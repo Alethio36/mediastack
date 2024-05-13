@@ -94,6 +94,9 @@ configure_docker_compose() {
     echo "Retrieving NordLynx private key..."
     private_key=$(sudo wg show nordlynx private-key)
 
+    #logout of nordvpn
+    nordvpn logout  --persist-token
+
     # Use sed to replace the placeholder with the NordLynx private key
     sed -i "s/WIREGUARD_PRIVATE_KEY=.*/WIREGUARD_PRIVATE_KEY=$private_key/g" docker-compose.yml
 
