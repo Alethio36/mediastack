@@ -53,11 +53,27 @@ install_dns_checker() {
     sudo chmod +x /ms4/tools/dnsleaktest.sh
 }
 
+# Function to update installed applications
+update_applications() {
+    # Update package index
+    sudo apt-get update
+
+    # Upgrade installed packages
+    sudo apt-get upgrade -y
+}
+
+# Function to update Docker images
+update_docker_images() {
+    # Update all Docker images
+    sudo docker image prune -af
+    sudo docker pull $(sudo docker image ls -q)
+}
+
 # User interaction section
 echo "Welcome to the Debian 12 management script!"
 echo "Please select an option:"
 echo "1. Install Docker, NordVPN, WireGuard, and DNS Checker Tool"
-echo "2. Update existing installations (Not yet implemented)"
+echo "2. Update existing installations"
 read -p "Enter your choice: " choice
 
 case $choice in
@@ -69,7 +85,8 @@ case $choice in
         ;;
     2)
         echo "Updating existing installations..."
-        # Add update functionality here
+        update_applications
+        update_docker_images
         ;;
     *)
         echo "Invalid option. Exiting."
