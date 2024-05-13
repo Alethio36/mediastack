@@ -133,8 +133,11 @@ configure_docker_compose() {
     # Write NordLynx private key to file
     echo "$private_key" | sudo tee "$info_directory/wireguardprivatekey.txt" > /dev/null
 
+    # Escape special characters in the private key
+    escaped_private_key=$(printf '%s\n' "$private_key" | sed 's:[\&/]:\\&:g;$!s/$/\\/')
+    
     # Use sed to replace the placeholder with the NordLynx private key
-    sed -i "s|WIREGUARD_PRIVATE_KEY=.*|WIREGUARD_PRIVATE_KEY=$private_key|g" docker-compose.yml
+    sed -i "s|WIREGUARD_PRIVATE_KEY=.*|WIREGUARD_PRIVATE_KEY=$escaped_private_key|g" docker-compose.yml
 
     echo "NordVPN token and WireGuard private key have been saved in the /ms4/information directory."
 }
