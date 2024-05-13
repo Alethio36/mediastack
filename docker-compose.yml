@@ -1,0 +1,154 @@
+version: "3"
+services:
+  gluetun:
+    image: qmcgaw/gluetun
+    container_name: gluetun
+    # line above must be uncommented to allow external containers to connect.
+    # See https://github.com/qdm12/gluetun-wiki/blob/main/setup/connect-a-container-to-gluetun.md#external-container-to-gluetun
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      - 6881:6881
+      - 6881:6881/udp
+      - 8085:8085 # qbittorrent - torrenter
+      - 8989:8989 # Sonarr - tv 
+      - 7878:7878 # radarr - movie
+      - 9696:9696 # Prowlarr - torrent indexer
+      - 8686:8686 # lidarr - music
+      - 8787:8787 # readarr - books
+      - 6767:6767 # bazarr - subtitles
+
+    volumes:
+      - /home/alethio/docker/ms4/gluetun:/gluetun
+      - /home/alethio/docker/ms4/tools:/tools
+    environment:
+      # See https://github.com/qdm12/gluetun-wiki/tree/main/setup#setup
+      - VPN_SERVICE_PROVIDER=nordvpn
+      - VPN_TYPE=wireguard
+      # OpenVPN:
+      # - OPENVPN_USER=
+      # - OPENVPN_PASSWORD=
+      # Wireguard:
+      - WIREGUARD_PRIVATE_KEY=
+ # See https://github.com/qdm12/gluetun-wiki/blob/main/setup/providers/nordvpn.md#obtain-your-wireguard-private-key
+      - WIREGUARD_ADDRESSES=10.5.0.2/32
+      # Timezone for accurate log times
+      - TZ=Australia/Sydney
+      # Server list updater
+      # See https://github.com/qdm12/gluetun-wiki/blob/main/setup/servers.md#update-the-vpn-servers-list
+      - UPDATER_PERIOD=24h
+      - SERVER_COUNTRIES=australia  # Comma separated list of countries
+      - SERVER_REGIONS= # Comma separated list of regions
+      - SERVER_CITIES= # Comma separated list of server cities
+      - SERVER_HOSTNAMES= # Comma separated list of server hostnames
+      - SERVER_CATEGORIES= # Comma separated list of server categories
+      - DOT_PROVIDERS= # Comma delimited list of DNS over TLS providers
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent
+    container_name: qbittorrent
+    network_mode: "service:gluetun"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Australia/Sydney
+      - WEBUI_PORT=8085
+    volumes:
+      - /ms4/torrent/config:/config
+      - /ms4/torrent:/downloads
+      - /ms4/tools:/tools
+    depends_on:
+      - gluetun
+    restart: always
+
+  sonarr:
+#    image: lscr.io/linuxserver/sonarr:latest
+    image: ghcr.io/hotio/sonarr:latest
+    container_name: sonarr
+    network_mode: "service:gluetun"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Australia/Sydney
+    volumes:
+      - /ms4/sonarr/config:/config
+      - /ms4/sonarr/tv:/tv #optional
+      - /ms4/torrent/sonarr:/downloads #optional
+      - /ms4/tools:/tools
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    network_mode: "service:gluetun"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Australia/Sydney
+    volumes:
+      - /ms4/radarr/config:/config
+      - /ms4/radarr/movies:/movies #optional
+      - /ms4/torrent/radarr:/downloads #optional
+      - /ms4/tools:/tools
+    restart: unless-stopped
+
+  lidarr:
+    image: lscr.io/linuxserver/lidarr:latest
+    container_name: lidarr
+    network_mode: "service:gluetun"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Australia/Sydney
+    volumes:
+      - /ms4/lidarr/config:/config
+      - /ms4/lidarr/music:/music #optional
+      - /ms4/torrent/lidarr:/downloads #optional
+      - /ms4/tools:/tools
+    restart: unless-stopped
+
+  readarr:
+#    image: lscr.io/linuxserver/readarr:develop
+    image: ghcr.io/hotio/readarr:latest
+    container_name: readarr
+    network_mode: "service:gluetun"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Australia/Sydney
+    volumes:
+      - /ms4/readarr/config:/config
+      - /ms4/readarr/books:/books #optional
+      - /ms4/torrent/readarr:/downloads #optional
+      - /ms4/tools:/tools
+    restart: unless-stopped
+
+  bazarr:
+    image: lscr.io/linuxserver/bazarr:latest
+    container_name: bazarr
+    network_mode: "service:gluetun"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Australia/Sydney
+    volumes:
+      - /ms4/bazarr/config:/config
+      - /ms4/radarr/movies:/movies #optional
+      - /ms4/sonarr/tv:/tv #optional
+      - /ms4/tools:/tools
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    network_mode: "service:gluetun"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Australia/Sydney
+    volumes:
+      - /ms4/prowlarr/config:/config
+      - /ms4/tools:/tools
+    restart: unless-stopped
