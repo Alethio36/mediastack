@@ -78,9 +78,26 @@ return_to_menu() {
 }
 
 configure_docker_compose() {
-    # Placeholder instructions for the NordVPN token
-    echo "Please obtain your NordVPN authentication token from the NordVPN website and enter it below:"
-    read -p "Enter your NordVPN authentication token: " nordvpn_token
+    # Check if NordVPN token file exists
+    token_file="/ms4/information/nordvpntoken.txt"
+    if [[ -f "$token_file" ]]; then
+        # NordVPN token file exists
+        echo "A NordVPN token file was found. Do you want to use the token from the file? (yes/no)"
+        read -r use_token_from_file
+        if [[ $use_token_from_file == "yes" ]]; then
+            # Read NordVPN token from file
+            nordvpn_token=$(<"$token_file")
+            echo "Using NordVPN token from file."
+        else
+            # Prompt user for NordVPN token
+            echo "Please obtain your NordVPN authentication token from the NordVPN website and enter it below:"
+            read -p "Enter your NordVPN authentication token: " nordvpn_token
+        fi
+    else
+        # Prompt user for NordVPN token
+        echo "Please obtain your NordVPN authentication token from the NordVPN website and enter it below:"
+        read -p "Enter your NordVPN authentication token: " nordvpn_token
+    fi
 
     # Placeholder instructions for the NordLynx private key
     echo "Please ensure you have established a NordVPN connection before proceeding to retrieve the NordLynx private key."
@@ -108,14 +125,17 @@ configure_docker_compose() {
     info_directory="/ms4/information"
     sudo mkdir -p "$info_directory"
 
-    # Write NordVPN token to file
-    echo "$nordvpn_token" | sudo tee "$info_directory/nordvpntoken.txt" > /dev/null
+    # Write NordVPN token to file if it was entered manually
+    if [[ $use_token_from_file != "yes" ]]; then
+        echo "$nordvpn_token" | sudo tee "$info_directory/nordvpntoken.txt" > /dev/null
+    fi
 
     # Write NordLynx private key to file
     echo "$private_key" | sudo tee "$info_directory/wireguardprivatekey.txt" > /dev/null
 
     echo "NordVPN token and WireGuard private key have been saved in the /ms4/information directory."
 }
+
 
 
 # Main menu function
