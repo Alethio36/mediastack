@@ -142,6 +142,29 @@ configure_docker_compose() {
     echo "NordVPN token and WireGuard private key have been saved in the /ms4/information directory."
 }
 
+run_dns_leak_test() {
+    # Check if dnsleaktest.sh script exists
+    dns_leak_test_script="/ms4/tools/dnsleaktest.sh"
+    if [[ ! -f "$dns_leak_test_script" ]]; then
+        echo "DNS leak test script not found: $dns_leak_test_script"
+        return 1
+    fi
+
+    # Get list of running containers
+    running_containers=$(sudo docker ps --format "{{.Names}}")
+
+    # Check if there are any running containers
+    if [[ -z "$running_containers" ]]; then
+        echo "No running containers found."
+        return 1
+    fi
+
+    # Loop through each running container and execute the DNS leak test script
+    for container in $running_containers; do
+        echo "Running DNS leak test in container: $container"
+        sudo docker exec "$container" /bin/bash "$dns_leak_test_script"
+    done
+}
 
 
 
@@ -153,7 +176,8 @@ main_menu() {
     echo "2. Update existing installations"
     echo "3. Update Docker images"
     echo "4. Configure Docker Compose with NordVPN key"
-    echo "5. Exit"
+    echo "5. run a leak test"
+    echo "6. Exit"
     read -p "Enter your choice: " choice
 
     case $choice in
@@ -179,7 +203,9 @@ main_menu() {
             configure_docker_compose
             return_to_menu
             ;;
-        5)
+        5) run_dns_leak_test
+            ;;
+        6)
             echo "Exiting."
             exit 0
             ;;
