@@ -51,9 +51,9 @@ need to write a script to
 3) pull the wireguard key and place it into compose file (done)
 4) update docker images
 5) prune docker images
-6) configure storage options for containers (this will need to interact with the compose file) and create said directories as well
+6) configure storage options for containers (this will need to interact with the compose file) and create said directories as well (wont know until needed for specifics)
 7) update host system (done)
-8) perform a ip and dns leak test on all containers (done, but needs to berefined insomuch as configuring the gluetun container to use specific dns servers)
+8) perform a ip and dns leak test on all containers (done)
 
 stretch goals
 1) only install wanted apps
