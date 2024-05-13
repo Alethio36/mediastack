@@ -49,9 +49,16 @@ install_wireguard() {
 
 # Function to install DNS checker tool
 install_dns_checker() {
-    sudo curl https://raw.githubusercontent.com/macvk/dnsleaktest/master/dnsleaktest.sh -o /ms4/tools/dnsleaktest.sh
+    # Ensure directory /ms4/tools exists
+    sudo mkdir -p /ms4/tools
+
+    # Download DNS leak test script
+    sudo curl -o /ms4/tools/dnsleaktest.sh https://raw.githubusercontent.com/macvk/dnsleaktest/master/dnsleaktest.sh
+    
+    # Set execute permissions for the script
     sudo chmod +x /ms4/tools/dnsleaktest.sh
 }
+
 
 # Function to update installed applications
 update_applications() {
