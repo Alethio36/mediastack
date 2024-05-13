@@ -32,3 +32,7 @@ sudo sh <(curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh)
 
 #install wireguard
 sudo apt install wireguard
+
+#install dns checker tool
+sudo curl https://raw.githubusercontent.com/macvk/dnsleaktest/master/dnsleaktest.sh -o /ms4/tools/dnsleaktest.sh
+sudo chmod +x /ms4/tools/dnsleaktest.sh
