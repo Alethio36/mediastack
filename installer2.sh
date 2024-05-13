@@ -154,12 +154,12 @@ run_dns_leak_test() {
         return 1
     fi
 
-    # Get list of running containers excluding "gluetun"
+    # Get list of running containers excluding flaresolverr and gluetun
     running_containers=$(sudo docker ps --format "{{.Names}}" | grep -v -e "gluetun" -e "flaresolverr")
 
     # Check if there are any running containers
     if [[ -z "$running_containers" ]]; then
-        echo "No running containers found (excluding gluetun)."
+        echo "No running containers found (excluding gluetun and flaresolverr)."
         return 1
     fi
 
@@ -173,7 +173,7 @@ run_dns_leak_test() {
 
 # Main menu function
 main_menu() {
-    echo "Welcome to the Debian 12 management script!"
+    echo "Welcome to the Mediastack management script!"
     echo "Please select an option:"
     echo "1. Install Docker, NordVPN, WireGuard, and DNS Checker Tool"
     echo "2. Update existing installations"
@@ -206,7 +206,9 @@ main_menu() {
             configure_docker_compose
             return_to_menu
             ;;
-        5) run_dns_leak_test
+        5) 
+           run_dns_leak_test
+           return_to_menu
             ;;
         6)
             echo "Exiting."
