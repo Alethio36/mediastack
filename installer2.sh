@@ -77,14 +77,25 @@ return_to_menu() {
     main_menu
 }
 
+configure_docker_compose() {
+    # Prompt user for NordVPN key
+    read -p "Enter your NordVPN authentication token: " nordvpn_key
+
+    # Use sed to replace the placeholder with the NordVPN key
+    sed -i "s/WIREGUARD_PRIVATE_KEY=/WIREGUARD_PRIVATE_KEY=$nordvpn_key/g" docker-compose.yml
+
+    echo "NordVPN WireGuard private key has been configured."
+}
+
 # Main menu function
 main_menu() {
     echo "Welcome to the Debian 12 management script!"
     echo "Please select an option:"
     echo "1. Install Docker, NordVPN, WireGuard, and DNS Checker Tool"
     echo "2. Update existing installations"
-    echo "3. Exit"
-    echo "4. Update Docker images"
+    echo "3. Update Docker images"
+    echo "4. Configure Docker Compose"
+    echo "5. Exit"
     read -p "Enter your choice: " choice
 
     case $choice in
@@ -101,13 +112,18 @@ main_menu() {
             return_to_menu
             ;;
         3)
-            echo "Exiting."
-            exit 0
-            ;;
-        4)
             echo "Updating Docker images..."
             update_docker_images
             return_to_menu
+            ;;
+        4)
+            echo "Configuring Docker Compose..."
+            configure_docker_compose
+            return_to_menu
+            ;;
+        5)
+            echo "Exiting."
+            exit 0
             ;;
         *)
             echo "Invalid option. Please try again."
