@@ -71,10 +71,13 @@ update_applications() {
 
 # Function to update Docker images
 update_docker_images() {
-    # Update all Docker images
+    # remove all container volumes
     sudo docker rm -vf $(sudo docker ps -aq)
+    # remove all images
     sudo docker rmi -f $(sudo docker images -aq)
+    # pulling all new images
     sudo docker compose pull
+    # prune any orphans
     sudo docker image prune -af
     echo "Images have been pruned and updated, please remember to start applications"
 }
