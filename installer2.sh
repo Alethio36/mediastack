@@ -82,6 +82,10 @@ configure_docker_compose() {
     echo "Please obtain your NordVPN authentication token from the NordVPN website and enter it below:"
     read -p "Enter your NordVPN authentication token: " nordvpn_token
 
+    # Placeholder instructions for the NordLynx private key
+    echo "Please ensure you have established a NordVPN connection before proceeding to retrieve the NordLynx private key."
+    read -p "Once connected, press Enter to continue..."
+
     # Run NordVPN login command with the provided token
     echo "Logging into NordVPN using the provided token..."
     nordvpn login --token "$nordvpn_token"
@@ -97,16 +101,20 @@ configure_docker_compose() {
     echo "Retrieving NordLynx private key..."
     private_key=$(sudo wg show nordlynx private-key)
 
-    #logout of nordvpn
-    nordvpn logout  --persist-token
+    # Logout of NordVPN
+    nordvpn logout --persist-token
 
-    # Escape special characters in the private key
-    escaped_private_key=$(printf '%s\n' "$private_key" | sed 's:[\&/]:\\&:g;$!s/$/\\/')
-    
-    # Use sed to replace the placeholder with the NordLynx private key
-    sed -i "s|WIREGUARD_PRIVATE_KEY=.*|WIREGUARD_PRIVATE_KEY=$escaped_private_key|g" docker-compose.yml
+    # Create directory if it doesn't exist
+    info_directory="/ms4/information"
+    sudo mkdir -p "$info_directory"
 
-    echo "NordLynx private key has been configured in the Docker Compose file."
+    # Write NordVPN token to file
+    echo "$nordvpn_token" | sudo tee "$info_directory/nordvpntoken.txt" > /dev/null
+
+    # Write NordLynx private key to file
+    echo "$private_key" | sudo tee "$info_directory/wireguardprivatekey.txt" > /dev/null
+
+    echo "NordVPN token and WireGuard private key have been saved in the /ms4/information directory."
 }
 
 
