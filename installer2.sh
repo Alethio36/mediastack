@@ -66,7 +66,7 @@ update_applications() {
 update_docker_images() {
     # Update all Docker images
     sudo docker image prune -af
-    sudo docker pull $(sudo docker image ls -q)
+    echo "images have been pruned, please remember to start applications"
 }
 
 # User interaction section
