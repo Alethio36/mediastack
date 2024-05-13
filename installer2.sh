@@ -28,6 +28,9 @@ install_docker() {
 
     # Install Docker packages
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+    # Option to return to main menu
+    return_to_menu
 }
 
 # Function to install NordVPN
@@ -40,17 +43,26 @@ install_nordvpn() {
 
     # Clean up
     rm nordvpn_install.sh
+
+    # Option to return to main menu
+    return_to_menu
 }
 
 # Function to install WireGuard
 install_wireguard() {
     sudo apt install wireguard -y
+
+    # Option to return to main menu
+    return_to_menu
 }
 
 # Function to install DNS checker tool
 install_dns_checker() {
     sudo curl https://raw.githubusercontent.com/macvk/dnsleaktest/master/dnsleaktest.sh -o /ms4/tools/dnsleaktest.sh
     sudo chmod +x /ms4/tools/dnsleaktest.sh
+
+    # Option to return to main menu
+    return_to_menu
 }
 
 # Function to update installed applications
@@ -60,36 +72,57 @@ update_applications() {
 
     # Upgrade installed packages
     sudo apt-get upgrade -y
+
+    # Option to return to main menu
+    return_to_menu
 }
 
 # Function to update Docker images
 update_docker_images() {
     # Update all Docker images
     sudo docker image prune -af
-    echo "images have been pruned, please remember to start applications"
+    echo "Images have been pruned, please remember to start applications"
+
+    # Option to return to main menu
+    return_to_menu
 }
 
-# User interaction section
-echo "Welcome to the Debian 12 management script!"
-echo "Please select an option:"
-echo "1. Install Docker, NordVPN, WireGuard, and DNS Checker Tool"
-echo "2. Update existing installations"
-read -p "Enter your choice: " choice
+# Function to return to the main menu
+return_to_menu() {
+    echo ""
+    echo "Returning to the main menu..."
+    echo ""
+    main_menu
+}
 
-case $choice in
-    1)
-        install_docker
-        install_nordvpn
-        install_wireguard
-        install_dns_checker
-        ;;
-    2)
-        echo "Updating existing installations..."
-        update_applications
-        update_docker_images
-        ;;
-    *)
-        echo "Invalid option. Exiting."
-        exit 1
-        ;;
-esac
+# Main menu function
+main_menu() {
+    echo "Welcome to the Debian 12 management script!"
+    echo "Please select an option:"
+    echo "1. Install Docker, NordVPN, WireGuard, and DNS Checker Tool"
+    echo "2. Update existing installations"
+    echo "3. Exit"
+    read -p "Enter your choice: " choice
+
+    case $choice in
+        1)
+            install_docker
+            ;;
+        2)
+            echo "Updating existing installations..."
+            update_applications
+            update_docker_images
+            ;;
+        3)
+            echo "Exiting."
+            exit 0
+            ;;
+        *)
+            echo "Invalid option. Please try again."
+            main_menu
+            ;;
+    esac
+}
+
+# Start with the main menu
+main_menu
