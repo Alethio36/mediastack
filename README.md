@@ -39,7 +39,7 @@ nordvpn logout  --persist-token  Keep your current access token valid after logg
       - 6767:6767 # bazarr -vpn - subtitles
       - 1234:1234 # jellyfin -no vpn - media player
       - 1234:1234 # jellyseerr - no vpn - media grabber
-                  # flaresolver - vpn - cloudflare captha solver
+      - 8191:8191 # flaresolver - vpn - cloudflare captha solver
 
 
 prereqs
