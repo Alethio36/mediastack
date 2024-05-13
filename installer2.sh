@@ -150,22 +150,21 @@ run_dns_leak_test() {
         return 1
     fi
 
-    # Get list of running containers
-    running_containers=$(sudo docker ps --format "{{.Names}}")
+    # Get list of running containers excluding "gluetun"
+    running_containers=$(sudo docker ps --format "{{.Names}}" | grep -v "gluetun")
 
     # Check if there are any running containers
     if [[ -z "$running_containers" ]]; then
-        echo "No running containers found."
+        echo "No running containers found (excluding gluetun)."
         return 1
     fi
 
-    # Loop through each running container and execute the DNS leak test script
+    # Loop through each running container (excluding gluetun) and execute the DNS leak test script
     for container in $running_containers; do
         echo "Running DNS leak test in container: $container"
         sudo docker exec "$container" /bin/bash tools/dnsleaktest.sh
     done
 }
-
 
 
 # Main menu function
