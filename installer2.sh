@@ -99,10 +99,6 @@ configure_docker_compose() {
         read -p "Enter your NordVPN authentication token: " nordvpn_token
     fi
 
-    # Placeholder instructions for the NordLynx private key
-    echo "Please ensure you have established a NordVPN connection before proceeding to retrieve the NordLynx private key."
-    read -p "Once connected, press Enter to continue..."
-
     # Run NordVPN login command with the provided token
     echo "Logging into NordVPN using the provided token..."
     nordvpn login --token "$nordvpn_token"
