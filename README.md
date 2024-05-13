@@ -46,8 +46,8 @@ prereqs
 curl, nano, git, wireguard, docker, nordvpn, ssh
 
 need to write a script to
-1) install docker
-2) install nordvpn and wireguard
+1) install docker (done)
+2) install nordvpn and wireguard (done)
 3) pull the wireguard key and place it into compose file
 4) update docker images
 5) prune docker images
