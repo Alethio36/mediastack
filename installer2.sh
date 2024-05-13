@@ -90,6 +90,9 @@ configure_docker_compose() {
     echo "Setting NordVPN technology to NordLynx..."
     nordvpn set technology nordlynx
 
+    # make a connection to establish a key
+    nordvpn connect
+
     # Get NordLynx private key
     echo "Retrieving NordLynx private key..."
     private_key=$(sudo wg show nordlynx private-key)
