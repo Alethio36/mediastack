@@ -162,7 +162,7 @@ run_dns_leak_test() {
     # Loop through each running container and execute the DNS leak test script
     for container in $running_containers; do
         echo "Running DNS leak test in container: $container"
-        sudo docker exec "$container" sh tools/dnsleaktest.sh
+        sudo docker exec "$container" /bin/bash tools/dnsleaktest.sh
     done
 }
 
