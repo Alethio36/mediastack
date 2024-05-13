@@ -81,8 +81,8 @@ configure_docker_compose() {
     # Prompt user for NordVPN key
     read -p "Enter your NordVPN authentication token: " nordvpn_key
 
-    # Use sed to replace the placeholder with the NordVPN key
-    sed -i "s/WIREGUARD_PRIVATE_KEY=/WIREGUARD_PRIVATE_KEY=$nordvpn_key/g" docker-compose.yml
+    # Use sed to replace the entire line with the NordVPN key
+    sed -i "s/^\( *- *WIREGUARD_PRIVATE_KEY *= *\).*/\1$nordvpn_key/g" docker-compose.yml
 
     echo "NordVPN WireGuard private key has been configured."
 }
