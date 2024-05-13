@@ -147,7 +147,7 @@ run_dns_leak_test() {
     fi
 
     # Get list of running containers excluding "gluetun"
-    running_containers=$(sudo docker ps --format "{{.Names}}" | grep -v "gluetun")
+    running_containers=$(sudo docker ps --format "{{.Names}}" | grep -v -e "gluetun" -e "flaresolverr")
 
     # Check if there are any running containers
     if [[ -z "$running_containers" ]]; then
