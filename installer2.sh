@@ -28,9 +28,6 @@ install_docker() {
 
     # Install Docker packages
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-    # Option to return to main menu
-    return_to_menu
 }
 
 # Function to install NordVPN
@@ -43,26 +40,17 @@ install_nordvpn() {
 
     # Clean up
     rm nordvpn_install.sh
-
-    # Option to return to main menu
-    return_to_menu
 }
 
 # Function to install WireGuard
 install_wireguard() {
     sudo apt install wireguard -y
-
-    # Option to return to main menu
-    return_to_menu
 }
 
 # Function to install DNS checker tool
 install_dns_checker() {
     sudo curl https://raw.githubusercontent.com/macvk/dnsleaktest/master/dnsleaktest.sh -o /ms4/tools/dnsleaktest.sh
     sudo chmod +x /ms4/tools/dnsleaktest.sh
-
-    # Option to return to main menu
-    return_to_menu
 }
 
 # Function to update installed applications
@@ -72,9 +60,6 @@ update_applications() {
 
     # Upgrade installed packages
     sudo apt-get upgrade -y
-
-    # Option to return to main menu
-    return_to_menu
 }
 
 # Function to update Docker images
@@ -82,9 +67,6 @@ update_docker_images() {
     # Update all Docker images
     sudo docker image prune -af
     echo "Images have been pruned, please remember to start applications"
-
-    # Option to return to main menu
-    return_to_menu
 }
 
 # Function to return to the main menu
@@ -102,24 +84,30 @@ main_menu() {
     echo "1. Install Docker, NordVPN, WireGuard, and DNS Checker Tool"
     echo "2. Update existing installations"
     echo "3. Exit"
-    echo "4. update app images"
+    echo "4. Update Docker images"
     read -p "Enter your choice: " choice
 
     case $choice in
         1)
             install_docker
+            install_nordvpn
+            install_wireguard
+            install_dns_checker
+            return_to_menu
             ;;
         2)
             echo "Updating existing installations..."
             update_applications
+            return_to_menu
             ;;
         3)
             echo "Exiting."
             exit 0
             ;;
         4)
-            echo "updatting docker images"
+            echo "Updating Docker images..."
             update_docker_images
+            return_to_menu
             ;;
         *)
             echo "Invalid option. Please try again."
