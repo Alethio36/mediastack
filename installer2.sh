@@ -32,7 +32,14 @@ install_docker() {
 
 # Function to install NordVPN
 install_nordvpn() {
-    sudo sh <(curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh)
+    # Download NordVPN installation script
+    curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh -o nordvpn_install.sh
+
+    # Execute NordVPN installation script
+    sudo sh nordvpn_install.sh
+
+    # Clean up
+    rm nordvpn_install.sh
 }
 
 # Function to install WireGuard
