@@ -94,7 +94,7 @@ main_menu() {
     echo "1. Install Docker, NordVPN, WireGuard, and DNS Checker Tool"
     echo "2. Update existing installations"
     echo "3. Update Docker images"
-    echo "4. Configure Docker Compose"
+    echo "4. Configure Docker Compose with NordVPN key"
     echo "5. Exit"
     read -p "Enter your choice: " choice
 
