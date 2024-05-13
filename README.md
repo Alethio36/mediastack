@@ -42,6 +42,9 @@ nordvpn logout  --persist-token  Keep your current access token valid after logg
                   # flaresolver - vpn - cloudflare captha solver
 
 
+prereqs
+curl, nano, git, wireguard, docker, nordvpn, ssh
+
 need to write a script to
 1) install docker
 2) install nordvpn and wireguard
