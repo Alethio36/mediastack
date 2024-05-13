@@ -31,7 +31,7 @@ sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plug
 sudo sh <(curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh)
 
 #install wireguard
-sudo apt install wireguard
+sudo apt install wireguard -y
 
 #install dns checker tool
 sudo curl https://raw.githubusercontent.com/macvk/dnsleaktest/master/dnsleaktest.sh -o /ms4/tools/dnsleaktest.sh
