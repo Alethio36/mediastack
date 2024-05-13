@@ -46,6 +46,7 @@ services:
       - SERVER_HOSTNAMES= # Comma separated list of server hostnames
       - SERVER_CATEGORIES= # Comma separated list of server categories
       - DOT_PROVIDERS= # Comma delimited list of DNS over TLS providers
+      - DNS_ADDRESS=103.86.96.100 # 103.86.99.100
 
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent
