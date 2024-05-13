@@ -78,14 +78,28 @@ return_to_menu() {
 }
 
 configure_docker_compose() {
-    # Prompt user for NordVPN key
-    read -p "Enter your NordVPN authentication token: " nordvpn_key
+    # Placeholder instructions for the NordVPN token
+    echo "Please obtain your NordVPN authentication token from the NordVPN website and enter it below:"
+    read -p "Enter your NordVPN authentication token: " nordvpn_token
 
-    # Use sed to replace the entire line with the NordVPN key
-    sed -i "s/^\( *- *WIREGUARD_PRIVATE_KEY *= *\).*/\1$nordvpn_key/g" docker-compose.yml
+    # Run NordVPN login command with the provided token
+    echo "Logging into NordVPN using the provided token..."
+    nordvpn login --token "$nordvpn_token"
 
-    echo "NordVPN WireGuard private key has been configured."
+    # Set NordVPN technology to NordLynx
+    echo "Setting NordVPN technology to NordLynx..."
+    nordvpn set technology nordlynx
+
+    # Get NordLynx private key
+    echo "Retrieving NordLynx private key..."
+    private_key=$(sudo wg show nordlynx private-key)
+
+    # Use sed to replace the placeholder with the NordLynx private key
+    sed -i "s/WIREGUARD_PRIVATE_KEY=.*/WIREGUARD_PRIVATE_KEY=$private_key/g" docker-compose.yml
+
+    echo "NordLynx private key has been configured in the Docker Compose file."
 }
+
 
 # Main menu function
 main_menu() {
