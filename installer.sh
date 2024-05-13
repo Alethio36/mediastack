@@ -4,7 +4,7 @@
 sudo apt-get update
 
 # Install prerequisites
-sudo apt-get install -y ca-certificates curl
+sudo apt-get install -y ca-certificates curl 
 
 # Create directory for Docker's GPG key
 sudo install -m 0755 -d /etc/apt/keyrings
@@ -26,3 +26,9 @@ sudo apt-get update
 
 # Install Docker packages
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+#install nordvpn
+sudo sh <(curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh)
+
+#install wireguard
+sudo apt install wireguard
