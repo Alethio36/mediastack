@@ -111,11 +111,14 @@ main_menu() {
         2)
             echo "Updating existing installations..."
             update_applications
-            update_docker_images
             ;;
         3)
             echo "Exiting."
             exit 0
+            ;;
+        4)
+            echo "updatting docker images"
+            update_docker_images
             ;;
         *)
             echo "Invalid option. Please try again."
