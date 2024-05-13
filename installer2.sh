@@ -65,6 +65,7 @@ update_applications() {
 # Function to update Docker images
 update_docker_images() {
     # Update all Docker images
+    sudo docker compose pull
     sudo docker image prune -af
     echo "Images have been pruned, please remember to start applications"
 }
