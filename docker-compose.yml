@@ -21,8 +21,8 @@ services:
       - 6767:6767 # bazarr - subtitles
 
     volumes:
-      - /home/alethio/docker/ms4/gluetun:/gluetun
-      - /home/alethio/docker/ms4/tools:/tools
+      - /ms4/gluetun:/gluetun
+      - /ms4/tools:/tools
     environment:
       # See https://github.com/qdm12/gluetun-wiki/tree/main/setup#setup
       - VPN_SERVICE_PROVIDER=nordvpn
