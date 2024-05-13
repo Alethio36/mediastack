@@ -102,6 +102,7 @@ main_menu() {
     echo "1. Install Docker, NordVPN, WireGuard, and DNS Checker Tool"
     echo "2. Update existing installations"
     echo "3. Exit"
+    echo "4. update app images"
     read -p "Enter your choice: " choice
 
     case $choice in
