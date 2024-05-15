@@ -7,7 +7,7 @@ this also assumes the os has been intalled and configured, with the user having 
 this also assumes you have a cloudflare domain, and a nordvpn subscription
 
 1) please install some prerequsites apps
-   #                  sudo apt install curl nano git openssh-server
+   #       -      sudo apt install curl nano git openssh-server
 
 2) with ssh installed, it is easier to use your normal workstation, the rest of this tutorial assumes you have a normal workstation with standard capabilites
 
