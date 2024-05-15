@@ -13,6 +13,7 @@ curl, nano, git, wireguard, docker, nordvpn, ssh, docker
 6) -  configure storage options for containers (this will need to interact with the compose file) and create said directories as well (wont know until needed for specifics)
 7) - [x] update host system (done)
 8) - [x] perform a ip and dns leak test on all containers (done)
+9) - [ ] trasnfer a windows jellyfin to a linux jellyfin server
 
 # stretch goals
 1) - [] only install wanted apps
