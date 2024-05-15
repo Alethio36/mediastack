@@ -71,6 +71,9 @@ update_applications() {
 
 # Function to update Docker images
 update_docker_images() {
+    # stopping the mediastack
+    echo "Stopping mediastack..."
+    sudo docker compose down
     # remove all container volumes
     sudo docker rm -vf $(sudo docker ps -aq)
     # remove all images
