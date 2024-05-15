@@ -17,7 +17,7 @@ curl, nano, git, wireguard, docker, nordvpn, ssh, docker
 
 # stretch goals
 1) - [] only install wanted apps
-2) - [] auto configure all the arr apps with eachother
+2) - [o] auto configure all the arr apps with eachother (this is not going to happen, to complicated)
 3) - [] setup dns, proxy, and ssl with the apps for lan acess 
 4) - [x] setup jellyfin and jellyseerr to work with cloudflare tunnell
 
