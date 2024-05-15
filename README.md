@@ -53,15 +53,16 @@ this also assumes you have a cloudflare domain, and a nordvpn subscription
 curl, nano, git, wireguard, docker, nordvpn, ssh, docker
 
 # script goals
-1) - [x] install docker (done)
-2) - [x] install nordvpn and wireguard (done)
-3) - [x] pull the wireguard key and place it into compose file (done)
-4) - [x] update docker images
-5) - [x] prune docker images
-6) -  configure storage options for containers (this will need to interact with the compose file) and create said directories as well (wont know until needed for specifics)
-7) - [x] update host system (done)
-8) - [x] perform a ip and dns leak test on all containers (done)
-9) - [ ] trasnfer a windows jellyfin to a linux jellyfin server
+1)  - [x] install docker (done)
+2)  - [x] install nordvpn and wireguard (done)
+3)  - [x] pull the wireguard key and place it into compose file (done)
+4)  - [x] update docker images
+5)  - [x] prune docker images
+6)  -  configure storage options for containers (this will need to interact with the compose file) and create said directories as well (wont know until needed for specifics)
+7)  - [x] update host system (done)
+8)  - [x] perform a ip and dns leak test on all containers (done)
+9)  - [ ] trasnfer a windows jellyfin to a linux jellyfin server
+10) - [ ] put in proper error handing in user interaction 
 
 # stretch goals
 1) - [] only install wanted apps
