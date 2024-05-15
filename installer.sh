@@ -220,6 +220,32 @@ setup_cloudflare_token() {
     echo "Cloudflare token has been added to the Docker Compose file."
 }
 
+manage_docker_operations() {
+    echo "Do you want to start or stop the Docker Compose?"
+    echo "1. Start"
+    echo "2. Stop"
+    echo "3. Return to main menu"
+    read -p "Enter your choice (1, 2, or 3): " choice
+
+    case $choice in
+        1)
+            # Start Docker Compose
+            echo "Starting Docker Compose..."
+            sudo docker-compose up -d
+            ;;
+        2)
+            # Stop Docker Compose
+            echo "Stopping Docker Compose..."
+            sudo docker-compose down
+            ;;
+        3)
+            echo "Returning to the main menu..."
+            ;;
+        *)
+            echo "Invalid choice. Please enter 1 to start, 2 to stop, or 3 to return to the main menu."
+            ;;
+    esac
+}
 
 
 # Main menu function
@@ -230,9 +256,10 @@ main_menu() {
     echo "2. Update existing installations"
     echo "3. Update Docker images"
     echo "4. Configure Docker Compose with NordVPN key"
-    echo "5. run a leak test"
-    echo "6. Exit"
-    echo "7. setup cloudflare tunnell"
+    echo "5. Run a leak test"
+    echo "6. Setup cloudflare tunnell"
+    echo "7. start or stop the mediastack"
+    echo "8. Exit"
     read -p "Enter your choice: " choice
 
     case $choice in
@@ -263,12 +290,16 @@ main_menu() {
            return_to_menu
             ;;
         6)
-            echo "Exiting."
-            exit 0
-            ;;
-        7) 
            setup_cloudflare_token
            return_to_menu
+            ;;
+        7)
+           manage_docker_operations
+           return_to_menu
+            ;;
+        8) 
+           echo "Exiting."
+           exit 0
             ;;
         *)
             echo "Invalid option. Please try again."
