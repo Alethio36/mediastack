@@ -231,12 +231,12 @@ manage_docker_operations() {
         1)
             # Start Docker Compose
             echo "Starting Docker Compose..."
-            sudo docker-compose up -d
+            sudo docker compose up -d
             ;;
         2)
             # Stop Docker Compose
             echo "Stopping Docker Compose..."
-            sudo docker-compose down
+            sudo docker compose down
             ;;
         3)
             echo "Returning to the main menu..."
