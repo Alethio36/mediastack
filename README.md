@@ -22,6 +22,7 @@ this also assumes you have a cloudflare domain, and a nordvpn subscription
    for cloudflare, please login, and find your way to the cloudflare zero trust section. under networks, click on tunnels, and create a new tunnell. pick the cloudflared option, name the tunnell whatever you want, and under install and run connectors, you want to copy the docker command, paste it into notepad (presumably where your nordvpn token is) and remove everthing that is NOT the token. the token will be a bunch of random charectors and look like nonsense. from there, please wait to finish setting up the mediastack
 
 5) now back to the media server, make sure your ssh in and sudo works ( a good test is run the command "sudo whoami" it should return "root", if not, please troubleshoot)
+   
        -  a) cd mediastack
        -  b) sudo bash installer.sh
        -  c) hit option 1
@@ -32,8 +33,8 @@ this also assumes you have a cloudflare domain, and a nordvpn subscription
        -  h) hit option 7, and start the stack
        -  i) optional step is hit option 5 to run a dns leak test on the runnining images. this will take a few minutes. make sure to read the readout of each container. also check the ip on each container just in case
 
-6) congrats, everything is up and running, please enter each app to configure it as needed from their respective webguis. especially jellyfin, as we will be opening it to WAN in the next step
-7) now, if you return to cloudflare, it should have connector loaded up and you should hit next, from the next page, please enter your subdomain, and domain (subdomain.domain.tld) and below under service, select http, and under url, enter "mediaserver:8096" then save tunnell. now jellyfin is open to the world wide web. if you would like a second tunell for jellyseer, please reach out to me to reconfigure for a second tunell
+7) congrats, everything is up and running, please enter each app to configure it as needed from their respective webguis. especially jellyfin, as we will be opening it to WAN in the next step
+8) now, if you return to cloudflare, it should have connector loaded up and you should hit next, from the next page, please enter your subdomain, and domain (subdomain.domain.tld) and below under service, select http, and under url, enter "mediaserver:8096" then save tunnell. now jellyfin is open to the world wide web. if you would like a second tunell for jellyseer, please reach out to me to reconfigure for a second tunell
 
 
 
