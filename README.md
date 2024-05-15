@@ -18,10 +18,11 @@ curl, nano, git, wireguard, docker, nordvpn, ssh, docker
 1) - [] only install wanted apps
 2) - [] auto configure all the arr apps with eachother
 3) - [] setup dns, proxy, and ssl with the apps for lan acess 
-4) - [] setup jellyfin and jellyseerr to work with cloudflare tunnell
+4) - [x] setup jellyfin and jellyseerr to work with cloudflare tunnell
 
 # apps involved 
 
+      - [x]  xxxx:xxxx # gluetun -vpn - vpn tunnell
       - [x]  8085:8085 # qbittorrent -vpn - torrenter
       - [x]  8989:8989 # Sonarr -vpn - tv 
       - [x]  7878:7878 # radarr -vpn - movie
@@ -29,8 +30,8 @@ curl, nano, git, wireguard, docker, nordvpn, ssh, docker
       - [x]  8686:8686 # lidarr -vpn - music
       - [x]  8787:8787 # readarr -vpn - books
       - [x]  6767:6767 # bazarr -vpn - subtitles
-      -    xxxx:xxxx # jellyfin -no vpn - media player
-      -    xxxx:xxxx # jellyseerr - no vpn - media grabber
+      - [x]  8096:8096 # jellyfin -no vpn - media player
+      - [x]  5055:5055 # jellyseerr - no vpn - media grabber
       - [x]  8191:8191 # flaresolver - vpn - cloudflare captha solver
 
 
