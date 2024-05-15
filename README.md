@@ -63,7 +63,9 @@ curl, nano, git, wireguard, docker, nordvpn, ssh, docker
 8)  - [x] perform a ip and dns leak test on all containers (done)
 9)  - [ ] trasnfer a windows jellyfin to a linux jellyfin server
 10) - [ ] put in proper error handing in user interaction 
-
+11) - [ ] add in a option to change vpn tunnel options
+   
+   
 # stretch goals
 1) - [] only install wanted apps
 2) - [o] auto configure all the arr apps with eachother (this is not going to happen, to complicated)
