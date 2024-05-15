@@ -1,7 +1,7 @@
 # mediastack
 step 1
 
-prereqs
+# prereqs
 curl, nano, git, wireguard, docker, nordvpn, ssh, docker
 
 need to write a script to
@@ -20,7 +20,7 @@ stretch goals
 3) - [] setup dns, proxy, and ssl with the apps for lan acess 
 4) - [] setup jellyfin and jellyseerr to work with cloudflare tunnell
 
-- apps involved - 
+# apps involved 
 
       - [x]  8085:8085 # qbittorrent -vpn - torrenter
       - [x]  8989:8989 # Sonarr -vpn - tv 
@@ -37,7 +37,7 @@ stretch goals
 
 
 
--notes-
+# notes
 
 install nordvpn
 
