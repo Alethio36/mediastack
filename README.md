@@ -7,12 +7,12 @@ this also assumes the os has been intalled and configured, with the user having 
 this also assumes you have a cloudflare domain, and a nordvpn subscription
 
 1) please install some prerequsites apps
-   #       -      sudo apt install curl nano git openssh-server
+   - sudo apt install curl nano git openssh-server
 
 2) with ssh installed, it is easier to use your normal workstation, the rest of this tutorial assumes you have a normal workstation with standard capabilites
 
 3) download this git repo for local use
-         sudo git clone https://github.com/alethio36/mediastack
+        - sudo git clone https://github.com/alethio36/mediastack
    this should have created a folder called mediastack inside the folder you ran the previous command, run "ls" command to confirm
 
 4) now would be a good idea to prepare your nordvpn and cloudflare tokens.
