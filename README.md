@@ -4,17 +4,17 @@ step 1
 # prereqs
 curl, nano, git, wireguard, docker, nordvpn, ssh, docker
 
-need to write a script to
+# script goals
 1) - [x] install docker (done)
 2) - [x] install nordvpn and wireguard (done)
 3) - [x] pull the wireguard key and place it into compose file (done)
 4) - [x] update docker images
 5) - [x] prune docker images
-6) - [] configure storage options for containers (this will need to interact with the compose file) and create said directories as well (wont know until needed for specifics)
+6) -  configure storage options for containers (this will need to interact with the compose file) and create said directories as well (wont know until needed for specifics)
 7) - [x] update host system (done)
 8) - [x] perform a ip and dns leak test on all containers (done)
 
-stretch goals
+# stretch goals
 1) - [] only install wanted apps
 2) - [] auto configure all the arr apps with eachother
 3) - [] setup dns, proxy, and ssl with the apps for lan acess 
@@ -29,8 +29,8 @@ stretch goals
       - [x]  8686:8686 # lidarr -vpn - music
       - [x]  8787:8787 # readarr -vpn - books
       - [x]  6767:6767 # bazarr -vpn - subtitles
-      - []   xxxx:xxxx # jellyfin -no vpn - media player
-      - []   xxxx:xxxx # jellyseerr - no vpn - media grabber
+      -    xxxx:xxxx # jellyfin -no vpn - media player
+      -    xxxx:xxxx # jellyseerr - no vpn - media grabber
       - [x]  8191:8191 # flaresolver - vpn - cloudflare captha solver
 
 
