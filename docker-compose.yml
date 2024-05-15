@@ -168,3 +168,11 @@ services:
     volumes:
       - /ms4/tools:/tools
     restart: unless-stopped
+
+  cloudflared: 
+    image: cloudflare/cloudflared 
+    container_name: cloudflare-tunnel 
+    restart: unless-stopped 
+    command: tunnel run 
+    environment: 
+      - TUNNEL_TOKEN=
