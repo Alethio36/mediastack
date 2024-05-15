@@ -176,6 +176,52 @@ run_dns_leak_test() {
 }
 
 
+# Function to set up Cloudflare token
+setup_cloudflare_token() {
+    # Check if the token file already exists
+    if [ -f "/ms4/information/cloudflare_token.txt" ]; then
+        echo "Cloudflare token file already exists."
+        read -p "Do you want to use the existing Cloudflare token? (Y/N): " use_existing_token
+
+        # Convert user input to uppercase
+        use_existing_token=$(echo "$use_existing_token" | tr '[:lower:]' '[:upper:]')
+
+        if [ "$use_existing_token" = "Y" ]; then
+            # Read the token from the file
+            cloudflare_token=$(<"/ms4/information/cloudflare_token.txt")
+            echo "Using existing Cloudflare token."
+        else
+            # Prompt the user to enter a new token
+            echo "Please obtain your Cloudflare token from the Cloudflare dashboard and enter it below:"
+            echo "You can find instructions on how to generate a Cloudflare token in the Cloudflare documentation."
+            echo "Enter the Cloudflare token when prompted."
+            read -p "Enter your Cloudflare token: " cloudflare_token
+        fi
+    else
+        # Prompt the user to enter a new token
+        echo "Please obtain your Cloudflare token from the Cloudflare dashboard and enter it below:"
+        echo "You can find instructions on how to generate a Cloudflare token in the Cloudflare documentation."
+        echo "Enter the Cloudflare token when prompted."
+        read -p "Enter your Cloudflare token: " cloudflare_token
+    fi
+
+    # Check if the token is provided
+    if [ -z "$cloudflare_token" ]; then
+        echo "No Cloudflare token provided. Exiting."
+        return 1
+    fi
+
+    # Create a file named 'cloudflare_token.txt' and place the token in it
+    echo "$cloudflare_token" > /ms4/information/cloudflare_token.txt
+    echo "Cloudflare token has been saved to /ms4/information/cloudflare_token.txt"
+
+    # Add the token to the Docker Compose file after TUNNEL_TOKEN=
+    sed -i "s|TUNNEL_TOKEN=.*|TUNNEL_TOKEN=$cloudflare_token|g" docker-compose.yml
+    echo "Cloudflare token has been added to the Docker Compose file."
+}
+
+
+
 # Main menu function
 main_menu() {
     echo "Welcome to the Mediastack management script!"
@@ -186,6 +232,7 @@ main_menu() {
     echo "4. Configure Docker Compose with NordVPN key"
     echo "5. run a leak test"
     echo "6. Exit"
+    echo "7. setup cloudflare tunnell"
     read -p "Enter your choice: " choice
 
     case $choice in
@@ -218,6 +265,10 @@ main_menu() {
         6)
             echo "Exiting."
             exit 0
+            ;;
+        7) 
+           setup_cloudflare_token
+           return_to_menu
             ;;
         *)
             echo "Invalid option. Please try again."
