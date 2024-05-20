@@ -46,7 +46,7 @@ this also assumes you have a cloudflare domain, and a nordvpn subscription
 
 6) congrats, everything is up and running, please enter each app to configure it as needed from their respective webguis. especially jellyfin, as we will be opening it to WAN in the next step
 7) now, if you return to cloudflare, it should have connector loaded up and you should hit next, from the next page, please enter your subdomain, and domain (subdomain.domain.tld) and below under service, select http, and under url, enter "mediaserver:8096" then save tunnell. now jellyfin is open to the world wide web. if you would like a second tunell for jellyseer, please reach out to me to reconfigure for a second tunell
-
+8) unfortunatley i cant find a way to auto configure all the apps to work with eachother, this must be done manually from the gui of each app. find the ip adress of the host and append the correct port (i.e 192.168.1.100:xxxx) to find each app. proper dns coming soon
 
 
 # prereqs
