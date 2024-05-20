@@ -222,7 +222,7 @@ services:
       - "80:80/tcp"
     environment:
       - TZ=Australia/Sydney
-      - WEBPASSWORD='testest'
+      - WEBPASSWORD=testest #change this for gods sake
     # Volumes store your data between container upgrades
     volumes:
       - '/ms4/pihole/config:/etc/pihole'
