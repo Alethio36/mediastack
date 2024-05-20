@@ -79,7 +79,7 @@ update_docker_images() {
     # remove all images
     sudo docker rmi -f $(sudo docker images -aq)
     # pulling all new images
-    sudo docker compose pull
+    # sudo docker compose pull
     # prune any orphans
     sudo docker image prune -af
     echo "Images have been pruned and updated, please remember to start applications"
