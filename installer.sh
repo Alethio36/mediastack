@@ -98,17 +98,23 @@ configure_docker_compose() {
     token_file="/ms4/information/nordvpntoken.txt"
     if [[ -f "$token_file" ]]; then
         # NordVPN token file exists
-        echo "A NordVPN token file was found. Do you want to use the token from the file? (yes/no)"
-        read -r use_token_from_file
-        if [[ $use_token_from_file == "yes" ]]; then
-            # Read NordVPN token from file
-            nordvpn_token=$(<"$token_file")
-            echo "Using NordVPN token from file."
-        else
-            # Prompt user for NordVPN token
-            echo "Please obtain your NordVPN authentication token from the NordVPN website and enter it below:"
-            read -p "Enter your NordVPN authentication token: " nordvpn_token
-        fi
+        while true; do
+            echo "A NordVPN token file was found. Do you want to use the token from the file? (yes/no)"
+            read -r use_token_from_file
+            if [[ $use_token_from_file == "yes" ]]; then
+                # Read NordVPN token from file
+                nordvpn_token=$(<"$token_file")
+                echo "Using NordVPN token from file."
+                break
+            elif [[ $use_token_from_file == "no" ]]; then
+                # Prompt user for NordVPN token
+                echo "Please obtain your NordVPN authentication token from the NordVPN website and enter it below:"
+                read -p "Enter your NordVPN authentication token: " nordvpn_token
+                break
+            else
+                echo "Invalid choice. Please enter 'yes' or 'no'."
+            fi
+        done
     else
         # Prompt user for NordVPN token
         echo "Please obtain your NordVPN authentication token from the NordVPN website and enter it below:"
@@ -123,7 +129,7 @@ configure_docker_compose() {
     echo "Setting NordVPN technology to NordLynx..."
     nordvpn set technology nordlynx
 
-    # make a connection to establish a key
+    # Make a connection to establish a key
     nordvpn connect
 
     # Get NordLynx private key
@@ -147,7 +153,7 @@ configure_docker_compose() {
 
     # Escape special characters in the private key
     escaped_private_key=$(printf '%s\n' "$private_key" | sed 's:[\&/]:\\&:g;$!s/$/\\/')
-    
+
     # Use sed to replace the placeholder with the NordLynx private key
     sed -i "s|WIREGUARD_PRIVATE_KEY=.*|WIREGUARD_PRIVATE_KEY=$escaped_private_key|g" docker-compose.yml
 
