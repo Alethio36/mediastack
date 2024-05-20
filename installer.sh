@@ -264,6 +264,7 @@ manage_docker_operations() {
             ;;
         *)
             echo "Invalid choice. Please enter 1 to start, 2 to stop, or 3 to return to the main menu."
+            manage_docker_operations
             ;;
     esac
 }
