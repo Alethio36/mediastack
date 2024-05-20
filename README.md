@@ -62,7 +62,7 @@ curl, nano, git, wireguard, docker, nordvpn, ssh, docker
 7)  - [x] update host system (done)
 8)  - [x] perform a ip and dns leak test on all containers (done)
 9)  - [ ] trasnfer a windows jellyfin to a linux jellyfin server
-10) - [ ] put in proper error handing in user interaction 
+10) - [x] put in proper error handing in user interaction 
 11) - [ ] add in a option to change vpn tunnel options
    
    
