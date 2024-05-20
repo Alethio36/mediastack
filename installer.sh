@@ -188,24 +188,31 @@ run_dns_leak_test() {
 # Function to set up Cloudflare token
 setup_cloudflare_token() {
     # Check if the token file already exists
-    if [ -f "/ms4/information/cloudflare_token.txt" ]; then
+    token_file="/ms4/information/cloudflare_token.txt"
+    if [[ -f "$token_file" ]]; then
         echo "Cloudflare token file already exists."
-        read -p "Do you want to use the existing Cloudflare token? (Y/N): " use_existing_token
+        while true; do
+            read -p "Do you want to use the existing Cloudflare token? (Y/N): " use_existing_token
 
-        # Convert user input to uppercase
-        use_existing_token=$(echo "$use_existing_token" | tr '[:lower:]' '[:upper:]')
+            # Convert user input to uppercase
+            use_existing_token=$(echo "$use_existing_token" | tr '[:lower:]' '[:upper:]')
 
-        if [ "$use_existing_token" = "Y" ]; then
-            # Read the token from the file
-            cloudflare_token=$(<"/ms4/information/cloudflare_token.txt")
-            echo "Using existing Cloudflare token."
-        else
-            # Prompt the user to enter a new token
-            echo "Please obtain your Cloudflare token from the Cloudflare dashboard and enter it below:"
-            echo "You can find instructions on how to generate a Cloudflare token in the Cloudflare documentation."
-            echo "Enter the Cloudflare token when prompted."
-            read -p "Enter your Cloudflare token: " cloudflare_token
-        fi
+            if [[ "$use_existing_token" == "Y" ]]; then
+                # Read the token from the file
+                cloudflare_token=$(<"$token_file")
+                echo "Using existing Cloudflare token."
+                break
+            elif [[ "$use_existing_token" == "N" ]]; then
+                # Prompt the user to enter a new token
+                echo "Please obtain your Cloudflare token from the Cloudflare dashboard and enter it below:"
+                echo "You can find instructions on how to generate a Cloudflare token in the Cloudflare documentation."
+                echo "Enter the Cloudflare token when prompted."
+                read -p "Enter your Cloudflare token: " cloudflare_token
+                break
+            else
+                echo "Invalid choice. Please enter 'Y' or 'N'."
+            fi
+        done
     else
         # Prompt the user to enter a new token
         echo "Please obtain your Cloudflare token from the Cloudflare dashboard and enter it below:"
@@ -215,19 +222,24 @@ setup_cloudflare_token() {
     fi
 
     # Check if the token is provided
-    if [ -z "$cloudflare_token" ]; then
+    if [[ -z "$cloudflare_token" ]]; then
         echo "No Cloudflare token provided. Exiting."
         return 1
     fi
 
+    # Create the directory if it doesn't exist
+    info_directory="/ms4/information"
+    sudo mkdir -p "$info_directory"
+
     # Create a file named 'cloudflare_token.txt' and place the token in it
-    echo "$cloudflare_token" > /ms4/information/cloudflare_token.txt
-    echo "Cloudflare token has been saved to /ms4/information/cloudflare_token.txt"
+    echo "$cloudflare_token" | sudo tee "$token_file" > /dev/null
+    echo "Cloudflare token has been saved to $token_file"
 
     # Add the token to the Docker Compose file after TUNNEL_TOKEN=
     sed -i "s|TUNNEL_TOKEN=.*|TUNNEL_TOKEN=$cloudflare_token|g" docker-compose.yml
     echo "Cloudflare token has been added to the Docker Compose file."
 }
+
 
 manage_docker_operations() {
     echo "Do you want to start or stop the Docker Compose?"
