@@ -71,18 +71,26 @@ update_applications() {
 
 # Function to update Docker images
 update_docker_images() {
-    # stopping the mediastack
-    echo "Stopping mediastack..."
-    sudo docker compose down
-    # remove all container volumes
-    sudo docker rm -vf $(sudo docker ps -aq)
-    # remove all images
-    sudo docker rmi -f $(sudo docker images -aq)
-    # pulling all new images
-    # sudo docker compose pull
-    # prune any orphans
-    sudo docker image prune -af
-    echo "Images have been pruned and updated, please remember to start applications"
+    ## stopping the mediastack
+    #echo "Stopping mediastack..."
+    #sudo docker compose down
+    ## remove all container volumes
+    #sudo docker rm -vf $(sudo docker ps -aq)
+    ## remove all images
+    #sudo docker rmi -f $(sudo docker images -aq)
+    ## pulling all new images
+    ## sudo docker compose pull
+    ## prune any orphans
+    #sudo docker image prune -af
+    #echo "Images have been pruned and updated, please remember to start applications"
+
+
+    sudo docker pull
+    #this pull all images needed to be updated
+    sudo docker-compose up -d
+    #deploying all containers needed to be updated
+    sudo docker prune -a -f --volumes
+    #removes unused resources
 }
 
 # Function to return to the main menu
