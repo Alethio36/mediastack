@@ -89,7 +89,7 @@ update_docker_images() {
     #this pull all images needed to be updated
     sudo docker compose up -d
     #deploying all containers needed to be updated
-    sudo docker prune -a -f --volumes
+    sudo docker system prune -f --volumes
     #removes unused resources
 }
 
