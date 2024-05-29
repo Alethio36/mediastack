@@ -85,9 +85,9 @@ update_docker_images() {
     #echo "Images have been pruned and updated, please remember to start applications"
 
 
-    sudo docker-compose pull
+    sudo docker compose pull
     #this pull all images needed to be updated
-    sudo docker-compose up -d
+    sudo docker compose up -d
     #deploying all containers needed to be updated
     sudo docker prune -a -f --volumes
     #removes unused resources
