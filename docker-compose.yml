@@ -58,8 +58,8 @@ services:
       - TZ=Australia/Sydney
       - WEBUI_PORT=8085
     volumes:
-      - /ms4/torrent/config:/config
-      - /ms4/torrent:/downloads
+      - /ms4/qbittorrent/config:/config
+      - /ms4/data/torrent:/downloads
       - /ms4/tools:/tools
     depends_on:
       - gluetun
@@ -76,8 +76,7 @@ services:
       - TZ=Australia/Sydney
     volumes:
       - /ms4/sonarr/config:/config
-      - /ms4/sonarr/tv:/tv #optional
-      - /ms4/torrent/sonarr:/downloads #optional
+      - /ms4/data/:/data 
       - /ms4/tools:/tools
     restart: unless-stopped
 
@@ -91,8 +90,7 @@ services:
       - TZ=Australia/Sydney
     volumes:
       - /ms4/radarr/config:/config
-      - /ms4/radarr/movies:/movies #optional
-      - /ms4/torrent/radarr:/downloads #optional
+      - /ms4/data/:/data 
       - /ms4/tools:/tools
     restart: unless-stopped
 
@@ -106,8 +104,7 @@ services:
       - TZ=Australia/Sydney
     volumes:
       - /ms4/lidarr/config:/config
-      - /ms4/lidarr/music:/music #optional
-      - /ms4/torrent/lidarr:/downloads #optional
+      - /ms4/data:/data 
       - /ms4/tools:/tools
     restart: unless-stopped
 
@@ -122,8 +119,7 @@ services:
       - TZ=Australia/Sydney
     volumes:
       - /ms4/readarr/config:/config
-      - /ms4/readarr/books:/books #optional
-      - /ms4/torrent/readarr:/downloads #optional
+      - /ms4/data:/data 
       - /ms4/tools:/tools
     restart: unless-stopped
 
@@ -137,8 +133,7 @@ services:
       - TZ=Australia/Sydney
     volumes:
       - /ms4/bazarr/config:/config
-      - /ms4/radarr/movies:/movies #optional
-      - /ms4/sonarr/tv:/tv #optional
+      - /ms4/data/:/data 
       - /ms4/tools:/tools
     restart: unless-stopped
 
@@ -189,10 +184,10 @@ services:
     volumes:
       - /ms4/jellyfin/config:/config
       - /ms4/jellyfin/cache:/cache
-      - /ms4/sonarr/tv:/data/tvshows
-      - /ms4/radarr/movies:/data/movies
-      - /ms4/readarr/books:/data/books
-      - /ms4/lidarr/music:/data/music
+      - /ms4/data/media/tv:/data/tvshows
+      - /ms4/data/media/movies:/data/movies
+      - /ms4/data/media//books:/data/books
+      - /ms4/data/media/music:/data/music
     ports:
       - 8096:8096
     #  - 8920:8920 #optional
