@@ -53,9 +53,10 @@ services:
     container_name: qbittorrent
     network_mode: "service:gluetun"
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=13007
+      - PGID=13000
       - TZ=Australia/Sydney
+      - UMASK=002
       - WEBUI_PORT=8085
     volumes:
       - /ms4/config/qbittorrent/config:/config
@@ -71,8 +72,9 @@ services:
     container_name: sonarr
     network_mode: "service:gluetun"
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=13001
+      - PGID=13000
+      - UMASK=002
       - TZ=Australia/Sydney
     volumes:
       - /ms4/config/sonarr/config:/config
@@ -85,8 +87,9 @@ services:
     container_name: radarr
     network_mode: "service:gluetun"
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=13002
+      - PGID=13000
+      - UMASK=002
       - TZ=Australia/Sydney
     volumes:
       - /ms4/config/radarr/config:/config
@@ -99,8 +102,9 @@ services:
     container_name: lidarr
     network_mode: "service:gluetun"
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=13003
+      - PGID=13000
+      - UMASK=002
       - TZ=Australia/Sydney
     volumes:
       - /ms4/config/lidarr/config:/config
@@ -114,8 +118,9 @@ services:
     container_name: readarr
     network_mode: "service:gluetun"
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=13004
+      - PGID=13000
+      - UMASK=002
       - TZ=Australia/Sydney
     volumes:
       - /ms4/config/readarr/config:/config
@@ -128,8 +133,9 @@ services:
     container_name: bazarr
     network_mode: "service:gluetun"
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=13013
+      - PGID=13000
+      - UMASK=002
       - TZ=Australia/Sydney
     volumes:
       - /ms4/config/bazarr/config:/config
@@ -142,8 +148,9 @@ services:
     container_name: prowlarr
     network_mode: "service:gluetun"
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=13006
+      - PGID=13000
+      - UMASK=002
       - TZ=Australia/Sydney
     volumes:
       - /ms4/config/prowlarr/config:/config
@@ -177,8 +184,9 @@ services:
     image: lscr.io/linuxserver/jellyfin:latest
     container_name: jellyfin
     environment:
-      - PUID=1000
-      - PGID=1000
+      - PUID=13010
+      - PGID=13000
+      - UMASK=002
       - TZ=Australia/Sydney
      # - JELLYFIN_PublishedServerUrl=192.168.0.5 #optional
     volumes:
@@ -201,6 +209,9 @@ services:
        environment:
             - LOG_LEVEL=debug
             - TZ=Australia/Sydney
+            - PUID=13012
+            - PGID=13000
+            - UMASK=002
        ports:
             - 5055:5055
        volumes:
