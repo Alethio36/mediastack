@@ -22,7 +22,7 @@ services:
       - 8191:8191 # flaresolverr - captcha bypass
 
     volumes:
-      - /ms4/gluetun:/gluetun
+      - /ms4/config/gluetun:/gluetun
       - /ms4/tools:/tools
     environment:
       # See https://github.com/qdm12/gluetun-wiki/tree/main/setup#setup
@@ -58,7 +58,7 @@ services:
       - TZ=Australia/Sydney
       - WEBUI_PORT=8085
     volumes:
-      - /ms4/qbittorrent/config:/config
+      - /ms4/config/qbittorrent/config:/config
       - /ms4/data/torrent:/downloads
       - /ms4/tools:/tools
     depends_on:
@@ -75,7 +75,7 @@ services:
       - PGID=1000
       - TZ=Australia/Sydney
     volumes:
-      - /ms4/sonarr/config:/config
+      - /ms4/config/sonarr/config:/config
       - /ms4/data/:/data 
       - /ms4/tools:/tools
     restart: unless-stopped
@@ -89,7 +89,7 @@ services:
       - PGID=1000
       - TZ=Australia/Sydney
     volumes:
-      - /ms4/radarr/config:/config
+      - /ms4/config/radarr/config:/config
       - /ms4/data/:/data 
       - /ms4/tools:/tools
     restart: unless-stopped
@@ -103,7 +103,7 @@ services:
       - PGID=1000
       - TZ=Australia/Sydney
     volumes:
-      - /ms4/lidarr/config:/config
+      - /ms4/config/lidarr/config:/config
       - /ms4/data:/data 
       - /ms4/tools:/tools
     restart: unless-stopped
@@ -118,7 +118,7 @@ services:
       - PGID=1000
       - TZ=Australia/Sydney
     volumes:
-      - /ms4/readarr/config:/config
+      - /ms4/config/readarr/config:/config
       - /ms4/data:/data 
       - /ms4/tools:/tools
     restart: unless-stopped
@@ -132,7 +132,7 @@ services:
       - PGID=1000
       - TZ=Australia/Sydney
     volumes:
-      - /ms4/bazarr/config:/config
+      - /ms4/config/bazarr/config:/config
       - /ms4/data/:/data 
       - /ms4/tools:/tools
     restart: unless-stopped
@@ -146,7 +146,7 @@ services:
       - PGID=1000
       - TZ=Australia/Sydney
     volumes:
-      - /ms4/prowlarr/config:/config
+      - /ms4/config/prowlarr/config:/config
       - /ms4/tools:/tools
     restart: unless-stopped
     
@@ -182,8 +182,8 @@ services:
       - TZ=Australia/Sydney
      # - JELLYFIN_PublishedServerUrl=192.168.0.5 #optional
     volumes:
-      - /ms4/jellyfin/config:/config
-      - /ms4/jellyfin/cache:/cache
+      - /ms4/config/jellyfin/config:/config
+      - /ms4/config/jellyfin/cache:/cache
       - /ms4/data/media/tv:/data/tvshows
       - /ms4/data/media/movies:/data/movies
       - /ms4/data/media//books:/data/books
@@ -204,7 +204,7 @@ services:
        ports:
             - 5055:5055
        volumes:
-            - /ms4/jellyseerr/config:/app/config
+            - /ms4/config/jellyseerr/config:/app/config
        restart: unless-stopped
 
   pihole:
@@ -221,8 +221,8 @@ services:
       - WEBPASSWORD=testest #change this for gods sake
     # Volumes store your data between container upgrades
     volumes:
-      - '/ms4/pihole/config:/etc/pihole'
-      - '/ms4/pihole/dns:/etc/dnsmasq.d'
+      - '/ms4/config/pihole/config:/etc/pihole'
+      - '/ms4/config/pihole/dns:/etc/dnsmasq.d'
     #   https://github.com/pi-hole/docker-pi-hole#note-on-capabilities
     cap_add:
       - NET_ADMIN # Required if you are using Pi-hole as your DHCP server, else not needed
@@ -250,5 +250,5 @@ services:
       # DISABLE_IPV6: 'true'
 
     volumes:
-      - /ms4/npm/data:/data
-      - /ms4/npm/letsencrypt:/etc/letsencrypt
+      - /ms4/config/npm/data:/data
+      - /ms4/config/npm/letsencrypt:/etc/letsencrypt
