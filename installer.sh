@@ -84,6 +84,7 @@ sudo usermod -a -G mediacenter bazarr
 # Make directories
 sudo mkdir -pv /ms4/config/{sonarr,radarr,lidarr,readarr,prowlarr,qbittorrent,audiobookshelf,jellyseerr,bazarr,jellyfin}
 sudo mkdir -pv /ms4/data/{torrent,media}/{tv,movies,music,books,comics,audiobooks,podcasts}
+sudo mkdir /ms4/information
 
 # Set permissions
 sudo chmod -R 775 /ms4/data/
