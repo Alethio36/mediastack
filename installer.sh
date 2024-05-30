@@ -59,6 +59,46 @@ install_dns_checker() {
     sudo chmod +x /ms4/tools/dnsleaktest.sh
 }
 
+create_folders_users_groups() {
+# Make users and group
+sudo useradd sonarr -u 13001
+sudo useradd radarr -u 13002
+sudo useradd lidarr -u 13003
+sudo useradd readarr -u 13004
+sudo useradd prowlarr -u 13006
+sudo useradd qbittorrent -u 13007
+sudo useradd jellyfin -u 13010
+sudo useradd jellyseerr -u 13012
+sudo useradd bazarr -u 13013
+sudo groupadd mediacenter -g 13000
+sudo usermod -a -G mediacenter sonarr
+sudo usermod -a -G mediacenter radarr
+sudo usermod -a -G mediacenter lidarr
+sudo usermod -a -G mediacenter readarr
+sudo usermod -a -G mediacenter prowlarr
+sudo usermod -a -G mediacenter qbittorrent
+sudo usermod -a -G mediacenter jellyfin
+sudo usermod -a -G mediacenter jellyseerr
+sudo usermod -a -G mediacenter bazarr
+
+# Make directories
+sudo mkdir -pv /ms4/config/{sonarr,radarr,lidarr,readarr,prowlarr,qbittorrent,audiobookshelf,jellyseerr,bazarr,jellyfin}
+sudo mkdir -pv /ms4/data/{torrent,media}/{tv,movies,music,books,comics,audiobooks,podcasts}
+
+# Set permissions
+sudo chmod -R 775 /ms4/data/
+sudo chown -R 1000:mediacenter /ms4/data/
+sudo chown -R sonarr:mediacenter /ms4/config/sonarr
+sudo chown -R radarr:mediacenter /ms4/config/radarr
+sudo chown -R lidarr:mediacenter /ms4/config/lidarr
+sudo chown -R readarr:mediacenter /ms4/config/readarr
+sudo chown -R prowlarr:mediacenter /ms4/config/prowlarr
+sudo chown -R qbittorrent:mediacenter /ms4/config/qbittorrent
+sudo chown -R jellyfin:mediacenter /ms4/config/jellyfin
+sudo chown -R jellyseerr:mediacenter /ms4/config/jellyseerr
+sudo chown -R bazarr:mediacenter /ms4/config/bazarr
+}
+
 
 # Function to update installed applications
 update_applications() {
@@ -282,7 +322,7 @@ manage_docker_operations() {
 main_menu() {
     echo "Welcome to the Mediastack management script!"
     echo "Please select an option:"
-    echo "1. Install Docker, NordVPN, WireGuard, and DNS Checker Tool"
+    echo "1. Install Docker, NordVPN, WireGuard, and DNS Checker Tool, as well as configure directories and user groups, this need only be run once"
     echo "2. Update existing installations"
     echo "3. Update Docker images"
     echo "4. Configure Docker Compose with NordVPN key"
@@ -298,6 +338,7 @@ main_menu() {
             install_nordvpn
             install_wireguard
             install_dns_checker
+            create_folders_users_groups
             return_to_menu
             ;;
         2)
