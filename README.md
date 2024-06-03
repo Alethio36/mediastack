@@ -86,6 +86,8 @@ curl, nano, git, wireguard, docker, nordvpn, ssh, docker
       - [x]  8096:8096 # jellyfin -no vpn - media player
       - [x]  5055:5055 # jellyseerr - no vpn - media grabber
       - [x]  8191:8191 # flaresolver - vpn - cloudflare captha solver
+      - [x]  80:80 443:443 81:81 (81 is the admin portal) # npm (proxy) - no vpn - this routes your domains to services
+      - [x]  53:53 67:67 83:80 (83 is the extnernal mgmt portal) # pihole - no vpn - this is a dns, dhcp, and adblocker
 
 
 
