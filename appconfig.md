@@ -58,6 +58,8 @@ location /admin {
   
   d) feel free to adjust each services settings as you wish, this can be a fiddly and time consuming project, i sugesst doing this after you have this whole mediastack up and running
 
+  e) you will also need to set a remote mapping from where the radarr things downloads are, and where the download client thinks things are. settins under download client on the bottom (if you dont do this and check logs, it sounds like a permissions issue. drove. me. nuts.
+
 
 6) jellyfin
    
