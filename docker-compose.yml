@@ -228,8 +228,8 @@ services:
       - "67:67/udp" # Only required if you are using Pi-hole as your DHCP server
       - "83:80/tcp"
     environment:
-      - TZ=Australia/Sydney
-      - WEBPASSWORD=testest #change this for gods sake
+      TZ: 'Australia/Sydney'
+      WEBPASSWORD: 'testtest' #change this for gods sake
     # Volumes store your data between container upgrades
     volumes:
       - '/ms4/config/pihole/config:/etc/pihole'
@@ -237,7 +237,7 @@ services:
     #   https://github.com/pi-hole/docker-pi-hole#note-on-capabilities
     cap_add:
       - NET_ADMIN # Required if you are using Pi-hole as your DHCP server, else not needed
-    restart: unless-stopped
+    restart: unless-stopped   
 
 
   npm:
