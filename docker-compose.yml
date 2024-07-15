@@ -20,7 +20,7 @@ services:
       - 8787:8787 # readarr - books
       - 6767:6767 # bazarr - subtitles
       - 8191:8191 # flaresolverr - captcha bypass
-
+    restart: unless-stopped
     volumes:
       - /ms4/config/gluetun:/gluetun
       - /ms4/tools:/tools
@@ -64,7 +64,7 @@ services:
       - /ms4/tools:/tools
     depends_on:
       - gluetun
-    restart: always
+    restart: unless-stopped
 
   sonarr:
 #    image: lscr.io/linuxserver/sonarr:latest # alternative mirror
