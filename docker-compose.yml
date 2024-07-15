@@ -20,7 +20,7 @@ services:
       - 8787:8787 # readarr - books
       - 6767:6767 # bazarr - subtitles
       - 8191:8191 # flaresolverr - captcha bypass
-    restart: unless-stopped
+    restart: always
     volumes:
       - /ms4/config/gluetun:/gluetun
       - /ms4/tools:/tools
@@ -64,7 +64,7 @@ services:
       - /ms4/tools:/tools
     depends_on:
       - gluetun
-    restart: unless-stopped
+    restart: always
 
   sonarr:
 #    image: lscr.io/linuxserver/sonarr:latest # alternative mirror
@@ -80,7 +80,7 @@ services:
       - /ms4/config/sonarr/config:/config
       - /ms4/data/:/data 
       - /ms4/tools:/tools
-    restart: unless-stopped
+    restart: always
 
   radarr:
     image: lscr.io/linuxserver/radarr:latest
@@ -95,7 +95,7 @@ services:
       - /ms4/config/radarr/config:/config
       - /ms4/data/:/data 
       - /ms4/tools:/tools
-    restart: unless-stopped
+    restart: always
 
   lidarr:
     image: lscr.io/linuxserver/lidarr:latest
@@ -110,7 +110,7 @@ services:
       - /ms4/config/lidarr/config:/config
       - /ms4/data:/data 
       - /ms4/tools:/tools
-    restart: unless-stopped
+    restart: always
 
   readarr:
 #    image: lscr.io/linuxserver/readarr:develop #alternative mirror
@@ -126,7 +126,7 @@ services:
       - /ms4/config/readarr/config:/config
       - /ms4/data:/data 
       - /ms4/tools:/tools
-    restart: unless-stopped
+    restart: always
 
   bazarr:
     image: lscr.io/linuxserver/bazarr:latest
@@ -141,8 +141,8 @@ services:
       - /ms4/config/bazarr/config:/config
       - /ms4/data/:/data 
       - /ms4/tools:/tools
-    restart: unless-stopped
-
+    restart: always
+    
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr
@@ -155,7 +155,7 @@ services:
     volumes:
       - /ms4/config/prowlarr/config:/config
       - /ms4/tools:/tools
-    restart: unless-stopped
+    restart: always
     
   flaresolverr:
     # DockerHub mirror flaresolverr/flaresolverr:latest
@@ -169,12 +169,12 @@ services:
       - TZ=Australia/Sydney
     volumes:
       - /ms4/tools:/tools
-    restart: unless-stopped
+    restart: always
 
   cloudflared: 
     image: cloudflare/cloudflared 
     container_name: cloudflare-tunnel 
-    restart: unless-stopped 
+    restart: always
     command: tunnel run 
     environment: 
       - TUNNEL_TOKEN=
@@ -201,7 +201,7 @@ services:
     #  - 8920:8920 #optional
     #  - 7359:7359/udp #optional
     #  - 1900:1900/udp #optional
-    restart: unless-stopped
+    restart: always
 
   jellyseerr:
        image: fallenbagel/jellyseerr:latest
@@ -216,7 +216,7 @@ services:
             - 5055:5055
        volumes:
             - /ms4/config/jellyseerr/config:/app/config
-       restart: unless-stopped
+       restart: always
 
   pihole:
     container_name: pihole
@@ -237,12 +237,12 @@ services:
     #   https://github.com/pi-hole/docker-pi-hole#note-on-capabilities
     cap_add:
       - NET_ADMIN # Required if you are using Pi-hole as your DHCP server, else not needed
-    restart: unless-stopped   
+    restart: always
 
 
   npm:
     image: 'jc21/nginx-proxy-manager:latest'
-    restart: unless-stopped
+    restart: always
     ports:
       # These ports are in format <host-port>:<container-port>
       - '80:80' # Public HTTP Port
