@@ -194,7 +194,7 @@ services:
       - /ms4/config/jellyfin/cache:/cache
       - /ms4/data/media/tv:/data/tvshows
       - /ms4/data/media/movies:/data/movies
-      - /ms4/data/media//books:/data/books
+      - /ms4/data/media/books:/data/books
       - /ms4/data/media/music:/data/music
     ports:
       - 8096:8096
