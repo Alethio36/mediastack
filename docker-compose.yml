@@ -40,12 +40,18 @@ services:
       # Server list updater
       # See https://github.com/qdm12/gluetun-wiki/blob/main/setup/servers.md#update-the-vpn-servers-list
       - UPDATER_PERIOD=24h
-      - SERVER_COUNTRIES=australia  # Comma separated list of countries
-      - SERVER_REGIONS= # Comma separated list of regions
-      - SERVER_CITIES= # Comma separated list of server cities
-      - SERVER_HOSTNAMES= # Comma separated list of server hostnames
-      - SERVER_CATEGORIES= # Comma separated list of server categories
-      - DOT_PROVIDERS= # Comma delimited list of DNS over TLS providers, `cloudflare`, `google`, `quad9`, `quadrant`, `cleanbrowsing`
+      - SERVER_COUNTRIES=australia  
+      # Comma separated list of countries
+      - SERVER_REGIONS= 
+      # Comma separated list of regions
+      - SERVER_CITIES= 
+      # Comma separated list of server cities
+      - SERVER_HOSTNAMES= 
+      # Comma separated list of server hostnames
+      - SERVER_CATEGORIES= 
+      # Comma separated list of server categories
+      - DOT_PROVIDERS= 
+      # Comma delimited list of DNS over TLS providers, `cloudflare`, `google`, `quad9`, `quadrant`, `cleanbrowsing`
       - DNS_ADDRESS=103.86.96.100 # 103.86.99.100, provided here are both nordvpn dns adresses, enter a single ip adress for custom dns 
 
   qbittorrent:
