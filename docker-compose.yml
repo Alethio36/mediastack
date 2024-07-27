@@ -202,6 +202,7 @@ services:
       - /ms4/data/media/movies:/data/movies
       - /ms4/data/media/books:/data/books
       - /ms4/data/media/music:/data/music
+      - /ms4/tools:/tools
     ports:
       - 8096:8096
     #  - 8920:8920 #optional
@@ -222,6 +223,7 @@ services:
             - 5055:5055
        volumes:
             - /ms4/config/jellyseerr/config:/app/config
+            - /ms4/tools:/tools
        restart: always
 
   pihole:
@@ -240,6 +242,7 @@ services:
     volumes:
       - '/ms4/config/pihole/config:/etc/pihole'
       - '/ms4/config/pihole/dns:/etc/dnsmasq.d'
+      - /ms4/tools:/tools
     #   https://github.com/pi-hole/docker-pi-hole#note-on-capabilities
     cap_add:
       - NET_ADMIN # Required if you are using Pi-hole as your DHCP server, else not needed
@@ -269,7 +272,7 @@ services:
     volumes:
       - /ms4/config/npm/data:/data
       - /ms4/config/npm/letsencrypt:/etc/letsencrypt
-
+      - /ms4/tools:/tools
   watchtower:
     image: containrrr/watchtower
     container_name: watchtower
