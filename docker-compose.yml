@@ -269,3 +269,10 @@ services:
     volumes:
       - /ms4/config/npm/data:/data
       - /ms4/config/npm/letsencrypt:/etc/letsencrypt
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+#    command: --interval 30
