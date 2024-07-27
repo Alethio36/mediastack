@@ -58,10 +58,10 @@ curl, nano, git, wireguard, docker, nordvpn, ssh, docker
 3)  - [x] pull the wireguard key and place it into compose file (done)
 4)  - [x] update docker images
 5)  - [x] prune docker images
-6)  -  configure storage options for containers (this will need to interact with the compose file) and create said directories as well (wont know until needed for specifics)
+6)  -  configure storage options for containers (this will need to interact with the compose file) and create said directories as well (wont know until needed for specifics) also unfortunatley this may be beyond the scope of this project
 7)  - [x] update host system (done)
 8)  - [x] perform a ip and dns leak test on all containers (done)
-9)  - [ ] trasnfer a windows jellyfin to a linux jellyfin server
+9)  - [ ] trasnfer a windows jellyfin to a linux jellyfin server (this was not done well, and should be considered beyond the scope of this project)
 10) - [x] put in proper error handing in user interaction 
 11) - [ ] add in a option to change vpn tunnel options
    
@@ -69,9 +69,9 @@ curl, nano, git, wireguard, docker, nordvpn, ssh, docker
 # stretch goals
 1) - [] only install wanted apps
 2) - [o] auto configure all the arr apps with eachother (this is not going to happen, to complicated)
-3) - [] setup dns, proxy, and ssl with the apps for lan acess 
+3) - [] setup dns, proxy, and ssl with the apps for lan acess (this mediastack has the options for all thses things but mus be manually configured)
 4) - [x] setup jellyfin and jellyseerr to work with cloudflare tunnell
-5) - [ ] setup a docker secrets for sensetie tokens
+5) - [ ] setup a docker secrets for sensetive tokens
 
 # apps involved 
 
@@ -88,6 +88,7 @@ curl, nano, git, wireguard, docker, nordvpn, ssh, docker
       - [x]  8191:8191 # flaresolver - vpn - cloudflare captha solver
       - [x]  80:80 443:443 81:81 (81 is the admin portal) # npm (proxy) - no vpn - this routes your domains to services
       - [x]  53:53 67:67 83:80 (83 is the extnernal mgmt portal) # pihole - no vpn - this is a dns, dhcp, and adblocker
+      - [x] noport:noport # watchtower for automatic image updater
 
 
 
