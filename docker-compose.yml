@@ -66,7 +66,7 @@ services:
       - WEBUI_PORT=8085
     volumes:
       - /ms4/config/qbittorrent/config:/config
-      - /ms4/data/torrent:/downloads
+      - /ms4/data/torrent:/torrent
       - /ms4/tools:/tools
     depends_on:
       - gluetun
