@@ -32,12 +32,12 @@ Now would be a good idea to prepare your NordVPN and Cloudflare tokens.
 
 Now back to the media server, make sure your SSH in and sudo works (a good test is to run the command `sudo whoami`; it should return "root". If not, please troubleshoot). 
    
-   1. 
+   1. use this command to enter the medisatck folder
    ```
    cd mediastack
    ```
 
-   2. 
+   2. use this command to run the installer script
    ```
    sudo bash installer.sh
    ```
