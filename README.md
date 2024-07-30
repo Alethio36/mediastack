@@ -1,6 +1,6 @@
 # Mediastack
 
-This also assumes you have a Cloudflare domain and a NordVPN subscription.
+This also assumes you have a Cloudflare domain and a NordVPN subscription. and i need to fill this section out more
 
 ## Prepping the host machine
 
