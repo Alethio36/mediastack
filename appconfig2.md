@@ -89,7 +89,7 @@
    - Email address: Your real email for Let's Encrypt.
    - Use DNS challenge with Cloudflare.
    - <img width="433" alt="chrome_nLIvjL2XP6" src="https://github.com/user-attachments/assets/98ff851c-0bb7-4ebb-9263-a259524b4f43">
-   - Add `120` to propagation settings, agree to TOS, and save. It may take a minutes or to confirm, thats normal.
+   - Add `120` to propagation settings, agree to TOS, and save. It may take a minute or two to confirm, thats normal.
    - Edit each host to use the new SSL certificate.
    - <img width="461" alt="chrome_MMXlnLInsL" src="https://github.com/user-attachments/assets/494aabca-6998-4f09-b197-583c4b81f49e">
 
