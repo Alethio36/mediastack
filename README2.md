@@ -30,31 +30,31 @@ Now would be a good idea to prepare your NordVPN and Cloudflare tokens.
 
 ### Running the installer script
 
-Now back to the media server, make sure your SSH in and sudo works (a good test is to run the command `sudo whoami`; it should return "root". If not, please troubleshoot).
+Now back to the media server, make sure your SSH in and sudo works (a good test is to run the command `sudo whoami`; it should return "root". If not, please troubleshoot). 
    
-   - 
+   1. 
    ```
    cd mediastack
    ```
 
-   - 
+   2. 
    ```
    sudo bash installer.sh
    ```
   
-   - Hit option 1
+   3. Hit option 1
   
-   - Hit option 2
+   4. Hit option 2
   
-   - Hit option 4, and enter your NordVPN token
+   5. Hit option 4, and enter your NordVPN token
   
-   - Hit option 6, and enter your Cloudflare token
+   6. Hit option 6, and enter your Cloudflare token
   
-   - Hit option 3. This may take a moment as it downloads all the containers. This option also makes sure to prune and clean up various files and images and updates to the latest image for all the apps.
+   7. Hit option 3. This may take a moment as it downloads all the containers. This option also makes sure to prune and clean up various files and images and updates to the latest image for all the apps.
   
-   - Hit option 7, and start the stack.
+   8. Hit option 7, and start the stack.
   
-   - Optional step: hit option 5 to run a DNS leak test on the running images. This will take a few minutes. Make sure to read the readout of each container. Also check the IP on each container just in case. at the moment, i need to reconfiure how every container works with the leak test. there may be some errors with certain apps. last i checked, the important stuff works.
+   9. Optional step: hit option 5 to run a DNS leak test on the running images. This will take a few minutes. Make sure to read the readout of each container. Also check the IP on each container just in case. at the moment, i need to reconfiure how every container works with the leak test. there may be some errors with certain apps. last i checked, the important stuff works.
 
 ### Congrats
 
