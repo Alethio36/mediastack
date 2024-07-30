@@ -15,8 +15,10 @@ This also assumes the OS has been installed and configured, with the user having
 
 2. With SSH installed, it is easier to use your normal workstation. The rest of this tutorial assumes you have a normal workstation with standard capabilities.
 
-3. Download this git repo for local use:
-    - `sudo git clone https://github.com/alethio36/mediastack`
+3. Download this git repo for local use, you can place it anywhere, but i recommend the user home directory:
+    - ```
+      sudo git clone https://github.com/alethio36/mediastack
+      ```
 
    This should have created a folder called `mediastack` inside the folder you ran the previous command. Run the `ls` command to confirm.
 
@@ -44,11 +46,11 @@ This also assumes the OS has been installed and configured, with the user having
   
         i) Optional step: hit option 5 to run a DNS leak test on the running images. This will take a few minutes. Make sure to read the readout of each container. Also check the IP on each container just in case.
 
-6. Congrats, everything is up and running! Please enter each app to configure it as needed from their respective web GUIs, especially Jellyfin, as we will be opening it to WAN in the next step.
+6. Congrats, everything is up and running! Please enter each app to configure (there is a file called appconfig for more info) it as needed from their respective web GUIs, especially Jellyfin, as we will be opening it to WAN in the next step.
 
-7. Now, if you return to Cloudflare, it should have the connector loaded up. Hit next. From the next page, please enter your subdomain and domain (subdomain.domain.tld). Below, under service, select http, and under URL, enter "mediaserver:8096". Then save the tunnel. Now Jellyfin is open to the World Wide Web. If you would like a second tunnel for Jellyseerr, please reach out to me to reconfigure for a second tunnel.
+7. Now, if you return to Cloudflare, it should have the connector loaded up. Hit next. From the next page, please enter your subdomain and domain (subdomain.domain.tld). Below, under service, select http, and under URL, enter "mediaserverip:8096" (making sure to add your media servers actual ip address. Then save the tunnel. Now Jellyfin is open to the World Wide Web. If you would like a second tunnel for Jellyseerr, please reach out to me to reconfigure for a second tunnel.
 
-8. Unfortunately, I can’t find a way to auto-configure all the apps to work with each other. This must be done manually from the GUI of each app. Find the IP address of the host and append the correct port (i.e., 192.168.1.100:xxxx) to find each app. Proper DNS coming soon.
+8. Unfortunately, I can’t find a way to auto-configure all the apps to work with each other. This must be done manually from the GUI of each app. Find the IP address of the host and append the correct port (i.e., 192.168.1.100:xxxx) to find each app. please check the appconfig more for info
 
 # Prereqs
 
@@ -78,8 +80,8 @@ This also assumes the OS has been installed and configured, with the user having
 # Stretch Goals
 
 1. - [ ] Only install wanted apps
-2. - [o] Auto-configure all the ARR apps with each other (this is not going to happen, too complicated)
-3. - [ ] Setup DNS, proxy, and SSL with the apps for LAN access (this mediastack has the options for all these things but must be manually configured)
+2. - [ ] Auto-configure all the ARR apps with each other (this is not going to happen, too complicated)
+3. - [x] Setup DNS, proxy, and SSL with the apps for LAN access (this mediastack has the options for all these things but must be manually configured)
 4. - [x] Setup Jellyfin and Jellyseerr to work with Cloudflare tunnel
 5. - [ ] Setup a docker secrets for sensitive tokens
 
@@ -100,22 +102,15 @@ This also assumes the OS has been installed and configured, with the user having
 - [x]  53:53 67:67 83:80 (83 is the external mgmt portal) # Pihole - no vpn - This is a DNS, DHCP, and adblocker
 - [x]  noport:noport # Watchtower for automatic image updater
 
-# Notes
+# Notes For Author
 
 ## Install NordVPN
 
 sh <(curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh)
 
-
 It will ask for the sudo password.
 
 Setup an access token to log in. Set to not expire (or do, but it will expire in 30 days).
-
-## Install DNSLeak Test
-
-https://github.com/macvk/dnsleaktest
-
-Place it into a volume and place it into the docker compose file.
 
 ## In Gluetun to Get Wireguard Key
 
@@ -125,6 +120,8 @@ There’s no legacy, log in via `nordvpn login --token *place token here*`.
 
 Note, logging out invalidates the token unless you pass an argument, check on that before logging out of NordVPN via terminal:
 
+```
 nordvpn logout --persist-token
+```
 
 Keep your current access token valid after logging out. (default: false)
