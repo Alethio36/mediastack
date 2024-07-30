@@ -93,9 +93,9 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
 
 #   Configuring your now running apps
 
-# Manual Configuration Guide for Pi-hole, NPM, and Various Apps
+## Manual Configuration Guide for Pi-hole, NPM, and Various Apps
 
-## Pi-hole
+### Pi-hole
 
 1. **Find Your IP Address:**
    - Find your (hopefully static) IP address of the host server. 
@@ -126,7 +126,7 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
    - Beyond this manual's scope, but can be configured.
    - Might be a good option for static IP addresses.
 
-## Nginx Proxy Manager (NPM)
+### Nginx Proxy Manager (NPM)
 
 1. **Access NPM:**
    - Enter `MEDIASTACKIP:81` in your browser (Eg. 192.168.1.41:81).
@@ -189,7 +189,7 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
    - <img width="461" alt="chrome_MMXlnLInsL" src="https://github.com/user-attachments/assets/494aabca-6998-4f09-b197-583c4b81f49e">
 
 
-## ARR Apps (Sonarr, Radarr, etc.)
+### ARR Apps (Sonarr, Radarr, etc.)
 
 1. **Initial Configuration:**
    - Create an account to log in.
@@ -207,7 +207,7 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
    - adjusting settings for the specifcs of each app can take a significant amount of time and depend heavily on preference. I recommend waiting until everything is configured before doing this, but it is up to you.
 
 
-## Jellyfin
+### Jellyfin
 
 1. **Welcome Wizard:**
    - Configure Jellyfin with the welcome wizard.
@@ -216,13 +216,13 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
    - Make sure there is at least a single admin account (usualy your own)
    - Make note of the jellyfin API token.
 
-## Jellyseerr
+### Jellyseerr
 
 1. **Welcome Wizard:**
    - Use the connect to Jellyfin button.
    - Connect Radarr and Sonarr using their IP address or domain name and API key.
 
-## qBittorrent
+### qBittorrent
 
 1. **Access and Configure:**
    - Enter the correct domain into the browser.
@@ -232,7 +232,7 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
    - Configure settings, user login, and anonymous mode.
    - Optionally, disable CSRF protection if encountering unauthorized errors for some reason, if i would hit a bookmark or something to come this this adress, it comes up with a unauthorized error. When i clicked the url and hit enter, worked like a charm. To fix this (optional) go to tools, options, web ui tab, then about halfway down, theres a box checked for Enable Cross-Site Request Forgery (CSRF) protection. Unchecking that fixed the issue. buts its not critical so id recommend keeping it unless you have a reason to need this to work
 
-## Configuring the VPN Connection
+### Configuring the VPN Connection
 
 1. Hopefully in the future, i will have the installer.sh script handle this, but for now
    
@@ -250,7 +250,7 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
      - SERVER_CATEGORIES= # Comma separated list of server categories
      ```
 
-## Overview
+### Overview
 
 1. **Final Steps and notes:**
    - Ensure all services are connected and configured.
