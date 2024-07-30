@@ -68,7 +68,7 @@
      }
      ```
    - Change `IPADDRESS` to your (hopefully) static IP.
-   - Just in case, here is the [orginal instruction to add pihole to the npm] (https://docs.techdox.nz/pihole-on-npm/#:~:text=To%20add%20Pi%2Dhole%20to,%22Add%20Proxy%20Host%22%20button).
+   - Just in case, here is the [orginal instruction to add pihole to the npm](https://docs.techdox.nz/pihole-on-npm/#:~:text=To%20add%20Pi%2Dhole%20to,%22Add%20Proxy%20Host%22%20button).
 
 4. **Add Other Services:**
    - Repeat the above steps (excluding the Advanced configuration for Pihole) for other services.
