@@ -78,16 +78,23 @@ https://docs.techdox.nz/pihole-on-npm/#:~:text=To%20add%20Pi%2Dhole%20to,%22Add%
 
   j)
     1) now back to npm, click on the ssl certificates section on the top bar, then click add ssl certificate, and select lets encrypt in the dropdown
+    
     2) under domain name, please put *.YOURDOMAIN.TLD (that asterisk is important, and needed) then click the dropdown that comes up, should just be what you typed out
+    
     3) enter your real email adress for lets encrypt
+    
     4) click the use dns challenge button and choose your dns provider as cloudflare
+    
     5) for the credentials file content, it should have populated the right text already that looks like this (subject to change i suppose, but as of mid 2024 this is it, if npm looks different, trust that, if its empty, use this) then just replace the example token text with your actual token. make sure there are no trailing spaces or anything extra when you copy and paste
+    
        Cloudflare API token
        dns_cloudflare_api_token=0123456789abcdef0123456789abcdef01234567
 
-  6) add 120 to propagation settings, then agree to TOS, then hit save. it might take a minute or so to do its thing
-  7) now that is saved and ready to use, head back to hosts, and proxy hosts, and under each host, click the 3 dots, edit, hit the ssl tab, choose the ssl cert you just made, then check all 4 tabs, then hit save.
-  8) as a double check measure, make sure all the domains work just in case
+    6) add 120 to propagation settings, then agree to TOS, then hit save. it might take a minute or so to do its thing
+     
+    7) now that is saved and ready to use, head back to hosts, and proxy hosts, and under each host, click the 3 dots, edit, hit the ssl tab, choose the ssl cert you just made, then check all 4 tabs, then hit save.
+     
+    8) as a double check measure, make sure all the domains work just in case
         
         
   ARR apps
