@@ -81,11 +81,11 @@ Now back to the media server, make sure your SSH in and sudo works (a good test 
 
 ### Congrats
 
-everything is up and running! Please enter each app to configure (there is a file called appconfig for more info) it as needed from their respective web GUIs, especially Jellyfin, as we will be opening it to WAN in the next step.
+everything is up and running! You may now go to each app in your browser to configure (more info is below on app configuration) as needed from their respective web GUIs, especially Jellyfin, as we will be opening it to WAN in the next step.
 
 ### Cloudflare tunnell
 
-Now, if you return to Cloudflare, it should have the connector loaded up. Hit next. From the next page, please enter your subdomain and domain (subdomain.domain.tld). Below, under service, select http, and under URL, enter "mediaserverip:8096" (making sure to add your media servers actual ip address. Then save the tunnel. Now Jellyfin is open to the World Wide Web. If you would like a second tunnel for Jellyseerr, please reach out to me to reconfigure for a second tunnel.
+Now, if you return to Cloudflare, it should have the connector loaded up. Hit next. From the next page, please enter your subdomain and domain (subdomain.domain.tld). Below, under service, select http, and under URL, enter "mediaserverip:8096" (making sure to add your media servers actual ip address. Then save the tunnel. Now Jellyfin is open to the World Wide Web. If you would like a second tunnel for Jellyseerr, im not sure how to do that yet.
 
 ### Unfortunately 
 
@@ -205,6 +205,12 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
      ```
 3. **Settings Adjustments:**
    - adjusting settings for the specifcs of each app can take a significant amount of time and depend heavily on preference. I recommend waiting until everything is configured before doing this, but it is up to you.
+  
+4. **Add a download client**
+   - Go to settings, Download clients, and add qbittorrent
+     
+6. **Integrate prowlarr**
+   - In Prowlarr, go to settings, apps, and add each service. For sync level I recommend Full Sync
 
 
 ### Jellyfin
