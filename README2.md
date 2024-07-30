@@ -22,11 +22,34 @@ This also assumes the OS has been installed and configured, with the user having
 
    This should have created a folder called `mediastack` inside the folder you ran the previous command. Run the `ls` command to confirm.
 
-### Getting tokens
+### Getting Tokens
 
-Now would be a good idea to prepare your NordVPN and Cloudflare tokens.
-   - For NordVPN, please go to their website and log in. From there, under the left sidebar under services, click on NordVPN. Scroll all the way down to "Setup VPN Manually." It will ask to verify your email. From there, you want to generate a new access token. It will ask you to choose between a 30-day token or an indefinite token. It doesn’t matter, but if you choose to have an expiration token, you’ll have to redo this step if you need to update the VPN. Also note, this token will not be able to be revealed again, so copy it to your desktop or leave the page open until you're done with this process.
-   - For Cloudflare, please log in, and find your way to the Cloudflare Zero Trust section. Under networks, click on tunnels, and create a new tunnel. Pick the Cloudflared option, name the tunnel whatever you want, and under "Install and Run Connectors," you want to copy the docker command, paste it into notepad (presumably where your NordVPN token is), and remove everything that is NOT the token. The token will be a bunch of random characters and look like nonsense. From there, please wait to finish setting up the mediastack.
+To prepare your NordVPN and Cloudflare tokens, follow the steps below:
+
+#### NordVPN Token
+
+1. **Log in to NordVPN**: Visit the [NordVPN website](https://nordvpn.com) and log in to your account.
+2. **Access Token Generation**:
+   - Navigate to the sidebar on the left and click on **Services**.
+   - Select **NordVPN** from the services menu.
+   - Scroll down to the **Setup VPN Manually** section. You will be prompted to verify your email.
+   - Generate a new access token. You can choose between a 30-day token or an indefinite token. Note that if you choose an expiration token, you will need to redo this step once the token expires.
+   - **Important**: This token will not be shown again, so make sure to copy it to your desktop or keep the page open until you complete this process.
+
+#### Cloudflare Token
+
+1. **Log in to Cloudflare**: Visit the [Cloudflare website](https://cloudflare.com) and log in to your account.
+2. **Navigate to Zero Trust Section**:
+   - Go to the **Cloudflare Zero Trust** section.
+   - Under **Networks**, click on **Tunnels**.
+3. **Create a New Tunnel**:
+   - Choose the **Cloudflared** option.
+   - Name the tunnel as desired.
+   - Under **Install and Run Connectors**, copy the Docker command provided.
+   - Paste this command into a notepad (alongside your NordVPN token) and remove everything that is NOT the token. The token will appear as a series of random characters.
+
+Once you have obtained both tokens, you can proceed with setting up the mediastack.
+
 
 ### Running the installer script
 
