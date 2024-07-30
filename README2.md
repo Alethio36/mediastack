@@ -28,29 +28,29 @@ This also assumes the OS has been installed and configured, with the user having
 
 5. Now back to the media server, make sure your SSH in and sudo works (a good test is to run the command `sudo whoami`; it should return "root". If not, please troubleshoot).
    
-        a) cd mediastack
-  
-        b) sudo bash installer.sh
-  
-        c) Hit option 1
-  
-        d) Hit option 2
-  
-        e) Hit option 4, and enter your NordVPN token
-  
-        f) Hit option 6, and enter your Cloudflare token
-  
-        g) Hit option 3. This may take a moment as it downloads all the containers. This option also makes sure to prune and clean up various files and images and updates to the latest image for all the apps.
-  
-        h) Hit option 7, and start the stack.
-  
-        i) Optional step: hit option 5 to run a DNS leak test on the running images. This will take a few minutes. Make sure to read the readout of each container. Also check the IP on each container just in case.
+      a) cd mediastack
 
-6. Congrats, everything is up and running! Please enter each app to configure (there is a file called appconfig for more info) it as needed from their respective web GUIs, especially Jellyfin, as we will be opening it to WAN in the next step.
+      b) sudo bash installer.sh
+  
+      c) Hit option 1
+  
+      d) Hit option 2
+  
+      e) Hit option 4, and enter your NordVPN token
+  
+      f) Hit option 6, and enter your Cloudflare token
+  
+      g) Hit option 3. This may take a moment as it downloads all the containers. This option also makes sure to prune and clean up various files and images and updates to the latest image for all the apps.
+  
+      h) Hit option 7, and start the stack.
+  
+      i) Optional step: hit option 5 to run a DNS leak test on the running images. This will take a few minutes. Make sure to read the readout of each container. Also check the IP on each container just in case.
 
-7. Now, if you return to Cloudflare, it should have the connector loaded up. Hit next. From the next page, please enter your subdomain and domain (subdomain.domain.tld). Below, under service, select http, and under URL, enter "mediaserverip:8096" (making sure to add your media servers actual ip address. Then save the tunnel. Now Jellyfin is open to the World Wide Web. If you would like a second tunnel for Jellyseerr, please reach out to me to reconfigure for a second tunnel.
+7. Congrats, everything is up and running! Please enter each app to configure (there is a file called appconfig for more info) it as needed from their respective web GUIs, especially Jellyfin, as we will be opening it to WAN in the next step.
 
-8. Unfortunately, I can’t find a way to auto-configure all the apps to work with each other. This must be done manually from the GUI of each app. Find the IP address of the host and append the correct port (i.e., 192.168.1.100:xxxx) to find each app. please check the appconfig more for info
+8. Now, if you return to Cloudflare, it should have the connector loaded up. Hit next. From the next page, please enter your subdomain and domain (subdomain.domain.tld). Below, under service, select http, and under URL, enter "mediaserverip:8096" (making sure to add your media servers actual ip address. Then save the tunnel. Now Jellyfin is open to the World Wide Web. If you would like a second tunnel for Jellyseerr, please reach out to me to reconfigure for a second tunnel.
+
+9. Unfortunately, I can’t find a way to auto-configure all the apps to work with each other. This must be done manually from the GUI of each app. Find the IP address of the host and append the correct port (i.e., 192.168.1.100:xxxx) to find each app. please check the appconfig more for info
 
 # Prereqs
 
