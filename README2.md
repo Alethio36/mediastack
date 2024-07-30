@@ -9,7 +9,9 @@ Please note this has been written for a Debian12 OS. All other Linux distros may
 This also assumes the OS has been installed and configured, with the user having sudo permissions. It would also be a good idea to put a static IP on the console, but it is not strictly required.
 
 1. Please install some prerequisite apps:
-   - ```sudo apt install curl nano git openssh-server jq```
+   - ```
+     sudo apt install curl nano git openssh-server jq
+     ```
 
 2. With SSH installed, it is easier to use your normal workstation. The rest of this tutorial assumes you have a normal workstation with standard capabilities.
 
