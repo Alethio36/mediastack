@@ -8,60 +8,58 @@ Please note this has been written for a Debian12 OS. All other Linux distros may
 
 This also assumes the OS has been installed and configured, with the user having sudo permissions. It would also be a good idea to put a static IP on the console, but it is not strictly required.
 
-1. Please install some prerequisite apps:
+### Please install some prerequisite apps:
    - ```
      sudo apt install curl nano git openssh-server jq
      ```
 
-2. With SSH installed, it is easier to use your normal workstation. The rest of this tutorial assumes you have a normal workstation with standard capabilities.
+- With SSH installed, it is easier to use your normal workstation. The rest of this tutorial assumes you have a normal workstation with standard capabilities.
 
-3. Download this git repo for local use, you can place it anywhere, but i recommend the user home directory:
+- Download this git repo for local use, you can place it anywhere, but i recommend the user home directory:
     - ```
       sudo git clone https://github.com/alethio36/mediastack
       ```
 
    This should have created a folder called `mediastack` inside the folder you ran the previous command. Run the `ls` command to confirm.
 
-4. Now would be a good idea to prepare your NordVPN and Cloudflare tokens.
+### Getting tokens
+
+Now would be a good idea to prepare your NordVPN and Cloudflare tokens.
    - For NordVPN, please go to their website and log in. From there, under the left sidebar under services, click on NordVPN. Scroll all the way down to "Setup VPN Manually." It will ask to verify your email. From there, you want to generate a new access token. It will ask you to choose between a 30-day token or an indefinite token. It doesn’t matter, but if you choose to have an expiration token, you’ll have to redo this step if you need to update the VPN. Also note, this token will not be able to be revealed again, so copy it to your desktop or leave the page open until you're done with this process.
    - For Cloudflare, please log in, and find your way to the Cloudflare Zero Trust section. Under networks, click on tunnels, and create a new tunnel. Pick the Cloudflared option, name the tunnel whatever you want, and under "Install and Run Connectors," you want to copy the docker command, paste it into notepad (presumably where your NordVPN token is), and remove everything that is NOT the token. The token will be a bunch of random characters and look like nonsense. From there, please wait to finish setting up the mediastack.
 
-5. Now back to the media server, make sure your SSH in and sudo works (a good test is to run the command `sudo whoami`; it should return "root". If not, please troubleshoot).
+### Running the installer script
+
+Now back to the media server, make sure your SSH in and sudo works (a good test is to run the command `sudo whoami`; it should return "root". If not, please troubleshoot).
    
-      a) cd mediastack
+   a) cd mediastack
 
-      b) sudo bash installer.sh
+   b) sudo bash installer.sh
   
-      c) Hit option 1
+   c) Hit option 1
   
-      d) Hit option 2
+   d) Hit option 2
   
-      e) Hit option 4, and enter your NordVPN token
+   e) Hit option 4, and enter your NordVPN token
   
-      f) Hit option 6, and enter your Cloudflare token
+   f) Hit option 6, and enter your Cloudflare token
   
-      g) Hit option 3. This may take a moment as it downloads all the containers. This option also makes sure to prune and clean up various files and images and updates to the latest image for all the apps.
+   g) Hit option 3. This may take a moment as it downloads all the containers. This option also makes sure to prune and clean up various files and images and updates to the latest image for all the apps.
   
-      h) Hit option 7, and start the stack.
+   h) Hit option 7, and start the stack.
   
-      i) Optional step: hit option 5 to run a DNS leak test on the running images. This will take a few minutes. Make sure to read the readout of each container. Also check the IP on each container just in case.
+   i) Optional step: hit option 5 to run a DNS leak test on the running images. This will take a few minutes. Make sure to read the readout of each container. Also check the IP on each container just in case.
 
-7. Congrats, everything is up and running! Please enter each app to configure (there is a file called appconfig for more info) it as needed from their respective web GUIs, especially Jellyfin, as we will be opening it to WAN in the next step.
+### Congrats
 
-8. Now, if you return to Cloudflare, it should have the connector loaded up. Hit next. From the next page, please enter your subdomain and domain (subdomain.domain.tld). Below, under service, select http, and under URL, enter "mediaserverip:8096" (making sure to add your media servers actual ip address. Then save the tunnel. Now Jellyfin is open to the World Wide Web. If you would like a second tunnel for Jellyseerr, please reach out to me to reconfigure for a second tunnel.
+everything is up and running! Please enter each app to configure (there is a file called appconfig for more info) it as needed from their respective web GUIs, especially Jellyfin, as we will be opening it to WAN in the next step.
+
+### Cloudflare tunnell
+
+Now, if you return to Cloudflare, it should have the connector loaded up. Hit next. From the next page, please enter your subdomain and domain (subdomain.domain.tld). Below, under service, select http, and under URL, enter "mediaserverip:8096" (making sure to add your media servers actual ip address. Then save the tunnel. Now Jellyfin is open to the World Wide Web. If you would like a second tunnel for Jellyseerr, please reach out to me to reconfigure for a second tunnel.
 
 9. Unfortunately, I can’t find a way to auto-configure all the apps to work with each other. This must be done manually from the GUI of each app. Find the IP address of the host and append the correct port (i.e., 192.168.1.100:xxxx) to find each app. please check the appconfig more for info
 
-# Prereqs
-
-- curl
-- nano
-- git
-- wireguard
-- docker
-- nordvpn
-- ssh
-- docker
 
 # Script Goals
 
@@ -103,6 +101,17 @@ This also assumes the OS has been installed and configured, with the user having
 - [x]  noport:noport # Watchtower for automatic image updater
 
 # Notes For Author
+
+## Prereqs
+
+- curl
+- nano
+- git
+- wireguard
+- docker
+- nordvpn
+- ssh
+- docker
 
 ## Install NordVPN
 
