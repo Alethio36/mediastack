@@ -126,7 +126,7 @@
 ## Configuring the VPN Connection
 
 1. **Edit Docker Compose:**
-   - Open the Docker compose file: `sudo nano docker-compose.yml`.
+   - Open the Docker compose file: ```sudo nano docker-compose.yml```.
    - Adjust the following lines under the gluetun container:
      ```yaml
      - SERVER_COUNTRIES=  # Comma separated list of countries
