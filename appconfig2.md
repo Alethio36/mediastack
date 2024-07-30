@@ -21,7 +21,7 @@
    - Point your machine's DNS lookups to the host IP address.
    - Some routers allow network-level DNS configuration.
    - Consult your IT professional or documentation for more information.
-   - For local machine settings, search for "MY OS DNS settings."
+   - For local machine settings, search for "My OS DNS settings."
 
 6. **Upstream DNS in Pi-hole:**
    - Under Pi-hole settings and DNS, configure upstream DNS lookups.
@@ -43,6 +43,7 @@
    - Scheme: `http`.
    - Forward Hostname/IP: Host IP address.
    - Port: `83`.
+   - <img width="454" alt="chrome_8ETkiE4paU" src="https://github.com/user-attachments/assets/05937549-1708-44a4-aa14-d0e6979c7f75">
 
 3. **Advanced Configuration for Pi-hole:**
    - In the Advanced tab, enter the following:
@@ -66,18 +67,22 @@
        proxy_read_timeout 90;
      }
      ```
-   - Change `IPADDRESS` to your static IP.
+   - Change `IPADDRESS` to your (hopefully) static IP.
+   - Just in case, here is the [orginal instruction to add pihole to the npm] (https://docs.techdox.nz/pihole-on-npm/#:~:text=To%20add%20Pi%2Dhole%20to,%22Add%20Proxy%20Host%22%20button).
 
 4. **Add Other Services:**
-   - Repeat the above steps (excluding the Advanced configuration) for other services.
-   - Example services: qbittorrent, Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Bazarr, Jellyfin, Jellyseerr, NPM, Pi-hole.
+   - Repeat the above steps (excluding the Advanced configuration for Pihole) for other services.
+   - Example services: qbittorrent, Sonarr, Radarr, Prowlarr, Lidarr, Readarr, Bazarr, Jellyfin, Jellyseerr, NPM, Pihole.
 
 5. **Testing Proxy Hosts:**
    - Test each proxy host in your browser.
    - Use incognito mode or a different browser to avoid cache issues.
 
 6. **SSL Setup (using Cloudflare):**
-   - Log into Cloudflare, go to API Tokens, and create a token using the "Edit Zone DNS" template. Please also rename the token, in case you need to change it later. 
+   - Log into Cloudflare, go to API Tokens, and create a token using the "Edit Zone DNS" template. Please also rename the token, in case you need to change it later.
+   - <img width="377" alt="chrome_XYAq3ZpMOB" src="https://github.com/user-attachments/assets/4c47417c-66b4-4f3c-b553-6c59b71c1ee6">
+   - <img width="245" alt="chrome_15dxMjsvu1" src="https://github.com/user-attachments/assets/dcf7584c-e5d1-4934-82a9-676a005f8c0f">
+   - <img width="807" alt="chrome_LlyJTl3W3X" src="https://github.com/user-attachments/assets/c7f487ef-782a-4f83-acef-b1f375aea91d">
    - Save the token, cloudflare will NOT show it again.
    - In NPM, go to SSL Certificates, add a certificate, and select Let's Encrypt.
    - Domain name: `*.YOURDOMAIN.TLD`.
@@ -103,15 +108,18 @@
      Host        Remote Path      Local Path
      localhost   /torrent/        /data/torrent/
      ```
+3. **Settings Adjustments:**
+   - adjusting settings for the specifcs of each app can take a significant amount of time and depend heavily on preference. I recommend waiting until everything is configured before doing this, but it is up to you.
+
 
 ## Jellyfin
 
 1. **Welcome Wizard:**
    - Configure Jellyfin with the welcome wizard.
-   - Add media folders (e.g., Movies and TV for Jellyseerr).
+   - Add media folders (e.g., Movies and TV).
    - Delay library scan until after basic setup.
    - Make sure there is at least a single admin account (usualy your own)
-   - Make notes of the jellyfin API token.
+   - Make note of the jellyfin API token.
 
 ## Jellyseerr
 
@@ -127,8 +135,7 @@
    - If login fails, check the logs for the real password with the folowing command:
      ```sudo docker logs qbittorrent```
    - Configure settings, user login, and anonymous mode.
-   - Optionally, disable CSRF protection if encountering unauthorized errors.
-   - Also, for some reason, if i would hit a bookmark or something to come this this adress, it comes up with a unauthorized error. When i clicked the url and hit enter, worked like a charm. To fix this (optional) go to tools, options, web ui tab, then about halfway down, theres a box checked for Enable Cross-Site Request Forgery (CSRF) protection. Unchecking that fixed the issue. buts its not critical so id recommend keeping it unless you have a reason to need this to work
+   - Optionally, disable CSRF protection if encountering unauthorized errors for some reason, if i would hit a bookmark or something to come this this adress, it comes up with a unauthorized error. When i clicked the url and hit enter, worked like a charm. To fix this (optional) go to tools, options, web ui tab, then about halfway down, theres a box checked for Enable Cross-Site Request Forgery (CSRF) protection. Unchecking that fixed the issue. buts its not critical so id recommend keeping it unless you have a reason to need this to work
 
 ## Configuring the VPN Connection
 
