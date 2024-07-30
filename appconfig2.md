@@ -34,7 +34,7 @@
 ## Nginx Proxy Manager (NPM)
 
 1. **Access NPM:**
-   - Enter `MEDIASTACKIP:81` in your browser.
+   - Enter `MEDIASTACKIP:81` in your browser (Eg. 192.168.1.41:81).
    - Default credentials: `admin@example.com` and `changeme`.
 
 2. **Add Proxy Host:**
