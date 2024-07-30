@@ -77,21 +77,24 @@
    - Use incognito mode or a different browser to avoid cache issues.
 
 6. **SSL Setup (using Cloudflare):**
-   - Log into Cloudflare, go to API Tokens, and create a token using the "Edit Zone DNS" template.
-   - Save the token.
+   - Log into Cloudflare, go to API Tokens, and create a token using the "Edit Zone DNS" template. Please also rename the token, in case you need to change it later. 
+   - Save the token, cloudflare will NOT show it again.
    - In NPM, go to SSL Certificates, add a certificate, and select Let's Encrypt.
    - Domain name: `*.YOURDOMAIN.TLD`.
    - Email address: Your real email for Let's Encrypt.
    - Use DNS challenge with Cloudflare.
-   - Add 120 to propagation settings, agree to TOS, and save.
+   - <img width="433" alt="chrome_nLIvjL2XP6" src="https://github.com/user-attachments/assets/98ff851c-0bb7-4ebb-9263-a259524b4f43">
+   - Add 120 to propagation settings, agree to TOS, and save. It may take a minutes or to confirm, thats normal.
    - Edit each host to use the new SSL certificate.
+   - <img width="461" alt="chrome_MMXlnLInsL" src="https://github.com/user-attachments/assets/494aabca-6998-4f09-b197-583c4b81f49e">
+
 
 ## ARR Apps (Sonarr, Radarr, etc.)
 
 1. **Initial Configuration:**
    - Create an account to log in.
    - Adjust root folder settings: `/data/media/*subfolder*` (e.g., TV for Sonarr, Movies for Radarr).
-   - Note the API key under settings.
+   - Note the API key under settings, General.
 
 2. **Remote Mapping:**
    - Configure remote mapping under Download Client.
@@ -107,6 +110,8 @@
    - Configure Jellyfin with the welcome wizard.
    - Add media folders (e.g., Movies and TV for Jellyseerr).
    - Delay library scan until after basic setup.
+   - Make sure there is at least a single admin account (usualy your own)
+   - Make notes of the jellyfin API token.
 
 ## Jellyseerr
 
@@ -119,18 +124,22 @@
 1. **Access and Configure:**
    - Enter the correct domain into the browser.
    - Default credentials: `admin` / `adminadmin`.
-   - If login fails, check the logs for the real password: `sudo docker logs qbittorrent`.
+   - If login fails, check the logs for the real password with the folowing command:
+     ```sudo docker logs qbittorrent```
    - Configure settings, user login, and anonymous mode.
    - Optionally, disable CSRF protection if encountering unauthorized errors.
+   - Also, for some reason, if i would hit a bookmark or something to come this this adress, it comes up with a unauthorized error. When i clicked the url and hit enter, worked like a charm. To fix this (optional) go to tools, options, web ui tab, then about halfway down, theres a box checked for Enable Cross-Site Request Forgery (CSRF) protection. Unchecking that fixed the issue. buts its not critical so id recommend keeping it unless you have a reason to need this to work
 
 ## Configuring the VPN Connection
 
-1. **Edit Docker Compose:**
+1. Hopefully in the future, i will have the installer.sh script handle this, but for now
+   
+2. **Edit Docker Compose:**
    - Open the Docker compose file:
      ```
      sudo nano docker-compose.yml
      ```
-   - Adjust the following lines under the gluetun container:
+   - Adjust the following lines under the gluetun container. They do not all need to be entered, I would work top down, and configure as desired:
      ```yaml
      - SERVER_COUNTRIES=  # Comma separated list of countries
      - SERVER_REGIONS=    # Comma separated list of regions
@@ -141,7 +150,8 @@
 
 ## Overview
 
-1. **Final Steps:**
+1. **Final Steps and notes:**
    - Ensure all services are connected and configured.
    - Connect Prowlarr to all ARR apps.
    - Leave ARR qBittorrent connection to localhost.
+   - start scanning all libraries in jellyfin, sonarr, radarr, jellyseerr. This may take a substantial amount of time. As in several days depending on your pcs power. please save this step for the very last. 
