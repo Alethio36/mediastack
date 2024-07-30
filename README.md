@@ -262,7 +262,8 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
    - Ensure all services are connected and configured.
    - Connect Prowlarr to all ARR apps.
    - Leave ARR qBittorrent connection to localhost.
-   - start scanning all libraries in jellyfin, sonarr, radarr, jellyseerr. This may take a substantial amount of time. As in several days depending on your pcs power. please save this step for the very last. 
+   - start scanning all libraries in jellyfin, sonarr, radarr, jellyseerr. This may take a substantial amount of time. As in several days depending on your pcs power. please save this step for the very last.
+   - perhaps run a dns leak check from `installer.sh` just to make sure
 
 
 
