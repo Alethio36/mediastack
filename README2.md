@@ -16,9 +16,9 @@ This also assumes the OS has been installed and configured, with the user having
 - With SSH installed, it is easier to use your normal workstation. The rest of this tutorial assumes you have a normal workstation with standard capabilities.
 
 - Download this git repo for local use, you can place it anywhere, but i recommend the user home directory:
-    - ```
-      sudo git clone https://github.com/alethio36/mediastack
-      ```
+ - ```
+   sudo git clone https://github.com/alethio36/mediastack
+   ```
 
    This should have created a folder called `mediastack` inside the folder you ran the previous command. Run the `ls` command to confirm.
 
