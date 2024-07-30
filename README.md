@@ -127,7 +127,7 @@ Now, if you return to Cloudflare, it should have the connector loaded up. Hit ne
 - [x]  8191:8191 # Flaresolver - vpn - Cloudflare Captcha Solver
 - [x]  80:80 443:443 81:81 (81 is the admin portal) # NPM (proxy) - no vpn - This routes your domains to services
 - [x]  53:53 67:67 83:80 (83 is the external mgmt portal) # Pihole - no vpn - This is a DNS, DHCP, and adblocker
-- [x]  noport:noport # Watchtower for automatic image updater
+- [x]  xxxx:xxxx # Watchtower for automatic image updater
 
 # Notes For Author
 
