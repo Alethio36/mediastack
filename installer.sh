@@ -105,8 +105,6 @@ do
     sudo mkdir -pv /ms4/data/media/$dir
 done
 
-# sudo mkdir -pv /ms4/config/{sonarr,radarr,lidarr,readarr,prowlarr,qbittorrent,audiobookshelf,jellyseerr,bazarr,jellyfin}
-# sudo mkdir -pv /ms4/data/{torrent,media}/{tv,movies,music,books,comics,audiobooks,podcasts,other}
 sudo mkdir /ms4/information
 
 # Set permissions
@@ -135,19 +133,6 @@ update_applications() {
 
 # Function to update Docker images
 update_docker_images() {
-    ## stopping the mediastack
-    #echo "Stopping mediastack..."
-    #sudo docker compose down
-    ## remove all container volumes
-    #sudo docker rm -vf $(sudo docker ps -aq)
-    ## remove all images
-    #sudo docker rmi -f $(sudo docker images -aq)
-    ## pulling all new images
-    ## sudo docker compose pull
-    ## prune any orphans
-    #sudo docker image prune -af
-    #echo "Images have been pruned and updated, please remember to start applications"
-
 
     sudo docker compose pull
     #this pull all images needed to be updated
@@ -381,6 +366,7 @@ main_menu() {
             return_to_menu
             ;;
         5) 
+           echo "Running DNS leak test. make sure to read the output fully" 
            run_dns_leak_test
            return_to_menu
             ;;
