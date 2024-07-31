@@ -86,7 +86,7 @@ everything is up and running! You may now go to each app in your browser to conf
 
 ### Cloudflare tunnell
 
-Now, if you return to Cloudflare, it should have the connector loaded up. Hit next. From the next page, please enter your subdomain and domain (subdomain.domain.tld). Below, under service, select http, and under URL, enter "mediaserverip:8096" (making sure to add your media servers actual ip address. Then save the tunnel. Now Jellyfin is open to the World Wide Web. If you would like a second tunnel for Jellyseerr, im not sure how to do that yet.
+Now, if you return to Cloudflare, it should have the connector loaded up. Hit next. From the next page, please enter your subdomain and domain (subdomain.domain.tld). Below, under service, select http, and under URL, enter "mediaserverip:8096" (making sure to add your media servers actual ip address. Then save the tunnel. Now Jellyfin is open to the World Wide Web. If you would like a second tunnel for Jellyseerr (or whatever), just add a second public hostname in the tunnell configuration.
 
 ### Unfortunately 
 
