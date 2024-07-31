@@ -1,6 +1,18 @@
 # Mediastack
 
-This also assumes you have a Cloudflare domain and a NordVPN subscription. and i need to fill this section out more
+Project Overview
+This project aims to provide a private stack of applications to manage and consume media. It offers an all-in-one solution, covering many needs out of the box. One notable feature is its configuration to use a Cloudflare tunnel pointing to Jellyfin. If you prefer not to use this feature, you can skip the tunnel configuration steps or remove/comment out the cloudflared image from the Docker compose file.
+
+Prerequisites and Notes
+Before beginning, ensure you have the following:
+
+   1. Cloudflare Domain: You need a registered domain with Cloudflare.
+   2. NordVPN Subscription: This guide assumes you are using NordVPN. If you use a different VPN provider, please adjust accordingly.
+   3. Debian 12 Install: The guide is tested and configured for Debian 12. Other Linux distributions may work with some adjustments, but results may vary.
+   4. User with Sudo Access: Ensure you have a user on the Debian machine with sudo privileges.
+   5. Directory Structure: This script will create directories in a specific location and assumes this location for all steps. If you need to change this, note that it may disrupt the process. It is recommended to create a link to your target directory or, for an NFS/SMB share, mount inside the directory.
+   6. Command Line Familiarity: Basic knowledge of command-line commands like cd, ls, sudo, nano, and ssh is necessary.
+   7. Workstation: Use a separate workstation from the host running the mediastack. This will make copying tokens and commands easier.
 
 ## Prepping the host machine
 
