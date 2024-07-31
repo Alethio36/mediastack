@@ -88,8 +88,25 @@ sudo usermod -a -G mediacenter jellyseerr
 sudo usermod -a -G mediacenter bazarr
 
 # Make directories
-sudo mkdir -pv /ms4/config/{sonarr,radarr,lidarr,readarr,prowlarr,qbittorrent,audiobookshelf,jellyseerr,bazarr,jellyfin}
-sudo mkdir -pv /ms4/data/{torrent,media}/{tv,movies,music,books,comics,audiobooks,podcasts,other}
+#!/bin/sh
+
+for dir in sonarr radarr lidarr readarr prowlarr qbittorrent audiobookshelf jellyseerr bazarr jellyfin; 
+do
+    sudo mkdir -pv /ms4/config/$dir
+done
+
+for dir in tv movies music books comics audiobooks podcasts other; 
+do
+    sudo mkdir -pv /ms4/data/torrent/$dir
+done
+
+for dir in tv movies music books comics audiobooks podcasts other; 
+do
+    sudo mkdir -pv /ms4/data/media/$dir
+done
+
+# sudo mkdir -pv /ms4/config/{sonarr,radarr,lidarr,readarr,prowlarr,qbittorrent,audiobookshelf,jellyseerr,bazarr,jellyfin}
+# sudo mkdir -pv /ms4/data/{torrent,media}/{tv,movies,music,books,comics,audiobooks,podcasts,other}
 sudo mkdir /ms4/information
 
 # Set permissions
