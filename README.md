@@ -30,11 +30,12 @@ To prepare your NordVPN and Cloudflare tokens, follow the steps below:
 
 1. **Log in to NordVPN**: Visit the [NordVPN website](https://nordvpn.com) and log in to your account.
 2. **Access Token Generation**:
-   - Navigate to the sidebar on the left and click on **Services**.
-   - Select **NordVPN** from the services menu.
+   - Navigate to the sidebar on the left and click on **NORDVPN** under **Services**.
    - Scroll down to the **Setup VPN Manually** section. You will be prompted to verify your email.
+     <img width="864" alt="chrome_BE6A6ufspi" src="https://github.com/user-attachments/assets/2e315243-db6d-4ebb-a780-f91932943f64">
    - Generate a new access token. You can choose between a 30-day token or an indefinite token. Note that if you choose an expiration token, you will need to redo this step once the token expires.
-   - **Important**: This token will not be shown again, so make sure to copy it to your desktop or keep the page open until you complete this process.
+     <img width="841" alt="chrome_iLzf3QaitP" src="https://github.com/user-attachments/assets/11881cce-1134-4b80-993a-ef98eaebef8c">
+   - **Important**: This token will not be shown again, so make sure to copy it to your desktop on notepad or something.
 
 #### Cloudflare Token
 
@@ -103,6 +104,7 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
 
 2. **Configuration Video:**
    - [Watch this video](https://www.youtube.com/watch?v=kKsHo6r4_rc) for a detailed walkthrough.
+   - This tutoiral also is very brief on how to use PI-hole, there is a lot it can do and if you want the most out of it, check out their documentation or relevant guides on youtube
 
 3. **DNS Record:**
    - Use your host IP address (where everything is running).
@@ -198,20 +200,22 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
 
 2. **Remote Mapping:**
    - Configure remote mapping under Download Client.
-   - Example:
+   - It should be something like this:
      ```
      Host        Remote Path      Local Path
      localhost   /torrent/        /data/torrent/
      ```
 3. **Settings Adjustments:**
    - adjusting settings for the specifcs of each app can take a significant amount of time and depend heavily on preference. I recommend waiting until everything is configured before doing this, but it is up to you.
+   - This guide is widley recommended if you are not sure where to start. (TRaSH Guides)[https://trash-guides.info/]
   
 4. **Add a download client**
-   - Go to settings, Download clients, and add qbittorrent
+   - Go to settings, Download clients, and add qbittorrent, it should look something like this:
+    <img width="518" alt="chrome_4jDj92l7wD" src="https://github.com/user-attachments/assets/796b1b1c-d34d-4ddc-9b0b-c182e603db51">
      
 6. **Integrate prowlarr**
    - In Prowlarr, go to settings, apps, and add each service. For sync level I recommend Full Sync
-
+ 
 
 ### Jellyfin
 
@@ -247,7 +251,7 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
      ```
      sudo nano docker-compose.yml
      ```
-   - Adjust the following lines under the gluetun container. They do not all need to be entered, I would work top down, and configure as desired:
+   - Adjust the following lines under the gluetun configuration. They do not all need to be entered, I would work top down, and configure as desired:
      ```yaml
      - SERVER_COUNTRIES=  # Comma separated list of countries
      - SERVER_REGIONS=    # Comma separated list of regions
@@ -260,10 +264,10 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
 
 1. **Final Steps and notes:**
    - Ensure all services are connected and configured.
-   - Connect Prowlarr to all ARR apps.
+     make sure to connect Prowlarr to all ARR apps.
    - Leave ARR qBittorrent connection to localhost.
    - start scanning all libraries in jellyfin, sonarr, radarr, jellyseerr. This may take a substantial amount of time. As in several days depending on your pcs power. please save this step for the very last.
-   - perhaps run a dns leak check from `installer.sh` just to make sure
+   - perhaps run a final dns leak check from `installer.sh` just to make sure
 
 
 
