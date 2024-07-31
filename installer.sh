@@ -32,6 +32,10 @@ install_docker() {
 
 # Function to install NordVPN
 install_nordvpn() {
+    
+    # Update package index
+    sudo apt-get update
+    
     # Download NordVPN installation script
     curl -sSf https://downloads.nordcdn.com/apps/linux/install.sh -o nordvpn_install.sh
 
@@ -44,6 +48,8 @@ install_nordvpn() {
 
 # Function to install WireGuard
 install_wireguard() {
+    # Update package index
+    sudo apt-get update
     sudo apt install wireguard -y
 }
 
