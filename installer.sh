@@ -218,16 +218,16 @@ configure_docker_compose() {
 run_dns_leak_test() {
     # Check if dnsleaktest.sh script exists
     dns_leak_test_script="/ms4/tools/dnsleaktest.sh"
-    if [[ ! -f "$dns_leak_test_script" ]]; then
+    if [ ! -f "$dns_leak_test_script" ]; then
         echo "DNS leak test script not found: $dns_leak_test_script"
         return 1
     fi
 
-    # Get list of running containers excluding flaresolverr and gluetun
-    running_containers=$(sudo docker ps --format "{{.Names}}" | grep -v -e "gluetun" -e "flaresolverr" -e "cloudflared")
+    # Get list of running containers excluding flaresolverr, gluetun cloudflared, watchtower, npm, jellyseerr, and jellyfin
+    running_containers=$(sudo docker ps --format "{{.Names}}" | grep -v -e "gluetun" -e "flaresolverr" -e "cloudflared" -e "watchtower" -e "npm" -e "jellyseerr" -e "jellyfin" )
 
     # Check if there are any running containers
-    if [[ -z "$running_containers" ]]; then
+    if [ -z "$running_containers" ]; then
         echo "No running containers found (excluding gluetun and flaresolverr)."
         return 1
     fi
