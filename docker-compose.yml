@@ -179,7 +179,7 @@ services:
 
   cloudflared: 
     image: cloudflare/cloudflared 
-    container_name: cloudflare-tunnel 
+    container_name: cloudflared
     restart: always
     command: tunnel run 
     environment: 
@@ -252,6 +252,7 @@ services:
   npm:
     image: 'jc21/nginx-proxy-manager:latest'
     restart: always
+    container_name: npm
     ports:
       # These ports are in format <host-port>:<container-port>
       - '80:80' # Public HTTP Port
@@ -273,6 +274,8 @@ services:
       - /ms4/config/npm/data:/data
       - /ms4/config/npm/letsencrypt:/etc/letsencrypt
       - /ms4/tools:/tools
+
+      
   watchtower:
     image: containrrr/watchtower
     container_name: watchtower
