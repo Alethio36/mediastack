@@ -276,10 +276,12 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
 
 1. **Final Steps and notes:**
    - Ensure all services are connected and configured.
-     make sure to connect Prowlarr to all ARR apps.
-   - Leave ARR qBittorrent connection to localhost.
-   - start scanning all libraries in jellyfin, sonarr, radarr, jellyseerr. This may take a substantial amount of time. As in several days depending on your pcs power. please save this step for the very last.
-   - perhaps run a final dns leak check from `installer.sh` just to make sure
+   - Make sure to connect Prowlarr to all ARR apps.
+   - Leave the ARR stack qBittorrent connection to localhost.
+   - Start scanning all libraries in jellyfin, sonarr, radarr, jellyseerr. This may take a substantial amount of time. As in several days depending on your pcs power. please save this step for the very last.
+   - Perhaps run a final dns leak check from `installer.sh` just to make sure
+   - If you are running on a NAS, the config files will become unstable and unhappy, especially the SQLite database files. I would suggest a directory (such as /ms5) thats held locally and adjust your docker compose file accordingly. It will also be WAY snappier.
+   - Iv been told Qbittorrent cant be a smudge fussy about what port its on. If you go to Tools->Options->Connections and hit the random button (and save) you may have a better time of things
 
 
 
