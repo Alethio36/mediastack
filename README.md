@@ -291,6 +291,9 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
       proxy_read_timeout 30m;
       ```
 
+     ![chrome_0ahEnkk9Ln](https://github.com/user-attachments/assets/985aad46-0eee-4d57-a9d4-c307b433ce42)
+
+
 
 
 # Script Goals
