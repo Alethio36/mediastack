@@ -282,6 +282,14 @@ I can’t find a way to auto-configure all the apps to work with each other. Thi
    - Perhaps run a final dns leak check from `installer.sh` just to make sure
    - If you are running on a NAS, the config files will become unstable and unhappy, especially the SQLite database files. I would suggest a directory (such as /ms5) thats held locally and adjust your docker compose file accordingly. It will also be WAY snappier.
    - Iv been told Qbittorrent cant be a smudge fussy about what port its on. If you go to Tools->Options->Connections and hit the random button (and save) you may have a better time of things
+   - There may be some time out related errors with the ARR apps, please add the below code into the advanced section in the NPM manager host section for effected services.
+     ```
+     # Increase timeouts
+      send_timeout 100m;
+      proxy_connect_timeout 600;
+      proxy_send_timeout 600;
+      proxy_read_timeout 30m;
+      ```
 
 
 
