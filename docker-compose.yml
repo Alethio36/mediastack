@@ -276,9 +276,18 @@ services:
       - /ms4/tools:/tools
 
       
+#  watchtower:
+#    image: containrrr/watchtower
+#    container_name: watchtower
+#    volumes:
+#      - /var/run/docker.sock:/var/run/docker.sock
+#    command: --interval 30
+
   watchtower:
     image: containrrr/watchtower
     container_name: watchtower
+    command:
+      - --cleanup=true
+    restart: always
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-#    command: --interval 30
