@@ -22,7 +22,7 @@ This also assumes the OS has been installed and configured, with the user having
 
 ### Please install some prerequisite apps:
    - ```
-     sudo apt install curl nano git openssh-server jq
+     sudo apt install -y curl nano git openssh-server jq
      ```
 
 - With SSH installed, it is easier to use your normal workstation. The rest of this tutorial assumes you have a normal workstation with standard capabilities.
