@@ -118,21 +118,21 @@ services:
       - /ms4/tools:/tools
     restart: always
 
-  readarr:
+#  readarr:
 #    image: lscr.io/linuxserver/readarr:develop #alternative mirror
-    image: ghcr.io/hotio/readarr:latest
-    container_name: readarr
-    network_mode: "service:gluetun"
-    environment:
-      - PUID=13004
-      - PGID=13000
-      - UMASK=002
-      - TZ=Australia/Sydney
-    volumes:
-      - /ms4/config/readarr/config:/config
-      - /ms4/data:/data 
-      - /ms4/tools:/tools
-    restart: always
+#    image: ghcr.io/hotio/readarr:latest
+#    container_name: readarr
+#    network_mode: "service:gluetun"
+#    environment:
+#      - PUID=13004
+#      - PGID=13000
+#      - UMASK=002
+#      - TZ=Australia/Sydney
+#    volumes:
+#      - /ms4/config/readarr/config:/config
+#      - /ms4/data:/data 
+#      - /ms4/tools:/tools
+#    restart: always
 
   bazarr:
     image: lscr.io/linuxserver/bazarr:latest
