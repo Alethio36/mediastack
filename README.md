@@ -3,6 +3,8 @@
 Project Overview
 This project aims to provide a private stack of applications to manage and consume media. It offers an all-in-one solution, covering many needs out of the box. One notable feature is its configuration to use a Cloudflare tunnel pointing to Jellyfin. If you prefer not to use this feature, you can skip the tunnel configuration steps or remove/comment out the cloudflared image from the Docker compose file.
 
+READARR HAS BEEN DEPRCATED, WILL FIND A ALTERNATIVE WHEN I CAN FIND THE TIME
+
 Prerequisites and Notes
 Before beginning, ensure you have the following:
 
