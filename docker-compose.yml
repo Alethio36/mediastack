@@ -275,19 +275,22 @@ services:
       - /ms4/config/npm/letsencrypt:/etc/letsencrypt
       - /ms4/tools:/tools
 
-      
 #  watchtower:
 #    image: containrrr/watchtower
 #    container_name: watchtower
+#    command:
+#      - --cleanup=true
+#    restart: always
 #    volumes:
 #      - /var/run/docker.sock:/var/run/docker.sock
-#    command: --interval 30
-
   watchtower:
-    image: containrrr/watchtower
+    image: nickfedor/watchtower:latest
     container_name: watchtower
-    command:
-      - --cleanup=true
-    restart: always
+    environment:
+      - WATCHTOWER_CLEANUP=true # remove old images
+      - TZ=Australia/Sydney
+      - WATCHTOWER_SCHEDULE=0 0 4 * * * # runs daily at 400am local to TZ
+#      - WATCHTOWER_RUN_ONCE=true # uncommet to run once, then recomment to enable
+    restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
