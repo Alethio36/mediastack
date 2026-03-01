@@ -211,11 +211,12 @@ services:
     restart: always
 
   jellyseerr:
-       image: fallenbagel/jellyseerr:latest
-       container_name: jellyseerr
+       image: ghcr.io/seerr-team/seerr:latest
+       init: true
+       container_name: seerr
        environment:
             - LOG_LEVEL=debug
-            - TZ=Australia/Sydney
+            - TZ=America/Los_Angeles
             - PUID=13012
             - PGID=13000
             - UMASK=002
@@ -224,7 +225,13 @@ services:
        volumes:
             - /ms4/config/jellyseerr/config:/app/config
             - /ms4/tools:/tools
-       restart: always
+       healthcheck:
+            test: wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/status || exit 1
+            start_period: 20s
+            timeout: 3s
+            interval: 15s
+            retries: 3
+       restart: unless-stopped
 
   pihole:
     container_name: pihole
