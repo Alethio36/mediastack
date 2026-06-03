@@ -282,14 +282,6 @@ services:
       - /ms4/config/npm/letsencrypt:/etc/letsencrypt
       - /ms4/tools:/tools
 
-#  watchtower:
-#    image: containrrr/watchtower
-#    container_name: watchtower
-#    command:
-#      - --cleanup=true
-#    restart: always
-#    volumes:
-#      - /var/run/docker.sock:/var/run/docker.sock
   watchtower:
     image: nickfedor/watchtower:latest
     container_name: watchtower
