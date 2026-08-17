@@ -680,7 +680,14 @@ First time? Services need connecting to each other once — the README's
 "After install" section walks through it app by app.
 EOT
 }
-cmd_down() { load_env; DC down; ok "Stack stopped (configs and data untouched)."; }
+cmd_down() {
+    load_env
+    # --volumes: only anonymous volumes exist in this stack (VOLUME directives
+    # in upstream images); all real state is in bind mounts, so this is safe
+    # and stops orphaned-volume creep on every stop/start cycle.
+    DC down --volumes
+    ok "Stack stopped (configs and data untouched)."
+}
 
 cmd_enable() {
     local svc="${1:?usage: enable <service>}"; load_env
@@ -1156,7 +1163,34 @@ cmd_doctor() {
     else
         ok "load $l1 / $l5 / $l15 (1/5/15min) on $cores cores"
     fi
-    sudo docker system df | tail -n +2 | sed 's/^/:: docker /'
+
+    hr "doctor: docker storage"
+    local dtype dtot dact dsize drecl dpct
+    while IFS='|' read -r dtype dtot dact dsize drecl; do
+        case "$dtype" in
+            Images)
+                ok "images: $dtot on disk ($dsize), $dact in use by this host's containers"
+                dpct=$(grep -oP '\(\K[0-9]+(?=%\))' <<<"$drecl" || echo 0)
+                if (( dpct >= 30 )); then
+                    info "  $drecl of image data is unused — reclaim with: sudo docker image prune -a  (keeps anything in use)"
+                fi ;;
+            Containers)
+                if (( dtot > dact )); then
+                    warn "stopped containers lingering: $(( dtot - dact )) — list with: sudo docker ps -a --filter status=exited"
+                else
+                    ok "containers: $dact running, none stopped/exited"
+                fi ;;
+            "Build Cache")
+                [[ "$dsize" != "0B" ]] && info "build cache: $dsize — this stack builds nothing; reclaim with: sudo docker builder prune" ;;
+        esac
+    done < <(sudo docker system df --format '{{.Type}}|{{.TotalCount}}|{{.Active}}|{{.Size}}|{{.Reclaimable}}' 2>/dev/null)
+    local dang
+    dang=$(sudo docker volume ls -qf dangling=true 2>/dev/null | wc -l)
+    if (( dang > 0 )); then
+        info "orphaned anonymous volumes: $dang — empty leftovers from container recreates (all real state is bind-mounted). Clean: sudo docker volume prune -f"
+    else
+        ok "no orphaned volumes"
+    fi
 
     hr "doctor: host neighbours"
     sudo docker ps --format '{{.Names}} {{.Image}}' | grep -Ei 'watchtower|ouroboros|autoheal' | grep -v mediastack \
