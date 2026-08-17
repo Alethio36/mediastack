@@ -1577,8 +1577,8 @@ api() { # api METHOD URL APIKEY [json-body] -> body on stdout, rc from http
     [[ "$code" =~ ^2 ]]
 }
 
-arr_key() { # arr_key <svc> -> api key from its config.xml
-    sudo grep -oP '<ApiKey>\K[^<]+' "$(env_get CONFIG_ROOT)/$1/config.xml" 2>/dev/null | head -1
+arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialising)
+    sudo grep -oP '<ApiKey>\K[^<]+' "$(env_get CONFIG_ROOT)/$1/config.xml" 2>/dev/null | head -1 || true
 }
 
 arr_url() { echo "http://127.0.0.1:$(svc_label "$1" mediastack.port)"; }
@@ -1629,11 +1629,19 @@ wire_qbit() {
     pass=$(env_get QBITTORRENT_PASSWORD)
     if [[ -n "$user" && -n "$pass" ]] && qb_login "$user" "$pass"; then
         ok "credentials from .env work"
+    elif (( WIRE_DRY )); then
+        w_would "harvest qBittorrent's boot password and set permanent credentials (you pick or accept generated)" || true
+        info "category preview needs credentials — computed on the real run"
+        return 0
     else
-        # first run: harvest the per-boot temporary password from the log
-        local tmp
-        tmp=$(sudo docker logs "$(svc_cname qbittorrent)" 2>&1 \
-              | grep -oP 'temporary password .*: \K\S+' | tail -1)
+        # first run: harvest the per-boot temporary password from the log.
+        # lsio init takes ~20s after (re)create before the line appears.
+        local tmp="" t=0
+        while [[ -z "$tmp" && $t -lt 45 ]]; do
+            tmp=$(sudo docker logs "$(svc_cname qbittorrent)" 2>&1 \
+                  | grep -oP 'temporary password .*: \K\S+' | tail -1 || true)
+            [[ -n "$tmp" ]] || { sleep 5; t=$((t+5)); info "waiting for qBittorrent to finish booting (${t}s)..."; }
+        done
         [[ -n "$tmp" ]] || die "qBittorrent: no stored credentials work and no temporary
   password found in its log. Restart it (docker restart) to get a fresh
   temporary password, then re-run: ./mediastack.sh wire qbit"
@@ -1655,8 +1663,9 @@ type your own to use it instead. Stored in .env (view: credentials)."
         fi
     fi
     # categories: one per arr instance, distinct save paths = hardlink discipline
+    [[ -n "$QB_COOKIE" ]] || { info "no qBittorrent session — categories skipped"; return 0; }
     local existing s cat
-    existing=$(qb_api /torrents/categories)
+    existing=$(qb_api /torrents/categories || true)
     for s in $(arr_instances); do
         cat=$(svc_label "$s" mediastack.category)
         if grep -q "\"$cat\"" <<<"$existing"; then
@@ -1767,7 +1776,7 @@ wire_bazarr() {
     svc_enabled bazarr || { info "bazarr not enabled — skipped"; return 0; }
     wire_gate bazarr
     local bkey burl
-    bkey=$(sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | head -1)
+    bkey=$(sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | head -1 || true)
     [[ -n "$bkey" ]] || { fail "bazarr: no api key found yet (config/config.yaml) — re-run wire shortly"; return 0; }
     burl="http://127.0.0.1:$(svc_label bazarr mediastack.port)"
     local pairs=() t skey
