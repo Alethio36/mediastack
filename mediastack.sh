@@ -413,9 +413,14 @@ search engine). Change any of this later with enable/disable." \
         3) for s in $(svc_managed); do
                d=$(svc_label "$s" mediastack.desc)
                # default: current state if configured before, else standard membership
-               if [[ "$cur_en" == *",$s,"* || ( "$cur_en" == ",," && " $STD " == *" $s "* ) ]]; then dp="Y/n"; else dp="y/N"; fi
+               local dp def
+               if [[ "$cur_en" == *",$s,"* || ( "$cur_en" == ",," && " $STD " == *" $s "* ) ]]; then
+                   dp="Y/n"; def=y
+               else
+                   dp="y/N"; def=n
+               fi
                read -r -p "  $s — ${d:-no description} [$dp]: " REPLY_VAL
-               REPLY_VAL="${REPLY_VAL:-${dp:0:1}}"
+               REPLY_VAL="${REPLY_VAL:-$def}"
                [[ "${REPLY_VAL,,}" == y* ]] && sel+="$s "
            done ;;
         *) sel="$STD" ;;
