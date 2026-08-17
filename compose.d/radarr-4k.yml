@@ -1,0 +1,49 @@
+# radarr-4k: second Radarr instance dedicated to 4K/2160p — the TRaSH-
+# canonical split. Own config, own root folder, own torrent category;
+# NEVER share a root folder between instances.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+services:
+  radarr-4k:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: ${RADARR_4K_NAME:-mediastack-radarr-4k}
+    profiles: ["radarr-4k"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=${RADARR_4K_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - UMASK=002
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/radarr-4k:/config
+      - ${DATA_ROOT}:/data
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.desc: "second Radarr just for 4K movies (own library + rules)"
+      mediastack.vpn: "true"
+      mediastack.config: "true"
+      mediastack.subdomain: "radarr-4k"
+      mediastack.port: "7879"
+      mediastack.appport: "7879"      # in-app port seeded pre-first-boot: two
+                                      # radarrs share gluetun's namespace
+      mediastack.arrtype: "radarr"
+      mediastack.category: "movies-4k"
+      mediastack.rootfolder: "/data/media/movies-4k"
+      mediastack.datadirs: "torrent/movies-4k media/movies-4k"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:7879/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging: *logging
+    restart: unless-stopped
