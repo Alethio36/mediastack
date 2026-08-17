@@ -1,0 +1,81 @@
+# Search profile: Meilisearch-backed fast search for Jellyfin via JellySearch.
+# JellySearch is a proxy, not a plugin: your reverse proxy must route requests
+# containing ?searchTerm to jellysearch:5000 (see README "Search").
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  meilisearch:
+    image: getmeili/meilisearch:v1.34
+    container_name: ${MEILISEARCH_NAME:-mediastack-meilisearch}
+    profiles: ["search"]
+    user: "${MEILISEARCH_UID}:${MEDIA_GROUP_GID}"
+    environment:
+      - TZ=${TZ}
+      - MEILI_ENV=production
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - MEILI_NO_ANALYTICS=true
+      - MEILI_LOG_LEVEL=WARN
+      - MEILI_MAX_INDEXING_MEMORY=${MEILI_MAX_INDEXING_MEMORY:-1Gb}
+      - MEILI_MAX_INDEXING_THREADS=${MEILI_MAX_INDEXING_THREADS:-2}
+    volumes:
+      # Index data is fully re-derivable from Jellyfin's DB: lives in CACHE_ROOT,
+      # excluded from backups, wipe freely on a bad upgrade.
+      - ${CACHE_ROOT}/meilisearch:/meili_data
+    # No ports: internal only. Never publish 7700.
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.vpn: "false"
+      mediastack.config: "false"
+      mediastack.cache: "true"
+    healthcheck:
+      # image tooling varies: try curl, fall back to wget
+      test: ["CMD-SHELL", "curl -fsS --max-time 5 http://127.0.0.1:7700/health || wget -qO- --timeout=5 http://127.0.0.1:7700/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped
+
+  jellysearch:
+    image: domistyle/jellysearch:latest
+    container_name: ${JELLYSEARCH_NAME:-mediastack-jellysearch}
+    profiles: ["search"]
+    # Runs as Jellyfin's identity: its whole job is reading Jellyfin's DB.
+    # (The image default 1000:100 cannot read a config owned by other IDs.)
+    user: "${JELLYFIN_UID}:${MEDIA_GROUP_GID}"
+    depends_on:
+      jellyfin:
+        condition: service_healthy
+      meilisearch:
+        condition: service_healthy
+    environment:
+      - TZ=${TZ}
+      - MEILI_URL=http://meilisearch:7700
+      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
+      - JELLYFIN_URL=http://jellyfin:8096
+      - INDEX_CRON=${JELLYSEARCH_INDEX_CRON:-0 0 0/2 ? * * *}   # Quartz format
+    volumes:
+      # Official jellyfin image: DB at /config/data/jellyfin.db, so mount the
+      # config root directly. (linuxserver image would need /config/data here.)
+      - ${CONFIG_ROOT}/jellyfin:/config:ro
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.vpn: "false"
+      mediastack.config: "false"
+    # No healthcheck: minimal .NET image, no probe tooling. Doctor checks the
+    # index via meilisearch instead.
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped
