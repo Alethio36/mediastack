@@ -256,11 +256,11 @@ https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" \
     else
         ok "Docker already present: $(docker --version)"
     fi
-    local cv
-    cv=$(sudo docker compose version --short 2>/dev/null || echo "0")
+    local cv min=2.24.0
+    cv=$(sudo docker compose version --short 2>/dev/null || echo "0"); cv=${cv#v}
     ok "docker compose $cv"
-    printf '%s\n2.24.0\n' "$cv" | sort -V | head -n1 | grep -qx "2.20.0" \
-        || warn "compose < 2.24 lacks 'include:'/wildcard profiles — upgrade the compose plugin."
+    [[ "$(printf '%s\n%s\n' "$cv" "$min" | sort -V | head -n1)" == "$min" ]] \
+        || warn "compose $cv < $min — 'include:'/wildcard profiles need $min+. Upgrade the compose plugin."
     echo; ok "Dependencies ready. Next: ./mediastack.sh configure"
 }
 
