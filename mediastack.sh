@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=2
+SCRIPT_SCHEMA=3
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -47,6 +47,8 @@ env_get() { # env_get VAR [default]
     line=$(grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 || true)
     if [[ -n "$line" ]]; then echo "${line#*=}"; else echo "${2-}"; fi
 }
+
+env_del() { sed -i "/^$1=/d" "$ENV_FILE"; } # remove a variable entirely
 
 env_set() { # env_set VAR value  (idempotent upsert, preserves file order)
     local var="$1" val="$2"
@@ -104,6 +106,12 @@ migrate_env_1_to_2() {
     esac; done
     env_set COMPOSE_PROFILES "$(echo "$out" | tr ' ' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)"
     info "Profiles translated to per-service form: $(env_get COMPOSE_PROFILES)"
+}
+migrate_env_2_to_3() {
+    # ersatztv's upstream image is rootful (no user mapping) — a UID entry
+    # for it made doctor audit root-owned files against a fictional owner.
+    env_del ERSATZTV_UID
+    info "Removed ERSATZTV_UID (ersatztv runs as root by upstream design)."
 }
 
 # ------------------------------------------------------------ compose layer --
@@ -487,13 +495,23 @@ key, then paste it below. Country selection works the same for all."
         env_set MEILI_MASTER_KEY "$(openssl rand -base64 32 2>/dev/null || head -c32 /dev/urandom | base64)"
         ok "Generated Meilisearch master key (machine secret — you never need it)."
     fi
-    if [[ "$(env_get COMPOSE_PROFILES)" == *tunnel* && -z "$(env_get CLOUDFLARE_TUNNEL_TOKEN)" ]]; then
-        explain "Cloudflare tunnel token" \
-"Cloudflare dashboard -> Zero Trust -> Networks -> Tunnels -> create a
-'cloudflared' tunnel -> copy ONLY the long token from the docker command."
-        read -r -p "Tunnel token: " REPLY_VAL; env_set CLOUDFLARE_TUNNEL_TOKEN "$REPLY_VAL"
+    if svc_enabled cloudflared && [[ -z "$(env_get CLOUDFLARE_TUNNEL_TOKEN)" ]]; then
+        explain "Cloudflare tunnel" \
+"The tunnel is created on CLOUDFLARE'S side; this stack just runs the
+connector. One-time setup in their dashboard:" \
+"  1. dash.cloudflare.com -> Zero Trust -> Networks -> Tunnels" \
+"  2. Create a tunnel (type: cloudflared), name it, save" \
+"  3. From the install step, copy ONLY the long token string" \
+"     (the part after '--token' in the command they show)" \
+"AFTER the stack is up, routing also lives in that dashboard: add Public
+Hostnames pointing at http://npm:80 (recommended — reuses your proxy
+hosts and certificates) or directly at a service, e.g. http://jellyfin:8096.
+Service names resolve — cloudflared shares the stack's network."
+        read -r -p "Tunnel token: " REPLY_VAL
+        [[ -n "$REPLY_VAL" ]] && env_set CLOUDFLARE_TUNNEL_TOKEN "$REPLY_VAL" \
+            || warn "No token — cloudflared will crash-loop until one is set in .env."
     fi
-    if [[ "$(env_get COMPOSE_PROFILES)" == *dns* && -z "$(env_get PIHOLE_PASSWORD)" ]]; then
+    if svc_enabled pihole && [[ -z "$(env_get PIHOLE_PASSWORD)" ]]; then
         env_set PIHOLE_PASSWORD "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"
         ok "Generated Pi-hole admin password (view it any time in .env)."
     fi
@@ -727,7 +745,7 @@ prune_backups() {
     local total=$(( keepd + keepw * 7 ))
     local n; n=$(ls -1 "$broot" 2>/dev/null | wc -l)
     (( n > total )) || return 0
-    ls -1 "$broot" | head -n $(( n - total )) | while read -r old; do
+    { ls -1 "$broot" | head -n $(( n - total )) || true; } | while read -r old; do
         info "Pruning old restore point $old"
         sudo rm -rf "${broot:?}/$old"
     done
@@ -981,29 +999,31 @@ cmd_doctor() {
     for s in $(svc_managed); do
         [[ $(svc_label "$s" mediastack.config) == "true" ]] || continue
         v="$(uvar "$s")_UID"; uid=$(env_get "$v"); [[ -n "$uid" && -d "$croot/$s" ]] || continue
-        bad=$(sudo find "$croot/$s" \( -not -user "$uid" -o -not -group "$(env_get MEDIA_GROUP_GID)" \) 2>/dev/null | head -3)
+        bad=$(sudo find "$croot/$s" \( -not -user "$uid" -o -not -group "$(env_get MEDIA_GROUP_GID)" \) 2>/dev/null | head -3 || true)
         if [[ -n "$bad" ]]; then
             d_fail "$s: files not owned $uid:mediacenter" "the app cannot write its own config" "./mediastack.sh fix-perms $s"
         else
-            sudo runuser -u "#$uid" -- test -w "$croot/$s" 2>/dev/null \
+            sudo setpriv --reuid "$uid" --regid "$(env_get MEDIA_GROUP_GID)" --clear-groups \
+                 -- test -w "$croot/$s" 2>/dev/null \
                 && ok "$s config ownership + write access" \
                 || d_fail "$s: uid $uid cannot write $croot/$s" "mode/ACL problem despite ownership" "./mediastack.sh fix-perms $s"
         fi
     done
     # jellysearch must READ jellyfin's config
     if svc_enabled jellysearch; then
-        sudo runuser -u "#$(env_get JELLYFIN_UID)" -- test -r "$croot/jellyfin" 2>/dev/null \
+        sudo setpriv --reuid "$(env_get JELLYFIN_UID)" --regid "$(env_get MEDIA_GROUP_GID)" --clear-groups \
+             -- test -r "$croot/jellyfin" 2>/dev/null \
             && ok "jellysearch can read jellyfin's config" \
             || d_fail "jellysearch cannot read $croot/jellyfin" "search cannot index" "./mediastack.sh fix-perms jellyfin"
     fi
     # artifact sweep
-    sudo find "$(env_get DATA_ROOT)" -maxdepth 2 -name '*{*}*' 2>/dev/null | grep -q . \
+    [[ $(sudo find "$(env_get DATA_ROOT)" -maxdepth 2 -name '*{*}*' 2>/dev/null | wc -l) -gt 0 ]] \
         && warn "literal '{...}' directories under DATA_ROOT — junk from an old installer; safe to remove"
-    sudo find "$croot" -maxdepth 1 -name '*.pre-restore.*' 2>/dev/null | grep -q . \
+    [[ $(sudo find "$croot" -maxdepth 1 -name '*.pre-restore.*' 2>/dev/null | wc -l) -gt 0 ]] \
         && warn "old *.pre-restore.* trees under CONFIG_ROOT — remove once you trust the restore"
 
     hr "doctor: host resources"
-    df -h "$croot" "$(env_get DATA_ROOT)" 2>/dev/null | tail -n +2 | while read -r line; do
+    df -h "$croot" "$(env_get DATA_ROOT)" 2>/dev/null | tail -n +2 | sort -u | while read -r line; do
         local pct; pct=$(awk '{print $5}' <<<"$line" | tr -d %)
         (( pct >= 90 )) && warn "disk >90%: $line" || ok "disk: $line"
     done
