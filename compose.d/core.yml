@@ -63,6 +63,8 @@ services:
       mediastack.config: "true"
     # gluetun ships its own image HEALTHCHECK (tunnel connectivity);
     # do not override it — depends_on: service_healthy uses it as-is.
+    networks: [mediastack]   # explicit: without this compose isolates gluetun
+                             # on an implicit second network (mediastack_default)
     logging: *logging
     restart: unless-stopped
 

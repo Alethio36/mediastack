@@ -1118,6 +1118,19 @@ cmd_doctor() {
 
     hr "doctor: vpn + backups"
     if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
+        local dgid dnm dbad=""
+        dgid=$(sudo docker inspect --format '{{.Id}}' "$(svc_cname gluetun)" | tr -d '\n')
+        for s in $(svc_managed); do
+            [[ $(svc_label "$s" mediastack.vpn) == "true" ]] || continue
+            svc_enabled "$s" || continue
+            [[ $(c_state "$(svc_cname "$s")") == running ]] || continue
+            dnm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$(svc_cname "$s")" | tr -d '\n')
+            [[ "$dnm" == "container:$dgid" ]] || dbad+="$s "
+        done
+        [[ -z "$dbad" ]] && ok "all VPN'd services attached to gluetun's namespace" \
+            || d_fail "VPN'd services NOT attached to gluetun: $dbad" "their traffic bypasses the VPN entirely" "./mediastack.sh up   (recreates with correct attachment), then ./mediastack.sh leak-test"
+    fi
+    if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
         local vip; vip=$(sudo docker exec "$(svc_cname gluetun)" wget -qO- --timeout=8 https://ipinfo.io/ip 2>/dev/null || true)
         [[ -n "$vip" ]] && ok "tunnel public IP: $vip" \
             || d_fail "cannot fetch IP through tunnel" "VPN may be down; downloads are dead (not leaking — kill-switch)" "./mediastack.sh logs gluetun"
@@ -1185,10 +1198,23 @@ cmd_leak_test() {
          -6 -fsS --max-time 8 https://ipv6.google.com >/dev/null 2>&1; then
         fail "IPv6 egress SUCCEEDED inside the tunnel namespace — IPv6 leak"; rc=1
     else ok "no IPv6 egress"; fi
-    # resolver identity
-    sudo docker run --rm --network "container:$gcn" curlimages/curl:latest \
-        -fsS --max-time 8 https://ipinfo.io/ip >/dev/null 2>&1 \
-        && ok "DNS resolves inside the namespace (gluetun's resolver)"
+    # resolver identity: queries must go to gluetun's local resolver (which
+    # forwards over the tunnel), not a LAN/ISP resolver
+    if sudo docker exec "$gcn" sh -c 'grep -q "nameserver 127.0.0.1" /etc/resolv.conf' 2>/dev/null; then
+        ok "DNS goes to gluetun's own resolver — queries ride the tunnel"
+    else
+        warn "resolv.conf inside the namespace is not gluetun's resolver — DNS may leak to the LAN (check DNS settings in gluetun)"
+    fi
+    # interface audit: the namespace must hold exactly lo + one LAN-side
+    # interface + the tunnel. A second ethN means another docker network is
+    # attached — the "accidentally on another network" case.
+    local links eth_n
+    links=$(sudo docker exec "$gcn" ip -o link 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 | grep -v '^lo$' || true)
+    eth_n=$(grep -c '^eth' <<<"$links" || true)
+    if [[ "$eth_n" == 1 ]]; then ok "exactly one LAN-side interface in the namespace"
+    else fail "unexpected interface set in namespace: $(tr '\n' ' ' <<<"$links") — a second network is attached"; rc=1; fi
+    grep -qE '^(tun|wg)' <<<"$links" && ok "tunnel interface present" \
+        || { fail "no tunnel interface in the namespace"; rc=1; }
 
     hr "leak-test: kill-switch"
     sudo docker exec "$gcn" sh -c 'iptables -S OUTPUT 2>/dev/null | grep -qE -- "^-P OUTPUT DROP|-j DROP"' \
@@ -1204,6 +1230,27 @@ cmd_leak_test() {
         sudo docker exec "$gcn" sh -c 'ip link set dev tun0 up' || true
         info "Restarting gluetun to restore a clean tunnel..."
         DC restart gluetun >/dev/null
+
+        warn "Hard-stop proof: stopping gluetun ENTIRELY (~30s of downtime)..."
+        sudo docker stop "$gcn" >/dev/null
+        local pcn; pcn=$(svc_cname qbittorrent)
+        if [[ $(c_state "$pcn") == running ]]; then
+            if sudo docker exec "$pcn" curl -fsS --max-time 6 https://ipinfo.io/ip >/dev/null 2>&1; then
+                fail "egress SUCCEEDED from a dependent with gluetun STOPPED — containment broken"; rc=1
+            else ok "zero egress from dependents with gluetun dead (namespace has no interfaces — fail-safe)"; fi
+            if sudo docker exec "$pcn" sh -c 'ip route 2>/dev/null | grep -q default'; then
+                fail "a default route appeared inside the dead namespace"; rc=1
+            else ok "no fallback route appeared — docker cannot re-home a joined container"; fi
+        else info "qbittorrent not running — hard-stop probe skipped"; fi
+        info "Restarting gluetun and re-joining dependents..."
+        sudo docker start "$gcn" >/dev/null
+        local t=0; while [[ $(c_health "$gcn") != healthy && $t -lt 90 ]]; do sleep 3; t=$((t+3)); done
+        local rs
+        for rs in $(svc_managed); do
+            [[ $(svc_label "$rs" mediastack.vpn) == "true" ]] || continue
+            svc_enabled "$rs" || continue
+            sudo docker restart "$(svc_cname "$rs")" >/dev/null && info "  rejoined: $rs"
+        done
     fi
 
     hr "leak-test: host port sweep"
