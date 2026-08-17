@@ -10,6 +10,8 @@ x-armour: &no-foreign-watchtower
   com.centurylinklabs.watchtower.enable: "false"
 
 services:
+  # Rootful by upstream design: the official image maps no user and writes
+  # /config as root. No UID entry exists for it — doctor skips the audit.
   ersatztv:
     image: ghcr.io/ersatztv/ersatztv:latest
     container_name: ${ERSATZTV_NAME:-mediastack-ersatztv}
