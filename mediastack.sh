@@ -123,6 +123,11 @@ DC() { # compose wrapper: project dir pinned, pin-override applied when present
 
 RENDERED_JSON=""
 render() { # cache rendered config as json for discovery
+    # CACHING SEMANTICS: helpers run inside $( ) subshells, so a render
+    # triggered there does NOT populate the parent shell. Any function that
+    # reads $RENDERED_JSON directly, or loops service helpers, must call
+    # `render` in its own (parent) scope first — both for correctness and to
+    # avoid one `docker compose config` per helper call.
     [[ -n "$RENDERED_JSON" ]] && return 0
     # --profile "*": discovery sees the whole catalogue, not just enabled
     # services — otherwise disabled services vanish from backups and audits.
@@ -396,6 +401,7 @@ ENCOURAGED — backups on the same disk as the configs aren't backups.
     fi
 
     # -- services (à la carte)
+    render
     local STD="gluetun qbittorrent sonarr radarr prowlarr jellyfin npm meilisearch jellysearch seerr"
     explain "Services" \
 "Pick exactly what runs — anything, à la carte. Dependencies are handled
@@ -585,7 +591,7 @@ EOF
 
 provision() {
     hr "Provisioning users, group, folders"
-    load_env
+    load_env; render
     local gid; gid=$(env_get MEDIA_GROUP_GID 13000)
     getent group mediacenter >/dev/null || { sudo groupadd -g "$gid" mediacenter; ok "group mediacenter ($gid)"; }
     local s v uid croot droot cache
@@ -594,7 +600,9 @@ provision() {
         svc_enabled "$s" || continue
         v="$(uvar "$s")_UID"; uid=$(env_get "$v")
         if [[ -n "$uid" ]] && ! getent passwd "$s" >/dev/null; then
-            sudo useradd -r -M -s /usr/sbin/nologin -u "$uid" -g mediacenter "$s" \
+            # no -r: it only warns about our (deliberate) high UIDs; with an
+            # explicit -u it contributes nothing that -M and nologin don't.
+            sudo useradd -M -s /usr/sbin/nologin -u "$uid" -g mediacenter "$s" \
                 && ok "user $s ($uid)" \
                 || warn "could not create user $s (uid $uid taken? doctor will flag it)"
         fi
@@ -682,7 +690,7 @@ c_uptime() { sudo docker inspect --format '{{.State.StartedAt}}' "$1" 2>/dev/nul
 c_version(){ sudo docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$1" 2>/dev/null || true; }
 
 cmd_status() {
-    load_env
+    load_env; render
     if [[ -n "${1:-}" ]]; then status_one "$1"; return; fi
     hr "Mediastack status"
     printf "%-14s %-4s %-9s %-10s %-12s %-8s %s\n" SERVICE VPN STATE HEALTH VERSION PINNED UPTIME
@@ -986,7 +994,7 @@ D_FAILS=0
 d_fail() { fail "$1"; printf '     why : %s\n     fix : %s\n' "$2" "$3"; D_FAILS=$((D_FAILS+1)); }
 
 cmd_doctor() {
-    load_env; need_cmd jq
+    load_env; need_cmd jq; render
     hr "doctor: environment"
     local root
     for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT BACKUP_ROOT; do
