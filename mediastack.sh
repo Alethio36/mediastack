@@ -133,10 +133,15 @@ render() { # cache rendered config as json for discovery
     [[ -n "$RENDERED_JSON" ]] && return 0
     # --profile "*": discovery sees the whole catalogue, not just enabled
     # services — otherwise disabled services vanish from backups and audits.
-    RENDERED_JSON=$(DC --profile "*" config --format json 2>/dev/null) \
-        || die "docker compose could not render the config.
-  Check: docker compose version >= 2.24 (needed for 'include:' and wildcard profiles), and that
-  .env has no syntax errors. Try: docker compose config"
+    local rerr
+    rerr=$(mktemp)
+    if ! RENDERED_JSON=$(DC --profile "*" config --format json 2>"$rerr"); then
+        echo "${C_RED}compose said:${C_RST}" >&2
+        sed 's/^/  /' "$rerr" >&2; rm -f "$rerr"
+        die "docker compose could not render the config (see compose's message above).
+  Needs compose >= 2.24 ('include:' + wildcard profiles); check .env syntax."
+    fi
+    rm -f "$rerr"
 }
 
 svc_all()      { render; jq -r '.services | keys[]' <<<"$RENDERED_JSON"; }
@@ -409,6 +414,25 @@ ENCOURAGED — backups on the same disk as the configs aren't backups.
         warn "DATA_ROOT and its torrent subdir are on different filesystems — hardlinks will not work."
     fi
 
+    # -- self-heal FIRST: adopt any *_UID / *_UPDATE vars new fragments
+    # reference, so the render below never sees unset variables
+    info "Checking for newly added services..."
+    local ref base
+    base=$(env_get UID_BASE 13000)
+    while read -r ref; do
+        if ! grep -qE "^${ref}=" "$ENV_FILE"; then
+            if [[ "$ref" == *_UID ]]; then
+                local max
+                max=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+                env_set "$ref" "$(( ${max:-$base} + 1 ))"
+                info "New service variable $ref -> $(env_get "$ref")"
+            elif [[ "$ref" == *_UPDATE ]]; then
+                env_set "$ref" true
+            fi
+        fi
+    done < <(grep -rhoE '\$\{[A-Z0-9_]+_(UID|UPDATE)[^}]*\}' docker-compose.yml compose.d/ \
+             | sed -E 's/\$\{([A-Z0-9_]+).*/\1/' | sort -u)
+
     # -- services (à la carte)
     render
     local STD="gluetun qbittorrent sonarr radarr prowlarr jellyfin npm meilisearch jellysearch seerr"
@@ -446,23 +470,6 @@ search engine). Change any of this later with enable/disable." \
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     ok "Enabled: $(env_get COMPOSE_PROFILES)"
 
-    # -- self-heal: adopt any *_UID / *_UPDATE vars referenced by compose
-    info "Checking for newly added services..."
-    local ref base
-    base=$(env_get UID_BASE 13000)
-    while read -r ref; do
-        if ! grep -qE "^${ref}=" "$ENV_FILE"; then
-            if [[ "$ref" == *_UID ]]; then
-                local max
-                max=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
-                env_set "$ref" "$(( ${max:-$base} + 1 ))"
-                info "New service variable $ref -> $(env_get "$ref")"
-            elif [[ "$ref" == *_UPDATE ]]; then
-                env_set "$ref" true
-            fi
-        fi
-    done < <(grep -rhoE '\$\{[A-Z0-9_]+_(UID|UPDATE)[^}]*\}' docker-compose.yml compose.d/ \
-             | sed -E 's/\$\{([A-Z0-9_]+).*/\1/' | sort -u)
 
     # -- VPN
     explain "VPN (gluetun)" \
