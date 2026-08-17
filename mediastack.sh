@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=4
+SCRIPT_SCHEMA=5
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -114,6 +114,7 @@ migrate_env_2_to_3() {
     info "Removed ERSATZTV_UID (ersatztv runs as root by upstream design)."
 }
 migrate_env_3_to_4() { :; } # .env.example default change only; existing values stand
+migrate_env_4_to_5() { :; } # additive only (arr instances, wire credentials)
 
 # ------------------------------------------------------------ compose layer --
 DC() { # compose wrapper: project dir pinned, pin-override applied when present
@@ -144,7 +145,7 @@ svc_managed()  { local s; for s in $(svc_all); do [[ $(svc_label "$s" mediastack
 svc_exists()   { svc_all | grep -qx "$1"; }
 svc_image()    { render; jq -r --arg s "$1" '.services[$s].image' <<<"$RENDERED_JSON"; }
 svc_cname()    { render; jq -r --arg s "$1" '.services[$s].container_name // $s' <<<"$RENDERED_JSON"; }
-uvar()         { echo "${1^^}" | tr -cd 'A-Z0-9_'; } # service -> env var stem
+uvar()         { echo "${1^^}" | tr '-' '_' | tr -cd 'A-Z0-9_'; } # service -> env var stem (radarr-4k -> RADARR_4K)
 svc_enabled()  { [[ ",$(env_get COMPOSE_PROFILES)," == *",$1,"* ]]; }
 svc_deps()     { # direct dependencies: depends_on + shared network namespace
     render
@@ -215,6 +216,13 @@ Maintain
   rollback SVC   Shortcut: restore SVC from the newest restore point.
   unpin SVC      Release a pinned service back to normal updates.
   upgrade        Pull the latest mediastack (git), migrate .env, summarize.
+Connect
+  wire           Configure the apps to talk to each other: qBittorrent
+                 credentials+categories, arr root folders, arr->qbit,
+                 Prowlarr->arrs, FlareSolverr, Bazarr. Idempotent — re-run
+                 any time. Scope: wire [qbit|arr|prowlarr|bazarr];
+                 preview: wire --dry-run.
+  credentials    Show the app logins wire created/stored.
 Check
   doctor         Full health/permission/resource audit with fix instructions.
   leak-test      Verify no VPN'd service can leak (--killswitch for the
@@ -630,14 +638,39 @@ provision() {
                 | $o.source + ($i.target | ltrimstr($o.target)) ]
             | unique | .[]' <<<"$RENDERED_JSON")
     done
-    # data tree: shared group, setgid so new files inherit it
+    # per-instance data dirs from the label contract
+    local dd
+    for s in $(svc_managed); do
+        svc_enabled "$s" || continue
+        for dd in $(svc_label "$s" mediastack.datadirs); do
+            sudo mkdir -p "$droot/$dd"
+            sudo chown ":mediacenter" "$droot/$dd"
+            sudo chmod 2775 "$droot/$dd"
+        done
+        # seed the in-app port BEFORE first boot: extra instances share
+        # gluetun's namespace, so the image default port would collide
+        local ap
+        ap=$(svc_label "$s" mediastack.appport)
+        if [[ -n "$ap" && ! -f "$croot/$s/config.xml" ]]; then
+            printf '<Config>\n  <Port>%s</Port>\n</Config>\n' "$ap" | sudo tee "$croot/$s/config.xml" >/dev/null
+            v="$(uvar "$s")_UID"; uid=$(env_get "$v")
+            [[ -n "$uid" ]] && sudo chown "$uid:mediacenter" "$croot/$s/config.xml"
+            info "$s: seeded in-app port $ap (namespace-shared instance)"
+        fi
+    done
+    # data tree: shared group, setgid so new files inherit it.
+    # The recursive pass runs ONLY when the tree root isn't group-correct yet:
+    # on a real library this is TBs — never re-walk it on every configure.
     local d
     for d in torrent media; do
         for sub in tv movies music books other; do sudo mkdir -p "$droot/$d/$sub"; done
     done
-    sudo chown -R ":mediacenter" "$droot" 2>/dev/null || true
-    sudo chmod -R g+rwX "$droot"
-    sudo find "$droot" -type d -exec chmod g+s {} +
+    if [[ "$(stat -c %G "$droot" 2>/dev/null)" != mediacenter ]]; then
+        info "first-time data tree ownership pass (may take a while on large trees)..."
+        sudo chown -R ":mediacenter" "$droot" 2>/dev/null || true
+        sudo chmod -R g+rwX "$droot"
+        sudo find "$droot" -type d -exec chmod g+s {} +
+    fi
     ok "data tree ready (group mediacenter, setgid)"
     sudo mkdir -p "$(env_get BACKUP_ROOT)"
 }
@@ -1516,6 +1549,287 @@ server-side setup is out of scope here."
     fi
 }
 
+
+# ================================================================= wire ====
+# Idempotent app-to-app configuration: read live state, compare intent
+# (labels + .env), apply only the delta. Safe to re-run forever.
+WIRE_DRY=0
+WIRE_CHANGES=0
+
+w_would() { # w_would "description" -> 0 if execution should proceed
+    WIRE_CHANGES=$((WIRE_CHANGES+1))
+    if (( WIRE_DRY )); then echo "  would: $1"; return 1; fi
+    info "$1"
+}
+
+api() { # api METHOD URL APIKEY [json-body] -> body on stdout, rc from http
+    local m="$1" u="$2" k="$3" b="${4:-}" out code
+    out=$(curl -sS -m 20 -X "$m" -H "X-Api-Key: $k" -H "Content-Type: application/json" \
+          ${b:+-d "$b"} -w '\n%{http_code}' "$u" 2>&1) || { echo "$out"; return 1; }
+    code=${out##*$'\n'}; echo "${out%$'\n'*}"
+    [[ "$code" =~ ^2 ]]
+}
+
+arr_key() { # arr_key <svc> -> api key from its config.xml
+    sudo grep -oP '<ApiKey>\K[^<]+' "$(env_get CONFIG_ROOT)/$1/config.xml" 2>/dev/null | head -1
+}
+
+arr_url() { echo "http://127.0.0.1:$(svc_label "$1" mediastack.port)"; }
+
+wire_gate() { # refuse to wire what isn't up
+    local s missing=""
+    for s in "$@"; do
+        svc_enabled "$s" || continue
+        [[ "$(c_state "$(svc_cname "$s")")" == running ]] || missing+="$s "
+    done
+    [[ -z "$missing" ]] || die "Cannot wire: not running: $missing
+  Start the stack first: ./mediastack.sh up   (then wait for healthy: status)"
+}
+
+# shellcheck disable=SC2120  # type argument is optional by design
+arr_instances() { # arr_instances [type] -> enabled arr services (optionally by type)
+    local s t
+    for s in $(svc_managed); do
+        svc_enabled "$s" || continue
+        t=$(svc_label "$s" mediastack.arrtype)
+        [[ -n "$t" ]] || continue
+        [[ -z "${1:-}" || "$t" == "$1" ]] && echo "$s"
+    done
+}
+
+# ---- qbit ----
+QB_COOKIE=""
+qb_login() { # qb_login user pass -> 0 on success, sets QB_COOKIE
+    local r
+    r=$(curl -sS -m 10 -c - --data-urlencode "username=$1" --data-urlencode "password=$2" \
+        "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2/auth/login" 2>/dev/null)
+    grep -q '^Ok' <<<"$(tail -1 <<<"$r")" 2>/dev/null || grep -q Ok. <<<"$r" || true
+    QB_COOKIE=$(grep -oP 'SID\s+\K\S+' <<<"$r" | head -1)
+    [[ -n "$QB_COOKIE" ]]
+}
+qb_api() { # qb_api PATH [data...] (form-encoded)
+    local p="$1"; shift
+    local args=(); local a; for a in "$@"; do args+=(--data-urlencode "$a"); done
+    curl -sS -m 20 -b "SID=$QB_COOKIE" "${args[@]}" \
+        "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2$p"
+}
+
+wire_qbit() {
+    hr "wire: qBittorrent"
+    wire_gate qbittorrent
+    local user pass gen
+    user=$(env_get QBITTORRENT_USER)
+    pass=$(env_get QBITTORRENT_PASSWORD)
+    if [[ -n "$user" && -n "$pass" ]] && qb_login "$user" "$pass"; then
+        ok "credentials from .env work"
+    else
+        # first run: harvest the per-boot temporary password from the log
+        local tmp
+        tmp=$(sudo docker logs "$(svc_cname qbittorrent)" 2>&1 \
+              | grep -oP 'temporary password .*: \K\S+' | tail -1)
+        [[ -n "$tmp" ]] || die "qBittorrent: no stored credentials work and no temporary
+  password found in its log. Restart it (docker restart) to get a fresh
+  temporary password, then re-run: ./mediastack.sh wire qbit"
+        qb_login admin "$tmp" || die "qBittorrent: temporary password from the log was rejected.
+  Restart the container for a fresh one and re-run wire."
+        ok "logged in with the boot temporary password"
+        gen=$(head -c12 /dev/urandom | base64 | tr -d '=+/')
+        explain "qBittorrent credentials" \
+"Pick the permanent WebUI login. Enter accepts the generated password;
+type your own to use it instead. Stored in .env (view: credentials)."
+        ask QB_USER "Username" "${user:-admin}"; user="$REPLY_VAL"
+        ask QB_PASS "Password" "$gen"; pass="$REPLY_VAL"
+        if w_would "set permanent qBittorrent credentials"; then
+            qb_api /app/setPreferences \
+                "json={\"web_ui_username\":\"$user\",\"web_ui_password\":\"$pass\"}" >/dev/null
+            env_set QBITTORRENT_USER "$user"; env_set QBITTORRENT_PASSWORD "$pass"
+            qb_login "$user" "$pass" || die "qBittorrent rejected the new credentials it just accepted — inspect: logs qbittorrent"
+            ok "permanent credentials set and verified"
+        fi
+    fi
+    # categories: one per arr instance, distinct save paths = hardlink discipline
+    local existing s cat
+    existing=$(qb_api /torrents/categories)
+    for s in $(arr_instances); do
+        cat=$(svc_label "$s" mediastack.category)
+        if grep -q "\"$cat\"" <<<"$existing"; then
+            ok "category '$cat' exists"
+        elif w_would "create category '$cat' -> /data/torrent/$cat"; then
+            qb_api /torrents/createCategory "category=$cat" "savePath=/data/torrent/$cat" >/dev/null \
+                && ok "category '$cat' created" \
+                || { fail "category '$cat' creation failed"; }
+        fi
+    done
+}
+
+# ---- arr root folders + download client ----
+wire_arr() {
+    hr "wire: arr instances (root folders + download client)"
+    local insts; insts=$(arr_instances)
+    [[ -n "$insts" ]] || { info "no arr instances enabled"; return 0; }
+    wire_gate $insts
+    local user pass; user=$(env_get QBITTORRENT_USER); pass=$(env_get QBITTORRENT_PASSWORD)
+    [[ -n "$pass" ]] || warn "qBittorrent credentials not in .env yet — run 'wire qbit' first; download-client wiring will be skipped"
+    local s key url root t catfield cat cur
+    for s in $insts; do
+        key=$(arr_key "$s")
+        [[ -n "$key" ]] || { fail "$s: no ApiKey in config.xml yet (still initialising?) — re-run wire in a minute"; continue; }
+        url=$(arr_url "$s"); root=$(svc_label "$s" mediastack.rootfolder)
+        # root folder
+        cur=$(api GET "$url/api/v3/rootfolder" "$key" || true)
+        if grep -q "\"path\":\"$root\"" <<<"${cur//[[:space:]]/}"; then
+            ok "$s: root folder $root registered"
+        elif w_would "$s: register root folder $root"; then
+            api POST "$url/api/v3/rootfolder" "$key" "{\"path\":\"$root\"}" >/dev/null \
+                && ok "$s: root folder registered" \
+                || fail "$s: root folder registration failed (does $root exist in-container? run configure to provision)"
+        fi
+        # download client
+        [[ -n "$pass" ]] || continue
+        t=$(svc_label "$s" mediastack.arrtype); cat=$(svc_label "$s" mediastack.category)
+        case "$t" in sonarr) catfield=tvCategory ;; radarr) catfield=movieCategory ;; lidarr) catfield=musicCategory ;; esac
+        cur=$(api GET "$url/api/v3/downloadclient" "$key" || true)
+        if grep -q '"qBittorrent (mediastack)"' <<<"$cur"; then
+            ok "$s: download client registered"
+        elif w_would "$s: register qBittorrent (category $cat)"; then
+            api POST "$url/api/v3/downloadclient" "$key" "$(cat <<JSON
+{"enable":true,"protocol":"torrent","priority":1,
+ "removeCompletedDownloads":true,"removeFailedDownloads":true,
+ "name":"qBittorrent (mediastack)","implementation":"QBittorrent",
+ "implementationName":"qBittorrent","configContract":"QBittorrentSettings",
+ "fields":[{"name":"host","value":"localhost"},
+   {"name":"port","value":$(svc_label qbittorrent mediastack.port)},
+   {"name":"useSsl","value":false},
+   {"name":"username","value":"$user"},{"name":"password","value":"$pass"},
+   {"name":"$catfield","value":"$cat"}]}
+JSON
+)" >/dev/null && ok "$s: download client registered" \
+              || fail "$s: download client registration failed — API said no; check: logs $s"
+        fi
+    done
+}
+
+# ---- prowlarr: applications + flaresolverr proxy ----
+wire_prowlarr() {
+    hr "wire: Prowlarr"
+    svc_enabled prowlarr || { info "prowlarr not enabled — skipped"; return 0; }
+    wire_gate prowlarr
+    local pkey purl; pkey=$(arr_key prowlarr); purl=$(arr_url prowlarr)
+    [[ -n "$pkey" ]] || { fail "prowlarr: no ApiKey yet — re-run wire shortly"; return 0; }
+    local s key t impl cur
+    cur=$(api GET "$purl/api/v1/applications" "$pkey" || true)
+    for s in $(arr_instances); do
+        t=$(svc_label "$s" mediastack.arrtype)
+        case "$t" in sonarr) impl=Sonarr ;; radarr) impl=Radarr ;; lidarr) impl=Lidarr ;; *) continue ;; esac
+        key=$(arr_key "$s") || true
+        [[ -n "$key" ]] || { fail "prowlarr<-$s: $s has no ApiKey yet"; continue; }
+        if grep -q "\"$s (mediastack)\"" <<<"$cur"; then
+            ok "prowlarr -> $s registered"
+        elif w_would "register $s in prowlarr (Full Sync)"; then
+            api POST "$purl/api/v1/applications" "$pkey" "$(cat <<JSON
+{"name":"$s (mediastack)","syncLevel":"fullSync",
+ "implementation":"$impl","configContract":"${impl}Settings",
+ "fields":[{"name":"prowlarrUrl","value":"$purl"},
+   {"name":"baseUrl","value":"$(arr_url "$s")"},
+   {"name":"apiKey","value":"$key"}]}
+JSON
+)" >/dev/null && ok "prowlarr -> $s registered (Full Sync)" \
+              || fail "prowlarr -> $s failed — check: logs prowlarr"
+        fi
+    done
+    if svc_enabled flaresolverr; then
+        cur=$(api GET "$purl/api/v1/indexerproxy" "$pkey" || true)
+        if grep -q '"FlareSolverr (mediastack)"' <<<"$cur"; then
+            ok "flaresolverr proxy registered"
+        elif w_would "register FlareSolverr as indexer proxy"; then
+            api POST "$purl/api/v1/indexerproxy" "$pkey" "$(cat <<JSON
+{"name":"FlareSolverr (mediastack)","implementation":"FlareSolverr",
+ "configContract":"FlareSolverrSettings","tags":[],
+ "fields":[{"name":"host","value":"http://localhost:8191/"},
+   {"name":"requestTimeout","value":60}]}
+JSON
+)" >/dev/null && ok "flaresolverr proxy registered" \
+              || fail "flaresolverr proxy registration failed"
+        fi
+    fi
+}
+
+# ---- bazarr ----
+wire_bazarr() {
+    hr "wire: Bazarr"
+    svc_enabled bazarr || { info "bazarr not enabled — skipped"; return 0; }
+    wire_gate bazarr
+    local bkey burl
+    bkey=$(sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | head -1)
+    [[ -n "$bkey" ]] || { fail "bazarr: no api key found yet (config/config.yaml) — re-run wire shortly"; return 0; }
+    burl="http://127.0.0.1:$(svc_label bazarr mediastack.port)"
+    local pairs=() t skey
+    for t in sonarr radarr; do
+        svc_enabled "$t" || continue
+        skey=$(arr_key "$t"); [[ -n "$skey" ]] || continue
+        pairs+=("$t" "$skey")
+    done
+    (( ${#pairs[@]} )) || { info "no base sonarr/radarr to pair — skipped"; return 0; }
+    if w_would "point bazarr at base sonarr/radarr (extra instances are out of bazarr's scope)"; then
+        local form=() i
+        for ((i=0; i<${#pairs[@]}; i+=2)); do
+            t=${pairs[i]}; skey=${pairs[i+1]}
+            form+=("settings-general-use_${t}=true"
+                   "settings-${t}-ip=localhost"
+                   "settings-${t}-port=$(svc_label "$t" mediastack.port)"
+                   "settings-${t}-base_url=/"
+                   "settings-${t}-ssl=false"
+                   "settings-${t}-apikey=${skey}")
+        done
+        local args=() a
+        for a in "${form[@]}"; do args+=(--data-urlencode "$a"); done
+        if curl -sS -m 20 -f -X POST -H "X-API-KEY: $bkey" "${args[@]}" "$burl/api/system/settings" >/dev/null 2>&1; then
+            ok "bazarr paired with base sonarr/radarr"
+        else
+            fail "bazarr settings API rejected the pairing — pair manually in its UI (Settings -> Sonarr/Radarr) and report; its API is the fussiest of the set"
+        fi
+    fi
+}
+
+cmd_wire() {
+    load_env; render
+    local section="all"
+    while [[ $# -gt 0 ]]; do case "$1" in
+        --dry-run) WIRE_DRY=1; shift ;;
+        qbit|arr|prowlarr|bazarr|all) section="$1"; shift ;;
+        *) die "usage: wire [qbit|arr|prowlarr|bazarr] [--dry-run]" ;;
+    esac; done
+    (( WIRE_DRY )) && hr "wire --dry-run: showing changes, touching nothing"
+    if (( ! WIRE_DRY )) && [[ ! -f "$SCRIPT_DIR/.wired" ]]; then
+        if confirm "First wire on this deployment — take a restore point first? (recommended)"; then
+            cmd_backup
+        fi
+    fi
+    case "$section" in
+        qbit)     wire_qbit ;;
+        arr)      wire_arr ;;
+        prowlarr) wire_prowlarr ;;
+        bazarr)   wire_bazarr ;;
+        all)      wire_qbit; wire_arr; wire_prowlarr; wire_bazarr ;;
+    esac
+    echo
+    if (( WIRE_DRY )); then
+        info "dry-run complete: $WIRE_CHANGES change(s) would be applied. Run without --dry-run to apply."
+    else
+        touch "$SCRIPT_DIR/.wired"
+        ok "wire complete. Verify: ./mediastack.sh doctor   Credentials: ./mediastack.sh credentials"
+    fi
+}
+
+cmd_credentials() {
+    load_env
+    hr "Credentials (stored in .env)"
+    printf '%-22s %s\n' "qBittorrent user"     "$(env_get QBITTORRENT_USER '(not set — run wire)')"
+    printf '%-22s %s\n' "qBittorrent password" "$(env_get QBITTORRENT_PASSWORD '(not set — run wire)')"
+    printf '%-22s %s\n' "Pi-hole password"     "$(env_get PIHOLE_PASSWORD '(dns profile not configured)')"
+    info "Meilisearch master key is machine-to-machine — apps use it, you never need it."
+}
+
 cmd_new_service() {
     local name="${1:?usage: new-service <name>}"
     local f="compose.d/${name}.yml"
@@ -1580,6 +1894,8 @@ main() {
         leak-test)    cmd_leak_test "$@" ;;
         fix-perms)    cmd_fix_perms "$@" ;;
         add-mount)    cmd_add_mount ;;
+        wire)         cmd_wire "$@" ;;
+        credentials)  cmd_credentials ;;
         new-service)  cmd_new_service "$@" ;;
         upgrade)      cmd_upgrade ;;
         uninstall)    cmd_uninstall "$@" ;;

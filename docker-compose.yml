@@ -17,6 +17,8 @@ include:
   - compose.d/flaresolverr.yml
   - compose.d/torrents-extra.yml
   - compose.d/tv.yml
+  - compose.d/radarr-4k.yml
+  - compose.d/sonarr-anime.yml
 
 networks:
   mediastack:
