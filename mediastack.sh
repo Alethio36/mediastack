@@ -1620,14 +1620,17 @@ qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = 
     fi
     code=${r##*$'\n'}
     QB_LOGIN_BODY="[HTTP ${code}] ${r%%$'\n'*}"; [[ "$QB_LOGIN_BODY" == "[HTTP ${code}] ${code}" ]] && QB_LOGIN_BODY="[HTTP ${code}] <empty body>"
-    QB_COOKIE=$(grep -oP 'SID\s+\K\S+' "$jar" 2>/dev/null | head -1 || true)
+    # qBittorrent >= 5.2 returns 204 on success and names the cookie
+    # QBT_SID_<port>; older versions use 200 + "SID". Take name AND value
+    # from the jar so we send back exactly what was issued.
+    QB_COOKIE=$(awk -F'\t' '$6 ~ /(^|_)SID(_|$)|^SID$/ {print $6"="$7}' "$jar" 2>/dev/null | tail -1 || true)
     rm -f "$jar"
     [[ -n "$QB_COOKIE" ]] || return 1
 }
 qb_api() { # qb_api PATH [data...] (form-encoded)
     local p="$1"; shift
     local args=(); local a; for a in "$@"; do args+=(--data-urlencode "$a"); done
-    curl -sS -m 20 -b "SID=$QB_COOKIE" "${args[@]}" \
+    curl -sS -m 20 -b "$QB_COOKIE" "${args[@]}" \
         "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2$p"
 }
 
