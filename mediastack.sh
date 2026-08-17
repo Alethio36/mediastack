@@ -728,6 +728,7 @@ c_uptime() { # human-readable duration since container start (e.g. 3d4h, 12m, 45
     else echo "${sec}s"; fi
 }
 c_version(){ sudo docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$1" 2>/dev/null | tr -d '\n' || true; }
+c_restarts(){ local o; o=$(sudo docker inspect --format '{{.RestartCount}}' "$1" 2>/dev/null | tr -d '\n'); echo "${o:-0}"; }
 
 cmd_status() {
     load_env; render
@@ -1053,17 +1054,42 @@ cmd_doctor() {
 
     hr "doctor: containers"
     local s cn st h
+    local pending=()
+    local -A rc0=()
     for s in $(svc_managed); do
         cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
         case "$st:$h" in
             running:healthy|running:-) ok "$s ($st${h:+, $h})" ;;
-            running:starting) warn "$s still in its startup window ($(c_uptime "$cn") since start) — re-run doctor shortly; broken services graduate to 'unhealthy'" ;;
+            running:starting) pending+=("$s"); rc0[$s]=$(c_restarts "$cn") ;;   # verdict deferred
             absent:*) if svc_enabled "$s"; then
                           d_fail "$s enabled but not running" "container was never created or was removed" "./mediastack.sh up"
                       else info "$s not enabled — skipped"; fi ;;
-            *) d_fail "$s is $st/$h" "service is not serving" "./mediastack.sh logs $s   (then: rollback $s if a recent update broke it)" ;;
+            *) d_fail "$s is $st/$h (restarts: $(c_restarts "$cn"))" "service is not serving" "./mediastack.sh logs $s   (then: rollback $s if a recent update broke it)" ;;
         esac
     done
+    if (( ${#pending[@]} )); then
+        info "${#pending[@]} service(s) in their startup window — waiting (up to 60s, shared)..."
+        local deadline=$(( $(date +%s) + 60 )) rc_now still
+        while (( ${#pending[@]} )) && (( $(date +%s) < deadline )); do
+            sleep 5
+            still=()
+            for s in "${pending[@]}"; do
+                cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
+                rc_now=$(c_restarts "$cn")
+                if (( rc_now > ${rc0[$s]} )) || [[ "$st" == restarting ]]; then
+                    d_fail "$s is boot-looping (restarted $rc_now times)" "it starts, crashes, and restarts — it will never become healthy" "./mediastack.sh logs $s"
+                elif [[ "$h" == healthy ]]; then ok "$s (running, healthy — came up during the wait)"
+                elif [[ "$h" == starting ]]; then still+=("$s")
+                elif [[ "$st" == running && "$h" == "-" ]]; then ok "$s (running)"
+                else d_fail "$s is $st/$h" "service failed its startup" "./mediastack.sh logs $s"
+                fi
+            done
+            pending=("${still[@]}")
+        done
+        for s in "${pending[@]}"; do
+            d_fail "$s still not healthy after 60s (health: $(c_health "$(svc_cname "$s")"))" "startup is taking abnormally long or the healthcheck cannot pass" "./mediastack.sh logs $s"
+        done
+    fi
 
     hr "doctor: permissions"
     local croot uid v bad
