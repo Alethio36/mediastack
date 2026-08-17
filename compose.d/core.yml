@@ -61,8 +61,15 @@ services:
       mediastack.desc: "VPN gateway — all download traffic exits through this tunnel"
       mediastack.vpn: "false"      # gluetun IS the vpn, not behind it
       mediastack.config: "true"
-    # gluetun ships its own image HEALTHCHECK (tunnel connectivity);
-    # do not override it — depends_on: service_healthy uses it as-is.
+    # Same probe the image ships, but with a start grace: a cold tunnel can
+    # take >30s to establish, and without start_period compose declares
+    # gluetun unhealthy mid-handshake and aborts every dependent service.
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
     networks: [mediastack]   # explicit: without this compose isolates gluetun
                              # on an implicit second network (mediastack_default)
     logging: *logging

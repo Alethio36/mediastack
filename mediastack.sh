@@ -660,7 +660,18 @@ reconcile_disabled() {
 }
 
 cmd_up()   {
-    load_env; require_mounts; reconcile_disabled; DC up -d --remove-orphans
+    load_env; require_mounts; reconcile_disabled
+    if ! DC up -d --remove-orphans; then
+        warn "First start attempt failed — usually gluetun's health race after a recreate."
+        local gcn t=0; gcn=$(svc_cname gluetun)
+        info "Waiting for the tunnel (up to 120s)..."
+        while [[ $(c_health "$gcn") != healthy && $t -lt 120 ]]; do sleep 5; t=$((t+5)); done
+        [[ $(c_health "$gcn") == healthy ]] \
+            || die "gluetun never became healthy — nothing VPN'd was started.
+  Inspect: ./mediastack.sh logs gluetun (bad credentials? provider outage?)"
+        info "Tunnel up — starting the remaining services..."
+        DC up -d --remove-orphans
+    fi
     ok "Stack started."
     cat <<'EOT'
 Check on it:   ./mediastack.sh status    (what's running, health, versions)
@@ -1118,17 +1129,19 @@ cmd_doctor() {
 
     hr "doctor: vpn + backups"
     if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
-        local dgid dnm dbad=""
+        local dgid dnm dbad="" dchecked=0
         dgid=$(sudo docker inspect --format '{{.Id}}' "$(svc_cname gluetun)" | tr -d '\n')
         for s in $(svc_managed); do
             [[ $(svc_label "$s" mediastack.vpn) == "true" ]] || continue
             svc_enabled "$s" || continue
             [[ $(c_state "$(svc_cname "$s")") == running ]] || continue
             dnm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$(svc_cname "$s")" | tr -d '\n')
+            dchecked=1
             [[ "$dnm" == "container:$dgid" ]] || dbad+="$s "
         done
-        [[ -z "$dbad" ]] && ok "all VPN'd services attached to gluetun's namespace" \
-            || d_fail "VPN'd services NOT attached to gluetun: $dbad" "their traffic bypasses the VPN entirely" "./mediastack.sh up   (recreates with correct attachment), then ./mediastack.sh leak-test"
+        if (( dchecked == 0 )); then info "no running VPN'd services to audit"
+        elif [[ -z "$dbad" ]]; then ok "all VPN'd services attached to gluetun's namespace"
+        else d_fail "VPN'd services NOT attached to gluetun: $dbad" "their traffic bypasses the VPN entirely" "./mediastack.sh up   (recreates with correct attachment), then ./mediastack.sh leak-test"; fi
     fi
     if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
         local vip; vip=$(sudo docker exec "$(svc_cname gluetun)" wget -qO- --timeout=8 https://ipinfo.io/ip 2>/dev/null || true)
