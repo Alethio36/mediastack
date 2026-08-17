@@ -261,7 +261,23 @@ https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" \
     ok "docker compose $cv"
     [[ "$(printf '%s\n%s\n' "$cv" "$min" | sort -V | head -n1)" == "$min" ]] \
         || warn "compose $cv < $min — 'include:'/wildcard profiles need $min+. Upgrade the compose plugin."
-    echo; ok "Dependencies ready. Next: ./mediastack.sh configure"
+    echo; hr "Dependencies ready"
+    cat <<'EOT'
+Next step:   ./mediastack.sh configure
+
+That's the guided setup. Every question explains itself and offers a
+sensible default — pressing Enter through it gives a working stack.
+It will ask about:
+  * where configs, media, cache and backups live (defaults are fine)
+  * which services to run (a recommended set is offered)
+  * your VPN — HAVE THIS READY: a NordVPN access token
+    (nordvpn.com -> Services -> NordVPN -> "Set up NordVPN manually"),
+    or your provider's WireGuard private key if not using Nord
+  * when automatic updates should run
+
+Takes about 5 minutes. Safe to re-run any time — your answers become
+the new defaults.
+EOT
 }
 
 # --------------------------------------------------------------- configure --
@@ -581,7 +597,16 @@ provision() {
 }
 
 # ------------------------------------------------------------- up/down/... --
-cmd_up()   { load_env; require_mounts; DC up -d --remove-orphans; ok "Stack up. Try: ./mediastack.sh status"; }
+cmd_up()   {
+    load_env; require_mounts; DC up -d --remove-orphans
+    ok "Stack started."
+    cat <<'EOT'
+Check on it:   ./mediastack.sh status    (what's running, health, versions)
+Verify it:     ./mediastack.sh doctor    (full audit with fixes)
+First time? Services need connecting to each other once — the README's
+"After install" section walks through it app by app.
+EOT
+}
 cmd_down() { load_env; DC down; ok "Stack stopped (configs and data untouched)."; }
 
 cmd_enable() {
