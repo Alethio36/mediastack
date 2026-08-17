@@ -1904,13 +1904,14 @@ wire_bazarr() {
     done
     (( ${#pairs[@]} )) || { info "no base sonarr/radarr to pair — skipped"; return 0; }
     if w_would "point bazarr at base sonarr/radarr (extra instances are out of bazarr's scope)"; then
-        local form=() i
+        # auth fields exactly ONCE — duplicate form keys become lists on
+        # bazarr's side and fail its type validation
+        local form=("settings-auth-type=form"
+                    "settings-auth-username=$(env_get ARR_USER)"
+                    "settings-auth-password=$(env_get ARR_PASSWORD)") i
         for ((i=0; i<${#pairs[@]}; i+=2)); do
             t=${pairs[i]}; skey=${pairs[i+1]}
-            form+=("settings-auth-type=form"
-                   "settings-auth-username=$(env_get ARR_USER)"
-                   "settings-auth-password=$(env_get ARR_PASSWORD)"
-                   "settings-general-use_${t}=true"
+            form+=("settings-general-use_${t}=true"
                    "settings-${t}-ip=localhost"
                    "settings-${t}-port=$(svc_label "$t" mediastack.port)"
                    "settings-${t}-base_url=/"
