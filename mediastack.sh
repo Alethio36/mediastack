@@ -1610,13 +1610,18 @@ QB_LOGIN_BODY=""
 qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = unreachable
              # QB_LOGIN_BODY always carries the server's reply / curl error
     local r
-    if ! r=$(curl -sS -m 10 -c - --data-urlencode "username=$1" --data-urlencode "password=$2" \
+    local jar r code
+    jar=$(mktemp)
+    if ! r=$(curl -sS -m 10 -c "$jar" -w $'\n%{http_code}' \
+        --data-urlencode "username=$1" --data-urlencode "password=$2" \
         "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2/auth/login" 2>&1); then
         QB_LOGIN_BODY="unreachable: ${r:-<no detail>}"
-        return 2
+        rm -f "$jar"; return 2
     fi
-    QB_LOGIN_BODY="${r%%$'\n'*}"; QB_LOGIN_BODY="${QB_LOGIN_BODY%%\# Netscape*}"   # qbit's reply sans cookie-jar bleed
-    QB_COOKIE=$(grep -oP 'SID\s+\K\S+' <<<"$r" | head -1 || true)
+    code=${r##*$'\n'}
+    QB_LOGIN_BODY="[HTTP ${code}] ${r%%$'\n'*}"; [[ "$QB_LOGIN_BODY" == "[HTTP ${code}] ${code}" ]] && QB_LOGIN_BODY="[HTTP ${code}] <empty body>"
+    QB_COOKIE=$(grep -oP 'SID\s+\K\S+' "$jar" 2>/dev/null | head -1 || true)
+    rm -f "$jar"
     [[ -n "$QB_COOKIE" ]] || return 1
 }
 qb_api() { # qb_api PATH [data...] (form-encoded)
@@ -1666,17 +1671,20 @@ wire_qbit() {
   restart. Either it already has a password set that isn't in .env
   (set QBITTORRENT_USER/QBITTORRENT_PASSWORD there and re-run), or it
   is failing to boot: ./mediastack.sh logs qbittorrent"
-        # the password prints BEFORE the WebUI starts listening — retry
-        # through the gap, but stop instantly on a genuine rejection
+        # the password prints BEFORE the WebUI is fully ready: during warmup
+        # it can be unreachable (rc2) OR answer with empty non-auth replies
+        # (rc1, empty body). Retry BOTH through the window, evidence inline —
+        # a real "Fails." repeated to window-end is still a clean diagnosis.
         local lrc=2 lt=0
         while (( lt < 45 )); do
             if qb_login admin "$tmp"; then lrc=0; break; else lrc=$?; fi
-            (( lrc == 2 )) || break
-            sleep 3; lt=$((lt+3)); info "WebUI not accepting connections yet (${lt}s)..."
+            info "login attempt at ${lt}s: rc=$lrc, server said: $QB_LOGIN_BODY"
+            sleep 3; lt=$((lt+3))
         done
         case $lrc in
             0) ok "logged in with the freshly minted password" ;;
-            2) die "qBittorrent's WebUI never became reachable on port $(svc_label qbittorrent mediastack.port).
+            2) die "qBittorrent's WebUI never became reachable on port $(svc_label qbittorrent mediastack.port) within 45s.
+  Last state: $QB_LOGIN_BODY
   Inspect: ./mediastack.sh logs qbittorrent" ;;
             *) die "qBittorrent rejected the password it just printed — genuinely unexpected
   (restart clears auth bans, so that isn't it). Server said: $QB_LOGIN_BODY
