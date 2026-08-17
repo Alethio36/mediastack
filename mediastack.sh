@@ -716,7 +716,17 @@ cmd_logs() { load_env; DC logs -f --tail=100 "${1:?usage: logs <service>}"; }
 # alongside the stderr error — strip newlines and treat empty as the sentinel.
 c_state()  { local o; o=$(sudo docker inspect --format '{{.State.Status}}' "$1" 2>/dev/null | tr -d '\n'); echo "${o:-absent}"; }
 c_health() { local o; o=$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "$1" 2>/dev/null | tr -d '\n'); echo "${o:--}"; }
-c_uptime() { sudo docker inspect --format '{{.State.StartedAt}}' "$1" 2>/dev/null | tr -d '\n' | cut -dT -f1 || true; }
+c_uptime() { # human-readable duration since container start (e.g. 3d4h, 12m, 45s)
+    local st sec
+    st=$(sudo docker inspect --format '{{.State.StartedAt}}' "$1" 2>/dev/null | tr -d '\n')
+    [[ -n "$st" ]] || { echo "-"; return; }
+    sec=$(( $(date +%s) - $(date -d "$st" +%s 2>/dev/null || date +%s) ))
+    (( sec < 0 )) && sec=0
+    if   (( sec >= 86400 )); then echo "$((sec/86400))d$(( (sec%86400)/3600 ))h"
+    elif (( sec >= 3600 ));  then echo "$((sec/3600))h$(( (sec%3600)/60 ))m"
+    elif (( sec >= 60 ));    then echo "$((sec/60))m$((sec%60))s"
+    else echo "${sec}s"; fi
+}
 c_version(){ sudo docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$1" 2>/dev/null | tr -d '\n' || true; }
 
 cmd_status() {
@@ -1047,6 +1057,7 @@ cmd_doctor() {
         cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
         case "$st:$h" in
             running:healthy|running:-) ok "$s ($st${h:+, $h})" ;;
+            running:starting) warn "$s still in its startup window ($(c_uptime "$cn") since start) — re-run doctor shortly; broken services graduate to 'unhealthy'" ;;
             absent:*) if svc_enabled "$s"; then
                           d_fail "$s enabled but not running" "container was never created or was removed" "./mediastack.sh up"
                       else info "$s not enabled — skipped"; fi ;;
