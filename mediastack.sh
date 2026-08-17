@@ -209,6 +209,8 @@ Check
 Other
   new-service N  Scaffold a new compose.d fragment.
   uninstall      Remove the stack (tiered: containers / users / configs).
+                 --nuke: everything in one confirmed shot; works even on a
+                 broken tree. Media and backups are never touched.
   menu           Interactive menu wrapping all of the above.
 EOF
 }
@@ -1116,13 +1118,56 @@ cmd_upgrade() {
     ok "Upgrade complete. Apply new images when ready: ./mediastack.sh update"
 }
 
+cmd_nuke() {
+    # Deliberately does NOT need a working compose render or .env — it must
+    # succeed on a half-deleted deployment. Containers are found by compose
+    # project label; users by the mediacenter group in /etc/passwd.
+    hr "NUKE: remove everything the installer created"
+    echo "Removes: containers, docker network, systemd units,"
+    echo "         service users + group, CONFIG_ROOT, CACHE_ROOT."
+    echo "Keeps  : DATA_ROOT (your media), BACKUP_ROOT (restore points),"
+    echo "         .env and this repo folder (delete those yourself)."
+    echo "Note   : stop the stack BEFORE deleting this folder — running"
+    echo "         containers recreate their bind-mount dirs forever."
+    local really; read -r -p "Type 'nuke mediastack' to proceed: " really
+    [[ "$really" == "nuke mediastack" ]] || { info "Aborted — nothing touched."; return 1; }
+
+    sudo systemctl disable --now mediastack-update.timer 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer
+    sudo systemctl daemon-reload
+    ok "systemd units removed"
+    sudo docker ps -aq --filter "label=com.docker.compose.project=mediastack" \
+        | xargs -r sudo docker rm -f >/dev/null
+    ok "containers removed"
+    sudo docker network rm mediastack >/dev/null 2>&1 && ok "network removed" || true
+
+    local gid u
+    gid=$(getent group mediacenter | cut -d: -f3 || true)
+    if [[ -n "$gid" ]]; then
+        for u in $(awk -F: -v g="$gid" '$4==g{print $1}' /etc/passwd); do
+            sudo userdel "$u" 2>/dev/null && ok "user $u removed"
+        done
+        sudo groupdel mediacenter 2>/dev/null && ok "group mediacenter removed"
+    fi
+
+    local croot cache
+    croot=$(env_get CONFIG_ROOT "$SCRIPT_DIR/config")
+    cache=$(env_get CACHE_ROOT "$SCRIPT_DIR/cache")
+    sudo rm -rf "$croot" "$cache"
+    ok "removed $croot and $cache"
+    ok "Nuked. Media and backups untouched. Safe to delete this folder now."
+}
+
 cmd_uninstall() {
+    if [[ "${1:-}" == --nuke ]]; then cmd_nuke; return; fi
     load_env
     hr "Uninstall (tiered)"
     echo "Tier 1: remove containers + docker network (configs, data, users kept)"
     confirm "Proceed with tier 1?" || return 0
     DC down --remove-orphans; ok "containers removed"
     sudo systemctl disable --now mediastack-update.timer 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer
+    sudo systemctl daemon-reload
     echo; echo "Tier 2: remove the service system users + group"
     if confirm "Also remove users/group?"; then
         local s; for s in $(svc_managed); do sudo userdel "$s" 2>/dev/null || true; done
@@ -1279,7 +1324,7 @@ main() {
         add-mount)    cmd_add_mount ;;
         new-service)  cmd_new_service "$@" ;;
         upgrade)      cmd_upgrade ;;
-        uninstall)    cmd_uninstall ;;
+        uninstall)    cmd_uninstall "$@" ;;
         *) fail "Unknown command '$cmd'"; echo; cmd_help; exit 1 ;;
     esac
 }
