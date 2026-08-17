@@ -1636,9 +1636,12 @@ wire_qbit() {
     else
         # first run: harvest the per-boot temporary password from the log.
         # lsio init takes ~20s after (re)create before the line appears.
-        local tmp="" t=0
-        while [[ -z "$tmp" && $t -lt 45 ]]; do
-            tmp=$(sudo docker logs "$(svc_cname qbittorrent)" 2>&1 \
+        local tmp="" t=0 qcn since
+        qcn=$(svc_cname qbittorrent)
+        since=$(sudo docker inspect --format '{{.State.StartedAt}}' "$qcn" | tr -d '\n')
+        while [[ -z "$tmp" && $t -lt 60 ]]; do
+            # --since current boot: older sessions' temporary passwords are stale
+            tmp=$(sudo docker logs --since "$since" "$qcn" 2>&1 \
                   | grep -oP 'temporary password .*: \K\S+' | tail -1 || true)
             [[ -n "$tmp" ]] || { sleep 5; t=$((t+5)); info "waiting for qBittorrent to finish booting (${t}s)..."; }
         done
@@ -1685,7 +1688,13 @@ wire_arr() {
     [[ -n "$insts" ]] || { info "no arr instances enabled"; return 0; }
     wire_gate $insts
     local user pass; user=$(env_get QBITTORRENT_USER); pass=$(env_get QBITTORRENT_PASSWORD)
-    [[ -n "$pass" ]] || warn "qBittorrent credentials not in .env yet — run 'wire qbit' first; download-client wiring will be skipped"
+    if [[ -z "$pass" ]]; then
+        if (( WIRE_DRY )); then
+            info "download-client previews pend on qBittorrent credentials — they're created earlier in the same real run"
+        else
+            warn "qBittorrent credentials not set (scoped run?) — download-client wiring skipped; 'wire qbit' or a full 'wire' sets them"
+        fi
+    fi
     local s key url root t catfield cat cur
     for s in $insts; do
         key=$(arr_key "$s")
@@ -1819,6 +1828,24 @@ cmd_wire() {
     if (( ! WIRE_DRY )) && [[ ! -f "$SCRIPT_DIR/.wired" ]]; then
         if confirm "First wire on this deployment — take a restore point first? (recommended)"; then
             cmd_backup
+            # the backup bounced every container — let the apps come back
+            # before wiring their APIs
+            info "waiting for services to settle after the restore point (up to 120s)..."
+            local wt=0 pending_s
+            while (( wt < 120 )); do
+                pending_s=""
+                for s in qbittorrent prowlarr bazarr $(arr_instances); do
+                    svc_enabled "$s" || continue
+                    case "$(c_health "$(svc_cname "$s")")" in
+                        healthy|-) : ;;
+                        *) pending_s+="$s " ;;
+                    esac
+                done
+                [[ -z "$pending_s" ]] && break
+                sleep 5; wt=$((wt+5))
+            done
+            [[ -z "$pending_s" ]] && ok "services settled" \
+                || warn "still settling: $pending_s— wiring anyway; anything that refuses gets a per-item FAIL and a re-run picks it up"
         fi
     fi
     case "$section" in
@@ -1831,6 +1858,7 @@ cmd_wire() {
     echo
     if (( WIRE_DRY )); then
         info "dry-run complete: $WIRE_CHANGES change(s) would be applied. Run without --dry-run to apply."
+        info "note: items marked as pending on credentials resolve mid-run — the real run creates them in order."
     else
         touch "$SCRIPT_DIR/.wired"
         ok "wire complete. Verify: ./mediastack.sh doctor   Credentials: ./mediastack.sh credentials"
