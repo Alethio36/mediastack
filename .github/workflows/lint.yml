@@ -1,0 +1,21 @@
+name: lint
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck -S warning mediastack.sh
+      - name: compose renders
+        run: |
+          cp .env.example .env
+          docker compose config -q
+      - name: schema bump enforced
+        if: github.event_name == 'pull_request'
+        run: |
+          git fetch origin "${{ github.base_ref }}" --depth=1
+          if git diff --name-only "origin/${{ github.base_ref }}" -- .env.example | grep -q .; then
+            git diff "origin/${{ github.base_ref }}" -- .env.example | grep -q '^[+-]ENV_SCHEMA=' \
+              || { echo "::error::.env.example changed without bumping ENV_SCHEMA (and adding a migration)"; exit 1; }
+          fi

@@ -1,0 +1,10 @@
+# Deployment state — never tracked. `git status` stays clean on a healthy
+# deployment so `git pull` always fast-forwards.
+.env
+.env.bak.*
+.pins.yml
+docker-compose.override.yml
+config/
+cache/
+backups/
+local/

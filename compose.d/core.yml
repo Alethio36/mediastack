@@ -1,0 +1,258 @@
+# Core profile: VPN gateway, torrent client, arrs, Jellyfin, reverse proxy.
+# Label contract (read by mediastack.sh — see docs/adding-a-service.md):
+#   mediastack.managed   "true" on every service in this stack
+#   mediastack.vpn       "true" = must run inside gluetun's network namespace
+#   mediastack.config    "true" = owns a config dir at ${CONFIG_ROOT}/<service>
+#   mediastack.cache     "true" = owns a cache dir at ${CACHE_ROOT}/<service>
+#   mediastack.subdomain reverse-proxy subdomain (consumed by phase-2 npm-sync)
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+# Watchtower armour: our own update pipeline does not use these labels, but a
+# FOREIGN watchtower running on the same host would otherwise auto-update our
+# containers behind the backup/rollback system's back.
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: ${GLUETUN_NAME:-mediastack-gluetun}
+    profiles: ["core"]
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      # Every VPN'd service publishes its UI through gluetun.
+      # Unused mappings (disabled profiles) are harmless.
+      - "${QBITTORRENT_PORT:-8085}:8085"   # qBittorrent
+      - "${SONARR_PORT:-8989}:8989"        # Sonarr
+      - "${RADARR_PORT:-7878}:7878"        # Radarr
+      - "${PROWLARR_PORT:-9696}:9696"      # Prowlarr
+      - "${LIDARR_PORT:-8686}:8686"        # Lidarr    (music profile)
+      - "${BAZARR_PORT:-6767}:6767"        # Bazarr    (subs profile)
+      - "${FLARESOLVERR_PORT:-8191}:8191"  # FlareSolverr
+      - "${DELUGE_PORT:-8112}:8112"        # Deluge    (torrents-extra)
+      - "${TRANSMISSION_PORT:-9091}:9091"  # Transmission (torrents-extra)
+      - "6881:6881"
+      - "6881:6881/udp"
+    volumes:
+      - ${CONFIG_ROOT}/gluetun:/gluetun
+    environment:
+      - TZ=${TZ}
+      - VPN_SERVICE_PROVIDER=${VPN_PROVIDER}
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES:-10.5.0.2/32}
+      # Server selection: comma-separated, leave unused ones empty.
+      - SERVER_COUNTRIES=${VPN_SERVER_COUNTRIES:-}
+      - SERVER_CITIES=${VPN_SERVER_CITIES:-}
+      - SERVER_HOSTNAMES=${VPN_SERVER_HOSTNAMES:-}
+      - UPDATER_PERIOD=24h
+      - DNS_ADDRESS=${VPN_DNS_ADDRESS:-}
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.vpn: "false"      # gluetun IS the vpn, not behind it
+      mediastack.config: "true"
+    # gluetun ships its own image HEALTHCHECK (tunnel connectivity);
+    # do not override it — depends_on: service_healthy uses it as-is.
+    logging: *logging
+    restart: unless-stopped
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: ${QBITTORRENT_NAME:-mediastack-qbittorrent}
+    profiles: ["core"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy   # leak guard: never start before tunnel is up
+    environment:
+      - PUID=${QBITTORRENT_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - UMASK=002
+      - TZ=${TZ}
+      - WEBUI_PORT=8085
+    volumes:
+      - ${CONFIG_ROOT}/qbittorrent:/config
+      - ${DATA_ROOT}/torrent:/data/torrent
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.vpn: "true"
+      mediastack.config: "true"
+      mediastack.subdomain: "qbittorrent"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8085"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: ${SONARR_NAME:-mediastack-sonarr}
+    profiles: ["core"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=${SONARR_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - UMASK=002
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/sonarr:/config
+      - ${DATA_ROOT}:/data
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.vpn: "true"
+      mediastack.config: "true"
+      mediastack.subdomain: "sonarr"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8989/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging: *logging
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: ${RADARR_NAME:-mediastack-radarr}
+    profiles: ["core"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=${RADARR_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - UMASK=002
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/radarr:/config
+      - ${DATA_ROOT}:/data
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.vpn: "true"
+      mediastack.config: "true"
+      mediastack.subdomain: "radarr"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:7878/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging: *logging
+    restart: unless-stopped
+
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: ${PROWLARR_NAME:-mediastack-prowlarr}
+    profiles: ["core"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=${PROWLARR_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - UMASK=002
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/prowlarr:/config
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.vpn: "true"
+      mediastack.config: "true"
+      mediastack.subdomain: "prowlarr"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:9696/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging: *logging
+    restart: unless-stopped
+
+  jellyfin:
+    # Official image (not linuxserver): dev-supported, honours `user:` directly,
+    # and keeps the DB at /config/data/jellyfin.db — exactly where jellysearch
+    # expects it. Migrating from a linuxserver deployment? See
+    # docs/migration-existing.md — the lsio layout nests data one level deeper.
+    image: jellyfin/jellyfin:latest
+    container_name: ${JELLYFIN_NAME:-mediastack-jellyfin}
+    profiles: ["core"]
+    user: "${JELLYFIN_UID}:${MEDIA_GROUP_GID}"
+    ports:
+      - "${JELLYFIN_PORT:-8096}:8096"
+    environment:
+      - TZ=${TZ}
+      - JELLYFIN_PublishedServerUrl=${JELLYFIN_PUBLISHED_URL:-}
+    volumes:
+      - ${CONFIG_ROOT}/jellyfin:/config
+      - ${CACHE_ROOT}/jellyfin:/cache
+      # Optional: relocate the (large) metadata tree. Copy the existing
+      # directory to the new location BEFORE enabling, or artwork re-downloads.
+      # - ${JELLYFIN_METADATA_DIR}:/config/data/metadata
+      - ${DATA_ROOT}/media:/media:ro
+    # Hardware transcode (if the host has a GPU/iGPU):
+    # devices:
+    #   - /dev/dri:/dev/dri
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.vpn: "false"
+      mediastack.config: "true"
+      mediastack.cache: "true"
+      mediastack.subdomain: "jellyfin"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8096/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped
+
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: ${NPM_NAME:-mediastack-npm}
+    profiles: ["core"]
+    ports:
+      - "${NPM_HTTP_PORT:-80}:80"
+      - "${NPM_HTTPS_PORT:-443}:443"
+      - "${NPM_ADMIN_PORT:-81}:81"
+    volumes:
+      - ${CONFIG_ROOT}/npm/data:/data
+      - ${CONFIG_ROOT}/npm/letsencrypt:/etc/letsencrypt
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.vpn: "false"
+      mediastack.config: "true"
+      mediastack.subdomain: "npm"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:81/api"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped

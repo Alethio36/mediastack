@@ -1,0 +1,44 @@
+# Requests profile: Seerr — user-facing search/discovery/request UI.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: ${SEERR_NAME:-mediastack-seerr}
+    profiles: ["requests"]
+    init: true
+    environment:
+      - TZ=${TZ}
+      - PUID=${SEERR_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - UMASK=002
+      - LOG_LEVEL=${SEERR_LOG_LEVEL:-info}
+    ports:
+      - "${SEERR_PORT:-5055}:5055"
+    volumes:
+      - ${CONFIG_ROOT}/seerr:/app/config
+      - ${CACHE_ROOT}/seerr:/app/config/cache
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.vpn: "false"
+      mediastack.config: "true"
+      mediastack.cache: "true"
+      mediastack.subdomain: "requests"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5055/api/v1/status || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped
