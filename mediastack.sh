@@ -1172,8 +1172,9 @@ cmd_nuke() {
     echo "         service users + group, CONFIG_ROOT, CACHE_ROOT."
     echo "Keeps  : DATA_ROOT (your media), BACKUP_ROOT (restore points),"
     echo "         .env and this repo folder (delete those yourself)."
-    echo "Note   : stop the stack BEFORE deleting this folder — running"
-    echo "         containers recreate their bind-mount dirs forever."
+    echo "Running containers are stopped and removed by this command — no"
+    echo "need to stop anything first. (Just never skip this and rm -rf the"
+    echo "folder instead: running containers resurrect their mount dirs.)"
     local really; read -r -p "Type 'nuke mediastack' to proceed: " really
     [[ "$really" == "nuke mediastack" ]] || { info "Aborted — nothing touched."; return 1; }
 
