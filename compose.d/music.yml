@@ -33,6 +33,10 @@ services:
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "lidarr"
+      mediastack.port: "8686"
+      mediastack.arrtype: "lidarr"
+      mediastack.category: "music"
+      mediastack.rootfolder: "/data/media/music"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8686/ping"]
       interval: 30s

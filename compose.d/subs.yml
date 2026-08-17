@@ -33,6 +33,7 @@ services:
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "bazarr"
+      mediastack.port: "6767"
     healthcheck:
       # Bazarr has no unauthenticated /ping; a 200 on / (login page) proves up.
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:6767"]

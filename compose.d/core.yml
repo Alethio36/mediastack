@@ -39,6 +39,8 @@ services:
       - "${FLARESOLVERR_PORT:-8191}:8191"  # FlareSolverr
       - "${DELUGE_PORT:-8112}:8112"        # Deluge    (torrents-extra)
       - "${TRANSMISSION_PORT:-9091}:9091"  # Transmission (torrents-extra)
+      - "${RADARR_4K_PORT:-7879}:7879"     # Radarr 4K  (radarr-4k)
+      - "${SONARR_ANIME_PORT:-8990}:8990"  # Sonarr Anime (sonarr-anime)
       - "6881:6881"
       - "6881:6881/udp"
     volumes:
@@ -99,6 +101,7 @@ services:
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "qbittorrent"
+      mediastack.port: "8085"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8085"]
       interval: 30s
@@ -131,6 +134,10 @@ services:
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "sonarr"
+      mediastack.port: "8989"
+      mediastack.arrtype: "sonarr"
+      mediastack.category: "tv"
+      mediastack.rootfolder: "/data/media/tv"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8989/ping"]
       interval: 30s
@@ -163,6 +170,10 @@ services:
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "radarr"
+      mediastack.port: "7878"
+      mediastack.arrtype: "radarr"
+      mediastack.category: "movies"
+      mediastack.rootfolder: "/data/media/movies"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:7878/ping"]
       interval: 30s
@@ -194,6 +205,7 @@ services:
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "prowlarr"
+      mediastack.port: "9696"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:9696/ping"]
       interval: 30s
