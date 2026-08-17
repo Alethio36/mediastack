@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=3
+SCRIPT_SCHEMA=4
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -113,6 +113,7 @@ migrate_env_2_to_3() {
     env_del ERSATZTV_UID
     info "Removed ERSATZTV_UID (ersatztv runs as root by upstream design)."
 }
+migrate_env_3_to_4() { :; } # .env.example default change only; existing values stand
 
 # ------------------------------------------------------------ compose layer --
 DC() { # compose wrapper: project dir pinned, pin-override applied when present
@@ -642,8 +643,24 @@ provision() {
 }
 
 # ------------------------------------------------------------- up/down/... --
+reconcile_disabled() {
+    # compose does NOT treat profile-disabled services as orphans (verified
+    # on compose 5.x): their containers survive `up --remove-orphans`.
+    # Remove them explicitly. -v drops their anonymous volumes too.
+    render
+    local s cn
+    for s in $(svc_managed); do
+        svc_enabled "$s" && continue
+        cn=$(svc_cname "$s")
+        if [[ $(c_state "$cn") != absent ]]; then
+            sudo docker rm -f -v "$cn" >/dev/null
+            info "removed container for disabled service: $s"
+        fi
+    done
+}
+
 cmd_up()   {
-    load_env; require_mounts; DC up -d --remove-orphans
+    load_env; require_mounts; reconcile_disabled; DC up -d --remove-orphans
     ok "Stack started."
     cat <<'EOT'
 Check on it:   ./mediastack.sh status    (what's running, health, versions)
@@ -677,7 +694,7 @@ cmd_disable() {
     [[ -n "$blockers" ]] && die "'$svc' is required by enabled service(s): $blockers
   Disable those first, or leave '$svc' running."
     env_set COMPOSE_PROFILES "$(env_get COMPOSE_PROFILES | tr ',' '\n' | grep -vx "$svc" | paste -sd, -)"
-    DC up -d --remove-orphans
+    reconcile_disabled
     ok "'$svc' disabled; its container was removed (config kept, still backed up)."
 }
 
@@ -1216,7 +1233,8 @@ cmd_nuke() {
     echo "Removes: containers, docker network, systemd units,"
     echo "         service users + group, CONFIG_ROOT, CACHE_ROOT."
     echo "Keeps  : DATA_ROOT (your media), BACKUP_ROOT (restore points),"
-    echo "         .env and this repo folder (delete those yourself)."
+    echo "         .env, this repo folder, and pulled docker images (shared"
+    echo "         cache — 'docker image prune -a' reclaims them)."
     echo "Running containers are stopped and removed by this command — no"
     echo "need to stop anything first. (Just never skip this and rm -rf the"
     echo "folder instead: running containers resurrect their mount dirs.)"
@@ -1228,8 +1246,9 @@ cmd_nuke() {
     sudo systemctl daemon-reload
     ok "systemd units removed"
     sudo docker ps -aq --filter "label=com.docker.compose.project=mediastack" \
-        | xargs -r sudo docker rm -f >/dev/null
-    ok "containers removed"
+        | xargs -r sudo docker rm -f -v >/dev/null
+    ok "containers removed (with their anonymous volumes)"
+    rm -f "$PINS_FILE"
     sudo docker network rm mediastack >/dev/null 2>&1 && ok "network removed" || true
 
     local gid u
@@ -1255,7 +1274,7 @@ cmd_uninstall() {
     hr "Uninstall (tiered)"
     echo "Tier 1: remove containers + docker network (configs, data, users kept)"
     confirm "Proceed with tier 1?" || return 0
-    DC down --remove-orphans; ok "containers removed"
+    DC down --remove-orphans --volumes; ok "containers removed (anonymous volumes included)"
     sudo systemctl disable --now mediastack-update.timer 2>/dev/null || true
     sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer
     sudo systemctl daemon-reload
