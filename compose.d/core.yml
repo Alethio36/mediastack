@@ -22,7 +22,7 @@ services:
   gluetun:
     image: qmcgaw/gluetun:latest
     container_name: ${GLUETUN_NAME:-mediastack-gluetun}
-    profiles: ["core"]
+    profiles: ["gluetun"]
     cap_add:
       - NET_ADMIN
     devices:
@@ -58,6 +58,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "VPN gateway — all download traffic exits through this tunnel"
       mediastack.vpn: "false"      # gluetun IS the vpn, not behind it
       mediastack.config: "true"
     # gluetun ships its own image HEALTHCHECK (tunnel connectivity);
@@ -68,7 +69,7 @@ services:
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
     container_name: ${QBITTORRENT_NAME:-mediastack-qbittorrent}
-    profiles: ["core"]
+    profiles: ["qbittorrent"]
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -85,6 +86,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "torrent client (runs inside the VPN)"
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "qbittorrent"
@@ -100,7 +102,7 @@ services:
   sonarr:
     image: lscr.io/linuxserver/sonarr:latest
     container_name: ${SONARR_NAME:-mediastack-sonarr}
-    profiles: ["core"]
+    profiles: ["sonarr"]
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -116,6 +118,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "TV show automation"
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "sonarr"
@@ -131,7 +134,7 @@ services:
   radarr:
     image: lscr.io/linuxserver/radarr:latest
     container_name: ${RADARR_NAME:-mediastack-radarr}
-    profiles: ["core"]
+    profiles: ["radarr"]
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -147,6 +150,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "movie automation"
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "radarr"
@@ -162,7 +166,7 @@ services:
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: ${PROWLARR_NAME:-mediastack-prowlarr}
-    profiles: ["core"]
+    profiles: ["prowlarr"]
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -177,6 +181,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "indexer manager feeding the arrs"
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "prowlarr"
@@ -196,7 +201,7 @@ services:
     # docs/migration-existing.md — the lsio layout nests data one level deeper.
     image: jellyfin/jellyfin:latest
     container_name: ${JELLYFIN_NAME:-mediastack-jellyfin}
-    profiles: ["core"]
+    profiles: ["jellyfin"]
     user: "${JELLYFIN_UID}:${MEDIA_GROUP_GID}"
     ports:
       - "${JELLYFIN_PORT:-8096}:8096"
@@ -216,6 +221,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "the media server your users watch"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.cache: "true"
@@ -233,7 +239,7 @@ services:
   npm:
     image: jc21/nginx-proxy-manager:latest
     container_name: ${NPM_NAME:-mediastack-npm}
-    profiles: ["core"]
+    profiles: ["npm"]
     ports:
       - "${NPM_HTTP_PORT:-80}:80"
       - "${NPM_HTTPS_PORT:-443}:443"
@@ -244,6 +250,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "reverse proxy + HTTPS certificates"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "npm"

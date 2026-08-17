@@ -16,7 +16,7 @@ services:
   deluge:
     image: lscr.io/linuxserver/deluge:latest
     container_name: ${DELUGE_NAME:-mediastack-deluge}
-    profiles: ["torrents-extra"]
+    profiles: ["deluge"]
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -32,6 +32,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "extra torrent client (most people do not need it)"
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "deluge"
@@ -47,7 +48,7 @@ services:
   transmission:
     image: lscr.io/linuxserver/transmission:latest
     container_name: ${TRANSMISSION_NAME:-mediastack-transmission}
-    profiles: ["torrents-extra"]
+    profiles: ["transmission"]
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -63,6 +64,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "extra torrent client (most people do not need it)"
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "transmission"

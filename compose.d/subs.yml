@@ -13,7 +13,7 @@ services:
   bazarr:
     image: lscr.io/linuxserver/bazarr:latest
     container_name: ${BAZARR_NAME:-mediastack-bazarr}
-    profiles: ["subs"]
+    profiles: ["bazarr"]
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -29,6 +29,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "subtitle automation"
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "bazarr"

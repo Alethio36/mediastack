@@ -13,7 +13,7 @@ services:
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: ${CLOUDFLARED_NAME:-mediastack-cloudflared}
-    profiles: ["tunnel"]
+    profiles: ["cloudflared"]
     command: tunnel run
     environment:
       - TZ=${TZ}
@@ -21,6 +21,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "expose services without port-forwarding"
       mediastack.vpn: "false"
       mediastack.config: "false"
     networks: [mediastack]

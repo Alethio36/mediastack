@@ -24,6 +24,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "captcha bypass helper for some indexers"
       mediastack.vpn: "true"
       mediastack.config: "false"
     logging: *logging

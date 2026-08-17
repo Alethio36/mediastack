@@ -21,20 +21,31 @@ git clone <this-repo> && cd mediastack
 `./mediastack.sh` with no arguments lists every command with an explanation;
 `./mediastack.sh menu` gives you an interactive menu.
 
-## What runs (profiles)
+## What runs (à la carte)
 
-| profile | services | default |
-|---|---|---|
-| core | gluetun (VPN), qBittorrent, Sonarr, Radarr, Prowlarr, Jellyfin, Nginx Proxy Manager | ✔ |
-| search | Meilisearch + JellySearch — instant, typo-tolerant Jellyfin search | ✔ |
-| requests | Seerr — request/discovery site for your users | ✔ |
-| music / subs | Lidarr / Bazarr | |
-| dns / tunnel | Pi-hole / Cloudflare tunnel | |
-| flaresolverr | captcha helper for some indexers | |
-| torrents-extra | Deluge + Transmission (most people want neither) | |
-| tv | ErsatzTV virtual live-TV channels | |
+Pick any combination of services — the wizard walks you through it, and
+`enable <service>` / `disable <service>` change it any time. Dependencies
+are handled automatically (picking qBittorrent brings the VPN; JellySearch
+brings its search engine) and disabling something another service needs is
+refused with an explanation.
 
-`enable <profile>` / `disable <profile>` at any time.
+| service | what it is |
+|---|---|
+| gluetun | VPN gateway — all download traffic exits through this tunnel |
+| qbittorrent | torrent client (runs inside the VPN) |
+| sonarr / radarr / lidarr | TV / movie / music automation |
+| prowlarr | indexer manager feeding the arrs |
+| jellyfin | the media server your users watch |
+| meilisearch + jellysearch | instant, typo-tolerant Jellyfin search |
+| npm | reverse proxy + HTTPS certificates |
+| seerr | request/discovery site for your users |
+| bazarr | subtitle automation |
+| pihole / cloudflared | ad-blocking DNS / expose without port-forwarding |
+| flaresolverr | captcha bypass helper for some indexers |
+| deluge / transmission | extra torrent clients (most people need neither) |
+| ersatztv | virtual live-TV channels from your library |
+
+The recommended "standard" pick is the first eight rows.
 
 ## The rules the tooling enforces
 
@@ -51,6 +62,37 @@ git clone <this-repo> && cd mediastack
 * **`git pull` is always safe.** Your state lives in `.env` and gitignored
   dirs; tracked files are never written at runtime. `upgrade` wraps pull +
   config migration.
+
+## VPN membership
+
+Which services run inside the VPN is defined in the compose fragments, not
+asked by the wizard — it is a safety boundary, and `leak-test` audits it.
+Default: the acquisition chain (torrent clients, arrs, flaresolverr) is
+inside gluetun; the serving chain (Jellyfin, proxy, Seerr, search) is not.
+`status` shows a VPN column so you can see membership at a glance.
+
+To change it for your deployment, use `docker-compose.override.yml`
+(gitignored — survives upgrades). Example, moving sonarr OUT of the VPN:
+
+```yaml
+# docker-compose.override.yml
+services:
+  sonarr:
+    network_mode: !reset null
+    networks: [mediastack]
+    ports:
+      - "8989:8989"
+    labels:
+      mediastack.vpn: "false"
+```
+
+and set `SONARR_PORT=18989` in `.env` so gluetun's (now unused) mapping
+frees host port 8989. Moving a service IN is the reverse: set
+`network_mode: "service:gluetun"`, `!reset` its `networks:` and `ports:`,
+label `mediastack.vpn: "true"`, add its port to gluetun's `ports:` in the
+override (lists merge), and add a `depends_on: gluetun:
+condition: service_healthy` leak guard. Re-run `leak-test` after either
+change — it validates the labels against the running topology.
 
 ## Search (JellySearch)
 
