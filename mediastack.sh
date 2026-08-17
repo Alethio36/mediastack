@@ -1798,17 +1798,28 @@ operator). Stored in .env (view: credentials)."
             fi
         fi
         # root folder
+        t=$(svc_label "$s" mediastack.arrtype)
         cur=$(api GET "$url/api/$(arr_apiver "$s")/rootfolder" "$key" || true)
         if grep -q "\"path\":\"$root\"" <<<"${cur//[[:space:]]/}"; then
             ok "$s: root folder $root registered"
         elif w_would "$s: register root folder $root"; then
-            api POST "$url/api/$(arr_apiver "$s")/rootfolder" "$key" "{\"path\":\"$root\"}" >/dev/null \
-                && ok "$s: root folder registered" \
-                || wfail "$s: root folder registration failed (does $root exist in-container? run configure to provision)"
+            local rbody rresp
+            if [[ "$t" == lidarr ]]; then
+                # lidarr root folders carry library defaults (unlike sonarr/radarr);
+                # profile IDs 1 = the built-in Standard profiles on a fresh install
+                rbody="{\"name\":\"Music\",\"path\":\"$root\",\"defaultMetadataProfileId\":1,\"defaultQualityProfileId\":1,\"defaultMonitorOption\":\"all\",\"defaultTags\":[]}"
+            else
+                rbody="{\"path\":\"$root\"}"
+            fi
+            if rresp=$(api POST "$url/api/$(arr_apiver "$s")/rootfolder" "$key" "$rbody"); then
+                ok "$s: root folder registered"
+            else
+                wfail "$s: root folder rejected — API said: $(head -c180 <<<"$rresp")"
+            fi
         fi
         # download client
         [[ -n "$pass" ]] || continue
-        t=$(svc_label "$s" mediastack.arrtype); cat=$(svc_label "$s" mediastack.category)
+        cat=$(svc_label "$s" mediastack.category)
         case "$t" in sonarr) catfield=tvCategory ;; radarr) catfield=movieCategory ;; lidarr) catfield=musicCategory ;; esac
         cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key" || true)
         if grep -q '"qBittorrent (mediastack)"' <<<"$cur"; then
