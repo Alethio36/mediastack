@@ -601,6 +601,20 @@ provision() {
             sudo mkdir -p "$cache/$s"
             [[ -n "$uid" ]] && sudo chown "$uid:mediacenter" "$cache/$s"
         fi
+        # Nested bind mounts (e.g. cache inside config): docker creates the
+        # inner mountpoint stub as root if missing — pre-create it owned right.
+        local stub
+        while read -r stub; do
+            [[ -z "$stub" ]] && continue
+            sudo mkdir -p "$stub"
+            [[ -n "$uid" ]] && sudo chown "$uid:mediacenter" "$stub"
+        done < <(jq -r --arg s "$s" '
+            (.services[$s].volumes // []) | map(select(.type=="bind")) as $v
+            | [ $v[] as $o | $v[] as $i
+                | select($i.target != $o.target)
+                | select($i.target | startswith($o.target + "/"))
+                | $o.source + ($i.target | ltrimstr($o.target)) ]
+            | unique | .[]' <<<"$RENDERED_JSON")
     done
     # data tree: shared group, setgid so new files inherit it
     local d
@@ -682,7 +696,7 @@ cmd_status() {
     [[ -n "$off" ]] && info "Available, not enabled: $off"
     local last; last=$(ls -1 "$(env_get BACKUP_ROOT)" 2>/dev/null | tail -1 || true)
     info "Latest restore point: ${last:-none yet (run: ./mediastack.sh backup)}"
-    df -h "$(env_get CONFIG_ROOT)" "$(env_get DATA_ROOT)" 2>/dev/null | tail -n +2 \
+    df -h "$(env_get CONFIG_ROOT)" "$(env_get DATA_ROOT)" 2>/dev/null | tail -n +2 | sort -u \
         | awk '{printf ":: disk %-24s %s used of %s (%s)\n", $6, $3, $2, $5}'
 }
 
@@ -1003,18 +1017,36 @@ cmd_doctor() {
         if [[ -n "$bad" ]]; then
             d_fail "$s: files not owned $uid:mediacenter" "the app cannot write its own config" "./mediastack.sh fix-perms $s"
         else
-            sudo setpriv --reuid "$uid" --regid "$(env_get MEDIA_GROUP_GID)" --clear-groups \
-                 -- test -w "$croot/$s" 2>/dev/null \
-                && ok "$s config ownership + write access" \
-                || d_fail "$s: uid $uid cannot write $croot/$s" "mode/ACL problem despite ownership" "./mediastack.sh fix-perms $s"
+            # Probe from INSIDE the container: bind mounts don't traverse the
+            # host path, so host-side probes false-alarm on 0700 parent dirs.
+            local cn dest out rc
+            cn=$(svc_cname "$s")
+            if [[ $(c_state "$cn") == running ]]; then
+                dest=$(sudo docker inspect "$cn" 2>/dev/null \
+                       | jq -r --arg src "$croot/$s" '.[0].Mounts[]? | select(.Source==$src) | .Destination' | head -1)
+                if [[ -n "$dest" ]]; then
+                    out=$(sudo docker exec "$cn" test -w "$dest" 2>&1) && rc=0 || rc=$?
+                    if (( rc == 0 )); then ok "$s config writable from inside the container"
+                    elif grep -q "executable file not found" <<<"$out"; then
+                        info "$s: image has no probe tooling — ownership check only"
+                    else
+                        d_fail "$s cannot write $dest from inside its container" "the app cannot persist settings" "./mediastack.sh fix-perms $s && ./mediastack.sh logs $s"
+                    fi
+                else info "$s: config not bind-mounted in running container — skipped"; fi
+            else ok "$s config ownership (write probe skipped: not running)"; fi
         fi
     done
     # jellysearch must READ jellyfin's config
     if svc_enabled jellysearch; then
-        sudo setpriv --reuid "$(env_get JELLYFIN_UID)" --regid "$(env_get MEDIA_GROUP_GID)" --clear-groups \
-             -- test -r "$croot/jellyfin" 2>/dev/null \
-            && ok "jellysearch can read jellyfin's config" \
-            || d_fail "jellysearch cannot read $croot/jellyfin" "search cannot index" "./mediastack.sh fix-perms jellyfin"
+        local jcn jout jrc
+        jcn=$(svc_cname jellysearch)
+        if [[ $(c_state "$jcn") == running ]]; then
+            jout=$(sudo docker exec "$jcn" test -r /config 2>&1) && jrc=0 || jrc=$?
+            if (( jrc == 0 )); then ok "jellysearch can read jellyfin's config"
+            elif grep -q "executable file not found" <<<"$jout"; then
+                info "jellysearch: image has no probe tooling — skipped"
+            else d_fail "jellysearch cannot read /config inside its container" "search cannot index" "./mediastack.sh fix-perms jellyfin"; fi
+        else info "jellysearch not running — read probe skipped"; fi
     fi
     # artifact sweep
     [[ $(sudo find "$(env_get DATA_ROOT)" -maxdepth 2 -name '*{*}*' 2>/dev/null | wc -l) -gt 0 ]] \
@@ -1042,7 +1074,7 @@ cmd_doctor() {
     local net
     while read -r net; do
         [[ -z "$net" ]] && continue
-        ip route | grep -v docker | grep -v "^default" | grep -q "^${net%.*}" \
+        ip route | grep -vE 'dev (docker0|br-)' | grep -v "^default" | grep -q "^${net%.*}" \
             && warn "docker subnet $net overlaps a host route — containers may fail to reach the LAN/NAS. Fix: 'default-address-pools' in /etc/docker/daemon.json (restarts ALL containers on this host — do it in a window)."
     done < <(sudo docker network ls -q | xargs -r sudo docker network inspect \
              --format '{{range .IPAM.Config}}{{.Subnet}}{{println}}{{end}}' 2>/dev/null \
