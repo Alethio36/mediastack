@@ -701,10 +701,12 @@ cmd_disable() {
 cmd_logs() { load_env; DC logs -f --tail=100 "${1:?usage: logs <service>}"; }
 
 # ------------------------------------------------------------------ status --
-c_state()  { sudo docker inspect --format '{{.State.Status}}' "$1" 2>/dev/null || echo absent; }
-c_health() { sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "$1" 2>/dev/null || echo -; }
-c_uptime() { sudo docker inspect --format '{{.State.StartedAt}}' "$1" 2>/dev/null | cut -dT -f1 || true; }
-c_version(){ sudo docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$1" 2>/dev/null || true; }
+# NOTE: on a missing container, some docker versions emit a blank stdout line
+# alongside the stderr error — strip newlines and treat empty as the sentinel.
+c_state()  { local o; o=$(sudo docker inspect --format '{{.State.Status}}' "$1" 2>/dev/null | tr -d '\n'); echo "${o:-absent}"; }
+c_health() { local o; o=$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "$1" 2>/dev/null | tr -d '\n'); echo "${o:--}"; }
+c_uptime() { sudo docker inspect --format '{{.State.StartedAt}}' "$1" 2>/dev/null | tr -d '\n' | cut -dT -f1 || true; }
+c_version(){ sudo docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$1" 2>/dev/null | tr -d '\n' || true; }
 
 cmd_status() {
     load_env; render
