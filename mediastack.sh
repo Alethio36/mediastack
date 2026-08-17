@@ -762,12 +762,16 @@ cmd_backup() {
     info "Restore point: $dest"
 
     # images.lock BEFORE stopping (inspect needs the containers)
-    local s cn ref
+    local s cn img ref
     { for s in $(svc_managed); do
         cn=$(svc_cname "$s")
-        ref=$(sudo docker inspect --format '{{index .RepoDigests 0}}' "$cn" 2>/dev/null || true)
+        # RepoDigests is an IMAGE field: resolve container -> image -> digest
+        img=$(sudo docker inspect --format '{{.Image}}' "$cn" 2>/dev/null | tr -d '\n' || true)
+        [[ -n "$img" ]] || continue
+        ref=$(sudo docker image inspect --format '{{index .RepoDigests 0}}' "$img" 2>/dev/null | tr -d '\n' || true)
         [[ -n "$ref" ]] && echo "$s $ref"
       done; } | sudo tee "$dest/images.lock" >/dev/null
+    [[ -s "$dest/images.lock" ]] || warn "images.lock is empty — image-exact rollback unavailable for this point"
 
     info "Stopping stack for a consistent snapshot..."
     DC stop >/dev/null
@@ -1153,15 +1157,18 @@ cmd_leak_test() {
     [[ "$(c_state "$gcn")" == running ]] || die "gluetun is not running — start the stack first."
 
     hr "leak-test: attachment audit"
-    local gsandbox rc=0 s cn nm sb
-    gsandbox=$(sudo docker inspect --format '{{.NetworkSettings.SandboxKey}}' "$gcn")
+    # Netns-joined containers report an EMPTY SandboxKey, so key equality can
+    # never verify the join. The truth is NetworkMode: docker enforces
+    # container:<id> joins atomically — matching gluetun's full ID is proof.
+    local gid rc=0 s cn nm
+    gid=$(sudo docker inspect --format '{{.Id}}' "$gcn" | tr -d '\n')
     for s in $(svc_managed); do
         [[ $(svc_label "$s" mediastack.vpn) == "true" ]] || continue
+        svc_enabled "$s" || continue
         cn=$(svc_cname "$s"); [[ "$(c_state "$cn")" == running ]] || { info "$s not running — skipped"; continue; }
-        nm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$cn")
-        sb=$(sudo docker inspect --format '{{.NetworkSettings.SandboxKey}}' "$cn")
-        if [[ "$nm" == container:* && "$sb" == "$gsandbox" ]]; then ok "$s runs inside gluetun's namespace"
-        else fail "$s is NOT inside gluetun's namespace (mode: $nm) — this IS a leak path"; rc=1; fi
+        nm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$cn" | tr -d '\n')
+        if [[ "$nm" == "container:$gid" ]]; then ok "$s runs inside gluetun's namespace"
+        else fail "$s is NOT joined to gluetun (mode: ${nm:0:40}...) — this IS a leak path"; rc=1; fi
     done
 
     hr "leak-test: tunnel identity (one test — all VPN'd services share this namespace)"
@@ -1184,7 +1191,7 @@ cmd_leak_test() {
         && ok "DNS resolves inside the namespace (gluetun's resolver)"
 
     hr "leak-test: kill-switch"
-    sudo docker exec "$gcn" sh -c 'iptables -S OUTPUT 2>/dev/null | grep -q -- "-j DROP"' \
+    sudo docker exec "$gcn" sh -c 'iptables -S OUTPUT 2>/dev/null | grep -qE -- "^-P OUTPUT DROP|-j DROP"' \
         && ok "firewall DROP rules present in gluetun" \
         || warn "could not confirm firewall rules (gluetun still defaults fail-closed)"
     if (( killswitch )); then
