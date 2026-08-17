@@ -1634,22 +1634,27 @@ wire_qbit() {
         info "category preview needs credentials — computed on the real run"
         return 0
     else
-        # first run: harvest the per-boot temporary password from the log.
-        # lsio init takes ~20s after (re)create before the line appears.
-        local tmp="" t=0 qcn since
+        # No stored credentials: don't forensically read old boots' logs —
+        # restart qBittorrent ourselves and watch for the password THIS
+        # restart mints. Deterministic: our restart, our time window.
+        local tmp="" t=0 qcn ts
         qcn=$(svc_cname qbittorrent)
-        since=$(sudo docker inspect --format '{{.State.StartedAt}}' "$qcn" | tr -d '\n')
-        while [[ -z "$tmp" && $t -lt 60 ]]; do
-            # --since current boot: older sessions' temporary passwords are stale
-            tmp=$(sudo docker logs --since "$since" "$qcn" 2>&1 \
+        info "restarting qBittorrent to mint a fresh temporary password (~20s)..."
+        ts=$(date +%s)
+        sudo docker restart "$qcn" >/dev/null
+        while [[ -z "$tmp" && $t -lt 90 ]]; do
+            sleep 5; t=$((t+5))
+            # relative window covering everything since our restart
+            tmp=$(sudo docker logs --since "$(( $(date +%s) - ts + 2 ))s" "$qcn" 2>&1 \
                   | grep -oP 'temporary password .*: \K\S+' | tail -1 || true)
-            [[ -n "$tmp" ]] || { sleep 5; t=$((t+5)); info "waiting for qBittorrent to finish booting (${t}s)..."; }
+            [[ -n "$tmp" ]] || info "waiting for qBittorrent to boot (${t}s)..."
         done
-        [[ -n "$tmp" ]] || die "qBittorrent: no stored credentials work and no temporary
-  password found in its log. Restart it (docker restart) to get a fresh
-  temporary password, then re-run: ./mediastack.sh wire qbit"
-        qb_login admin "$tmp" || die "qBittorrent: temporary password from the log was rejected.
-  Restart the container for a fresh one and re-run wire."
+        [[ -n "$tmp" ]] || die "qBittorrent printed no temporary password within 90s of a fresh
+  restart. Either it already has a password set that isn't in .env
+  (set QBITTORRENT_USER/QBITTORRENT_PASSWORD there and re-run), or it
+  is failing to boot: ./mediastack.sh logs qbittorrent"
+        qb_login admin "$tmp" || die "qBittorrent rejected the password it just printed — this should
+  be impossible; inspect: ./mediastack.sh logs qbittorrent"
         ok "logged in with the boot temporary password"
         gen=$(head -c12 /dev/urandom | base64 | tr -d '=+/')
         explain "qBittorrent credentials" \
