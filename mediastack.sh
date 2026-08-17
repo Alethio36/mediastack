@@ -1068,8 +1068,8 @@ cmd_doctor() {
         esac
     done
     if (( ${#pending[@]} )); then
-        info "${#pending[@]} service(s) in their startup window — waiting (up to 60s, shared)..."
-        local deadline=$(( $(date +%s) + 60 )) rc_now still
+        info "${#pending[@]} service(s) in their startup window — waiting (up to 90s, shared)..."
+        local deadline=$(( $(date +%s) + 90 )) rc_now still
         while (( ${#pending[@]} )) && (( $(date +%s) < deadline )); do
             sleep 5
             still=()
@@ -1087,7 +1087,7 @@ cmd_doctor() {
             pending=("${still[@]}")
         done
         for s in "${pending[@]}"; do
-            d_fail "$s still not healthy after 60s (health: $(c_health "$(svc_cname "$s")"))" "startup is taking abnormally long or the healthcheck cannot pass" "./mediastack.sh logs $s"
+            d_fail "$s still not healthy after 90s (health: $(c_health "$(svc_cname "$s")"))" "startup is taking abnormally long or the healthcheck cannot pass" "./mediastack.sh logs $s"
         done
     fi
 
@@ -1143,11 +1143,19 @@ cmd_doctor() {
         local pct; pct=$(awk '{print $5}' <<<"$line" | tr -d %)
         (( pct >= 90 )) && warn "disk >90%: $line" || ok "disk: $line"
     done
-    local memfree loadavg cores
+    local memfree l1 l5 l15 cores
     memfree=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo)
-    loadavg=$(awk '{print $1}' /proc/loadavg); cores=$(nproc)
+    read -r l1 l5 l15 _ < /proc/loadavg; cores=$(nproc)
     awk -v m="$memfree" 'BEGIN{exit !(m<1)}' && warn "available RAM low: ${memfree}G" || ok "available RAM: ${memfree}G"
-    awk -v l="$loadavg" -v c="$cores" 'BEGIN{exit !(l>c)}' && warn "load $loadavg exceeds $cores cores" || ok "load $loadavg / $cores cores"
+    # Judge on the 5-min average: the 1-min figure spikes on every cold start
+    # (container init is IO-heavy and Linux load counts IO-wait) and would
+    # cry wolf exactly when people run doctor. Sustained 5-min > cores is
+    # the real "this host is too small" signal.
+    if awk -v l="$l5" -v c="$cores" 'BEGIN{exit !(l>c)}'; then
+        warn "sustained load high: $l1 / $l5 / $l15 (1/5/15min) on $cores cores"
+    else
+        ok "load $l1 / $l5 / $l15 (1/5/15min) on $cores cores"
+    fi
     sudo docker system df | tail -n +2 | sed 's/^/:: docker /'
 
     hr "doctor: host neighbours"
