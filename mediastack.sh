@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=5
+SCRIPT_SCHEMA=6
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -115,6 +115,7 @@ migrate_env_2_to_3() {
 }
 migrate_env_3_to_4() { :; } # .env.example default change only; existing values stand
 migrate_env_4_to_5() { :; } # additive only (arr instances, wire credentials)
+migrate_env_5_to_6() { :; } # additive only (stack-wide arr login)
 
 # ------------------------------------------------------------ compose layer --
 DC() { # compose wrapper: project dir pinned, pin-override applied when present
@@ -314,6 +315,23 @@ ask() { # ask VAR "prompt" "default" -> sets REPLY_VAL
     local def="$3" ans
     read -r -p "$2 [${def}]: " ans
     REPLY_VAL="${ans:-$def}"
+}
+
+ask_secret() { # ask_secret "prompt" "generated-default" -> REPLY_VAL
+    # Never echoes. Enter accepts the generated default (view: credentials);
+    # a typed password must be entered twice to guard against blind typos.
+    local a b
+    while true; do
+        read -r -s -p "$1 [Enter = accept a generated one]: " a; echo
+        if [[ -z "$a" ]]; then
+            REPLY_VAL="$2"
+            info "using a generated password — view any time: ./mediastack.sh credentials"
+            return 0
+        fi
+        read -r -s -p "Confirm password: " b; echo
+        [[ "$a" == "$b" ]] && { REPLY_VAL="$a"; return 0; }
+        fail "Passwords do not match — try again."
+    done
 }
 
 ask_time() { # 24h HH:MM prompt with validation -> REPLY_VAL
@@ -1695,10 +1713,10 @@ wire_qbit() {
         esac
         gen=$(head -c12 /dev/urandom | base64 | tr -d '=+/')
         explain "qBittorrent credentials" \
-"Pick the permanent WebUI login. Enter accepts the generated password;
+"Pick the permanent WebUI login. Enter accepts a generated password;
 type your own to use it instead. Stored in .env (view: credentials)."
         ask QB_USER "Username" "${user:-admin}"; user="$REPLY_VAL"
-        ask QB_PASS "Password" "$gen"; pass="$REPLY_VAL"
+        ask_secret "Password" "$gen"; pass="$REPLY_VAL"
         if w_would "set permanent qBittorrent credentials"; then
             qb_api /app/setPreferences \
                 "json={\"web_ui_username\":\"$user\",\"web_ui_password\":\"$pass\"}" >/dev/null
@@ -1732,6 +1750,22 @@ wire_arr() {
     local insts; insts=$(arr_instances)
     [[ -n "$insts" ]] || { info "no arr instances enabled"; return 0; }
     wire_gate $insts
+    # --- arr login (the first-run "authentication required" gate) ---
+    local auser apass
+    auser=$(env_get ARR_USER); apass=$(env_get ARR_PASSWORD)
+    if [[ -z "$auser" || -z "$apass" ]]; then
+        if (( WIRE_DRY )); then
+            w_would "set one shared login on every arr instance (the first-run auth gate)" || true
+        else
+            explain "Arr login" \
+"The arrs refuse to serve their UI until an authentication method and
+login are set. One login is used for ALL instances (they share one
+operator). Stored in .env (view: credentials)."
+            ask ARR_U "Username" "${auser:-admin}"; auser="$REPLY_VAL"
+            ask_secret "Password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; apass="$REPLY_VAL"
+            env_set ARR_USER "$auser"; env_set ARR_PASSWORD "$apass"
+        fi
+    fi
     local user pass; user=$(env_get QBITTORRENT_USER); pass=$(env_get QBITTORRENT_PASSWORD)
     if [[ -z "$pass" ]]; then
         if (( WIRE_DRY )); then
@@ -1745,6 +1779,19 @@ wire_arr() {
         key=$(arr_key "$s")
         [[ -n "$key" ]] || { fail "$s: no ApiKey in config.xml yet (still initialising?) — re-run wire in a minute"; continue; }
         url=$(arr_url "$s"); root=$(svc_label "$s" mediastack.rootfolder)
+        # authentication (forms login) — idempotent on method+username match
+        if [[ -n "$auser" && -n "$apass" ]]; then
+            cur=$(api GET "$url/api/v3/config/host" "$key" || true)
+            if jq -e --arg u "$auser" '.authenticationMethod=="forms" and .username==$u' <<<"$cur" >/dev/null 2>&1; then
+                ok "$s: forms login already set for '$auser'"
+            elif w_would "$s: enable forms login for '$auser'"; then
+                api PUT "$url/api/v3/config/host" "$key" "$(jq -c --arg u "$auser" --arg p "$apass" \
+                    '.authenticationMethod="forms" | .authenticationRequired="enabled"
+                     | .username=$u | .password=$p | .passwordConfirmation=$p' <<<"$cur")" >/dev/null \
+                    && ok "$s: forms login enabled" \
+                    || fail "$s: auth setup rejected by the API — set it once in its UI; check: logs $s"
+            fi
+        fi
         # root folder
         cur=$(api GET "$url/api/v3/rootfolder" "$key" || true)
         if grep -q "\"path\":\"$root\"" <<<"${cur//[[:space:]]/}"; then
@@ -1844,7 +1891,10 @@ wire_bazarr() {
         local form=() i
         for ((i=0; i<${#pairs[@]}; i+=2)); do
             t=${pairs[i]}; skey=${pairs[i+1]}
-            form+=("settings-general-use_${t}=true"
+            form+=("settings-auth-type=form"
+                   "settings-auth-username=$(env_get ARR_USER)"
+                   "settings-auth-password=$(env_get ARR_PASSWORD)"
+                   "settings-general-use_${t}=true"
                    "settings-${t}-ip=localhost"
                    "settings-${t}-port=$(svc_label "$t" mediastack.port)"
                    "settings-${t}-base_url=/"
@@ -1913,6 +1963,8 @@ cmd_wire() {
 cmd_credentials() {
     load_env
     hr "Credentials (stored in .env)"
+    printf '%-22s %s\n' "Arr apps user"        "$(env_get ARR_USER '(not set — run wire)')"
+    printf '%-22s %s\n' "Arr apps password"    "$(env_get ARR_PASSWORD '(not set — run wire)')"
     printf '%-22s %s\n' "qBittorrent user"     "$(env_get QBITTORRENT_USER '(not set — run wire)')"
     printf '%-22s %s\n' "qBittorrent password" "$(env_get QBITTORRENT_PASSWORD '(not set — run wire)')"
     printf '%-22s %s\n' "Pi-hole password"     "$(env_get PIHOLE_PASSWORD '(dns profile not configured)')"
