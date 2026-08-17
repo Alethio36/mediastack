@@ -15,7 +15,7 @@ services:
   pihole:
     image: pihole/pihole:latest
     container_name: ${PIHOLE_NAME:-mediastack-pihole}
-    profiles: ["dns"]
+    profiles: ["pihole"]
     ports:
       - "53:53/tcp"
       - "53:53/udp"
@@ -32,6 +32,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "network-wide ad-blocking DNS"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "pihole"

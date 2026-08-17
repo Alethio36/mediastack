@@ -13,13 +13,13 @@ services:
   seerr:
     image: ghcr.io/seerr-team/seerr:latest
     container_name: ${SEERR_NAME:-mediastack-seerr}
-    profiles: ["requests"]
+    profiles: ["seerr"]
     init: true
+    # Rootless image: PUID/PGID are deliberately unsupported (the image never
+    # starts as root) — the runtime identity is set here instead.
+    user: "${SEERR_UID}:${MEDIA_GROUP_GID}"
     environment:
       - TZ=${TZ}
-      - PUID=${SEERR_UID}
-      - PGID=${MEDIA_GROUP_GID}
-      - UMASK=002
       - LOG_LEVEL=${SEERR_LOG_LEVEL:-info}
     ports:
       - "${SEERR_PORT:-5055}:5055"
@@ -29,6 +29,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "request/discovery site for your users"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.cache: "true"

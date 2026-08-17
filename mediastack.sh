@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=1
+SCRIPT_SCHEMA=2
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -86,6 +86,25 @@ migrate_env() {
     :
 }
 migrate_env_0_to_1() { :; } # base schema: nothing to do
+migrate_env_1_to_2() {
+    # profiles were groups; now profile == service name. Translate.
+    local cur out="" tok
+    cur=$(env_get COMPOSE_PROFILES)
+    for tok in ${cur//,/ }; do case "$tok" in
+        core) out+="gluetun qbittorrent sonarr radarr prowlarr jellyfin npm " ;;
+        search) out+="meilisearch jellysearch " ;;
+        requests) out+="seerr " ;;
+        music) out+="lidarr " ;;
+        subs) out+="bazarr " ;;
+        dns) out+="pihole " ;;
+        tunnel) out+="cloudflared " ;;
+        torrents-extra) out+="deluge transmission " ;;
+        tv) out+="ersatztv " ;;
+        *) out+="$tok " ;;   # already a service name
+    esac; done
+    env_set COMPOSE_PROFILES "$(echo "$out" | tr ' ' '\n' | awk 'NF && !seen[$0]++' | paste -sd, -)"
+    info "Profiles translated to per-service form: $(env_get COMPOSE_PROFILES)"
+}
 
 # ------------------------------------------------------------ compose layer --
 DC() { # compose wrapper: project dir pinned, pin-override applied when present
@@ -97,9 +116,11 @@ DC() { # compose wrapper: project dir pinned, pin-override applied when present
 RENDERED_JSON=""
 render() { # cache rendered config as json for discovery
     [[ -n "$RENDERED_JSON" ]] && return 0
-    RENDERED_JSON=$(DC config --format json 2>/dev/null) \
+    # --profile "*": discovery sees the whole catalogue, not just enabled
+    # services — otherwise disabled services vanish from backups and audits.
+    RENDERED_JSON=$(DC --profile "*" config --format json 2>/dev/null) \
         || die "docker compose could not render the config.
-  Check: docker compose version >= 2.20 (needed for 'include:'), and that
+  Check: docker compose version >= 2.24 (needed for 'include:' and wildcard profiles), and that
   .env has no syntax errors. Try: docker compose config"
 }
 
@@ -110,6 +131,27 @@ svc_exists()   { svc_all | grep -qx "$1"; }
 svc_image()    { render; jq -r --arg s "$1" '.services[$s].image' <<<"$RENDERED_JSON"; }
 svc_cname()    { render; jq -r --arg s "$1" '.services[$s].container_name // $s' <<<"$RENDERED_JSON"; }
 uvar()         { echo "${1^^}" | tr -cd 'A-Z0-9_'; } # service -> env var stem
+svc_enabled()  { [[ ",$(env_get COMPOSE_PROFILES)," == *",$1,"* ]]; }
+svc_deps()     { # direct dependencies: depends_on + shared network namespace
+    render
+    jq -r --arg s "$1" '.services[$s]
+        | ((.depends_on // {}) | keys[]?),
+          (if ((.network_mode // "") | startswith("service:"))
+           then (.network_mode | ltrimstr("service:")) else empty end)' \
+        <<<"$RENDERED_JSON" | sort -u
+}
+resolve_deps() { # expand a service set to include all transitive dependencies
+    local set=" $* " grew=1 s d
+    while (( grew )); do
+        grew=0
+        for s in $set; do
+            for d in $(svc_deps "$s"); do
+                [[ "$set" == *" $d "* ]] || { set+="$d "; grew=1; info "  + $d (required by $s)"; }
+            done
+        done
+    done
+    echo "$set" | xargs -n1 | awk 'NF' | sort -u
+}
 
 # ------------------------------------------------------------------ mounts --
 require_mounts() {
@@ -137,11 +179,13 @@ Setup
   configure      Interactive setup wizard. Writes .env, creates users and
                  folders. Safe to re-run any time — existing answers become
                  the defaults, and it auto-adopts newly added services.
+  add-mount      Guided NFS/SMB mount on this host (fstab automount +
+                 poison layer). NAS-side share setup is out of scope.
 Run
   up             Start the stack (everything enabled in COMPOSE_PROFILES).
   down           Stop the stack. Configs and data are untouched.
-  enable NAME    Add a profile (service group) and start it.
-  disable NAME   Remove a profile and stop its services.
+  enable SVC     Turn one service on (dependencies come along) and start it.
+  disable SVC    Turn one service off (refused while others depend on it).
   status [svc]   Overview table of every service — or a deep view of one
                  service (health, mounts, uid, recent log lines).
   logs SVC       Follow one service's logs.
@@ -213,8 +257,8 @@ https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" \
     local cv
     cv=$(sudo docker compose version --short 2>/dev/null || echo "0")
     ok "docker compose $cv"
-    printf '%s\n2.20.0\n' "$cv" | sort -V | head -n1 | grep -qx "2.20.0" \
-        || warn "compose < 2.20 cannot read 'include:' — upgrade the compose plugin."
+    printf '%s\n2.24.0\n' "$cv" | sort -V | head -n1 | grep -qx "2.20.0" \
+        || warn "compose < 2.24 lacks 'include:'/wildcard profiles — upgrade the compose plugin."
     echo; ok "Dependencies ready. Next: ./mediastack.sh configure"
 }
 
@@ -225,6 +269,14 @@ ask() { # ask VAR "prompt" "default" -> sets REPLY_VAL
     local def="$3" ans
     read -r -p "$2 [${def}]: " ans
     REPLY_VAL="${ans:-$def}"
+}
+
+ask_time() { # 24h HH:MM prompt with validation -> REPLY_VAL
+    while true; do
+        ask UPD_TIME "Time (24h, HH:MM)" "04:00"
+        [[ "$REPLY_VAL" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] && return 0
+        fail "'$REPLY_VAL' is not a valid HH:MM time (e.g. 04:00, 23:30)."
+    done
 }
 
 abspath() { case "$1" in /*) echo "$1" ;; *) echo "$SCRIPT_DIR/${1#./}" ;; esac; }
@@ -238,6 +290,14 @@ configure_root() { # configure_root VAR title "explanation..." allow_network(yes
     explain "$title" "$text"
     while true; do
         ask "$var" "$title path" "$cur"; val=$(abspath "$REPLY_VAL")
+        # Network shares must be mounted BEFORE this wizard runs — we record
+        # the mount identity now and guard it forever after. Catch the trap:
+        if grep -qsE "[[:space:]]${val}[[:space:]]" /etc/fstab && ! findmnt -rn "$val" >/dev/null 2>&1; then
+            fail "'$val' is listed in /etc/fstab but NOT currently mounted.
+  Continuing would record the wrong disk as this path's home. Fix first:
+  sudo mount '$val'   (then re-enter the path here)"
+            continue
+        fi
         sudo mkdir -p "$val"
         fs=$(fstype_of "$val")
         if [[ "$allow_net" == no && "$fs" =~ ^(nfs|nfs4|cifs|smb3)$ ]]; then
@@ -289,7 +349,10 @@ cmd_configure() {
     configure_root DATA_ROOT "Data directory" \
 "Your media library and torrent downloads — usually the largest folder,
 often on a NAS or a big second drive, NOT the system disk.
-  * Network shares are fine here.
+  * Network shares are fine here — but this wizard does NOT create mounts.
+    Set one up first with './mediastack.sh add-mount', then enter its path;
+    the wizard records the mount and refuses to start if it ever drops.
+  * Just testing? Accept the default local path.
   * Keep torrents and media on the SAME drive or imports become slow
     full copies instead of instant hardlinks (checked below)." yes
     configure_root CACHE_ROOT "Cache directory" \
@@ -298,27 +361,44 @@ costs a regeneration, nothing more. Network storage is fine; note that
 transcode segments on NFS can stutter playback on transcoding hosts." yes
     configure_root BACKUP_ROOT "Backup directory" \
 "Where restore points are written before every update. A NAS path is
-ENCOURAGED — backups on the same disk as the configs aren't backups." yes
+ENCOURAGED — backups on the same disk as the configs aren't backups.
+(As above: mount the share first; the wizard doesn't create mounts.)" yes
 
     # hardlink check
     if [[ $(fsdev_of "$(env_get DATA_ROOT)") != "$(fsdev_of "$(env_get DATA_ROOT)/torrent" 2>/dev/null || fsdev_of "$(env_get DATA_ROOT)")" ]]; then
         warn "DATA_ROOT and its torrent subdir are on different filesystems — hardlinks will not work."
     fi
 
-    # -- profiles
-    explain "Service groups (profiles)" \
-"Pick what runs. You can change this later with enable/disable." \
-"  core           VPN, qBittorrent, Sonarr, Radarr, Prowlarr, Jellyfin, proxy (required)" \
-"  search         Fast typo-tolerant Jellyfin search (Meilisearch+JellySearch)" \
-"  requests       Seerr — friendly request/discovery site for your users" \
-"  music          Lidarr        subs     Bazarr (subtitles)" \
-"  dns            Pi-hole       tunnel   Cloudflare tunnel" \
-"  flaresolverr   captcha helper for some indexers" \
-"  torrents-extra Deluge+Transmission (most people want NEITHER)" \
-"  tv             ErsatzTV virtual live-TV channels"
-    ask COMPOSE_PROFILES "Profiles (comma-separated)" "$(env_get COMPOSE_PROFILES core,search,requests)"
-    [[ "$REPLY_VAL" == *core* ]] || { warn "'core' is required — adding it."; REPLY_VAL="core,${REPLY_VAL}"; }
-    env_set COMPOSE_PROFILES "$REPLY_VAL"
+    # -- services (à la carte)
+    local STD="gluetun qbittorrent sonarr radarr prowlarr jellyfin npm meilisearch jellysearch seerr"
+    explain "Services" \
+"Pick exactly what runs — anything, à la carte. Dependencies are handled
+for you (picking qBittorrent brings the VPN; JellySearch brings its
+search engine). Change any of this later with enable/disable." \
+"  1) standard    the recommended setup: VPN, qBittorrent, Sonarr, Radarr," \
+"                 Prowlarr, Jellyfin + instant search, proxy, request site" \
+"  2) everything  all $(svc_managed | wc -l) services" \
+"  3) custom      yes/no through each service"
+    local mode sel="" cur_en s d dp
+    ask SVC_MODE "Choice" "1"; mode="$REPLY_VAL"
+    cur_en=",$(env_get COMPOSE_PROFILES),"
+    case "$mode" in
+        2) sel=$(svc_managed | tr '\n' ' ') ;;
+        3) for s in $(svc_managed); do
+               d=$(svc_label "$s" mediastack.desc)
+               # default: current state if configured before, else standard membership
+               if [[ "$cur_en" == *",$s,"* || ( "$cur_en" == ",," && " $STD " == *" $s "* ) ]]; then dp="Y/n"; else dp="y/N"; fi
+               read -r -p "  $s — ${d:-no description} [$dp]: " REPLY_VAL
+               REPLY_VAL="${REPLY_VAL:-${dp:0:1}}"
+               [[ "${REPLY_VAL,,}" == y* ]] && sel+="$s "
+           done ;;
+        *) sel="$STD" ;;
+    esac
+    [[ -n "$sel" ]] || die "No services selected — nothing to run."
+    info "Resolving dependencies..."
+    sel=$(resolve_deps $sel)
+    env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
+    ok "Enabled: $(env_get COMPOSE_PROFILES)"
 
     # -- self-heal: adopt any *_UID / *_UPDATE vars referenced by compose
     info "Checking for newly added services..."
@@ -401,21 +481,52 @@ key, then paste it below. Country selection works the same for all."
     fi
 
     # -- update schedule
+    local sched_cur; sched_cur=$(env_get UPDATE_SCHEDULE)
     explain "Automatic updates" \
 "Nightly-style pipeline: restore point first, then pull + apply, then a
 health check — one command rolls anything back. Updates briefly stop
-services, so pick a quiet time for YOUR users. Examples:" \
-"  *-*-* 04:00     every day 4am        Tue 04:00      Tuesdays 4am" \
-"  Mon..Fri 03:30  weekday 3:30am       (empty)        manual only"
+services, so pick a quiet time for YOUR users." \
+"  1) daily       every day at a time you pick" \
+"  2) weekly      one day a week (a good default for a stable stack)" \
+"  3) weekdays    Mon–Fri at a time you pick" \
+"  4) weekends    Sat+Sun at a time you pick" \
+"  5) custom      raw systemd OnCalendar expression" \
+"  6) never       manual './mediastack.sh update' only" \
+"$( [[ -n "$sched_cur" ]] && echo "  0) keep current: $sched_cur" )"
+    local expr="" t day
     while true; do
-        ask UPDATE_SCHEDULE "Update schedule (systemd OnCalendar)" "$(env_get UPDATE_SCHEDULE '*-*-* 04:00')"
-        [[ -z "$REPLY_VAL" ]] && { env_set UPDATE_SCHEDULE ""; ok "Automatic updates disabled (manual 'update' only)."; break; }
-        if systemd-analyze calendar "$REPLY_VAL" >/dev/null 2>&1; then
-            env_set UPDATE_SCHEDULE "$REPLY_VAL"
-            ok "Next runs:"; systemd-analyze calendar --iterations=3 "$REPLY_VAL" | grep -E 'Next elapse|Iter' | head -3 || true
+        ask SCHED_MODE "Choice" "$( [[ -n "$sched_cur" ]] && echo 0 || echo 1 )"
+        case "$REPLY_VAL" in
+            0) [[ -n "$sched_cur" ]] || { fail "Nothing to keep."; continue; }
+               expr="$sched_cur" ;;
+            1) ask_time; expr="*-*-* $REPLY_VAL" ;;
+            2) while true; do
+                   ask UPD_DAY "Day (Mon/Tue/Wed/Thu/Fri/Sat/Sun)" "Tue"
+                   day="${REPLY_VAL:0:1}"; day="${day^^}${REPLY_VAL:1:2}"; day="${day:0:3}"
+                   [[ "$day" =~ ^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$ ]] && break
+                   fail "'$REPLY_VAL' is not a weekday name."
+               done
+               ask_time; expr="$day $REPLY_VAL" ;;
+            3) ask_time; expr="Mon..Fri $REPLY_VAL" ;;
+            4) ask_time; expr="Sat,Sun $REPLY_VAL" ;;
+            5) explain "Custom schedule" \
+"Any systemd OnCalendar expression, e.g.:" \
+"  Tue,Fri 04:00      twice a week      *-*-01 03:00   1st of the month" \
+"  Mon..Fri 03:30     weekday early     (validated before it is saved)"
+               ask UPDATE_SCHEDULE "OnCalendar expression" "*-*-* 04:00"; expr="$REPLY_VAL" ;;
+            6) env_set UPDATE_SCHEDULE ""
+               ok "Automatic updates disabled (manual 'update' only)."; expr=""; break ;;
+            *) fail "Pick 0-6."; continue ;;
+        esac
+        if [[ -n "$expr" ]]; then
+            systemd-analyze calendar "$expr" >/dev/null 2>&1 \
+                || { fail "'$expr' is not a valid schedule."; continue; }
+            env_set UPDATE_SCHEDULE "$expr"
+            ok "Schedule: $expr — next runs:"
+            systemd-analyze calendar --iterations=3 "$expr" | grep -E 'Next elapse|Iter' | head -3 || true
             break
         fi
-        fail "'$REPLY_VAL' is not a valid OnCalendar expression (see examples above)."
+        break
     done
 
     provision
@@ -439,6 +550,7 @@ provision() {
     local s v uid croot droot cache
     croot=$(env_get CONFIG_ROOT); droot=$(env_get DATA_ROOT); cache=$(env_get CACHE_ROOT)
     for s in $(svc_managed); do
+        svc_enabled "$s" || continue
         v="$(uvar "$s")_UID"; uid=$(env_get "$v")
         if [[ -n "$uid" ]] && ! getent passwd "$s" >/dev/null; then
             sudo useradd -r -M -s /usr/sbin/nologin -u "$uid" -g mediacenter "$s" \
@@ -471,20 +583,30 @@ cmd_up()   { load_env; require_mounts; DC up -d --remove-orphans; ok "Stack up. 
 cmd_down() { load_env; DC down; ok "Stack stopped (configs and data untouched)."; }
 
 cmd_enable() {
-    local p="${1:?usage: enable <profile>}"; load_env
-    local cur; cur=$(env_get COMPOSE_PROFILES)
-    [[ ",$cur," == *",$p,"* ]] && { ok "'$p' already enabled."; return; }
-    env_set COMPOSE_PROFILES "$cur,$p"; load_env; require_mounts
-    provision >/dev/null   # adopt users/dirs for newly enabled services
-    DC up -d --remove-orphans; ok "Profile '$p' enabled and started."
+    local svc="${1:?usage: enable <service>}"; load_env
+    svc_exists "$svc" || die "No service '$svc'. Known: $(svc_managed | tr '\n' ' ')"
+    svc_enabled "$svc" && { ok "'$svc' already enabled."; return; }
+    local sel cur; cur=$(env_get COMPOSE_PROFILES | tr ',' ' ')
+    # shellcheck disable=SC2086  # word splitting intended: service list
+    sel=$(resolve_deps "$svc" $cur)
+    env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
+    require_mounts; provision >/dev/null   # users/dirs for the new services
+    DC up -d --remove-orphans; ok "'$svc' enabled and started."
 }
 cmd_disable() {
-    local p="${1:?usage: disable <profile>}"; load_env
-    [[ "$p" == core ]] && die "'core' cannot be disabled — use 'down' to stop everything."
-    local cur; cur=$(env_get COMPOSE_PROFILES)
-    env_set COMPOSE_PROFILES "$(echo ",$cur," | sed "s/,$p,/,/" | sed 's/^,//;s/,$//')"
-    load_env; DC up -d --remove-orphans
-    ok "Profile '$p' disabled; its containers were removed (configs kept)."
+    local svc="${1:?usage: disable <service>}"; load_env
+    svc_enabled "$svc" || { ok "'$svc' is not enabled."; return; }
+    local e deps blockers=""
+    for e in $(env_get COMPOSE_PROFILES | tr ',' ' '); do
+        [[ "$e" == "$svc" ]] && continue
+        deps=$(svc_deps "$e")
+        [[ " $deps " == *" $svc "* ]] && blockers+="$e "
+    done
+    [[ -n "$blockers" ]] && die "'$svc' is required by enabled service(s): $blockers
+  Disable those first, or leave '$svc' running."
+    env_set COMPOSE_PROFILES "$(env_get COMPOSE_PROFILES | tr ',' '\n' | grep -vx "$svc" | paste -sd, -)"
+    DC up -d --remove-orphans
+    ok "'$svc' disabled; its container was removed (config kept, still backed up)."
 }
 
 cmd_logs() { load_env; DC logs -f --tail=100 "${1:?usage: logs <service>}"; }
@@ -499,20 +621,20 @@ cmd_status() {
     load_env
     if [[ -n "${1:-}" ]]; then status_one "$1"; return; fi
     hr "Mediastack status"
-    printf "%-14s %-9s %-10s %-12s %-8s %s\n" SERVICE STATE HEALTH VERSION PINNED UPTIME
-    local s cn pin
+    printf "%-14s %-4s %-9s %-10s %-12s %-8s %s\n" SERVICE VPN STATE HEALTH VERSION PINNED UPTIME
+    local s cn pin vpn
     for s in $(svc_managed); do
+        svc_enabled "$s" || continue
         cn=$(svc_cname "$s")
         pin=no; [[ -s "$PINS_FILE" ]] && grep -q "^  $s:" "$PINS_FILE" && pin="${C_YLW}yes${C_RST}"
-        printf "%-14s %-9s %-10s %-12s %-8s %s\n" \
-            "$s" "$(c_state "$cn")" "$(c_health "$cn")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")"
+        vpn=-; [[ $(svc_label "$s" mediastack.vpn) == "true" ]] && vpn=yes
+        printf "%-14s %-4s %-9s %-10s %-12s %-8s %s\n" \
+            "$s" "$vpn" "$(c_state "$cn")" "$(c_health "$cn")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")"
     done
     echo
-    local enabled; enabled=$(env_get COMPOSE_PROFILES)
-    info "Enabled profiles: $enabled"
-    local all="core search requests music subs dns tunnel flaresolverr torrents-extra tv" off=""
-    local p; for p in $all; do [[ ",$enabled," == *",$p,"* ]] || off+="$p "; done
-    [[ -n "$off" ]] && info "Not enabled: $off"
+    local off="" p
+    for p in $(svc_managed); do svc_enabled "$p" || off+="$p "; done
+    [[ -n "$off" ]] && info "Available, not enabled: $off"
     local last; last=$(ls -1 "$(env_get BACKUP_ROOT)" 2>/dev/null | tail -1 || true)
     info "Latest restore point: ${last:-none yet (run: ./mediastack.sh backup)}"
     df -h "$(env_get CONFIG_ROOT)" "$(env_get DATA_ROOT)" 2>/dev/null | tail -n +2 \
@@ -691,8 +813,10 @@ cmd_update() {
     fi
 
     # build target list honouring toggles + pins
+    [[ -n "$one" ]] && ! svc_enabled "$one" && die "'$one' is not enabled — enable it first or skip it."
     local targets=() s
     for s in $(svc_managed); do
+        svc_enabled "$s" || continue
         [[ -n "$one" && "$s" != "$one" ]] && continue
         [[ -z "$one" ]] && { [[ "$(env_get "$(uvar "$s")_UPDATE" true)" == true ]] || continue; }
         [[ -s "$PINS_FILE" ]] && grep -q "^  $s:" "$PINS_FILE" && [[ -z "$to_tag" ]] \
@@ -742,7 +866,7 @@ cmd_update() {
         [[ "${before[$s]}" != "$after" ]] && changed+=("$s: ${before[$s]:-?} -> ${after:-?}")
     done
     # search functional probe: index must exist and be non-empty
-    if svc_managed | grep -qx jellysearch && [[ ",$(env_get COMPOSE_PROFILES)," == *",search,"* ]]; then
+    if svc_enabled jellysearch; then
         local docs
         docs=$(sudo docker exec "$(svc_cname meilisearch)" sh -c \
                "curl -fsS -H 'Authorization: Bearer $(env_get MEILI_MASTER_KEY)' http://127.0.0.1:7700/stats \
@@ -817,7 +941,9 @@ cmd_doctor() {
         cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
         case "$st:$h" in
             running:healthy|running:-) ok "$s ($st${h:+, $h})" ;;
-            absent:*) info "$s not running (profile disabled?)" ;;
+            absent:*) if svc_enabled "$s"; then
+                          d_fail "$s enabled but not running" "container was never created or was removed" "./mediastack.sh up"
+                      else info "$s not enabled — skipped"; fi ;;
             *) d_fail "$s is $st/$h" "service is not serving" "./mediastack.sh logs $s   (then: rollback $s if a recent update broke it)" ;;
         esac
     done
@@ -838,7 +964,7 @@ cmd_doctor() {
         fi
     done
     # jellysearch must READ jellyfin's config
-    if [[ ",$(env_get COMPOSE_PROFILES)," == *",search,"* ]]; then
+    if svc_enabled jellysearch; then
         sudo runuser -u "#$(env_get JELLYFIN_UID)" -- test -r "$croot/jellyfin" 2>/dev/null \
             && ok "jellysearch can read jellyfin's config" \
             || d_fail "jellysearch cannot read $croot/jellyfin" "search cannot index" "./mediastack.sh fix-perms jellyfin"
@@ -1010,6 +1136,83 @@ cmd_uninstall() {
     ok "Uninstall finished. Media in DATA_ROOT and backups in BACKUP_ROOT were never touched."
 }
 
+cmd_add_mount() {
+    explain "Add a host mount (NFS / SMB)" \
+"Sets up a network share on THIS host the safe way:
+  * /etc/fstab entry with systemd automount — boot never hangs on the NAS,
+    the share attaches on first access and survives NAS reboots.
+  * 'hard' mount — apps wait out a NAS blip instead of corrupting writes.
+  * poison layer — the empty mountpoint is made immutable, so if the share
+    is ever down, writes FAIL LOUDLY instead of silently filling your
+    system disk behind the mount.
+The share itself (NFS export / SMB share on the NAS) must already exist —
+server-side setup is out of scope here."
+    local mtype remote mpoint
+    while true; do
+        ask MOUNT_TYPE "Share type (nfs/cifs)" "nfs"
+        mtype="$REPLY_VAL"; [[ "$mtype" == nfs || "$mtype" == cifs ]] && break
+        fail "Answer 'nfs' or 'cifs' (cifs = SMB/Samba/Windows share)."
+    done
+    if [[ "$mtype" == nfs ]]; then
+        explain "Remote path" "NFS form:  server:/export/path   e.g. 192.168.1.50:/volume1/media"
+    else
+        explain "Remote path" "SMB form:  //server/share        e.g. //192.168.1.50/media"
+    fi
+    ask MOUNT_REMOTE "Remote" ""
+    remote="$REPLY_VAL"; [[ -n "$remote" ]] || die "Remote path is required."
+    ask MOUNT_POINT "Local mountpoint (e.g. /mnt/media)" ""
+    mpoint=$(abspath "${REPLY_VAL:?mountpoint required}")
+    grep -qsE "[[:space:]]${mpoint}[[:space:]]" /etc/fstab \
+        && die "$mpoint already has an fstab entry. Edit /etc/fstab manually or pick another path."
+    findmnt -rn "$mpoint" >/dev/null 2>&1 && die "$mpoint is already a mountpoint."
+
+    if [[ "$mtype" == nfs ]]; then
+        info "Installing nfs-common..."
+        sudo apt-get install -y -qq nfs-common >/dev/null
+    else
+        info "Installing cifs-utils..."
+        sudo apt-get install -y -qq cifs-utils >/dev/null
+    fi
+
+    sudo mkdir -p "$mpoint"
+    [[ -z "$(sudo ls -A "$mpoint")" ]] || die "$mpoint is not empty — mounting would hide its contents. Move them first."
+    sudo chattr +i "$mpoint" 2>/dev/null \
+        && ok "poison layer set (mountpoint immutable while unmounted)" \
+        || warn "filesystem does not support chattr +i — poison layer skipped"
+
+    local opts fsline
+    if [[ "$mtype" == nfs ]]; then
+        opts="_netdev,x-systemd.automount,hard,nfsvers=4.2,nofail"
+        fsline="$remote $mpoint nfs4 $opts 0 0"
+    else
+        local smbuser smbpass credfile gid
+        ask SMB_USER "SMB username" ""
+        smbuser="$REPLY_VAL"
+        read -r -s -p "SMB password: " smbpass; echo
+        credfile="/etc/mediastack-cifs-$(basename "$mpoint")"
+        printf 'username=%s\npassword=%s\n' "$smbuser" "$smbpass" | sudo tee "$credfile" >/dev/null
+        sudo chmod 600 "$credfile"
+        ok "credentials stored at $credfile (root-only)"
+        gid=$( [[ -f "$ENV_FILE" ]] && env_get MEDIA_GROUP_GID 13000 || echo 13000 )
+        # SMB has no POSIX ownership: map files to the shared media group.
+        opts="_netdev,x-systemd.automount,hard,nofail,credentials=$credfile,uid=0,gid=$gid,file_mode=0664,dir_mode=2775,iocharset=utf8"
+        fsline="$remote $mpoint cifs $opts 0 0"
+    fi
+    echo "$fsline" | sudo tee -a /etc/fstab >/dev/null
+    ok "fstab entry written"
+    sudo systemctl daemon-reload
+    if sudo mount "$mpoint" 2>/dev/null && findmnt -rn "$mpoint" >/dev/null; then
+        ok "$mpoint mounted from $remote"
+        info "Use this path in './mediastack.sh configure' — the wizard will record and guard it."
+    else
+        fail "Mount FAILED. The fstab entry is kept (it is boot-safe: nofail+automount).
+  Check: server reachable? export/share name right? credentials right?
+  Retry with: sudo mount '$mpoint'
+  Or remove the line from /etc/fstab to abandon it."
+        exit 1
+    fi
+}
+
 cmd_new_service() {
     local name="${1:?usage: new-service <name>}"
     local f="compose.d/${name}.yml"
@@ -1073,6 +1276,7 @@ main() {
         doctor)       cmd_doctor ;;
         leak-test)    cmd_leak_test "$@" ;;
         fix-perms)    cmd_fix_perms "$@" ;;
+        add-mount)    cmd_add_mount ;;
         new-service)  cmd_new_service "$@" ;;
         upgrade)      cmd_upgrade ;;
         uninstall)    cmd_uninstall ;;

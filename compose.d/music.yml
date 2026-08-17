@@ -13,7 +13,7 @@ services:
   lidarr:
     image: lscr.io/linuxserver/lidarr:latest
     container_name: ${LIDARR_NAME:-mediastack-lidarr}
-    profiles: ["music"]
+    profiles: ["lidarr"]
     network_mode: "service:gluetun"
     depends_on:
       gluetun:
@@ -29,6 +29,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "music automation"
       mediastack.vpn: "true"
       mediastack.config: "true"
       mediastack.subdomain: "lidarr"

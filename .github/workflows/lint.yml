@@ -10,7 +10,7 @@ jobs:
       - name: compose renders
         run: |
           cp .env.example .env
-          docker compose config -q
+          docker compose --profile "*" config -q
       - name: schema bump enforced
         if: github.event_name == 'pull_request'
         run: |

@@ -13,7 +13,7 @@ services:
   ersatztv:
     image: ghcr.io/ersatztv/ersatztv:latest
     container_name: ${ERSATZTV_NAME:-mediastack-ersatztv}
-    profiles: ["tv"]
+    profiles: ["ersatztv"]
     environment:
       - TZ=${TZ}
     ports:
@@ -24,6 +24,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "virtual live-TV channels from your library"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "tv"

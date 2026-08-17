@@ -15,7 +15,7 @@ services:
   meilisearch:
     image: getmeili/meilisearch:v1.34
     container_name: ${MEILISEARCH_NAME:-mediastack-meilisearch}
-    profiles: ["search"]
+    profiles: ["meilisearch"]
     user: "${MEILISEARCH_UID}:${MEDIA_GROUP_GID}"
     environment:
       - TZ=${TZ}
@@ -33,6 +33,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "search engine backing JellySearch"
       mediastack.vpn: "false"
       mediastack.config: "false"
       mediastack.cache: "true"
@@ -50,7 +51,7 @@ services:
   jellysearch:
     image: domistyle/jellysearch:latest
     container_name: ${JELLYSEARCH_NAME:-mediastack-jellysearch}
-    profiles: ["search"]
+    profiles: ["jellysearch"]
     # Runs as Jellyfin's identity: its whole job is reading Jellyfin's DB.
     # (The image default 1000:100 cannot read a config owned by other IDs.)
     user: "${JELLYFIN_UID}:${MEDIA_GROUP_GID}"
@@ -72,6 +73,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "instant, typo-tolerant Jellyfin search"
       mediastack.vpn: "false"
       mediastack.config: "false"
     # No healthcheck: minimal .NET image, no probe tooling. Doctor checks the
