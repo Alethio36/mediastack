@@ -1580,6 +1580,8 @@ server-side setup is out of scope here."
 # (labels + .env), apply only the delta. Safe to re-run forever.
 WIRE_DRY=0
 WIRE_CHANGES=0
+WIRE_FAILS=0
+wfail() { fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); }
 
 w_would() { # w_would "description" -> 0 if execution should proceed
     WIRE_CHANGES=$((WIRE_CHANGES+1))
@@ -1600,6 +1602,9 @@ arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialisin
 }
 
 arr_url() { echo "http://127.0.0.1:$(svc_label "$1" mediastack.port)"; }
+arr_apiver() { # lidarr never moved to v3
+    case "$(svc_label "$1" mediastack.arrtype)" in lidarr) echo v1 ;; *) echo v3 ;; esac
+}
 
 wire_gate() { # refuse to wire what isn't up
     local s missing=""
@@ -1739,7 +1744,7 @@ type your own to use it instead. Stored in .env (view: credentials)."
         elif w_would "create category '$cat' -> /data/torrent/$cat"; then
             qb_api /torrents/createCategory "category=$cat" "savePath=/data/torrent/$cat" >/dev/null \
                 && ok "category '$cat' created" \
-                || { fail "category '$cat' creation failed"; }
+                || { wfail "category '$cat' creation failed"; }
         fi
     done
 }
@@ -1777,39 +1782,39 @@ operator). Stored in .env (view: credentials)."
     local s key url root t catfield cat cur
     for s in $insts; do
         key=$(arr_key "$s")
-        [[ -n "$key" ]] || { fail "$s: no ApiKey in config.xml yet (still initialising?) — re-run wire in a minute"; continue; }
+        [[ -n "$key" ]] || { wfail "$s: no ApiKey in config.xml yet (still initialising?) — re-run wire in a minute"; continue; }
         url=$(arr_url "$s"); root=$(svc_label "$s" mediastack.rootfolder)
         # authentication (forms login) — idempotent on method+username match
         if [[ -n "$auser" && -n "$apass" ]]; then
-            cur=$(api GET "$url/api/v3/config/host" "$key" || true)
+            cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)
             if jq -e --arg u "$auser" '.authenticationMethod=="forms" and .username==$u' <<<"$cur" >/dev/null 2>&1; then
                 ok "$s: forms login already set for '$auser'"
             elif w_would "$s: enable forms login for '$auser'"; then
-                api PUT "$url/api/v3/config/host" "$key" "$(jq -c --arg u "$auser" --arg p "$apass" \
+                api PUT "$url/api/$(arr_apiver "$s")/config/host" "$key" "$(jq -c --arg u "$auser" --arg p "$apass" \
                     '.authenticationMethod="forms" | .authenticationRequired="enabled"
                      | .username=$u | .password=$p | .passwordConfirmation=$p' <<<"$cur")" >/dev/null \
                     && ok "$s: forms login enabled" \
-                    || fail "$s: auth setup rejected by the API — set it once in its UI; check: logs $s"
+                    || wfail "$s: auth setup rejected by the API — set it once in its UI; check: logs $s"
             fi
         fi
         # root folder
-        cur=$(api GET "$url/api/v3/rootfolder" "$key" || true)
+        cur=$(api GET "$url/api/$(arr_apiver "$s")/rootfolder" "$key" || true)
         if grep -q "\"path\":\"$root\"" <<<"${cur//[[:space:]]/}"; then
             ok "$s: root folder $root registered"
         elif w_would "$s: register root folder $root"; then
-            api POST "$url/api/v3/rootfolder" "$key" "{\"path\":\"$root\"}" >/dev/null \
+            api POST "$url/api/$(arr_apiver "$s")/rootfolder" "$key" "{\"path\":\"$root\"}" >/dev/null \
                 && ok "$s: root folder registered" \
-                || fail "$s: root folder registration failed (does $root exist in-container? run configure to provision)"
+                || wfail "$s: root folder registration failed (does $root exist in-container? run configure to provision)"
         fi
         # download client
         [[ -n "$pass" ]] || continue
         t=$(svc_label "$s" mediastack.arrtype); cat=$(svc_label "$s" mediastack.category)
         case "$t" in sonarr) catfield=tvCategory ;; radarr) catfield=movieCategory ;; lidarr) catfield=musicCategory ;; esac
-        cur=$(api GET "$url/api/v3/downloadclient" "$key" || true)
+        cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key" || true)
         if grep -q '"qBittorrent (mediastack)"' <<<"$cur"; then
             ok "$s: download client registered"
         elif w_would "$s: register qBittorrent (category $cat)"; then
-            api POST "$url/api/v3/downloadclient" "$key" "$(cat <<JSON
+            api POST "$url/api/$(arr_apiver "$s")/downloadclient" "$key" "$(cat <<JSON
 {"enable":true,"protocol":"torrent","priority":1,
  "removeCompletedDownloads":true,"removeFailedDownloads":true,
  "name":"qBittorrent (mediastack)","implementation":"QBittorrent",
@@ -1821,7 +1826,7 @@ operator). Stored in .env (view: credentials)."
    {"name":"$catfield","value":"$cat"}]}
 JSON
 )" >/dev/null && ok "$s: download client registered" \
-              || fail "$s: download client registration failed — API said no; check: logs $s"
+              || wfail "$s: download client registration failed — API said no; check: logs $s"
         fi
     done
 }
@@ -1832,14 +1837,14 @@ wire_prowlarr() {
     svc_enabled prowlarr || { info "prowlarr not enabled — skipped"; return 0; }
     wire_gate prowlarr
     local pkey purl; pkey=$(arr_key prowlarr); purl=$(arr_url prowlarr)
-    [[ -n "$pkey" ]] || { fail "prowlarr: no ApiKey yet — re-run wire shortly"; return 0; }
+    [[ -n "$pkey" ]] || { wfail "prowlarr: no ApiKey yet — re-run wire shortly"; return 0; }
     local s key t impl cur
     cur=$(api GET "$purl/api/v1/applications" "$pkey" || true)
     for s in $(arr_instances); do
         t=$(svc_label "$s" mediastack.arrtype)
         case "$t" in sonarr) impl=Sonarr ;; radarr) impl=Radarr ;; lidarr) impl=Lidarr ;; *) continue ;; esac
         key=$(arr_key "$s") || true
-        [[ -n "$key" ]] || { fail "prowlarr<-$s: $s has no ApiKey yet"; continue; }
+        [[ -n "$key" ]] || { wfail "prowlarr<-$s: $s has no ApiKey yet"; continue; }
         if grep -q "\"$s (mediastack)\"" <<<"$cur"; then
             ok "prowlarr -> $s registered"
         elif w_would "register $s in prowlarr (Full Sync)"; then
@@ -1851,7 +1856,7 @@ wire_prowlarr() {
    {"name":"apiKey","value":"$key"}]}
 JSON
 )" >/dev/null && ok "prowlarr -> $s registered (Full Sync)" \
-              || fail "prowlarr -> $s failed — check: logs prowlarr"
+              || wfail "prowlarr -> $s failed — check: logs prowlarr"
         fi
     done
     if svc_enabled flaresolverr; then
@@ -1866,7 +1871,7 @@ JSON
    {"name":"requestTimeout","value":60}]}
 JSON
 )" >/dev/null && ok "flaresolverr proxy registered" \
-              || fail "flaresolverr proxy registration failed"
+              || wfail "flaresolverr proxy registration failed"
         fi
     fi
 }
@@ -1878,7 +1883,7 @@ wire_bazarr() {
     wire_gate bazarr
     local bkey burl
     bkey=$(sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | head -1 || true)
-    [[ -n "$bkey" ]] || { fail "bazarr: no api key found yet (config/config.yaml) — re-run wire shortly"; return 0; }
+    [[ -n "$bkey" ]] || { wfail "bazarr: no api key found yet (config/config.yaml) — re-run wire shortly"; return 0; }
     burl="http://127.0.0.1:$(svc_label bazarr mediastack.port)"
     local pairs=() t skey
     for t in sonarr radarr; do
@@ -1903,10 +1908,15 @@ wire_bazarr() {
         done
         local args=() a
         for a in "${form[@]}"; do args+=(--data-urlencode "$a"); done
-        if curl -sS -m 20 -f -X POST -H "X-API-KEY: $bkey" "${args[@]}" "$burl/api/system/settings" >/dev/null 2>&1; then
-            ok "bazarr paired with base sonarr/radarr"
+        local bresp bcode
+        bresp=$(curl -sS -m 20 -w $'\n%{http_code}' -X POST -H "X-API-KEY: $bkey" \
+                "${args[@]}" "$burl/api/system/settings" 2>&1) || bresp="${bresp}"$'\n000'
+        bcode=${bresp##*$'\n'}
+        if [[ "$bcode" =~ ^2 ]]; then
+            ok "bazarr paired with base sonarr/radarr (+ shared login)"
         else
-            fail "bazarr settings API rejected the pairing — pair manually in its UI (Settings -> Sonarr/Radarr) and report; its API is the fussiest of the set"
+            wfail "bazarr pairing rejected [HTTP $bcode]: $(head -c200 <<<"${bresp%$'\n'*}")
+     pair manually meanwhile (Settings -> Sonarr/Radarr) and paste the above"
         fi
     fi
 }
@@ -1956,6 +1966,10 @@ cmd_wire() {
         info "note: items marked as pending on credentials resolve mid-run — the real run creates them in order."
     else
         touch "$SCRIPT_DIR/.wired"
+        if (( WIRE_FAILS )); then
+            fail "wire finished with $WIRE_FAILS failure(s) — see the FAIL lines above. Re-run after fixing; completed items just skip."
+            exit 1
+        fi
         ok "wire complete. Verify: ./mediastack.sh doctor   Credentials: ./mediastack.sh credentials"
     fi
 }
