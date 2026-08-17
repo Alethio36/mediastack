@@ -1606,13 +1606,18 @@ arr_instances() { # arr_instances [type] -> enabled arr services (optionally by 
 
 # ---- qbit ----
 QB_COOKIE=""
-qb_login() { # qb_login user pass -> 0 on success, sets QB_COOKIE
+QB_LOGIN_BODY=""
+qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = unreachable
+             # QB_LOGIN_BODY always carries the server's reply / curl error
     local r
-    r=$(curl -sS -m 10 -c - --data-urlencode "username=$1" --data-urlencode "password=$2" \
-        "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2/auth/login" 2>/dev/null)
-    grep -q '^Ok' <<<"$(tail -1 <<<"$r")" 2>/dev/null || grep -q Ok. <<<"$r" || true
-    QB_COOKIE=$(grep -oP 'SID\s+\K\S+' <<<"$r" | head -1)
-    [[ -n "$QB_COOKIE" ]]
+    if ! r=$(curl -sS -m 10 -c - --data-urlencode "username=$1" --data-urlencode "password=$2" \
+        "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2/auth/login" 2>&1); then
+        QB_LOGIN_BODY="unreachable: ${r:-<no detail>}"
+        return 2
+    fi
+    QB_LOGIN_BODY="${r%%$'\n'*}"; QB_LOGIN_BODY="${QB_LOGIN_BODY%%\# Netscape*}"   # qbit's reply sans cookie-jar bleed
+    QB_COOKIE=$(grep -oP 'SID\s+\K\S+' <<<"$r" | head -1 || true)
+    [[ -n "$QB_COOKIE" ]] || return 1
 }
 qb_api() { # qb_api PATH [data...] (form-encoded)
     local p="$1"; shift
@@ -1624,6 +1629,14 @@ qb_api() { # qb_api PATH [data...] (form-encoded)
 wire_qbit() {
     hr "wire: qBittorrent"
     wire_gate qbittorrent
+    # auth-free settle: any HTTP status proves the listener (000 = no socket);
+    # avoids misreading a boot gap as bad credentials on re-runs
+    local qt=0
+    while [[ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' \
+             "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2/app/webapiVersion" 2>/dev/null || echo 000)" == 000 ]]; do
+        (( qt >= 45 )) && die "qBittorrent's WebUI never started listening — inspect: ./mediastack.sh logs qbittorrent"
+        sleep 3; qt=$((qt+3)); info "qBittorrent WebUI not accepting connections yet (${qt}s)..."
+    done
     local user pass gen
     user=$(env_get QBITTORRENT_USER)
     pass=$(env_get QBITTORRENT_PASSWORD)
@@ -1653,9 +1666,22 @@ wire_qbit() {
   restart. Either it already has a password set that isn't in .env
   (set QBITTORRENT_USER/QBITTORRENT_PASSWORD there and re-run), or it
   is failing to boot: ./mediastack.sh logs qbittorrent"
-        qb_login admin "$tmp" || die "qBittorrent rejected the password it just printed — this should
-  be impossible; inspect: ./mediastack.sh logs qbittorrent"
-        ok "logged in with the boot temporary password"
+        # the password prints BEFORE the WebUI starts listening — retry
+        # through the gap, but stop instantly on a genuine rejection
+        local lrc=2 lt=0
+        while (( lt < 45 )); do
+            if qb_login admin "$tmp"; then lrc=0; break; else lrc=$?; fi
+            (( lrc == 2 )) || break
+            sleep 3; lt=$((lt+3)); info "WebUI not accepting connections yet (${lt}s)..."
+        done
+        case $lrc in
+            0) ok "logged in with the freshly minted password" ;;
+            2) die "qBittorrent's WebUI never became reachable on port $(svc_label qbittorrent mediastack.port).
+  Inspect: ./mediastack.sh logs qbittorrent" ;;
+            *) die "qBittorrent rejected the password it just printed — genuinely unexpected
+  (restart clears auth bans, so that isn't it). Server said: $QB_LOGIN_BODY
+  Inspect: ./mediastack.sh logs qbittorrent" ;;
+        esac
         gen=$(head -c12 /dev/urandom | base64 | tr -d '=+/')
         explain "qBittorrent credentials" \
 "Pick the permanent WebUI login. Enter accepts the generated password;
@@ -1666,7 +1692,10 @@ type your own to use it instead. Stored in .env (view: credentials)."
             qb_api /app/setPreferences \
                 "json={\"web_ui_username\":\"$user\",\"web_ui_password\":\"$pass\"}" >/dev/null
             env_set QBITTORRENT_USER "$user"; env_set QBITTORRENT_PASSWORD "$pass"
-            qb_login "$user" "$pass" || die "qBittorrent rejected the new credentials it just accepted — inspect: logs qbittorrent"
+            sleep 2   # let the preference write settle
+            local vrc=0; qb_login "$user" "$pass" || vrc=$?
+            (( vrc == 0 )) \
+                || die "qBittorrent did not accept the new credentials (rc=$vrc). Server said: $QB_LOGIN_BODY — inspect: logs qbittorrent"
             ok "permanent credentials set and verified"
         fi
     fi
