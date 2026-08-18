@@ -880,16 +880,44 @@ cmd_backup() {
     prune_backups
 }
 
+# Tiered (grandfather-father-son) retention, all knobs in .env:
+#   BACKUP_KEEP_DAILY   (7)  newest N restore points, kept unconditionally
+#   BACKUP_KEEP_WEEKLY  (4)  beyond those: newest point per ISO week, N weeks
+#   BACKUP_KEEP_MONTHLY (6)  beyond those: newest point per month, N months
+# 0 disables a tier; the newest point is never pruned; anything in
+# BACKUP_ROOT not matching a restore-point name is never touched.
 prune_backups() {
-    local broot keepd keepw
-    broot=$(env_get BACKUP_ROOT); keepd=$(env_get BACKUP_KEEP_DAILY 7); keepw=$(env_get BACKUP_KEEP_WEEKLY 4)
-    local total=$(( keepd + keepw * 7 ))
-    local n; n=$(ls -1 "$broot" 2>/dev/null | wc -l)
-    (( n > total )) || return 0
-    { ls -1 "$broot" | head -n $(( n - total )) || true; } | while read -r old; do
-        info "Pruning old restore point $old"
-        sudo rm -rf "${broot:?}/$old"
+    local broot keepd keepw keepm
+    broot=$(env_get BACKUP_ROOT)
+    keepd=$(env_get BACKUP_KEEP_DAILY 7)
+    keepw=$(env_get BACKUP_KEEP_WEEKLY 4)
+    keepm=$(env_get BACKUP_KEEP_MONTHLY 6)
+    local -a all
+    mapfile -t all < <(ls -1 "$broot" 2>/dev/null | grep -E '^[0-9]{8}-[0-9]{6}$' | sort -r)
+    (( ${#all[@]} )) || return 0
+    local -A keepset seenw seenm
+    local p d wk mo i=0 pruned=0 nw=0 nm=0
+    for p in "${all[@]}"; do
+        d=${p:0:8}
+        if (( i < keepd )) || (( i == 0 )); then keepset[$p]=1; i=$((i+1)); continue; fi
+        i=$((i+1))
+        wk=$(date -d "$d" +%G-%V 2>/dev/null) || { keepset[$p]=1; continue; }
+        mo=${d:0:6}
+        if [[ -z "${seenw[$wk]:-}" ]] && (( nw < keepw )); then
+            seenw[$wk]=1; nw=$((nw+1)); keepset[$p]=1; continue
+        fi
+        seenw[$wk]=1
+        if [[ -z "${seenm[$mo]:-}" ]] && (( nm < keepm )); then
+            seenm[$mo]=1; nm=$((nm+1)); keepset[$p]=1; continue
+        fi
+        seenm[$mo]=1
     done
+    for p in "${all[@]}"; do
+        [[ -n "${keepset[$p]:-}" ]] && continue
+        info "Pruning restore point $p (outside ${keepd}d/${keepw}w/${keepm}m retention)"
+        sudo rm -rf "${broot:?}/$p"; pruned=$((pruned+1))
+    done
+    ok "retention ${keepd}d/${keepw}w/${keepm}m: kept $(( ${#all[@]} - pruned )), pruned $pruned"
 }
 
 cmd_backup_verify() {
@@ -2363,6 +2391,11 @@ cmd_trash_sync() {
         trash_sentinel "$s"
     done
     hr "trash-sync: recyclarr"
+    # keep the pinned :8 tag current (patch releases only — a major bump is
+    # a schema migration and stays a deliberate, manual tag change)
+    sudo docker compose pull -q recyclarr 2>/dev/null \
+        && info "recyclarr image: pinned tag up to date" \
+        || warn "recyclarr image pull failed (registry unreachable?) — syncing with the local image"
     local slog rc summary
     slog=$(mktemp)
     sudo docker compose run --rm recyclarr sync 2>&1 | tee "$slog"
