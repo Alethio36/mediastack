@@ -1,0 +1,53 @@
+# Jellyfin: the media server your users watch.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  jellyfin:
+    # Official image (not linuxserver): dev-supported, honours `user:` directly,
+    # and keeps the DB at /config/data/jellyfin.db — exactly where jellysearch
+    # expects it. Migrating from a linuxserver deployment? See
+    # docs/migration-existing.md — the lsio layout nests data one level deeper.
+    image: jellyfin/jellyfin:latest
+    container_name: ${JELLYFIN_NAME:-mediastack-jellyfin}
+    profiles: ["jellyfin"]
+    user: "${JELLYFIN_UID}:${MEDIA_GROUP_GID}"
+    ports:
+      - "${JELLYFIN_PORT:-8096}:8096"
+    environment:
+      - TZ=${TZ}
+      - JELLYFIN_PublishedServerUrl=${JELLYFIN_PUBLISHED_URL:-}
+    volumes:
+      - ${CONFIG_ROOT}/jellyfin:/config
+      - ${CACHE_ROOT}/jellyfin:/cache
+      # Optional: relocate the (large) metadata tree. Copy the existing
+      # directory to the new location BEFORE enabling, or artwork re-downloads.
+      # - ${JELLYFIN_METADATA_DIR}:/config/data/metadata
+      - ${DATA_ROOT}/media:/media:ro
+    # Hardware transcode (if the host has a GPU/iGPU):
+    # devices:
+    #   - /dev/dri:/dev/dri
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.desc: "the media server your users watch"
+      mediastack.vpn: "false"
+      mediastack.config: "true"
+      mediastack.cache: "true"
+      mediastack.subdomain: "jellyfin"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8096/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped

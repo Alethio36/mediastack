@@ -7,18 +7,26 @@
 name: mediastack
 
 include:
-  - compose.d/core.yml
-  - compose.d/search.yml
-  - compose.d/requests.yml
-  - compose.d/music.yml
-  - compose.d/subs.yml
-  - compose.d/dns.yml
-  - compose.d/tunnel.yml
+  - compose.d/bazarr.yml
+  - compose.d/cloudflared.yml
+  - compose.d/deluge.yml
+  - compose.d/ersatztv.yml
   - compose.d/flaresolverr.yml
-  - compose.d/torrents-extra.yml
-  - compose.d/tv.yml
+  - compose.d/gluetun.yml
+  - compose.d/jellyfin.yml
+  - compose.d/jellysearch.yml
+  - compose.d/lidarr.yml
+  - compose.d/meilisearch.yml
+  - compose.d/npm.yml
+  - compose.d/pihole.yml
+  - compose.d/prowlarr.yml
+  - compose.d/qbittorrent.yml
   - compose.d/radarr-4k.yml
+  - compose.d/radarr.yml
+  - compose.d/seerr.yml
   - compose.d/sonarr-anime.yml
+  - compose.d/sonarr.yml
+  - compose.d/transmission.yml
 
 networks:
   mediastack:

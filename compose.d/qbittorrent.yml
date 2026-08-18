@@ -1,0 +1,45 @@
+# qBittorrent: torrent client (runs inside the VPN).
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: ${QBITTORRENT_NAME:-mediastack-qbittorrent}
+    profiles: ["qbittorrent"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy   # leak guard: never start before tunnel is up
+    environment:
+      - PUID=${QBITTORRENT_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - UMASK=002
+      - TZ=${TZ}
+      - WEBUI_PORT=8085
+    volumes:
+      - ${CONFIG_ROOT}/qbittorrent:/config
+      - ${DATA_ROOT}/torrent:/data/torrent
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.desc: "torrent client (runs inside the VPN)"
+      mediastack.vpn: "true"
+      mediastack.config: "true"
+      mediastack.subdomain: "qbittorrent"
+      mediastack.port: "8085"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8085"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging: *logging
+    restart: unless-stopped

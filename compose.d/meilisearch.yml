@@ -1,6 +1,4 @@
-# Search profile: Meilisearch-backed fast search for Jellyfin via JellySearch.
-# JellySearch is a proxy, not a plugin: your reverse proxy must route requests
-# containing ?searchTerm to jellysearch:5000 (see README "Search").
+# Meilisearch: search engine backing JellySearch.
 
 x-logging: &logging
   driver: json-file
@@ -44,40 +42,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    networks: [mediastack]
-    logging: *logging
-    restart: unless-stopped
-
-  jellysearch:
-    image: domistyle/jellysearch:latest
-    container_name: ${JELLYSEARCH_NAME:-mediastack-jellysearch}
-    profiles: ["jellysearch"]
-    # Runs as Jellyfin's identity: its whole job is reading Jellyfin's DB.
-    # (The image default 1000:100 cannot read a config owned by other IDs.)
-    user: "${JELLYFIN_UID}:${MEDIA_GROUP_GID}"
-    depends_on:
-      jellyfin:
-        condition: service_healthy
-      meilisearch:
-        condition: service_healthy
-    environment:
-      - TZ=${TZ}
-      - MEILI_URL=http://meilisearch:7700
-      - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
-      - JELLYFIN_URL=http://jellyfin:8096
-      - INDEX_CRON=${JELLYSEARCH_INDEX_CRON:-0 0 0/2 ? * * *}   # Quartz format
-    volumes:
-      # Official jellyfin image: DB at /config/data/jellyfin.db, so mount the
-      # config root directly. (linuxserver image would need /config/data here.)
-      - ${CONFIG_ROOT}/jellyfin:/config:ro
-    labels:
-      <<: *no-foreign-watchtower
-      mediastack.managed: "true"
-      mediastack.desc: "instant, typo-tolerant Jellyfin search"
-      mediastack.vpn: "false"
-      mediastack.config: "false"
-    # No healthcheck: minimal .NET image, no probe tooling. Doctor checks the
-    # index via meilisearch instead.
     networks: [mediastack]
     logging: *logging
     restart: unless-stopped

@@ -1,0 +1,46 @@
+# Deluge: extra torrent client. Most deployments want exactly ONE torrent client
+# (qBittorrent). Enable only if you know why. Peer-port note: 6881 is mapped
+# once on gluetun; configure distinct listen ports per client if you run
+# several.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  deluge:
+    image: lscr.io/linuxserver/deluge:latest
+    container_name: ${DELUGE_NAME:-mediastack-deluge}
+    profiles: ["deluge"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=${DELUGE_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - UMASK=002
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/deluge:/config
+      - ${DATA_ROOT}/torrent:/data/torrent
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.desc: "extra torrent client (most people do not need it)"
+      mediastack.vpn: "true"
+      mediastack.config: "true"
+      mediastack.subdomain: "deluge"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8112"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging: *logging
+    restart: unless-stopped
