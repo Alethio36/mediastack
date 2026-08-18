@@ -59,3 +59,14 @@ the tunnel). Success stamps `cache/trash-last-sync`; `doctor` warns when the
 stamp is older than 26h or missing.
 
 Preview without applying: `sudo docker compose run --rm recyclarr sync --preview`.
+
+## Nightly pipeline
+
+Once any TRaSH profile is chosen, every scheduled update run finishes with
+a trash-sync step — same UPDATE_SCHEDULE the operator already picked, so
+sync cadence inherits update cadence (daily here; weekly deployments sync
+weekly). In timer context, instances without a stored choice are set to
+`skip` with a warning rather than blocking the pipeline on a prompt; a
+failed sync step fails the pipeline's exit status loudly but never rolls
+back or masks the update result. Last-run summary: doctor's TRaSH line and
+cache/trash-sync.log.

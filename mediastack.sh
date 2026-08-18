@@ -1070,6 +1070,13 @@ cmd_update() {
         exit 1
     fi
     ok "All updated services healthy."
+
+    # nightly TRaSH sync rides the update pipeline: same schedule the
+    # operator already chose, guides drift-window stays at one cycle.
+    if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
+        echo
+        cmd_trash_sync || { fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"; exit 1; }
+    fi
 }
 
 cmd_apply_timer() {
@@ -2158,6 +2165,11 @@ trash_menu() {
             radarr-4k)    env_set "$key" uhd;   info "radarr-4k: pre-answered 'uhd' (that is its whole job)"; continue ;;
             sonarr-anime) env_set "$key" anime; info "sonarr-anime: pre-answered 'anime'"; continue ;;
         esac
+        if [[ ! -t 0 ]]; then
+            env_set "$key" skip
+            warn "$s: no TRaSH profile chosen and no terminal to ask — set to 'skip'; run './mediastack.sh trash-sync' interactively to choose"
+            continue
+        fi
         explain "TRaSH profile: $s" \
 "Pick the quality profile recyclarr will manage on this instance.
   1) 1080p   TRaSH guide default (recommended)
