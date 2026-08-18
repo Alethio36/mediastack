@@ -32,8 +32,16 @@ warns persistently while staging certificates are live.
 
 Defaults: dash, jellyfin, requests (seerr), tv (ersatztv), pihole, qbit,
 sonarr, radarr, prowlarr, lidarr, bazarr, radarr-4k, sonarr-anime — all
-under `TRAEFIK_DOMAIN`. Override any with `<SERVICE>_HOST` in `.env`
-(e.g. `SEERR_HOST=watch`).
+under `TRAEFIK_DOMAIN`. Rename any of them with the guided pass:
+
+    ./mediastack.sh traefik-setup --hosts
+
+It walks every routed service (discovered from the fragments' own labels,
+so new services appear automatically), validates names, refuses
+collisions, and Enter keeps the current value. Equivalent by hand:
+`<SERVICE>_HOST` in `.env` (e.g. `SEERR_HOST=watch`). Either way, apply
+with `up`; the wildcard certificate covers any name, and renaming a
+VPN'd service recreates gluetun (brief tunnel bounce).
 
 Routers for VPN'd services live as labels on gluetun (they share its
 network namespace and have no IP of their own); standalone services carry

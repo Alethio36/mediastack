@@ -232,6 +232,7 @@ Connect
   traefik-setup  Configure the HTTPS edge: domain, Cloudflare token, cert
                  environment (staging/production), dashboard login. Auto-runs
                  on 'up' when traefik is enabled and unconfigured.
+                 --hosts: guided rename of every service's subdomain.
   trash-sync     Sync TRaSH Guides quality profiles (Recyclarr) to the arrs.
                  First run asks per-instance choices; overrides survive in
                  local/trash-overrides.yml. See docs/trash-sync.md.
@@ -2204,7 +2205,7 @@ main() {
         wire)         cmd_wire "$@" ;;
         credentials)  cmd_credentials ;;
         trash-sync)   cmd_trash_sync "$@" ;;
-        traefik-setup) cmd_traefik_setup ;;
+        traefik-setup) cmd_traefik_setup "$@" ;;
         new-service)  cmd_new_service "$@" ;;
         upgrade)      cmd_upgrade ;;
         uninstall)    cmd_uninstall "$@" ;;
@@ -2642,10 +2643,51 @@ DYNAMIC
     ok "traefik config generated ($acmeenv certificates, domain $domain)"
 }
 
+# hostname map is discovered from the fragments' own router labels
+# (${X_HOST:-default}), so it self-maintains as services are added
+traefik_host_vars() {
+    grep -rhoE '\$\{[A-Z0-9_]+_HOST:-[a-z0-9-]+\}' compose.d/ \
+        | sed -E 's/^\$\{([A-Z0-9_]+_HOST):-([a-z0-9-]+)\}$/\1 \2/' | sort -u
+    echo "TRAEFIK_DASH_HOST dash"
+}
+
+cmd_traefik_hosts() {
+    [[ -t 0 ]] || die "traefik-setup --hosts needs a terminal."
+    local domain; domain=$(env_get TRAEFIK_DOMAIN)
+    [[ -n "$domain" ]] || die "Run './mediastack.sh traefik-setup' first — no domain configured yet."
+    hr "Service hostnames"
+    explain "Pick each service's address" \
+"Enter keeps the name shown in [brackets]. Names must be a single DNS
+label: letters, numbers, hyphens (not first or last). The wildcard
+certificate covers any choice — renames are free."
+    local var def cur val
+    local -A chosen
+    while read -r var def; do
+        cur=$(env_get "$var"); cur=${cur:-$def}
+        while :; do
+            ask HV "  ${var%_HOST} -> https://?.$domain" "$cur"; val="$REPLY_VAL"
+            [[ "$val" =~ ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$ ]] \
+                || { warn "'$val' is not a valid DNS label — lowercase letters, numbers, hyphens only"; continue; }
+            if [[ -n "${chosen[$val]:-}" ]]; then
+                warn "'$val' is already taken by ${chosen[$val]} — pick another"
+                continue
+            fi
+            break
+        done
+        chosen[$val]="${var%_HOST}"
+        env_set "$var" "$val"
+    done < <(traefik_host_vars)
+    traefik_gen   # the dashboard hostname lives in the generated config
+    info "Apply with: ./mediastack.sh up"
+    info "(services whose name changed are recreated; renaming a VPN'd service recreates gluetun — a brief tunnel bounce)"
+}
+
 cmd_traefik_setup() {
     svc_enabled traefik || die "traefik is not enabled. Enable it first: ./mediastack.sh enable traefik"
+    if [[ "${1:-}" == --hosts ]]; then cmd_traefik_hosts; return; fi
     traefik_ensure --reconfigure
     info "Apply with: ./mediastack.sh up   (recreates traefik if config changed)"
+    info "Rename service addresses any time: ./mediastack.sh traefik-setup --hosts"
 }
 
 main "$@"
