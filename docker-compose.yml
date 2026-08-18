@@ -22,6 +22,7 @@ include:
   - compose.d/prowlarr.yml
   - compose.d/qbittorrent.yml
   - compose.d/radarr-4k.yml
+  - compose.d/recyclarr.yml
   - compose.d/radarr.yml
   - compose.d/seerr.yml
   - compose.d/sonarr-anime.yml
