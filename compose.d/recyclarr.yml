@@ -11,6 +11,7 @@ services:
     container_name: mediastack-recyclarr
     profiles: ["recyclarr"]
     network_mode: "service:gluetun"
+    user: "${RECYCLARR_UID:-13020}:${MEDIA_GROUP_GID:-13000}"
     depends_on:
       gluetun:
         condition: service_healthy
