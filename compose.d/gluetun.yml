@@ -1,0 +1,70 @@
+# Gluetun: VPN gateway — all download traffic exits through this tunnel.
+# Label contract for every fragment: docs/adding-a-service.md.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  gluetun:
+    image: qmcgaw/gluetun:latest
+    container_name: ${GLUETUN_NAME:-mediastack-gluetun}
+    profiles: ["gluetun"]
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    ports:
+      # Every VPN'd service publishes its UI through gluetun.
+      # Unused mappings (disabled profiles) are harmless.
+      - "${QBITTORRENT_PORT:-8085}:8085"   # qBittorrent
+      - "${SONARR_PORT:-8989}:8989"        # Sonarr
+      - "${RADARR_PORT:-7878}:7878"        # Radarr
+      - "${PROWLARR_PORT:-9696}:9696"      # Prowlarr
+      - "${LIDARR_PORT:-8686}:8686"        # Lidarr    (music profile)
+      - "${BAZARR_PORT:-6767}:6767"        # Bazarr    (subs profile)
+      - "${FLARESOLVERR_PORT:-8191}:8191"  # FlareSolverr
+      - "${DELUGE_PORT:-8112}:8112"        # Deluge    (torrents-extra)
+      - "${TRANSMISSION_PORT:-9091}:9091"  # Transmission (torrents-extra)
+      - "${RADARR_4K_PORT:-7879}:7879"     # Radarr 4K  (radarr-4k)
+      - "${SONARR_ANIME_PORT:-8990}:8990"  # Sonarr Anime (sonarr-anime)
+      - "6881:6881"
+      - "6881:6881/udp"
+    volumes:
+      - ${CONFIG_ROOT}/gluetun:/gluetun
+    environment:
+      - TZ=${TZ}
+      - VPN_SERVICE_PROVIDER=${VPN_PROVIDER}
+      - VPN_TYPE=wireguard
+      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
+      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES:-10.5.0.2/32}
+      # Server selection: comma-separated, leave unused ones empty.
+      - SERVER_COUNTRIES=${VPN_SERVER_COUNTRIES:-}
+      - SERVER_CITIES=${VPN_SERVER_CITIES:-}
+      - SERVER_HOSTNAMES=${VPN_SERVER_HOSTNAMES:-}
+      - UPDATER_PERIOD=24h
+      - DNS_ADDRESS=${VPN_DNS_ADDRESS:-}
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.desc: "VPN gateway — all download traffic exits through this tunnel"
+      mediastack.vpn: "false"      # gluetun IS the vpn, not behind it
+      mediastack.config: "true"
+    # Same probe the image ships, but with a start grace: a cold tunnel can
+    # take >30s to establish, and without start_period compose declares
+    # gluetun unhealthy mid-handshake and aborts every dependent service.
+    healthcheck:
+      test: ["CMD", "/gluetun-entrypoint", "healthcheck"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    networks: [mediastack]   # explicit: without this compose isolates gluetun
+                             # on an implicit second network (mediastack_default)
+    logging: *logging
+    restart: unless-stopped
