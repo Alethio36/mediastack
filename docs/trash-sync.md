@@ -58,6 +58,8 @@ gluetun's namespace, so instance URLs are localhost and guide fetches ride
 the tunnel). Success stamps `cache/trash-last-sync`; `doctor` warns when the
 stamp is older than 26h or missing.
 
+The pinned `recyclarr:8` image is refreshed (patch releases) at the start of every trash-sync; a major version bump is a schema migration and stays a deliberate manual tag change in `compose.d/recyclarr.yml`.
+
 Preview without applying: `sudo docker compose run --rm recyclarr sync --preview`.
 
 ## Nightly pipeline

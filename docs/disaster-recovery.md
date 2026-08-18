@@ -22,3 +22,18 @@ rebuilds like this:
 
 Practice this once on a scratch VM before you need it. The restore drill is
 the only real proof your backups work.
+
+## Restore-point retention
+
+Tiered (grandfather-father-son), pruned after every backup, knobs in `.env`:
+
+* `BACKUP_KEEP_DAILY` (7) — the newest N restore points, kept unconditionally.
+* `BACKUP_KEEP_WEEKLY` (4) — beyond those, the newest point per ISO week,
+  for N distinct weeks.
+* `BACKUP_KEEP_MONTHLY` (6) — beyond those, the newest point per month,
+  for N distinct months.
+
+Defaults give ~6 months of reach at 17 points steady state. `0` disables a
+tier. The newest point is never pruned, and nothing in `BACKUP_ROOT` that
+isn't a restore-point directory is ever touched. Every prune prints what it
+removed and a `retention 7d/4w/6m: kept X, pruned Y` summary.
