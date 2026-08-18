@@ -2309,26 +2309,26 @@ trash_sentinel() { # $1 = svc
     fi
 }
 
-# condense recyclarr's results table into one line for doctor + the verdict.
-# Columns: CustomFormats QualityProfiles QualitySizes MediaNaming MediaMgmt.
-# Cell values: ✓ unchanged, number = changes applied, ~ partial, ✗ failed.
+# condense recyclarr's sync log into one line for doctor + the verdict.
+# recyclarr only renders its results table on a TTY; captured output is
+# plain [INF] logging, so that is what we parse: "Created/Updated/Deleted
+# N <thing>" lines per instance mean drift was repaired or guides moved.
+# Best-effort: unrecognized output degrades to a note, never the verdict.
 trash_summarize() { # $1 = captured sync log
     awk '
-        ($1 == "✓" || $1 == "✗" || $1 == "~") && NF >= 7 {
-            name=$2; det=""
-            n=split("CF QP QS MN MM", lbl, " ")
-            for (i=3; i<=7; i++) {
-                v=$i
-                if (v ~ /^[0-9]+$/) det = det (det?",":"") lbl[i-2] ":" v
-                else if (v == "✗" || v == "~") det = det (det?",":"") lbl[i-2] ":" v
-            }
-            if (det != "") { changed = changed (changed?" ":"") name "(" det ")" }
-            rows++
+        /^\[INF\] [a-z0-9-]+: (Created|Updated|Deleted) [0-9]+ / {
+            name=$2; sub(/:$/, "", name)
+            detail=""; for (i=3; i<=NF; i++) detail = detail (detail?" ":"") $i
+            sub(/:.*/, "", detail)
+            per[name] = per[name] (per[name] ? ", " : "") detail
         }
+        /^\[INF\] [a-z0-9-]+: Processing / { rows++ }
         END {
-            if (rows == 0)            print "summary unavailable (unrecognized output)"
-            else if (changed == "")   print "all in sync, no drift"
-            else                      print "changes applied: " changed
+            if (rows == 0) { print "summary unavailable (unrecognized output)"; exit }
+            out=""
+            for (n in per) out = out (out ? " " : "") n "(" per[n] ")"
+            if (out == "") print "all in sync, no drift"
+            else           print "changes applied: " out
         }
     ' "$1"
 }
