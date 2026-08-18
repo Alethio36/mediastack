@@ -18,5 +18,7 @@ services:
     environment:
       TZ: ${TZ}
     volumes:
-      - ./local/recyclarr:/config
+      # absolute path, stack convention: include-relative paths resolve
+      # against compose.d/, not the project root
+      - ${CONFIG_ROOT}/recyclarr:/config
     restart: "no"
