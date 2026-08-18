@@ -23,9 +23,13 @@ token, certificate environment, dashboard login (view later:
 `ACME_ENV=staging` issues from Let's Encrypt's staging environment:
 effectively unlimited, browsers warn. Use it for any repeated
 install/nuke testing — production allows only 5 duplicate certificates
-per week and a burned week is a burned week. Switching the knob and
-running `up` is the whole procedure: the tooling detects the mismatch and
-resets the certificate store so the new environment takes effect. `doctor`
+per week and a burned week is a burned week. Switching is one command:
+
+    ./mediastack.sh traefik-setup --certs
+
+It asks the single question, resets the certificate store, restarts
+traefik, and the new environment reissues automatically — nothing else to
+touch. `doctor`
 warns persistently while staging certificates are live.
 
 ## Hostnames
