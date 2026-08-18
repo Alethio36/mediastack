@@ -26,6 +26,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.port: "8409"
       mediastack.desc: "virtual live-TV channels from your library"
       mediastack.vpn: "false"
       mediastack.config: "true"

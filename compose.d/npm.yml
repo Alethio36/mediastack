@@ -24,6 +24,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.port: "81"
       mediastack.desc: "reverse proxy + HTTPS certificates"
       mediastack.vpn: "false"
       mediastack.config: "true"
