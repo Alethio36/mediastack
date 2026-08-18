@@ -1602,8 +1602,27 @@ arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialisin
 }
 
 arr_url() { echo "http://127.0.0.1:$(svc_label "$1" mediastack.port)"; }
-arr_apiver() { # lidarr never moved to v3
+arr_apiver() { # prowlarr and lidarr speak v1; the content arrs are v3
+    [[ "$1" == prowlarr ]] && { echo v1; return; }
     case "$(svc_label "$1" mediastack.arrtype)" in lidarr) echo v1 ;; *) echo v3 ;; esac
+}
+
+arr_forms_login() { # shared operator login on an arr-family UI; idempotent
+    local s="$1" auser apass key url cur
+    auser=$(env_get ARR_USER); apass=$(env_get ARR_PASSWORD)
+    [[ -n "$auser" && -n "$apass" ]] || { info "$s: shared arr login not set yet — 'wire arr' creates it"; return 0; }
+    key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
+    url=$(arr_url "$s")
+    cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)
+    if jq -e --arg u "$auser" '.authenticationMethod=="forms" and .username==$u' <<<"$cur" >/dev/null 2>&1; then
+        ok "$s: forms login already set for '$auser'"
+    elif w_would "$s: enable forms login for '$auser'"; then
+        api PUT "$url/api/$(arr_apiver "$s")/config/host" "$key" "$(jq -c --arg u "$auser" --arg p "$apass" \
+            '.authenticationMethod="forms" | .authenticationRequired="enabled"
+             | .username=$u | .password=$p | .passwordConfirmation=$p' <<<"$cur")" >/dev/null \
+            && ok "$s: forms login enabled" \
+            || wfail "$s: auth setup rejected by the API — set it once in its UI; check: logs $s"
+    fi
 }
 
 wire_gate() { # refuse to wire what isn't up
@@ -1785,18 +1804,7 @@ operator). Stored in .env (view: credentials)."
         [[ -n "$key" ]] || { wfail "$s: no ApiKey in config.xml yet (still initialising?) — re-run wire in a minute"; continue; }
         url=$(arr_url "$s"); root=$(svc_label "$s" mediastack.rootfolder)
         # authentication (forms login) — idempotent on method+username match
-        if [[ -n "$auser" && -n "$apass" ]]; then
-            cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)
-            if jq -e --arg u "$auser" '.authenticationMethod=="forms" and .username==$u' <<<"$cur" >/dev/null 2>&1; then
-                ok "$s: forms login already set for '$auser'"
-            elif w_would "$s: enable forms login for '$auser'"; then
-                api PUT "$url/api/$(arr_apiver "$s")/config/host" "$key" "$(jq -c --arg u "$auser" --arg p "$apass" \
-                    '.authenticationMethod="forms" | .authenticationRequired="enabled"
-                     | .username=$u | .password=$p | .passwordConfirmation=$p' <<<"$cur")" >/dev/null \
-                    && ok "$s: forms login enabled" \
-                    || wfail "$s: auth setup rejected by the API — set it once in its UI; check: logs $s"
-            fi
-        fi
+        arr_forms_login "$s"
         # root folder
         t=$(svc_label "$s" mediastack.arrtype)
         cur=$(api GET "$url/api/$(arr_apiver "$s")/rootfolder" "$key" || true)
@@ -1849,6 +1857,8 @@ wire_prowlarr() {
     wire_gate prowlarr
     local pkey purl; pkey=$(arr_key prowlarr); purl=$(arr_url prowlarr)
     [[ -n "$pkey" ]] || { wfail "prowlarr: no ApiKey yet — re-run wire shortly"; return 0; }
+    # prowlarr has no arrtype label so wire_arr's loop never sees it: gate here
+    arr_forms_login prowlarr
     local s key t impl cur
     cur=$(api GET "$purl/api/v1/applications" "$pkey" || true)
     for s in $(arr_instances); do
