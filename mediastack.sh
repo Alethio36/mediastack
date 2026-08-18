@@ -323,6 +323,22 @@ ask() { # ask VAR "prompt" "default" -> sets REPLY_VAL
     REPLY_VAL="${ans:-$def}"
 }
 
+ask_token() { # ask_token "prompt" "current" -> REPLY_VAL; pasted secrets:
+    # hidden input, single entry (no typo-confirm — it's pasted), Enter
+    # keeps the current value when one exists, empty is refused otherwise.
+    local a hint=""
+    [[ -n "${2:-}" ]] && hint=" [Enter keeps the current one]"
+    while true; do
+        read -r -s -p "$1${hint}: " a; echo
+        if [[ -z "$a" ]]; then
+            [[ -n "${2:-}" ]] && { REPLY_VAL="$2"; info "keeping the current value"; return 0; }
+            warn "this value is required — paste it (input is hidden)"
+            continue
+        fi
+        REPLY_VAL="$a"; return 0
+    done
+}
+
 ask_secret() { # ask_secret "prompt" "generated-default" -> REPLY_VAL
     # Never echoes. Enter accepts the generated default (view: credentials);
     # a typed password must be entered twice to guard against blind typos.
@@ -2467,48 +2483,60 @@ cmd_trash_sync() {
 # Wave 3: the edge. All config is generated (desired state from .env); the
 # only imperative act is issuing certs, which Traefik does itself.
 
-traefik_ensure() { # called by cmd_up when traefik is enabled; idempotent
+traefik_ensure() { # traefik_ensure [--reconfigure]; runs on up/enable; idempotent
     svc_enabled traefik || return 0
-    local domain email token acmeenv duser dpass
+    local force=0; [[ "${1:-}" == --reconfigure ]] && force=1
+    local domain email token acmeenv duser
     domain=$(env_get TRAEFIK_DOMAIN); email=$(env_get ACME_EMAIL)
     token=$(env_get CF_DNS_API_TOKEN)
-    if [[ -z "$domain" || -z "$email" || -z "$token" ]]; then
+    if [[ -z "$domain" || -z "$email" || -z "$token" ]] || (( force )); then
         if [[ ! -t 0 ]]; then
+            (( force )) && die "traefik-setup needs a terminal."
             die "traefik is enabled but not configured (TRAEFIK_DOMAIN/ACME_EMAIL/CF_DNS_API_TOKEN) and there is no terminal to ask — run './mediastack.sh traefik-setup' interactively first."
         fi
         hr "Traefik setup"
-        explain "Domain" \
-"The base domain for the stack. Every service gets a subdomain of it
-(jellyfin.<domain>, requests.<domain>, ...). The domain's DNS must be
-hosted on Cloudflare, with a wildcard A record (*.<domain>) pointing at
-this host's LAN IP. Nothing is exposed to the internet by this."
-        ask TD "Base domain (e.g. med.example.com)" "${domain}"; domain="$REPLY_VAL"
+        (( force )) && info "Enter keeps the value shown in [brackets]."
+        explain "Your domain" \
+"Every service gets its own address under one domain you own:
+https://jellyfin.<domain>, https://requests.<domain>, and so on.
+Before continuing, two things must exist at dash.cloudflare.com:
+  1. the domain's DNS, hosted on Cloudflare
+  2. a wildcard A record  *.<domain> -> this machine's LAN IP,
+     with the proxy toggle OFF (grey cloud, 'DNS only')
+This exposes nothing to the internet — the addresses only resolve
+usefully on your own network."
+        ask TD "Base domain (e.g. media.example.com)" "${domain}"; domain="$REPLY_VAL"
         [[ -n "$domain" ]] || die "A domain is required."
-        ask AE "Email for Let's Encrypt expiry notices" "${email}"; email="$REPLY_VAL"
+        ask AE "Email for certificate-expiry notices" "${email}"; email="$REPLY_VAL"
         explain "Cloudflare API token" \
-"Create at dash.cloudflare.com -> My Profile -> API Tokens: permission
-Zone / DNS / Edit, scoped to this one zone. NOT the Global API Key."
-        ask_secret "Cloudflare DNS API token"; token="$REPLY_VAL"
-        explain "Certificate environment" \
-"  production  real, browser-trusted certificates. Rate-limited: 5
-              duplicate certs per week — do NOT use while testing
-              repeated installs.
-  staging     effectively unlimited issuance for testing; browsers
-              show a warning. Switch to production when done — the
-              tooling resets stored certs on switch automatically."
+"Lets the stack prove to Let's Encrypt that you control the domain.
+Create one at dash.cloudflare.com -> My Profile -> API Tokens ->
+Create Token: give it the single permission  Zone / DNS / Edit,
+scoped to just this domain's zone. (Not the Global API Key.)"
+        ask_token "Paste the Cloudflare token (input is hidden)" "$token"; token="$REPLY_VAL"
+        explain "Certificates: real or testing?" \
+"  production  real certificates, trusted by every browser. Let's
+              Encrypt allows only 5 identical ones per week, so
+              repeated install testing can lock you out for days.
+  staging     unlimited test certificates. Browsers show a warning
+              you can click through — everything else works the
+              same. Pick this while you are still testing; one
+              setting change switches to production later and the
+              stack handles the swap itself."
         ask AV "Certificate environment [production/staging]" "$(env_get ACME_ENV production)"
         case "$REPLY_VAL" in production|staging) acmeenv="$REPLY_VAL" ;; *) die "Expected 'production' or 'staging'." ;; esac
         env_set TRAEFIK_DOMAIN "$domain"; env_set ACME_EMAIL "$email"
         env_set CF_DNS_API_TOKEN "$token"; env_set ACME_ENV "$acmeenv"
     fi
     duser=$(env_get TRAEFIK_DASH_USER)
-    if [[ -z "$duser" ]]; then
+    if [[ -z "$duser" ]] || (( force )); then
         [[ -t 0 ]] || die "traefik dashboard credentials unset and no terminal — run './mediastack.sh traefik-setup'."
         explain "Dashboard login" \
-"The Traefik dashboard (dash.<domain>) is read-only but still gated.
-Enter accepts a generated password; view later: credentials."
-        ask DU "Dashboard username" "admin"; duser="$REPLY_VAL"
-        ask_secret "Dashboard password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"
+"Traefik's dashboard (https://dash.<domain>) shows every route and
+certificate. It cannot change anything, but it still gets a login.
+Enter accepts a generated password; see it later with: credentials"
+        ask DU "Dashboard username" "$(env_get TRAEFIK_DASH_USER admin)"; duser="$REPLY_VAL"
+        ask_secret "Dashboard password" "$(env_get TRAEFIK_DASH_PASSWORD "$(head -c12 /dev/urandom | base64 | tr -d '=+/')")"
         env_set TRAEFIK_DASH_USER "$duser"; env_set TRAEFIK_DASH_PASSWORD "$REPLY_VAL"
     fi
     traefik_gen
@@ -2521,7 +2549,7 @@ traefik_gen() {
     # docker creates missing bind sources as root-owned DIRECTORIES; if the
     # container ever started before setup, our file paths are junk dirs now
     local f
-    for f in "$croot/traefik/traefik.yml" "$croot/traefik/dynamic.yml"; do
+    for f in "$croot/traefik/traefik.yml" "$croot/traefik/dynamic.yml" "$croot/traefik/dynamic/00-mediastack.yml"; do
         sudo test -d "$f" && { warn "removing docker-created junk directory at $f"; sudo rm -rf "$f"; }
     done
     sudo test -d /run-traefik-setup-first && sudo rm -rf /run-traefik-setup-first
@@ -2600,17 +2628,23 @@ http:
         users:
           - "$duser:$hash"
 DYNAMIC
-    sudo install -m 600 "$tmp" "$croot/traefik/dynamic.yml"; rm -f "$tmp"
+    sudo install -d -m 700 "$croot/traefik/dynamic"
+    sudo rm -f "$croot/traefik/dynamic.yml"   # pre-dir layout leftover
+    sudo install -m 600 "$tmp" "$croot/traefik/dynamic/00-mediastack.yml"; rm -f "$tmp"
+    # user proxy hosts: copied in (applied on every up / traefik-setup)
+    sudo rm -f "$croot/traefik/dynamic/"user-*.yml
+    local uf n=0
+    for uf in local/proxy.d/*.yml; do
+        [[ -e "$uf" ]] || break
+        sudo install -m 600 "$uf" "$croot/traefik/dynamic/user-$(basename "$uf")"; n=$((n+1))
+    done
+    (( n )) && info "$n user proxy file(s) from local/proxy.d applied"
     ok "traefik config generated ($acmeenv certificates, domain $domain)"
 }
 
 cmd_traefik_setup() {
     svc_enabled traefik || die "traefik is not enabled. Enable it first: ./mediastack.sh enable traefik"
-    # force re-prompt by clearing nothing: prompts fire only for unset values,
-    # so setup re-runs regenerate config from current .env. To change answers,
-    # edit .env (TRAEFIK_DOMAIN, ACME_EMAIL, CF_DNS_API_TOKEN, ACME_ENV) or
-    # unset them and re-run.
-    traefik_ensure
+    traefik_ensure --reconfigure
     info "Apply with: ./mediastack.sh up   (recreates traefik if config changed)"
 }
 

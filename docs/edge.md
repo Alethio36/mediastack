@@ -42,7 +42,8 @@ versioned in git, nothing to re-click after a reinstall.
 
 ## Proxying something that isn't in the stack
 
-Drop a file in `local/proxy.d/` (user-owned, watched live — no restart):
+Drop a file in `local/proxy.d/` (user-owned); it is applied by the next
+`up` or `traefik-setup`:
 
 ```yaml
 # local/proxy.d/nas.yml
