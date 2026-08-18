@@ -18,7 +18,7 @@ lists. Adding one is two touches:
 | `mediastack.vpn: "true"` | must run inside gluetun (`network_mode: "service:gluetun"`, no own `ports:`) — leak-test enforces both |
 | `mediastack.config: "true"` | owns `${CONFIG_ROOT}/<service>` (provisioned, audited, backed up) |
 | `mediastack.cache: "true"` | owns `${CACHE_ROOT}/<service>` (provisioned, never backed up) |
-| `mediastack.subdomain: name` | reverse-proxy subdomain (consumed by phase-2 npm-sync) |
+| `traefik.http.routers.*` labels | HTTPS hostname — native Traefik labels, see docs/edge.md |
 
 Conventions: config dir name == service name; env var stem == service name
 uppercased (`myapp` → `MYAPP_UID`, `MYAPP_UPDATE`, `MYAPP_NAME`, `MYAPP_PORT`).

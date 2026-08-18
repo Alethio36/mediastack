@@ -1,0 +1,46 @@
+# Traefik: the stack's edge — HTTPS for every web UI via one wildcard cert
+# (Let's Encrypt DNS-01 through Cloudflare; no ports exposed to the world).
+# Static config + dynamic file are GENERATED into ${CONFIG_ROOT}/traefik by
+# 'traefik-setup' (auto-run by 'up'); user-added proxy hosts go in
+# local/proxy.d/*.yml (mounted into the watched dynamic dir).
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  traefik:
+    image: traefik:v3
+    container_name: ${TRAEFIK_NAME:-mediastack-traefik}
+    profiles: ["traefik"]
+    ports:
+      - "${TRAEFIK_HTTP_PORT:-80}:80"
+      - "${TRAEFIK_HTTPS_PORT:-443}:443"
+    environment:
+      TZ: ${TZ}
+      CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${CONFIG_ROOT}/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ${CONFIG_ROOT}/traefik/acme:/letsencrypt
+      # flat watched dir: user files are the dir, generated file projected in
+      - ${TRAEFIK_LOCAL_PROXY:-/run-traefik-setup-first}:/dynamic:ro
+      - ${CONFIG_ROOT}/traefik/dynamic.yml:/dynamic/00-mediastack.yml:ro
+    networks: [mediastack]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "traefik", "healthcheck", "--ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.port: "443"
+    restart: unless-stopped
