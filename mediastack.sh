@@ -1300,8 +1300,10 @@ cmd_doctor() {
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
         if [[ -s cache/trash-last-sync ]]; then
             local tage=$(( ( $(date +%s) - $(cat cache/trash-last-sync) ) / 3600 ))
+            local tsum=""
+            [[ -s cache/trash-last-summary ]] && tsum=" — last run: $(cat cache/trash-last-summary)"
             (( tage > 26 )) && warn "TRaSH sync is ${tage}h old — run: ./mediastack.sh trash-sync" \
-                            || ok "TRaSH sync ${tage}h old"
+                            || ok "TRaSH sync ${tage}h old${tsum}"
         else
             warn "TRaSH configured but never synced — run: ./mediastack.sh trash-sync"
         fi
@@ -2307,6 +2309,30 @@ trash_sentinel() { # $1 = svc
     fi
 }
 
+# condense recyclarr's results table into one line for doctor + the verdict.
+# Columns: CustomFormats QualityProfiles QualitySizes MediaNaming MediaMgmt.
+# Cell values: ✓ unchanged, number = changes applied, ~ partial, ✗ failed.
+trash_summarize() { # $1 = captured sync log
+    awk '
+        ($1 == "✓" || $1 == "✗" || $1 == "~") && NF >= 7 {
+            name=$2; det=""
+            n=split("CF QP QS MN MM", lbl, " ")
+            for (i=3; i<=7; i++) {
+                v=$i
+                if (v ~ /^[0-9]+$/) det = det (det?",":"") lbl[i-2] ":" v
+                else if (v == "✗" || v == "~") det = det (det?",":"") lbl[i-2] ":" v
+            }
+            if (det != "") { changed = changed (changed?" ":"") name "(" det ")" }
+            rows++
+        }
+        END {
+            if (rows == 0)            print "summary unavailable (unrecognized output)"
+            else if (changed == "")   print "all in sync, no drift"
+            else                      print "changes applied: " changed
+        }
+    ' "$1"
+}
+
 cmd_trash_sync() {
     WIRE_FAILS=0
     hr "trash-sync: TRaSH Guides via Recyclarr"
@@ -2325,11 +2351,18 @@ cmd_trash_sync() {
         trash_sentinel "$s"
     done
     hr "trash-sync: recyclarr"
-    if sudo docker compose run --rm recyclarr sync; then
+    local slog rc summary
+    slog=$(mktemp)
+    sudo docker compose run --rm recyclarr sync 2>&1 | tee "$slog"
+    rc=${PIPESTATUS[0]}
+    summary=$(trash_summarize "$slog")
+    sudo install -m 644 "$slog" cache/trash-sync.log; rm -f "$slog"
+    if (( rc == 0 )); then
         date +%s | sudo tee cache/trash-last-sync >/dev/null
-        ok "sync complete"
+        printf '%s' "$summary" | sudo tee cache/trash-last-summary >/dev/null
+        ok "sync complete — $summary (full log: cache/trash-sync.log)"
     else
-        wfail "recyclarr sync failed — output above is the evidence"
+        wfail "recyclarr sync failed — output above is the evidence (also: cache/trash-sync.log)"
     fi
     if (( WIRE_FAILS )); then
         fail "trash-sync finished with $WIRE_FAILS failure(s)."; return 1
