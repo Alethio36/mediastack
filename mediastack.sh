@@ -763,6 +763,7 @@ cmd_enable() {
     sel=$(resolve_deps "$svc" $cur)
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     require_mounts; provision >/dev/null   # users/dirs for the new services
+    traefik_ensure   # wizard + config gen if traefik just came into the set
     DC up -d --remove-orphans; ok "'$svc' enabled and started."
 }
 cmd_disable() {
@@ -2517,6 +2518,13 @@ traefik_gen() {
     local croot domain acmeenv caline hash duser dpass
     croot=$(env_get CONFIG_ROOT); domain=$(env_get TRAEFIK_DOMAIN)
     acmeenv=$(env_get ACME_ENV production)
+    # docker creates missing bind sources as root-owned DIRECTORIES; if the
+    # container ever started before setup, our file paths are junk dirs now
+    local f
+    for f in "$croot/traefik/traefik.yml" "$croot/traefik/dynamic.yml"; do
+        sudo test -d "$f" && { warn "removing docker-created junk directory at $f"; sudo rm -rf "$f"; }
+    done
+    sudo test -d /run-traefik-setup-first && sudo rm -rf /run-traefik-setup-first
     sudo install -d -m 700 "$croot/traefik" "$croot/traefik/acme"
     install -d -m 755 local/proxy.d
     env_set TRAEFIK_LOCAL_PROXY "$PWD/local/proxy.d"
