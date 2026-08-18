@@ -2662,7 +2662,8 @@ label: letters, numbers, hyphens (not first or last). The wildcard
 certificate covers any choice — renames are free."
     local var def cur val
     local -A chosen
-    while read -r var def; do
+    # map on fd 3: ask() must keep stdin for the person's answers
+    while read -r var def <&3; do
         cur=$(env_get "$var"); cur=${cur:-$def}
         while :; do
             ask HV "  ${var%_HOST} -> https://?.$domain" "$cur"; val="$REPLY_VAL"
@@ -2676,7 +2677,7 @@ certificate covers any choice — renames are free."
         done
         chosen[$val]="${var%_HOST}"
         env_set "$var" "$val"
-    done < <(traefik_host_vars)
+    done 3< <(traefik_host_vars)
     traefik_gen   # the dashboard hostname lives in the generated config
     info "Apply with: ./mediastack.sh up"
     info "(services whose name changed are recreated; renaming a VPN'd service recreates gluetun — a brief tunnel bounce)"
