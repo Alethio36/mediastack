@@ -50,7 +50,7 @@ malformed override fails the sync loudly rather than being skipped.
 
 ## Mechanics
 
-`trash-sync` regenerates `local/recyclarr/recyclarr.yml` from `.env` +
+`trash-sync` regenerates `${CONFIG_ROOT}/recyclarr/recyclarr.yml` from `.env` +
 overrides on every run (generated file — never edit it), pushes the sentinel
 banner (idempotent), then runs the one-shot recyclarr container
 (`compose.d/recyclarr.yml`, profile-gated so `up` never starts it; it shares
