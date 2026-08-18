@@ -1,0 +1,21 @@
+# Recyclarr: one-shot TRaSH Guides sync tool — NOT a long-running service.
+# Invoked only via `./mediastack.sh trash-sync` (docker compose run --rm),
+# which activates its profile; `up` never starts it. No mediastack.managed
+# label on purpose: status/doctor/update skip tooling. Shares gluetun's
+# namespace so instance URLs are localhost and the kill-switch covers guide
+# fetches. Binds no ports, so the appport collision rule does not apply.
+
+services:
+  recyclarr:
+    image: ghcr.io/recyclarr/recyclarr:8
+    container_name: mediastack-recyclarr
+    profiles: ["recyclarr"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ}
+    volumes:
+      - ./local/recyclarr:/config
+    restart: "no"
