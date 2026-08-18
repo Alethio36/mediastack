@@ -914,10 +914,10 @@ prune_backups() {
     done
     for p in "${all[@]}"; do
         [[ -n "${keepset[$p]:-}" ]] && continue
-        info "Pruning restore point $p (outside ${keepd}d/${keepw}w/${keepm}m retention)"
+        info "Pruning restore point $p (older than the retention policy keeps)"
         sudo rm -rf "${broot:?}/$p"; pruned=$((pruned+1))
     done
-    ok "retention ${keepd}d/${keepw}w/${keepm}m: kept $(( ${#all[@]} - pruned )), pruned $pruned"
+    ok "restore points: kept $(( ${#all[@]} - pruned )), pruned $pruned — policy: the last $keepd backups, plus one per week for $keepw weeks, plus one per month for $keepm months (change via BACKUP_KEEP_* in .env)"
 }
 
 cmd_backup_verify() {
@@ -2333,6 +2333,24 @@ trash_gen_config() {
 # the ownership banner: a never-matching CF that sorts first in the GUI so
 # nobody hand-tunes what nightly sync will revert. Recyclarr cannot create
 # non-TRaSH CFs, so we push it ourselves (idempotent by name).
+# container "running" is not API "ready" — after a cold restart the arrs
+# answer errors for a few seconds. Poll each instance before touching it.
+arr_api_ready() { # arr_api_ready <svc> <shared-deadline-epoch> -> 0 ready
+    local s="$1" deadline="$2" key url probe
+    key=$(arr_key "$s"); [[ -n "$key" ]] || return 1
+    url=$(arr_url "$s")
+    while :; do
+        probe=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+                -H "X-Api-Key: $key" "$url/api/$(arr_apiver "$s")/system/status" 2>&1)
+        [[ "$probe" == 200 ]] && return 0
+        if (( $(date +%s) >= deadline )); then
+            wfail "$s: API not ready before the 90s budget ran out (last probe: $(head -c80 <<<"$probe"))"
+            return 1
+        fi
+        sleep 3
+    done
+}
+
 TRASH_SENTINEL='[!] Synced by mediastack — tune via local/trash-overrides.yml'
 trash_sentinel() { # $1 = svc
     local s="$1" key url cur
@@ -2342,10 +2360,13 @@ trash_sentinel() { # $1 = svc
     if jq -e --arg n "$TRASH_SENTINEL" 'any(.[]; .name == $n)' <<<"$cur" >/dev/null 2>&1; then
         ok "$s: sentinel banner present"
     elif w_would "$s: create sentinel banner custom format"; then
-        api POST "$url/api/$(arr_apiver "$s")/customformat" "$key" "$(jq -nc --arg n "$TRASH_SENTINEL" \
-            '{name:$n, includeCustomFormatWhenRenaming:false, specifications:[{name:"Never matches", implementation:"ReleaseTitleSpecification", negate:false, required:true, fields:[{name:"value", value:"\\b\\B"}]}]}')" >/dev/null \
-            && ok "$s: sentinel banner created" \
-            || wfail "$s: sentinel creation rejected — check: logs $s"
+        local sresp
+        if sresp=$(api POST "$url/api/$(arr_apiver "$s")/customformat" "$key" "$(jq -nc --arg n "$TRASH_SENTINEL" \
+            '{name:$n, includeCustomFormatWhenRenaming:false, specifications:[{name:"Never matches", implementation:"ReleaseTitleSpecification", negate:false, required:true, fields:[{name:"value", value:"\\b\\B"}]}]}')"); then
+            ok "$s: sentinel banner created"
+        else
+            wfail "$s: sentinel creation rejected — API said: $(head -c160 <<<"$sresp")"
+        fi
     fi
 }
 
@@ -2386,8 +2407,10 @@ cmd_trash_sync() {
     trash_gen_config
     local s
     hr "trash-sync: ownership banners"
+    local deadline=$(( $(date +%s) + 90 ))
     for s in $insts; do
         [[ "$(env_get "$(trash_envkey "$s")")" == skip ]] && continue
+        arr_api_ready "$s" "$deadline" || continue
         trash_sentinel "$s"
     done
     hr "trash-sync: recyclarr"
