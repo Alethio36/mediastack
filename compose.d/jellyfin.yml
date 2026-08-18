@@ -37,6 +37,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.port: "8096"
       mediastack.desc: "the media server your users watch"
       mediastack.vpn: "false"
       mediastack.config: "true"

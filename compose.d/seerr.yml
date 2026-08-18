@@ -29,6 +29,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.port: "5055"
       mediastack.desc: "request/discovery site for your users"
       mediastack.vpn: "false"
       mediastack.config: "true"

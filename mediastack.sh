@@ -799,15 +799,16 @@ cmd_status() {
     load_env; render
     if [[ -n "${1:-}" ]]; then status_one "$1"; return; fi
     hr "Mediastack status"
-    printf "%-14s %-4s %-9s %-10s %-12s %-8s %s\n" SERVICE VPN STATE HEALTH VERSION PINNED UPTIME
-    local s cn pin vpn
+    printf "%-14s %-5s %-4s %-9s %-10s %-12s %-8s %s\n" SERVICE PORT VPN STATE HEALTH VERSION PINNED UPTIME
+    local s cn pin vpn port
     for s in $(svc_managed); do
         svc_enabled "$s" || continue
         cn=$(svc_cname "$s")
         pin=no; [[ -s "$PINS_FILE" ]] && grep -q "^  $s:" "$PINS_FILE" && pin="${C_YLW}yes${C_RST}"
         vpn=-; [[ $(svc_label "$s" mediastack.vpn) == "true" ]] && vpn=yes
-        printf "%-14s %-4s %-9s %-10s %-12s %-8s %s\n" \
-            "$s" "$vpn" "$(c_state "$cn")" "$(c_health "$cn")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")"
+        port=$(svc_label "$s" mediastack.port); port=${port:--}
+        printf "%-14s %-5s %-4s %-9s %-10s %-12s %-8s %s\n" \
+            "$s" "$port" "$vpn" "$(c_state "$cn")" "$(c_health "$cn")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")"
     done
     echo
     local off="" p
@@ -1881,17 +1882,42 @@ JSON
         fi
     done
     if svc_enabled flaresolverr; then
+        # tag 'flared': put it on any indexer that needs FlareSolverr and
+        # prowlarr routes that indexer through the proxy. Nothing carries it
+        # by default — only Cloudflare-protected indexers should pay the tax.
+        local fid
+        fid=$(api GET "$purl/api/v1/tag" "$pkey" | jq -r '.[] | select(.label=="flared") | .id' 2>/dev/null | head -1)
+        if [[ -n "$fid" ]]; then
+            ok "tag 'flared' exists"
+        elif w_would "create prowlarr tag 'flared' (attach to indexers needing FlareSolverr)"; then
+            fid=$(api POST "$purl/api/v1/tag" "$pkey" '{"label":"flared"}' | jq -r '.id' 2>/dev/null)
+            [[ -n "$fid" && "$fid" != null ]] && ok "tag 'flared' created" \
+                || { wfail "prowlarr tag 'flared' creation failed — check: logs prowlarr"; fid=""; }
+        fi
         cur=$(api GET "$purl/api/v1/indexerproxy" "$pkey" || true)
         if grep -q '"FlareSolverr (mediastack)"' <<<"$cur"; then
-            ok "flaresolverr proxy registered"
+            if [[ -n "$fid" ]] && jq -e --argjson id "$fid" \
+                    '.[] | select(.name=="FlareSolverr (mediastack)") | .tags | index($id) | not' \
+                    <<<"$cur" >/dev/null 2>&1; then
+                if w_would "attach tag 'flared' to the FlareSolverr proxy"; then
+                    local fbody
+                    fbody=$(jq -c --argjson id "$fid" \
+                        '[.[] | select(.name=="FlareSolverr (mediastack)")][0] | .tags += [$id]' <<<"$cur")
+                    api PUT "$purl/api/v1/indexerproxy/$(jq -r '.id' <<<"$fbody")" "$pkey" "$fbody" >/dev/null \
+                        && ok "flaresolverr proxy tagged 'flared'" \
+                        || wfail "could not tag the flaresolverr proxy — check: logs prowlarr"
+                fi
+            else
+                ok "flaresolverr proxy registered"
+            fi
         elif w_would "register FlareSolverr as indexer proxy"; then
             api POST "$purl/api/v1/indexerproxy" "$pkey" "$(cat <<JSON
 {"name":"FlareSolverr (mediastack)","implementation":"FlareSolverr",
- "configContract":"FlareSolverrSettings","tags":[],
+ "configContract":"FlareSolverrSettings","tags":[${fid:-}],
  "fields":[{"name":"host","value":"http://localhost:8191/"},
    {"name":"requestTimeout","value":60}]}
 JSON
-)" >/dev/null && ok "flaresolverr proxy registered" \
+)" >/dev/null && ok "flaresolverr proxy registered (tag 'flared')" \
               || wfail "flaresolverr proxy registration failed"
         fi
     fi
@@ -1906,6 +1932,21 @@ wire_bazarr() {
     bkey=$(sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | head -1 || true)
     [[ -n "$bkey" ]] || { wfail "bazarr: no api key found yet (config/config.yaml) — re-run wire shortly"; return 0; }
     burl="http://127.0.0.1:$(svc_label bazarr mediastack.port)"
+    # readiness gate: on a virgin install bazarr is still migrating its DB when
+    # wire reaches it and resets the connection (HTTP 000). Poll before posting.
+    if (( ! WIRE_DRY )); then
+        local waited=0 bprobe
+        until bprobe=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+                -H "X-API-KEY: $bkey" "$burl/api/system/status" 2>&1) \
+                && [[ "$bprobe" == 200 ]]; do
+            if (( waited >= 90 )); then
+                wfail "bazarr not ready after ${waited}s (last probe: $(head -c120 <<<"$bprobe")) — re-run wire once it settles; check: logs bazarr"
+                return 0
+            fi
+            (( waited == 0 )) && info "waiting for bazarr to come up (budget 90s)..."
+            sleep 3; waited=$((waited+3))
+        done
+    fi
     local pairs=() t skey
     for t in sonarr radarr; do
         svc_enabled "$t" || continue

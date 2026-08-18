@@ -24,6 +24,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.port: "8191"
       mediastack.desc: "captcha bypass helper for some indexers"
       mediastack.vpn: "true"
       mediastack.config: "false"
