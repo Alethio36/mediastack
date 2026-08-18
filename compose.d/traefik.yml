@@ -28,9 +28,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${CONFIG_ROOT}/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ${CONFIG_ROOT}/traefik/acme:/letsencrypt
-      # flat watched dir: user files are the dir, generated file projected in
-      - ${TRAEFIK_LOCAL_PROXY:-/run-traefik-setup-first}:/dynamic:ro
-      - ${CONFIG_ROOT}/traefik/dynamic.yml:/dynamic/00-mediastack.yml:ro
+      # generated dir; local/proxy.d/*.yml are copied in by traefik-setup/up
+      - ${CONFIG_ROOT}/traefik/dynamic:/dynamic:ro
     networks: [mediastack]
     security_opt:
       - no-new-privileges:true
