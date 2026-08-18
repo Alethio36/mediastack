@@ -37,7 +37,7 @@ refused with an explanation.
 | prowlarr | indexer manager feeding the arrs |
 | jellyfin | the media server your users watch |
 | meilisearch + jellysearch | instant, typo-tolerant Jellyfin search |
-| npm | reverse proxy + HTTPS certificates |
+| traefik | HTTPS edge: hostnames + certificates for every UI |
 | seerr | request/discovery site for your users |
 | bazarr | subtitle automation |
 | pihole / cloudflared | ad-blocking DNS / expose without port-forwarding |

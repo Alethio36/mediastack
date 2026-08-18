@@ -229,6 +229,9 @@ Connect
                  any time. Scope: wire [qbit|arr|prowlarr|bazarr];
                  preview: wire --dry-run.
   credentials    Show the app logins wire created/stored.
+  traefik-setup  Configure the HTTPS edge: domain, Cloudflare token, cert
+                 environment (staging/production), dashboard login. Auto-runs
+                 on 'up' when traefik is enabled and unconfigured.
   trash-sync     Sync TRaSH Guides quality profiles (Recyclarr) to the arrs.
                  First run asks per-instance choices; overrides survive in
                  local/trash-overrides.yml. See docs/trash-sync.md.
@@ -722,6 +725,7 @@ reconcile_disabled() {
 
 cmd_up()   {
     load_env; require_mounts; reconcile_disabled
+    traefik_ensure
     if ! DC up -d --remove-orphans; then
         warn "First start attempt failed — usually gluetun's health race after a recreate."
         local gcn t=0; gcn=$(svc_cname gluetun)
@@ -1341,6 +1345,23 @@ cmd_doctor() {
                             || ok "TRaSH sync ${tage}h old${tsum}"
         else
             warn "TRaSH configured but never synced — run: ./mediastack.sh trash-sync"
+        fi
+    fi
+    if svc_enabled traefik && [[ -n "$(env_get TRAEFIK_DOMAIN)" ]]; then
+        local acmef="$(env_get CONFIG_ROOT)/traefik/acme/acme.json"
+        if sudo test -s "$acmef"; then
+            [[ "$(sudo stat -c %a "$acmef")" == 600 ]] && ok "acme.json permissions 600" \
+                || warn "acme.json is NOT mode 600 — traefik will refuse it; fix: sudo chmod 600 $acmef"
+            if sudo grep -q "acme-staging" "$acmef"; then
+                warn "STAGING certificates active — browsers will warn. For real use: set ACME_ENV=production in .env, then ./mediastack.sh up"
+            else
+                ok "production certificates in the store"
+            fi
+            sudo grep -q "\*.$(env_get TRAEFIK_DOMAIN)" "$acmef" \
+                && ok "wildcard certificate present for *.$(env_get TRAEFIK_DOMAIN)" \
+                || warn "no wildcard certificate for *.$(env_get TRAEFIK_DOMAIN) yet — check: logs traefik"
+        else
+            warn "traefik configured but no certificates issued yet — check: logs traefik"
         fi
     fi
 
@@ -2094,6 +2115,8 @@ cmd_credentials() {
     printf '%-22s %s\n' "qBittorrent user"     "$(env_get QBITTORRENT_USER '(not set — run wire)')"
     printf '%-22s %s\n' "qBittorrent password" "$(env_get QBITTORRENT_PASSWORD '(not set — run wire)')"
     printf '%-22s %s\n' "Pi-hole password"     "$(env_get PIHOLE_PASSWORD '(dns profile not configured)')"
+    printf '%-22s %s\n' "Traefik dash user"    "$(env_get TRAEFIK_DASH_USER '(traefik not configured)')"
+    printf '%-22s %s\n' "Traefik dash password" "$(env_get TRAEFIK_DASH_PASSWORD '(traefik not configured)')"
     info "Meilisearch master key is machine-to-machine — apps use it, you never need it."
 }
 
@@ -2164,6 +2187,7 @@ main() {
         wire)         cmd_wire "$@" ;;
         credentials)  cmd_credentials ;;
         trash-sync)   cmd_trash_sync "$@" ;;
+        traefik-setup) cmd_traefik_setup ;;
         new-service)  cmd_new_service "$@" ;;
         upgrade)      cmd_upgrade ;;
         uninstall)    cmd_uninstall "$@" ;;
@@ -2436,6 +2460,150 @@ cmd_trash_sync() {
         fail "trash-sync finished with $WIRE_FAILS failure(s)."; return 1
     fi
     ok "trash-sync complete."
+}
+
+# ================================================================= traefik --
+# Wave 3: the edge. All config is generated (desired state from .env); the
+# only imperative act is issuing certs, which Traefik does itself.
+
+traefik_ensure() { # called by cmd_up when traefik is enabled; idempotent
+    svc_enabled traefik || return 0
+    local domain email token acmeenv duser dpass
+    domain=$(env_get TRAEFIK_DOMAIN); email=$(env_get ACME_EMAIL)
+    token=$(env_get CF_DNS_API_TOKEN)
+    if [[ -z "$domain" || -z "$email" || -z "$token" ]]; then
+        if [[ ! -t 0 ]]; then
+            die "traefik is enabled but not configured (TRAEFIK_DOMAIN/ACME_EMAIL/CF_DNS_API_TOKEN) and there is no terminal to ask — run './mediastack.sh traefik-setup' interactively first."
+        fi
+        hr "Traefik setup"
+        explain "Domain" \
+"The base domain for the stack. Every service gets a subdomain of it
+(jellyfin.<domain>, requests.<domain>, ...). The domain's DNS must be
+hosted on Cloudflare, with a wildcard A record (*.<domain>) pointing at
+this host's LAN IP. Nothing is exposed to the internet by this."
+        ask TD "Base domain (e.g. med.example.com)" "${domain}"; domain="$REPLY_VAL"
+        [[ -n "$domain" ]] || die "A domain is required."
+        ask AE "Email for Let's Encrypt expiry notices" "${email}"; email="$REPLY_VAL"
+        explain "Cloudflare API token" \
+"Create at dash.cloudflare.com -> My Profile -> API Tokens: permission
+Zone / DNS / Edit, scoped to this one zone. NOT the Global API Key."
+        ask_secret "Cloudflare DNS API token"; token="$REPLY_VAL"
+        explain "Certificate environment" \
+"  production  real, browser-trusted certificates. Rate-limited: 5
+              duplicate certs per week — do NOT use while testing
+              repeated installs.
+  staging     effectively unlimited issuance for testing; browsers
+              show a warning. Switch to production when done — the
+              tooling resets stored certs on switch automatically."
+        ask AV "Certificate environment [production/staging]" "$(env_get ACME_ENV production)"
+        case "$REPLY_VAL" in production|staging) acmeenv="$REPLY_VAL" ;; *) die "Expected 'production' or 'staging'." ;; esac
+        env_set TRAEFIK_DOMAIN "$domain"; env_set ACME_EMAIL "$email"
+        env_set CF_DNS_API_TOKEN "$token"; env_set ACME_ENV "$acmeenv"
+    fi
+    duser=$(env_get TRAEFIK_DASH_USER)
+    if [[ -z "$duser" ]]; then
+        [[ -t 0 ]] || die "traefik dashboard credentials unset and no terminal — run './mediastack.sh traefik-setup'."
+        explain "Dashboard login" \
+"The Traefik dashboard (dash.<domain>) is read-only but still gated.
+Enter accepts a generated password; view later: credentials."
+        ask DU "Dashboard username" "admin"; duser="$REPLY_VAL"
+        ask_secret "Dashboard password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"
+        env_set TRAEFIK_DASH_USER "$duser"; env_set TRAEFIK_DASH_PASSWORD "$REPLY_VAL"
+    fi
+    traefik_gen
+}
+
+traefik_gen() {
+    local croot domain acmeenv caline hash duser dpass
+    croot=$(env_get CONFIG_ROOT); domain=$(env_get TRAEFIK_DOMAIN)
+    acmeenv=$(env_get ACME_ENV production)
+    sudo install -d -m 700 "$croot/traefik" "$croot/traefik/acme"
+    install -d -m 755 local/proxy.d
+    env_set TRAEFIK_LOCAL_PROXY "$PWD/local/proxy.d"
+    # env switch detection: staging certs must not survive into production
+    # (and vice versa) — traefik would keep serving the cached ones forever
+    local acme="$croot/traefik/acme/acme.json" stored=""
+    if sudo test -s "$acme"; then
+        sudo grep -q "acme-staging" "$acme" && stored=staging || stored=production
+        if [[ "$stored" != "$acmeenv" ]]; then
+            warn "ACME_ENV is '$acmeenv' but stored certificates are '$stored' — resetting the certificate store so the switch takes effect (reissue happens automatically)."
+            sudo mv "$acme" "$acme.old-$stored.$(date +%s)"
+        fi
+    fi
+    caline=""
+    [[ "$acmeenv" == staging ]] && caline='      caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"'
+    local tmp; tmp=$(mktemp)
+    cat > "$tmp" <<STATIC
+# GENERATED by mediastack traefik-setup — DO NOT EDIT. Knobs live in .env.
+ping: {}
+api:
+  dashboard: true
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+providers:
+  docker:
+    exposedByDefault: false
+    network: mediastack
+  file:
+    directory: /dynamic
+    watch: true
+certificatesResolvers:
+  le:
+    acme:
+      email: $(env_get ACME_EMAIL)
+      storage: /letsencrypt/acme.json
+$caline
+      dnsChallenge:
+        provider: cloudflare
+        resolvers:
+          - "1.1.1.1:53"
+          - "8.8.8.8:53"
+STATIC
+    sudo install -m 600 "$tmp" "$croot/traefik/traefik.yml"
+    duser=$(env_get TRAEFIK_DASH_USER); dpass=$(env_get TRAEFIK_DASH_PASSWORD)
+    hash=$(openssl passwd -apr1 "$dpass")
+    cat > "$tmp" <<DYNAMIC
+# GENERATED by mediastack traefik-setup — DO NOT EDIT.
+# The dashboard router is also the single wildcard-cert requester: every
+# other router says tls=true and reuses the cert issued here.
+http:
+  routers:
+    dashboard:
+      rule: "Host(\`$(env_get TRAEFIK_DASH_HOST dash).$domain\`)"
+      entryPoints: [websecure]
+      service: api@internal
+      middlewares: [dash-auth]
+      tls:
+        certResolver: le
+        domains:
+          - main: "$domain"
+            sans: ["*.$domain"]
+  middlewares:
+    dash-auth:
+      basicAuth:
+        users:
+          - "$duser:$hash"
+DYNAMIC
+    sudo install -m 600 "$tmp" "$croot/traefik/dynamic.yml"; rm -f "$tmp"
+    ok "traefik config generated ($acmeenv certificates, domain $domain)"
+}
+
+cmd_traefik_setup() {
+    svc_enabled traefik || die "traefik is not enabled. Enable it first: ./mediastack.sh enable traefik"
+    # force re-prompt by clearing nothing: prompts fire only for unset values,
+    # so setup re-runs regenerate config from current .env. To change answers,
+    # edit .env (TRAEFIK_DOMAIN, ACME_EMAIL, CF_DNS_API_TOKEN, ACME_ENV) or
+    # unset them and re-run.
+    traefik_ensure
+    info "Apply with: ./mediastack.sh up   (recreates traefik if config changed)"
 }
 
 main "$@"

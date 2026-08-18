@@ -27,6 +27,11 @@ services:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
       mediastack.port: "8409"
+      traefik.enable: "true"
+      traefik.http.routers.ersatztv.rule: "Host(`${ERSATZTV_HOST:-tv}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.ersatztv.entrypoints: "websecure"
+      traefik.http.routers.ersatztv.tls: "true"
+      traefik.http.services.ersatztv.loadbalancer.server.port: "8409"
       mediastack.desc: "virtual live-TV channels from your library"
       mediastack.vpn: "false"
       mediastack.config: "true"
