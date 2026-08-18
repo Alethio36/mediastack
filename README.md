@@ -1,39 +1,76 @@
 # Mediastack
 
 A self-hosted media server stack — VPN-isolated downloading, the *arr suite,
-Jellyfin with fast search, and a request site — managed by one script that
-installs, configures, updates, backs up, and diagnoses the whole thing.
+Jellyfin, a request site, and HTTPS for everything — managed by one script
+that installs, configures, wires, updates, backs up, and diagnoses the whole
+thing.
 
 Built to work for anyone: every setting has a sane default, every wizard
 prompt explains itself, and every failure states its fix.
 
-## Quick start
+```
+your users ──HTTPS──▶ traefik ──▶ jellyfin / seerr / dashboards
+                                      │
+                                      ▼ (watches)
+media library  ◀── imports ──  sonarr / radarr / lidarr / bazarr
+                                      │
+                              qBittorrent + prowlarr
+                                      │
+internet  ◀──── VPN tunnel ────  gluetun  (kill-switch enforced)
+```
+
+One wildcard certificate covers every service; nothing is exposed to the
+internet — the hostnames resolve to your LAN.
+
+## Requirements
+
+* 64-bit Debian 12+ or Ubuntu 22.04+ (the installer handles Docker and
+  dependencies)
+* 4 CPU cores, 8 GB RAM, 40 GB SSD for the OS and app configs
+  * search profile with a large library: 12 GB+ (Meilisearch keeps its
+    index in memory)
+  * Jellyfin *transcoding* wants an iGPU or more cores; direct play is
+    fine at the floor
+* Media storage separate from configs — any size, NAS over NFS/SMB is fine
+  (`add-mount` sets it up)
+* A VPN subscription with WireGuard from a
+  [gluetun-supported provider](https://github.com/qdm12/gluetun-wiki)
+* Optional, for HTTPS hostnames: a domain with DNS on Cloudflare
+
+## Install
 
 ```
 git clone <this-repo> && cd mediastack
-./mediastack.sh install      # host dependencies (Debian/Ubuntu)
+./mediastack.sh install      # host dependencies
 ./mediastack.sh configure    # guided setup — explains every question
-./mediastack.sh up
-./mediastack.sh doctor       # verify
-./mediastack.sh leak-test    # prove the VPN can't leak
+./mediastack.sh up           # start (runs the HTTPS wizard if traefik is on)
+./mediastack.sh wire         # connect the apps to each other
+./mediastack.sh trash-sync   # quality profiles from the TRaSH Guides
+./mediastack.sh doctor       # verify everything
+./mediastack.sh leak-test    # prove the VPN cannot leak
 ```
 
-`./mediastack.sh` with no arguments lists every command with an explanation;
-`./mediastack.sh menu` gives you an interactive menu.
+`./mediastack.sh` with no arguments lists every command; `menu` gives you an
+interactive menu. Passwords the stack created: `credentials`.
+
+Still manual until the next wave: Jellyfin's first-run wizard (add
+`/media/tv` and `/media/movies`) and connecting Seerr to Jellyfin and the
+arrs.
 
 ## What runs (à la carte)
 
-Pick any combination of services — the wizard walks you through it, and
+Pick any combination — the wizard walks you through it, and
 `enable <service>` / `disable <service>` change it any time. Dependencies
-are handled automatically (picking qBittorrent brings the VPN; JellySearch
-brings its search engine) and disabling something another service needs is
-refused with an explanation.
+are automatic (qBittorrent brings the VPN; JellySearch brings its search
+engine), and disabling something another service needs is refused with an
+explanation.
 
 | service | what it is |
 |---|---|
 | gluetun | VPN gateway — all download traffic exits through this tunnel |
 | qbittorrent | torrent client (runs inside the VPN) |
 | sonarr / radarr / lidarr | TV / movie / music automation |
+| radarr-4k / sonarr-anime | separate 4K movie and anime TV instances |
 | prowlarr | indexer manager feeding the arrs |
 | jellyfin | the media server your users watch |
 | meilisearch + jellysearch | instant, typo-tolerant Jellyfin search |
@@ -45,100 +82,119 @@ refused with an explanation.
 | deluge / transmission | extra torrent clients (most people need neither) |
 | ersatztv | virtual live-TV channels from your library |
 
-The recommended "standard" pick is the first eight rows.
+Recyclarr rides along as a tool container (not a service) powering
+`trash-sync`. The recommended "standard" pick: gluetun, qbittorrent, the
+base arrs, prowlarr, jellyfin, search, traefik, seerr.
+
+## Command reference
+
+Setup
+| command | what it does |
+|---|---|
+| `install` | host dependencies (Docker, jq, ...) on Debian/Ubuntu |
+| `configure` | interactive wizard; safe to re-run, answers become defaults |
+| `add-mount` | guided NFS/SMB mount for media (fstab automount + poison layer) |
+
+Run
+| command | what it does |
+|---|---|
+| `up` / `down` | start / stop the stack |
+| `enable <svc>` / `disable <svc>` | turn one service on/off (dependencies handled) |
+| `status [svc]` | overview table (ports, VPN, health, versions) or one-service deep view |
+| `logs <svc>` | follow one service's logs |
+
+Maintain
+| command | what it does |
+|---|---|
+| `update [svc] [--to TAG] [--dry-run] [--now]` | backup → pull → apply → health gate; nightly via timer |
+| `apply-timer` | install/refresh the scheduled-update systemd timer |
+| `backup` / `backup verify [ts]` | restore point now / verify checksums + archives |
+| `restore --service <svc>\|--all [--from TS]` | restore configs + exact image |
+| `rollback <svc>` / `unpin <svc>` | restore from newest point and pin / release the pin |
+| `upgrade` | pull the latest mediastack + migrate `.env` |
+
+Connect
+| command | what it does |
+|---|---|
+| `wire [qbit\|arr\|prowlarr\|bazarr] [--dry-run]` | connect the apps to each other; idempotent |
+| `trash-sync` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update |
+| `traefik-setup` | HTTPS wizard: domain, Cloudflare token, cert environment, dashboard login |
+| `traefik-setup --hosts` | guided rename of every service's subdomain |
+| `traefik-setup --certs` | switch staging/production certificates (applied end to end) |
+| `credentials` | every login the stack created or stores |
+
+Check
+| command | what it does |
+|---|---|
+| `doctor` | full health/permission/cert/backup audit — every failure states its fix |
+| `leak-test [--killswitch]` | prove no VPN'd service can leak (`--killswitch` = destructive proof) |
+| `fix-perms [svc]` | repair config ownership from the UID map |
+
+Other
+| command | what it does |
+|---|---|
+| `new-service <name>` | scaffold a new compose fragment |
+| `uninstall [--nuke]` | tiered removal; `--nuke` = everything, one confirmation. Media and backups are never touched |
+| `menu` | interactive menu wrapping all of the above |
+
+This table mirrors `./mediastack.sh help` as of the current version; the
+script's own help is always authoritative.
 
 ## The rules the tooling enforces
 
 * **Configs on local disk only** — SQLite corrupts on NFS/SMB; the wizard
-  refuses network paths for CONFIG_ROOT. Media (DATA_ROOT) on a NAS is fine;
-  backups (BACKUP_ROOT) on a NAS is encouraged.
-* **Every update is preceded by a restore point.** `update` = backup → pull →
-  apply → health gate. Anything broken: `rollback <service>` returns
-  yesterday's config *and* yesterday's exact image, and holds it there until
-  you `unpin`.
+  refuses network paths for CONFIG_ROOT. Media on a NAS is fine; backups on
+  a NAS is encouraged.
+* **Every update is preceded by a restore point**, and restore points are
+  kept on a daily/weekly/monthly schedule (7 daily, one per week for 4
+  weeks, one per month for 6 months — `BACKUP_KEEP_*` in `.env`).
+  Anything broken after an update: `rollback <service>`.
 * **Downloads cannot leak.** VPN'd services run inside gluetun's network
   namespace, start only after the tunnel is verifiably up, and `leak-test`
-  proves the whole chain (add `--killswitch` for the destructive proof).
+  proves the chain. Membership is defined in the fragments, audited by the
+  tooling — see [docs/vpn-membership.md](docs/vpn-membership.md) to change it.
+* **One wildcard certificate, nothing exposed.** HTTPS via Let's Encrypt
+  DNS-01: the hostnames point at your LAN, no ports are forwarded, and a
+  staging mode exists so testing never hits production rate limits
+  (`traefik-setup --certs` switches, safely, either way).
+* **Machine-managed settings are marked.** Synced quality profiles carry a
+  `[synced]` prefix and a banner custom format; hand edits to them are
+  reverted nightly by design — durable tuning goes in
+  `local/trash-overrides.yml` ([docs/trash-sync.md](docs/trash-sync.md)).
 * **`git pull` is always safe.** Your state lives in `.env` and gitignored
   dirs; tracked files are never written at runtime. `upgrade` wraps pull +
   config migration.
 
-## VPN membership
-
-Which services run inside the VPN is defined in the compose fragments, not
-asked by the wizard — it is a safety boundary, and `leak-test` audits it.
-Default: the acquisition chain (torrent clients, arrs, flaresolverr) is
-inside gluetun; the serving chain (Jellyfin, proxy, Seerr, search) is not.
-`status` shows a VPN column so you can see membership at a glance.
-
-To change it for your deployment, use `docker-compose.override.yml`
-(gitignored — survives upgrades). Example, moving sonarr OUT of the VPN:
-
-```yaml
-# docker-compose.override.yml
-services:
-  sonarr:
-    network_mode: !reset null
-    networks: [mediastack]
-    ports:
-      - "8989:8989"
-    labels:
-      mediastack.vpn: "false"
-```
-
-and set `SONARR_PORT=18989` in `.env` so gluetun's (now unused) mapping
-frees host port 8989. Moving a service IN is the reverse: set
-`network_mode: "service:gluetun"`, `!reset` its `networks:` and `ports:`,
-label `mediastack.vpn: "true"`, add its port to gluetun's `ports:` in the
-override (lists merge), and add a `depends_on: gluetun:
-condition: service_healthy` leak guard. Re-run `leak-test` after either
-change — it validates the labels against the running topology.
-
 ## Search (JellySearch)
 
-The `search` profile makes Jellyfin search instant and typo-tolerant for
-every client. One manual step: your reverse proxy must route search requests
-to JellySearch. In NPM, open the Jellyfin proxy host, find the custom nginx
-config field (gear icon on the tab row in current versions), and paste:
+The `search` profile makes Jellyfin search instant and typo-tolerant. The
+final piece — routing search requests through the proxy automatically —
+lands in the next wave; until then Jellyfin's built-in search is used and
+nothing needs doing.
 
-```
-location ~* (/Users/.*/Items|/Items|/Artists|/Genres|/Persons|/Studios)$ {
-    if ($args ~* "searchterm=") {
-        proxy_pass http://jellysearch:5000;
-        break;
-    }
-    proxy_pass http://jellyfin:8096;
-}
-```
+## Roadmap
 
-Search via your domain (direct `:8096` bypasses the proxy and stays slow).
+Shipped: one-fragment-per-service architecture · app wiring (`wire`) ·
+TRaSH Guides sync with ownership model and nightly automation · HTTPS edge
+with staging/production certificates and guided hostnames · tiered backup
+retention.
 
-## Default ports
+Next (wave 4): Jellyfin + Seerr automated setup, JellySearch routing,
+invite management (wizarr).
 
-| app | port | | app | port |
-|---|---|---|---|---|
-| Jellyfin | 8096 | | Prowlarr | 9696 |
-| NPM admin | 81 | | Lidarr | 8686 |
-| qBittorrent | 8085 | | Bazarr | 6767 |
-| Sonarr | 8989 | | Seerr | 5055 |
-| Radarr | 7878 | | Pi-hole web | 83 |
-
-All overridable in `.env` (`SONARR_PORT=` etc).
-
-## After install (manual app wiring — phase 2 will automate this)
-
-1. **Jellyfin** (`:8096`): run the wizard, add `/media/tv` + `/media/movies`.
-2. **qBittorrent** (`:8085`): password is in `docker logs` on first run;
-   set download dir to `/data/torrent`.
-3. **arrs**: root folder `/data/media/<type>`, download client
-   `localhost:8085`, then connect Prowlarr → each arr (Full Sync).
-4. **Seerr** (`:5055`): connect to Jellyfin, then Sonarr/Radarr by API key.
-5. **NPM** (`:81`, default `admin@example.com`/`changeme` — change it):
-   add proxy hosts per app; wildcard cert via DNS challenge.
-   [TRaSH Guides](https://trash-guides.info/) for arr tuning.
+Then (wave 5): notifications (Apprise), download cleanup (cleanuparr),
+credential rotation (`set-credentials`), per-service log-error counts and
+deeper audits in `doctor`.
 
 ## Docs
 
+* [docs/edge.md](docs/edge.md) — HTTPS, hostnames, certificates, proxying non-stack hosts
+* [docs/trash-sync.md](docs/trash-sync.md) — quality profiles, overrides, ownership
+* [docs/vpn-membership.md](docs/vpn-membership.md) — moving services in/out of the VPN
 * [docs/adding-a-service.md](docs/adding-a-service.md) — extend the stack
 * [docs/migration-existing.md](docs/migration-existing.md) — adopt an existing deployment
 * [docs/disaster-recovery.md](docs/disaster-recovery.md) — full rebuild from a restore point
+
+## License
+
+MIT — see [LICENSE](LICENSE). Share it around.
