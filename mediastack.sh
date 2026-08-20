@@ -2327,10 +2327,8 @@ wire_seerr() {
     local jar pub
     jar=$(mktemp)
     pub=$(seerr_api GET /settings/public "$jar" || true)
-    if [[ "$(jq -r '.initialized' <<<"$pub" 2>/dev/null)" == true ]]; then
-        ok "seerr already initialised — untouched (its settings are yours to manage in the GUI)"
-        rm -f "$jar"; return 0
-    fi
+    local seerr_initialized=false
+    [[ "$(jq -r '.initialized' <<<"$pub" 2>/dev/null)" == true ]] && seerr_initialized=true
     local juser jpass
     juser=$(env_get JELLYFIN_ADMIN_USER); jpass=$(env_get JELLYFIN_ADMIN_PASSWORD)
     if [[ -z "$juser" || -z "$jpass" ]]; then
@@ -2341,7 +2339,13 @@ wire_seerr() {
         fi
         rm -f "$jar"; return 0
     fi
-    if ! w_would "bootstrap seerr: jellyfin sign-in ('$juser'), libraries, arr servers, initialise"; then rm -f "$jar"; return 0; fi
+    if $seerr_initialized; then
+        # initialised = its settings are yours; wire only CREATES missing arr
+        # entries (matched by name), mirroring the jellyfin library contract
+        if ! w_would "verify seerr's arr entries (create missing only — nothing existing is touched)"; then rm -f "$jar"; return 0; fi
+    else
+        if ! w_would "bootstrap seerr: jellyfin sign-in ('$juser'), libraries, arr servers, initialise"; then rm -f "$jar"; return 0; fi
+    fi
 
     # the API demands the hostname iff seerr does not have one yet: a prior
     # partial bootstrap leaves it stored, and re-sending it is a hard 500
@@ -2350,7 +2354,7 @@ wire_seerr() {
     out=$(seerr_api POST /auth/jellyfin "$jar" "$(jq -cn --arg u "$juser" --arg p "$jpass" --argjson port "$jfport" \
           '{username:$u,password:$p,hostname:"jellyfin",port:$port,useSsl:false,urlBase:"",serverType:2}')") || {
         if grep -q "already configured" <<<"$out"; then
-            info "seerr already holds the jellyfin hostname (earlier attempt) — signing in without it"
+            $seerr_initialized || info "seerr already holds the jellyfin hostname (earlier attempt) — signing in without it"
             out=$(seerr_api POST /auth/jellyfin "$jar" "$(jq -cn --arg u "$juser" --arg p "$jpass" \
                   '{username:$u,password:$p,serverType:2}')") \
                 || { wfail "seerr rejected the jellyfin sign-in [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
@@ -2360,6 +2364,7 @@ wire_seerr() {
     }
     ok "signed in — seerr owner is jellyfin admin '$juser'"
 
+    if ! $seerr_initialized; then
     # v3.4.1 API: ?sync=true fetches from jellyfin and returns the list;
     # ?enable=<csv-ids> declares the complete enabled set in one call
     local libs ids n
@@ -2371,14 +2376,23 @@ wire_seerr() {
         || { wfail "enabling libraries failed [HTTP $(seerr_code)]: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 1; }
     n=$(jq '[.[] | select(.enabled)] | length' <<<"$libs" 2>/dev/null)
     ok "libraries synced — ${n:-0} enabled"
+    fi
 
     # one server entry per arr instance, connection details straight from the
     # stack's own labels/keys. The arrs live in gluetun's network namespace,
-    # so 'gluetun' is their in-network hostname.
+    # so 'gluetun' is their in-network hostname. Existing entries (matched by
+    # name) are never touched — create-if-missing only.
+    local have_radarr have_sonarr
+    have_radarr=$(seerr_api GET /settings/radarr "$jar" | jq -r '[.[].name] | join(" ")' 2>/dev/null)
+    have_sonarr=$(seerr_api GET /settings/sonarr "$jar" | jq -r '[.[].name] | join(" ")' 2>/dev/null)
     local s ty key port root profs pid pname body ep is4k
     for s in $(arr_instances); do
         ty=$(svc_label "$s" mediastack.arrtype)
         [[ "$ty" == radarr || "$ty" == sonarr ]] || { info "$s: seerr does not manage $ty — skipped"; continue; }
+        if [[ "$ty" == radarr && " $have_radarr " == *" $s "* ]] || [[ "$ty" == sonarr && " $have_sonarr " == *" $s "* ]]; then
+            ok "$s already in seerr — untouched (yours to manage in the GUI)"
+            continue
+        fi
         key=$(arr_key "$s"); port=$(svc_label "$s" mediastack.port); root=$(svc_label "$s" mediastack.rootfolder)
         [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — is it initialised? re-run wire in a minute"; continue; }
         profs=$(api GET "$(arr_url "$s")/api/$(arr_apiver "$s")/qualityprofile" "$key" || true)
@@ -2396,6 +2410,7 @@ wire_seerr() {
                 tagRequests:false,overrideRule:[]}')
         ep="/settings/$ty"
         [[ "$ty" == radarr ]] && body=$(jq -c '. + {minimumAvailability:"released"}' <<<"$body")
+        [[ "$ty" == sonarr ]] && body=$(jq -c '. + {enableSeasonFolders:true}' <<<"$body")
         [[ "$s" == sonarr-anime ]] && body=$(jq -c '. + {isDefault:false}' <<<"$body")
         out=$(seerr_api POST "$ep/test" "$jar" "$body") \
             || { wfail "$s: seerr could not reach it [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; continue; }
@@ -2404,6 +2419,11 @@ wire_seerr() {
             || wfail "$s: seerr rejected the server entry [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
     done
 
+    if $seerr_initialized; then
+        rm -f "$jar"
+        ok "seerr arr entries verified"
+        return 0
+    fi
     out=$(seerr_api POST /settings/initialize "$jar") \
         || { wfail "seerr initialise call failed [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
     local skey
