@@ -2272,8 +2272,12 @@ wire_apprise() {
   ops       update pipeline, backup failures, doctor problems
   activity  arr grabs, imports, health events
   users     invite activity (wizarr)
-URL formats: ntfy://ntfy.sh/mytopic, discord://id/token, mailto://...
-— full list: https://github.com/caronc/apprise/wiki"
+Getting a URL:
+  Discord   channel -> gear -> Integrations -> Webhooks -> New Webhook
+            -> Copy Webhook URL, and paste that https://... URL as-is
+  ntfy      pick any unique topic name: ntfy://ntfy.sh/your-topic
+            (subscribe to the topic in the ntfy app — zero signup)
+  anything  else: https://github.com/caronc/apprise/wiki"
         local ops_u act_u usr_u cfg="" u
         ask AP_OPS "URLs for ops" ""; ops_u="$REPLY_VAL"
         ask AP_ACT "URLs for activity" ""; act_u="$REPLY_VAL"
