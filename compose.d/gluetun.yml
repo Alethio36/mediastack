@@ -50,6 +50,10 @@ services:
       - SERVER_HOSTNAMES=${VPN_SERVER_HOSTNAMES:-}
       - UPDATER_PERIOD=24h
       - DNS_ADDRESS=${VPN_DNS_ADDRESS:-}
+      # gluetun's HTTP control server defaults to :8000, which collides with
+      # apprise-api inside the shared namespace. Nothing in the stack uses
+      # the control server, so it moves out of the way.
+      - HTTP_CONTROL_SERVER_ADDRESS=:8008
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
