@@ -192,9 +192,10 @@ profile); an initialised Seerr is never touched.
 ## Invites (Wizarr)
 
 Wizarr turns "set up my account" into a link. Its first run is a one-time
-UI step (admin account, connect Jellyfin at `http://jellyfin:8096`, mint
-an API key — `wire wizarr` walks you through it and stores the key).
-After that:
+UI step: create the admin account, add Jellyfin as a server (URL
+`http://jellyfin:8096`, using the stack's Jellyfin API key — shown by
+`credentials`), and mint a Wizarr API key. `wire wizarr` walks you through
+it with the exact values to paste, and stores the key. After that:
 
 ```bash
 ./mediastack.sh invite               # never-expiring invitation URL

@@ -2343,11 +2343,21 @@ wire_seerr() {
     fi
     if ! w_would "bootstrap seerr: jellyfin sign-in ('$juser'), libraries, arr servers, initialise"; then rm -f "$jar"; return 0; fi
 
+    # the API demands the hostname iff seerr does not have one yet: a prior
+    # partial bootstrap leaves it stored, and re-sending it is a hard 500
     local jfport out
     jfport=$(svc_label jellyfin mediastack.port)
     out=$(seerr_api POST /auth/jellyfin "$jar" "$(jq -cn --arg u "$juser" --arg p "$jpass" --argjson port "$jfport" \
-          '{username:$u,password:$p,hostname:"jellyfin",port:$port,useSsl:false,urlBase:"",serverType:2}')") \
-        || { wfail "seerr rejected the jellyfin sign-in [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
+          '{username:$u,password:$p,hostname:"jellyfin",port:$port,useSsl:false,urlBase:"",serverType:2}')") || {
+        if grep -q "already configured" <<<"$out"; then
+            info "seerr already holds the jellyfin hostname (earlier attempt) — signing in without it"
+            out=$(seerr_api POST /auth/jellyfin "$jar" "$(jq -cn --arg u "$juser" --arg p "$jpass" \
+                  '{username:$u,password:$p,serverType:2}')") \
+                || { wfail "seerr rejected the jellyfin sign-in [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
+        else
+            wfail "seerr rejected the jellyfin sign-in [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1
+        fi
+    }
     ok "signed in — seerr owner is jellyfin admin '$juser'"
 
     # v3.4.1 API: ?sync=true fetches from jellyfin and returns the list;
@@ -2435,13 +2445,18 @@ wire_wizarr() {
             return 0
         fi
         host=$(env_get WIZARR_HOST invites); domain=$(env_get TRAEFIK_DOMAIN)
+        local jfkey; jfkey=$(env_get JELLYFIN_API_KEY "(empty — run 'wire jellyfin' first to mint it)")
         explain "Wizarr first-run (one-time, in its UI)" \
 "Wizarr's admin account and API keys can only be created in its web UI —
 there is no automation API for this by upstream design. Once, ever:
   1. open ${domain:+https://$host.$domain (or }http://<this-host>:$(svc_label wizarr mediastack.port)${domain:+)}
   2. create the admin account
-  3. connect your media server:  Jellyfin, URL http://jellyfin:8096,
-     signing in with the jellyfin admin (view: credentials)
+  3. Settings -> Servers -> Add Server:
+       Name            jellyfin
+       Server Type     Jellyfin
+       URL (Internal)  http://jellyfin:8096
+       API Key         $jfkey
+     then Test & Add
   4. Settings -> API Keys -> create one, and paste it below
 Paste nothing to skip for now — re-run 'wire wizarr' any time."
         ask_token "Wizarr API key (input is hidden; empty = skip)" ""
