@@ -180,10 +180,19 @@ script's own help is always authoritative.
 The `apprise` profile gives the stack one notification hub with three
 streams: **ops** (update pipeline results, backup failures, doctor
 problems), **activity** (arr grabs, imports, health events), **users**
-(invite activity). `wire apprise` asks for your endpoints once —
-ntfy, Discord, email, [anything Apprise speaks](https://github.com/caronc/apprise/wiki)
-— stores them under one key, and connects every arr to the hub.
-Endpoints already stored are never touched.
+(invite activity). `wire apprise` asks for your endpoints once,
+stores them under one key, and connects every arr to the hub. Endpoints
+already stored are never touched.
+
+Getting an endpoint URL:
+
+* **Discord** — channel -> gear (Edit Channel) -> Integrations ->
+  Webhooks -> New Webhook -> Copy Webhook URL. Paste the
+  `https://discord.com/api/webhooks/...` URL as-is.
+* **ntfy** (zero signup) — pick any unique topic name; the URL is
+  `ntfy://ntfy.sh/your-topic`. Subscribe to the topic in the ntfy app.
+* **Anything else** — email, Telegram, Slack, 100+ services:
+  [the Apprise wiki](https://github.com/caronc/apprise/wiki).
 
 For invite notifications, add an agent in Wizarr's UI (Settings ->
 Notifications): type *apprise*, URL
