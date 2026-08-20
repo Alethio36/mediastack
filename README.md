@@ -146,6 +146,13 @@ script's own help is always authoritative.
 * **Configs on local disk only** — SQLite corrupts on NFS/SMB; the wizard
   refuses network paths for CONFIG_ROOT. Media on a NAS is fine; backups on
   a NAS is encouraged.
+* **DATA_ROOT should be one filesystem.** Imports work by hardlinking
+  torrent → media: instant, zero duplicate space, seeding uninterrupted —
+  and hardlinks cannot cross filesystems. If your media spans multiple
+  drives, don't point apps at per-drive folders (that forces slow, space-
+  doubling copies); union the drives into one filesystem first — mergerfs
+  is the standard tool — and use the pool as DATA_ROOT. `configure` warns
+  when it detects a split.
 * **Every update is preceded by a restore point**, and restore points are
   kept on a daily/weekly/monthly schedule (7 daily, one per week for 4
   weeks, one per month for 6 months — `BACKUP_KEEP_*` in `.env`).

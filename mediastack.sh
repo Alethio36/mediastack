@@ -469,7 +469,7 @@ ENCOURAGED — backups on the same disk as the configs aren't backups.
 
     # hardlink check
     if [[ $(fsdev_of "$(env_get DATA_ROOT)") != "$(fsdev_of "$(env_get DATA_ROOT)/torrent" 2>/dev/null || fsdev_of "$(env_get DATA_ROOT)")" ]]; then
-        warn "DATA_ROOT and its torrent subdir are on different filesystems — hardlinks will not work."
+        warn "DATA_ROOT and its torrent subdir are on different filesystems — hardlinks will not work: imports fall back to slow, space-doubling copies. Union the drives (e.g. mergerfs) and use the pool as DATA_ROOT (see README)."
     fi
 
     # -- self-heal FIRST: adopt any *_UID / *_UPDATE vars new fragments
