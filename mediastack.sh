@@ -136,6 +136,13 @@ migrate_env_7_to_8() {
         info "New service variable APPRISE_UID -> $(env_get APPRISE_UID)"
     fi
     grep -qE '^APPRISE_UPDATE=' "$ENV_FILE" || env_set APPRISE_UPDATE true
+    if ! grep -qE '^CLEANUPARR_UID=' "$ENV_FILE"; then
+        local cmax
+        cmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        env_set CLEANUPARR_UID "$(( ${cmax:-$(env_get UID_BASE 13000)} + 1 ))"
+        info "New service variable CLEANUPARR_UID -> $(env_get CLEANUPARR_UID)"
+    fi
+    grep -qE '^CLEANUPARR_UPDATE=' "$ENV_FILE" || env_set CLEANUPARR_UPDATE true
 }
 
 # ------------------------------------------------------------ compose layer --
@@ -249,7 +256,7 @@ Connect
                  Prowlarr->arrs, FlareSolverr, Bazarr, Jellyfin first-run
                  (+libraries), Seerr bootstrap, Wizarr key. Idempotent —
                  re-run any time; GUI-configured apps are never overwritten.
-                 Scope: wire [qbit|arr|prowlarr|bazarr|apprise|jellyfin|seerr|wizarr];
+                 Scope: wire [qbit|arr|prowlarr|bazarr|apprise|cleanuparr|jellyfin|seerr|wizarr];
                  preview: wire --dry-run.
   invite         Mint a Wizarr invitation and print the ready-to-share URL.
                  Options: --expires 1|7|30 (default: never expires).
@@ -2254,6 +2261,137 @@ URL formats: ntfy://ntfy.sh/mytopic, discord://id/token, mailto://...
     done
 }
 
+# ---- cleanuparr (wave 5) ----
+# Bootstrap the account (reusing the stack's arr login), store the API key,
+# point it at qBittorrent and every arr, and switch the queue cleaner on
+# with its conservative upstream defaults. Existing entries: untouched.
+cup_url() { echo "http://127.0.0.1:$(env_get CLEANUPARR_PORT 11011)"; }
+CUP_CODE_F="${TMPDIR:-/tmp}/.mediastack-cup-code.$$"
+cup_code() { cat "$CUP_CODE_F" 2>/dev/null || echo 000; }
+cup_api() { # cup_api METHOD PATH AUTHHDR [json-body] -> body; rc = http 2xx
+    local m="$1" p="$2" hdr="$3" b="${4:-}" out code
+    if ! out=$(curl -sS -m 20 -X "$m" ${hdr:+-H "$hdr"} -H "Content-Type: application/json" \
+          ${b:+-d "$b"} -w $'\n%{http_code}' "$(cup_url)/api$p" 2>&1); then
+        printf '000' > "$CUP_CODE_F"; echo "$out"; return 1
+    fi
+    code=${out##*$'\n'}; printf '%s' "$code" > "$CUP_CODE_F"
+    echo "${out%$'\n'*}"
+    [[ "$code" =~ ^2 ]]
+}
+
+wire_cleanuparr() {
+    hr "wire: cleanuparr"
+    svc_enabled cleanuparr || { info "cleanuparr not enabled — skipped"; return 0; }
+    wire_gate cleanuparr
+    local t=0 code
+    while :; do
+        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(cup_url)/health" 2>/dev/null || echo 000)
+        [[ "$code" =~ ^2 ]] && break
+        (( t >= 90 )) && { wfail "cleanuparr never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs cleanuparr"; return 1; }
+        sleep 5; t=$((t+5)); info "waiting for cleanuparr (${t}s)..."
+    done
+
+    local user pass st out
+    user=$(env_get ARR_USER); pass=$(env_get ARR_PASSWORD)
+    [[ -n "$user" && -n "$pass" ]] || { wfail "cleanuparr bootstrap reuses the arr login — run 'wire arr' first (a full 'wire' does both in order)"; return 1; }
+
+    st=$(cup_api GET /auth/status "" || true)
+    if [[ "$(jq -r '.setupCompleted' <<<"$st" 2>/dev/null)" != true ]]; then
+        if w_would "create cleanuparr's account ('$user' — same login as the arrs) and complete setup"; then
+            out=$(cup_api POST /auth/setup/account "" "$(jq -cn --arg u "$user" --arg p "$pass" '{username:$u,password:$p}')")
+            [[ "$(cup_code)" =~ ^2 || "$(cup_code)" == 409 ]] \
+                || { wfail "cleanuparr account creation rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 1; }
+            out=$(cup_api POST /auth/setup/complete "")
+            [[ "$(cup_code)" =~ ^2 || "$(cup_code)" == 409 ]] \
+                || { wfail "cleanuparr setup completion rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 1; }
+            ok "account created — sign in with the arr login (view: credentials)"
+        fi
+    else
+        ok "account already set up"
+    fi
+    (( WIRE_DRY )) && { info "remaining cleanuparr previews pend on signing in — shown on the real run"; return 0; }
+
+    # login -> bearer -> durable API key
+    local tok akey
+    out=$(cup_api POST /auth/login "" "$(jq -cn --arg u "$user" --arg p "$pass" '{username:$u,password:$p}')") \
+        || { wfail "cleanuparr rejected the arr login [HTTP $(cup_code)]: $(head -c200 <<<"$out")
+     if you changed its password in the UI, this is expected — its config stays yours"; return 1; }
+    tok=$(jq -r '.tokens.accessToken // empty' <<<"$out")
+    [[ -n "$tok" ]] || { wfail "cleanuparr login gave no access token: $(head -c200 <<<"$out")"; return 1; }
+    akey=$(cup_api GET /account/api-key "Authorization: Bearer $tok" | jq -r '.apiKey // empty' 2>/dev/null)
+    [[ -n "$akey" ]] || { wfail "could not read cleanuparr's API key [HTTP $(cup_code)]"; return 1; }
+    [[ "$(env_get CLEANUPARR_API_KEY)" == "$akey" ]] || env_set CLEANUPARR_API_KEY "$akey"
+    local KH="X-Api-Key: $akey"
+
+    # download client: create-if-missing by name
+    local qu qp have
+    qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
+    have=$(cup_api GET /configuration/download_client "$KH" | jq -r '[.[].name] | join(" ")' 2>/dev/null)
+    if [[ " $have " == *" qbittorrent "* ]]; then
+        ok "qbittorrent already connected — untouched"
+    elif [[ -z "$qu" || -z "$qp" ]]; then
+        wfail "no qBittorrent credentials in .env — run 'wire qbit' first"
+    else
+        local dc
+        dc=$(jq -cn --arg u "$qu" --arg p "$qp" \
+             '{enabled:true,name:"qbittorrent",typeName:"qBittorrent",type:"Torrent",
+               host:"http://gluetun:8085",urlBase:"",username:$u,password:$p}')
+        out=$(cup_api POST /configuration/download_client/test "$KH" "$dc") \
+            || { wfail "cleanuparr could not reach qBittorrent [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 1; }
+        out=$(cup_api POST /configuration/download_client "$KH" "$dc") \
+            && ok "qbittorrent connected" \
+            || wfail "qbittorrent entry rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
+    fi
+
+    # arrs: create-if-missing by name, per type
+    local s ty key port cfg names
+    for s in $(arr_instances); do
+        ty=$(svc_label "$s" mediastack.arrtype)
+        [[ "$ty" == sonarr || "$ty" == radarr || "$ty" == lidarr ]] || continue
+        key=$(arr_key "$s"); port=$(svc_label "$s" mediastack.port)
+        [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; continue; }
+        cfg=$(cup_api GET "/configuration/$ty" "$KH" || true)
+        names=$(jq -r '[.instances[]?.name] | join(" ")' <<<"$cfg" 2>/dev/null)
+        if [[ " $names " == *" $s "* ]]; then
+            ok "$s already connected — untouched"
+            continue
+        fi
+        out=$(cup_api POST "/configuration/$ty/instances" "$KH" \
+              "$(jq -cn --arg n "$s" --arg u "http://gluetun:$port" --arg k "$key" \
+                 '{enabled:true,name:$n,url:$u,apiKey:$k}')") \
+            && ok "$s connected" \
+            || wfail "$s: cleanuparr rejected it [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
+    done
+
+    # queue cleaner: switch on, keep upstream's conservative defaults
+    cfg=$(cup_api GET /configuration/queue_cleaner "$KH" || true)
+    if [[ "$(jq -r '.enabled' <<<"$cfg" 2>/dev/null)" == true ]]; then
+        ok "queue cleaner already on — its settings are yours to manage in the UI"
+    elif [[ -n "$cfg" ]]; then
+        out=$(cup_api PUT /configuration/queue_cleaner "$KH" "$(jq -c '.enabled = true' <<<"$cfg")") \
+            && ok "queue cleaner enabled (conservative defaults — tune in its UI)" \
+            || wfail "could not enable the queue cleaner [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
+    else
+        wfail "could not read the queue-cleaner config [HTTP $(cup_code)]"
+    fi
+
+    # ops notifications via the hub, when the hub is wired
+    if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(apprise_url)/get/mediastack" 2>/dev/null)" == 200 ]]; then
+        have=$(cup_api GET /configuration/notification_providers "$KH" | jq -r '[.[].name] | join(" ")' 2>/dev/null)
+        if [[ " $have " == *" mediastack-apprise "* ]]; then
+            ok "already notifies the hub — untouched"
+        else
+            out=$(cup_api POST /configuration/notification_providers/apprise "$KH" \
+                  "$(jq -cn '{name:"mediastack-apprise",isEnabled:true,mode:"Api",
+                              url:"http://gluetun:8000",key:"mediastack",tags:"ops",
+                              onQueueItemDeleted:true,onDownloadCleaned:true,
+                              onStalledStrike:true,onFailedImportStrike:true}')") \
+                && ok "now notifies the hub (tag: ops)" \
+                || wfail "hub connection rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
+        fi
+    fi
+}
+
 # ---- jellyfin (wave 4) ----
 # Wire's jellyfin surface is deliberately tiny: complete the first-run wizard
 # (once, ever — the API gate closes itself), create libraries whose PATH is
@@ -2633,8 +2771,8 @@ cmd_wire() {
     local section="all"
     while [[ $# -gt 0 ]]; do case "$1" in
         --dry-run) WIRE_DRY=1; shift ;;
-        qbit|arr|prowlarr|bazarr|apprise|jellyfin|seerr|wizarr|all) section="$1"; shift ;;
-        *) die "usage: wire [qbit|arr|prowlarr|bazarr|apprise|jellyfin|seerr|wizarr] [--dry-run]" ;;
+        qbit|arr|prowlarr|bazarr|apprise|cleanuparr|jellyfin|seerr|wizarr|all) section="$1"; shift ;;
+        *) die "usage: wire [qbit|arr|prowlarr|bazarr|apprise|cleanuparr|jellyfin|seerr|wizarr] [--dry-run]" ;;
     esac; done
     (( WIRE_DRY )) && hr "wire --dry-run: showing changes, touching nothing"
     if (( ! WIRE_DRY )) && [[ ! -f "$SCRIPT_DIR/.wired" ]]; then
@@ -2646,7 +2784,7 @@ cmd_wire() {
             local wt=0 pending_s
             while (( wt < 120 )); do
                 pending_s=""
-                for s in qbittorrent prowlarr bazarr apprise jellyfin seerr wizarr $(arr_instances); do
+                for s in qbittorrent prowlarr bazarr apprise cleanuparr jellyfin seerr wizarr $(arr_instances); do
                     svc_enabled "$s" || continue
                     case "$(c_health "$(svc_cname "$s")")" in
                         healthy|-) : ;;
@@ -2666,12 +2804,13 @@ cmd_wire() {
         prowlarr) wire_prowlarr ;;
         bazarr)   wire_bazarr ;;
         apprise)  wire_apprise ;;
+        cleanuparr) wire_cleanuparr ;;
         jellyfin) wire_jellyfin ;;
         seerr)    wire_seerr ;;
         wizarr)   wire_wizarr ;;
         # order matters: seerr signs in via jellyfin's admin; wizarr's UI
         # first-run wants jellyfin claimed first
-        all)      wire_qbit; wire_arr; wire_prowlarr; wire_bazarr; wire_apprise; wire_jellyfin; wire_seerr; wire_wizarr ;;
+        all)      wire_qbit; wire_arr; wire_prowlarr; wire_bazarr; wire_apprise; wire_cleanuparr; wire_jellyfin; wire_seerr; wire_wizarr ;;
     esac
     echo
     if (( WIRE_DRY )); then
