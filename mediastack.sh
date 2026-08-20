@@ -2547,9 +2547,11 @@ cmd_credentials() {
     printf '%-22s %s\n' "Traefik dash password" "$(env_get TRAEFIK_DASH_PASSWORD '(traefik not configured)')"
     printf '%-22s %s\n' "Jellyfin admin user"   "$(env_get JELLYFIN_ADMIN_USER '(not set — run wire)')"
     printf '%-22s %s\n' "Jellyfin admin password" "$(env_get JELLYFIN_ADMIN_PASSWORD '(not set — run wire)')"
+    printf '%-22s %s\n' "Jellyfin API key"      "$(env_get JELLYFIN_API_KEY '(not set — run wire jellyfin)')"
     printf '%-22s %s\n' "Wizarr API key"        "$(env_get WIZARR_API_KEY '(not set — run wire wizarr)')"
+    info "Seerr owner = the Jellyfin admin above; all Seerr sign-ins use Jellyfin accounts (no separate Seerr passwords exist)."
+    info "The Jellyfin API key is what Wizarr's Add Server form asks for."
     info "Meilisearch master key is machine-to-machine — apps use it, you never need it."
-    info "Seerr has no login of its own: sign in with the Jellyfin account."
 }
 
 cmd_invite() { # mint a wizarr invitation and print the ready-to-share URL
