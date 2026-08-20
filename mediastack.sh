@@ -1492,7 +1492,7 @@ cmd_doctor() {
         [[ "$(c_state "$cn")" == running ]] || continue
         expect=$(env_get "$(uvar "$s")_UID")
         [[ -n "$expect" ]] || continue
-        uids=$(sudo docker top "$cn" -eo uid= 2>/dev/null | sort -u | tr -d ' ' | tr '\n' ' ')
+        uids=$(sudo docker top "$cn" -o uid=,pid= 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ' || true)
         if [[ " $uids" == *" $expect "* ]]; then :; else
             warn "$s: no process runs as UID $expect (saw: ${uids:-none}) — PUID may be ignored; check: logs $s"
             drift=$((drift+1))
@@ -1503,7 +1503,7 @@ cmd_doctor() {
     if svc_enabled qbittorrent && [[ "$(c_state "$(svc_cname qbittorrent)")" == running ]]; then
         if qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" 2>/dev/null; then
             local iface
-            iface=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null)
+            iface=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null || true)
             [[ "$iface" == tun0 ]] && ok "qBittorrent transfers bound to tun0" \
                 || warn "qBittorrent is NOT bound to tun0 (currently: '${iface:-unset}') — fix: ./mediastack.sh wire qbit"
         else
@@ -1907,12 +1907,12 @@ QB_LOGIN_BODY=""
 qb_bind_tun0() { # requires QB_COOKIE
     [[ -n "$QB_COOKIE" ]] || { info "no qBittorrent session — interface bind skipped"; return 0; }
     local cur
-    cur=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null)
+    cur=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null || true)
     if [[ "$cur" == tun0 ]]; then
         ok "transfers bound to tun0"
     elif w_would "bind qBittorrent's transfers to tun0 (VPN interface)"; then
         qb_api /app/setPreferences 'json={"current_network_interface":"tun0"}' >/dev/null
-        cur=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null)
+        cur=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null || true)
         [[ "$cur" == tun0 ]] && ok "transfers bound to tun0" \
             || wfail "interface bind did not stick (reads back '$cur') — set it in the UI: Advanced -> Network interface"
     fi
@@ -2158,11 +2158,11 @@ JSON
         # prowlarr routes that indexer through the proxy. Nothing carries it
         # by default — only Cloudflare-protected indexers should pay the tax.
         local fid
-        fid=$(api GET "$purl/api/v1/tag" "$pkey" | jq -r '.[] | select(.label=="flared") | .id' 2>/dev/null | head -1)
+        fid=$(api GET "$purl/api/v1/tag" "$pkey" | jq -r '.[] | select(.label=="flared") | .id' 2>/dev/null | head -1 || true)
         if [[ -n "$fid" ]]; then
             ok "tag 'flared' exists"
         elif w_would "create prowlarr tag 'flared' (attach to indexers needing FlareSolverr)"; then
-            fid=$(api POST "$purl/api/v1/tag" "$pkey" '{"label":"flared"}' | jq -r '.id' 2>/dev/null)
+            fid=$(api POST "$purl/api/v1/tag" "$pkey" '{"label":"flared"}' | jq -r '.id' 2>/dev/null || true)
             [[ -n "$fid" && "$fid" != null ]] && ok "tag 'flared' created" \
                 || { wfail "prowlarr tag 'flared' creation failed — check: logs prowlarr"; fid=""; }
         fi
@@ -2344,7 +2344,7 @@ Getting a URL:
         [[ "$ty" == sonarr || "$ty" == radarr || "$ty" == lidarr ]] || continue
         key=$(arr_key "$s"); url=$(arr_url "$s"); ver=$(arr_apiver "$s")
         [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; continue; }
-        have=$(api GET "$url/api/$ver/notification" "$key" | jq -r '[.[].name] | join(" ")' 2>/dev/null)
+        have=$(api GET "$url/api/$ver/notification" "$key" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "$s already notifies the hub — untouched"
             continue
@@ -2427,7 +2427,7 @@ wire_cleanuparr() {
      if you changed its password in the UI, this is expected — its config stays yours"; return 1; }
     tok=$(jq -r '.tokens.accessToken // empty' <<<"$out")
     [[ -n "$tok" ]] || { wfail "cleanuparr login gave no access token: $(head -c200 <<<"$out")"; return 1; }
-    akey=$(cup_api GET /account/api-key "Authorization: Bearer $tok" | jq -r '.apiKey // empty' 2>/dev/null)
+    akey=$(cup_api GET /account/api-key "Authorization: Bearer $tok" | jq -r '.apiKey // empty' 2>/dev/null || true)
     [[ -n "$akey" ]] || { wfail "could not read cleanuparr's API key [HTTP $(cup_code)]"; return 1; }
     [[ "$(env_get CLEANUPARR_API_KEY)" == "$akey" ]] || env_set CLEANUPARR_API_KEY "$akey"
     local KH="X-Api-Key: $akey"
@@ -2435,7 +2435,7 @@ wire_cleanuparr() {
     # download client: create-if-missing by name
     local qu qp have
     qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
-    have=$(cup_api GET /configuration/download_client "$KH" | jq -r '[.[].name] | join(" ")' 2>/dev/null)
+    have=$(cup_api GET /configuration/download_client "$KH" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
     if [[ " $have " == *" qbittorrent "* ]]; then
         ok "qbittorrent already connected — untouched"
     elif [[ -z "$qu" || -z "$qp" ]]; then
@@ -2486,7 +2486,7 @@ wire_cleanuparr() {
 
     # ops notifications via the hub, when the hub is wired
     if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(apprise_url)/get/mediastack" 2>/dev/null)" == 200 ]]; then
-        have=$(cup_api GET /configuration/notification_providers "$KH" | jq -r '[.[].name] | join(" ")' 2>/dev/null)
+        have=$(cup_api GET /configuration/notification_providers "$KH" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "already notifies the hub — untouched"
         else
@@ -2761,8 +2761,8 @@ wire_seerr() {
     # so 'gluetun' is their in-network hostname. Existing entries (matched by
     # name) are never touched — create-if-missing only.
     local have_radarr have_sonarr
-    have_radarr=$(seerr_api GET /settings/radarr "$jar" | jq -r '[.[].name] | join(" ")' 2>/dev/null)
-    have_sonarr=$(seerr_api GET /settings/sonarr "$jar" | jq -r '[.[].name] | join(" ")' 2>/dev/null)
+    have_radarr=$(seerr_api GET /settings/radarr "$jar" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
+    have_sonarr=$(seerr_api GET /settings/sonarr "$jar" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
     local s ty key port root profs pid pname body ep is4k
     for s in $(arr_instances); do
         ty=$(svc_label "$s" mediastack.arrtype)
@@ -2822,7 +2822,7 @@ wire_seerr() {
     out=$(seerr_api POST /settings/initialize "$jar") \
         || { wfail "seerr initialise call failed [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
     local skey
-    skey=$(seerr_api GET /settings/main "$jar" | jq -r '.apiKey // empty' 2>/dev/null)
+    skey=$(seerr_api GET /settings/main "$jar" | jq -r '.apiKey // empty' 2>/dev/null || true)
     [[ -n "$skey" ]] && env_set SEERR_API_KEY "$skey"
     rm -f "$jar"
     ok "seerr initialised — users sign in with their jellyfin logins"
