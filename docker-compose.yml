@@ -9,6 +9,7 @@ name: mediastack
 include:
   - compose.d/apprise.yml
   - compose.d/bazarr.yml
+  - compose.d/cleanuparr.yml
   - compose.d/cloudflared.yml
   - compose.d/deluge.yml
   - compose.d/ersatztv.yml
