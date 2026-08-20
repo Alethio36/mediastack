@@ -2350,16 +2350,17 @@ wire_seerr() {
         || { wfail "seerr rejected the jellyfin sign-in [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
     ok "signed in — seerr owner is jellyfin admin '$juser'"
 
-    out=$(seerr_api POST /settings/jellyfin/library/sync "$jar") \
-        || { wfail "library sync failed [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
-    local libs id n=0
-    libs=$(seerr_api GET /settings/jellyfin/library "$jar" || true)
-    for id in $(jq -r '.[]?.id' <<<"$libs" 2>/dev/null); do
-        seerr_api PUT "/settings/jellyfin/library/$id" "$jar" '{"enabled":true}' >/dev/null \
-            && n=$((n+1)) \
-            || wfail "could not enable seerr library id $id [HTTP $(seerr_code)]"
-    done
-    ok "libraries synced — $n enabled"
+    # v3.4.1 API: ?sync=true fetches from jellyfin and returns the list;
+    # ?enable=<csv-ids> declares the complete enabled set in one call
+    local libs ids n
+    libs=$(seerr_api GET "/settings/jellyfin/library?sync=true" "$jar") \
+        || { wfail "library sync failed [HTTP $(seerr_code)]: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 1; }
+    ids=$(jq -r '[.[].id] | join(",")' <<<"$libs" 2>/dev/null)
+    [[ -n "$ids" ]] || { wfail "seerr returned no libraries from jellyfin — are the libraries created? re-run 'wire jellyfin' first: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 1; }
+    libs=$(seerr_api GET "/settings/jellyfin/library?enable=$ids" "$jar") \
+        || { wfail "enabling libraries failed [HTTP $(seerr_code)]: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 1; }
+    n=$(jq '[.[] | select(.enabled)] | length' <<<"$libs" 2>/dev/null)
+    ok "libraries synced — ${n:-0} enabled"
 
     # one server entry per arr instance, connection details straight from the
     # stack's own labels/keys. The arrs live in gluetun's network namespace,
@@ -2416,7 +2417,9 @@ wire_wizarr() {
     local t=0 code
     while :; do
         code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(wizarr_url)/health" 2>/dev/null || echo 000)
-        [[ "$code" == 200 ]] && break
+        # a virgin wizarr 302s /health to /setup (onboarding middleware) —
+        # any 2xx/3xx means the app is up and serving
+        [[ "$code" =~ ^[23] ]] && break
         (( t >= 90 )) && { wfail "wizarr never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs wizarr"; return 1; }
         sleep 5; t=$((t+5)); info "waiting for wizarr (${t}s)..."
     done
