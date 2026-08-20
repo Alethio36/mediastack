@@ -1556,7 +1556,9 @@ cmd_leak_test() {
 # ------------------------------------------------------- upgrade/uninstall --
 cmd_upgrade() {
     need_cmd git
-    [[ -z "$(git status --porcelain 2>/dev/null)" ]] || die "Working tree has local changes to tracked files.
+    # -uno: untracked files (like the .wired marker) are deployment state,
+    # not a pull hazard — only tracked modifications block an upgrade.
+    [[ -z "$(git status --porcelain -uno 2>/dev/null)" ]] || die "Working tree has local changes to tracked files.
   Mediastack keeps user state in .env / override files, so tracked files
   should be clean. Review 'git status', stash or move changes into
   docker-compose.override.yml, then retry."
