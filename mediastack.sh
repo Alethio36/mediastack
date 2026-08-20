@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=7
+SCRIPT_SCHEMA=8
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -126,6 +126,16 @@ migrate_env_6_to_7() {
         info "New service variable WIZARR_UID -> $(env_get WIZARR_UID)"
     fi
     grep -qE '^WIZARR_UPDATE=' "$ENV_FILE" || env_set WIZARR_UPDATE true
+}
+migrate_env_7_to_8() {
+    # wave 5 adds apprise (+ cleanuparr later in the wave)
+    if ! grep -qE '^APPRISE_UID=' "$ENV_FILE"; then
+        local max
+        max=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        env_set APPRISE_UID "$(( ${max:-$(env_get UID_BASE 13000)} + 1 ))"
+        info "New service variable APPRISE_UID -> $(env_get APPRISE_UID)"
+    fi
+    grep -qE '^APPRISE_UPDATE=' "$ENV_FILE" || env_set APPRISE_UPDATE true
 }
 
 # ------------------------------------------------------------ compose layer --
@@ -239,7 +249,7 @@ Connect
                  Prowlarr->arrs, FlareSolverr, Bazarr, Jellyfin first-run
                  (+libraries), Seerr bootstrap, Wizarr key. Idempotent —
                  re-run any time; GUI-configured apps are never overwritten.
-                 Scope: wire [qbit|arr|prowlarr|bazarr|jellyfin|seerr|wizarr];
+                 Scope: wire [qbit|arr|prowlarr|bazarr|apprise|jellyfin|seerr|wizarr];
                  preview: wire --dry-run.
   invite         Mint a Wizarr invitation and print the ready-to-share URL.
                  Options: --expires 1|7|30 (default: never expires).
@@ -915,7 +925,11 @@ cmd_backup() {
     ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' )
     info "Restarting stack..."
     DC up -d >/dev/null
-    (( rc == 0 )) && ok "Restore point complete: $dest" || die "Backup finished WITH ERRORS — do not trust $dest."
+    if (( rc == 0 )); then ok "Restore point complete: $dest"
+    else
+        notify ops "Mediastack backup FAILED" "Restore point $dest finished with errors — do not trust it. Inspect on the host." failure
+        die "Backup finished WITH ERRORS — do not trust $dest."
+    fi
     prune_backups
 }
 
@@ -1134,15 +1148,19 @@ cmd_update() {
     if (( ${#bad[@]} )); then
         fail "Unhealthy after update: ${bad[*]}"
         echo "  Roll back any of them with: ./mediastack.sh rollback <service>"
+        notify ops "Mediastack update FAILED" "Unhealthy after update: ${bad[*]} — roll back with: ./mediastack.sh rollback <service>" failure
         exit 1
     fi
     ok "All updated services healthy."
+    (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '%s; ' "${changed[@]}")" success
 
     # nightly TRaSH sync rides the update pipeline: same schedule the
     # operator already chose, guides drift-window stays at one cycle.
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
         echo
-        cmd_trash_sync || { fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"; exit 1; }
+        cmd_trash_sync || { fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"
+                            notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded. Inspect: ./mediastack.sh trash-sync" failure
+                            exit 1; }
     fi
 }
 
@@ -1433,7 +1451,10 @@ cmd_doctor() {
     fi
 
     echo
-    if (( D_FAILS )); then fail "doctor: $D_FAILS problem(s) — fixes listed above."; exit 1
+    if (( D_FAILS )); then
+        fail "doctor: $D_FAILS problem(s) — fixes listed above."
+        notify ops "Mediastack doctor: $D_FAILS problem(s)" "Run ./mediastack.sh doctor on the host for the findings and fixes." failure
+        exit 1
     else ok "doctor: all checks passed."; fi
 }
 
@@ -2123,6 +2144,116 @@ wire_bazarr() {
     fi
 }
 
+# ---- apprise (wave 5): one notification hub for the whole stack ----
+# apprise-api in gluetun's namespace. Tags route messages: ops (pipeline,
+# backups, doctor), activity (arr events), users (wizarr invites).
+apprise_url() { echo "http://127.0.0.1:$(env_get APPRISE_PORT 8000)"; }
+
+NOTIFY_WARNED=0
+notify() { # notify TAG TITLE BODY [TYPE] — never blocks, never fails the caller
+    local tag="$1" title="$2" body="$3" type="${4:-info}"
+    svc_enabled apprise 2>/dev/null || return 0
+    [[ "$(c_state "$(svc_cname apprise)" 2>/dev/null)" == running ]] || return 0
+    curl -sS -m 5 -o /dev/null -X POST -H "Content-Type: application/json" \
+        -d "$(jq -cn --arg t "$title" --arg b "$body" --arg g "$tag" --arg y "$type" \
+             '{title:$t,body:$b,tag:$g,type:$y}')" \
+        "$(apprise_url)/notify/mediastack" 2>/dev/null && return 0
+    if (( ! NOTIFY_WARNED )); then
+        warn "apprise unreachable — notification dropped (stack keeps going; check: ./mediastack.sh logs apprise)"
+        NOTIFY_WARNED=1
+    fi
+    return 0
+}
+
+wire_apprise() {
+    hr "wire: apprise"
+    svc_enabled apprise || { info "apprise not enabled — skipped"; return 0; }
+    wire_gate apprise
+    local t=0 code
+    while :; do
+        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(apprise_url)/status" 2>/dev/null || echo 000)
+        [[ "$code" =~ ^2 ]] && break
+        (( t >= 90 )) && { wfail "apprise never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs apprise"; return 1; }
+        sleep 5; t=$((t+5)); info "waiting for apprise (${t}s)..."
+    done
+
+    # --- notification endpoints: stored once under key 'mediastack';
+    # an existing config is never touched (edit in apprise's UI or re-add)
+    code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)
+    if [[ "$code" == 200 ]]; then
+        ok "notification endpoints configured — untouched (yours to manage; UI: http://<this-host>:$(env_get APPRISE_PORT 8000))"
+    elif (( WIRE_DRY )); then
+        w_would "store notification endpoints (URLs asked per tag on the real run)" || true
+    elif [[ ! -t 0 ]]; then
+        info "no notification endpoints stored yet — run './mediastack.sh wire apprise' interactively to add them"
+    else
+        explain "Notifications (Apprise)" \
+"One hub, three streams — give each one or more Apprise URLs
+(comma-separated), or leave blank to skip a stream:
+  ops       update pipeline, backup failures, doctor problems
+  activity  arr grabs, imports, health events
+  users     invite activity (wizarr)
+URL formats: ntfy://ntfy.sh/mytopic, discord://id/token, mailto://...
+— full list: https://github.com/caronc/apprise/wiki"
+        local ops_u act_u usr_u cfg="" u
+        ask AP_OPS "URLs for ops" ""; ops_u="$REPLY_VAL"
+        ask AP_ACT "URLs for activity" ""; act_u="$REPLY_VAL"
+        ask AP_USR "URLs for users" ""; usr_u="$REPLY_VAL"
+        for u in ${ops_u//,/ }; do cfg+="ops=$u"$'\n'; done
+        for u in ${act_u//,/ }; do cfg+="activity=$u"$'\n'; done
+        for u in ${usr_u//,/ }; do cfg+="users=$u"$'\n'; done
+        if [[ -z "$cfg" ]]; then
+            info "no URLs given — notifications stay off until 'wire apprise' stores some"
+        elif w_would "store the notification endpoints under key 'mediastack'"; then
+            local resp acode
+            resp=$(curl -sS -m 10 -X POST -H "Content-Type: application/json" \
+                   -d "$(jq -cn --arg c "$cfg" '{config:$c,format:"text"}')" \
+                   -w $'\n%{http_code}' "$(apprise_url)/add/mediastack" 2>&1) \
+                || { wfail "apprise unreachable while storing config: $(head -c200 <<<"$resp")"; return 1; }
+            acode=${resp##*$'\n'}
+            [[ "$acode" =~ ^2 ]] \
+                || { wfail "apprise rejected the config [HTTP $acode]: $(head -c200 <<<"${resp%$'\n'*}")
+     check the URL syntax against https://github.com/caronc/apprise/wiki"; return 1; }
+            ok "notification endpoints stored"
+            notify ops "Mediastack" "Notifications are wired up — this is your ops stream." info
+            info "a test notification went to the ops stream — check it arrived"
+        fi
+    fi
+
+    # --- each arr notifies the hub (tag: activity); create-if-missing by
+    # name, schema-driven so per-type event flags stay version-proof
+    local s ty key url ver have schema tmpl body resp
+    for s in $(arr_instances); do
+        ty=$(svc_label "$s" mediastack.arrtype)
+        [[ "$ty" == sonarr || "$ty" == radarr || "$ty" == lidarr ]] || continue
+        key=$(arr_key "$s"); url=$(arr_url "$s"); ver=$(arr_apiver "$s")
+        [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; continue; }
+        have=$(api GET "$url/api/$ver/notification" "$key" | jq -r '[.[].name] | join(" ")' 2>/dev/null)
+        if [[ " $have " == *" mediastack-apprise "* ]]; then
+            ok "$s already notifies the hub — untouched"
+            continue
+        fi
+        if ! w_would "$s: notify the hub on grab/import/health (tag: activity)"; then continue; fi
+        schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)
+        tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
+        [[ -n "$tmpl" ]] || { wfail "$s: its API offers no Apprise notification type — is the image very old?"; continue; }
+        body=$(jq -c --arg srv "http://localhost:8000" '
+            .name = "mediastack-apprise"
+            | .fields = [ .fields[]
+                | if .name == "serverUrl"         then .value = $srv
+                  elif .name == "configurationKey" then .value = "mediastack"
+                  elif .name == "tags"             then .value = ["activity"]
+                  else . end ]
+            | reduce ("onGrab","onDownload","onUpgrade","onReleaseImport",
+                      "onImportComplete","onHealthIssue","onHealthRestored",
+                      "onApplicationUpdate") as $k
+                (.; if has($k) then .[$k] = true else . end)' <<<"$tmpl")
+        resp=$(api POST "$url/api/$ver/notification" "$key" "$body") \
+            && ok "$s now notifies the hub" \
+            || wfail "$s: notification connection rejected: $(head -c200 <<<"$resp")"
+    done
+}
+
 # ---- jellyfin (wave 4) ----
 # Wire's jellyfin surface is deliberately tiny: complete the first-run wizard
 # (once, ever — the API gate closes itself), create libraries whose PATH is
@@ -2502,8 +2633,8 @@ cmd_wire() {
     local section="all"
     while [[ $# -gt 0 ]]; do case "$1" in
         --dry-run) WIRE_DRY=1; shift ;;
-        qbit|arr|prowlarr|bazarr|jellyfin|seerr|wizarr|all) section="$1"; shift ;;
-        *) die "usage: wire [qbit|arr|prowlarr|bazarr|jellyfin|seerr|wizarr] [--dry-run]" ;;
+        qbit|arr|prowlarr|bazarr|apprise|jellyfin|seerr|wizarr|all) section="$1"; shift ;;
+        *) die "usage: wire [qbit|arr|prowlarr|bazarr|apprise|jellyfin|seerr|wizarr] [--dry-run]" ;;
     esac; done
     (( WIRE_DRY )) && hr "wire --dry-run: showing changes, touching nothing"
     if (( ! WIRE_DRY )) && [[ ! -f "$SCRIPT_DIR/.wired" ]]; then
@@ -2515,7 +2646,7 @@ cmd_wire() {
             local wt=0 pending_s
             while (( wt < 120 )); do
                 pending_s=""
-                for s in qbittorrent prowlarr bazarr jellyfin seerr wizarr $(arr_instances); do
+                for s in qbittorrent prowlarr bazarr apprise jellyfin seerr wizarr $(arr_instances); do
                     svc_enabled "$s" || continue
                     case "$(c_health "$(svc_cname "$s")")" in
                         healthy|-) : ;;
@@ -2534,12 +2665,13 @@ cmd_wire() {
         arr)      wire_arr ;;
         prowlarr) wire_prowlarr ;;
         bazarr)   wire_bazarr ;;
+        apprise)  wire_apprise ;;
         jellyfin) wire_jellyfin ;;
         seerr)    wire_seerr ;;
         wizarr)   wire_wizarr ;;
         # order matters: seerr signs in via jellyfin's admin; wizarr's UI
         # first-run wants jellyfin claimed first
-        all)      wire_qbit; wire_arr; wire_prowlarr; wire_bazarr; wire_jellyfin; wire_seerr; wire_wizarr ;;
+        all)      wire_qbit; wire_arr; wire_prowlarr; wire_bazarr; wire_apprise; wire_jellyfin; wire_seerr; wire_wizarr ;;
     esac
     echo
     if (( WIRE_DRY )); then
