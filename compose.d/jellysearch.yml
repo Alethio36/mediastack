@@ -1,6 +1,10 @@
 # JellySearch: Meilisearch-backed fast search for Jellyfin.
-# JellySearch is a proxy, not a plugin: your reverse proxy must route requests
-# containing ?searchTerm to jellysearch:5000 (see README "Search").
+# JellySearch is a proxy, not a plugin: requests containing ?searchTerm must
+# reach jellysearch:5000 instead of Jellyfin. The router below does exactly
+# that — same Host as Jellyfin's router (deliberately shares JELLYFIN_HOST so
+# a hostname rename keeps them aligned) plus a query matcher, at a higher
+# priority so it wins. Upstream-documented rule; Traefik >= 3.0 required
+# (QueryRegexp does not exist in v2).
 
 x-logging: &logging
   driver: json-file
@@ -37,6 +41,12 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      traefik.enable: "true"
+      traefik.http.routers.jellysearch.rule: "Host(`${JELLYFIN_HOST:-jellyfin}.${TRAEFIK_DOMAIN:-unset.invalid}`) && (QueryRegexp(`searchTerm`, `(.*?)`) || QueryRegexp(`SearchTerm`, `(.*?)`))"
+      traefik.http.routers.jellysearch.entrypoints: "websecure"
+      traefik.http.routers.jellysearch.tls: "true"
+      traefik.http.routers.jellysearch.priority: "100"
+      traefik.http.services.jellysearch.loadbalancer.server.port: "5000"
       mediastack.desc: "instant, typo-tolerant Jellyfin search"
       mediastack.vpn: "false"
       mediastack.config: "false"

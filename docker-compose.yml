@@ -21,13 +21,14 @@ include:
   - compose.d/prowlarr.yml
   - compose.d/qbittorrent.yml
   - compose.d/radarr-4k.yml
-  - compose.d/recyclarr.yml
   - compose.d/radarr.yml
+  - compose.d/recyclarr.yml
   - compose.d/seerr.yml
   - compose.d/sonarr-anime.yml
   - compose.d/sonarr.yml
   - compose.d/traefik.yml
   - compose.d/transmission.yml
+  - compose.d/wizarr.yml
 
 networks:
   mediastack:

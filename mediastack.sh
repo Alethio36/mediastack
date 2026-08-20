@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=6
+SCRIPT_SCHEMA=7
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -116,6 +116,17 @@ migrate_env_2_to_3() {
 migrate_env_3_to_4() { :; } # .env.example default change only; existing values stand
 migrate_env_4_to_5() { :; } # additive only (arr instances, wire credentials)
 migrate_env_5_to_6() { :; } # additive only (stack-wide arr login)
+migrate_env_6_to_7() {
+    # wave 4 adds wizarr: adopt its vars so enable/up on an existing .env
+    # never renders unset variables (configure's self-heal only runs there).
+    if ! grep -qE '^WIZARR_UID=' "$ENV_FILE"; then
+        local max
+        max=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        env_set WIZARR_UID "$(( ${max:-$(env_get UID_BASE 13000)} + 1 ))"
+        info "New service variable WIZARR_UID -> $(env_get WIZARR_UID)"
+    fi
+    grep -qE '^WIZARR_UPDATE=' "$ENV_FILE" || env_set WIZARR_UPDATE true
+}
 
 # ------------------------------------------------------------ compose layer --
 DC() { # compose wrapper: project dir pinned, pin-override applied when present
@@ -225,9 +236,13 @@ Maintain
 Connect
   wire           Configure the apps to talk to each other: qBittorrent
                  credentials+categories, arr root folders, arr->qbit,
-                 Prowlarr->arrs, FlareSolverr, Bazarr. Idempotent — re-run
-                 any time. Scope: wire [qbit|arr|prowlarr|bazarr];
+                 Prowlarr->arrs, FlareSolverr, Bazarr, Jellyfin first-run
+                 (+libraries), Seerr bootstrap, Wizarr key. Idempotent —
+                 re-run any time; GUI-configured apps are never overwritten.
+                 Scope: wire [qbit|arr|prowlarr|bazarr|jellyfin|seerr|wizarr];
                  preview: wire --dry-run.
+  invite         Mint a Wizarr invitation and print the ready-to-share URL.
+                 Options: --expires 1|7|30 (default: never expires).
   credentials    Show the app logins wire created/stored.
   traefik-setup  Configure the HTTPS edge: domain, Cloudflare token, cert
                  environment (staging/production), dashboard login. Auto-runs
@@ -1385,6 +1400,38 @@ cmd_doctor() {
         fi
     fi
 
+    hr "doctor: apps"
+    if svc_enabled jellyfin && [[ "$(c_state "$(svc_cname jellyfin)")" == running ]]; then
+        local jpub
+        jpub=$(curl -s -m 10 "http://127.0.0.1:$(svc_label jellyfin mediastack.port)/System/Info/Public" 2>/dev/null || true)
+        case "$(jq -r '.StartupWizardCompleted' <<<"$jpub" 2>/dev/null)" in
+            true)  ok "jellyfin first-run wizard completed" ;;
+            false) d_fail "jellyfin first-run wizard NOT completed" "an unclaimed jellyfin lets any visitor create the admin account" "./mediastack.sh wire jellyfin" ;;
+            *)     warn "jellyfin public info unreadable — API may still be warming up" ;;
+        esac
+    fi
+    if svc_enabled seerr && [[ "$(c_state "$(svc_cname seerr)")" == running ]]; then
+        local spub
+        spub=$(curl -s -m 10 "http://127.0.0.1:$(svc_label seerr mediastack.port)/api/v1/settings/public" 2>/dev/null || true)
+        case "$(jq -r '.initialized' <<<"$spub" 2>/dev/null)" in
+            true)  ok "seerr initialised" ;;
+            false) warn "seerr not initialised yet — run: ./mediastack.sh wire seerr" ;;
+            *)     warn "seerr public settings unreadable — API may still be warming up" ;;
+        esac
+    fi
+    if svc_enabled wizarr && [[ "$(c_state "$(svc_cname wizarr)")" == running ]]; then
+        local wkey wcode
+        wkey=$(env_get WIZARR_API_KEY)
+        if [[ -z "$wkey" ]]; then
+            warn "wizarr has no stored API key — invites need it: ./mediastack.sh wire wizarr"
+        else
+            wcode=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-API-Key: $wkey" \
+                    "http://127.0.0.1:$(svc_label wizarr mediastack.port)/api/invitations" 2>/dev/null || echo 000)
+            [[ "$wcode" =~ ^2 ]] && ok "wizarr API key works ('invite' is ready)" \
+                || d_fail "wizarr rejected the stored API key [HTTP $wcode]" "'invite' cannot mint links" "recreate the key in wizarr's Settings -> API Keys, then: ./mediastack.sh wire wizarr"
+        fi
+    fi
+
     echo
     if (( D_FAILS )); then fail "doctor: $D_FAILS problem(s) — fixes listed above."; exit 1
     else ok "doctor: all checks passed."; fi
@@ -2074,13 +2121,349 @@ wire_bazarr() {
     fi
 }
 
+# ---- jellyfin (wave 4) ----
+# Wire's jellyfin surface is deliberately tiny: complete the first-run wizard
+# (once, ever — the API gate closes itself), create libraries whose PATH is
+# not yet covered, and mint the stack's API key. It never updates or deletes
+# anything: rename/merge/tune libraries in the GUI freely — wire matches by
+# path, not name, so it will not recreate or touch them.
+JF_AUTH_HDR='Authorization: MediaBrowser Client="mediastack", Device="mediastack", DeviceId="mediastack-wire", Version="1.0"'
+# jf_api runs inside $( ) at every call site, so a plain global would be lost
+# to the subshell — the last HTTP code crosses back via a per-PID file.
+JF_CODE_F="${TMPDIR:-/tmp}/.mediastack-jf-code.$$"
+jf_code() { cat "$JF_CODE_F" 2>/dev/null || echo 000; }
+jf_url() { echo "http://127.0.0.1:$(svc_label jellyfin mediastack.port)"; }
+jf_api() { # jf_api METHOD PATH TOKEN [json-body] -> body on stdout; rc = http 2xx
+    local m="$1" p="$2" tok="$3" b="${4:-}" out code
+    if ! out=$(curl -sS -m 20 -X "$m" -H "$JF_AUTH_HDR" \
+          ${tok:+-H "X-Emby-Token: $tok"} -H "Content-Type: application/json" \
+          ${b:+-d "$b"} -w $'\n%{http_code}' "$(jf_url)$p" 2>&1); then
+        printf '000' > "$JF_CODE_F"; echo "$out"; return 1
+    fi
+    code=${out##*$'\n'}; printf '%s' "$code" > "$JF_CODE_F"
+    echo "${out%$'\n'*}"
+    [[ "$code" =~ ^2 ]]
+}
+jf_ready() { # container "running" != API "ready"
+    local t=0 code
+    while :; do
+        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(jf_url)/health" 2>/dev/null || echo 000)
+        [[ "$code" == 200 ]] && return 0
+        (( t >= 90 )) && { wfail "jellyfin's API never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs jellyfin"; return 1; }
+        sleep 5; t=$((t+5)); info "waiting for jellyfin's API (${t}s)..."
+    done
+}
+jf_libname() { # default library name for a media subdir
+    case "$1" in
+        movies)    echo "Movies" ;;
+        movies-4k) echo "Movies (4K)" ;;
+        tv)        echo "TV Shows" ;;
+        tv-anime)  echo "Anime" ;;
+        music)     echo "Music" ;;
+        *)         echo "${1^}" ;;
+    esac
+}
+
+wire_jellyfin() {
+    hr "wire: jellyfin"
+    svc_enabled jellyfin || { info "jellyfin not enabled — skipped"; return 0; }
+    wire_gate jellyfin
+    jf_ready || return 1
+    local pub completed juser jpass
+    pub=$(jf_api GET /System/Info/Public "" || true)
+    # NB: jq's // operator treats false as missing — read booleans plainly
+    completed=$(jq -r '.StartupWizardCompleted' <<<"$pub" 2>/dev/null)
+    [[ "$completed" == true || "$completed" == false ]] \
+        || { wfail "jellyfin gave no readable public info [HTTP $(jf_code)]: $(head -c200 <<<"$pub")"; return 1; }
+    juser=$(env_get JELLYFIN_ADMIN_USER); jpass=$(env_get JELLYFIN_ADMIN_PASSWORD)
+
+    # --- first-run wizard: only ever runs while jellyfin says it is unclaimed.
+    # This also closes a real hole: an unconfigured jellyfin lets ANY visitor
+    # create the admin account.
+    if [[ "$completed" == false ]]; then
+        if [[ -z "$juser" || -z "$jpass" ]]; then
+            if (( WIRE_DRY )); then
+                w_would "complete jellyfin's first-run wizard (admin login asked on the real run)" || true
+            elif [[ ! -t 0 ]]; then
+                wfail "jellyfin's first-run wizard is incomplete and there is no terminal to ask for the admin login — run './mediastack.sh wire jellyfin' interactively"
+                return 1
+            else
+                explain "Jellyfin admin" \
+"Jellyfin needs one administrator account. This is the operator/recovery
+login (it also signs in to Seerr as its owner) — your household gets
+their own accounts later via invites. Everything else about Jellyfin
+(look, libraries' settings, users) stays yours to manage in its GUI;
+wire only performs this minimum first-run. Stored in .env (view:
+credentials)."
+                ask JF_U "Admin username" "${juser:-admin}"; juser="$REPLY_VAL"
+                ask_secret "Admin password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; jpass="$REPLY_VAL"
+                env_set JELLYFIN_ADMIN_USER "$juser"; env_set JELLYFIN_ADMIN_PASSWORD "$jpass"
+            fi
+        fi
+        if [[ -n "$juser" && -n "$jpass" ]] && w_would "complete jellyfin's first-run wizard (admin '$juser', remote access on, UPnP off)"; then
+            local step out
+            for step in cfg getuser postuser remote complete; do
+                case "$step" in
+                    cfg)      out=$(jf_api POST /Startup/Configuration "" '{"UICulture":"en-US","MetadataCountryCode":"US","PreferredMetadataLanguage":"en"}') ;;
+                    getuser)  out=$(jf_api GET /Startup/User "") ;;  # initialises the first-user record
+                    postuser) out=$(jf_api POST /Startup/User "" "$(jq -cn --arg u "$juser" --arg p "$jpass" '{Name:$u,Password:$p}')") ;;
+                    remote)   out=$(jf_api POST /Startup/RemoteAccess "" '{"EnableRemoteAccess":true,"EnableAutomaticPortMapping":false}') ;;
+                    complete) out=$(jf_api POST /Startup/Complete "") ;;
+                esac || { wfail "jellyfin wizard step '$step' rejected [HTTP $(jf_code)]: $(head -c200 <<<"$out")"; return 1; }
+            done
+            ok "first-run wizard completed — admin '$juser'"
+        fi
+    else
+        ok "first-run wizard already completed"
+    fi
+
+    # --- everything below needs an admin session
+    if [[ -z "$juser" || -z "$jpass" ]]; then
+        if (( WIRE_DRY )); then
+            info "library/API-key previews pend on the admin login — created earlier in the same real run"
+        else
+            info "jellyfin was configured outside wire and no JELLYFIN_ADMIN_USER/PASSWORD is in .env — libraries and the stack API key stay manual (set them in .env to let wire manage those)"
+        fi
+        return 0
+    fi
+    local auth tok
+    auth=$(jf_api POST /Users/AuthenticateByName "" "$(jq -cn --arg u "$juser" --arg p "$jpass" '{Username:$u,Pw:$p}')") \
+        || { (( WIRE_DRY )) && { info "cannot verify further without logging in — real run continues from here"; return 0; }
+             wfail "jellyfin rejected the admin login from .env [HTTP $(jf_code)]: $(head -c200 <<<"$auth")"; return 1; }
+    tok=$(jq -r '.AccessToken // empty' <<<"$auth")
+    [[ -n "$tok" ]] || { wfail "jellyfin login succeeded but returned no token: $(head -c200 <<<"$auth")"; return 1; }
+
+    # --- libraries: create-if-path-missing, derived from the arrs' own
+    # rootfolder labels. Match by PATH so GUI renames/merges are respected.
+    local vf droot; vf=$(jf_api GET /Library/VirtualFolders "$tok" || true)
+    [[ "$(jf_code)" =~ ^2 ]] || { wfail "could not list jellyfin libraries [HTTP $(jf_code)]: $(head -c200 <<<"$vf")"; return 1; }
+    droot=$(env_get DATA_ROOT)
+    local -A seen=()
+    local s rf base path ctype lname enc_n enc_p resp
+    for s in $(arr_instances); do
+        rf=$(svc_label "$s" mediastack.rootfolder); base=${rf##*/}
+        [[ -n "$base" && -z "${seen[$base]:-}" ]] || continue; seen[$base]=1
+        path="/media/$base"
+        case "$(svc_label "$s" mediastack.arrtype)" in
+            radarr) ctype=movies ;; sonarr) ctype=tvshows ;; lidarr) ctype=music ;; *) continue ;;
+        esac
+        if jq -e --arg p "$path" 'any(.[].Locations[]?; . == $p)' <<<"$vf" >/dev/null 2>&1; then
+            ok "a library already covers $path — untouched (yours to manage in the GUI)"
+            continue
+        fi
+        if (( WIRE_DRY )); then
+            w_would "create jellyfin library for $path (${ctype}; name asked on the real run)" || true
+            continue
+        fi
+        if [[ ! -t 0 ]]; then
+            info "$path has no library yet — creation asks for a name, so it only happens interactively: ./mediastack.sh wire jellyfin"
+            continue
+        fi
+        # jellyfin sees /media read-only; the host dir must exist or the
+        # library is born broken. Same ownership pattern as configure's tree.
+        sudo test -d "$droot/media/$base" \
+            || { sudo install -d -m 2775 -g mediacenter "$droot/media/$base" && info "created $droot/media/$base (was missing)"; }
+        ask JF_LN "Library name for $path" "$(jf_libname "$base")"; lname="$REPLY_VAL"
+        if w_would "create jellyfin library '$lname' -> $path"; then
+            enc_n=$(jq -rn --arg v "$lname" '$v|@uri'); enc_p=$(jq -rn --arg v "$path" '$v|@uri')
+            resp=$(jf_api POST "/Library/VirtualFolders?name=${enc_n}&collectionType=${ctype}&paths=${enc_p}&refreshLibrary=true" "$tok" '{"LibraryOptions":{}}') \
+                && ok "library '$lname' created" \
+                || wfail "library '$lname' rejected [HTTP $(jf_code)]: $(head -c200 <<<"$resp")"
+        fi
+    done
+
+    # --- one API key for the stack (update-defer streaming check + doctor)
+    local keys have
+    keys=$(jf_api GET /Auth/Keys "$tok" || true)
+    have=$(jq -r '.Items[]? | select(.AppName=="mediastack") | .AccessToken' <<<"$keys" 2>/dev/null | head -1)
+    if [[ -n "$have" ]]; then
+        [[ "$(env_get JELLYFIN_API_KEY)" == "$have" ]] || env_set JELLYFIN_API_KEY "$have"
+        ok "stack API key present"
+    elif w_would "mint a jellyfin API key for the stack (app 'mediastack')"; then
+        jf_api POST "/Auth/Keys?app=mediastack" "$tok" >/dev/null \
+            || { wfail "API key creation rejected [HTTP $(jf_code)]"; return 1; }
+        keys=$(jf_api GET /Auth/Keys "$tok" || true)
+        have=$(jq -r '.Items[]? | select(.AppName=="mediastack") | .AccessToken' <<<"$keys" 2>/dev/null | head -1)
+        [[ -n "$have" ]] || { wfail "API key created but not readable back — check Dashboard -> API Keys"; return 1; }
+        env_set JELLYFIN_API_KEY "$have"
+        ok "stack API key minted and stored (JELLYFIN_API_KEY)"
+    fi
+}
+
+# ---- seerr (wave 4) ----
+# Seerr federates auth to jellyfin (users sign in with their jellyfin logins;
+# no seerr-local passwords exist here). Wire bootstraps an UNINITIALISED
+# seerr only: first sign-in as the jellyfin admin (which creates seerr's
+# owner), library sync + enable, one server entry per arr, initialise. An
+# initialised seerr is never touched — its settings are GUI territory.
+seerr_url() { echo "http://127.0.0.1:$(svc_label seerr mediastack.port)"; }
+SEERR_CODE_F="${TMPDIR:-/tmp}/.mediastack-seerr-code.$$"
+seerr_code() { cat "$SEERR_CODE_F" 2>/dev/null || echo 000; }
+seerr_api() { # seerr_api METHOD PATH JAR [json-body] -> body; rc = http 2xx
+    local m="$1" p="$2" jar="$3" b="${4:-}" out code
+    if ! out=$(curl -sS -m 30 -X "$m" -b "$jar" -c "$jar" -H "Content-Type: application/json" \
+          ${b:+-d "$b"} -w $'\n%{http_code}' "$(seerr_url)/api/v1$p" 2>&1); then
+        printf '000' > "$SEERR_CODE_F"; echo "$out"; return 1
+    fi
+    code=${out##*$'\n'}; printf '%s' "$code" > "$SEERR_CODE_F"
+    echo "${out%$'\n'*}"
+    [[ "$code" =~ ^2 ]]
+}
+
+wire_seerr() {
+    hr "wire: seerr"
+    svc_enabled seerr || { info "seerr not enabled — skipped"; return 0; }
+    svc_enabled jellyfin || { wfail "seerr is enabled but jellyfin is not — seerr cannot function without it"; return 1; }
+    wire_gate seerr jellyfin
+    local t=0 code
+    while :; do
+        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(seerr_url)/api/v1/status" 2>/dev/null || echo 000)
+        [[ "$code" == 200 ]] && break
+        (( t >= 90 )) && { wfail "seerr's API never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs seerr"; return 1; }
+        sleep 5; t=$((t+5)); info "waiting for seerr's API (${t}s)..."
+    done
+    local jar pub
+    jar=$(mktemp)
+    pub=$(seerr_api GET /settings/public "$jar" || true)
+    if [[ "$(jq -r '.initialized' <<<"$pub" 2>/dev/null)" == true ]]; then
+        ok "seerr already initialised — untouched (its settings are yours to manage in the GUI)"
+        rm -f "$jar"; return 0
+    fi
+    local juser jpass
+    juser=$(env_get JELLYFIN_ADMIN_USER); jpass=$(env_get JELLYFIN_ADMIN_PASSWORD)
+    if [[ -z "$juser" || -z "$jpass" ]]; then
+        if (( WIRE_DRY )); then
+            w_would "bootstrap seerr (sign in as the jellyfin admin, sync + enable libraries, add the arrs, initialise)" || true
+        else
+            wfail "seerr bootstrap needs the jellyfin admin login — run 'wire jellyfin' first (a full 'wire' does both in order)"
+        fi
+        rm -f "$jar"; return 0
+    fi
+    if ! w_would "bootstrap seerr: jellyfin sign-in ('$juser'), libraries, arr servers, initialise"; then rm -f "$jar"; return 0; fi
+
+    local jfport out
+    jfport=$(svc_label jellyfin mediastack.port)
+    out=$(seerr_api POST /auth/jellyfin "$jar" "$(jq -cn --arg u "$juser" --arg p "$jpass" --argjson port "$jfport" \
+          '{username:$u,password:$p,hostname:"jellyfin",port:$port,useSsl:false,urlBase:"",serverType:2}')") \
+        || { wfail "seerr rejected the jellyfin sign-in [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
+    ok "signed in — seerr owner is jellyfin admin '$juser'"
+
+    out=$(seerr_api POST /settings/jellyfin/library/sync "$jar") \
+        || { wfail "library sync failed [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
+    local libs id n=0
+    libs=$(seerr_api GET /settings/jellyfin/library "$jar" || true)
+    for id in $(jq -r '.[]?.id' <<<"$libs" 2>/dev/null); do
+        seerr_api PUT "/settings/jellyfin/library/$id" "$jar" '{"enabled":true}' >/dev/null \
+            && n=$((n+1)) \
+            || wfail "could not enable seerr library id $id [HTTP $(seerr_code)]"
+    done
+    ok "libraries synced — $n enabled"
+
+    # one server entry per arr instance, connection details straight from the
+    # stack's own labels/keys. The arrs live in gluetun's network namespace,
+    # so 'gluetun' is their in-network hostname.
+    local s ty key port root profs pid pname body ep is4k
+    for s in $(arr_instances); do
+        ty=$(svc_label "$s" mediastack.arrtype)
+        [[ "$ty" == radarr || "$ty" == sonarr ]] || { info "$s: seerr does not manage $ty — skipped"; continue; }
+        key=$(arr_key "$s"); port=$(svc_label "$s" mediastack.port); root=$(svc_label "$s" mediastack.rootfolder)
+        [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — is it initialised? re-run wire in a minute"; continue; }
+        profs=$(api GET "$(arr_url "$s")/api/$(arr_apiver "$s")/qualityprofile" "$key" || true)
+        pid=$(jq -r --arg n "$(env_get "TRASH_PROFILE_$(uvar "$s")")" \
+              '(map(select(.name==$n)) + .)[0].id // empty' <<<"$profs" 2>/dev/null)
+        pname=$(jq -r --arg n "$(env_get "TRASH_PROFILE_$(uvar "$s")")" \
+              '(map(select(.name==$n)) + .)[0].name // empty' <<<"$profs" 2>/dev/null)
+        [[ -n "$pid" ]] || { wfail "$s: could not read a quality profile from its API — seerr entry skipped"; continue; }
+        is4k=false; [[ "$s" == *-4k ]] && is4k=true
+        body=$(jq -cn --arg name "$s" --argjson port "$port" --arg key "$key" \
+                     --argjson pid "$pid" --arg pname "$pname" --arg root "$root" --argjson is4k "$is4k" \
+              '{name:$name,hostname:"gluetun",port:$port,apiKey:$key,useSsl:false,baseUrl:"",
+                activeProfileId:$pid,activeProfileName:$pname,activeDirectory:$root,
+                tags:[],is4k:$is4k,isDefault:true,syncEnabled:true,preventSearch:false,
+                tagRequests:false,overrideRule:[]}')
+        ep="/settings/$ty"
+        [[ "$ty" == radarr ]] && body=$(jq -c '. + {minimumAvailability:"released"}' <<<"$body")
+        [[ "$s" == sonarr-anime ]] && body=$(jq -c '. + {isDefault:false}' <<<"$body")
+        out=$(seerr_api POST "$ep/test" "$jar" "$body") \
+            || { wfail "$s: seerr could not reach it [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; continue; }
+        out=$(seerr_api POST "$ep" "$jar" "$body") \
+            && ok "$s added to seerr (profile '$pname'${is4k:+, 4k=$is4k})" \
+            || wfail "$s: seerr rejected the server entry [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
+    done
+
+    out=$(seerr_api POST /settings/initialize "$jar") \
+        || { wfail "seerr initialise call failed [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
+    local skey
+    skey=$(seerr_api GET /settings/main "$jar" | jq -r '.apiKey // empty' 2>/dev/null)
+    [[ -n "$skey" ]] && env_set SEERR_API_KEY "$skey"
+    rm -f "$jar"
+    ok "seerr initialised — users sign in with their jellyfin logins"
+}
+
+# ---- wizarr (wave 4) ----
+# Wizarr's admin account, jellyfin connection, and API keys are web-UI-only
+# by upstream design — no bootstrap API exists. One documented first-run in
+# the UI, then wire holds the API key and './mediastack.sh invite' does the
+# rest forever.
+wizarr_url() { echo "http://127.0.0.1:$(svc_label wizarr mediastack.port)"; }
+
+wire_wizarr() {
+    hr "wire: wizarr"
+    svc_enabled wizarr || { info "wizarr not enabled — skipped"; return 0; }
+    wire_gate wizarr
+    local t=0 code
+    while :; do
+        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(wizarr_url)/health" 2>/dev/null || echo 000)
+        [[ "$code" == 200 ]] && break
+        (( t >= 90 )) && { wfail "wizarr never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs wizarr"; return 1; }
+        sleep 5; t=$((t+5)); info "waiting for wizarr (${t}s)..."
+    done
+    local key host domain
+    key=$(env_get WIZARR_API_KEY)
+    if [[ -z "$key" ]]; then
+        if (( WIRE_DRY )); then
+            w_would "store + verify a wizarr API key (pasted by you after wizarr's one-time UI first-run)" || true
+            return 0
+        fi
+        if [[ ! -t 0 ]]; then
+            info "no WIZARR_API_KEY yet — wizarr's first-run is a one-time UI step; run './mediastack.sh wire wizarr' interactively after it"
+            return 0
+        fi
+        host=$(env_get WIZARR_HOST invites); domain=$(env_get TRAEFIK_DOMAIN)
+        explain "Wizarr first-run (one-time, in its UI)" \
+"Wizarr's admin account and API keys can only be created in its web UI —
+there is no automation API for this by upstream design. Once, ever:
+  1. open ${domain:+https://$host.$domain (or }http://<this-host>:$(svc_label wizarr mediastack.port)${domain:+)}
+  2. create the admin account
+  3. connect your media server:  Jellyfin, URL http://jellyfin:8096,
+     signing in with the jellyfin admin (view: credentials)
+  4. Settings -> API Keys -> create one, and paste it below
+Paste nothing to skip for now — re-run 'wire wizarr' any time."
+        ask_token "Wizarr API key (input is hidden; empty = skip)" ""
+        key="$REPLY_VAL"
+        [[ -n "$key" ]] || { info "skipped — invites stay in wizarr's UI until a key is stored"; return 0; }
+        env_set WIZARR_API_KEY "$key"
+    fi
+    local out
+    if ! out=$(curl -sS -m 15 -H "X-API-Key: $key" -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1); then
+        wfail "wizarr unreachable while verifying the API key: $(head -c200 <<<"$out")"; return 1
+    fi
+    code=${out##*$'\n'}
+    if [[ "$code" =~ ^2 ]]; then
+        ok "API key verified — mint invites with: ./mediastack.sh invite"
+    else
+        wfail "wizarr rejected the stored API key [HTTP $code] — recreate it in Settings -> API Keys, then re-run 'wire wizarr' (the old value stays in .env until replaced)"
+        return 1
+    fi
+}
+
 cmd_wire() {
     load_env; render
     local section="all"
     while [[ $# -gt 0 ]]; do case "$1" in
         --dry-run) WIRE_DRY=1; shift ;;
-        qbit|arr|prowlarr|bazarr|all) section="$1"; shift ;;
-        *) die "usage: wire [qbit|arr|prowlarr|bazarr] [--dry-run]" ;;
+        qbit|arr|prowlarr|bazarr|jellyfin|seerr|wizarr|all) section="$1"; shift ;;
+        *) die "usage: wire [qbit|arr|prowlarr|bazarr|jellyfin|seerr|wizarr] [--dry-run]" ;;
     esac; done
     (( WIRE_DRY )) && hr "wire --dry-run: showing changes, touching nothing"
     if (( ! WIRE_DRY )) && [[ ! -f "$SCRIPT_DIR/.wired" ]]; then
@@ -2092,7 +2475,7 @@ cmd_wire() {
             local wt=0 pending_s
             while (( wt < 120 )); do
                 pending_s=""
-                for s in qbittorrent prowlarr bazarr $(arr_instances); do
+                for s in qbittorrent prowlarr bazarr jellyfin seerr wizarr $(arr_instances); do
                     svc_enabled "$s" || continue
                     case "$(c_health "$(svc_cname "$s")")" in
                         healthy|-) : ;;
@@ -2111,7 +2494,12 @@ cmd_wire() {
         arr)      wire_arr ;;
         prowlarr) wire_prowlarr ;;
         bazarr)   wire_bazarr ;;
-        all)      wire_qbit; wire_arr; wire_prowlarr; wire_bazarr ;;
+        jellyfin) wire_jellyfin ;;
+        seerr)    wire_seerr ;;
+        wizarr)   wire_wizarr ;;
+        # order matters: seerr signs in via jellyfin's admin; wizarr's UI
+        # first-run wants jellyfin claimed first
+        all)      wire_qbit; wire_arr; wire_prowlarr; wire_bazarr; wire_jellyfin; wire_seerr; wire_wizarr ;;
     esac
     echo
     if (( WIRE_DRY )); then
@@ -2137,7 +2525,54 @@ cmd_credentials() {
     printf '%-22s %s\n' "Pi-hole password"     "$(env_get PIHOLE_PASSWORD '(dns profile not configured)')"
     printf '%-22s %s\n' "Traefik dash user"    "$(env_get TRAEFIK_DASH_USER '(traefik not configured)')"
     printf '%-22s %s\n' "Traefik dash password" "$(env_get TRAEFIK_DASH_PASSWORD '(traefik not configured)')"
+    printf '%-22s %s\n' "Jellyfin admin user"   "$(env_get JELLYFIN_ADMIN_USER '(not set — run wire)')"
+    printf '%-22s %s\n' "Jellyfin admin password" "$(env_get JELLYFIN_ADMIN_PASSWORD '(not set — run wire)')"
+    printf '%-22s %s\n' "Wizarr API key"        "$(env_get WIZARR_API_KEY '(not set — run wire wizarr)')"
     info "Meilisearch master key is machine-to-machine — apps use it, you never need it."
+    info "Seerr has no login of its own: sign in with the Jellyfin account."
+}
+
+cmd_invite() { # mint a wizarr invitation and print the ready-to-share URL
+    load_env; render
+    local expires="" host domain base key
+    while [[ $# -gt 0 ]]; do case "$1" in
+        --expires) case "${2:-}" in 1|7|30) expires="$2"; shift 2 ;;
+                   *) die "usage: invite [--expires 1|7|30]   (no flag = never expires)" ;; esac ;;
+        *) die "usage: invite [--expires 1|7|30]   (no flag = never expires)" ;;
+    esac; done
+    svc_enabled wizarr || die "wizarr is not enabled. Enable it first: ./mediastack.sh enable wizarr"
+    [[ "$(c_state "$(svc_cname wizarr)")" == running ]] || die "wizarr is not running: ./mediastack.sh up"
+    key=$(env_get WIZARR_API_KEY)
+    [[ -n "$key" ]] || die "No wizarr API key stored yet — run: ./mediastack.sh wire wizarr"
+    # server discovery: a create without server_ids deliberately answers 400
+    # WITH the available_servers list (upstream-documented behaviour)
+    local disc dcode ids out code url exp_line
+    disc=$(curl -sS -m 15 -X POST -H "X-API-Key: $key" -H "Content-Type: application/json" \
+           -d '{}' -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1) \
+        || die "wizarr unreachable: $(head -c200 <<<"$disc")"
+    dcode=${disc##*$'\n'}; disc=${disc%$'\n'*}
+    [[ "$dcode" == 400 || "$dcode" =~ ^2 ]] || die "wizarr refused the request [HTTP $dcode]: $(head -c200 <<<"$disc")
+  (401 = stale API key: re-run 'wire wizarr')"
+    ids=$(jq -c '[.available_servers[]?.id]' <<<"$disc" 2>/dev/null)
+    [[ "$ids" != "[]" && -n "$ids" ]] || die "wizarr has no verified media server yet — finish its one-time
+  first-run in the UI (see: wire wizarr), then retry."
+    out=$(curl -sS -m 15 -X POST -H "X-API-Key: $key" -H "Content-Type: application/json" \
+          -d "$(jq -cn --argjson ids "$ids" --argjson e "${expires:-null}" \
+               '{server_ids:$ids} + (if $e then {expires_in_days:$e} else {} end)')" \
+          -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1) \
+        || die "wizarr unreachable during creation: $(head -c200 <<<"$out")"
+    code=${out##*$'\n'}; out=${out%$'\n'*}
+    [[ "$code" =~ ^2 ]] || die "invitation rejected [HTTP $code]: $(head -c200 <<<"$out")"
+    url=$(jq -r '.invitation.url // empty' <<<"$out")
+    [[ -n "$url" ]] || die "invitation created but no URL in the reply: $(head -c300 <<<"$out")"
+    host=$(env_get WIZARR_HOST invites); domain=$(env_get TRAEFIK_DOMAIN)
+    if [[ -n "$domain" ]]; then base="https://$host.$domain"
+    else base="http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_label wizarr mediastack.port)"; fi
+    exp_line="never expires"
+    [[ -n "$expires" ]] && exp_line="expires in $expires day(s)"
+    hr "Invitation ready"
+    echo "  ${base}${url}"
+    echo "  ($exp_line — manage or revoke in wizarr's UI)"
 }
 
 cmd_new_service() {
@@ -2205,6 +2640,7 @@ main() {
         fix-perms)    cmd_fix_perms "$@" ;;
         add-mount)    cmd_add_mount ;;
         wire)         cmd_wire "$@" ;;
+        invite)       cmd_invite "$@" ;;
         credentials)  cmd_credentials ;;
         trash-sync)   cmd_trash_sync "$@" ;;
         traefik-setup) cmd_traefik_setup "$@" ;;

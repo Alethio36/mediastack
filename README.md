@@ -116,7 +116,8 @@ Maintain
 Connect
 | command | what it does |
 |---|---|
-| `wire [qbit\|arr\|prowlarr\|bazarr] [--dry-run]` | connect the apps to each other; idempotent |
+| `wire [qbit\|arr\|prowlarr\|bazarr\|jellyfin\|seerr\|wizarr] [--dry-run]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten |
+| `invite [--expires 1\|7\|30]` | mint a Wizarr invitation, print the ready-to-share URL (default: never expires) |
 | `trash-sync` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update |
 | `traefik-setup` | HTTPS wizard: domain, Cloudflare token, cert environment, dashboard login |
 | `traefik-setup --hosts` | guided rename of every service's subdomain |
@@ -167,22 +168,48 @@ script's own help is always authoritative.
 
 ## Search (JellySearch)
 
-The `search` profile makes Jellyfin search instant and typo-tolerant. The
-final piece — routing search requests through the proxy automatically —
-lands in the next wave; until then Jellyfin's built-in search is used and
-nothing needs doing.
+The `search` profile makes Jellyfin search instant and typo-tolerant.
+Routing is automatic: JellySearch carries a Traefik router on Jellyfin's
+own hostname that captures `?searchTerm` requests at a higher priority
+(Traefik >= 3.0 — the stack's edge). No configuration needed.
+
+## Media apps (Jellyfin, Seerr)
+
+`wire jellyfin` performs the minimum first-run only: metadata defaults,
+one admin account (the operator/recovery login, stored in `.env` — view:
+`credentials`), remote access on with UPnP off, and libraries derived from
+the arrs' root folders — you name each library at creation. Everything
+else is yours to manage in the GUI, and wire can't undo you: libraries
+are matched by **path, never name**, so renames, merges, and settings
+changes are respected — wire only ever creates what's missing, and the
+wizard gate closes itself after the first run.
+
+Seerr has no logins of its own: everyone signs in with their Jellyfin
+account. `wire seerr` bootstraps an uninitialised Seerr (owner = the
+Jellyfin admin, libraries enabled, every arr connected with its TRaSH
+profile); an initialised Seerr is never touched.
+
+## Invites (Wizarr)
+
+Wizarr turns "set up my account" into a link. Its first run is a one-time
+UI step (admin account, connect Jellyfin at `http://jellyfin:8096`, mint
+an API key — `wire wizarr` walks you through it and stores the key).
+After that:
+
+```bash
+./mediastack.sh invite               # never-expiring invitation URL
+./mediastack.sh invite --expires 7   # or 1 | 30 days
+```
 
 ## Roadmap
 
 Shipped: one-fragment-per-service architecture · app wiring (`wire`) ·
 TRaSH Guides sync with ownership model and nightly automation · HTTPS edge
 with staging/production certificates and guided hostnames · tiered backup
-retention.
+retention · Jellyfin + Seerr automated setup · JellySearch routing ·
+invite management (Wizarr).
 
-Next (wave 4): Jellyfin + Seerr automated setup, JellySearch routing,
-invite management (wizarr).
-
-Then (wave 5): notifications (Apprise), download cleanup (cleanuparr),
+Next (wave 5): notifications (Apprise), download cleanup (cleanuparr),
 credential rotation (`set-credentials`), per-service log-error counts and
 deeper audits in `doctor`.
 
