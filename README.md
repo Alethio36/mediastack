@@ -118,6 +118,7 @@ Connect
 |---|---|
 | `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|jellyfin\|seerr\|wizarr] [--dry-run]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten |
 | `invite [--expires 1\|7\|30]` | mint a Wizarr invitation, print the ready-to-share URL (default: never expires) |
+| `set-credentials <arr\|qbit\|jellyfin>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically |
 | `trash-sync` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update |
 | `traefik-setup` | HTTPS wizard: domain, Cloudflare token, cert environment, dashboard login |
 | `traefik-setup --hosts` | guided rename of every service's subdomain |
@@ -158,8 +159,9 @@ script's own help is always authoritative.
   weeks, one per month for 6 months — `BACKUP_KEEP_*` in `.env`).
   Anything broken after an update: `rollback <service>`.
 * **Downloads cannot leak.** VPN'd services run inside gluetun's network
-  namespace, start only after the tunnel is verifiably up, and `leak-test`
-  proves the chain. Membership is defined in the fragments, audited by the
+  namespace, start only after the tunnel is verifiably up, qBittorrent's
+  transfers are additionally bound to the tunnel interface itself (tun0),
+  and `leak-test` proves the chain. Membership is defined in the fragments, audited by the
   tooling — see [docs/vpn-membership.md](docs/vpn-membership.md) to change it.
 * **One wildcard certificate, nothing exposed.** HTTPS via Let's Encrypt
   DNS-01: the hostnames point at your LAN, no ports are forwarded, and a
@@ -233,11 +235,12 @@ Shipped: one-fragment-per-service architecture · app wiring (`wire`) ·
 TRaSH Guides sync with ownership model and nightly automation · HTTPS edge
 with staging/production certificates and guided hostnames · tiered backup
 retention · Jellyfin + Seerr automated setup · JellySearch routing ·
-invite management (Wizarr).
+invite management (Wizarr) · notification hub (Apprise) · download
+cleanup (cleanuparr) · credential rotation (`set-credentials`) · tunnel
+interface binding · runtime audits in `doctor`.
 
-Next (wave 5): notifications (Apprise), download cleanup (cleanuparr),
-credential rotation (`set-credentials`), per-service log-error counts and
-deeper audits in `doctor`.
+Next: production go-live (certificates, NAS backups) and the anzac2
+migration.
 
 ## Docs
 
