@@ -198,6 +198,10 @@ For invite notifications, add an agent in Wizarr's UI (Settings ->
 Notifications): type *apprise*, URL
 `apprise://gluetun:8000/mediastack?tags=users`.
 
+Seerr's request/approval/availability events flow to the hub too. Jellyfin
+events would need its Webhook plugin (GUI-installable) — deliberately out
+of wire's scope.
+
 Apprise lives inside the VPN namespace like the arrs, so notifications
 egress through the tunnel. Known property: if the tunnel is hard down,
 push notifications are down with it — the script still logs locally.

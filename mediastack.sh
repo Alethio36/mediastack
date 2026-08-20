@@ -1829,6 +1829,38 @@ arr_apiver() { # prowlarr and lidarr speak v1; the content arrs are v3
     case "$(svc_label "$1" mediastack.arrtype)" in lidarr) echo v1 ;; *) echo v3 ;; esac
 }
 
+arr_pretty_name() { # sonarr-anime -> "Sonarr (Anime)", radarr-4k -> "Radarr (4K)"
+    local s="$1" ty suffix
+    ty=$(svc_label "$s" mediastack.arrtype)
+    suffix=${s#"$ty"}; suffix=${suffix#-}
+    case "$suffix" in
+        "")    echo "${ty^}" ;;
+        4k)    echo "${ty^} (4K)" ;;
+        anime) echo "${ty^} (Anime)" ;;
+        *)     echo "${ty^} (${suffix^})" ;;
+    esac
+}
+
+arr_instance_name() { # brand the instance so notifications are tellable apart;
+                      # only replaces the stock default — a custom name is yours
+    local s="$1" key url cur have want
+    key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
+    url=$(arr_url "$s")
+    cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)
+    have=$(jq -r '.instanceName // empty' <<<"$cur" 2>/dev/null)
+    want=$(arr_pretty_name "$s")
+    if [[ "$have" == "$want" ]]; then
+        ok "$s: instance name '$have'"
+    elif [[ -n "$have" && "${have,,}" != "$(svc_label "$s" mediastack.arrtype)" ]]; then
+        ok "$s: instance name '$have' (custom) — untouched"
+    elif w_would "$s: name the instance '$want' (distinguishes its notifications)"; then
+        api PUT "$url/api/$(arr_apiver "$s")/config/host" "$key" \
+            "$(jq -c --arg n "$want" '.instanceName=$n' <<<"$cur")" >/dev/null \
+            && ok "$s: instance name set to '$want'" \
+            || wfail "$s: instance rename rejected — set it in its UI (Settings -> General)"
+    fi
+}
+
 arr_forms_login() { # shared operator login on an arr-family UI; idempotent
     local s="$1" auser apass key url cur verb=enable
     [[ "${2:-}" == force ]] && verb=rotate
@@ -1879,7 +1911,7 @@ qb_bind_tun0() { # requires QB_COOKIE
     if [[ "$cur" == tun0 ]]; then
         ok "transfers bound to tun0"
     elif w_would "bind qBittorrent's transfers to tun0 (VPN interface)"; then
-        qb_api /app/setPreferences 'json={"network_interface":"tun0"}' >/dev/null
+        qb_api /app/setPreferences 'json={"current_network_interface":"tun0"}' >/dev/null
         cur=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null)
         [[ "$cur" == tun0 ]] && ok "transfers bound to tun0" \
             || wfail "interface bind did not stick (reads back '$cur') — set it in the UI: Advanced -> Network interface"
@@ -2045,6 +2077,7 @@ operator). Stored in .env (view: credentials)."
         url=$(arr_url "$s"); root=$(svc_label "$s" mediastack.rootfolder)
         # authentication (forms login) — idempotent on method+username match
         arr_forms_login "$s"
+        arr_instance_name "$s"
         # root folder
         t=$(svc_label "$s" mediastack.arrtype)
         cur=$(api GET "$url/api/$(arr_apiver "$s")/rootfolder" "$key" || true)
@@ -2764,6 +2797,23 @@ wire_seerr() {
             || wfail "$s: seerr rejected the server entry [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
     done
 
+    # request/media events -> the hub (tag: activity), when the hub is wired.
+    # An enabled webhook agent (whatever it points at) is never overwritten.
+    if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(apprise_url)/get/mediastack" 2>/dev/null)" == 200 ]]; then
+        local wh
+        wh=$(seerr_api GET /settings/notifications/webhook "$jar" || true)
+        if [[ "$(jq -r '.enabled' <<<"$wh" 2>/dev/null)" == true ]]; then
+            ok "webhook notifications already enabled — untouched (yours to manage in the GUI)"
+        elif w_would "notify the hub on requests/approvals/availability (tag: activity)"; then
+            out=$(seerr_api POST /settings/notifications/webhook "$jar" "$(jq -cn '
+                {enabled:true, embedPoster:false, types:222,
+                 options:{webhookUrl:"http://gluetun:8000/notify/mediastack",
+                          authHeader:"",
+                          jsonPayload:"{\"title\":\"Seerr\",\"body\":\"{{event}}\\n{{subject}}\\n{{message}}\",\"tag\":\"activity\",\"type\":\"info\"}"}}')") \
+                && ok "seerr now notifies the hub" \
+                || wfail "seerr rejected the webhook agent [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
+        fi
+    fi
     if $seerr_initialized; then
         rm -f "$jar"
         ok "seerr arr entries verified"
