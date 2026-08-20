@@ -28,6 +28,7 @@ services:
       - "${PROWLARR_PORT:-9696}:9696"      # Prowlarr
       - "${LIDARR_PORT:-8686}:8686"        # Lidarr    (music profile)
       - "${BAZARR_PORT:-6767}:6767"        # Bazarr    (subs profile)
+      - "${APPRISE_PORT:-8000}:8000"        # Apprise   (apprise profile)
       - "${FLARESOLVERR_PORT:-8191}:8191"  # FlareSolverr
       - "${DELUGE_PORT:-8112}:8112"        # Deluge    (torrents-extra)
       - "${TRANSMISSION_PORT:-9091}:9091"  # Transmission (torrents-extra)

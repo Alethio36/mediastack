@@ -116,7 +116,7 @@ Maintain
 Connect
 | command | what it does |
 |---|---|
-| `wire [qbit\|arr\|prowlarr\|bazarr\|jellyfin\|seerr\|wizarr] [--dry-run]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten |
+| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|jellyfin\|seerr\|wizarr] [--dry-run]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten |
 | `invite [--expires 1\|7\|30]` | mint a Wizarr invitation, print the ready-to-share URL (default: never expires) |
 | `trash-sync` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update |
 | `traefik-setup` | HTTPS wizard: domain, Cloudflare token, cert environment, dashboard login |
@@ -172,6 +172,24 @@ script's own help is always authoritative.
 * **`git pull` is always safe.** Your state lives in `.env` and gitignored
   dirs; tracked files are never written at runtime. `upgrade` wraps pull +
   config migration.
+
+## Notifications (Apprise)
+
+The `apprise` profile gives the stack one notification hub with three
+streams: **ops** (update pipeline results, backup failures, doctor
+problems), **activity** (arr grabs, imports, health events), **users**
+(invite activity). `wire apprise` asks for your endpoints once —
+ntfy, Discord, email, [anything Apprise speaks](https://github.com/caronc/apprise/wiki)
+— stores them under one key, and connects every arr to the hub.
+Endpoints already stored are never touched.
+
+For invite notifications, add an agent in Wizarr's UI (Settings ->
+Notifications): type *apprise*, URL
+`apprise://gluetun:8000/mediastack?tags=users`.
+
+Apprise lives inside the VPN namespace like the arrs, so notifications
+egress through the tunnel. Known property: if the tunnel is hard down,
+push notifications are down with it — the script still logs locally.
 
 ## Search (JellySearch)
 
