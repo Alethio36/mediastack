@@ -2293,7 +2293,7 @@ wire_apprise() {
 
     # --- notification endpoints: stored once under key 'mediastack';
     # an existing config is never touched (edit in apprise's UI or re-add)
-    code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)
+    code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)
     if [[ "$code" == 200 ]]; then
         ok "notification endpoints configured — untouched (yours to manage; UI: http://<this-host>:$(env_get APPRISE_PORT 8000))"
     elif (( WIRE_DRY )); then
@@ -2370,6 +2370,33 @@ Getting a URL:
             && ok "$s now notifies the hub" \
             || wfail "$s: notification connection rejected: $(head -c200 <<<"$resp")"
     done
+    # prowlarr too — indexer/health events are ops signal
+    if svc_enabled prowlarr; then
+        key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr)
+        have=$(api GET "$url/api/$ver/notification" "$key" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
+        if [[ " $have " == *" mediastack-apprise "* ]]; then
+            ok "prowlarr already notifies the hub — untouched"
+        elif w_would "prowlarr: notify the hub on indexer/health events (tag: ops)"; then
+            schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)
+            tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
+            if [[ -z "$tmpl" ]]; then
+                wfail "prowlarr: its API offers no Apprise notification type — is the image very old?"
+            else
+                body=$(jq -c --arg srv "http://localhost:8000" '
+                    .name = "mediastack-apprise"
+                    | .fields = [ .fields[]
+                        | if .name == "serverUrl"          then .value = $srv
+                          elif .name == "configurationKey" then .value = "mediastack"
+                          elif .name == "tags"             then .value = ["ops"]
+                          else . end ]
+                    | reduce ("onHealthIssue","onHealthRestored","onApplicationUpdate") as $k
+                        (.; if has($k) then .[$k] = true else . end)' <<<"$tmpl")
+                resp=$(api POST "$url/api/$ver/notification" "$key" "$body") \
+                    && ok "prowlarr now notifies the hub" \
+                    || wfail "prowlarr: notification connection rejected: $(head -c200 <<<"$resp")"
+            fi
+        fi
+    fi
 }
 
 # ---- cleanuparr (wave 5) ----
@@ -2491,7 +2518,7 @@ wire_cleanuparr() {
     fi
 
     # ops notifications via the hub, when the hub is wired
-    if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(apprise_url)/get/mediastack" 2>/dev/null)" == 200 ]]; then
+    if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
         have=$(cup_api GET /configuration/notification_providers "$KH" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "already notifies the hub — untouched"
@@ -2805,7 +2832,7 @@ wire_seerr() {
 
     # request/media events -> the hub (tag: activity), when the hub is wired.
     # An enabled webhook agent (whatever it points at) is never overwritten.
-    if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(apprise_url)/get/mediastack" 2>/dev/null)" == 200 ]]; then
+    if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
         local wh
         wh=$(seerr_api GET /settings/notifications/webhook "$jar" || true)
         if [[ "$(jq -r '.enabled' <<<"$wh" 2>/dev/null)" == true ]]; then
