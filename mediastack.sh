@@ -261,6 +261,8 @@ Connect
   invite         Mint a Wizarr invitation and print the ready-to-share URL.
                  Options: --expires 1|7|30 (default: never expires).
   credentials    Show the app logins wire created/stored.
+  set-credentials Rotate a stored login everywhere it lives, atomically:
+                 set-credentials <arr|qbit|jellyfin>.
   traefik-setup  Configure the HTTPS edge: domain, Cloudflare token, cert
                  environment (staging/production), dashboard login. Auto-runs
                  on 'up' when traefik is enabled and unconfigured.
@@ -1164,6 +1166,16 @@ cmd_update() {
     # nightly TRaSH sync rides the update pipeline: same schedule the
     # operator already chose, guides drift-window stays at one cycle.
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
+        # pinned-major drift notice: the recyclarr pin (":8") is deliberate,
+        # but a released v9 should be a visible decision, not silence
+        local rc_pin rc_latest
+        rc_pin=$(grep -oE 'recyclarr/recyclarr:[0-9]+' compose.d/recyclarr.yml 2>/dev/null | cut -d: -f2)
+        rc_latest=$(curl -sf -m 10 https://github.com/recyclarr/recyclarr/releases.atom 2>/dev/null \
+                    | grep -oE '<title>v[0-9]+' | head -1 | grep -oE '[0-9]+')
+        if [[ -n "$rc_pin" && -n "$rc_latest" ]] && (( rc_latest > rc_pin )); then
+            warn "recyclarr v$rc_latest is out; the stack pins major v$rc_pin — review the breaking changes, then bump the tag in compose.d/recyclarr.yml when ready"
+            notify ops "recyclarr v$rc_latest available" "Stack pins major v$rc_pin. Review upstream breaking changes, then bump compose.d/recyclarr.yml." warning
+        fi
         echo
         cmd_trash_sync || { fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"
                             notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded. Inspect: ./mediastack.sh trash-sync" failure
@@ -1454,6 +1466,48 @@ cmd_doctor() {
                     "http://127.0.0.1:$(svc_label wizarr mediastack.port)/api/invitations" 2>/dev/null || echo 000)
             [[ "$wcode" =~ ^2 ]] && ok "wizarr API key works ('invite' is ready)" \
                 || d_fail "wizarr rejected the stored API key [HTTP $wcode]" "'invite' cannot mint links" "recreate the key in wizarr's Settings -> API Keys, then: ./mediastack.sh wire wizarr"
+        fi
+    fi
+
+    hr "doctor: runtime audit"
+    # per-service error volume, last 24h — noisy logs surface real problems
+    local noisy=0 cnt
+    for s in $(svc_managed); do
+        svc_enabled "$s" || continue
+        cn=$(svc_cname "$s")
+        [[ "$(c_state "$cn")" == running ]] || continue
+        cnt=$(sudo docker logs --since 24h "$cn" 2>&1 | grep -ciE '\b(error|fatal)\b' || true)
+        if (( cnt > 25 )); then
+            warn "$s: $cnt error lines in 24h — inspect: ./mediastack.sh logs $s"
+            noisy=$((noisy+1))
+        fi
+    done
+    (( noisy == 0 )) && ok "log noise: every service under the error threshold (25/24h)"
+    # effective UID: the process must actually run as the UID .env assigns —
+    # PUID images silently ignore bad values, this catches that
+    local expect uids drift=0
+    for s in $(svc_managed); do
+        svc_enabled "$s" || continue
+        cn=$(svc_cname "$s")
+        [[ "$(c_state "$cn")" == running ]] || continue
+        expect=$(env_get "$(uvar "$s")_UID")
+        [[ -n "$expect" ]] || continue
+        uids=$(sudo docker top "$cn" -eo uid= 2>/dev/null | sort -u | tr -d ' ' | tr '\n' ' ')
+        if [[ " $uids" == *" $expect "* ]]; then :; else
+            warn "$s: no process runs as UID $expect (saw: ${uids:-none}) — PUID may be ignored; check: logs $s"
+            drift=$((drift+1))
+        fi
+    done
+    (( drift == 0 )) && ok "effective UIDs match the .env map"
+    # qbit must be bound to the tunnel interface (wire sets it; verify here)
+    if svc_enabled qbittorrent && [[ "$(c_state "$(svc_cname qbittorrent)")" == running ]]; then
+        if qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" 2>/dev/null; then
+            local iface
+            iface=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null)
+            [[ "$iface" == tun0 ]] && ok "qBittorrent transfers bound to tun0" \
+                || warn "qBittorrent is NOT bound to tun0 (currently: '${iface:-unset}') — fix: ./mediastack.sh wire qbit"
+        else
+            warn "could not sign in to qBittorrent to verify the tun0 bind"
         fi
     fi
 
@@ -1776,15 +1830,16 @@ arr_apiver() { # prowlarr and lidarr speak v1; the content arrs are v3
 }
 
 arr_forms_login() { # shared operator login on an arr-family UI; idempotent
-    local s="$1" auser apass key url cur
+    local s="$1" auser apass key url cur verb=enable
+    [[ "${2:-}" == force ]] && verb=rotate
     auser=$(env_get ARR_USER); apass=$(env_get ARR_PASSWORD)
     [[ -n "$auser" && -n "$apass" ]] || { info "$s: shared arr login not set yet — 'wire arr' creates it"; return 0; }
     key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
     url=$(arr_url "$s")
     cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)
-    if jq -e --arg u "$auser" '.authenticationMethod=="forms" and .username==$u' <<<"$cur" >/dev/null 2>&1; then
+    if [[ "${2:-}" != force ]] && jq -e --arg u "$auser" '.authenticationMethod=="forms" and .username==$u' <<<"$cur" >/dev/null 2>&1; then
         ok "$s: forms login already set for '$auser'"
-    elif w_would "$s: enable forms login for '$auser'"; then
+    elif w_would "$s: $verb forms login for '$auser'"; then
         api PUT "$url/api/$(arr_apiver "$s")/config/host" "$key" "$(jq -c --arg u "$auser" --arg p "$apass" \
             '.authenticationMethod="forms" | .authenticationRequired="enabled"
              | .username=$u | .password=$p | .passwordConfirmation=$p' <<<"$cur")" >/dev/null \
@@ -1817,6 +1872,20 @@ arr_instances() { # arr_instances [type] -> enabled arr services (optionally by 
 # ---- qbit ----
 QB_COOKIE=""
 QB_LOGIN_BODY=""
+qb_bind_tun0() { # requires QB_COOKIE
+    [[ -n "$QB_COOKIE" ]] || { info "no qBittorrent session — interface bind skipped"; return 0; }
+    local cur
+    cur=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null)
+    if [[ "$cur" == tun0 ]]; then
+        ok "transfers bound to tun0"
+    elif w_would "bind qBittorrent's transfers to tun0 (VPN interface)"; then
+        qb_api /app/setPreferences 'json={"network_interface":"tun0"}' >/dev/null
+        cur=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null)
+        [[ "$cur" == tun0 ]] && ok "transfers bound to tun0" \
+            || wfail "interface bind did not stick (reads back '$cur') — set it in the UI: Advanced -> Network interface"
+    fi
+}
+
 qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = unreachable
              # QB_LOGIN_BODY always carries the server's reply / curl error
     local r
@@ -1920,6 +1989,9 @@ type your own to use it instead. Stored in .env (view: credentials)."
             ok "permanent credentials set and verified"
         fi
     fi
+    # bind transfers to the tunnel interface: belt on top of the killswitch —
+    # even a firewall wipe inside gluetun cannot make qbit talk past tun0
+    qb_bind_tun0
     # categories: one per arr instance, distinct save paths = hardlink discipline
     [[ -n "$QB_COOKIE" ]] || { info "no qBittorrent session — categories skipped"; return 0; }
     local existing s cat
@@ -2845,6 +2917,114 @@ cmd_credentials() {
     info "Meilisearch master key is machine-to-machine — apps use it, you never need it."
 }
 
+cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, atomically
+    load_env; render
+    local target="${1:-}"
+    [[ "$target" == arr || "$target" == qbit || "$target" == jellyfin ]] \
+        || die "usage: set-credentials <arr|qbit|jellyfin>
+  arr       the shared login of every arr app (+ cleanuparr's account password)
+  qbit      qBittorrent's WebUI login (+ every place that stores it)
+  jellyfin  the Jellyfin admin password (Seerr/Wizarr need no change)"
+    [[ -t 0 ]] || die "set-credentials is interactive — run it at a terminal."
+
+    case "$target" in
+    arr)
+        local olduser oldpass user pass s
+        olduser=$(env_get ARR_USER); oldpass=$(env_get ARR_PASSWORD)
+        explain "Rotate the arr login" \
+"One login for Sonarr/Radarr/Lidarr/Prowlarr/Bazarr — and cleanuparr's
+account password follows it. Cleanuparr's USERNAME cannot be changed via
+its API: if you change the username here, sign-in to cleanuparr keeps the
+old one."
+        ask SC_U "Username" "${olduser:-admin}"; user="$REPLY_VAL"
+        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        env_set ARR_USER "$user"; env_set ARR_PASSWORD "$pass"
+        for s in $(arr_instances) prowlarr; do
+            svc_enabled "$s" || continue
+            arr_forms_login "$s" force
+        done
+        if svc_enabled cleanuparr && [[ "$(c_state "$(svc_cname cleanuparr)")" == running ]]; then
+            local lout ltok
+            lout=$(cup_api POST /auth/login "" "$(jq -cn --arg u "$olduser" --arg p "$oldpass" '{username:$u,password:$p}')" || true)
+            ltok=$(jq -r '.tokens.accessToken // empty' <<<"$lout" 2>/dev/null)
+            if [[ -n "$ltok" ]]; then
+                cup_api PUT /account/password "Authorization: Bearer $ltok" \
+                    "$(jq -cn --arg c "$oldpass" --arg n "$pass" '{currentPassword:$c,newPassword:$n}')" >/dev/null \
+                    && ok "cleanuparr account password rotated in step" \
+                    || warn "cleanuparr refused the password change [HTTP $(cup_code)] — change it in its UI (login: '$olduser' + the OLD password)"
+            else
+                warn "could not sign in to cleanuparr with the previous login — rotate its password in its UI"
+            fi
+            [[ "$user" != "$olduser" ]] && warn "cleanuparr's username stays '$olduser' (no API to change it)"
+        fi
+        ok "arr login rotated — view: ./mediastack.sh credentials"
+        ;;
+    qbit)
+        local user pass s
+        explain "Rotate the qBittorrent login" \
+"Changes the WebUI login and updates everything that stores it: each
+arr's download-client entry and cleanuparr's connection."
+        ask SC_QU "Username" "$(env_get QBITTORRENT_USER admin)"; user="$REPLY_VAL"
+        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" \
+            || die "cannot sign in to qBittorrent with the stored credentials — fix that first (wire qbit)"
+        qb_api /app/setPreferences "json=$(jq -cn --arg u "$user" --arg p "$pass" '{web_ui_username:$u,web_ui_password:$p}')" >/dev/null
+        sleep 2
+        qb_login "$user" "$pass" || die "qBittorrent did not accept the new credentials — inspect: logs qbittorrent"
+        env_set QBITTORRENT_USER "$user"; env_set QBITTORRENT_PASSWORD "$pass"
+        ok "qBittorrent login rotated and verified"
+        local key url cur id ent
+        for s in $(arr_instances); do
+            svc_enabled "$s" || continue
+            key=$(arr_key "$s"); url=$(arr_url "$s")
+            cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key" || true)
+            id=$(jq -r '.[] | select(.implementation=="QBittorrent") | .id' <<<"$cur" 2>/dev/null | head -1)
+            [[ -n "$id" ]] || { info "$s: no qBittorrent download client entry — skipped"; continue; }
+            ent=$(jq -c --argjson i "$id" --arg u "$user" --arg p "$pass" '
+                .[] | select(.id==$i)
+                | .fields = [ .fields[]
+                    | if .name=="username" then .value=$u
+                      elif .name=="password" then .value=$p
+                      else . end ]' <<<"$cur")
+            api PUT "$url/api/$(arr_apiver "$s")/downloadclient/$id" "$key" "$ent" >/dev/null \
+                && ok "$s: download-client entry updated" \
+                || wfail "$s: could not update its download-client entry — fix in its UI (Settings -> Download Clients)"
+        done
+        if svc_enabled cleanuparr && [[ -n "$(env_get CLEANUPARR_API_KEY)" ]]; then
+            local KH dcs dcid dcent
+            KH="X-Api-Key: $(env_get CLEANUPARR_API_KEY)"
+            dcs=$(cup_api GET /configuration/download_client "$KH" || true)
+            dcid=$(jq -r '.[] | select(.name=="qbittorrent") | .id' <<<"$dcs" 2>/dev/null | head -1)
+            if [[ -n "$dcid" ]]; then
+                dcent=$(jq -c --arg i "$dcid" --arg u "$user" --arg p "$pass" \
+                        '.[] | select(.id==$i) | .username=$u | .password=$p' <<<"$dcs")
+                cup_api PUT "/configuration/download_client/$dcid" "$KH" "$dcent" >/dev/null \
+                    && ok "cleanuparr connection updated" \
+                    || wfail "cleanuparr connection not updated [HTTP $(cup_code)] — fix in its UI"
+            fi
+        fi
+        ;;
+    jellyfin)
+        local juser jpass npass auth tok
+        juser=$(env_get JELLYFIN_ADMIN_USER); jpass=$(env_get JELLYFIN_ADMIN_PASSWORD)
+        [[ -n "$juser" && -n "$jpass" ]] || die "no Jellyfin admin stored — run 'wire jellyfin' first"
+        explain "Rotate the Jellyfin admin password" \
+"Seerr federates to Jellyfin (nothing to change there) and Wizarr connects
+by API key (unchanged). Only this password and .env move."
+        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; npass="$REPLY_VAL"
+        auth=$(jf_api POST /Users/AuthenticateByName "" "$(jq -cn --arg u "$juser" --arg p "$jpass" '{Username:$u,Pw:$p}')") \
+            || die "Jellyfin rejected the stored admin login [HTTP $(jf_code)] — is .env stale?"
+        tok=$(jq -r '.AccessToken // empty' <<<"$auth")
+        jf_api POST /Users/Password "$tok" "$(jq -cn --arg c "$jpass" --arg n "$npass" '{CurrentPw:$c,NewPw:$n}')" >/dev/null \
+            || die "Jellyfin refused the password change [HTTP $(jf_code)]"
+        jf_api POST /Users/AuthenticateByName "" "$(jq -cn --arg u "$juser" --arg p "$npass" '{Username:$u,Pw:$p}')" >/dev/null \
+            || die "verification sign-in with the NEW password failed — check Jellyfin's users in its dashboard"
+        env_set JELLYFIN_ADMIN_PASSWORD "$npass"
+        ok "Jellyfin admin password rotated and verified"
+        ;;
+    esac
+}
+
 cmd_invite() { # mint a wizarr invitation and print the ready-to-share URL
     load_env; render
     local expires="" host domain base key
@@ -2954,6 +3134,7 @@ main() {
         add-mount)    cmd_add_mount ;;
         wire)         cmd_wire "$@" ;;
         invite)       cmd_invite "$@" ;;
+        set-credentials) cmd_set_credentials "$@" ;;
         credentials)  cmd_credentials ;;
         trash-sync)   cmd_trash_sync "$@" ;;
         traefik-setup) cmd_traefik_setup "$@" ;;
