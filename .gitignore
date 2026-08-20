@@ -3,6 +3,7 @@
 .env
 .env.bak.*
 .pins.yml
+.wired
 docker-compose.override.yml
 config/
 cache/
