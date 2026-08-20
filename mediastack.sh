@@ -1492,7 +1492,9 @@ cmd_doctor() {
         [[ "$(c_state "$cn")" == running ]] || continue
         expect=$(env_get "$(uvar "$s")_UID")
         [[ -n "$expect" ]] || continue
-        uids=$(sudo docker top "$cn" -o uid=,pid= 2>/dev/null | awk '{print $1}' | sort -u | tr '\n' ' ' || true)
+        # docker's daemon locates the PID column via the ps TITLE row, so the
+        # format must keep its headers; awk drops the title line
+        uids=$(sudo docker top "$cn" -o uid,pid 2>/dev/null | awk 'NR>1{print $1}' | sort -u | tr '\n' ' ' || true)
         if [[ " $uids" == *" $expect "* ]]; then :; else
             warn "$s: no process runs as UID $expect (saw: ${uids:-none}) — PUID may be ignored; check: logs $s"
             drift=$((drift+1))
@@ -2465,9 +2467,13 @@ wire_cleanuparr() {
             ok "$s already connected — untouched"
             continue
         fi
+        # version = the arr application major, exactly the value cleanuparr's
+        # own UI offers per type (sonarr 4, radarr 6, lidarr 3)
+        local aver
+        case "$ty" in sonarr) aver=4 ;; radarr) aver=6 ;; lidarr) aver=3 ;; esac
         out=$(cup_api POST "/configuration/$ty/instances" "$KH" \
-              "$(jq -cn --arg n "$s" --arg u "http://gluetun:$port" --arg k "$key" \
-                 '{enabled:true,name:$n,url:$u,apiKey:$k}')") \
+              "$(jq -cn --arg n "$s" --arg u "http://gluetun:$port" --arg k "$key" --argjson v "$aver" \
+                 '{enabled:true,name:$n,url:$u,apiKey:$k,version:$v}')") \
             && ok "$s connected" \
             || wfail "$s: cleanuparr rejected it [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
     done
