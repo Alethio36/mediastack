@@ -1673,7 +1673,17 @@ cmd_upgrade() {
     hr "Changes pulled"; git log --oneline "$before..HEAD" | sed 's/^/  /'
     load_env   # runs schema migrations
     provision >/dev/null || true
-    ok "Upgrade complete. Apply new images when ready: ./mediastack.sh update"
+    # say what (if anything) the pull requires — images are never part of
+    # an upgrade, so they are never mentioned here (that's: update, nightly)
+    local changed
+    changed=$(git diff --name-only "$before..HEAD" 2>/dev/null || true)
+    if grep -qE '^(compose\.d/|docker-compose\.yml)' <<<"$changed"; then
+        ok "Upgrade complete. Compose definitions changed — apply them: ./mediastack.sh up"
+    elif grep -qE '^mediastack\.sh' <<<"$changed"; then
+        ok "Upgrade complete. New tooling is live from the next command — nothing to apply."
+    else
+        ok "Upgrade complete. Docs/templates only — nothing to apply."
+    fi
 }
 
 cmd_nuke() {
