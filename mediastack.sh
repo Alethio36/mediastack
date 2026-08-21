@@ -2246,6 +2246,7 @@ JSON
               || wfail "flaresolverr proxy registration failed"
         fi
     fi
+    prowlarr_download_client
 }
 
 # ---- bazarr ----
