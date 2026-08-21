@@ -51,11 +51,11 @@ git clone <this-repo> && cd mediastack
 ```
 
 `./mediastack.sh` with no arguments lists every command; `menu` gives you an
-interactive menu. Passwords the stack created: `credentials`.
+interactive menu. Passwords the stack created: `credentials`; every
+service's address: `status`.
 
-Still manual until the next wave: Jellyfin's first-run wizard (add
-`/media/tv` and `/media/movies`) and connecting Seerr to Jellyfin and the
-arrs.
+The only remaining hands-on step is Wizarr's one-time first run — `wire`
+walks you through it with the exact values to paste.
 
 ## What runs (à la carte)
 
@@ -77,6 +77,9 @@ explanation.
 | traefik | HTTPS edge: hostnames + certificates for every UI |
 | seerr | request/discovery site for your users |
 | bazarr | subtitle automation |
+| wizarr | invitation links — "set up my account" becomes a URL |
+| apprise | one notification hub for the whole stack (ops/activity/users) |
+| cleanuparr | strikes stalled downloads, cleans the queue |
 | pihole / cloudflared | ad-blocking DNS / expose without port-forwarding |
 | flaresolverr | captcha bypass helper for some indexers |
 | deluge / transmission | extra torrent clients (most people need neither) |
@@ -100,23 +103,23 @@ Run
 |---|---|
 | `up` / `down` | start / stop the stack |
 | `enable <svc>` / `disable <svc>` | turn one service on/off (dependencies handled) |
-| `status [svc]` | overview table (ports, VPN, health, versions) or one-service deep view |
+| `status [svc]` | overview table (ports, VPN, health, versions, URLs) or one-service deep view |
 | `logs <svc>` | follow one service's logs |
 
 Maintain
 | command | what it does |
 |---|---|
-| `update [svc] [--to TAG] [--dry-run] [--now]` | backup → pull → apply → health gate; nightly via timer |
+| `update [svc] [--to TAG] [--dry-run] [--now]` | container images: backup → pull → apply → health gate; nightly via timer |
 | `apply-timer` | install/refresh the scheduled-update systemd timer |
 | `backup` / `backup verify [ts]` | restore point now / verify checksums + archives |
 | `restore --service <svc>\|--all [--from TS]` | restore configs + exact image |
 | `rollback <svc>` / `unpin <svc>` | restore from newest point and pin / release the pin |
-| `upgrade` | pull the latest mediastack + migrate `.env` |
+| `upgrade` | mediastack itself: git pull + `.env` migration (images stay put — that's `update`) |
 
 Connect
 | command | what it does |
 |---|---|
-| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|jellyfin\|seerr\|wizarr] [--dry-run]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten |
+| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|jellyfin\|seerr\|wizarr] [--dry-run]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten |
 | `invite [--expires 1\|7\|30]` | mint a Wizarr invitation, print the ready-to-share URL (default: never expires) |
 | `set-credentials <arr\|qbit\|jellyfin\|pihole\|traefik\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `all` sets one password across the stack (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
 | `trash-sync` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update |
@@ -135,7 +138,7 @@ Check
 Other
 | command | what it does |
 |---|---|
-| `new-service <name>` | scaffold a new compose fragment |
+| `new-service <name>` | scaffold a service into `docker-compose.override.yml` (untracked, upgrade-safe) |
 | `uninstall [--nuke]` | tiered removal; `--nuke` = everything, one confirmation. Media and backups are never touched |
 | `menu` | interactive menu wrapping all of the above |
 
@@ -244,7 +247,8 @@ own hostname that captures `?searchTerm` requests at a higher priority
 
 `wire jellyfin` performs the minimum first-run only: metadata defaults,
 one admin account (the operator/recovery login, stored in `.env` — view:
-`credentials`), remote access on with UPnP off, and libraries derived from
+`credentials`), remote access on with UPnP off, a server name you choose
+(the container default is a random ID hash), and libraries derived from
 the arrs' root folders — you name each library at creation. Everything
 else is yours to manage in the GUI, and wire can't undo you: libraries
 are matched by **path, never name**, so renames, merges, and settings
@@ -276,11 +280,13 @@ TRaSH Guides sync with ownership model and nightly automation · HTTPS edge
 with staging/production certificates and guided hostnames · tiered backup
 retention · Jellyfin + Seerr automated setup · JellySearch routing ·
 invite management (Wizarr) · notification hub (Apprise) · download
-cleanup (cleanuparr) · credential rotation (`set-credentials`) · tunnel
-interface binding · runtime audits in `doctor`.
+cleanup (cleanuparr) · credential rotation, including one-password mode
+(`set-credentials all`) · tunnel interface binding · runtime audits in
+`doctor` · manual grabs from Prowlarr · user services via
+`docker-compose.override.yml` · service URLs in `status`.
 
-Next: production go-live (certificates, NAS backups) and the anzac2
-migration.
+The stack is feature-complete for its scope; changes from here are
+maintenance and fixes.
 
 ## Docs
 

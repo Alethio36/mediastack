@@ -251,29 +251,31 @@ Run
   down           Stop the stack. Configs and data are untouched.
   enable SVC     Turn one service on (dependencies come along) and start it.
   disable SVC    Turn one service off (refused while others depend on it).
-  status [svc]   Overview table of every service — or a deep view of one
-                 service (health, mounts, uid, recent log lines).
+  status [svc]   Overview table of every service (state, health, version,
+                 URL) — or a deep view of one (mounts, uid, recent logs).
   logs SVC       Follow one service's logs.
 Maintain
-  update         Backup, then pull + apply new images (respects per-service
-                 toggles and pins). Options: SVC (one service only),
+  update         CONTAINER IMAGES: backup, then pull + apply (respects
+                 per-service toggles and pins). Options: SVC (one service),
                  SVC --to TAG (step to an exact version and pin there),
-                 --dry-run (show what would change), --now (skip deferral).
+                 --dry-run (preview), --now (skip deferral).
+                 For mediastack itself, see: upgrade.
   apply-timer    Install/refresh the systemd timer from UPDATE_SCHEDULE.
   backup         Take a restore point now (cold: brief stop/start).
+                 'backup verify [TS]' checks checksums and archives.
   restore        Restore configs+image from a restore point:
                  --service SVC | --all  [--from TIMESTAMP]
   rollback SVC   Shortcut: restore SVC from the newest restore point.
   unpin SVC      Release a pinned service back to normal updates.
-  upgrade        Pull the latest mediastack (git), migrate .env, summarize.
+  upgrade        MEDIASTACK ITSELF: git pull + .env migration. Container
+                 images stay put — that's: update.
 Connect
-  wire           Configure the apps to talk to each other: qBittorrent
-                 credentials+categories, arr root folders, arr->qbit,
-                 Prowlarr->arrs, FlareSolverr, Bazarr, Jellyfin first-run
-                 (+libraries), Seerr bootstrap, Wizarr key. Idempotent —
-                 re-run any time; GUI-configured apps are never overwritten.
-                 Scope: wire [qbit|arr|prowlarr|bazarr|apprise|cleanuparr|jellyfin|seerr|wizarr];
-                 preview: wire --dry-run.
+  wire           Connect the apps to each other — credentials, folders,
+                 download clients, notifications, first-run setup.
+                 Idempotent: re-run any time; anything you configured in a
+                 GUI is never overwritten.
+                 One app only: wire <qbit|arr|prowlarr|bazarr|apprise|
+                 cleanuparr|jellyfin|seerr|wizarr>. Preview: wire --dry-run.
   invite         Mint a Wizarr invitation and print the ready-to-share URL.
                  Options: --expires 1|7|30 (default: never expires).
   credentials    Show the app logins wire created/stored.
