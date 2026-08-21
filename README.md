@@ -223,6 +223,16 @@ Apprise lives inside the VPN namespace like the arrs, so notifications
 egress through the tunnel. Known property: if the tunnel is hard down,
 push notifications are down with it — the script still logs locally.
 
+## Jellyfin polish (GUI, once)
+
+wire names the server (the container default is a random ID hash) and
+builds libraries/keys, but three worthwhile settings stay yours in the
+Dashboard: **Networking -> Published server URL** (set your
+`https://jellyfin.<domain>` so apps and casting advertise the right
+address), **Playback -> Transcoding** (enable hardware acceleration only
+if you pass a GPU/QSV device into the container), and library metadata
+language/country if you want something other than en-US.
+
 ## Search (JellySearch)
 
 The `search` profile makes Jellyfin search instant and typo-tolerant.
