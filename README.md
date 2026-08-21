@@ -175,6 +175,15 @@ script's own help is always authoritative.
   dirs; tracked files are never written at runtime. `upgrade` wraps pull +
   config migration.
 
+## Adding your own services
+
+`./mediastack.sh new-service <name>` scaffolds a service into
+`docker-compose.override.yml` — untracked, merged automatically into every
+stack operation, and upgrade-safe. Fill in the image, run `configure`
+(adopts the new UID), then `enable <name>`. Never add services to
+`compose.d/` or edit `docker-compose.yml`: those are the repo's territory
+and local changes there block `upgrade` by design.
+
 ## Notifications (Apprise)
 
 The `apprise` profile gives the stack one notification hub with three

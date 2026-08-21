@@ -147,10 +147,15 @@ migrate_env_7_to_8() {
 
 # ------------------------------------------------------------ compose layer --
 DC() { # compose wrapper: project dir pinned, pin-override applied when present
+    # explicit -f disables compose's automatic override merge, so the user's
+    # override file is passed explicitly (before pins — pins win)
     local files=(-f docker-compose.yml)
+    [[ -e docker-compose.override.yml ]] && files+=(-f docker-compose.override.yml)
     [[ -s "$PINS_FILE" ]] && files+=(-f "$PINS_FILE")
     sudo docker compose --project-directory "$SCRIPT_DIR" "${files[@]}" "$@"
 }
+
+compose_renders() { DC config >/dev/null; } # rc-only; compose errors pass through
 
 RENDERED_JSON=""
 render() { # cache rendered config as json for discovery
@@ -278,7 +283,8 @@ Check
                  disruptive drop-the-tunnel proof).
   fix-perms [s]  Repair config-dir ownership from the UID map.
 Other
-  new-service N  Scaffold a new compose.d fragment.
+  new-service N  Scaffold service N into docker-compose.override.yml
+                 (untracked, merged automatically, upgrade-safe).
   uninstall      Remove the stack (tiered: containers / users / configs).
                  --nuke: everything in one confirmed shot; works even on a
                  broken tree. Media and backups are never touched.
@@ -507,7 +513,7 @@ ENCOURAGED — backups on the same disk as the configs aren't backups.
                 env_set "$ref" true
             fi
         fi
-    done < <(grep -rhoE '\$\{[A-Z0-9_]+_(UID|UPDATE)[^}]*\}' docker-compose.yml compose.d/ \
+    done < <(grep -rhoE '\$\{[A-Z0-9_]+_(UID|UPDATE)[^}]*\}' docker-compose.yml compose.d/ docker-compose.override.yml 2>/dev/null \
              | sed -E 's/\$\{([A-Z0-9_]+).*/\1/' | sort -u)
 
     # -- services (à la carte)
@@ -3194,21 +3200,27 @@ cmd_invite() { # mint a wizarr invitation and print the ready-to-share URL
 }
 
 cmd_new_service() {
+    # User services live in docker-compose.override.yml: compose merges it
+    # automatically, it is untracked, and upgrades never conflict with it.
+    # compose.d/ and docker-compose.yml are the repo's territory — a scaffold
+    # there would trip the clean-tree gate on the next upgrade.
     local name="${1:?usage: new-service <name>}"
-    local f="compose.d/${name}.yml"
-    [[ -e "$f" ]] && die "$f already exists."
-    sed -e "s/__NAME__/${name}/g" -e "s/__UPPER__/$(uvar "$name")/g" > "$f" <<'EOF'
-# __NAME__ profile — fill in image/ports/volumes, then:
-#   ./mediastack.sh configure   (adopts the new UID/UPDATE vars)
-#   ./mediastack.sh enable __NAME__
-x-logging: &logging
-  driver: json-file
-  options:
-    max-size: ${LOG_MAX_SIZE:-10m}
-    max-file: ${LOG_MAX_FILE:-3}
-x-armour: &no-foreign-watchtower
-  com.centurylinklabs.watchtower.enable: "false"
-services:
+    [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "Service names: lowercase letters, digits, dashes."
+    load_env
+    svc_exists "$name" && die "A service '$name' already exists in the rendered stack."
+    local f="docker-compose.override.yml" had_file=0 snap=""
+    if [[ -e "$f" ]]; then
+        had_file=1; snap=$(cat "$f")
+        grep -qE "^  ${name}:" "$f" && die "$f already defines '$name'."
+        grep -qE '^services:' "$f" || die "$f exists but has no 'services:' key — add the service there yourself."
+    else
+        printf '# Your services live here — untracked, merged automatically, upgrade-safe.\nservices:\n' > "$f"
+    fi
+    sed -e "s/__NAME__/${name}/g" -e "s/__UPPER__/$(uvar "$name")/g" >> "$f" <<'EOF'
+
+  # __NAME__ — fill in image/ports/volumes, then:
+  #   ./mediastack.sh configure   (adopts the new UID/UPDATE vars)
+  #   ./mediastack.sh enable __NAME__
   __NAME__:
     image: CHANGEME:latest
     container_name: ${__UPPER___NAME:-mediastack-__NAME__}
@@ -3221,16 +3233,26 @@ services:
     volumes:
       - ${CONFIG_ROOT}/__NAME__:/config
     labels:
-      <<: *no-foreign-watchtower
+      com.centurylinklabs.watchtower.enable: "false"
       mediastack.managed: "true"
       mediastack.vpn: "false"
       mediastack.config: "true"
     networks: [mediastack]
-    logging: *logging
+    logging:
+      driver: json-file
+      options:
+        max-size: ${LOG_MAX_SIZE:-10m}
+        max-file: ${LOG_MAX_FILE:-3}
     restart: unless-stopped
 EOF
-    ok "Scaffolded $f — edit it, then run: ./mediastack.sh configure && ./mediastack.sh enable $name"
-    warn "Remember: add '- compose.d/${name}.yml' to the include list in docker-compose.yml"
+    # the scaffold must render before it is kept: CHANGEME image is fine at
+    # config time, structural YAML mistakes are not
+    if ! compose_renders; then
+        if (( had_file )); then printf '%s' "$snap" > "$f"; else rm -f "$f"; fi
+        die "The scaffold broke compose rendering — reverted. See compose's message above."
+    fi
+    ok "Scaffolded '$name' in $f — edit it, then run: ./mediastack.sh configure && ./mediastack.sh enable $name"
+    info "Nothing else to edit: $f is untracked and merges automatically."
 }
 
 # -------------------------------------------------------------- dispatcher --
