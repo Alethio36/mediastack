@@ -186,6 +186,13 @@ svc_image()    { render; jq -r --arg s "$1" '.services[$s].image' <<<"$RENDERED_
 svc_cname()    { render; jq -r --arg s "$1" '.services[$s].container_name // $s' <<<"$RENDERED_JSON"; }
 uvar()         { echo "${1^^}" | tr '-' '_' | tr -cd 'A-Z0-9_'; } # service -> env var stem (radarr-4k -> RADARR_4K)
 svc_enabled()  { [[ ",$(env_get COMPOSE_PROFILES)," == *",$1,"* ]]; }
+svc_url()      { # where a browser reaches the service, best effort
+    local s="$1" sub port
+    sub=$(env_get "$(uvar "$s")_HOST"); [[ -n "$sub" ]] || sub=$(svc_label "$s" mediastack.subdomain)
+    if [[ -n "$sub" ]]; then echo "https://${sub}.$(env_get TRAEFIK_DOMAIN unset)"; return; fi
+    port=$(svc_label "$s" mediastack.port)
+    [[ -n "$port" ]] && echo "http://$(hostname):${port}" || echo "-"
+}
 svc_deps()     { # direct dependencies: depends_on + shared network namespace
     render
     jq -r --arg s "$1" '.services[$s]
@@ -866,7 +873,7 @@ cmd_status() {
     load_env; render
     if [[ -n "${1:-}" ]]; then status_one "$1"; return; fi
     hr "Mediastack status"
-    printf "%-14s %-5s %-4s %-9s %-10s %-12s %-8s %s\n" SERVICE PORT VPN STATE HEALTH VERSION PINNED UPTIME
+    printf "%-14s %-5s %-4s %-9s %-10s %-12s %-8s %-9s %s\n" SERVICE PORT VPN STATE HEALTH VERSION PINNED UPTIME URL
     local s cn pin vpn port
     for s in $(svc_managed); do
         svc_enabled "$s" || continue
@@ -874,8 +881,8 @@ cmd_status() {
         pin=no; [[ -s "$PINS_FILE" ]] && grep -q "^  $s:" "$PINS_FILE" && pin="${C_YLW}yes${C_RST}"
         vpn=-; [[ $(svc_label "$s" mediastack.vpn) == "true" ]] && vpn=yes
         port=$(svc_label "$s" mediastack.port); port=${port:--}
-        printf "%-14s %-5s %-4s %-9s %-10s %-12s %-8s %s\n" \
-            "$s" "$port" "$vpn" "$(c_state "$cn")" "$(c_health "$cn")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")"
+        printf "%-14s %-5s %-4s %-9s %-10s %-12s %-8s %-9s %s\n" \
+            "$s" "$port" "$vpn" "$(c_state "$cn")" "$(c_health "$cn")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")" "$(svc_url "$s")"
     done
     echo
     local off="" p
@@ -2508,7 +2515,7 @@ wire_cleanuparr() {
     # download client: create-if-missing by name
     local qu qp have
     qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
-    have=$(cup_api GET /configuration/download_client "$KH" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
+    have=$(cup_api GET /configuration/download_client "$KH" | jq -r '[.clients[]?.name] | join(" ")' 2>/dev/null || true)
     if [[ " $have " == *" qbittorrent "* ]]; then
         ok "qbittorrent already connected — untouched"
     elif [[ -z "$qu" || -z "$qp" ]]; then
@@ -2563,7 +2570,7 @@ wire_cleanuparr() {
 
     # ops notifications via the hub, when the hub is wired
     if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
-        have=$(cup_api GET /configuration/notification_providers "$KH" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
+        have=$(cup_api GET /configuration/notification_providers "$KH" | jq -r '[.providers[]?.name] | join(" ")' 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "already notifies the hub — untouched"
         else
@@ -3125,10 +3132,10 @@ arr's download-client entry and cleanuparr's connection."
             local KH dcs dcid dcent
             KH="X-Api-Key: $(env_get CLEANUPARR_API_KEY)"
             dcs=$(cup_api GET /configuration/download_client "$KH" || true)
-            dcid=$(jq -r '.[] | select(.name=="qbittorrent") | .id' <<<"$dcs" 2>/dev/null | head -1)
+            dcid=$(jq -r '.clients[]? | select(.name=="qbittorrent") | .id' <<<"$dcs" 2>/dev/null | head -1)
             if [[ -n "$dcid" ]]; then
                 dcent=$(jq -c --arg i "$dcid" --arg u "$user" --arg p "$pass" \
-                        '.[] | select(.id==$i) | .username=$u | .password=$p' <<<"$dcs")
+                        '.clients[] | select(.id==$i) | .username=$u | .password=$p' <<<"$dcs")
                 cup_api PUT "/configuration/download_client/$dcid" "$KH" "$dcent" >/dev/null \
                     && ok "cleanuparr connection updated" \
                     || wfail "cleanuparr connection not updated [HTTP $(cup_code)] — fix in its UI"

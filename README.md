@@ -211,6 +211,10 @@ For invite notifications, add an agent in Wizarr's UI (Settings ->
 Notifications): type *apprise*, URL
 `apprise://gluetun:8000/mediastack?tags=users`.
 
+Apprise's own UI lives at `https://notify.<your-domain>` (or
+`http://<host>:8000` on the LAN) — that's where stored endpoints are
+edited after the first wire.
+
 Seerr's request/approval/availability events flow to the hub too. Jellyfin
 events would need its Webhook plugin (GUI-installable) — deliberately out
 of wire's scope.
