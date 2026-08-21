@@ -219,9 +219,12 @@ Apprise's own UI lives at `https://notify.<your-domain>` (or
 `http://<host>:8000` on the LAN) — that's where stored endpoints are
 edited after the first wire.
 
-Seerr's request/approval/availability events flow to the hub too. Jellyfin
-events would need its Webhook plugin (GUI-installable) — deliberately out
-of wire's scope.
+Seerr's request/approval/availability events flow to the hub too. wire
+installs Jellyfin's Webhook plugin (WatchState's webhook mode and hub
+notifications both want it); its destinations stay yours to configure in
+Jellyfin's Dashboard -> Plugins -> Webhook — WatchState's UI hands you
+the exact URL to paste per backend, and a generic destination pointed at
+`http://gluetun:8000/notify/mediastack` feeds the hub.
 
 Apprise lives inside the VPN namespace like the arrs, so notifications
 egress through the tunnel. Known property: if the tunnel is hard down,

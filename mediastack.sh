@@ -2338,6 +2338,26 @@ wire_bazarr() {
     fi
 }
 
+jf_plugin_webhook() { # install-if-missing; two consumers: WatchState + the hub
+    local tok="$1" plugins
+    plugins=$(jf_api GET /Plugins "$tok" | jq -r '[.[].Name] | join(" ")' 2>/dev/null || true)
+    if [[ " $plugins " == *" Webhook "* ]]; then
+        ok "Webhook plugin installed"
+        return 0
+    fi
+    w_would "install Jellyfin's Webhook plugin (WatchState webhooks + hub notifications need it) and restart jellyfin once" \
+        || return 0
+    jf_api POST "/Packages/Installed/Webhook?assemblyGuid=71552A5A-5C5C-4350-A2AE-EBE451A30173" "$tok" >/dev/null \
+        || { wfail "plugin install rejected [HTTP $(jf_code)] — install in Dashboard -> Plugins -> Catalog"; return 1; }
+    info "plugin downloaded — restarting jellyfin to load it..."
+    DC restart jellyfin >/dev/null 2>&1 || { wfail "jellyfin restart failed — restart it, then re-run wire jellyfin"; return 1; }
+    jf_ready || return 1
+    plugins=$(jf_api GET /Plugins "$tok" | jq -r '[.[].Name] | join(" ")' 2>/dev/null || true)
+    [[ " $plugins " == *" Webhook "* ]] \
+        && ok "Webhook plugin installed and loaded" \
+        || wfail "plugin not visible after restart — check Dashboard -> Plugins (a repository fetch may have failed)"
+}
+
 jf_server_name() { # the name apps/casting show; container default is the ID hash
     local tok="$1" cfg have want
     cfg=$(jf_api GET /System/Configuration "$tok" || true)
@@ -2743,6 +2763,7 @@ credentials)."
     tok=$(jq -r '.AccessToken // empty' <<<"$auth")
     [[ -n "$tok" ]] || { wfail "jellyfin login succeeded but returned no token: $(head -c200 <<<"$auth")"; return 1; }
     jf_server_name "$tok"
+    jf_plugin_webhook "$tok"
 
     # --- libraries: create-if-path-missing, derived from the arrs' own
     # rootfolder labels. Match by PATH so GUI renames/merges are respected.
