@@ -34,9 +34,10 @@ warns persistently while staging certificates are live.
 
 ## Hostnames
 
-Defaults: dash, jellyfin, requests (seerr), tv (ersatztv), pihole, qbit,
-sonarr, radarr, prowlarr, lidarr, bazarr, radarr-4k, sonarr-anime — all
-under `TRAEFIK_DOMAIN`. Rename any of them with the guided pass:
+Defaults: dash, jellyfin, requests (seerr), invites (wizarr), notify
+(apprise), cleanup (cleanuparr), tv (ersatztv), pihole, qbit, sonarr,
+radarr, prowlarr, lidarr, bazarr, radarr-4k, sonarr-anime, deluge,
+transmission — all under `TRAEFIK_DOMAIN`. Rename any of them with the guided pass:
 
     ./mediastack.sh traefik-setup --hosts
 
