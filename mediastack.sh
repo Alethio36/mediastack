@@ -278,7 +278,8 @@ Connect
                  Options: --expires 1|7|30 (default: never expires).
   credentials    Show the app logins wire created/stored.
   set-credentials Rotate a stored login everywhere it lives, atomically:
-                 set-credentials <arr|qbit|jellyfin>.
+                 set-credentials <arr|qbit|jellyfin|all>; 'all' sets ONE
+                 password across the stack (Wizarr's admin excluded).
   traefik-setup  Configure the HTTPS edge: domain, Cloudflare token, cert
                  environment (staging/production), dashboard login. Auto-runs
                  on 'up' when traefik is enabled and unconfigured.
@@ -953,7 +954,7 @@ cmd_backup() {
     DC up -d >/dev/null
     if (( rc == 0 )); then ok "Restore point complete: $dest"
     else
-        notify ops "Mediastack backup FAILED" "Restore point $dest finished with errors — do not trust it. Inspect on the host." failure
+        notify ops "Mediastack backup FAILED" "Restore point \`$dest\` finished with errors — **do not trust it**. Inspect on the host." failure
         die "Backup finished WITH ERRORS — do not trust $dest."
     fi
     prune_backups
@@ -1174,11 +1175,11 @@ cmd_update() {
     if (( ${#bad[@]} )); then
         fail "Unhealthy after update: ${bad[*]}"
         echo "  Roll back any of them with: ./mediastack.sh rollback <service>"
-        notify ops "Mediastack update FAILED" "Unhealthy after update: ${bad[*]} — roll back with: ./mediastack.sh rollback <service>" failure
+        notify ops "Mediastack update FAILED" "Unhealthy after update: **${bad[*]}**\nRoll back: \`./mediastack.sh rollback <service>\`" failure
         exit 1
     fi
     ok "All updated services healthy."
-    (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '%s; ' "${changed[@]}")" success
+    (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '`%s`\\n' "${changed[@]}")" success
 
     # nightly TRaSH sync rides the update pipeline: same schedule the
     # operator already chose, guides drift-window stays at one cycle.
@@ -1191,11 +1192,11 @@ cmd_update() {
                     | grep -oE '<title>v[0-9]+' | head -1 | grep -oE '[0-9]+')
         if [[ -n "$rc_pin" && -n "$rc_latest" ]] && (( rc_latest > rc_pin )); then
             warn "recyclarr v$rc_latest is out; the stack pins major v$rc_pin — review the breaking changes, then bump the tag in compose.d/recyclarr.yml when ready"
-            notify ops "recyclarr v$rc_latest available" "Stack pins major v$rc_pin. Review upstream breaking changes, then bump compose.d/recyclarr.yml." warning
+            notify ops "recyclarr v$rc_latest available" "Stack pins major **v$rc_pin**. Review upstream breaking changes, then bump \`compose.d/recyclarr.yml\`." warning
         fi
         echo
         cmd_trash_sync || { fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"
-                            notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded. Inspect: ./mediastack.sh trash-sync" failure
+                            notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded.\nInspect: \`./mediastack.sh trash-sync\`" failure
                             exit 1; }
     fi
 }
@@ -1533,7 +1534,7 @@ cmd_doctor() {
     echo
     if (( D_FAILS )); then
         fail "doctor: $D_FAILS problem(s) — fixes listed above."
-        notify ops "Mediastack doctor: $D_FAILS problem(s)" "Run ./mediastack.sh doctor on the host for the findings and fixes." failure
+        notify ops "Mediastack doctor: $D_FAILS problem(s)" "Run \`./mediastack.sh doctor\` on the host for the findings and fixes." failure
         exit 1
     else ok "doctor: all checks passed."; fi
 }
@@ -2326,7 +2327,7 @@ notify() { # notify TAG TITLE BODY [TYPE] — never blocks, never fails the call
     [[ "$(c_state "$(svc_cname apprise)" 2>/dev/null)" == running ]] || return 0
     curl -sS -m 5 -o /dev/null -X POST -H "Content-Type: application/json" \
         -d "$(jq -cn --arg t "$title" --arg b "$body" --arg g "$tag" --arg y "$type" \
-             '{title:$t,body:$b,tag:$g,type:$y}')" \
+             '{title:$t,body:$b,tag:$g,type:$y,format:"markdown"}')" \
         "$(apprise_url)/notify/mediastack" 2>/dev/null && return 0
     if (( ! NOTIFY_WARNED )); then
         warn "apprise unreachable — notification dropped (stack keeps going; check: ./mediastack.sh logs apprise)"
@@ -3057,30 +3058,72 @@ cmd_credentials() {
     printf '%-22s %s\n' "Wizarr API key"        "$(env_get WIZARR_API_KEY '(not set — run wire wizarr)')"
     info "Seerr owner = the Jellyfin admin above; all Seerr sign-ins use Jellyfin accounts (no separate Seerr passwords exist)."
     info "The Jellyfin API key is what Wizarr's Add Server form asks for."
+    info "Wizarr's ADMIN login is its own account — set-credentials does not cover it; rotate in Wizarr's UI."
     info "Meilisearch master key is machine-to-machine — apps use it, you never need it."
 }
 
 cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, atomically
     load_env; render
     local target="${1:-}"
-    [[ "$target" == arr || "$target" == qbit || "$target" == jellyfin ]] \
-        || die "usage: set-credentials <arr|qbit|jellyfin>
+    [[ "$target" == arr || "$target" == qbit || "$target" == jellyfin || "$target" == all ]] \
+        || die "usage: set-credentials <arr|qbit|jellyfin|all>
   arr       the shared login of every arr app (+ cleanuparr's account password)
   qbit      qBittorrent's WebUI login (+ every place that stores it)
-  jellyfin  the Jellyfin admin password (Seerr/Wizarr need no change)"
+  jellyfin  the Jellyfin admin password (Seerr/Wizarr need no change)
+  all       ONE password across arr + qbit + jellyfin (usernames stay put)"
     [[ -t 0 ]] || die "set-credentials is interactive — run it at a terminal."
 
     case "$target" in
     arr)
-        local olduser oldpass user pass s
-        olduser=$(env_get ARR_USER); oldpass=$(env_get ARR_PASSWORD)
+        local user pass
         explain "Rotate the arr login" \
 "One login for Sonarr/Radarr/Lidarr/Prowlarr/Bazarr — and cleanuparr's
 account password follows it. Cleanuparr's USERNAME cannot be changed via
 its API: if you change the username here, sign-in to cleanuparr keeps the
 old one."
-        ask SC_U "Username" "${olduser:-admin}"; user="$REPLY_VAL"
+        ask SC_U "Username" "$(env_get ARR_USER admin)"; user="$REPLY_VAL"
         ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        sc_rotate_arr "$user" "$pass"
+        ;;
+    qbit)
+        local user pass
+        explain "Rotate the qBittorrent login" \
+"Changes the WebUI login and updates everything that stores it: each
+arr's download-client entry and cleanuparr's connection."
+        ask SC_QU "Username" "$(env_get QBITTORRENT_USER admin)"; user="$REPLY_VAL"
+        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        sc_rotate_qbit "$user" "$pass"
+        ;;
+    jellyfin)
+        local npass
+        explain "Rotate the Jellyfin admin password" \
+"Seerr federates to Jellyfin (nothing to change there) and Wizarr connects
+by API key (unchanged). Only this password and .env move."
+        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; npass="$REPLY_VAL"
+        sc_rotate_jellyfin "$npass"
+        ;;
+    all)
+        local pass
+        explain "One password across the stack" \
+"Sets a single password on the arr login (6 apps + cleanuparr follows),
+qBittorrent (and everything storing its login), and the Jellyfin admin.
+Usernames stay as they are. Deliberate trade-off: one reused password
+means one leak opens everything — use a strong, stack-unique one.
+NOT covered: Wizarr's admin account is its own — rotate it in Wizarr's
+UI (Settings -> Account) yourself."
+        ask_secret "New stack password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        sc_rotate_arr "$(env_get ARR_USER admin)" "$pass"
+        sc_rotate_qbit "$(env_get QBITTORRENT_USER admin)" "$pass"
+        sc_rotate_jellyfin "$pass"
+        warn "Wizarr's admin password is NOT rotated by this — change it in Wizarr's UI."
+        ok "one password now covers arr + qbit + jellyfin — view: ./mediastack.sh credentials"
+        ;;
+    esac
+}
+
+sc_rotate_arr() { # USER PASS — every arr-family app + cleanuparr follows
+        local user="$1" pass="$2" olduser oldpass s
+        olduser=$(env_get ARR_USER); oldpass=$(env_get ARR_PASSWORD)
         env_set ARR_USER "$user"; env_set ARR_PASSWORD "$pass"
         for s in $(arr_instances) prowlarr; do
             svc_enabled "$s" || continue
@@ -3101,14 +3144,10 @@ old one."
             [[ "$user" != "$olduser" ]] && warn "cleanuparr's username stays '$olduser' (no API to change it)"
         fi
         ok "arr login rotated — view: ./mediastack.sh credentials"
-        ;;
-    qbit)
-        local user pass s
-        explain "Rotate the qBittorrent login" \
-"Changes the WebUI login and updates everything that stores it: each
-arr's download-client entry and cleanuparr's connection."
-        ask SC_QU "Username" "$(env_get QBITTORRENT_USER admin)"; user="$REPLY_VAL"
-        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+}
+
+sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
+        local user="$1" pass="$2" s
         qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" \
             || die "cannot sign in to qBittorrent with the stored credentials — fix that first (wire qbit)"
         qb_api /app/setPreferences "json=$(jq -cn --arg u "$user" --arg p "$pass" '{web_ui_username:$u,web_ui_password:$p}')" >/dev/null
@@ -3146,15 +3185,12 @@ arr's download-client entry and cleanuparr's connection."
                     || wfail "cleanuparr connection not updated [HTTP $(cup_code)] — fix in its UI"
             fi
         fi
-        ;;
-    jellyfin)
-        local juser jpass npass auth tok
+}
+
+sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
+        local npass="$1" juser jpass auth tok
         juser=$(env_get JELLYFIN_ADMIN_USER); jpass=$(env_get JELLYFIN_ADMIN_PASSWORD)
         [[ -n "$juser" && -n "$jpass" ]] || die "no Jellyfin admin stored — run 'wire jellyfin' first"
-        explain "Rotate the Jellyfin admin password" \
-"Seerr federates to Jellyfin (nothing to change there) and Wizarr connects
-by API key (unchanged). Only this password and .env move."
-        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; npass="$REPLY_VAL"
         auth=$(jf_api POST /Users/AuthenticateByName "" "$(jq -cn --arg u "$juser" --arg p "$jpass" '{Username:$u,Pw:$p}')") \
             || die "Jellyfin rejected the stored admin login [HTTP $(jf_code)] — is .env stale?"
         tok=$(jq -r '.AccessToken // empty' <<<"$auth")
@@ -3164,8 +3200,6 @@ by API key (unchanged). Only this password and .env move."
             || die "verification sign-in with the NEW password failed — check Jellyfin's users in its dashboard"
         env_set JELLYFIN_ADMIN_PASSWORD "$npass"
         ok "Jellyfin admin password rotated and verified"
-        ;;
-    esac
 }
 
 cmd_invite() { # mint a wizarr invitation and print the ready-to-share URL
