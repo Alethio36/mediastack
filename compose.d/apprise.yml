@@ -38,6 +38,7 @@ services:
       mediastack.port: "8000"
       mediastack.desc: "one notification hub for the whole stack"
       mediastack.vpn: "true"
+      mediastack.subdomain: "notify"
       mediastack.config: "true"
     healthcheck:
       test: ["CMD-SHELL", "curl -fs --max-time 5 http://127.0.0.1:8000/status || exit 1"]
