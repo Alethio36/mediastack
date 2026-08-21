@@ -184,6 +184,10 @@ problems), **activity** (arr grabs, imports, health events), **users**
 stores them under one key, and connects every arr to the hub. Endpoints
 already stored are never touched.
 
+Prowlarr also registers qBittorrent as its own download client, so a
+manual search in Prowlarr's UI can send a grab straight to qbit — those
+land under the dedicated `prowlarr` category, out of the arrs' way.
+
 Getting an endpoint URL:
 
 * **Discord** — channel -> gear (Edit Channel) -> Integrations ->
