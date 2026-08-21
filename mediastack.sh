@@ -2315,6 +2315,23 @@ wire_bazarr() {
     fi
 }
 
+jf_server_name() { # the name apps/casting show; container default is the ID hash
+    local tok="$1" cfg have want
+    cfg=$(jf_api GET /System/Configuration "$tok" || true)
+    have=$(jq -r '.ServerName // empty' <<<"$cfg" 2>/dev/null)
+    if [[ -n "$have" && ! "$have" =~ ^[0-9a-f]{12}$ ]]; then
+        ok "server name '$have'"
+        return 0
+    fi
+    if (( WIRE_DRY )); then w_would "name the Jellyfin server (asked on the real run)" || true; return 0; fi
+    [[ -t 0 ]] || { info "server name still the container ID — run 'wire jellyfin' interactively to set it"; return 0; }
+    ask JF_SRVNAME "Server name (shows in Jellyfin apps and casting)" "Jellyfin"
+    want="$REPLY_VAL"
+    jf_api POST /System/Configuration "$tok" "$(jq -c --arg n "$want" '.ServerName=$n' <<<"$cfg")" >/dev/null \
+        && ok "server name set to '$want'" \
+        || wfail "Jellyfin rejected the server name [HTTP $(jf_code)] — set it in Dashboard -> General"
+}
+
 # ---- apprise (wave 5): one notification hub for the whole stack ----
 # apprise-api in gluetun's namespace. Tags route messages: ops (pipeline,
 # backups, doctor), activity (arr events), users (wizarr invites).
@@ -2702,6 +2719,7 @@ credentials)."
              wfail "jellyfin rejected the admin login from .env [HTTP $(jf_code)]: $(head -c200 <<<"$auth")"; return 1; }
     tok=$(jq -r '.AccessToken // empty' <<<"$auth")
     [[ -n "$tok" ]] || { wfail "jellyfin login succeeded but returned no token: $(head -c200 <<<"$auth")"; return 1; }
+    jf_server_name "$tok"
 
     # --- libraries: create-if-path-missing, derived from the arrs' own
     # rootfolder labels. Match by PATH so GUI renames/merges are respected.
