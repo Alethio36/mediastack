@@ -27,6 +27,7 @@ services:
       mediastack.port: "8191"
       mediastack.desc: "captcha bypass helper for some indexers"
       mediastack.vpn: "true"
+      mediastack.internal: "true"
       mediastack.config: "false"
     logging: *logging
     restart: unless-stopped

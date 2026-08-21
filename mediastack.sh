@@ -186,12 +186,16 @@ svc_image()    { render; jq -r --arg s "$1" '.services[$s].image' <<<"$RENDERED_
 svc_cname()    { render; jq -r --arg s "$1" '.services[$s].container_name // $s' <<<"$RENDERED_JSON"; }
 uvar()         { echo "${1^^}" | tr '-' '_' | tr -cd 'A-Z0-9_'; } # service -> env var stem (radarr-4k -> RADARR_4K)
 svc_enabled()  { [[ ",$(env_get COMPOSE_PROFILES)," == *",$1,"* ]]; }
-svc_url()      { # where a browser reaches the service, best effort
+svc_url() { # where a browser reaches the service, best effort
     local s="$1" sub port
+    [[ "$s" == traefik ]] && { echo "-"; return; }   # it IS the https edge
     sub=$(env_get "$(uvar "$s")_HOST"); [[ -n "$sub" ]] || sub=$(svc_label "$s" mediastack.subdomain)
     if [[ -n "$sub" ]]; then echo "https://${sub}.$(env_get TRAEFIK_DOMAIN unset)"; return; fi
     port=$(svc_label "$s" mediastack.port)
-    [[ -n "$port" ]] && echo "http://$(hostname):${port}" || echo "-"
+    [[ -z "$port" ]] && { echo "-"; return; }
+    [[ "$(svc_label "$s" mediastack.internal)" == "true" ]] \
+        && echo "internal :${port}" \
+        || echo "http://$(hostname):${port}"
 }
 svc_deps()     { # direct dependencies: depends_on + shared network namespace
     render
