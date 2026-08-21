@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=8
+SCRIPT_SCHEMA=9
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -143,6 +143,16 @@ migrate_env_7_to_8() {
         info "New service variable CLEANUPARR_UID -> $(env_get CLEANUPARR_UID)"
     fi
     grep -qE '^CLEANUPARR_UPDATE=' "$ENV_FILE" || env_set CLEANUPARR_UPDATE true
+}
+migrate_env_8_to_9() {
+    # watchstate joins as an official service
+    if ! grep -qE '^WATCHSTATE_UID=' "$ENV_FILE"; then
+        local wmax
+        wmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        env_set WATCHSTATE_UID "$(( ${wmax:-$(env_get UID_BASE 13000)} + 1 ))"
+        info "New service variable WATCHSTATE_UID -> $(env_get WATCHSTATE_UID)"
+    fi
+    grep -qE '^WATCHSTATE_UPDATE=' "$ENV_FILE" || env_set WATCHSTATE_UPDATE true
 }
 
 # ------------------------------------------------------------ compose layer --
