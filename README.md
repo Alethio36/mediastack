@@ -118,7 +118,7 @@ Connect
 |---|---|
 | `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|jellyfin\|seerr\|wizarr] [--dry-run]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten |
 | `invite [--expires 1\|7\|30]` | mint a Wizarr invitation, print the ready-to-share URL (default: never expires) |
-| `set-credentials <arr\|qbit\|jellyfin\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `all` sets one password across the stack (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
+| `set-credentials <arr\|qbit\|jellyfin\|pihole\|traefik\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `all` sets one password across the stack (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
 | `trash-sync` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update |
 | `traefik-setup` | HTTPS wizard: domain, Cloudflare token, cert environment, dashboard login |
 | `traefik-setup --hosts` | guided rename of every service's subdomain |

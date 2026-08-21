@@ -278,8 +278,9 @@ Connect
                  Options: --expires 1|7|30 (default: never expires).
   credentials    Show the app logins wire created/stored.
   set-credentials Rotate a stored login everywhere it lives, atomically:
-                 set-credentials <arr|qbit|jellyfin|all>; 'all' sets ONE
-                 password across the stack (Wizarr's admin excluded).
+                 set-credentials <arr|qbit|jellyfin|pihole|traefik|all>;
+                 'all' sets ONE password across the stack (Wizarr's
+                 admin excluded).
   traefik-setup  Configure the HTTPS edge: domain, Cloudflare token, cert
                  environment (staging/production), dashboard login. Auto-runs
                  on 'up' when traefik is enabled and unconfigured.
@@ -3083,12 +3084,14 @@ cmd_credentials() {
 cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, atomically
     load_env; render
     local target="${1:-}"
-    [[ "$target" == arr || "$target" == qbit || "$target" == jellyfin || "$target" == all ]] \
-        || die "usage: set-credentials <arr|qbit|jellyfin|all>
+    case "$target" in arr|qbit|jellyfin|pihole|traefik|all) ;; *)
+        die "usage: set-credentials <arr|qbit|jellyfin|pihole|traefik|all>
   arr       the shared login of every arr app (+ cleanuparr's account password)
   qbit      qBittorrent's WebUI login (+ every place that stores it)
   jellyfin  the Jellyfin admin password (Seerr/Wizarr need no change)
-  all       ONE password across arr + qbit + jellyfin (usernames stay put)"
+  pihole    the Pi-hole admin password
+  traefik   the Traefik dashboard password
+  all       ONE password across all of the above (usernames stay put)" ;; esac
     [[ -t 0 ]] || die "set-credentials is interactive — run it at a terminal."
 
     case "$target" in
@@ -3112,6 +3115,16 @@ arr's download-client entry and cleanuparr's connection."
         ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
         sc_rotate_qbit "$user" "$pass"
         ;;
+    pihole)
+        local pass
+        ask_secret "New Pi-hole password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        sc_rotate_pihole "$pass"
+        ;;
+    traefik)
+        local pass
+        ask_secret "New dashboard password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        sc_rotate_traefik "$pass"
+        ;;
     jellyfin)
         local npass
         explain "Rotate the Jellyfin admin password" \
@@ -3124,7 +3137,8 @@ by API key (unchanged). Only this password and .env move."
         local pass
         explain "One password across the stack" \
 "Sets a single password on the arr login (6 apps + cleanuparr follows),
-qBittorrent (and everything storing its login), and the Jellyfin admin.
+qBittorrent (and everything storing its login), the Jellyfin admin,
+Pi-hole, and the Traefik dashboard.
 Usernames stay as they are. Deliberate trade-off: one reused password
 means one leak opens everything — use a strong, stack-unique one.
 NOT covered: Wizarr's admin account is its own — rotate it in Wizarr's
@@ -3133,8 +3147,10 @@ UI (Settings -> Account) yourself."
         sc_rotate_arr "$(env_get ARR_USER admin)" "$pass"
         sc_rotate_qbit "$(env_get QBITTORRENT_USER admin)" "$pass"
         sc_rotate_jellyfin "$pass"
+        sc_rotate_pihole "$pass"
+        sc_rotate_traefik "$pass"
         warn "Wizarr's admin password is NOT rotated by this — change it in Wizarr's UI."
-        ok "one password now covers arr + qbit + jellyfin — view: ./mediastack.sh credentials"
+        ok "one password now covers arr + qbit + jellyfin + pihole + traefik — view: ./mediastack.sh credentials"
         ;;
     esac
 }
@@ -3203,6 +3219,25 @@ sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
                     || wfail "cleanuparr connection not updated [HTTP $(cup_code)] — fix in its UI"
             fi
         fi
+}
+
+sc_rotate_pihole() { # PASS — env-driven; recreate applies it
+        local pass="$1"
+        svc_enabled pihole || { info "pihole not enabled — skipped"; return 0; }
+        env_set PIHOLE_PASSWORD "$pass"
+        DC up -d pihole >/dev/null 2>&1 \
+            && ok "Pi-hole password rotated (container recreated)" \
+            || wfail "Pi-hole recreate failed — apply with: ./mediastack.sh up"
+}
+
+sc_rotate_traefik() { # PASS — regenerated into the watched dynamic config
+        local pass="$1"
+        svc_enabled traefik || { info "traefik not enabled — skipped"; return 0; }
+        [[ -n "$(env_get TRAEFIK_DASH_USER)" ]] || { info "traefik dashboard never configured — skipped (run traefik-setup first)"; return 0; }
+        env_set TRAEFIK_DASH_PASSWORD "$pass"
+        traefik_gen \
+            && ok "Traefik dashboard password rotated (config regenerated; traefik watches it live)" \
+            || wfail "traefik config regeneration failed — inspect: ./mediastack.sh traefik-setup"
 }
 
 sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
