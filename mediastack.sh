@@ -2040,6 +2040,14 @@ type your own to use it instead. Stored in .env (view: credentials)."
                 || { wfail "category '$cat' creation failed"; }
         fi
     done
+    # manual grabs from prowlarr get their own bucket
+    if grep -q '"prowlarr"' <<<"$existing"; then
+        ok "category 'prowlarr' exists"
+    elif w_would "create category 'prowlarr' -> /data/torrent/prowlarr (manual grabs)"; then
+        qb_api /torrents/createCategory "category=prowlarr" "savePath=/data/torrent/prowlarr" >/dev/null \
+            && ok "category 'prowlarr' created" \
+            || wfail "category 'prowlarr' creation failed"
+    fi
 }
 
 # ---- arr root folders + download client ----
@@ -2126,6 +2134,36 @@ JSON
 }
 
 # ---- prowlarr: applications + flaresolverr proxy ----
+prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
+    local key url ver have qu qp schema tmpl body resp qport
+    key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr)
+    [[ -n "$key" ]] || { wfail "prowlarr: no ApiKey readable — re-run wire in a minute"; return 1; }
+    qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
+    [[ -n "$qu" && -n "$qp" ]] || { info "prowlarr download client pends on 'wire qbit' storing credentials"; return 0; }
+    qport=$(svc_label qbittorrent mediastack.port)
+    have=$(api GET "$url/api/$ver/downloadclient" "$key" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
+    if [[ " $have " == *" qbittorrent "* ]]; then
+        ok "prowlarr download client registered"
+        return 0
+    fi
+    w_would "prowlarr: register qBittorrent as its download client (manual grabs -> category 'prowlarr')" || return 0
+    schema=$(api GET "$url/api/$ver/downloadclient/schema" "$key" || true)
+    tmpl=$(jq -c '[.[] | select(.implementation=="QBittorrent")][0] // empty' <<<"$schema" 2>/dev/null)
+    [[ -n "$tmpl" ]] || { wfail "prowlarr: its API offers no QBittorrent client type — is the image very old?"; return 1; }
+    body=$(jq -c --arg u "$qu" --arg p "$qp" --argjson port "$qport" '
+        .name = "qbittorrent" | .enable = true
+        | .fields = [ .fields[]
+            | if   .name == "host"     then .value = "localhost"
+              elif .name == "port"     then .value = $port
+              elif .name == "username" then .value = $u
+              elif .name == "password" then .value = $p
+              elif .name == "category" then .value = "prowlarr"
+              else . end ]' <<<"$tmpl")
+    resp=$(api POST "$url/api/$ver/downloadclient" "$key" "$body") \
+        && ok "prowlarr download client registered" \
+        || wfail "prowlarr: download client rejected: $(head -c200 <<<"$resp")"
+}
+
 wire_prowlarr() {
     hr "wire: Prowlarr"
     svc_enabled prowlarr || { info "prowlarr not enabled — skipped"; return 0; }
