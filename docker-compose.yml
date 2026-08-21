@@ -29,6 +29,7 @@ include:
   - compose.d/sonarr-anime.yml
   - compose.d/sonarr.yml
   - compose.d/traefik.yml
+  - compose.d/watchstate.yml
   - compose.d/transmission.yml
   - compose.d/wizarr.yml
 

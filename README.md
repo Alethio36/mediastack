@@ -80,6 +80,7 @@ explanation.
 | wizarr | invitation links — "set up my account" becomes a URL |
 | apprise | one notification hub for the whole stack (ops/activity/users) |
 | cleanuparr | strikes stalled downloads, cleans the queue |
+| watchstate | syncs + backs up per-user watch state across media servers |
 | pihole / cloudflared | ad-blocking DNS / expose without port-forwarding |
 | flaresolverr | captcha bypass helper for some indexers |
 | deluge / transmission | extra torrent clients (most people need neither) |
@@ -260,6 +261,20 @@ account. `wire seerr` bootstraps an uninitialised Seerr (owner = the
 Jellyfin admin, libraries enabled, every arr connected with its TRaSH
 profile); an initialised Seerr is never touched.
 
+## Watch state (WatchState)
+
+The `watchstate` profile runs [WatchState](https://github.com/arabcoders/watchstate):
+per-user play state, matched by metadata GUIDs rather than server-internal
+IDs, so it survives server rebuilds and library path changes. Use it to
+sync state between media servers (this stack's Jellyfin and any other
+Jellyfin/Plex/Emby you point it at) and to take portable play-state
+backups — its `/config` rides the stack's restore points.
+
+Backends are configured once in its UI (`https://watch.<your-domain>`):
+add each server with an API key, choose Import/Export per backend, and
+enable the scheduled tasks. Run exactly ONE instance per household —
+state lives here, and two instances means two divergent truths.
+
 ## Invites (Wizarr)
 
 Wizarr turns "set up my account" into a link. Its first run is a one-time
@@ -283,7 +298,8 @@ invite management (Wizarr) · notification hub (Apprise) · download
 cleanup (cleanuparr) · credential rotation, including one-password mode
 (`set-credentials all`) · tunnel interface binding · runtime audits in
 `doctor` · manual grabs from Prowlarr · user services via
-`docker-compose.override.yml` · service URLs in `status`.
+`docker-compose.override.yml` · service URLs in `status` · watch-state
+sync and backup (WatchState).
 
 The stack is feature-complete for its scope; changes from here are
 maintenance and fixes.
