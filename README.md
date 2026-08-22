@@ -82,6 +82,8 @@ explanation.
 | cleanuparr | strikes stalled downloads, cleans the queue |
 | watchstate | syncs + backs up per-user watch state across media servers |
 | navidrome | music server (Subsonic API) over lidarr's library |
+| audiobookshelf | audiobook + podcast server with progress sync |
+| kavita | reading server for ebooks, comics and manga |
 | pihole / cloudflared | ad-blocking DNS / expose without port-forwarding |
 | flaresolverr | captcha bypass helper for some indexers |
 | deluge / transmission | extra torrent clients (most people need neither) |
@@ -265,6 +267,21 @@ account. `wire seerr` bootstraps an uninitialised Seerr (owner = the
 Jellyfin admin, libraries enabled, every arr connected with its TRaSH
 profile); an initialised Seerr is never touched.
 
+## Books & audiobooks (Audiobookshelf, Kavita)
+
+Two serving apps cover the reading/listening side, both wire-free —
+create their accounts on first visit:
+
+* **Audiobookshelf** (`https://audiobooks.<your-domain>`) — audiobooks
+  and podcasts, progress sync, official mobile apps. Reads
+  `${DATA_ROOT}/media/audiobooks` and `.../podcasts`.
+* **Kavita** (`https://books.<your-domain>`) — ebooks, comics and manga
+  in one modern reader with OPDS and Kobo/KOReader sync. Reads
+  `.../media/books`, `.../comics`, `.../manga`.
+
+Acquisition (a Readarr replacement wiring these to Prowlarr) is a
+separate, later addition — these serve whatever lands in those folders.
+
 ## Music (Navidrome)
 
 The `navidrome` profile serves the music lidarr manages through the
@@ -312,7 +329,8 @@ cleanup (cleanuparr) · credential rotation, including one-password mode
 (`set-credentials all`) · tunnel interface binding · runtime audits in
 `doctor` · manual grabs from Prowlarr · user services via
 `docker-compose.override.yml` · service URLs in `status` · watch-state
-sync and backup (WatchState) · a dedicated music server (Navidrome).
+sync and backup (WatchState) · a dedicated music server (Navidrome) ·
+audiobook/podcast and ebook/comic serving (Audiobookshelf, Kavita).
 
 The stack is feature-complete for its scope; changes from here are
 maintenance and fixes.
