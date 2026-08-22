@@ -1,0 +1,47 @@
+# LazyLibrarian: book acquisition — the Readarr replacement. Monitors
+# authors, searches indexers, grabs ebooks/audiobooks/magazines and hands
+# them to qBittorrent. Prowlarr auto-syncs its indexers (it's a first-class
+# Prowlarr app, like the arrs). Lives in gluetun's namespace so its grabs
+# ride the VPN like every other downloader; wire connects it end to end.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  lazylibrarian:
+    image: lscr.io/linuxserver/lazylibrarian:latest
+    container_name: ${LAZYLIBRARIAN_NAME:-mediastack-lazylibrarian}
+    profiles: ["lazylibrarian"]
+    network_mode: "service:gluetun"
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      - PUID=${LAZYLIBRARIAN_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/lazylibrarian:/config
+      - ${DATA_ROOT}:/data
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.port: "5299"
+      mediastack.desc: "book acquisition (Readarr replacement)"
+      mediastack.vpn: "true"
+      mediastack.config: "true"
+      mediastack.subdomain: "books-dl"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs --max-time 5 http://127.0.0.1:5299/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    logging: *logging
+    restart: unless-stopped
