@@ -1,0 +1,50 @@
+# Kavita: fast reading server for ebooks, comics, manga and light novels.
+# Modern web reader, progress sync, OPDS, Kobo/KOReader sync. Serves the
+# books/comics libraries — serving only, no wire role; create the admin
+# account on first visit at its URL.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  kavita:
+    image: jvmilazz0/kavita:latest
+    container_name: ${KAVITA_NAME:-mediastack-kavita}
+    profiles: ["kavita"]
+    environment:
+      - PUID=${KAVITA_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/kavita:/kavita/config
+      - ${DATA_ROOT}/media/books:/books
+      - ${DATA_ROOT}/media/comics:/comics
+      - ${DATA_ROOT}/media/manga:/manga
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.port: "5000"
+      traefik.enable: "true"
+      traefik.http.routers.kavita.rule: "Host(`${KAVITA_HOST:-books}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.kavita.entrypoints: "websecure"
+      traefik.http.routers.kavita.tls: "true"
+      traefik.http.services.kavita.loadbalancer.server.port: "5000"
+      mediastack.desc: "reading server for ebooks, comics and manga"
+      mediastack.vpn: "false"
+      mediastack.config: "true"
+      mediastack.subdomain: "books"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:5000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped

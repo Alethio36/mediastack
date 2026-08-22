@@ -1,0 +1,51 @@
+# Audiobookshelf: audiobook + podcast server. Serves and streams the
+# audiobooks lidarr-adjacent tooling (or you) place under the library,
+# with progress sync and official mobile apps. Serving only — no wire
+# role; create your account on first visit at its URL.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  audiobookshelf:
+    image: ghcr.io/advplyr/audiobookshelf:latest
+    container_name: ${AUDIOBOOKSHELF_NAME:-mediastack-audiobookshelf}
+    profiles: ["audiobookshelf"]
+    environment:
+      - PUID=${AUDIOBOOKSHELF_UID}
+      - PGID=${MEDIA_GROUP_GID}
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/audiobookshelf:/config
+      - ${CACHE_ROOT}/audiobookshelf:/metadata
+      - ${DATA_ROOT}/media/audiobooks:/audiobooks
+      - ${DATA_ROOT}/media/podcasts:/podcasts
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.port: "80"
+      traefik.enable: "true"
+      traefik.http.routers.audiobookshelf.rule: "Host(`${AUDIOBOOKSHELF_HOST:-audiobooks}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.audiobookshelf.entrypoints: "websecure"
+      traefik.http.routers.audiobookshelf.tls: "true"
+      traefik.http.services.audiobookshelf.loadbalancer.server.port: "80"
+      mediastack.desc: "audiobook + podcast server with progress sync"
+      mediastack.vpn: "false"
+      mediastack.config: "true"
+      mediastack.cache: "true"
+      mediastack.subdomain: "audiobooks"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1/healthcheck || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped

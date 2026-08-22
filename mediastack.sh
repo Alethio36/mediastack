@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=10
+SCRIPT_SCHEMA=11
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -162,6 +162,19 @@ migrate_env_9_to_10() {
         info "New service variable NAVIDROME_UID -> $(env_get NAVIDROME_UID)"
     fi
     grep -qE '^NAVIDROME_UPDATE=' "$ENV_FILE" || env_set NAVIDROME_UPDATE true
+}
+migrate_env_10_to_11() {
+    # two reading/listening servers join; adopt their UID/UPDATE vars
+    local svc var last
+    for svc in AUDIOBOOKSHELF KAVITA; do
+        var="${svc}_UID"
+        if ! grep -qE "^${var}=" "$ENV_FILE"; then
+            last=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+            env_set "$var" "$(( ${last:-$(env_get UID_BASE 13000)} + 1 ))"
+            info "New service variable $var -> $(env_get "$var")"
+        fi
+        grep -qE "^${svc}_UPDATE=" "$ENV_FILE" || env_set "${svc}_UPDATE" true
+    done
 }
 
 # ------------------------------------------------------------ compose layer --
@@ -786,8 +799,10 @@ provision() {
     # The recursive pass runs ONLY when the tree root isn't group-correct yet:
     # on a real library this is TBs — never re-walk it on every configure.
     local d
-    for d in torrent media; do
-        for sub in tv movies music books other; do sudo mkdir -p "$droot/$d/$sub"; done
+    for sub in tv movies music books other; do sudo mkdir -p "$droot/torrent/$sub"; done
+    # media carries the reading/listening trees too (audiobookshelf, kavita)
+    for sub in tv movies music books audiobooks podcasts comics manga other; do
+        sudo mkdir -p "$droot/media/$sub"
     done
     if [[ "$(stat -c %G "$droot" 2>/dev/null)" != mediacenter ]]; then
         info "first-time data tree ownership pass (may take a while on large trees)..."
