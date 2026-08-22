@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=9
+SCRIPT_SCHEMA=10
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -153,6 +153,15 @@ migrate_env_8_to_9() {
         info "New service variable WATCHSTATE_UID -> $(env_get WATCHSTATE_UID)"
     fi
     grep -qE '^WATCHSTATE_UPDATE=' "$ENV_FILE" || env_set WATCHSTATE_UPDATE true
+}
+migrate_env_9_to_10() {
+    if ! grep -qE '^NAVIDROME_UID=' "$ENV_FILE"; then
+        local nmax
+        nmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        env_set NAVIDROME_UID "$(( ${nmax:-$(env_get UID_BASE 13000)} + 1 ))"
+        info "New service variable NAVIDROME_UID -> $(env_get NAVIDROME_UID)"
+    fi
+    grep -qE '^NAVIDROME_UPDATE=' "$ENV_FILE" || env_set NAVIDROME_UPDATE true
 }
 
 # ------------------------------------------------------------ compose layer --

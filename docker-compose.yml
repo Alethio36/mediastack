@@ -30,6 +30,7 @@ include:
   - compose.d/sonarr.yml
   - compose.d/traefik.yml
   - compose.d/watchstate.yml
+  - compose.d/navidrome.yml
   - compose.d/transmission.yml
   - compose.d/wizarr.yml
 

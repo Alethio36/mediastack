@@ -1,0 +1,56 @@
+# Navidrome: a proper music server over the library lidarr builds. Speaks
+# the Subsonic API, so any Subsonic client (phone, desktop, car) plays your
+# collection — a real music experience where Jellyfin's is an afterthought.
+# Read-only on the music tree: it serves, it never writes; lidarr owns the
+# files. No wire role — create your account on first visit at its URL.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: ${NAVIDROME_NAME:-mediastack-navidrome}
+    profiles: ["navidrome"]
+    user: "${NAVIDROME_UID}:${MEDIA_GROUP_GID}"
+    environment:
+      - ND_MUSICFOLDER=/music
+      - ND_DATAFOLDER=/data
+      - ND_SCANSCHEDULE=1h
+      - ND_LOGLEVEL=info
+      - ND_SESSIONTIMEOUT=24h
+      # served behind traefik under its own hostname
+      - ND_BASEURL=
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/navidrome:/data
+      # lidarr's music root, read-only — Navidrome serves, never writes
+      - ${DATA_ROOT}/media/music:/music:ro
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.port: "4533"
+      traefik.enable: "true"
+      traefik.http.routers.navidrome.rule: "Host(`${NAVIDROME_HOST:-music}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.navidrome.entrypoints: "websecure"
+      traefik.http.routers.navidrome.tls: "true"
+      traefik.http.services.navidrome.loadbalancer.server.port: "4533"
+      mediastack.desc: "music server (Subsonic API) over lidarr's library"
+      mediastack.vpn: "false"
+      mediastack.config: "true"
+      mediastack.subdomain: "music"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:4533/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped
