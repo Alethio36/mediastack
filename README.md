@@ -354,6 +354,7 @@ maintenance and fixes.
 * [docs/adding-a-service.md](docs/adding-a-service.md) — extend the stack
 * [docs/migration-existing.md](docs/migration-existing.md) — adopt an existing deployment
 * [docs/disaster-recovery.md](docs/disaster-recovery.md) — full rebuild from a restore point
+* [docs/candidates.md](docs/candidates.md) — services evaluated but deferred, with reasoning
 
 ## License
 
