@@ -40,7 +40,10 @@ services:
       mediastack.config: "true"
       mediastack.subdomain: "books"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:5000/api/health || exit 1"]
+      # Kavita's /api/health sits behind SPA routing and version-shifts;
+      # the app's own log treats "listening on 5000" as ready, so a TCP
+      # port probe is the reliable readiness signal (busybox nc, -w timeout)
+      test: ["CMD-SHELL", "nc -z -w5 127.0.0.1 5000 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
