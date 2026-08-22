@@ -40,10 +40,8 @@ services:
       mediastack.config: "true"
       mediastack.subdomain: "books"
     healthcheck:
-      # Kavita's /api/health sits behind SPA routing and version-shifts;
-      # the app's own log treats "listening on 5000" as ready, so a TCP
-      # port probe is the reliable readiness signal (busybox nc, -w timeout)
-      test: ["CMD-SHELL", "nc -z -w5 127.0.0.1 5000 || exit 1"]
+      # this image ships curl but not wget/nc; /api/health returns Ok
+      test: ["CMD-SHELL", "curl -fsS --max-time 5 http://127.0.0.1:5000/api/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
