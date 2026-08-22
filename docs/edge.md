@@ -35,7 +35,7 @@ warns persistently while staging certificates are live.
 ## Hostnames
 
 Defaults: dash, jellyfin, requests (seerr), invites (wizarr), notify
-(apprise), cleanup (cleanuparr), watch (watchstate), music (navidrome), audiobooks (audiobookshelf), books (kavita),
+(apprise), cleanup (cleanuparr), watch (watchstate), music (navidrome), audiobooks (audiobookshelf), books (kavita), books-dl (lazylibrarian),
 tv (ersatztv),
 pihole, qbit, sonarr,
 radarr, prowlarr, lidarr, bazarr, radarr-4k, sonarr-anime, deluge,

@@ -29,6 +29,7 @@ services:
       - "${LIDARR_PORT:-8686}:8686"        # Lidarr    (music profile)
       - "${BAZARR_PORT:-6767}:6767"        # Bazarr    (subs profile)
       - "${APPRISE_PORT:-8000}:8000"        # Apprise   (apprise profile)
+      - "${LAZYLIBRARIAN_PORT:-5299}:5299"   # LazyLibrarian (lazylibrarian profile)
       - "${FLARESOLVERR_PORT:-8191}:8191"  # FlareSolverr
       - "${DELUGE_PORT:-8112}:8112"        # Deluge    (torrents-extra)
       - "${TRANSMISSION_PORT:-9091}:9091"  # Transmission (torrents-extra)
@@ -70,6 +71,11 @@ services:
       traefik.http.routers.apprise.tls: "true"
       traefik.http.routers.apprise.service: "apprise"
       traefik.http.services.apprise.loadbalancer.server.port: "8000"
+      traefik.http.routers.lazylibrarian.rule: "Host(`${LAZYLIBRARIAN_HOST:-books-dl}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.lazylibrarian.entrypoints: "websecure"
+      traefik.http.routers.lazylibrarian.tls: "true"
+      traefik.http.routers.lazylibrarian.service: "lazylibrarian"
+      traefik.http.services.lazylibrarian.loadbalancer.server.port: "5299"
       traefik.http.routers.sonarr.rule: "Host(`${SONARR_HOST:-sonarr}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.sonarr.entrypoints: "websecure"
       traefik.http.routers.sonarr.tls: "true"

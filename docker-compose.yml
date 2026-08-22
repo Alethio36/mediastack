@@ -33,6 +33,7 @@ include:
   - compose.d/navidrome.yml
   - compose.d/audiobookshelf.yml
   - compose.d/kavita.yml
+  - compose.d/lazylibrarian.yml
   - compose.d/transmission.yml
   - compose.d/wizarr.yml
 

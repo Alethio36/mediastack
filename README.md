@@ -84,6 +84,7 @@ explanation.
 | navidrome | music server (Subsonic API) over lidarr's library |
 | audiobookshelf | audiobook + podcast server with progress sync |
 | kavita | reading server for ebooks, comics and manga |
+| lazylibrarian | book acquisition (Readarr replacement) |
 | pihole / cloudflared | ad-blocking DNS / expose without port-forwarding |
 | flaresolverr | captcha bypass helper for some indexers |
 | deluge / transmission | extra torrent clients (most people need neither) |
@@ -279,8 +280,18 @@ create their accounts on first visit:
   in one modern reader with OPDS and Kobo/KOReader sync. Reads
   `.../media/books`, `.../comics`, `.../manga`.
 
-Acquisition (a Readarr replacement wiring these to Prowlarr) is a
-separate, later addition — these serve whatever lands in those folders.
+### Acquisition (LazyLibrarian)
+
+The `lazylibrarian` profile automates book acquisition — the Readarr
+replacement. It monitors authors, grabs ebooks/audiobooks, and hands them
+to qBittorrent. `wire lazylibrarian` sets its download client and book
+folders (`/data/media/books`, `/data/media/audiobooks`) and registers it
+in Prowlarr as a first-class app, so indexers sync automatically like the
+arrs. One manual step on first run: LazyLibrarian mints its API key only
+after you open its UI (`https://books-dl.<your-domain>`), set a login
+under Config -> Interface, and restart it — then re-run
+`wire lazylibrarian`. It lives in the VPN namespace, so grabs ride the
+tunnel.
 
 ## Music (Navidrome)
 

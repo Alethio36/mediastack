@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=11
+SCRIPT_SCHEMA=12
 
 # ------------------------------------------------------------------ output --
 if [[ -t 1 ]]; then
@@ -176,6 +176,15 @@ migrate_env_10_to_11() {
         grep -qE "^${svc}_UPDATE=" "$ENV_FILE" || env_set "${svc}_UPDATE" true
     done
 }
+migrate_env_11_to_12() {
+    if ! grep -qE '^LAZYLIBRARIAN_UID=' "$ENV_FILE"; then
+        local lmax
+        lmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        env_set LAZYLIBRARIAN_UID "$(( ${lmax:-$(env_get UID_BASE 13000)} + 1 ))"
+        info "New service variable LAZYLIBRARIAN_UID -> $(env_get LAZYLIBRARIAN_UID)"
+    fi
+    grep -qE '^LAZYLIBRARIAN_UPDATE=' "$ENV_FILE" || env_set LAZYLIBRARIAN_UPDATE true
+}
 
 # ------------------------------------------------------------ compose layer --
 DC() { # compose wrapper: project dir pinned, pin-override applied when present
@@ -307,7 +316,7 @@ Connect
                  Idempotent: re-run any time; anything you configured in a
                  GUI is never overwritten.
                  One app only: wire <qbit|arr|prowlarr|bazarr|apprise|
-                 cleanuparr|jellyfin|seerr|wizarr>. Preview: wire --dry-run.
+                 cleanuparr|lazylibrarian|jellyfin|seerr|wizarr>. Preview: wire --dry-run.
   invite         Mint a Wizarr invitation and print the ready-to-share URL.
                  Options: --expires 1|7|30 (default: never expires).
   credentials    Show the app logins wire created/stored.
@@ -2229,6 +2238,72 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
         || wfail "prowlarr: download client rejected: $(head -c200 <<<"$resp")"
 }
 
+ll_url() { echo "http://127.0.0.1:$(env_get LAZYLIBRARIAN_PORT 5299)"; }
+ll_key() { # LazyLibrarian mints its API key on first run into config.ini
+    local f
+    f="$(env_get CONFIG_ROOT)/lazylibrarian/config.ini"
+    [[ -r "$f" ]] || { sudo cat "$f" 2>/dev/null | sed -n 's/^api_key = *//p' | head -1; return; }
+    sed -n 's/^api_key = *//p' "$f" | head -1
+}
+ll_api() { # ll_api cmd [k=v ...] -> body; the &cmd= API, apikey-authenticated
+    local cmd="$1"; shift
+    local q kv
+    q="apikey=$(ll_key)&cmd=$cmd"
+    for kv in "$@"; do q+="&$kv"; done
+    curl -sS -m 15 "$(ll_url)/api?$q" 2>/dev/null
+}
+
+wire_lazylibrarian() {
+    hr "wire: LazyLibrarian"
+    svc_enabled lazylibrarian || { info "lazylibrarian not enabled — skipped"; return 0; }
+    wire_gate lazylibrarian
+    local t=0 code
+    while :; do
+        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(ll_url)/" 2>/dev/null || echo 000)
+        [[ "$code" =~ ^(200|401|403) ]] && break
+        (( t >= 90 )) && { wfail "lazylibrarian never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
+        sleep 5; t=$((t+5)); info "waiting for lazylibrarian (${t}s)..."
+    done
+    local key; key=$(ll_key)
+    if [[ -z "$key" ]]; then
+        # first-ever start: the API key is minted only after the web UI has
+        # been opened once and config saved. Cannot proceed headless.
+        wfail "lazylibrarian has no API key yet — open https://books-dl.\$TRAEFIK_DOMAIN once,
+     go to Config -> Interface, set a username/password and Save, restart it
+     in the UI, then re-run: ./mediastack.sh wire lazylibrarian"
+        return 1
+    fi
+    ok "API key found"
+
+    # download client: qBittorrent, reachable in-namespace at localhost:8085
+    (( WIRE_DRY )) && { w_would "point lazylibrarian at qBittorrent and set its book folder" || true; }
+    if ! (( WIRE_DRY )); then
+        local qu qp qport
+        qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
+        qport=$(svc_label qbittorrent mediastack.port)
+        if [[ -z "$qu" || -z "$qp" ]]; then
+            wfail "no qBittorrent credentials in .env — run 'wire qbit' first"
+        else
+            # LazyLibrarian's qBittorrent settings live in [QBITTORRENT]
+            ll_api writeCFG "name=HOST&group=QBITTORRENT&value=http://localhost" >/dev/null
+            ll_api writeCFG "name=PORT&group=QBITTORRENT&value=$qport" >/dev/null
+            ll_api writeCFG "name=USER&group=QBITTORRENT&value=$qu" >/dev/null
+            ll_api writeCFG "name=PASS&group=QBITTORRENT&value=$qp" >/dev/null
+            ll_api writeCFG "name=LABEL&group=QBITTORRENT&value=prowlarr" >/dev/null
+            ll_api writeCFG "name=TOR_DOWNLOADER&group=General&value=qbittorrent" >/dev/null
+            ok "qBittorrent set as download client"
+            # book destination on the shared media tree
+            ll_api writeCFG "name=EBOOK_DEST_FOLDER&group=General&value=/data/media/books" >/dev/null
+            ll_api writeCFG "name=AUDIO_DEST_FOLDER&group=General&value=/data/media/audiobooks" >/dev/null
+            ll_api writeCFG "name=DESTINATION_DIR&group=General&value=/data/media/books" >/dev/null
+            ok "book folders set (/data/media/books, /data/media/audiobooks)"
+            ll_api loadCFG >/dev/null
+            ok "config reloaded"
+        fi
+    fi
+    info "indexers arrive automatically from Prowlarr (registered in the prowlarr pass)"
+}
+
 wire_prowlarr() {
     hr "wire: Prowlarr"
     svc_enabled prowlarr || { info "prowlarr not enabled — skipped"; return 0; }
@@ -2258,6 +2333,27 @@ JSON
               || wfail "prowlarr -> $s failed — check: logs prowlarr"
         fi
     done
+    # LazyLibrarian is a first-class Prowlarr app — register it so its book
+    # indexers sync exactly like the arrs (needs its API key from config.ini)
+    if svc_enabled lazylibrarian; then
+        local llkey
+        llkey=$(ll_key)
+        if [[ -z "$llkey" ]]; then
+            info "prowlarr -> lazylibrarian: skipped (no API key yet — run 'wire lazylibrarian' first)"
+        elif grep -q '"LazyLibrarian (mediastack)"' <<<"$cur"; then
+            ok "prowlarr -> lazylibrarian registered"
+        elif w_would "register lazylibrarian in prowlarr (Full Sync)"; then
+            api POST "$purl/api/v1/applications" "$pkey" "$(cat <<JSON
+{"name":"LazyLibrarian (mediastack)","syncLevel":"fullSync",
+ "implementation":"LazyLibrarian","configContract":"LazyLibrarianSettings",
+ "fields":[{"name":"prowlarrUrl","value":"$purl"},
+   {"name":"baseUrl","value":"http://localhost:5299"},
+   {"name":"apiKey","value":"$llkey"}]}
+JSON
+)" >/dev/null && ok "prowlarr -> lazylibrarian registered (Full Sync)" \
+              || wfail "prowlarr -> lazylibrarian failed — check: logs prowlarr"
+        fi
+    fi
     if svc_enabled flaresolverr; then
         # tag 'flared': put it on any indexer that needs FlareSolverr and
         # prowlarr routes that indexer through the proxy. Nothing carries it
@@ -3073,8 +3169,8 @@ cmd_wire() {
     local section="all"
     while [[ $# -gt 0 ]]; do case "$1" in
         --dry-run) WIRE_DRY=1; shift ;;
-        qbit|arr|prowlarr|bazarr|apprise|cleanuparr|jellyfin|seerr|wizarr|all) section="$1"; shift ;;
-        *) die "usage: wire [qbit|arr|prowlarr|bazarr|apprise|cleanuparr|jellyfin|seerr|wizarr] [--dry-run]" ;;
+        qbit|arr|prowlarr|bazarr|apprise|cleanuparr|lazylibrarian|jellyfin|seerr|wizarr|all) section="$1"; shift ;;
+        *) die "usage: wire [qbit|arr|prowlarr|bazarr|apprise|cleanuparr|lazylibrarian|jellyfin|seerr|wizarr] [--dry-run]" ;;
     esac; done
     (( WIRE_DRY )) && hr "wire --dry-run: showing changes, touching nothing"
     if (( ! WIRE_DRY )) && [[ ! -f "$SCRIPT_DIR/.wired" ]]; then
@@ -3086,7 +3182,7 @@ cmd_wire() {
             local wt=0 pending_s
             while (( wt < 120 )); do
                 pending_s=""
-                for s in qbittorrent prowlarr bazarr apprise cleanuparr jellyfin seerr wizarr $(arr_instances); do
+                for s in qbittorrent prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr $(arr_instances); do
                     svc_enabled "$s" || continue
                     case "$(c_health "$(svc_cname "$s")")" in
                         healthy|-) : ;;
@@ -3107,12 +3203,13 @@ cmd_wire() {
         bazarr)   wire_bazarr ;;
         apprise)  wire_apprise ;;
         cleanuparr) wire_cleanuparr ;;
+        lazylibrarian) wire_lazylibrarian ;;
         jellyfin) wire_jellyfin ;;
         seerr)    wire_seerr ;;
         wizarr)   wire_wizarr ;;
         # order matters: seerr signs in via jellyfin's admin; wizarr's UI
         # first-run wants jellyfin claimed first
-        all)      wire_qbit; wire_arr; wire_prowlarr; wire_bazarr; wire_apprise; wire_cleanuparr; wire_jellyfin; wire_seerr; wire_wizarr ;;
+        all)      wire_qbit; wire_arr; wire_prowlarr; wire_bazarr; wire_apprise; wire_cleanuparr; wire_lazylibrarian; wire_jellyfin; wire_seerr; wire_wizarr ;;
     esac
     echo
     if (( WIRE_DRY )); then
