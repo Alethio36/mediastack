@@ -5,6 +5,44 @@ yet, with the reasoning, so the decision isn't re-litigated from scratch
 later. Adding any of these is a `new-service` scaffold plus a fragment —
 the notes here are about *whether*, not *how*.
 
+## ROMM — ROM library manager (game emulation)
+
+**What it is:** best-in-class self-hosted ROM manager — IGDB metadata,
+in-browser play (EmulatorJS), save-state and asset management, 80+
+platforms, multi-user. On-brand for a gaming-adjacent deployment.
+
+**Why deferred:** it's the first candidate that doesn't fit the stack's
+single-container, cold-copy-the-config architecture. ROMM is a **three-
+container application**: the app **+ MariaDB** (its real data store —
+library, users, save associations) **+ Valkey/Redis** (sessions + scan
+task queue). That brings three problems the current stack doesn't solve:
+
+1. **Database-aware backup.** The backup model cold-copies config dirs; a
+   live MariaDB cold-copies to a torn, useless database. ROMM's restore
+   points would need a `mariadb-dump` before the copy.
+2. **Startup ordering as a data dependency.** The app crash-loops if it
+   starts before MariaDB has applied migrations — needs a DB healthcheck
+   and `depends_on: service_healthy` gating (like gluetun, but for data).
+3. **User-supplied IGDB key** from Twitch for metadata (same shape as
+   ComicVine for Kapowarr) — setup, not a blocker.
+
+**What adding it would look like — three options, decision pending:**
+
+* **(a) Full integration** — ship ROMM + MariaDB + Valkey and teach
+  `backup`/`doctor` to be database-aware (dump before restore points,
+  health-gate the app on the DB). Correct and durable; touches the backup
+  engine — the biggest change since the wave.
+* **(b) Contained integration** — ship the 3-container unit, but ROMM's
+  MariaDB dumps itself to `${CONFIG_ROOT}/romm/db-dump.sql` via a
+  pre-backup hook, which then rides the normal cold-copy. Backup engine
+  stays naive; the DB concern stays local to ROMM. Sets a clean pattern
+  for any future DB-backed service. **Leaning option.**
+* **(c) Keep deferred** until the appetite for a ROM manager is concrete.
+
+**Revisit when:** you want game-library management enough to accept the
+first database-backed service — then decide (a) vs (b). Kavita/Jellyfin
+don't cover this; there's no manual stopgap beyond a plain file share.
+
 ## Kapowarr — comic acquisition
 
 **What it is:** a comic library manager in the *arr family, best-in-class
