@@ -81,6 +81,7 @@ explanation.
 | apprise | one notification hub for the whole stack (ops/activity/users) |
 | cleanuparr | strikes stalled downloads, cleans the queue |
 | watchstate | syncs + backs up per-user watch state across media servers |
+| navidrome | music server (Subsonic API) over lidarr's library |
 | pihole / cloudflared | ad-blocking DNS / expose without port-forwarding |
 | flaresolverr | captcha bypass helper for some indexers |
 | deluge / transmission | extra torrent clients (most people need neither) |
@@ -264,6 +265,15 @@ account. `wire seerr` bootstraps an uninitialised Seerr (owner = the
 Jellyfin admin, libraries enabled, every arr connected with its TRaSH
 profile); an initialised Seerr is never touched.
 
+## Music (Navidrome)
+
+The `navidrome` profile serves the music lidarr manages through the
+Subsonic API — any Subsonic client (phone, desktop, car stereo) plays
+your collection, a real music experience where Jellyfin's is an
+afterthought. It reads `${DATA_ROOT}/media/music` **read-only**: it
+serves, lidarr owns the files. No wiring — create your account on first
+visit at `https://music.<your-domain>`.
+
 ## Watch state (WatchState)
 
 The `watchstate` profile runs [WatchState](https://github.com/arabcoders/watchstate):
@@ -302,7 +312,7 @@ cleanup (cleanuparr) · credential rotation, including one-password mode
 (`set-credentials all`) · tunnel interface binding · runtime audits in
 `doctor` · manual grabs from Prowlarr · user services via
 `docker-compose.override.yml` · service URLs in `status` · watch-state
-sync and backup (WatchState).
+sync and backup (WatchState) · a dedicated music server (Navidrome).
 
 The stack is feature-complete for its scope; changes from here are
 maintenance and fixes.
