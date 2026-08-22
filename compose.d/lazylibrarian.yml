@@ -38,7 +38,9 @@ services:
       mediastack.config: "true"
       mediastack.subdomain: "books-dl"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs --max-time 5 http://127.0.0.1:5299/ || exit 1"]
+      # LazyLibrarian redirects / -> /home (303); -f would fail on that, so
+      # accept any response by checking the connection succeeds
+      test: ["CMD-SHELL", "curl -s --max-time 5 -o /dev/null http://127.0.0.1:5299/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

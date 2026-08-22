@@ -2260,7 +2260,7 @@ wire_lazylibrarian() {
     local t=0 code
     while :; do
         code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(ll_url)/" 2>/dev/null || echo 000)
-        [[ "$code" =~ ^(200|401|403) ]] && break
+        [[ "$code" =~ ^(2|3)[0-9][0-9]$ || "$code" =~ ^(401|403)$ ]] && break
         (( t >= 90 )) && { wfail "lazylibrarian never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
         sleep 5; t=$((t+5)); info "waiting for lazylibrarian (${t}s)..."
     done
