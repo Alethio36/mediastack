@@ -17,10 +17,6 @@ services:
     image: lscr.io/linuxserver/deluge:latest
     container_name: ${DELUGE_NAME:-mediastack-deluge}
     profiles: ["deluge"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - PUID=${DELUGE_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -35,6 +31,7 @@ services:
       mediastack.port: "8112"
       mediastack.desc: "extra torrent client (most people do not need it)"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "deluge"
     healthcheck:

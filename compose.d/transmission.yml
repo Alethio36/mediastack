@@ -17,10 +17,6 @@ services:
     image: lscr.io/linuxserver/transmission:latest
     container_name: ${TRANSMISSION_NAME:-mediastack-transmission}
     profiles: ["transmission"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - PUID=${TRANSMISSION_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -35,6 +31,7 @@ services:
       mediastack.port: "9091"
       mediastack.desc: "extra torrent client (most people do not need it)"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "transmission"
     healthcheck:

@@ -22,10 +22,6 @@ services:
     image: lscr.io/linuxserver/apprise-api:latest
     container_name: ${APPRISE_NAME:-mediastack-apprise}
     profiles: ["apprise"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - PUID=${APPRISE_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -38,6 +34,7 @@ services:
       mediastack.port: "8000"
       mediastack.desc: "one notification hub for the whole stack"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.subdomain: "notify"
       mediastack.config: "true"
     healthcheck:
