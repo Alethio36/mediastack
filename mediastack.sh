@@ -939,6 +939,7 @@ cmd_status() {
         cn=$(svc_cname "$s")
         pin=no; [[ -s "$PINS_FILE" ]] && grep -q "^  $s:" "$PINS_FILE" && pin="${C_YLW}yes${C_RST}"
         vpn=off; [[ $(svc_label "$s" mediastack.vpn) == "true" ]] && vpn=on
+        [[ "$s" == gluetun ]] && vpn=self   # gluetun IS the tunnel, not behind it
         # flag a toggle-enabled service that's been moved off its recommended setting
         if [[ $(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpntoggle"]//""' <<<"$bvpn") == "true" ]]; then
             rec=$(vpn_onoff "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpn"]//"false"' <<<"$bvpn")")
@@ -949,7 +950,7 @@ cmd_status() {
             "$s" "$port" "$vpn" "$(c_state "$cn")" "$(c_health "$cn")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")" "$(svc_url "$s")"
     done
     echo
-    info "VPN: on = via the tunnel, off = direct · * = changed from recommended · change: ./mediastack.sh vpn"
+    info "VPN: on = via the tunnel, off = direct, self = the tunnel itself · * = changed from recommended · change: ./mediastack.sh vpn"
     local off="" p
     for p in $(svc_managed); do svc_enabled "$p" || off+="$p "; done
     [[ -n "$off" ]] && info "Available, not enabled: $off"

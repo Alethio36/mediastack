@@ -3,7 +3,11 @@
 Which services run inside the VPN is an operator choice, changed with the
 `vpn` command. No fragment editing and no compose overrides: membership is
 generated into `local/vpn-overlay.yml` and applied on the next `up`.
-`leak-test` audits the result and `status` shows a VPN column at a glance.
+
+Two views show membership: `./mediastack.sh vpn` (this listing, with the
+recommended setting per service) and `./mediastack.sh status` (its `VPN`
+column reads `on`/`off`, `self` for gluetun itself, and marks a service moved
+off its recommendation with `*`). `leak-test` audits the live result.
 
 ## Defaults
 
