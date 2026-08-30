@@ -3937,17 +3937,21 @@ vpn_gen() {
     # Build the three sections up front so empty ones can be omitted (an empty
     # `ports:`/`labels:` mapping is invalid YAML) and traefik.enable is emitted
     # exactly once per container (never duplicated as a mapping key).
-    local gports="" glabels="" stanzas="" s stem cport sub rname defv eff
+    local gports="" glabels="" stanzas="" s stem cport sub rname defv eff hp
     for s in $svcs; do
         stem=$(uvar "$s"); rname=$(vpn_rname "$s")
         cport=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.port"] // ""' <<<"$bj")
         sub=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.subdomain"] // ""' <<<"$bj")
         defv=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpn"] // "false"' <<<"$bj")
+        # hostport=false => traefik-only, no host port published (serving apps
+        # whose container port would collide on the host, e.g. :80 vs Traefik).
+        # Default true preserves direct host access for the acquisition apps.
+        hp=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.hostport"] // "true"' <<<"$bj")
         [[ -n "$cport" ]] || die "vpn: $s carries no mediastack.port label"
         [[ -n "$sub"   ]] || die "vpn: $s carries no mediastack.subdomain label"
         eff=$(vpn_effective "$s" "$defv")
         if [[ "$eff" == true ]]; then
-            gports+="      - \"\${${stem}_PORT:-${cport}}:${cport}\""$'\n'
+            [[ "$hp" != false ]] && gports+="      - \"\${${stem}_PORT:-${cport}}:${cport}\""$'\n'
             glabels+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem")"$'\n'
             stanzas+="  ${s}:"$'\n'"    network_mode: \"service:gluetun\""$'\n'
             stanzas+="    depends_on:"$'\n'"      gluetun:"$'\n'"        condition: service_healthy"$'\n'
@@ -3956,7 +3960,7 @@ vpn_gen() {
             [[ " $VPN_TORRENT_CLIENTS " == *" $s "* ]] \
                 && warn "vpn: $s (torrent client) is OUTSIDE the VPN — its traffic exits on the host IP"
             stanzas+="  ${s}:"$'\n'"    networks: [mediastack]"$'\n'
-            stanzas+="    ports:"$'\n'"      - \"\${${stem}_PORT:-${cport}}:${cport}\""$'\n'
+            [[ "$hp" != false ]] && stanzas+="    ports:"$'\n'"      - \"\${${stem}_PORT:-${cport}}:${cport}\""$'\n'
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"false\""$'\n'"      traefik.enable: \"true\""$'\n'
             stanzas+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem")"$'\n'
         fi
