@@ -18,10 +18,6 @@ services:
     image: lscr.io/linuxserver/lazylibrarian:latest
     container_name: ${LAZYLIBRARIAN_NAME:-mediastack-lazylibrarian}
     profiles: ["lazylibrarian"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - PUID=${LAZYLIBRARIAN_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -35,6 +31,7 @@ services:
       mediastack.port: "5299"
       mediastack.desc: "book acquisition (Readarr replacement)"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "books-dl"
     healthcheck:

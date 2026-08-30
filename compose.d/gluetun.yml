@@ -23,11 +23,8 @@ services:
       # Every VPN'd service publishes its UI through gluetun.
       # Unused mappings (disabled profiles) are harmless.
       # VPN'd service ports are generated into local/vpn-overlay.yml (vpn_gen)
-      - "${APPRISE_PORT:-8000}:8000"        # Apprise   (apprise profile)
-      - "${LAZYLIBRARIAN_PORT:-5299}:5299"   # LazyLibrarian (lazylibrarian profile)
-      - "${FLARESOLVERR_PORT:-8191}:8191"  # FlareSolverr
-      - "${DELUGE_PORT:-8112}:8112"        # Deluge    (torrents-extra)
-      - "${TRANSMISSION_PORT:-9091}:9091"  # Transmission (torrents-extra)
+      - "${FLARESOLVERR_PORT:-8191}:8191"  # FlareSolverr — STATIC on purpose: internal-only,
+      # always-VPN, never operator-toggleable (Prowlarr reaches it in-namespace)
       - "6881:6881"
       - "6881:6881/udp"
     volumes:
@@ -55,16 +52,6 @@ services:
       # own, so their edge identity lives here with their port map
       traefik.enable: "true"
       # VPN'd service routers are generated into local/vpn-overlay.yml (vpn_gen)
-      traefik.http.routers.apprise.rule: "Host(`${APPRISE_HOST:-notify}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
-      traefik.http.routers.apprise.entrypoints: "websecure"
-      traefik.http.routers.apprise.tls: "true"
-      traefik.http.routers.apprise.service: "apprise"
-      traefik.http.services.apprise.loadbalancer.server.port: "8000"
-      traefik.http.routers.lazylibrarian.rule: "Host(`${LAZYLIBRARIAN_HOST:-books-dl}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
-      traefik.http.routers.lazylibrarian.entrypoints: "websecure"
-      traefik.http.routers.lazylibrarian.tls: "true"
-      traefik.http.routers.lazylibrarian.service: "lazylibrarian"
-      traefik.http.services.lazylibrarian.loadbalancer.server.port: "5299"
       mediastack.desc: "VPN gateway — all download traffic exits through this tunnel"
       mediastack.vpn: "false"      # gluetun IS the vpn, not behind it
       mediastack.config: "true"
