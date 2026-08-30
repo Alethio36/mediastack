@@ -12,10 +12,6 @@ services:
     image: lscr.io/linuxserver/sonarr:latest
     container_name: ${SONARR_ANIME_NAME:-mediastack-sonarr-anime}
     profiles: ["sonarr-anime"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - PUID=${SONARR_ANIME_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -29,6 +25,7 @@ services:
       mediastack.managed: "true"
       mediastack.desc: "second Sonarr just for anime (own library + rules)"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "sonarr-anime"
       mediastack.port: "8990"

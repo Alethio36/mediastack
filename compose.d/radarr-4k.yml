@@ -13,10 +13,6 @@ services:
     image: lscr.io/linuxserver/radarr:latest
     container_name: ${RADARR_4K_NAME:-mediastack-radarr-4k}
     profiles: ["radarr-4k"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - PUID=${RADARR_4K_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -30,6 +26,7 @@ services:
       mediastack.managed: "true"
       mediastack.desc: "second Radarr just for 4K movies (own library + rules)"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "radarr-4k"
       mediastack.port: "7879"

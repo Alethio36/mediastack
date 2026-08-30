@@ -14,10 +14,6 @@ services:
     image: lscr.io/linuxserver/bazarr:latest
     container_name: ${BAZARR_NAME:-mediastack-bazarr}
     profiles: ["bazarr"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - PUID=${BAZARR_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -31,6 +27,7 @@ services:
       mediastack.managed: "true"
       mediastack.desc: "subtitle automation"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "bazarr"
       mediastack.port: "6767"

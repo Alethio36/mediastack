@@ -14,10 +14,6 @@ services:
     image: lscr.io/linuxserver/sonarr:latest
     container_name: ${SONARR_NAME:-mediastack-sonarr}
     profiles: ["sonarr"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - PUID=${SONARR_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -31,6 +27,7 @@ services:
       mediastack.managed: "true"
       mediastack.desc: "TV show automation"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "sonarr"
       mediastack.port: "8989"
