@@ -14,10 +14,6 @@ services:
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: ${PROWLARR_NAME:-mediastack-prowlarr}
     profiles: ["prowlarr"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - PUID=${PROWLARR_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -30,6 +26,7 @@ services:
       mediastack.managed: "true"
       mediastack.desc: "indexer manager feeding the arrs"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "prowlarr"
       mediastack.port: "9696"

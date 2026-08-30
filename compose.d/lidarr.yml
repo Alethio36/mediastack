@@ -14,10 +14,6 @@ services:
     image: lscr.io/linuxserver/lidarr:latest
     container_name: ${LIDARR_NAME:-mediastack-lidarr}
     profiles: ["lidarr"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy
     environment:
       - PUID=${LIDARR_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -31,6 +27,7 @@ services:
       mediastack.managed: "true"
       mediastack.desc: "music automation"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "lidarr"
       mediastack.port: "8686"
