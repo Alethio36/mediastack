@@ -14,10 +14,9 @@ services:
     image: lscr.io/linuxserver/qbittorrent:latest
     container_name: ${QBITTORRENT_NAME:-mediastack-qbittorrent}
     profiles: ["qbittorrent"]
-    network_mode: "service:gluetun"
-    depends_on:
-      gluetun:
-        condition: service_healthy   # leak guard: never start before tunnel is up
+    # VPN membership (network_mode + gluetun depends_on, or its own network +
+    # ports when out) is generated into local/vpn-overlay.yml by vpn_gen from
+    # the mediastack.vpn default below and any QBITTORRENT_VPN override in .env.
     environment:
       - PUID=${QBITTORRENT_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -32,6 +31,7 @@ services:
       mediastack.managed: "true"
       mediastack.desc: "torrent client (runs inside the VPN)"
       mediastack.vpn: "true"
+      mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "qbit"
       mediastack.port: "8085"

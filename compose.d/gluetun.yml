@@ -22,7 +22,7 @@ services:
     ports:
       # Every VPN'd service publishes its UI through gluetun.
       # Unused mappings (disabled profiles) are harmless.
-      - "${QBITTORRENT_PORT:-8085}:8085"   # qBittorrent
+      # qBittorrent port is generated into local/vpn-overlay.yml (vpn_gen)
       - "${SONARR_PORT:-8989}:8989"        # Sonarr
       - "${RADARR_PORT:-7878}:7878"        # Radarr
       - "${PROWLARR_PORT:-9696}:9696"      # Prowlarr
@@ -61,11 +61,7 @@ services:
       # routers for namespace-shared services: they have no IP of their
       # own, so their edge identity lives here with their port map
       traefik.enable: "true"
-      traefik.http.routers.qbittorrent.rule: "Host(`${QBITTORRENT_HOST:-qbit}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
-      traefik.http.routers.qbittorrent.entrypoints: "websecure"
-      traefik.http.routers.qbittorrent.tls: "true"
-      traefik.http.routers.qbittorrent.service: "qbittorrent"
-      traefik.http.services.qbittorrent.loadbalancer.server.port: "8085"
+      # qBittorrent routers are generated into local/vpn-overlay.yml (vpn_gen)
       traefik.http.routers.apprise.rule: "Host(`${APPRISE_HOST:-notify}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.apprise.entrypoints: "websecure"
       traefik.http.routers.apprise.tls: "true"

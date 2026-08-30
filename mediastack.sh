@@ -192,6 +192,9 @@ DC() { # compose wrapper: project dir pinned, pin-override applied when present
     # override file is passed explicitly (before pins — pins win)
     local files=(-f docker-compose.yml)
     [[ -e docker-compose.override.yml ]] && files+=(-f docker-compose.override.yml)
+    # generated VPN membership overlay (see vpn_gen); after the user override
+    # so materialised membership is authoritative, before pins so pins win
+    [[ -e local/vpn-overlay.yml ]] && files+=(-f local/vpn-overlay.yml)
     [[ -s "$PINS_FILE" ]] && files+=(-f "$PINS_FILE")
     sudo docker compose --project-directory "$SCRIPT_DIR" "${files[@]}" "$@"
 }
@@ -337,6 +340,9 @@ Check
   doctor         Full health/permission/resource audit with fix instructions.
   leak-test      Verify no VPN'd service can leak (--killswitch for the
                  disruptive drop-the-tunnel proof).
+  vpn [svc on|off]  Show or change which services run behind the VPN. No args
+                 lists membership; 'vpn <svc> on|off' flips it (torrent clients
+                 need --i-know to leave the tunnel). Apply with: up.
   fix-perms [s]  Repair config-dir ownership from the UID map.
 Other
   new-service N  Scaffold service N into docker-compose.override.yml
@@ -842,6 +848,7 @@ reconcile_disabled() {
 
 cmd_up()   {
     load_env; require_mounts; reconcile_disabled
+    vpn_gen   # materialise per-service VPN membership before compose renders
     traefik_ensure
     if ! DC up -d --remove-orphans; then
         warn "First start attempt failed — usually gluetun's health race after a recreate."
@@ -3540,6 +3547,7 @@ main() {
         unpin)        cmd_unpin "$@" ;;
         doctor)       cmd_doctor ;;
         leak-test)    cmd_leak_test "$@" ;;
+        vpn)          cmd_vpn "$@" ;;
         fix-perms)    cmd_fix_perms "$@" ;;
         add-mount)    cmd_add_mount ;;
         wire)         cmd_wire "$@" ;;
@@ -3883,6 +3891,133 @@ Enter accepts a generated password; see it later with: credentials"
         env_set TRAEFIK_DASH_USER "$duser"; env_set TRAEFIK_DASH_PASSWORD "$REPLY_VAL"
     fi
     traefik_gen
+}
+
+# --------------------------------------------------------- vpn membership --
+# VPN membership is operator-selectable per service. A service opts in by
+# carrying the label mediastack.vpntoggle="true"; only those are handled here,
+# so services still using static wiring are left untouched. Effective
+# membership = ${<STEM>_VPN} from .env if set, else the fragment's
+# mediastack.vpn default. vpn_gen materialises the wiring into
+# local/vpn-overlay.yml (loaded by DC) additively — no compose !reset needed —
+# and deterministically (sorted services), so identical inputs yield an
+# identical file and never trigger a spurious recreate. .env stays the single
+# source of truth for ports/hosts: the overlay emits ${VAR} placeholders, not
+# resolved values.
+VPN_TORRENT_CLIENTS="qbittorrent deluge transmission"
+
+vpn_rname() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik router name
+
+vpn_base_json() {   # base compose ONLY — never include the overlay (no self-reference)
+    sudo docker compose --project-directory "$SCRIPT_DIR" -f docker-compose.yml \
+        --profile "*" config --format json 2>/dev/null
+}
+
+vpn_effective() {   # vpn_effective <svc> <default> -> true|false
+    local v; v=$(env_get "$(uvar "$1")_VPN")
+    [[ -n "$v" ]] && { echo "$v"; return; }
+    echo "$2"
+}
+
+vpn_traefik_labels() {   # <indent> <rname> <sub> <cport> <stem>  (router/service only)
+    local i="$1" r="$2" sub="$3" cp="$4" stem="$5"
+    echo "${i}traefik.http.routers.${r}.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${TRAEFIK_DOMAIN:-unset.invalid}\`)\""
+    echo "${i}traefik.http.routers.${r}.entrypoints: \"websecure\""
+    echo "${i}traefik.http.routers.${r}.tls: \"true\""
+    echo "${i}traefik.http.routers.${r}.service: \"${r}\""
+    echo "${i}traefik.http.services.${r}.loadbalancer.server.port: \"${cp}\""
+}
+
+vpn_gen() {
+    install -d -m 755 local
+    local bj; bj=$(vpn_base_json) || die "vpn: could not read base compose config"
+    local svcs
+    svcs=$(jq -r '.services | to_entries[]
+        | select(.value.labels["mediastack.vpntoggle"]=="true") | .key' <<<"$bj" | sort)
+    # Build the three sections up front so empty ones can be omitted (an empty
+    # `ports:`/`labels:` mapping is invalid YAML) and traefik.enable is emitted
+    # exactly once per container (never duplicated as a mapping key).
+    local gports="" glabels="" stanzas="" s stem cport sub rname defv eff
+    for s in $svcs; do
+        stem=$(uvar "$s"); rname=$(vpn_rname "$s")
+        cport=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.port"] // ""' <<<"$bj")
+        sub=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.subdomain"] // ""' <<<"$bj")
+        defv=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpn"] // "false"' <<<"$bj")
+        [[ -n "$cport" ]] || die "vpn: $s carries no mediastack.port label"
+        [[ -n "$sub"   ]] || die "vpn: $s carries no mediastack.subdomain label"
+        eff=$(vpn_effective "$s" "$defv")
+        if [[ "$eff" == true ]]; then
+            gports+="      - \"\${${stem}_PORT:-${cport}}:${cport}\""$'\n'
+            glabels+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem")"$'\n'
+            stanzas+="  ${s}:"$'\n'"    network_mode: \"service:gluetun\""$'\n'
+            stanzas+="    depends_on:"$'\n'"      gluetun:"$'\n'"        condition: service_healthy"$'\n'
+            stanzas+="    labels:"$'\n'"      mediastack.vpn: \"true\""$'\n'
+        else
+            [[ " $VPN_TORRENT_CLIENTS " == *" $s "* ]] \
+                && warn "vpn: $s (torrent client) is OUTSIDE the VPN — its traffic exits on the host IP"
+            stanzas+="  ${s}:"$'\n'"    networks: [mediastack]"$'\n'
+            stanzas+="    ports:"$'\n'"      - \"\${${stem}_PORT:-${cport}}:${cport}\""$'\n'
+            stanzas+="    labels:"$'\n'"      mediastack.vpn: \"false\""$'\n'"      traefik.enable: \"true\""$'\n'
+            stanzas+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem")"$'\n'
+        fi
+    done
+    local tmp; tmp=$(mktemp)
+    {
+        echo "# GENERATED by mediastack vpn_gen — DO NOT EDIT."
+        echo "# Per-service VPN membership. Flip with: ./mediastack.sh vpn <svc> on|off"
+        echo "# Source of truth: <SVC>_VPN in .env (default = fragment mediastack.vpn)."
+        echo "services:"
+        # gluetun only appears when at least one service is VPN'd; traefik.enable
+        # is already set on the base gluetun service, so it is not repeated here.
+        if [[ -n "$gports" || -n "$glabels" ]]; then
+            echo "  gluetun:"
+            [[ -n "$gports"  ]] && { echo "    ports:";  printf '%s' "$gports"; }
+            [[ -n "$glabels" ]] && { echo "    labels:"; printf '%s' "$glabels"; }
+        fi
+        printf '%s' "$stanzas"
+    } > "$tmp"
+    if ! cmp -s "$tmp" local/vpn-overlay.yml 2>/dev/null; then
+        mv "$tmp" local/vpn-overlay.yml
+    else
+        rm -f "$tmp"
+    fi
+}
+
+vpn_list() {
+    local bj; bj=$(vpn_base_json) || die "vpn: could not read base compose config"
+    local any; any=$(jq -r '.services|to_entries[]
+        | select(.value.labels["mediastack.vpntoggle"]=="true")|.key' <<<"$bj" | sort)
+    [[ -n "$any" ]] || { info "No toggle-enabled services yet."; return; }
+    printf '%-16s %-9s %-9s %s\n' SERVICE DEFAULT EFFECTIVE OVERRIDE
+    local s defv ov
+    for s in $any; do
+        defv=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpn"] // "false"' <<<"$bj")
+        ov=$(env_get "$(uvar "$s")_VPN")
+        printf '%-16s %-9s %-9s %s\n' "$s" "$defv" "$(vpn_effective "$s" "$defv")" "${ov:-—}"
+    done
+}
+
+cmd_vpn() {
+    load_env
+    local svc="${1:-}" act="${2:-}" iknow=0 a
+    for a in "$@"; do [[ "$a" == --i-know ]] && iknow=1; done
+    [[ -z "$svc" ]] && { vpn_list; return; }
+    svc_exists "$svc" || die "vpn: no such service '$svc'"
+    [[ $(svc_label "$svc" mediastack.vpntoggle) == "true" ]] \
+        || die "vpn: '$svc' is not toggle-enabled (no mediastack.vpntoggle label — not yet migrated to the generated model)."
+    local stem; stem=$(uvar "$svc")
+    case "$act" in
+        on|true)   env_set "${stem}_VPN" true ;;
+        off|false)
+            if [[ " $VPN_TORRENT_CLIENTS " == *" $svc "* && $iknow -ne 1 ]]; then
+                die "vpn: refusing to move torrent client '$svc' OUT of the VPN — that leaks its traffic on the host IP.
+  If you really mean it: ./mediastack.sh vpn $svc off --i-know"
+            fi
+            env_set "${stem}_VPN" false ;;
+        *) die "usage: ./mediastack.sh vpn [<svc> on|off]" ;;
+    esac
+    vpn_gen
+    ok "vpn: $svc set $act — regenerated local/vpn-overlay.yml. Apply with: ./mediastack.sh up"
 }
 
 traefik_gen() {
