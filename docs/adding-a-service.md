@@ -22,7 +22,9 @@ backups and the update pipeline like any shipped service.
 | Label | Meaning |
 |---|---|
 | `mediastack.managed: "true"` | required on every service |
-| `mediastack.vpn: "true"` | must run inside gluetun (`network_mode: "service:gluetun"`, no own `ports:`) — leak-test enforces both |
+| `mediastack.vpn: "true"` | default VPN membership. On a **toggle-enabled** service this is only the default (override per deployment via `<SVC>_VPN` in `.env` / the `vpn` command); on a **static** service the fragment itself must set `network_mode: "service:gluetun"` with no own `ports:`. `leak-test` audits the live result either way |
+| `mediastack.vpntoggle: "true"` | opt into operator-selectable VPN membership: `vpn_gen` generates this service's network, host port and Traefik route from its metadata, so the fragment carries none of those directly. See docs/vpn-membership.md |
+| `mediastack.hostport: "false"` | (toggle services only) Traefik-only — publish no host port in either VPN state, for serving apps whose container port would collide on the host (e.g. `:80`). Default `"true"` |
 | `mediastack.config: "true"` | owns `${CONFIG_ROOT}/<service>` (provisioned, audited, backed up) |
 | `mediastack.cache: "true"` | owns `${CACHE_ROOT}/<service>` (provisioned, never backed up) |
 | `mediastack.internal: "true"` | reachable on the LAN only — status marks it instead of printing a URL |
