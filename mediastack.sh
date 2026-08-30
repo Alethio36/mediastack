@@ -3907,6 +3907,7 @@ Enter accepts a generated password; see it later with: credentials"
 VPN_TORRENT_CLIENTS="qbittorrent deluge transmission"
 
 vpn_rname() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik router name
+vpn_io()    { [[ "$1" == true ]] && echo "in" || echo "out"; }   # membership -> in/out
 
 vpn_base_json() {   # base compose ONLY — never include the overlay (no self-reference)
     sudo docker compose --project-directory "$SCRIPT_DIR" -f docker-compose.yml \
@@ -3992,12 +3993,17 @@ vpn_list() {
     local any; any=$(jq -r '.services|to_entries[]
         | select(.value.labels["mediastack.vpntoggle"]=="true")|.key' <<<"$bj" | sort)
     [[ -n "$any" ]] || { info "No toggle-enabled services yet."; return; }
-    printf '%-16s %-9s %-9s %s\n' SERVICE DEFAULT EFFECTIVE OVERRIDE
-    local s defv ov
+    echo "VPN membership — 'in' = the service runs inside the VPN tunnel, 'out' = it doesn't."
+    echo "  SHIPPED = the stack's default   CURRENT = what's applied after 'up'   YOUR SETTING = your"
+    echo "  override, or '—' when you're using the shipped default. Change it with:"
+    echo "    ./mediastack.sh vpn <service> on|off   then   ./mediastack.sh up"
+    printf '%-16s %-9s %-9s %s\n' SERVICE SHIPPED CURRENT "YOUR SETTING"
+    local s defv ov setting
     for s in $any; do
         defv=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpn"] // "false"' <<<"$bj")
         ov=$(env_get "$(uvar "$s")_VPN")
-        printf '%-16s %-9s %-9s %s\n' "$s" "$defv" "$(vpn_effective "$s" "$defv")" "${ov:-—}"
+        [[ -n "$ov" ]] && setting=$(vpn_io "$ov") || setting="—"
+        printf '%-16s %-9s %-9s %s\n' "$s" "$(vpn_io "$defv")" "$(vpn_io "$(vpn_effective "$s" "$defv")")" "$setting"
     done
 }
 

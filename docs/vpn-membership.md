@@ -28,11 +28,13 @@ The acquisition chain runs inside gluetun; the serving chain does not.
 ./mediastack.sh up                   # apply
 ```
 
-`vpn <service> on|off` writes `<SERVICE>_VPN=true|false` to `.env` (the source
-of truth) and regenerates the overlay immediately; `up` then recreates the
-affected containers. The listing has four columns: SERVICE, DEFAULT (the
-fragment's shipped value), EFFECTIVE (what is actually applied), and OVERRIDE
-(your `.env` value, or `—` when unset).
+`vpn <service> on|off` records your choice in `.env` — writing `<SERVICE>_VPN`
+only when it differs from the shipped default, and clearing it when it matches —
+then regenerates the overlay immediately; `up` recreates the affected
+containers. The listing shows, per service: **SHIPPED** (the stack default),
+**CURRENT** (what is applied after `up`), and **YOUR SETTING** (your override,
+or `—` when you are using the default). Values read `in` (inside the VPN
+tunnel) or `out`.
 
 ### Torrent-client guard
 
