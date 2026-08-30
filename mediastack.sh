@@ -931,18 +931,25 @@ cmd_status() {
     load_env; render
     if [[ -n "${1:-}" ]]; then status_one "$1"; return; fi
     hr "Mediastack status"
-    printf "%-14s %-5s %-4s %-9s %-10s %-12s %-8s %-9s %s\n" SERVICE PORT VPN STATE HEALTH VERSION PINNED UPTIME URL
-    local s cn pin vpn port
+    printf "%-14s %-5s %-5s %-9s %-10s %-12s %-8s %-9s %s\n" SERVICE PORT VPN STATE HEALTH VERSION PINNED UPTIME URL
+    local s cn pin vpn port rec bvpn
+    bvpn=$(vpn_base_json)   # base (pre-overlay) labels = recommended VPN settings
     for s in $(svc_managed); do
         svc_enabled "$s" || continue
         cn=$(svc_cname "$s")
         pin=no; [[ -s "$PINS_FILE" ]] && grep -q "^  $s:" "$PINS_FILE" && pin="${C_YLW}yes${C_RST}"
-        vpn=-; [[ $(svc_label "$s" mediastack.vpn) == "true" ]] && vpn=yes
+        vpn=off; [[ $(svc_label "$s" mediastack.vpn) == "true" ]] && vpn=on
+        # flag a toggle-enabled service that's been moved off its recommended setting
+        if [[ $(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpntoggle"]//""' <<<"$bvpn") == "true" ]]; then
+            rec=$(vpn_onoff "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpn"]//"false"' <<<"$bvpn")")
+            [[ "$vpn" == "$rec" ]] || vpn+="*"
+        fi
         port=$(svc_label "$s" mediastack.port); port=${port:--}
-        printf "%-14s %-5s %-4s %-9s %-10s %-12s %-8s %-9s %s\n" \
+        printf "%-14s %-5s %-5s %-9s %-10s %-12s %-8s %-9s %s\n" \
             "$s" "$port" "$vpn" "$(c_state "$cn")" "$(c_health "$cn")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")" "$(svc_url "$s")"
     done
     echo
+    info "VPN: on = via the tunnel, off = direct · * = changed from recommended · change: ./mediastack.sh vpn"
     local off="" p
     for p in $(svc_managed); do svc_enabled "$p" || off+="$p "; done
     [[ -n "$off" ]] && info "Available, not enabled: $off"
