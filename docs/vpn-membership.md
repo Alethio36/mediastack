@@ -29,12 +29,12 @@ The acquisition chain runs inside gluetun; the serving chain does not.
 ```
 
 `vpn <service> on|off` records your choice in `.env` — writing `<SERVICE>_VPN`
-only when it differs from the shipped default, and clearing it when it matches —
-then regenerates the overlay immediately; `up` recreates the affected
-containers. The listing shows, per service: **SHIPPED** (the stack default),
-**CURRENT** (what is applied after `up`), and **YOUR SETTING** (your override,
-or `—` when you are using the default). Values read `in` (inside the VPN
-tunnel) or `out`.
+only when it differs from the recommended setting, and clearing it when it
+matches — then regenerates the overlay immediately; `up` recreates the affected
+containers. The listing shows, per service, **VPN** (what it is set to now) and
+**RECOMMENDED** (the maintainer's suggested setting), each `on` (inside the VPN
+tunnel) or `off`; a service you have changed away from the recommendation is
+flagged in the row.
 
 ### Torrent-client guard
 
