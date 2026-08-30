@@ -1,30 +1,75 @@
 # VPN membership — moving services in or out
 
-Which services run inside the VPN is defined in the compose fragments, not
-asked by the wizard — it is a safety boundary, and `leak-test` audits it.
-Default: the acquisition chain (torrent clients, arrs, flaresolverr) is
-inside gluetun; the serving chain (Jellyfin, proxy, Seerr, search) is not.
-`status` shows a VPN column so you can see membership at a glance.
+Which services run inside the VPN is an operator choice, changed with the
+`vpn` command. No fragment editing and no compose overrides: membership is
+generated into `local/vpn-overlay.yml` and applied on the next `up`.
+`leak-test` audits the result and `status` shows a VPN column at a glance.
 
-To change it for your deployment, use `docker-compose.override.yml`
-(gitignored — survives upgrades). Example, moving sonarr OUT of the VPN:
+## Defaults
 
-```yaml
-# docker-compose.override.yml
-services:
-  sonarr:
-    network_mode: !reset null
-    networks: [mediastack]
-    ports:
-      - "8989:8989"
-    labels:
-      mediastack.vpn: "false"
+The acquisition chain runs inside gluetun; the serving chain does not.
+
+* **Inside (default):** qBittorrent, Deluge, Transmission, the arrs (Sonarr,
+  Sonarr-Anime, Radarr, Radarr-4K, Lidarr, Prowlarr, Bazarr), LazyLibrarian,
+  Apprise.
+* **Outside (default):** Audiobookshelf (toggleable — see below) and every
+  other serving/infra service.
+* **Pinned inside, not toggleable:** FlareSolverr and Recyclarr. Both are
+  reached by their consumers *inside* the namespace (Prowlarr → FlareSolverr;
+  Recyclarr → the arrs on `localhost`), so moving them out would break those
+  references. They are deliberately excluded from the toggle.
+
+## The command
+
+```
+./mediastack.sh vpn                  # list toggle-enabled services + membership
+./mediastack.sh vpn <service> on     # move it inside the VPN
+./mediastack.sh vpn <service> off    # move it outside
+./mediastack.sh up                   # apply
 ```
 
-and set `SONARR_PORT=18989` in `.env` so gluetun's (now unused) mapping
-frees host port 8989. Moving a service IN is the reverse: set
-`network_mode: "service:gluetun"`, `!reset` its `networks:` and `ports:`,
-label `mediastack.vpn: "true"`, add its port to gluetun's `ports:` in the
-override (lists merge), and add a `depends_on: gluetun:
-condition: service_healthy` leak guard. Re-run `leak-test` after either
-change — it validates the labels against the running topology.
+`vpn <service> on|off` writes `<SERVICE>_VPN=true|false` to `.env` (the source
+of truth) and regenerates the overlay immediately; `up` then recreates the
+affected containers. The listing has four columns: SERVICE, DEFAULT (the
+fragment's shipped value), EFFECTIVE (what is actually applied), and OVERRIDE
+(your `.env` value, or `—` when unset).
+
+### Torrent-client guard
+
+qBittorrent, Deluge and Transmission refuse to leave the VPN without an
+explicit acknowledgement — moving a torrent client out exposes its traffic on
+your real IP:
+
+```
+./mediastack.sh vpn deluge off             # refused
+./mediastack.sh vpn deluge off --i-know    # proceeds
+```
+
+## How it works
+
+Toggle-enabled services carry `mediastack.vpntoggle: "true"` and are wired by
+`vpn_gen`, not by hand. For each one it writes, into `local/vpn-overlay.yml`
+(loaded automatically by every stack command, gitignored):
+
+* **Inside:** `network_mode: "service:gluetun"` plus a gluetun health gate on
+  the service; its host port and Traefik router are published on gluetun,
+  which owns the shared namespace IP.
+* **Outside:** its own `networks: [mediastack]`, host port, and Traefik router
+  on the service itself.
+
+Because the wiring is generated, the fragment of a toggle service carries no
+`network_mode`, `networks`, `ports`, or Traefik router labels — only the
+metadata the generator reads: `mediastack.port`, `mediastack.subdomain`,
+`mediastack.vpn` (the default membership), and optionally
+`mediastack.hostport`.
+
+### Traefik-only services (`mediastack.hostport: "false"`)
+
+Serving apps whose container port would collide on the host — Audiobookshelf
+listens on `:80`, which Traefik owns — set `mediastack.hostport: "false"`.
+The generator then publishes no host port in either state; Traefik still
+reaches the service over the docker network. Acquisition apps omit the label
+(default `"true"`) and keep direct host access.
+
+Re-run `leak-test` after any change: it validates the live topology via
+`docker inspect`, not the labels, so it catches a service that failed to move.

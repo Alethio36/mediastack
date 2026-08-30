@@ -138,6 +138,7 @@ Check
 |---|---|
 | `doctor` | full health/permission/cert/backup audit — every failure states its fix |
 | `leak-test [--killswitch]` | prove no VPN'd service can leak (`--killswitch` = destructive proof) |
+| `vpn [svc on/off]` | show or change which services run behind the VPN (torrent clients need `--i-know` to leave) |
 | `fix-perms [svc]` | repair config ownership from the UID map |
 
 Other
@@ -169,8 +170,9 @@ script's own help is always authoritative.
 * **Downloads cannot leak.** VPN'd services run inside gluetun's network
   namespace, start only after the tunnel is verifiably up, qBittorrent's
   transfers are additionally bound to the tunnel interface itself (tun0),
-  and `leak-test` proves the chain. Membership is defined in the fragments, audited by the
-  tooling — see [docs/vpn-membership.md](docs/vpn-membership.md) to change it.
+  and `leak-test` proves the chain. Membership is operator-selectable with the
+  `vpn` command and audited by the tooling — see
+  [docs/vpn-membership.md](docs/vpn-membership.md).
 * **One wildcard certificate, nothing exposed.** HTTPS via Let's Encrypt
   DNS-01: the hostnames point at your LAN, no ports are forwarded, and a
   staging mode exists so testing never hits production rate limits
