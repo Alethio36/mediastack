@@ -17,6 +17,10 @@ services:
     image: ghcr.io/advplyr/audiobookshelf:latest
     container_name: ${AUDIOBOOKSHELF_NAME:-mediastack-audiobookshelf}
     profiles: ["audiobookshelf"]
+    # Network, host-port and route are generated into local/vpn-overlay.yml by
+    # vpn_gen. Traefik-only (mediastack.hostport=false — no host publish; :80
+    # would collide with Traefik). Defaults OUT of the VPN; toggle with:
+    #   ./mediastack.sh vpn audiobookshelf on
     environment:
       - PUID=${AUDIOBOOKSHELF_UID}
       - PGID=${MEDIA_GROUP_GID}
@@ -30,13 +34,10 @@ services:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
       mediastack.port: "80"
-      traefik.enable: "true"
-      traefik.http.routers.audiobookshelf.rule: "Host(`${AUDIOBOOKSHELF_HOST:-audiobooks}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
-      traefik.http.routers.audiobookshelf.entrypoints: "websecure"
-      traefik.http.routers.audiobookshelf.tls: "true"
-      traefik.http.services.audiobookshelf.loadbalancer.server.port: "80"
       mediastack.desc: "audiobook + podcast server with progress sync"
       mediastack.vpn: "false"
+      mediastack.vpntoggle: "true"
+      mediastack.hostport: "false"
       mediastack.config: "true"
       mediastack.cache: "true"
       mediastack.subdomain: "audiobooks"
@@ -46,6 +47,5 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
-    networks: [mediastack]
     logging: *logging
     restart: unless-stopped
