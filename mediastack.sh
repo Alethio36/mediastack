@@ -3907,7 +3907,7 @@ Enter accepts a generated password; see it later with: credentials"
 VPN_TORRENT_CLIENTS="qbittorrent deluge transmission"
 
 vpn_rname() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik router name
-vpn_io()    { [[ "$1" == true ]] && echo "in" || echo "out"; }   # membership -> in/out
+vpn_onoff() { [[ "$1" == true ]] && echo "on" || echo "off"; }   # membership -> on/off
 
 vpn_base_json() {   # base compose ONLY — never include the overlay (no self-reference)
     sudo docker compose --project-directory "$SCRIPT_DIR" -f docker-compose.yml \
@@ -3993,17 +3993,28 @@ vpn_list() {
     local any; any=$(jq -r '.services|to_entries[]
         | select(.value.labels["mediastack.vpntoggle"]=="true")|.key' <<<"$bj" | sort)
     [[ -n "$any" ]] || { info "No toggle-enabled services yet."; return; }
-    echo "VPN membership — 'in' = the service runs inside the VPN tunnel, 'out' = it doesn't."
-    echo "  SHIPPED = the stack's default   CURRENT = what's applied after 'up'   YOUR SETTING = your"
-    echo "  override, or '—' when you're using the shipped default. Change it with:"
-    echo "    ./mediastack.sh vpn <service> on|off   then   ./mediastack.sh up"
-    printf '%-16s %-9s %-9s %s\n' SERVICE SHIPPED CURRENT "YOUR SETTING"
-    local s defv ov setting
+    cat <<'EOP'
+VPN membership
+"on" routes a service's internet traffic through the VPN tunnel (hiding your
+real IP); "off" connects directly. It matters for downloaders and indexers
+(torrent trackers, Prowlarr) — so those run on by default. Apps that only
+serve your own media (Jellyfin, music, books) gain nothing and are fixed
+outside the VPN, so they aren't shown here.
+
+  VPN          what each service is set to now
+  RECOMMENDED  the maintainer's suggested setting
+
+Change one:  ./mediastack.sh vpn <service> on|off   then   ./mediastack.sh up
+Turning a torrent client off needs --i-know (it exposes your IP).
+
+EOP
+    printf '%-16s %-5s %-13s %s\n' SERVICE VPN RECOMMENDED ""
+    local s defv eff note
     for s in $any; do
         defv=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpn"] // "false"' <<<"$bj")
-        ov=$(env_get "$(uvar "$s")_VPN")
-        [[ -n "$ov" ]] && setting=$(vpn_io "$ov") || setting="—"
-        printf '%-16s %-9s %-9s %s\n' "$s" "$(vpn_io "$defv")" "$(vpn_io "$(vpn_effective "$s" "$defv")")" "$setting"
+        eff=$(vpn_effective "$s" "$defv")
+        [[ "$eff" != "$defv" ]] && note="changed from recommended" || note=""
+        printf '%-16s %-5s %-13s %s\n' "$s" "$(vpn_onoff "$eff")" "$(vpn_onoff "$defv")" "$note"
     done
 }
 
