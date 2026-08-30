@@ -4009,19 +4009,30 @@ cmd_vpn() {
     svc_exists "$svc" || die "vpn: no such service '$svc'"
     [[ $(svc_label "$svc" mediastack.vpntoggle) == "true" ]] \
         || die "vpn: '$svc' is not toggle-enabled (no mediastack.vpntoggle label — not yet migrated to the generated model)."
-    local stem; stem=$(uvar "$svc")
+    local stem target; stem=$(uvar "$svc")
     case "$act" in
-        on|true)   env_set "${stem}_VPN" true ;;
+        on|true)   target=true ;;
         off|false)
             if [[ " $VPN_TORRENT_CLIENTS " == *" $svc "* && $iknow -ne 1 ]]; then
                 die "vpn: refusing to move torrent client '$svc' OUT of the VPN — that leaks its traffic on the host IP.
   If you really mean it: ./mediastack.sh vpn $svc off --i-know"
             fi
-            env_set "${stem}_VPN" false ;;
+            target=false ;;
         *) die "usage: ./mediastack.sh vpn [<svc> on|off]" ;;
     esac
+    # Store an override only when it differs from the shipped default; when it
+    # matches, clear any stale override so `vpn` shows OVERRIDE=— (no redundant
+    # .env line). Read the default from the base fragment, not the rendered
+    # config — the overlay reports the effective value, not the default.
+    local default how
+    default=$(vpn_base_json | jq -r --arg s "$svc" '.services[$s].labels["mediastack.vpn"] // "false"')
+    if [[ "$target" == "$default" ]]; then
+        env_del "${stem}_VPN"; how="matches default"
+    else
+        env_set "${stem}_VPN" "$target"; how="override"
+    fi
     vpn_gen
-    ok "vpn: $svc set $act — regenerated local/vpn-overlay.yml. Apply with: ./mediastack.sh up"
+    ok "vpn: $svc $act ($how) — regenerated local/vpn-overlay.yml. Apply with: ./mediastack.sh up"
 }
 
 traefik_gen() {
