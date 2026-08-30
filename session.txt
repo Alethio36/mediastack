@@ -1,86 +1,121 @@
 MEDIASTACK — SESSION HANDOFF
-Date: 2026-08-22
+Date: 2026-08-30
 Repo: github.com/Alethio36/mediastack   Git authority: Harkon1   Deploy/verify: anzac3   Prod: anzac2 (old stack, untouched)
-Schema: SCRIPT_SCHEMA=12   Harness: /tmp/h4 (142 tests passing)
-Sandbox HEAD (last commit): 2db0a61 docs(readme): wire scope row was missing lazylibrarian
-Harkon1 = origin, confirmed congruent this session (clean tree, matching message sequence).
+Schema: SCRIPT_SCHEMA=12 (unchanged — feature used labels + optional env vars, no migration)
+Sandbox HEAD (last commit message): feat(status): show gluetun as 'self'; document the status VPN view
+Harkon1 = origin (git am replays → origin hashes differ from sandbox; message sequence is the congruity proof).
+Compose on anzac3: v5.5.0.
 
 
 == WHAT WAS BEING WORKED ON ==
-App-expansion wave: new media services + polish, all shipped/verified live on anzac3.
-Delivery pipeline unchanged: sandbox commit -> format-patch + sha256 -> Nick verifies -> git am -> push -> anzac3 upgrade.
+Two things, both shipped and verified live on anzac3:
+1. VPN membership made OPERATOR-SELECTABLE per service (the session's main work — 10 commits).
+2. docs/candidates.md reorganised + two new entries researched (CWA, YouTube archiving).
+Delivery pipeline unchanged: sandbox commit -> format-patch + sha256 -> Nick verifies -> git am -> push -> anzac3 upgrade -> up.
 
 
-== DONE (shipped, wired, verified live on anzac3) ==
-New services (each its own fragment, stack UID, traefik router, config on restore points):
-  - watchstate  (feat1) play-state sync/backup, GUID-matched. ONE instance rule. router watch.
-  - navidrome   (feat3) music server over lidarr's /data/media/music (read-only). router music.
-  - audiobookshelf (feat4) audiobooks+podcasts. router audiobooks.
-  - kavita      (feat4) ebooks/comics/manga. router books.
-  - lazylibrarian (feat5) book acquisition (Readarr replacement), VPN namespace. router books-dl.
-      * first-class Prowlarr app (indexers sync like arrs), qbit download client, /data/media/{books,audiobooks}
-      * MANUAL first-run by design: open UI -> Config>Interface -> set login -> Save -> restart -> re-run wire
-Features/fixes this session:
-  - jellyfin Webhook plugin now installed by wire (feat2) — WatchState webhooks + hub both need it
-  - jellyfin server name set by wire (was container-ID hash)
-  - set-credentials: added pihole+traefik; 'all' = one password across whole stack (Wizarr admin excluded)
-  - provisioner: media/ tree grew audiobooks/podcasts/comics/manga; torrent/ stays lean
-  - upgrade closing line now path-aware (compose->up / script->nothing / docs->nothing)
-  - kavita healthcheck: image ships neither wget nor nc — uses curl /api/health (fix15/16)
-  - lazylibrarian readiness+healthcheck accept /->/ home 303 (fix17)
-  - docs sweep + candidates.md watchlist
+== DONE — VPN TOGGLE (shipped, wired, verified live) ==
+Which services run inside gluetun is now a runtime operator choice, not hardwired.
 
-Serving now complete: video(jellyfin) music(navidrome) audiobooks/podcasts(audiobookshelf)
-  ebooks/comics/manga(kavita). Acquisition: arrs + lazylibrarian, all VPN'd, Prowlarr-fed.
+  Model: a service opts in with label mediastack.vpntoggle="true". vpn_gen reads its metadata and
+  writes local/vpn-overlay.yml (gitignored, loaded by DC after the user override, before pins). The
+  overlay is ADDITIVE (no compose !reset), deterministic (sorted), regenerated on `up` and on any `vpn`
+  change. Toggle fragments therefore carry NO network_mode / networks / ports / traefik-router labels —
+  only metadata: mediastack.{port, subdomain, vpn(=default), hostport(optional)}.
 
-WatchState state on anzac3: 13 anzac2 household identities + main provisioned via Single Backend Mode
-  (temporarily deleted anzac3 backend to expose the switch). anzac2 backend = Import on / Export off.
-  Hourly import task live. Per-user prod-state backups banked. Beta jellyfin export pending real libraries.
+  Override: <SVC>_VPN=true|false in .env is the per-deployment source of truth. `vpn <svc> on|off`
+  writes it ONLY when it differs from the fragment default, and CLEARS it (env_del) when it matches —
+  so a redundant override self-heals and the listing shows no stray entry.
+
+  Defaults (recommended): IN = qbittorrent, deluge, transmission, sonarr, sonarr-anime, radarr,
+  radarr-4k, lidarr, prowlarr, bazarr, lazylibrarian, apprise. OUT = audiobookshelf + all serving/infra.
+
+  Guardrail: torrent clients (qbittorrent, deluge, transmission) refuse `vpn <svc> off` without --i-know.
+
+  Pinned STATIC, never toggleable (moving them out breaks their consumer):
+    - flaresolverr — Prowlarr reaches it inside the namespace (localhost). Static network_mode; the sole
+      remaining per-service entry in gluetun.yml (its port + the 6881 BT ports).
+    - recyclarr    — one-shot trash-sync tool, unmanaged (no mediastack.managed), reaches the arrs on
+      localhost; VPN'd by fragment, excluded from audits by design.
+
+  Option A applied: deluge + transmission GAINED real Traefik routes (were port-only before) — WebUIs
+  now reachable like qBittorrent's.
+
+  hostport label: mediastack.hostport="false" => traefik-only, no host port published in either state
+  (for serving apps whose container port collides on the host — audiobookshelf is :80 vs Traefik).
+  Default "true" preserves direct host access for the acquisition apps. audiobookshelf is the first
+  serving-side toggle service (default OUT; only egress is public podcast feeds, so VPN optional).
+
+  Two views (intentionally redundant — Nick's call, both informational):
+    - ./mediastack.sh vpn         preamble + SERVICE / VPN / RECOMMENDED, on/off, flags changed rows.
+    - ./mediastack.sh status      VPN column = on/off, `self` for gluetun, `*` = changed-from-recommended,
+      plus a footnote legend.
+
+  Verified live on anzac3 across every wave: leak-test green in both directions, guardrail refuses,
+  audiobookshelf toggles IN with NO :80 host collision and keeps resolving, deluge/transmission routes
+  return 200/301. NOTE: vpn_gen has NO /tmp/h4 harness coverage — proven via ad-hoc emit-tests + anzac3.
+
+  Audit done this session: no OTHER non-VPN service needs the tunnel. Serving apps make only benign
+  metadata calls or serve local media; audiobookshelf (podcasts) added as the one optional lever.
+
+Commit sequence (messages; origin hashes differ):
+  feat(vpn): operator-selectable per-service VPN membership (engine + qbit)   [wave 1]
+  feat(vpn): migrate the arrs to generated VPN membership                     [wave 2]
+  feat(vpn): migrate apprise/lazylibrarian/deluge/transmission               [wave 3]
+  docs(vpn): document the vpn command, workflow, and label contract
+  feat(vpn): make audiobookshelf toggle-enabled (traefik-only); add hostport opt-out
+  fix(vpn): clear <SVC>_VPN override when it matches the shipped default
+  feat(vpn): plain-English vpn listing — preamble + VPN/RECOMMENDED columns
+  feat(status): show VPN membership as on/off with a changed-from-recommended flag
+  feat(status): show gluetun as 'self'; document the status VPN view
 
 
-== DEFERRED (parked in docs/candidates.md with reasoning + revisit triggers) ==
-  - ROMM      (Nick chose defer) first DB-backed service (app+MariaDB+Valkey, IGDB key).
-              3 options recorded: (a) full DB-aware backup, (b) contained self-dump [LEANING], (c) defer [chosen].
-  - Kapowarr  scrapes GetComics, NOT Prowlarr-integrated, needs ComicVine key. Doesn't fit shared-indexer model.
-  - Bindery   young, Usenet-first vs this torrent stack.
-  - Komga     Kavita chosen for breadth; Komga's API edge only matters for scripting.
+== DONE — CANDIDATES.MD ==
+Reorganised by domain with an at-a-glance table; existing ROMM/Kapowarr/Bindery/Komga preserved. Added:
+  - Calibre-Web-Automated (Books) — mgmt + e-reader delivery layer over a Calibre library. Health
+    excellent. NOT a ROMM-style DB problem (SQLite only). Cost = forks the books tree onto metadata.db;
+    Kavita demotes to reader; wire LazyLibrarian -> CWA ingest; never add its downloader companion.
+    Verdict: ship-worthy, radar not roadmap.
+  - YouTube archiving (Video) — Pinchflat [PICK] (single container, SQLite, NFO -> Jellyfin native),
+    alts TubeArchivist (heavy: ES+Redis) / ytdl-sub (no UI) / TubeSync. Two forced caveats: must NOT go
+    through gluetun (datacenter/VPN IPs get bot-flagged harder) and can't be tag-pinned (bundled yt-dlp
+    goes stale -> breakage). Adversarial upstream (PO tokens / bot detection).
 
 
-== NEXT STEPS (in priority order) ==
-1. MIGRATION anzac2 -> anzac3 — BLOCKED on Nick's decision. All discovery banked:
-     - old compose + inventory captured. UID map already matches. Arr root folders already /data/media/{tv,movies,music} (ZERO remap).
-     - qbit needs /torrent -> /data/torrent remap (transitional bind + Set-Location UI pass) for mid-flight downloads.
-     - jellyfin lsio->official DB relocation in docs/migration-existing.md; plugins ride config rsync (Webhook already installed on anzac2).
-     - WatchState bridges watch state so new jellyfin uses clean /data/media/* paths (no path preservation needed).
-     - DECISION PENDING: beta isolation. 5 options presented; recommendation = subtree beta now + time-sliced rehearsal, optional music-slice graduation.
-     - Still need from Nick: `qm config <anzac2-vmid>` + beta-isolation pick.
-2. PRE-GO-LIVE checklist: BACKUP_ROOT->NAS via add-mount; ACME_ENV=production + up (check subdomain collisions); TRAEFIK_DOMAIN final.
-3. DISCORD CHANNEL SPLIT (Nick's GUI task): seerr native Discord agent -> household channel (posters/embeds);
-     hub streams -> separate ops channel. Native agents & hub must feed DIFFERENT channels to avoid dupes.
-4. LazyLibrarian book indexers: 1337x synced (general tracker, low book hit-rate). Add a book-specific
-     indexer (e.g. MyAnonaMouse) in Prowlarr for real book coverage. Content task, not wire.
+== NEXT STEPS (priority order) ==
+1. anzac2 -> anzac3 MIGRATION — STILL BLOCKED on Nick (unchanged; this session was a VPN detour).
+   Needs: beta-isolation decision + `qm config <anzac2-vmid>`. All discovery banked in prior handoff +
+   docs/migration-existing.md. This is the real next priority.
+2. (optional) Add vpn_gen coverage to the harness — it's the one recent feature with no h4 tests.
+3. (optional) Ship Pinchflat when appetite exists (lightest candidate; mind the two caveats).
 
 
 == OPEN QUESTIONS / KNOWN GAPS ==
-  - LazyLibrarian NOT wired to apprise hub: it has NO Apprise notifier (the "Apprise library installed" log line
-    is a bundled dep for other notifiers). Only Slack/Telegram/Pushover/Prowl/email/custom_notify. Left unwired
-    (documented gap) rather than build a fragile script bridge. The one stack service without native hub support.
-  - Version column cosmetic bug (low priority): kavita shows base-OS "24.04" not app version — c_version parser
-    reads wrong label for that image.
+  - vpn_gen: no automated harness; verified by emit-tests + anzac3 only.
+  - gluetun status VPN cell shows `self` (cosmetic, resolved this session).
+  - The vpn list and status VPN view overlap by design (kept redundant, both informational).
+  - Pre-existing (not VPN-related): kavita version column shows base-OS "24.04"; lazylibrarian has no
+    native Apprise hub notifier (documented gap).
 
 
 == KEY FILE PATHS ==
-  compose.d/{watchstate,navidrome,audiobookshelf,kavita,lazylibrarian}.yml — new fragments
-  mediastack.sh — wire_lazylibrarian, jf_plugin_webhook, jf_server_name, sc_rotate_* (arr/qbit/jellyfin/pihole/traefik), svc_url
-  docs/candidates.md — the deferred-services watchlist (ROMM/Kapowarr/Bindery/Komga)
-  docs/migration-existing.md — adoption/migration runbook (lsio->official jellyfin, etc.)
+  mediastack.sh — vpn_gen, cmd_vpn, vpn_list, vpn_onoff, vpn_effective, vpn_rname, vpn_base_json,
+                  vpn_traefik_labels; VPN_TORRENT_CLIENTS guard; DC() loads local/vpn-overlay.yml;
+                  cmd_status VPN column (on/off/self/*).
+  compose.d/*.yml — 13 toggle fragments neutralised (vpntoggle label, no static network wiring);
+                  gluetun.yml static per-service block emptied except flaresolverr + 6881.
+  local/vpn-overlay.yml — GENERATED, gitignored (do not edit).
+  docs/vpn-membership.md — the vpn command, workflow, defaults, pinned exceptions, hostport, both views.
+  docs/adding-a-service.md — label contract incl. mediastack.vpntoggle / mediastack.hostport.
+  docs/candidates.md — deferred-services watchlist (CWA, YouTube archiving, ROMM/Kapowarr/Bindery/Komga).
 
 
 == STANDING RULES (still active) ==
   - Verify upstream against the DEPLOYED image tag, not master.
   - Never head-truncate contract files. Every patch-script replace asserts anchor is unique.
-  - Probe-everything-at-once before choosing a healthcheck tool (nc/wget/curl lesson — burned 2 patches assuming nc).
+  - Probe-everything-at-once before choosing a healthcheck tool (nc/wget/curl lesson).
   - Permissive healthchecks for SPA/redirect-fronted apps (accept 2xx/3xx).
-  - anzac3 is the truth oracle; mocks prove code/mock agreement only.
+  - anzac3 is the truth oracle; mocks/emit-tests prove code agreement only.
   - Nick's long pastes auto-convert to EMPTY attachments — ask for trimmed inline text.
   - Delivery: never chain rm after git am; double-apply guard via git log before apply blocks.
+  - YouTube archiving, if ever added, must NOT ride gluetun and can't be reproducibly tag-pinned.
