@@ -3854,12 +3854,12 @@ cmd_trash_sync() {
     hr "trash-sync: recyclarr"
     # keep the pinned :8 tag current (patch releases only — a major bump is
     # a schema migration and stays a deliberate, manual tag change)
-    sudo docker compose pull -q recyclarr 2>/dev/null \
+    DC pull -q recyclarr 2>/dev/null \
         && info "recyclarr image: pinned tag up to date" \
         || warn "recyclarr image pull failed (registry unreachable?) — syncing with the local image"
     local slog rc summary
     slog=$(mktemp)
-    sudo docker compose run --rm recyclarr sync 2>&1 | tee "$slog"
+    DC run --rm --no-deps recyclarr sync 2>&1 | tee "$slog"
     rc=${PIPESTATUS[0]}
     summary=$(trash_summarize "$slog")
     sudo install -m 644 "$slog" cache/trash-sync.log; rm -f "$slog"
