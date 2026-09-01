@@ -79,3 +79,15 @@ reaches the service over the docker network. Acquisition apps omit the label
 
 Re-run `leak-test` after any change: it validates the live topology via
 `docker inspect`, not the labels, so it catches a service that failed to move.
+
+### The update pipeline guards the attachment
+
+Recreating gluetun gives it a new container ID, and compose does **not**
+recreate `network_mode` dependents whose own config is unchanged — they stay
+joined to the dead namespace and silently lose egress (health checks keep
+passing; the apps run fine offline). `update` therefore verifies, after
+applying, that every rendered `service:gluetun` dependent is joined to the
+*live* gluetun by full container ID. Any that aren't are force-recreated in
+the same run; if a dependent still isn't joined afterwards, the update fails
+loudly and notifies. Stopped containers are left alone — they are caught by
+`doctor`/`leak-test` when started.
