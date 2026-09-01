@@ -12,6 +12,12 @@ services:
     profiles: ["recyclarr"]
     network_mode: "service:gluetun"
     user: "${RECYCLARR_UID:-13020}:${MEDIA_GROUP_GID:-13000}"
+    # depends_on is retained as belt-and-braces: trash-sync invokes recyclarr
+    # with `run --no-deps` (so this does NOT trigger a gluetun recreate), and
+    # vpn_reattach_guard covers drift on every other path. It is therefore
+    # inert in the normal flow, kept only so a hand-run `compose run recyclarr`
+    # (without --no-deps) still refuses to start against a down/absent gluetun
+    # rather than launching detached. Do not rely on it for attachment.
     depends_on:
       gluetun:
         condition: service_healthy
