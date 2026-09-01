@@ -125,3 +125,18 @@ no borrower is ever orphaned in the first place — prevention, with no repair
 window. `vpn_reattach_guard` still runs afterward as the catch-all for drift
 that arrives by any other route (out-of-band `docker compose`, reboots,
 manual container ops); the cascade only covers the update path's own recreate.
+
+### doctor permissions: writability decides, ownership is tiered
+
+doctor's config-permission audit asks two separate questions and no longer
+conflates them. The definitive one — *can the app write its config?* — is
+probed live inside the container at its real mount path (not assumed to be
+`/config`; kavita, for instance, uses `/kavita/config`), and decides pass/fail.
+Ownership drift is reported separately and tiered: mis-owned files in actual
+config are a FAIL (`fix-perms` fixes them); mis-owned files confined to
+regenerable paths (`cache`, `logs`, `backups`, `tmp`) are a WARN, because
+images that ignore PUID and run as root write those as root through normal
+background activity (update checks, log rotation, nightly backups) and it does
+not threaten config integrity. Backup *health* (validity, recency) is audited
+separately in the vpn+backups section, so treating backup-file *ownership* as
+cosmetic here does not hide a broken backup.
