@@ -114,3 +114,14 @@ that drifted, and fails loudly (with an ops notification) if a re-pin does not
 take. A ghost gluetun therefore cannot survive a normal `up` or `update`:
 either every dependent is joined to the live tunnel, or the command stops and
 says why. Stopped dependents are left to `doctor`/`leak-test` on next start.
+
+### Update cascades the gluetun group
+
+When an update recreates gluetun (new image → new container ID), its
+`service:gluetun` borrowers would be left on the dead ID unless they are
+recreated too. `update` therefore detects gluetun in the target set and
+force-recreates gluetun together with its enabled borrowers as one group, so
+no borrower is ever orphaned in the first place — prevention, with no repair
+window. `vpn_reattach_guard` still runs afterward as the catch-all for drift
+that arrives by any other route (out-of-band `docker compose`, reboots,
+manual container ops); the cascade only covers the update path's own recreate.

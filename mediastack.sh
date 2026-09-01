@@ -1247,7 +1247,34 @@ cmd_update() {
     for s in "${targets[@]}"; do before[$s]=$(c_version "$(svc_cname "$s")"); done
     DC pull "${targets[@]}"
     hr "Applying"
-    DC up -d --remove-orphans "${targets[@]}"
+    # Cascade: recreating gluetun gives it a new container ID, and compose does
+    # NOT recreate its network_mode:service:gluetun borrowers when only their
+    # namespace-host changed — they would be left on the dead ID (the ghost).
+    # So when gluetun is in this update's target set, expand the recreate to
+    # its enabled borrowers and --force-recreate the group together, the way a
+    # dependency-aware updater would. Prevention: the borrowers never come up
+    # stale, so there is no repair window. vpn_reattach_guard still runs after
+    # as the catch-all for drift arriving via any OTHER path (out-of-band
+    # compose, reboots) — this only closes the update path's own recreate.
+    if printf '%s\n' "${targets[@]}" | grep -qx gluetun; then
+        # gluetun is in this run: recreate it AND its borrowers as one
+        # force-recreated group so no borrower is left on the old ID. Other
+        # targets apply normally in the same call — only the VPN group is
+        # forced, to avoid needlessly recreating unrelated services.
+        render
+        local grp=(gluetun) b
+        while IFS= read -r b; do
+            [[ -z "$b" ]] && continue
+            svc_enabled "$b" && grp+=("$b")
+        done < <(jq -r '.services | to_entries[]
+            | select((.value.network_mode // "") == "service:gluetun") | .key' \
+            <<<"$RENDERED_JSON")
+        info "gluetun is updating — recreating its ${#grp[@]}-member VPN group together so none is orphaned"
+        DC up -d --remove-orphans --force-recreate "${grp[@]}"
+        DC up -d --remove-orphans "${targets[@]}"
+    else
+        DC up -d --remove-orphans "${targets[@]}"
+    fi
     sudo docker image prune -f >/dev/null
 
     vpn_reattach_guard
