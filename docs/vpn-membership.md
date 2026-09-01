@@ -101,3 +101,16 @@ and pins) and with `--no-deps`, so it *joins* the already-healthy gluetun
 rather than recreating it. A bare `docker compose run recyclarr` renders a
 different config, treats gluetun as drifted, and recreates it mid-sync —
 tearing down the namespace every VPN'd service is joined to.
+
+### Fail-closed: the reattach guard
+
+`network_mode: service:gluetun` is fail-*open* at recreate time — a dependent
+recreated while gluetun has a new container ID lands nowhere useful and, worst
+case, on a bridge with real egress. The stack closes this with a single guard,
+`vpn_reattach_guard`, run at the end of both `up` and `update`. It enumerates
+every `service:gluetun` dependent from the rendered config, checks each running
+one's live `NetworkMode` against gluetun's current full ID, force-recreates any
+that drifted, and fails loudly (with an ops notification) if a re-pin does not
+take. A ghost gluetun therefore cannot survive a normal `up` or `update`:
+either every dependent is joined to the live tunnel, or the command stops and
+says why. Stopped dependents are left to `doctor`/`leak-test` on next start.
