@@ -1189,6 +1189,30 @@ jellyfin_sessions_active() {
     (( n > 0 ))
 }
 
+# `DC up` during an update, with the health verdict delegated to the script's
+# own health gate. Compose's depends_on: service_healthy gating fails `up`
+# (non-zero, fatal under set -e) the moment a service is briefly unhealthy on
+# recreate — e.g. a new image mid first-run migration — aborting the update
+# before vpn_reattach_guard and the tolerant 300s health gate ever run. We
+# therefore treat ONLY a health-gate abort as non-fatal and let the gate
+# adjudicate; every other up failure (broken config, image pull, etc.) still
+# dies loudly with compose's message. Never swallow a non-health failure.
+apply_up() {
+    local rerr rc
+    rerr=$(mktemp)
+    if DC up -d "$@" 2>"$rerr"; then
+        cat "$rerr" >&2; rm -f "$rerr"; return 0
+    fi
+    rc=$?
+    cat "$rerr" >&2   # always surface compose's output
+    if grep -qE 'dependency failed to start|is unhealthy|health' "$rerr"; then
+        warn "compose aborted the apply on a transient health check — deferring the verdict to the health gate below"
+        rm -f "$rerr"; return 0
+    fi
+    rm -f "$rerr"
+    die "update: 'up' failed for a non-health reason (rc=$rc) — see compose's message above. Nothing further was applied."
+}
+
 cmd_update() {
     load_env; require_mounts
     local one="" to_tag="" dry=0 now=0 auto=0
@@ -1275,10 +1299,10 @@ cmd_update() {
             | select((.value.network_mode // "") == "service:gluetun") | .key' \
             <<<"$RENDERED_JSON")
         info "gluetun is updating — recreating its ${#grp[@]}-member VPN group together so none is orphaned"
-        DC up -d --remove-orphans --force-recreate "${grp[@]}"
-        DC up -d --remove-orphans "${targets[@]}"
+        apply_up --remove-orphans --force-recreate "${grp[@]}"
+        apply_up --remove-orphans "${targets[@]}"
     else
-        DC up -d --remove-orphans "${targets[@]}"
+        apply_up --remove-orphans "${targets[@]}"
     fi
     sudo docker image prune -f >/dev/null
 
