@@ -1207,6 +1207,44 @@ cmd_update() {
     DC up -d --remove-orphans "${targets[@]}"
     sudo docker image prune -f >/dev/null
 
+    # ── gluetun attachment invariant ────────────────────────────────────
+    # `up` without --force-recreate does NOT recreate network_mode
+    # dependents when gluetun itself is recreated (new image => new
+    # container ID): they stay joined to the dead namespace and lose
+    # egress silently — health stays green because the app runs fine
+    # offline. Membership truth is the rendered config (the overlay
+    # encodes effective state incl. <SVC>_VPN overrides), join truth is
+    # NetworkMode against gluetun's full ID (same proof leak-test uses).
+    render
+    local gid vd nm vdeps=() stale=()
+    mapfile -t vdeps < <(jq -r '.services | to_entries[]
+        | select((.value.network_mode // "") == "service:gluetun") | .key' \
+        <<<"$RENDERED_JSON" | sort)
+    if (( ${#vdeps[@]} )); then
+        gid=$(sudo docker inspect --format '{{.Id}}' "$(svc_cname gluetun)" 2>/dev/null | tr -d '\n')
+        [[ -n "$gid" ]] || die "update: cannot resolve the live gluetun container — VPN attachment unverifiable. Inspect gluetun, then re-run."
+        for vd in "${vdeps[@]}"; do
+            [[ "$(c_state "$(svc_cname "$vd")")" == running ]] || continue
+            nm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$(svc_cname "$vd")" | tr -d '\n')
+            [[ "$nm" == "container:$gid" ]] || stale+=("$vd")
+        done
+        if (( ${#stale[@]} )); then
+            warn "gluetun was recreated — dependents still joined to the old namespace: ${stale[*]}"
+            info "re-pinning them onto the live gluetun..."
+            DC up -d --force-recreate --no-deps "${stale[@]}"
+            for vd in "${stale[@]}"; do
+                nm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$(svc_cname "$vd")" 2>/dev/null | tr -d '\n')
+                [[ "$nm" == "container:$gid" ]] && continue
+                notify ops "Mediastack update FAILED" "VPN dependents detached from gluetun and re-pin FAILED: **${stale[*]}**\nFix now: \`./mediastack.sh up\` then \`./mediastack.sh leak-test\`" failure
+                die "update: $vd is still not joined to the live gluetun after recreate — VPN egress is broken. Fix this before anything else."
+            done
+            ok "re-pinned ${#stale[@]} dependent(s) onto the live gluetun"
+        fi
+        ok "VPN attachment verified: ${#vdeps[@]} dependent(s) on the live gluetun"
+    else
+        warn "no service:gluetun dependents in the rendered config — attachment check skipped"
+    fi
+
     hr "Health gate"
     local deadline=$(( $(date +%s) + 300 )) bad=()
     for s in "${targets[@]}"; do
