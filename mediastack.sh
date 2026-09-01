@@ -1428,33 +1428,57 @@ cmd_doctor() {
     fi
 
     hr "doctor: permissions"
-    local croot uid v bad
-    croot=$(env_get CONFIG_ROOT)
+    # Two independent questions, deliberately not conflated:
+    #   1. Can the app write its own config? (the true invariant — probed live)
+    #   2. Is anything mis-owned, and does it matter? (reported, tiered)
+    # Ownership drift confined to regenerable paths (cache/logs/backups) is
+    # expected for images that ignore PUID and run as root — their background
+    # tasks (update checks, log rotation) write those files as root. That is a
+    # WARN, not a FAIL. Drift in actual config files is a FAIL. The writable
+    # probe decides real health regardless, and resolves the container's true
+    # mount path (which is not always /config — e.g. kavita uses /kavita/config).
+    local croot gid v uid s
+    croot=$(env_get CONFIG_ROOT); gid=$(env_get MEDIA_GROUP_GID)
+    # path segments whose ownership is cosmetic (regenerable, non-config)
+    local ephemeral_re='/(cache|cache-long|logs?|te?mp|[Bb]ackups?)(/|$)'
     for s in $(svc_managed); do
         [[ $(svc_label "$s" mediastack.config) == "true" ]] || continue
         v="$(uvar "$s")_UID"; uid=$(env_get "$v"); [[ -n "$uid" && -d "$croot/$s" ]] || continue
-        bad=$(sudo find "$croot/$s" \( -not -user "$uid" -o -not -group "$(env_get MEDIA_GROUP_GID)" \) 2>/dev/null | head -3 || true)
-        if [[ -n "$bad" ]]; then
-            d_fail "$s: files not owned $uid:mediacenter" "the app cannot write its own config" "./mediastack.sh fix-perms $s"
-        else
-            # Probe from INSIDE the container: bind mounts don't traverse the
-            # host path, so host-side probes false-alarm on 0700 parent dirs.
-            local cn dest out rc
-            cn=$(svc_cname "$s")
-            if [[ $(c_state "$cn") == running ]]; then
-                dest=$(sudo docker inspect "$cn" 2>/dev/null \
-                       | jq -r --arg src "$croot/$s" '.[0].Mounts[]? | select(.Source==$src) | .Destination' | head -1)
-                if [[ -n "$dest" ]]; then
-                    out=$(sudo docker exec "$cn" test -w "$dest" 2>&1) && rc=0 || rc=$?
-                    if (( rc == 0 )); then ok "$s config writable from inside the container"
-                    elif grep -q "executable file not found" <<<"$out"; then
-                        info "$s: image has no probe tooling — ownership check only"
-                    else
-                        d_fail "$s cannot write $dest from inside its container" "the app cannot persist settings" "./mediastack.sh fix-perms $s && ./mediastack.sh logs $s"
-                    fi
-                else info "$s: config not bind-mounted in running container — skipped"; fi
-            else ok "$s config ownership (write probe skipped: not running)"; fi
+
+        # Ownership audit, tiered: split drift into config vs ephemeral.
+        local misowned cfgbad="" ephbad="" f
+        misowned=$(sudo find "$croot/$s" \( -not -user "$uid" -o -not -group "$gid" \) 2>/dev/null || true)
+        if [[ -n "$misowned" ]]; then
+            while IFS= read -r f; do
+                [[ -z "$f" ]] && continue
+                if [[ "${f#"$croot/$s"}" =~ $ephemeral_re ]]; then ephbad+="$f"$'\n'; else cfgbad+="$f"$'\n'; fi
+            done <<<"$misowned"
         fi
+        if [[ -n "$cfgbad" ]]; then
+            d_fail "$s: config files not owned $uid:$gid" "the app cannot write its own config" "./mediastack.sh fix-perms $s"
+        elif [[ -n "$ephbad" ]]; then
+            warn "$s: $(grep -c . <<<"$ephbad") root-owned file(s) in cache/logs/backups — expected for a root-by-image app, cosmetic (clear with: ./mediastack.sh fix-perms $s)"
+        fi
+
+        # True invariant: can the app write its config? Probe live, from inside
+        # the container, at its REAL mount path. This decides pass/fail; runs
+        # regardless of ownership tier above (a config FAIL already fired if
+        # warranted, but writability is the definitive check).
+        local cn dest out rc
+        cn=$(svc_cname "$s")
+        if [[ $(c_state "$cn") == running ]]; then
+            dest=$(sudo docker inspect "$cn" 2>/dev/null \
+                   | jq -r --arg src "$croot/$s" '.[0].Mounts[]? | select(.Source==$src) | .Destination' | head -1)
+            if [[ -n "$dest" ]]; then
+                out=$(sudo docker exec "$cn" test -w "$dest" 2>&1) && rc=0 || rc=$?
+                if (( rc == 0 )); then ok "$s config writable from inside the container"
+                elif grep -q "executable file not found" <<<"$out"; then
+                    info "$s: image has no probe tooling — writability unverified"
+                else
+                    d_fail "$s cannot write $dest from inside its container" "the app cannot persist settings" "./mediastack.sh fix-perms $s && ./mediastack.sh logs $s"
+                fi
+            else info "$s: config not bind-mounted in running container — skipped"; fi
+        elif [[ -z "$cfgbad" ]]; then ok "$s config ownership OK (write probe skipped: not running)"; fi
     done
     # jellysearch must READ jellyfin's config
     if svc_enabled jellysearch; then
