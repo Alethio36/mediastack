@@ -91,3 +91,13 @@ applying, that every rendered `service:gluetun` dependent is joined to the
 the same run; if a dependent still isn't joined afterwards, the update fails
 loudly and notifies. Stopped containers are left alone — they are caught by
 `doctor`/`leak-test` when started.
+
+### trash-sync joins the existing tunnel, never recreates it
+
+Recyclarr shares gluetun's namespace (`network_mode: service:gluetun`) and
+`depends_on` gluetun. It must therefore be invoked through the same compose
+wrapper the rest of the stack uses (correct merged config, incl. the overlay
+and pins) and with `--no-deps`, so it *joins* the already-healthy gluetun
+rather than recreating it. A bare `docker compose run recyclarr` renders a
+different config, treats gluetun as drifted, and recreates it mid-sync —
+tearing down the namespace every VPN'd service is joined to.
