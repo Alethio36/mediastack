@@ -1077,7 +1077,12 @@ prune_backups() {
     keepw=$(env_get BACKUP_KEEP_WEEKLY 4)
     keepm=$(env_get BACKUP_KEEP_MONTHLY 6)
     local -a all
-    mapfile -t all < <(ls -1 "$broot" 2>/dev/null | grep -E '^[0-9]{8}-[0-9]{6}$' | sort -r)
+    local d
+    all=()
+    for d in "$broot"/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]; do
+        [[ -d "$d" ]] && all+=("$(basename "$d")")
+    done
+    mapfile -t all < <(printf '%s\n' "${all[@]}" | sort -r)
     (( ${#all[@]} )) || return 0
     local -A keepset seenw seenm
     local p d wk mo i=0 pruned=0 nw=0 nm=0
@@ -1141,19 +1146,19 @@ cmd_unpin() {
 
 cmd_restore() {
     load_env; require_mounts
-    local svc="" all=0 from=""
+    local svc="" all_svcs=0 from=""
     while [[ $# -gt 0 ]]; do case "$1" in
         --service) svc="$2"; shift 2 ;;
-        --all) all=1; shift ;;
+        --all) all_svcs=1; shift ;;
         --from) from="$2"; shift 2 ;;
         *) die "Unknown restore arg '$1' (usage: restore --service SVC|--all [--from TS])" ;;
     esac; done
-    (( all )) || [[ -n "$svc" ]] || die "usage: restore --service SVC | --all  [--from TIMESTAMP]"
+    (( all_svcs )) || [[ -n "$svc" ]] || die "usage: restore --service SVC | --all  [--from TIMESTAMP]"
     local broot; broot=$(env_get BACKUP_ROOT)
     [[ -n "$from" ]] || from=$(ls -1 "$broot" 2>/dev/null | tail -1)
     [[ -n "$from" && -d "$broot/$from" ]] || die "No restore point found. Available: $(ls -1 "$broot" 2>/dev/null | tr '\n' ' ')"
     info "Restoring from $from"
-    local targets; if (( all )); then targets=$(svc_managed); else targets="$svc"; fi
+    local targets; if (( all_svcs )); then targets=$(svc_managed); else targets="$svc"; fi
     local croot ts s ref
     croot=$(env_get CONFIG_ROOT); ts=$(ts_now)
     for s in $targets; do
@@ -1571,7 +1576,7 @@ cmd_doctor() {
         fi
     fi
     if svc_enabled traefik && [[ -n "$(env_get TRAEFIK_DOMAIN)" ]]; then
-        local acmef="$(env_get CONFIG_ROOT)/traefik/acme/acme.json"
+        local acmef; acmef="$(env_get CONFIG_ROOT)/traefik/acme/acme.json"
         if sudo test -s "$acmef"; then
             [[ "$(sudo stat -c %a "$acmef")" == 600 ]] && ok "acme.json permissions 600" \
                 || warn "acme.json is NOT mode 600 — traefik will refuse it; fix: sudo chmod 600 $acmef"
