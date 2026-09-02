@@ -1986,6 +1986,7 @@ cmd_nuke() {
     sudo systemctl disable --now mediastack-vpnguard.service 2>/dev/null || true
     sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer /etc/systemd/system/mediastack-vpnguard.service
     sudo systemctl daemon-reload
+    frontdoor_teardown
     ok "systemd units removed"
     sudo docker ps -aq --filter "label=com.docker.compose.project=mediastack" \
         | xargs -r sudo docker rm -f -v >/dev/null
@@ -2021,6 +2022,7 @@ cmd_uninstall() {
     sudo systemctl disable --now mediastack-vpnguard.service 2>/dev/null || true
     sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer /etc/systemd/system/mediastack-vpnguard.service
     sudo systemctl daemon-reload
+    frontdoor_teardown
     echo; echo "Tier 2: remove the service system users + group"
     if confirm "Also remove users/group?"; then
         local s; for s in $(svc_managed); do sudo userdel "$s" 2>/dev/null || true; done
@@ -3773,6 +3775,36 @@ FRONTDOOR_USER=olivetin
 FRONTDOOR_WRAPPER=/usr/local/bin/olivetin-frontdoor
 FRONTDOOR_SUDOERS=/etc/sudoers.d/mediastack-frontdoor
 
+frontdoor_teardown() {
+    # Remove everything frontdoor-install created (idempotent). The olivetin user
+    # and its units are control-plane infra, removed alongside the other units.
+    sudo systemctl disable --now mediastack-frontdoor-refresh.timer 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/mediastack-frontdoor-refresh.service \
+               /etc/systemd/system/mediastack-frontdoor-refresh.timer
+    sudo rm -f "$FRONTDOOR_SUDOERS" "$FRONTDOOR_WRAPPER"
+    sudo userdel -r "$FRONTDOOR_USER" 2>/dev/null || true
+    sudo systemctl daemon-reload 2>/dev/null || true
+}
+
+# frontdoor-refresh: (re)write the entity lists that back the panel dropdowns.
+# Runs on the HOST via the mediastack-frontdoor-refresh timer (and once at
+# install), so the panel container needs no write access and no dependency on
+# OliveTin's in-container scheduler. Internal verb: NOT front-door-exposed and
+# NOT in the wrapper whitelist (it writes files).
+cmd_frontdoor_refresh() {
+    load_env
+    local ent; ent="$(env_get CONFIG_ROOT)/olivetin/entities"
+    sudo test -d "$ent" || { info "front door not installed — nothing to refresh"; return 0; }
+    # enable dropdown offers what you CAN enable (currently disabled), and so on.
+    cmd_list disabled  --json | sudo tee "$ent/enable.json"  >/dev/null
+    cmd_list enabled   --json | sudo tee "$ent/disable.json" >/dev/null
+    cmd_list vpntoggle --json | sudo tee "$ent/vpn.json"     >/dev/null
+    cmd_list wire      --json | sudo tee "$ent/wire.json"    >/dev/null
+    sudo chown "$FRONTDOOR_USER:$FRONTDOOR_USER" "$ent"/enable.json "$ent"/disable.json "$ent"/vpn.json "$ent"/wire.json
+    sudo chmod 644 "$ent"/enable.json "$ent"/disable.json "$ent"/vpn.json "$ent"/wire.json
+    ok "refreshed OliveTin entity lists"
+}
+
 cmd_frontdoor_install() {
     load_env
     need_cmd argon2; need_cmd openssl; need_cmd ssh-keygen
@@ -3937,23 +3969,6 @@ entities:
     file: entities/wire.json
 
 actions:
-  # -- entity refresh: hidden, runs on startup and every 5 minutes. Writes the
-  #    container's own /config/entities cache from `list ... --json` (JSONL, one
-  #    {"name":...} per line — exactly OliveTin's JSON entity format).
-  - title: Refresh service lists
-    timeout: 60
-    id: refresh-entities
-    hidden: true
-    execOnStartup: true
-    execOnCron: "*/5 * * * *"
-    shell: |
-      mkdir -p /config/entities
-      SSH="ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal"
-      $SSH list disabled  --json > /config/entities/enable.json
-      $SSH list enabled   --json > /config/entities/disable.json
-      $SSH list vpntoggle --json > /config/entities/vpn.json
-      $SSH list wire      --json > /config/entities/wire.json
-
   # -- read-only reports (no confirmation; output shown in a dialog) --
   - title: Doctor (full audit)
     timeout: 300
@@ -4046,11 +4061,14 @@ OTCFG_TAIL
     sudo chmod 644 "$otdir/passwd"
     ok "wrote $otdir/passwd (uid $ot_uid resolvable in-container)"
 
-    # 9. Ownership so the (non-root) container can read its key/known_hosts and
-    #    write its entity cache. Nothing here is world-readable.
-    sudo chown -R "$FRONTDOOR_USER:$FRONTDOOR_USER" "$keydir" "$ent"
-    sudo chmod 700 "$keydir"; sudo chmod 600 "$keydir/id_ed25519"; sudo chmod 644 "$keydir/id_ed25519.pub" "$keydir/known_hosts"
-    sudo chmod 775 "$ent"
+    # 9. Ownership: the container runs as OLIVETIN_UID and owns its whole config
+    #    tree, so OliveTin can persist sessions and themes under /config. The
+    #    private key stays 600; config.yaml/known_hosts are read-only mounts.
+    sudo chown -R "$FRONTDOOR_USER:$FRONTDOOR_USER" "$otdir"
+    sudo chmod 755 "$otdir" "$ent"; sudo chmod 700 "$keydir"
+    sudo chmod 600 "$keydir/id_ed25519"
+    sudo chmod 644 "$keydir/id_ed25519.pub" "$keydir/known_hosts" "$otdir/passwd"
+    sudo chmod 640 "$otdir/config.yaml"
 
     # 10. Enable the profile (container defined in compose.d/olivetin.yml).
     if svc_enabled olivetin; then
@@ -4059,6 +4077,32 @@ OTCFG_TAIL
         env_set COMPOSE_PROFILES "$(env_get COMPOSE_PROFILES | tr ',' '\n' | awk 'NF && !seen[$0]++; END{print "olivetin"}' | paste -sd, -)"
         ok "added 'olivetin' to COMPOSE_PROFILES"
     fi
+
+    # Host-side entity-refresh timer: fills the dropdowns from the host, every
+    # 5 min and on boot. No userless OliveTin action, no container write needed.
+    sudo tee /etc/systemd/system/mediastack-frontdoor-refresh.service >/dev/null <<EOF
+[Unit]
+Description=Mediastack OliveTin entity-list refresh
+After=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=$SCRIPT_DIR
+ExecStart=$SCRIPT_DIR/mediastack.sh frontdoor-refresh
+EOF
+    sudo tee /etc/systemd/system/mediastack-frontdoor-refresh.timer >/dev/null <<EOF
+[Unit]
+Description=Refresh OliveTin entity lists
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now mediastack-frontdoor-refresh.timer >/dev/null 2>&1 || true
+    ok "entity-refresh timer installed (every 5 min)"
+    cmd_frontdoor_refresh   # populate now so dropdowns render on first start
 
     # 11. Re-verify both narrowings before declaring success.
     sudo -u "$FRONTDOOR_USER" /usr/bin/test -w "$script" \
@@ -4079,7 +4123,7 @@ Log in as 'admin' with the password you just set.
 
 Host-side checks worth confirming once (needs the live box):
   * sshd accepts the olivetin key from containers (host-gateway reachable, sshd up)
-  * the container populates its dropdowns within ~5 min of first start
+  * dropdowns are filled now and every 5 min by mediastack-frontdoor-refresh.timer
 EOT
 }
 
@@ -4118,6 +4162,7 @@ main() {
         new-service)  cmd_new_service "$@" ;;
         upgrade)      cmd_upgrade ;;
         frontdoor-install) cmd_frontdoor_install ;;
+        frontdoor-refresh) cmd_frontdoor_refresh ;;
         uninstall)    cmd_uninstall "$@" ;;
         *) fail "Unknown command '$cmd'"; echo; cmd_help; exit 1 ;;
     esac
