@@ -27,10 +27,14 @@ services:
     user: "${OLIVETIN_UID}:${OLIVETIN_GID}"
     environment:
       - TZ=${TZ}
+      # ssh client aborts if its uid has no passwd entry; give it a home too
+      - HOME=/config
     volumes:
       - ${CONFIG_ROOT}/olivetin/config.yaml:/config/config.yaml:ro
       - ${CONFIG_ROOT}/olivetin/ssh/id_ed25519:/config/ssh/id_ed25519:ro
       - ${CONFIG_ROOT}/olivetin/ssh/known_hosts:/config/ssh/known_hosts:ro
+      # resolves the container's uid so the ssh client's getpwuid() succeeds
+      - ${CONFIG_ROOT}/olivetin/passwd:/etc/passwd:ro
       # entity cache — the ONLY writable mount; owned by the same olivetin uid.
       - ${CONFIG_ROOT}/olivetin/entities:/config/entities
     extra_hosts:
