@@ -971,6 +971,27 @@ c_uptime() { # human-readable duration since container start (e.g. 3d4h, 12m, 45
 c_version(){ sudo docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$1" 2>/dev/null | tr -d '\n' || true; }
 c_restarts(){ local o; o=$(sudo docker inspect --format '{{.RestartCount}}' "$1" 2>/dev/null | tr -d '\n'); echo "${o:-0}"; }
 
+# Machine-readable service lister — one service name per line, nothing else.
+# Built for consumers that need a clean list to parse (e.g. a web UI populating
+# a dropdown), and useful on the CLI too. Subsets mirror the sets the other
+# verbs accept, so a caller can list exactly the services a given action will
+# take. Read-only: renders the config and prints names, changes nothing.
+cmd_list() {
+    load_env
+    local subset="${1:-managed}"
+    case "$subset" in
+        all)        svc_all | sort ;;
+        managed)    svc_managed | sort ;;
+        enabled)    local s; for s in $(svc_managed); do svc_enabled "$s" && echo "$s"; done | sort ;;
+        disabled)   local s; for s in $(svc_managed); do svc_enabled "$s" || echo "$s"; done | sort ;;
+        vpntoggle)  render; jq -r '.services | to_entries[]
+                        | select(.value.labels["mediastack.vpntoggle"]=="true") | .key' \
+                        <<<"$RENDERED_JSON" | sort ;;
+        wire)       printf '%s\n' qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr all ;;
+        *) die "usage: list [all|managed|enabled|disabled|vpntoggle|wire]" ;;
+    esac
+}
+
 cmd_status() {
     load_env; render
     if [[ -n "${1:-}" ]]; then status_one "$1"; return; fi
@@ -3731,6 +3752,7 @@ main() {
         enable)       cmd_enable "$@" ;;
         disable)      cmd_disable "$@" ;;
         status)       cmd_status "$@" ;;
+        list)         cmd_list "$@" ;;
         logs)         cmd_logs "$@" ;;
         update)       cmd_update "$@" ;;
         apply-timer)  cmd_apply_timer ;;
