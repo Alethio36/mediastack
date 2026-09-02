@@ -39,12 +39,6 @@ services:
     networks: [mediastack]
     security_opt:
       - no-new-privileges:true
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:1337/ >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
     labels:
       <<: *no-foreign-watchtower
       mediastack.port: "1337"

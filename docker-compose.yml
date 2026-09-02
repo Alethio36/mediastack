@@ -36,6 +36,7 @@ include:
   - compose.d/lazylibrarian.yml
   - compose.d/transmission.yml
   - compose.d/wizarr.yml
+  - compose.d/olivetin.yml
 
 networks:
   mediastack:
