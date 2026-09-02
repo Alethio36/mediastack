@@ -3935,6 +3935,9 @@ FRONTDOOR_WRAPPER
         cat <<'OTCFG_HEAD'
 # Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install.
 logLevel: "INFO"
+pageTitle: "Mediastack"
+# hide the small on-start indicator badges on each button, for a cleaner grid
+showNavigateOnStartIcons: false
 
 # Everyone must log in; the panel can change the stack, so no guest access.
 authRequireGuestsToLogin: true
@@ -3956,8 +3959,7 @@ OTCFG_HEAD
         printf "      password: '%s'\n" "$hash"
         cat <<'OTCFG_TAIL'
 
-# Service lists backing the dropdowns. The refresh action below regenerates
-# these on startup and on a timer by querying the host over SSH.
+# Service lists backing the dropdowns; refreshed on the host by the timer.
 entities:
   - name: svc_enable
     file: entities/enable.json
@@ -3969,38 +3971,29 @@ entities:
     file: entities/wire.json
 
 actions:
-  # -- read-only reports (no confirmation; output shown in a dialog) --
-  - title: Doctor (full audit)
+  # -- diagnostics (read-only) --
+  - title: Doctor
+    icon: "🩺"
     timeout: 300
-    icon: search
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal doctor
 
   - title: Status
+    icon: "📊"
     timeout: 120
-    icon: information
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal status
 
-  - title: Leak test (VPN)
+  - title: VPN leak test
+    icon: "🛡️"
     timeout: 120
-    icon: shield
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal leak-test
 
-  # -- state-changing (confirmation required; update is serialised) --
-  - title: Update stack
-    timeout: 300
-    icon: box
-    onclick: execution-dialog
-    maxConcurrent: 1
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal update
-    arguments:
-      - type: confirmation
-
-  - title: Enable a service
+  # -- services (pick one from the dropdown; confirm to run) --
+  - title: Enable service
+    icon: "▶️"
     timeout: 180
-    icon: play
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal enable {{ svc }}
     arguments:
@@ -4009,11 +4002,12 @@ actions:
         title: Service to enable
         choices:
           - value: '{{ svc_enable.name }}'
-      - type: confirmation
+      - title: Confirm
+        type: confirmation
 
-  - title: Disable a service
+  - title: Disable service
+    icon: "⏹️"
     timeout: 180
-    icon: stop
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal disable {{ svc }}
     arguments:
@@ -4022,11 +4016,12 @@ actions:
         title: Service to disable
         choices:
           - value: '{{ svc_disable.name }}'
-      - type: confirmation
+      - title: Confirm
+        type: confirmation
 
-  - title: Toggle VPN for a service
+  - title: Toggle VPN
+    icon: "🔒"
     timeout: 180
-    icon: globe
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal vpn {{ svc }}
     arguments:
@@ -4035,11 +4030,12 @@ actions:
         title: Service to toggle
         choices:
           - value: '{{ svc_vpn.name }}'
-      - type: confirmation
+      - title: Confirm
+        type: confirmation
 
-  - title: Wire a service
+  - title: Wire service
+    icon: "🔗"
     timeout: 180
-    icon: link
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal wire {{ svc }}
     arguments:
@@ -4048,7 +4044,19 @@ actions:
         title: Service to wire
         choices:
           - value: '{{ svc_wire.name }}'
-      - type: confirmation
+      - title: Confirm
+        type: confirmation
+
+  # -- maintenance --
+  - title: Update stack
+    icon: "⬆️"
+    timeout: 300
+    maxConcurrent: 1
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal update
+    arguments:
+      - title: Confirm — updates every service
+        type: confirmation
 OTCFG_TAIL
     } > "$ctmp"
     sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$otdir/config.yaml"; rm -f "$ctmp"
