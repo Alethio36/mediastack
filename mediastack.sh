@@ -3775,7 +3775,7 @@ FRONTDOOR_SUDOERS=/etc/sudoers.d/mediastack-frontdoor
 
 cmd_frontdoor_install() {
     load_env
-    need_cmd argon2; need_cmd openssl; need_cmd ssh-keygen; need_cmd ssh-keyscan
+    need_cmd argon2; need_cmd openssl; need_cmd ssh-keygen
     [[ -t 0 ]] || die "run frontdoor-install interactively — it prompts for the panel password."
     local script="$SCRIPT_DIR/mediastack.sh"
     local otdir keydir ent
@@ -3790,10 +3790,11 @@ cmd_frontdoor_install() {
     if id -u "$FRONTDOOR_USER" >/dev/null 2>&1; then
         ok "host user '$FRONTDOOR_USER' already present"
     else
-        sudo useradd --system --create-home --shell /usr/sbin/nologin "$FRONTDOOR_USER"
-        ok "created host user '$FRONTDOOR_USER' (system, nologin)"
+        sudo useradd --system --create-home --shell /bin/sh "$FRONTDOOR_USER"
+        ok "created host user '$FRONTDOOR_USER' (system, /bin/sh)"
     fi
     local ot_uid ot_gid ot_home
+    sudo usermod -s /bin/sh "$FRONTDOOR_USER"   # sshd execs the forced command via this shell
     ot_uid=$(id -u "$FRONTDOOR_USER"); ot_gid=$(id -g "$FRONTDOOR_USER")
     ot_home=$(getent passwd "$FRONTDOOR_USER" | cut -d: -f6)
     [[ -n "$ot_home" ]] || die "could not resolve $FRONTDOOR_USER home directory"
@@ -3873,10 +3874,11 @@ FRONTDOOR_WRAPPER
     # 6. known_hosts for the container->host hop. The host key is IP-independent,
     #    so scan it via loopback and label it for the name the container uses
     #    (host.docker.internal). StrictHostKeyChecking stays ON in the panel.
-    local hk; hk=$(sudo ssh-keyscan -t ed25519 127.0.0.1 2>/dev/null | sed 's/^[^ ]* /host.docker.internal /' | head -n1)
-    [[ -n "$hk" ]] || die "could not read this host's ed25519 SSH host key (is sshd running?)."
-    printf '%s\n' "$hk" | sudo tee "$keydir/known_hosts" >/dev/null
-    ok "pinned host key for host.docker.internal"
+    local hostpub=/etc/ssh/ssh_host_ed25519_key.pub
+    sudo test -f "$hostpub" || die "host ed25519 key $hostpub not found — is openssh-server installed?"
+    # authoritative source; ssh-keyscan can capture the banner line instead of the key
+    sudo awk '{print "host.docker.internal", $1, $2}' "$hostpub" | sudo tee "$keydir/known_hosts" >/dev/null
+    ok "pinned host key for host.docker.internal (from $hostpub)"
 
     # 7. Panel admin password -> argon2id hash (offline; OliveTin's own hasher
     #    needs a running instance). The password is read on the terminal and
@@ -3939,6 +3941,7 @@ actions:
   #    container's own /config/entities cache from `list ... --json` (JSONL, one
   #    {"name":...} per line — exactly OliveTin's JSON entity format).
   - title: Refresh service lists
+    timeout: 60
     id: refresh-entities
     hidden: true
     execOnStartup: true
@@ -3953,22 +3956,26 @@ actions:
 
   # -- read-only reports (no confirmation; output shown in a dialog) --
   - title: Doctor (full audit)
+    timeout: 300
     icon: search
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal doctor
 
   - title: Status
+    timeout: 120
     icon: information
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal status
 
   - title: Leak test (VPN)
+    timeout: 120
     icon: shield
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal leak-test
 
   # -- state-changing (confirmation required; update is serialised) --
   - title: Update stack
+    timeout: 300
     icon: box
     onclick: execution-dialog
     maxConcurrent: 1
@@ -3977,6 +3984,7 @@ actions:
       - type: confirmation
 
   - title: Enable a service
+    timeout: 180
     icon: play
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal enable {{ svc }}
@@ -3989,6 +3997,7 @@ actions:
       - type: confirmation
 
   - title: Disable a service
+    timeout: 180
     icon: stop
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal disable {{ svc }}
@@ -4001,6 +4010,7 @@ actions:
       - type: confirmation
 
   - title: Toggle VPN for a service
+    timeout: 180
     icon: globe
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal vpn {{ svc }}
@@ -4013,6 +4023,7 @@ actions:
       - type: confirmation
 
   - title: Wire a service
+    timeout: 180
     icon: link
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal wire {{ svc }}
