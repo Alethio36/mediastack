@@ -1,213 +1,121 @@
 MEDIASTACK — SESSION HANDOFF
-Date: 2026-09-02
-Repo: github.com/Alethio36/mediastack   Git authority: Harkon1   Deploy/verify: anzac3   Prod: anzac2 (legacy stack, untouched)
+Date: 2026-09-02 (session 2)
+Repo: github.com/Alethio36/mediastack   Git authority: Harkon1   Deploy/verify: anzac3   Prod: anzac2 (legacy, untouched)
 Delivery pipeline unchanged: sandbox commit -> format-patch + sha256 -> Nick verifies -> git am on Harkon1 -> push -> anzac3 ./mediastack.sh upgrade.
-Origin HEAD at session end: 22407d1 (feat(list): --json mode emitting entity records for UI dropdowns)
-Compose on anzac3: current. Timer (mediastack-update) ARMED. leak-test GREEN. doctor: all checks passed.
+Origin HEAD at session end: 8d52a38 (fix(frontdoor): make VPN toggle apply, and stop re-prompting for the password)
 
 
 == WHAT THIS SESSION WAS ==
-Started as a doctor-triage ("perms issue on kavita/lazylibrarian; VPN detach"). The VPN detach turned
-out to be a real, silent, structural leak-class bug. Fixing it properly consumed the first half. Second
-half: knocked down a backlog of small/medium items, then a deep investigation + partial build of an
-OliveTin web front door for the stack. 12 commits shipped and verified live. No schema bump this session.
-
-
-== THE INCIDENT (root-caused, fixed, closed) ==
-Symptom: doctor showed 13 VPN'd services "NOT attached to gluetun". Investigation (docker inspect, NOT
-trusting doctor) found: last night's `up` recreated gluetun with a NEW container ID; compose left the 13
-`network_mode: container:` dependents pinned to the OLD, now-dead gluetun netns. They lost egress ENTIRELY
-(sealed, not leaking — the dead netns had no route; confirmed via in-container trace). Ghost-detach.
-
-Root cause class: `network_mode: service:gluetun` is FAIL-OPEN. Compose does not recreate netns dependents
-when only the namespace-host (gluetun) changes. Any gluetun recreate that doesn't cascade to its
-dependents orphans them. Hit THREE times this session: (1) the original v5.5.0-era `up`, (2) the update
-path, (3) trash-sync's bare `docker compose run recyclarr`.
-
-Remediation that day: scoped `docker compose up -d --force-recreate --no-deps <13 services>` re-pinned them
-to the live gluetun. leak-test green.
+Built the OliveTin web front door END TO END and debugged it live on anzac3 until every button works.
+The prior handoff had this as "next session, fully de-risked" — it's now DONE and running. 7 commits shipped,
+each verified live. No schema bump. The whole thing was built fresh (old olivetin-drafts were superseded and
+NOT used, per the prior handoff's instruction).
 
 
 == COMMITS SHIPPED THIS SESSION (all live on anzac3, in order) ==
-  fix(update): re-pin VPN dependents when gluetun is recreated        [reattach guard, update path]
-  fix(trash-sync): route recyclarr through DC with --no-deps          [bare compose -> DC(); --no-deps]
-  refactor(vpn): single fail-closed reattach guard on up and update   [extracted vpn_reattach_guard(), called from cmd_up + cmd_update]
-  feat(update): cascade-recreate gluetun's VPN group together         [gluetun in targets -> force-recreate it + borrowers as a group]
-  fix(lint): clear shellcheck warnings; document recyclarr depends_on [SC2010/2178/2155; recyclarr depends_on marked inert-but-retained]
-  fix(doctor): tier config-perm ownership; probe writability as the true check  [item 8 — see below]
-  fix(update): defer health verdict to the health gate, not compose's up        [item 11 — apply_up()]
-  feat(vpn): boot/daemon guard unit for reattach coverage            [item 9 — mediastack-vpnguard.service]
-  polish: plainer VPN wording in summaries; duration hints           [item 5 + 6]
-  feat(list): machine-readable service lister for UI/dropdown consumption        [list verb — OliveTin groundwork]
-  ci(frontdoor): audit that mediastack.sh stays safe to expose via a front door  [scripts/audit-frontdoor-safety.sh in lint.yml]
-  feat(list): --json mode emitting entity records for UI dropdowns    [list --json -> {"name":"<svc>"}]
-
-The VPN fault-class is now CLOSED on every stack-driven path:
-  - PREVENTION: cascade recreates gluetun+borrowers together on update (no drift arises).
-  - CURE: vpn_reattach_guard runs on up + update, detects any ID mismatch, force-recreates, dies loud if
-    a re-pin fails (+ ops notify). Verifies against gluetun's live full ID (leak-test's proof idiom).
-  - BOOT/DAEMON: mediastack-vpnguard.service (oneshot, After/Requires=docker.service) runs the guard on
-    every boot and docker restart, waiting for gluetun health first. PROVEN live: manufactured a ghost,
-    the unit repaired 13 orphans, leak-test green. Installed idempotently by cmd_up; removed by uninstall.
-  NOT covered: a raw out-of-band `docker compose up` mid-session (no reboot). That's the ONE residual hole;
-  only Model B (internal-network topology) closes it, and we deliberately did NOT do Model B (see below).
+  feat(frontdoor): OliveTin web front door — install verb, wrapper, compose   [the big one]
+  fix(frontdoor): register olivetin in compose include; drop unrunnable healthcheck
+  fix(frontdoor): make the container uid resolvable for the ssh client
+  fix(frontdoor): real login shell, authoritative host key, action timeouts
+  fix(frontdoor): host-side entity refresh + persistent OliveTin state
+  polish(frontdoor): emoji icons, crisp titles, labeled confirms, branding
+  fix(frontdoor): make VPN toggle apply, and stop re-prompting for the password
 
 
-== KEY DECISIONS THIS SESSION ==
-- Model A (script guard) chosen over Model B (internal:true no-egress network). Model B is the "true"
-  fail-closed fix but BREAKS THE LOCALHOST CONTRACT the arrs depend on (prowlarr->flaresolverr,
-  recyclarr->arrs all use localhost BECAUSE they share gluetun's netns). Rejected as too invasive for the
-  benefit; documented. Revisit only if the stress test proves the guards insufficient.
-- item 7 (smarter backup — stop only affected services): CLOSED as WON'T-FIX. Nick's call: snapshots must
-  be whole-stack for consistency; per-service is a project for marginal gain. Backups stay atomic.
-- item 12 (cleanuparr ~2895 err/24h): diagnosed BENIGN. It's connection-refused bursts during gluetun
-  recreates (cleanuparr health-checks the arrs on a timer; each recreate window = a burst). ~15 recreates
-  this session inflated the count. WATCH-ITEM for production: the doctor error-line-count WARN will keep
-  tripping after gluetun updates; if it becomes alarm-fatigue in prod, tier it (like we did kavita). Left
-  as-is for now (option A) — the WARN is honest and self-clears in 24h.
-- CORRECTION: mediastack has NO NetBird scope. Earlier plan wrongly assumed "reach OliveTin over NetBird"
-  (NetBird is Nick's separate infra, netbird-kit project). Scrubbed. OliveTin reachability = Traefik like
-  other services (LAN), WAN only via a deliberate separate port-forward, not mediastack's concern.
+== CURRENT STATE: FRONT DOOR IS FEATURE-COMPLETE + LIVE ==
+Panel: https://panel.media.caelumcafe.com  (anzac3, STAGING certs — browser warns, expected)
+Login: admin / <password Nick set>. Password is now reused across reinstalls (idempotent).
+All 8 buttons work end to end (SSH -> forced-command wrapper -> sudo mediastack.sh -> back to panel):
+  Diagnostics: Doctor, Status, VPN leak test   (read-only)
+  Services:    Enable, Disable, Wire            (apply immediately via DC up / reconcile)
+  Services:    Toggle VPN                       (svc + on/off dropdowns -> vpn-apply -> stages + up)
+  Maintenance: Update stack                     (confirm, maxConcurrent 1)
+Dropdowns populated + fresh (host timer). Sessions persist. Diagnostics page: "No configuration issues."
+
+LIVE STATE NOTES (act on these next session):
+  - jellyfin is currently DISABLED — Nick disabled it via the panel as a test and did not re-enable.
+    If it should be running: ./mediastack.sh enable jellyfin   (or the panel's Enable button).
+  - `dropped` phantom service: Nick's leftover new-service scaffold in docker-compose.override.yml
+    (untracked). He located it (grep found the block) but it's UNCONFIRMED whether he removed it.
+    It shows in `status` as available-not-enabled and in the enable dropdown. To purge: remove the
+    `dropped:` block (or delete the override file if that's all it contains), then ./mediastack.sh up.
 
 
-== ITEM 8 (the original bug) — how it actually resolved ==
-Chain of misdiagnosis, evidence-corrected each step:
-  - kavita/audiobookshelf run as ROOT (images ignore PUID) -> write cache files as root.
-  - doctor's ownership check FAILed on ANY mis-owned file, short-circuiting BEFORE the writability probe.
-  - kavita's ONLY drift: one root-owned file at cache-long/update/github_latest_release_cache.json. Cosmetic.
-  - my /config writability test was a RED HERRING — kavita mounts /kavita/config, not /config. doctor's
-    own probe resolves the real mount dynamically; only the ownership gate was the problem.
-Fix (fix(doctor)): writability probe is now the DEFINITIVE pass/fail (live, at the real mount path).
-Ownership drift is TIERED: real config files -> FAIL; regenerable paths (cache|cache-long|logs|tmp|backups)
--> loud WARN, cosmetic. Probe always runs now (no longer gated behind ownership). VERIFIED live: kavita
-now WARNs on the cache file (not FAIL), audiobookshelf clean, doctor all-passed.
-Note: the runtime-audit "no process runs as UID 13028 — PUID may be ignored" WARNs for kavita/audiobookshelf
-are CORRECT and intentional (they truthfully report root-by-image); leave them.
+== ARCHITECTURE (as built + verified) ==
+- OliveTin unprivileged container (no docker.sock, non-root uid 999=host olivetin user). compose.d/olivetin.yml,
+  Traefik-routed (LAN), NO mediastack.managed label (control-plane infra). Enable via frontdoor-install.
+- Path to root guarded twice: (1) SSH forced-command wrapper (/usr/local/bin/olivetin-frontdoor) — charset
+  allowlist, verb whitelist, 2-arg cap, argv-not-string, no eval/sh-c; embedded as a heredoc in mediastack.sh
+  so the CI front-door audit covers it. (2) narrow sudoers (/etc/sudoers.d/mediastack-frontdoor): olivetin may
+  sudo ONLY mediastack.sh. Both re-verified at end of frontdoor-install.
+- Password: offline argon2id (argon2 CLI, added to install base deps). Reused on re-run; --set-password to change.
+- Entity dropdowns: entity-backed (JSONL, one {"name":...} per line = OliveTin's JSON format). Fed by
+  `list <subset> --json`. REFRESH IS HOST-SIDE: cmd_frontdoor_refresh + mediastack-frontdoor-refresh.timer
+  (every 5 min + boot). NOT OliveTin's in-container scheduler (its ACL blocks userless exec). Container mount
+  is read-mostly; /config is writable so OliveTin persists sessions.yaml + custom-webui.
+- vpn-apply <svc> on|off: new verb = cmd_vpn (stage) + cmd_up (apply). Panel's Toggle VPN uses it. cmd_vpn's
+  torrent-off guard (--i-know) stays; wrapper's 2-arg cap keeps that footgun off the panel.
+- Teardown: frontdoor_teardown() removes user + sudoers + wrapper + refresh units; wired into uninstall + nuke.
 
 
-== ANZAC2 INVESTIGATION (prod is fine, but understand why) ==
-Checked whether prod (anzac2) has the same leak bug. Findings:
-  - anzac2 is the LEGACY stack: monolithic docker-compose.yml, installer.sh, NO mediastack.sh, NO
-    compose.d/. Its source is the repo's `legacy` branch (per Nick).
-  - Topology: SAME Model A (10 services `network_mode: "service:gluetun"`, all on container:960fc871...).
-    NOT Model B. Nick's recollection that it was Model B was WRONG (a sealed Model A and a working Model B
-    look identical from outside — the whole point).
-  - Currently SEALED/clean: qbit egress = a VPN IP, not host 50.53.111.129. All borrowers on live gluetun.
-  - WHY anzac2 survived months w/ no guard: it runs WATCHTOWER (updates ALL containers, gluetun in scope,
-    no label-scoping). Watchtower's recreate IS dependency-aware — it recreates gluetun's netns dependents
-    WITH gluetun. Compose's partial `up` (what bit anzac3) is NOT. So anzac2 dodged the bug by using a
-    smarter recreator, NOT by having a safer design. Both boxes are equally fail-open topologically.
-  - Migration implication: anzac2->anzac3 is a LATERAL move (Model A -> Model A), to a box that's BETTER
-    guarded (guard present, no rogue watchtower). Not an architecture change.
+== GOTCHAS LEARNED (all cost a live round-trip; write them down) ==
+  - compose.d/*.yml MUST be added to docker-compose.yml's `include:` — it's an explicit list, NOT a glob.
+    (new-service dodges this by writing to docker-compose.override.yml instead.)
+  - OliveTin `icon:` renders plain words as literal text; needs emoji / HTML entity / Iconify. Use emoji.
+  - Container SSH client aborts "No user exists for uid 999" unless that uid is in the container's /etc/passwd
+    -> we mount a generated passwd. And the account needs a real /bin/sh (nologin -> "account not available",
+    sshd runs the shell before the forced command). The forced-command key is the lock, not nologin.
+  - known_hosts: build from /etc/ssh/ssh_host_ed25519_key.pub. ssh-keyscan captured the SSH *banner*, not the key.
+  - OliveTin default action timeout is ~3s — set per-action `timeout:` (update/doctor 300, status/leak 120,
+    state-changers 180, vpn 300).
+  - YAML: `on`/`off` are booleans — quote dropdown values ("on"/"off") or they become true/false.
+  - `vpn <svc> on|off` only STAGES an overlay (prints "apply with: up"); it needs an explicit up. enable/disable/
+    wire DO apply immediately.
+  - OliveTin JSON entity files are JSONL (one object per line), not a JSON array.
 
 
-== OLIVETIN FRONT DOOR — investigation + partial build (the big second-half thread) ==
-GOAL: a web UI of buttons/dropdowns over mediastack.sh's safe verbs (update, enable/disable, vpn toggle,
-wire, doctor/status/leak-test), so Nick can drive the stack from a browser/phone. QOL, zero new capability.
+== NEXT SESSION — KEEP POLISHING THE WEBGUI (Nick's stated intent) ==
+Candidate polish items (pick with Nick; his pref = strong opinionated defaults):
+  1. Completion affordance — the "is it done?" gap: a fast action's dialog just stops on the last line;
+     the only done-signal is the green "Completed" badge up top (easy to miss). Options discussed:
+     flip read-only reports to onclick: execution-button (discrete finished buttons); leave state-changers
+     on execution-dialog. DECIDED last session to leave as-is, but Nick may want to revisit. Do NOT wrap
+     verbs just to fake a "done" line.
+  2. Dashboard sectioning (Diagnostics / Services / Maintenance fieldsets) — DEFERRED: OliveTin dashboards
+     PULL actions out of the default "Actions" view, leaving an empty "Actions" tab in the sidebar with no
+     documented way to hide it. Revisit only if we find a clean way to suppress the default view (or accept
+     the empty tab). Fieldset syntax is known-good (docs verified: dashboards -> contents -> type: fieldset).
+  3. Icon variants — if any emoji render monochrome (arrow/stop glyphs sometimes do), pin the color variant.
+     Nick to report which, if any, look off.
+  4. Confirmation wording — currently "Confirm" / "Confirm — updates every service". Tune if desired.
+  5. (Bigger) Homepage-style read-only status tiles as a companion (the prior handoff flagged Homepage as a
+     safe read-only pairing). Optional.
 
-WHY OliveTin (researched, current as of this session): purpose-built "safe front door over your CLI" —
-Go binary, tiny, FOSS, actively maintained. Its OWN security guidance MATCHES our design (non-root/
-container, narrow sudo to only the needed script, auth, reverse proxy). Alternatives rejected: Semaphore/
-Rundeck/AWX (fleet/Ansible platforms — overkill, wrong model); Portainer/Dockge (drive raw compose ->
-BYPASS the guard -> disqualified); Cockpit (host admin, complements but doesn't run our verbs); Homepage
-(read-only dashboard — good future pairing for status tiles + service blurbs, safe because read-only).
-
-ARCHITECTURE (decided, docs-verified):
-  - OliveTin runs as an UNPRIVILEGED CONTAINER in the stack (no docker.sock, not privileged, not root).
-  - It reaches the host via SSH-TO-HOST (OliveTin's OWN documented preferred pattern; image ships an ssh
-    client). Use the MANUAL ssh setup (host-key checking ON), NOT the "easy" one (which disables it).
-  - Two independent narrowings + the CI audit guard the path to root:
-      #1 forced-command SSH key: authorized_keys pins command="/usr/local/bin/olivetin-frontdoor". That
-         wrapper whitelists verbs, rejects ALL shell metacharacters, then calls mediastack.sh via sudo.
-         WRAPPER LOGIC PROVEN IN SANDBOX: every allowed verb runs; every attack (;, &&, |, $(), ``, >,
-         path traversal, quoted-spaces, off-whitelist verbs) rejected.
-      #2 narrow sudoers: host `olivetin` user may `sudo` ONLY mediastack.sh.
-      #3 mediastack.sh itself is injection-free (front-door audit) and re-validates every service arg.
-  - Dropdowns are ENTITY-BACKED (OliveTin reads a JSON file; my earlier `choicesCommand` was FICTIONAL —
-    corrected via docs). A cron/startup OliveTin action refreshes the entity file via `ssh ... list <subset>
-    --json` (that's why list + list --json were built and shipped). enable->list disabled, disable->list
-    enabled, vpn->list vpntoggle, wire->list wire.
-  - AUTH (interim): OliveTin's BUILT-IN local-user auth, ON, even on LAN (the panel can change the stack,
-    so it's higher-stakes than the media services). Real SSO (Authelia/Keycloak) is future hardening.
-  - REACHABILITY: Traefik route like other services (LAN). NOT public. WAN only via deliberate portforward.
-  - PASSWORD: frontdoor-install will PROMPT interactively at install time and hash via OliveTin's argon2
-    helper. Deliberately NOT via mediastack.sh set-credentials — a password must never flow through the
-    front-door-exposed script's argv. set-credentials stays for media-service creds only.
-
-SECURITY AUDIT OF mediastack.sh (done, clean): no eval; every service arg whitelisted via svc_exists
-(exact grep -qx) + label checks; NO user input reaches any `sh -c` (all static single-quoted); container
-names quoted. Verdict: SAFE to expose via narrow sudo. The CI tripwire (scripts/audit-frontdoor-safety.sh,
-in lint.yml) now ENFORCES the two properties (no eval, no interpolating sh -c) so a regression fails CI.
-See docs/frontdoor-safety.md for the full contract (incl. host-side reqs the audit can't check).
-
-DELIBERATELY NOT EXPOSED via front door: set-credentials, traefik-setup, new-service, invite, configure,
-install, uninstall (free-text/config), and logs (follows -f, would hang the action).
+Reference: OliveTin config is GENERATED by cmd_frontdoor_install (heredoc OTCFG_HEAD/OTCFG_TAIL in mediastack.sh).
+Config-only changes: patch mediastack.sh -> upgrade -> frontdoor-install (no password prompt now) -> restart
+mediastack-olivetin -> hard-refresh browser (Ctrl-Shift-R).
 
 
-== NEXT SESSION — clean opener, fully de-risked ==
-1. BUILD `frontdoor-install` verb (the big one — do it FRESH, test EACH path, it writes sudoers/creates
-   users/generates keys). It should, idempotently:
-     - create unprivileged host `olivetin` user (distinct from alethio, NO shared write-group — that's what
-       makes mode-755 on the script sufficient; VERIFY groups first)
-     - install narrow sudoers via visudo -c validation
-     - generate the dedicated ed25519 keypair; install the forced-command wrapper (embed it in
-       mediastack.sh as a heredoc — Option A, matches the systemd-unit pattern; keeps it under the CI audit)
-     - pin authorized_keys with command="..."+no-pty+no-forwarding
-     - harden: chown root + chmod 755 mediastack.sh; VERIFY olivetin can't write it. NOTE the upgrade
-       tension: `upgrade` git-pulls as alethio; likely resolution is "accept alethio ownership, rely on
-       755 + distinct user" (root-own is belt, not load-bearing).
-     - PROMPT interactively for the OliveTin admin password, hash it, write config
-     - write compose.d/olivetin.yml (Traefik-routed, LAN, unprivileged, ssh key mounted ro, NO
-       mediastack.managed label — it's control-plane infra), the OliveTin config.yaml (entity dropdowns,
-       cron-refresh action, confirmations on destructive actions, concurrency limit on update, NO
-       experimental features.* flags), and the initial entity files
-     - VERIFY both narrowings before declaring success (fail loud otherwise)
-2. Then Piece 3 = LIVE DEPLOY on anzac3 (Nick at console, me directing): run frontdoor-install, add
-   "olivetin" to COMPOSE_PROFILES, up, and the ONE live-tuning pass (confirm entity dropdowns render;
-   the entity-file/refresh wiring is the last unverified bit — everything else is docs-verified).
-3. Old drafts in /mnt/user-data/outputs/olivetin-drafts/ are SUPERSEDED (they had the choicesCommand
-   error, NetBird refs, and the broken in-container-sudo compose). Rebuild fresh from the decisions above;
-   only the sshkey wrapper LOGIC survives (it was proven). Do NOT commit the .DRAFT files.
-
-REAL NEXT PRIORITY after OliveTin: anzac2->anzac3 MIGRATION (still blocked on Nick: beta-isolation decision
-+ `qm config <anzac2-vmid>`). Unchanged from prior handoffs. Plus the STRESS TEST (rapid build/rebuild)
-Nick wants before migrating — the boot guard (item 9) was built specifically to make that safe; the test
-must run through ./mediastack.sh (script-driven), since raw-compose-mid-session is the one unguarded path.
-
-
-== HARDENING BACKLOG (codified this session — do post-migration, when stack is stable) ==
-  - Real SSO (Authelia/Keycloak) in front of OliveTin, replacing interim built-in local auth.
-  - Move OliveTin off LAN-open once SSO exists (or internal-only Traefik route w/ IP-allowlist middleware).
-  - Phase-2 sudo narrowing (D1 deferral): read-only verbs (doctor/status/leak-test/list) -> docker-group
-    user WITHOUT sudo; only state-changing verbs (update/enable/disable/vpn/wire) keep sudo-root. Shrinks
-    the root surface. The OliveTin config draft notes exactly which lines change.
+== HARDENING BACKLOG (post-migration, when stable) ==
+  - Real SSO (Authelia/Keycloak) in front of OliveTin, replacing built-in local auth.
+  - Move OliveTin off LAN-open once SSO exists (or internal Traefik route + IP-allowlist middleware).
+  - Phase-2 sudo narrowing: read-only verbs (doctor/status/leak-test/list) -> docker-group user WITHOUT sudo;
+    only state-changing verbs keep sudo-root. Shrinks root surface.
   - Staging -> production certs on anzac3 (ACME_ENV=production) when it stops being a test box.
-  - cleanuparr doctor-WARN noise: tier it if it becomes alarm-fatigue in prod (see item 12 above).
-  - recyclarr depends_on: now inert (--no-deps + guard); latent trigger only if something else starts
-    recyclarr. Low.
-  - Model B (internal-network fail-closed) reconsideration IF the stress test surfaces out-of-band leaks
-    the guards can't catch. Documented tradeoff: closes the last hole, costs the localhost-contract rewrite.
-  - Eventual: split mediastack.sh (4400+ lines) into sourced modules. A real refactor with its own risk
-    to the current single-file simplicity — Nick flagged it for "later, with a proper org standard".
 
 
-== OPEN QUESTIONS / KNOWN GAPS ==
-  - OliveTin entity-dropdown refresh wiring is the one thing unverifiable without a live instance — the
-    single live-tuning item for Piece 3. Everything else is docs-verified.
-  - The out-of-band `docker compose up` mid-session path remains unguarded (Model A limit, by design).
-  - anzac2 stays on watchtower-recreates-everything; fine as-is, it's being migrated off.
+== REAL NEXT PRIORITY AFTER WEBGUI (parked all session) ==
+anzac2 -> anzac3 MIGRATION. Still blocked on Nick: beta-isolation decision + `qm config <anzac2-vmid>`.
+Plus the STRESS TEST (rapid build/rebuild) Nick wants before migrating — must run through ./mediastack.sh
+(script-driven), since raw-compose-mid-session is the one unguarded VPN path (Model A limit, by design).
+Unchanged from the prior handoff.
 
 
 == STANDING RULES (still active) ==
-  - Verify upstream/topology against the DEPLOYED reality (docker inspect), not against doctor or assumptions
-    — doctor was WRONG about the "bypass" this session; the daemon was the truth oracle.
-  - Every patch built against the LIVE repo HEAD, anchor-asserted, bash -n + shellcheck clean, and where
-    possible logic-tested in-sandbox before shipping. Rebuild base cleanly for format-patch (a base-juggling
-    slip twice produced full-file-add patches this session — caught before delivery; watch for it).
-  - Delivery: sha256 verify -> git log guard (title absent) -> git am -> push -> upgrade. The 100755 MINGW
-    "type" warning on every git am is harmless (exec bit; git doesn't track it).
-  - `./mediastack.sh logs <svc>` FOLLOWS (-f) — it hangs waiting for lines, it is NOT stuck. Ctrl-C. (Bit
-    Nick twice; a bounded-tail default is a possible future QOL fix, item 6-adjacent.)
-  - sudo journal: `journalctl -u <unit>` shows "no entries" to a non-adm user; use `sudo journalctl`.
-  - Front-door safety: NEVER add an eval or an interpolating `sh -c "…$var…"` to mediastack.sh (CI now
-    fails on both). Any new verb taking free-text must NOT be front-door-exposed. See docs/frontdoor-safety.md.
+  - Verify against the DEPLOYED reality (docker inspect / logs / the actual host files), not doctor or assumptions.
+    This session, every fix after the first was found by reading real error output, not guessing.
+  - Every patch: built against live repo HEAD, anchor-asserted, bash -n + shellcheck + front-door audit clean,
+    config YAML validated, delivered as format-patch + sha256, git-am verified on a fresh clone before sending.
+  - Front-door safety: NEVER add eval or interpolating sh -c to mediastack.sh (CI fails on both, and the embedded
+    wrapper is now part of the audited file). Any new verb taking free text must NOT be front-door-exposed.
+  - Emoji/UTF-8 survives the format-patch/MINGW/git-am pipeline fine (proven repeatedly).
