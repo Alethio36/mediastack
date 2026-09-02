@@ -4028,6 +4028,13 @@ OTCFG_TAIL
     sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$otdir/config.yaml"; rm -f "$ctmp"
     ok "wrote $otdir/config.yaml"
 
+    # Minimal passwd so the container ssh client can resolve its own uid
+    # (it runs as OLIVETIN_UID:GID, which is absent from the image passwd).
+    printf 'root:x:0:0:root:/root:/bin/sh\n%s:x:%s:%s:olivetin:/config:/bin/sh\n' \
+        "$FRONTDOOR_USER" "$ot_uid" "$ot_gid" | sudo tee "$otdir/passwd" >/dev/null
+    sudo chmod 644 "$otdir/passwd"
+    ok "wrote $otdir/passwd (uid $ot_uid resolvable in-container)"
+
     # 9. Ownership so the (non-root) container can read its key/known_hosts and
     #    write its entity cache. Nothing here is world-readable.
     sudo chown -R "$FRONTDOOR_USER:$FRONTDOOR_USER" "$keydir" "$ent"
