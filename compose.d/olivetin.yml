@@ -1,0 +1,57 @@
+# OliveTin: the stack's web front door — a panel of buttons/dropdowns over
+# mediastack.sh's safe verbs. It holds NO docker access; every action is one
+# narrow SSH call to the host that lands as `sudo mediastack.sh <verb>` through
+# a forced-command wrapper (see `frontdoor-install`, which writes the config,
+# key and host user this unit mounts). Control-plane infra: deliberately no
+# `mediastack.managed` label, so managed-service logic leaves it alone.
+#
+# Runs as the host 'olivetin' uid (OLIVETIN_UID/GID, set by frontdoor-install)
+# so it can read its key and write its own entity cache — nothing world-readable,
+# non-root, no-new-privileges. Reachable over HTTPS via Traefik like every other
+# service; NOT published to a host port. Enable with: ./mediastack.sh frontdoor-install
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  olivetin:
+    image: jamesread/olivetin:latest
+    container_name: ${OLIVETIN_NAME:-mediastack-olivetin}
+    profiles: ["olivetin"]
+    user: "${OLIVETIN_UID}:${OLIVETIN_GID}"
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ${CONFIG_ROOT}/olivetin/config.yaml:/config/config.yaml:ro
+      - ${CONFIG_ROOT}/olivetin/ssh/id_ed25519:/config/ssh/id_ed25519:ro
+      - ${CONFIG_ROOT}/olivetin/ssh/known_hosts:/config/ssh/known_hosts:ro
+      # entity cache — the ONLY writable mount; owned by the same olivetin uid.
+      - ${CONFIG_ROOT}/olivetin/entities:/config/entities
+    extra_hosts:
+      # lets the container SSH back to the host (StrictHostKeyChecking stays on)
+      - "host.docker.internal:host-gateway"
+    networks: [mediastack]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:1337/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.port: "1337"
+      traefik.enable: "true"
+      traefik.http.routers.olivetin.rule: "Host(`${OLIVETIN_HOST:-panel}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.olivetin.entrypoints: "websecure"
+      traefik.http.routers.olivetin.tls: "true"
+      traefik.http.services.olivetin.loadbalancer.server.port: "1337"
+    logging: *logging
+    restart: unless-stopped
