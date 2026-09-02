@@ -348,6 +348,7 @@ Other
   new-service N  Scaffold service N into docker-compose.override.yml
                  (untracked, merged automatically, upgrade-safe).
   uninstall      Remove the stack (tiered: containers / users / configs).
+  frontdoor-install  Install the OliveTin web panel over the safe verbs.
                  --nuke: everything in one confirmed shot; works even on a
                  broken tree. Media and backups are never touched.
   menu           Interactive menu wrapping all of the above.
@@ -378,9 +379,9 @@ cmd_install() {
         *) die "This installer supports Debian/Ubuntu (apt). Detected: ${PRETTY_NAME:-unknown}.
   Docker + compose v2.20+, jq, curl and git installed manually will also work." ;;
     esac
-    info "Installing base packages (curl, git, jq, ca-certificates)..."
+    info "Installing base packages (curl, git, jq, ca-certificates, argon2)..."
     sudo apt-get update -qq
-    sudo apt-get install -y -qq curl git jq ca-certificates >/dev/null
+    sudo apt-get install -y -qq curl git jq ca-certificates argon2 >/dev/null
     if ! command -v docker >/dev/null 2>&1; then
         info "Installing Docker from Docker's official repository..."
         sudo install -m 0755 -d /etc/apt/keyrings
@@ -3757,6 +3758,313 @@ EOF
 }
 
 # -------------------------------------------------------------- dispatcher --
+# =============================================================== frontdoor --
+# OliveTin web front door: a browser panel of buttons/dropdowns over this
+# script's SAFE verbs. Zero new capability — every button is one narrow SSH
+# call that lands, on the host, as `sudo mediastack.sh <verb> <arg>` through a
+# forced-command wrapper that whitelists verbs and rejects shell metacharacters.
+# The container is unprivileged (no docker.sock, non-root, all host-provided
+# files read-only). Path to root is guarded twice (forced-command key + narrow
+# sudoers) and the mediastack.sh injection-safety the CI audit enforces.
+#
+# frontdoor-install is CLI-ONLY and never exposed through the panel — it writes
+# host users, sudoers, keys and a password. It is idempotent: safe to re-run.
+FRONTDOOR_USER=olivetin
+FRONTDOOR_WRAPPER=/usr/local/bin/olivetin-frontdoor
+FRONTDOOR_SUDOERS=/etc/sudoers.d/mediastack-frontdoor
+
+cmd_frontdoor_install() {
+    load_env
+    need_cmd argon2; need_cmd openssl; need_cmd ssh-keygen; need_cmd ssh-keyscan
+    [[ -t 0 ]] || die "run frontdoor-install interactively — it prompts for the panel password."
+    local script="$SCRIPT_DIR/mediastack.sh"
+    local otdir keydir ent
+    otdir="$(env_get CONFIG_ROOT)/olivetin"; keydir="$otdir/ssh"; ent="$otdir/entities"
+
+    hr "OliveTin front door — install"
+
+    # 1. Unprivileged, no-login host user. --system + nologin: it can never open
+    #    an interactive session; its ONLY reachable path is the forced-command
+    #    key below. Distinct from the repo owner so mode-755 on the script is a
+    #    real barrier (verified in step 3).
+    if id -u "$FRONTDOOR_USER" >/dev/null 2>&1; then
+        ok "host user '$FRONTDOOR_USER' already present"
+    else
+        sudo useradd --system --create-home --shell /usr/sbin/nologin "$FRONTDOOR_USER"
+        ok "created host user '$FRONTDOOR_USER' (system, nologin)"
+    fi
+    local ot_uid ot_gid ot_home
+    ot_uid=$(id -u "$FRONTDOOR_USER"); ot_gid=$(id -g "$FRONTDOOR_USER")
+    ot_home=$(getent passwd "$FRONTDOOR_USER" | cut -d: -f6)
+    [[ -n "$ot_home" ]] || die "could not resolve $FRONTDOOR_USER home directory"
+    # The container runs as this same numeric uid/gid so it can read its key and
+    # write its own entity cache, without any file being world-readable.
+    env_set OLIVETIN_UID "$ot_uid"; env_set OLIVETIN_GID "$ot_gid"
+
+    # 2. Harden the sudo target: owner keeps write (upgrade git-pulls as the repo
+    #    owner), group/other read-only. With a distinct olivetin user this makes
+    #    the script unwritable by the front door — asserted next.
+    sudo chmod 755 "$script"
+
+    # 3. THE load-bearing check: prove olivetin cannot rewrite what it can run as
+    #    root. If it can, the whole model is void — fail loud, change nothing.
+    if sudo -u "$FRONTDOOR_USER" /usr/bin/test -w "$script"; then
+        die "SECURITY: '$FRONTDOOR_USER' can WRITE $script — a compromise would run as root.
+  Fix perms/ownership so $FRONTDOOR_USER cannot write it (it must share no write-group with the owner)."
+    fi
+    ok "verified: '$FRONTDOOR_USER' cannot write $script"
+
+    # 4. Narrow sudoers: olivetin may sudo ONLY this script (no password). The
+    #    wrapper (step 5) is what bounds WHICH verbs; sudoers bounds WHICH binary.
+    #    Validated with visudo -c before install so a typo can't wedge sudo.
+    local stmp; stmp=$(mktemp)
+    printf '# Managed by mediastack.sh frontdoor-install. Do not edit.\n%s ALL=(root) NOPASSWD: %s\n' \
+        "$FRONTDOOR_USER" "$script" > "$stmp"
+    sudo visudo -cf "$stmp" >/dev/null || { rm -f "$stmp"; die "sudoers validation failed — not installed."; }
+    sudo install -m 0440 -o root -g root "$stmp" "$FRONTDOOR_SUDOERS"; rm -f "$stmp"
+    ok "sudoers installed: $FRONTDOOR_USER may sudo only $script"
+
+    # 5. Dedicated key + forced-command wrapper + pinned authorized_keys.
+    sudo mkdir -p "$keydir"
+    if sudo test -f "$keydir/id_ed25519"; then
+        ok "ssh keypair already present"
+    else
+        sudo ssh-keygen -t ed25519 -N '' -C 'olivetin-frontdoor' -f "$keydir/id_ed25519" >/dev/null
+        ok "generated ed25519 keypair"
+    fi
+    # Install the wrapper (embedded below as a literal heredoc — kept in this
+    # file so the CI front-door audit covers it too), pinned to this script.
+    local wtmp; wtmp=$(mktemp)
+    sed "s#__MEDIASTACK__#$script#" > "$wtmp" <<'FRONTDOOR_WRAPPER'
+#!/usr/bin/env bash
+# olivetin-frontdoor — SSH forced-command wrapper (the path-to-root chokepoint).
+# authorized_keys pins this as the ONLY command the olivetin key may run; the
+# client's request arrives in $SSH_ORIGINAL_COMMAND. We whitelist the charset,
+# whitelist the verb, bound the arg count, then hand argv (never a shell string)
+# to mediastack.sh via a narrow sudo entry. No arbitrary evaluation, no
+# interpolating shell: injection has nowhere to land.
+set -euo pipefail
+MEDIASTACK="__MEDIASTACK__"
+cmd=${SSH_ORIGINAL_COMMAND:-}
+[[ -n "$cmd" ]] || { echo "frontdoor: no command supplied" >&2; exit 2; }
+[[ "$cmd" =~ ^[a-z0-9]([a-z0-9' '-]*[a-z0-9])?$ ]] \
+    || { echo "frontdoor: rejected — illegal characters" >&2; exit 3; }
+read -r -a argv <<<"$cmd"
+verb=${argv[0]}; args=("${argv[@]:1}")
+case "$verb" in
+    update|enable|disable|vpn|wire|doctor|status|leak-test|list) ;;
+    *) echo "frontdoor: verb '$verb' not permitted" >&2; exit 4 ;;
+esac
+(( ${#args[@]} <= 2 )) || { echo "frontdoor: too many arguments" >&2; exit 5; }
+exec sudo -n "$MEDIASTACK" "$verb" "${args[@]}"
+FRONTDOOR_WRAPPER
+    sudo install -m 0755 -o root -g root "$wtmp" "$FRONTDOOR_WRAPPER"; rm -f "$wtmp"
+    ok "forced-command wrapper installed at $FRONTDOOR_WRAPPER"
+
+    local akdir="$ot_home/.ssh" pub
+    pub=$(sudo cat "$keydir/id_ed25519.pub")
+    sudo mkdir -p "$akdir"
+    printf 'command="%s",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding %s\n' \
+        "$FRONTDOOR_WRAPPER" "$pub" | sudo tee "$akdir/authorized_keys" >/dev/null
+    sudo chown -R "$FRONTDOOR_USER:$FRONTDOOR_USER" "$akdir"
+    sudo chmod 700 "$akdir"; sudo chmod 600 "$akdir/authorized_keys"
+    ok "authorized_keys pinned (forced command, no pty, no forwarding)"
+
+    # 6. known_hosts for the container->host hop. The host key is IP-independent,
+    #    so scan it via loopback and label it for the name the container uses
+    #    (host.docker.internal). StrictHostKeyChecking stays ON in the panel.
+    local hk; hk=$(sudo ssh-keyscan -t ed25519 127.0.0.1 2>/dev/null | sed 's/^[^ ]* /host.docker.internal /' | head -n1)
+    [[ -n "$hk" ]] || die "could not read this host's ed25519 SSH host key (is sshd running?)."
+    printf '%s\n' "$hk" | sudo tee "$keydir/known_hosts" >/dev/null
+    ok "pinned host key for host.docker.internal"
+
+    # 7. Panel admin password -> argon2id hash (offline; OliveTin's own hasher
+    #    needs a running instance). The password is read on the terminal and
+    #    piped on stdin — it never appears in argv or the process list.
+    hr "OliveTin admin password"
+    local pw pw2
+    read -rs -p "Set OliveTin admin password: " pw; echo
+    read -rs -p "Confirm password: "            pw2; echo
+    [[ -n "$pw" ]] || die "empty password."
+    [[ "$pw" == "$pw2" ]] || die "passwords did not match."
+    local hash
+    hash=$(printf '%s' "$pw" | argon2 "$(openssl rand -base64 16)" -id -t 4 -m 16 -p 6 -l 32 -e)
+    unset pw pw2
+    [[ "$hash" == '$argon2id$'* ]] || die "argon2 did not produce an argon2id hash — aborting."
+    ok "password hashed (argon2id)"
+
+    # 8. Write the OliveTin config. Static parts via literal heredocs; the hash is
+    #    concatenated between them so its $-laden text is never shell-expanded.
+    sudo mkdir -p "$otdir" "$ent"
+    local ctmp; ctmp=$(mktemp)
+    {
+        cat <<'OTCFG_HEAD'
+# Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install.
+logLevel: "INFO"
+
+# Everyone must log in; the panel can change the stack, so no guest access.
+authRequireGuestsToLogin: true
+accessControlLists:
+  - name: admins
+    matchUsergroups: [admins]
+    permissions:
+      view: true
+      exec: true
+      logs: true
+    addToEveryAction: true
+
+authLocalUsers:
+  enabled: true
+  users:
+    - username: admin
+      usergroup: admins
+OTCFG_HEAD
+        printf "      password: '%s'\n" "$hash"
+        cat <<'OTCFG_TAIL'
+
+# Service lists backing the dropdowns. The refresh action below regenerates
+# these on startup and on a timer by querying the host over SSH.
+entities:
+  - name: svc_enable
+    file: entities/enable.json
+  - name: svc_disable
+    file: entities/disable.json
+  - name: svc_vpn
+    file: entities/vpn.json
+  - name: svc_wire
+    file: entities/wire.json
+
+actions:
+  # -- entity refresh: hidden, runs on startup and every 5 minutes. Writes the
+  #    container's own /config/entities cache from `list ... --json` (JSONL, one
+  #    {"name":...} per line — exactly OliveTin's JSON entity format).
+  - title: Refresh service lists
+    id: refresh-entities
+    hidden: true
+    execOnStartup: true
+    execOnCron: "*/5 * * * *"
+    shell: |
+      mkdir -p /config/entities
+      SSH="ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal"
+      $SSH list disabled  --json > /config/entities/enable.json
+      $SSH list enabled   --json > /config/entities/disable.json
+      $SSH list vpntoggle --json > /config/entities/vpn.json
+      $SSH list wire      --json > /config/entities/wire.json
+
+  # -- read-only reports (no confirmation; output shown in a dialog) --
+  - title: Doctor (full audit)
+    icon: search
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal doctor
+
+  - title: Status
+    icon: information
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal status
+
+  - title: Leak test (VPN)
+    icon: shield
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal leak-test
+
+  # -- state-changing (confirmation required; update is serialised) --
+  - title: Update stack
+    icon: box
+    onclick: execution-dialog
+    maxConcurrent: 1
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal update
+    arguments:
+      - type: confirmation
+
+  - title: Enable a service
+    icon: play
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal enable {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_enable
+        title: Service to enable
+        choices:
+          - value: '{{ svc_enable.name }}'
+      - type: confirmation
+
+  - title: Disable a service
+    icon: stop
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal disable {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_disable
+        title: Service to disable
+        choices:
+          - value: '{{ svc_disable.name }}'
+      - type: confirmation
+
+  - title: Toggle VPN for a service
+    icon: globe
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal vpn {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_vpn
+        title: Service to toggle
+        choices:
+          - value: '{{ svc_vpn.name }}'
+      - type: confirmation
+
+  - title: Wire a service
+    icon: link
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal wire {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_wire
+        title: Service to wire
+        choices:
+          - value: '{{ svc_wire.name }}'
+      - type: confirmation
+OTCFG_TAIL
+    } > "$ctmp"
+    sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$otdir/config.yaml"; rm -f "$ctmp"
+    ok "wrote $otdir/config.yaml"
+
+    # 9. Ownership so the (non-root) container can read its key/known_hosts and
+    #    write its entity cache. Nothing here is world-readable.
+    sudo chown -R "$FRONTDOOR_USER:$FRONTDOOR_USER" "$keydir" "$ent"
+    sudo chmod 700 "$keydir"; sudo chmod 600 "$keydir/id_ed25519"; sudo chmod 644 "$keydir/id_ed25519.pub" "$keydir/known_hosts"
+    sudo chmod 775 "$ent"
+
+    # 10. Enable the profile (container defined in compose.d/olivetin.yml).
+    if svc_enabled olivetin; then
+        ok "'olivetin' already in COMPOSE_PROFILES"
+    else
+        env_set COMPOSE_PROFILES "$(env_get COMPOSE_PROFILES | tr ',' '\n' | awk 'NF && !seen[$0]++; END{print "olivetin"}' | paste -sd, -)"
+        ok "added 'olivetin' to COMPOSE_PROFILES"
+    fi
+
+    # 11. Re-verify both narrowings before declaring success.
+    sudo -u "$FRONTDOOR_USER" /usr/bin/test -w "$script" \
+        && die "post-check FAILED: $FRONTDOOR_USER can write $script."
+    sudo visudo -cf "$FRONTDOOR_SUDOERS" >/dev/null \
+        || die "post-check FAILED: installed sudoers is invalid."
+    grep -q '^command=' "$akdir/authorized_keys" 2>/dev/null \
+        || sudo grep -q '^command=' "$akdir/authorized_keys" \
+        || die "post-check FAILED: authorized_keys is not forced-command pinned."
+    ok "both narrowings verified (forced-command key + narrow sudoers)"
+
+    echo
+    hr "Front door ready"
+    cat <<EOT
+Bring it up:   ./mediastack.sh up        (starts the 'olivetin' container)
+Reach it:      https://\${OLIVETIN_HOST:-panel}.<your TRAEFIK_DOMAIN>  (LAN)
+Log in as 'admin' with the password you just set.
+
+Host-side checks worth confirming once (needs the live box):
+  * sshd accepts the olivetin key from containers (host-gateway reachable, sshd up)
+  * the container populates its dropdowns within ~5 min of first start
+EOT
+}
+
 main() {
     local cmd="${1:-help}"; shift || true
     case "$cmd" in
@@ -3791,6 +4099,7 @@ main() {
         traefik-setup) cmd_traefik_setup "$@" ;;
         new-service)  cmd_new_service "$@" ;;
         upgrade)      cmd_upgrade ;;
+        frontdoor-install) cmd_frontdoor_install ;;
         uninstall)    cmd_uninstall "$@" ;;
         *) fail "Unknown command '$cmd'"; echo; cmd_help; exit 1 ;;
     esac
