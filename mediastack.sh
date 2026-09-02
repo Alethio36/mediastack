@@ -3808,7 +3808,6 @@ cmd_frontdoor_refresh() {
 cmd_frontdoor_install() {
     load_env
     need_cmd argon2; need_cmd openssl; need_cmd ssh-keygen
-    [[ -t 0 ]] || die "run frontdoor-install interactively — it prompts for the panel password."
     local script="$SCRIPT_DIR/mediastack.sh"
     local otdir keydir ent
     otdir="$(env_get CONFIG_ROOT)/olivetin"; keydir="$otdir/ssh"; ent="$otdir/entities"
@@ -3885,7 +3884,7 @@ cmd=${SSH_ORIGINAL_COMMAND:-}
 read -r -a argv <<<"$cmd"
 verb=${argv[0]}; args=("${argv[@]:1}")
 case "$verb" in
-    update|enable|disable|vpn|wire|doctor|status|leak-test|list) ;;
+    update|enable|disable|vpn|vpn-apply|wire|doctor|status|leak-test|list) ;;
     *) echo "frontdoor: verb '$verb' not permitted" >&2; exit 4 ;;
 esac
 (( ${#args[@]} <= 2 )) || { echo "frontdoor: too many arguments" >&2; exit 5; }
@@ -3912,20 +3911,31 @@ FRONTDOOR_WRAPPER
     sudo awk '{print "host.docker.internal", $1, $2}' "$hostpub" | sudo tee "$keydir/known_hosts" >/dev/null
     ok "pinned host key for host.docker.internal (from $hostpub)"
 
-    # 7. Panel admin password -> argon2id hash (offline; OliveTin's own hasher
-    #    needs a running instance). The password is read on the terminal and
-    #    piped on stdin — it never appears in argv or the process list.
-    hr "OliveTin admin password"
-    local pw pw2
-    read -rs -p "Set OliveTin admin password: " pw; echo
-    read -rs -p "Confirm password: "            pw2; echo
-    [[ -n "$pw" ]] || die "empty password."
-    [[ "$pw" == "$pw2" ]] || die "passwords did not match."
-    local hash
-    hash=$(printf '%s' "$pw" | argon2 "$(openssl rand -base64 16)" -id -t 4 -m 16 -p 6 -l 32 -e)
-    unset pw pw2
-    [[ "$hash" == '$argon2id$'* ]] || die "argon2 did not produce an argon2id hash — aborting."
-    ok "password hashed (argon2id)"
+    # 7. Panel admin password. Reuse the existing hash on re-runs (so config-only
+    #    updates don't force a re-auth); prompt only on first install or when
+    #    --set-password is given. The hash is offline (OliveTin's own hasher needs
+    #    a running instance); the password is read on the terminal and piped on
+    #    stdin — never in argv or the process list.
+    local hash="" setpw=0 a
+    for a in "$@"; do [[ "$a" == --set-password ]] && setpw=1; done
+    if (( ! setpw )) && sudo test -f "$otdir/config.yaml"; then
+        hash=$(sudo sed -n "s/^ *password: '\(.*\)'\$/\1/p" "$otdir/config.yaml" | head -1)
+    fi
+    if [[ -n "$hash" ]]; then
+        ok "reusing existing admin password (change it with: frontdoor-install --set-password)"
+    else
+        [[ -t 0 ]] || die "run frontdoor-install interactively to set the panel password."
+        hr "OliveTin admin password"
+        local pw pw2
+        read -rs -p "Set OliveTin admin password: " pw; echo
+        read -rs -p "Confirm password: "            pw2; echo
+        [[ -n "$pw" ]] || die "empty password."
+        [[ "$pw" == "$pw2" ]] || die "passwords did not match."
+        hash=$(printf '%s' "$pw" | argon2 "$(openssl rand -base64 16)" -id -t 4 -m 16 -p 6 -l 32 -e)
+        unset pw pw2
+        [[ "$hash" == '$argon2id$'* ]] || die "argon2 did not produce an argon2id hash — aborting."
+        ok "password hashed (argon2id)"
+    fi
 
     # 8. Write the OliveTin config. Static parts via literal heredocs; the hash is
     #    concatenated between them so its $-laden text is never shell-expanded.
@@ -4021,15 +4031,20 @@ actions:
 
   - title: Toggle VPN
     icon: "🔒"
-    timeout: 180
+    timeout: 300
     onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal vpn {{ svc }}
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal vpn-apply {{ svc }} {{ state }}
     arguments:
       - name: svc
         entity: svc_vpn
-        title: Service to toggle
+        title: Service
         choices:
           - value: '{{ svc_vpn.name }}'
+      - name: state
+        title: VPN
+        choices:
+          - value: "on"
+          - value: "off"
       - title: Confirm
         type: confirmation
 
@@ -4159,6 +4174,7 @@ main() {
         doctor)       cmd_doctor ;;
         leak-test)    cmd_leak_test "$@" ;;
         vpn)          cmd_vpn "$@" ;;
+        vpn-apply)    cmd_vpn_apply "$@" ;;
         fix-perms)    cmd_fix_perms "$@" ;;
         add-mount)    cmd_add_mount ;;
         wire)         cmd_wire "$@" ;;
@@ -4169,7 +4185,7 @@ main() {
         traefik-setup) cmd_traefik_setup "$@" ;;
         new-service)  cmd_new_service "$@" ;;
         upgrade)      cmd_upgrade ;;
-        frontdoor-install) cmd_frontdoor_install ;;
+        frontdoor-install) cmd_frontdoor_install "$@" ;;
         frontdoor-refresh) cmd_frontdoor_refresh ;;
         uninstall)    cmd_uninstall "$@" ;;
         *) fail "Unknown command '$cmd'"; echo; cmd_help; exit 1 ;;
@@ -4629,6 +4645,18 @@ EOP
         [[ "$eff" != "$defv" ]] && note="changed from recommended" || note=""
         printf '%-16s %-5s %-13s %s\n' "$s" "$(vpn_onoff "$eff")" "$(vpn_onoff "$defv")" "$note"
     done
+}
+
+# vpn-apply <svc> on|off — set a service's VPN membership AND apply it, so the
+# panel button actually takes effect (bare `vpn` only stages the overlay).
+# Delegates validation to cmd_vpn, which also refuses to move a torrent client
+# OUT of the tunnel without the CLI's explicit --i-know (that would leak).
+cmd_vpn_apply() {
+    load_env
+    local svc="${1:?usage: vpn-apply <svc> on|off}" act="${2:?usage: vpn-apply <svc> on|off}"
+    case "$act" in on|off) ;; *) die "vpn-apply: action must be on or off" ;; esac
+    cmd_vpn "$svc" "$act"
+    cmd_up
 }
 
 cmd_vpn() {
