@@ -1,121 +1,213 @@
 MEDIASTACK — SESSION HANDOFF
-Date: 2026-08-30
-Repo: github.com/Alethio36/mediastack   Git authority: Harkon1   Deploy/verify: anzac3   Prod: anzac2 (old stack, untouched)
-Schema: SCRIPT_SCHEMA=12 (unchanged — feature used labels + optional env vars, no migration)
-Sandbox HEAD (last commit message): feat(status): show gluetun as 'self'; document the status VPN view
-Harkon1 = origin (git am replays → origin hashes differ from sandbox; message sequence is the congruity proof).
-Compose on anzac3: v5.5.0.
+Date: 2026-09-02
+Repo: github.com/Alethio36/mediastack   Git authority: Harkon1   Deploy/verify: anzac3   Prod: anzac2 (legacy stack, untouched)
+Delivery pipeline unchanged: sandbox commit -> format-patch + sha256 -> Nick verifies -> git am on Harkon1 -> push -> anzac3 ./mediastack.sh upgrade.
+Origin HEAD at session end: 22407d1 (feat(list): --json mode emitting entity records for UI dropdowns)
+Compose on anzac3: current. Timer (mediastack-update) ARMED. leak-test GREEN. doctor: all checks passed.
 
 
-== WHAT WAS BEING WORKED ON ==
-Two things, both shipped and verified live on anzac3:
-1. VPN membership made OPERATOR-SELECTABLE per service (the session's main work — 10 commits).
-2. docs/candidates.md reorganised + two new entries researched (CWA, YouTube archiving).
-Delivery pipeline unchanged: sandbox commit -> format-patch + sha256 -> Nick verifies -> git am -> push -> anzac3 upgrade -> up.
+== WHAT THIS SESSION WAS ==
+Started as a doctor-triage ("perms issue on kavita/lazylibrarian; VPN detach"). The VPN detach turned
+out to be a real, silent, structural leak-class bug. Fixing it properly consumed the first half. Second
+half: knocked down a backlog of small/medium items, then a deep investigation + partial build of an
+OliveTin web front door for the stack. 12 commits shipped and verified live. No schema bump this session.
 
 
-== DONE — VPN TOGGLE (shipped, wired, verified live) ==
-Which services run inside gluetun is now a runtime operator choice, not hardwired.
+== THE INCIDENT (root-caused, fixed, closed) ==
+Symptom: doctor showed 13 VPN'd services "NOT attached to gluetun". Investigation (docker inspect, NOT
+trusting doctor) found: last night's `up` recreated gluetun with a NEW container ID; compose left the 13
+`network_mode: container:` dependents pinned to the OLD, now-dead gluetun netns. They lost egress ENTIRELY
+(sealed, not leaking — the dead netns had no route; confirmed via in-container trace). Ghost-detach.
 
-  Model: a service opts in with label mediastack.vpntoggle="true". vpn_gen reads its metadata and
-  writes local/vpn-overlay.yml (gitignored, loaded by DC after the user override, before pins). The
-  overlay is ADDITIVE (no compose !reset), deterministic (sorted), regenerated on `up` and on any `vpn`
-  change. Toggle fragments therefore carry NO network_mode / networks / ports / traefik-router labels —
-  only metadata: mediastack.{port, subdomain, vpn(=default), hostport(optional)}.
+Root cause class: `network_mode: service:gluetun` is FAIL-OPEN. Compose does not recreate netns dependents
+when only the namespace-host (gluetun) changes. Any gluetun recreate that doesn't cascade to its
+dependents orphans them. Hit THREE times this session: (1) the original v5.5.0-era `up`, (2) the update
+path, (3) trash-sync's bare `docker compose run recyclarr`.
 
-  Override: <SVC>_VPN=true|false in .env is the per-deployment source of truth. `vpn <svc> on|off`
-  writes it ONLY when it differs from the fragment default, and CLEARS it (env_del) when it matches —
-  so a redundant override self-heals and the listing shows no stray entry.
-
-  Defaults (recommended): IN = qbittorrent, deluge, transmission, sonarr, sonarr-anime, radarr,
-  radarr-4k, lidarr, prowlarr, bazarr, lazylibrarian, apprise. OUT = audiobookshelf + all serving/infra.
-
-  Guardrail: torrent clients (qbittorrent, deluge, transmission) refuse `vpn <svc> off` without --i-know.
-
-  Pinned STATIC, never toggleable (moving them out breaks their consumer):
-    - flaresolverr — Prowlarr reaches it inside the namespace (localhost). Static network_mode; the sole
-      remaining per-service entry in gluetun.yml (its port + the 6881 BT ports).
-    - recyclarr    — one-shot trash-sync tool, unmanaged (no mediastack.managed), reaches the arrs on
-      localhost; VPN'd by fragment, excluded from audits by design.
-
-  Option A applied: deluge + transmission GAINED real Traefik routes (were port-only before) — WebUIs
-  now reachable like qBittorrent's.
-
-  hostport label: mediastack.hostport="false" => traefik-only, no host port published in either state
-  (for serving apps whose container port collides on the host — audiobookshelf is :80 vs Traefik).
-  Default "true" preserves direct host access for the acquisition apps. audiobookshelf is the first
-  serving-side toggle service (default OUT; only egress is public podcast feeds, so VPN optional).
-
-  Two views (intentionally redundant — Nick's call, both informational):
-    - ./mediastack.sh vpn         preamble + SERVICE / VPN / RECOMMENDED, on/off, flags changed rows.
-    - ./mediastack.sh status      VPN column = on/off, `self` for gluetun, `*` = changed-from-recommended,
-      plus a footnote legend.
-
-  Verified live on anzac3 across every wave: leak-test green in both directions, guardrail refuses,
-  audiobookshelf toggles IN with NO :80 host collision and keeps resolving, deluge/transmission routes
-  return 200/301. NOTE: vpn_gen has NO /tmp/h4 harness coverage — proven via ad-hoc emit-tests + anzac3.
-
-  Audit done this session: no OTHER non-VPN service needs the tunnel. Serving apps make only benign
-  metadata calls or serve local media; audiobookshelf (podcasts) added as the one optional lever.
-
-Commit sequence (messages; origin hashes differ):
-  feat(vpn): operator-selectable per-service VPN membership (engine + qbit)   [wave 1]
-  feat(vpn): migrate the arrs to generated VPN membership                     [wave 2]
-  feat(vpn): migrate apprise/lazylibrarian/deluge/transmission               [wave 3]
-  docs(vpn): document the vpn command, workflow, and label contract
-  feat(vpn): make audiobookshelf toggle-enabled (traefik-only); add hostport opt-out
-  fix(vpn): clear <SVC>_VPN override when it matches the shipped default
-  feat(vpn): plain-English vpn listing — preamble + VPN/RECOMMENDED columns
-  feat(status): show VPN membership as on/off with a changed-from-recommended flag
-  feat(status): show gluetun as 'self'; document the status VPN view
+Remediation that day: scoped `docker compose up -d --force-recreate --no-deps <13 services>` re-pinned them
+to the live gluetun. leak-test green.
 
 
-== DONE — CANDIDATES.MD ==
-Reorganised by domain with an at-a-glance table; existing ROMM/Kapowarr/Bindery/Komga preserved. Added:
-  - Calibre-Web-Automated (Books) — mgmt + e-reader delivery layer over a Calibre library. Health
-    excellent. NOT a ROMM-style DB problem (SQLite only). Cost = forks the books tree onto metadata.db;
-    Kavita demotes to reader; wire LazyLibrarian -> CWA ingest; never add its downloader companion.
-    Verdict: ship-worthy, radar not roadmap.
-  - YouTube archiving (Video) — Pinchflat [PICK] (single container, SQLite, NFO -> Jellyfin native),
-    alts TubeArchivist (heavy: ES+Redis) / ytdl-sub (no UI) / TubeSync. Two forced caveats: must NOT go
-    through gluetun (datacenter/VPN IPs get bot-flagged harder) and can't be tag-pinned (bundled yt-dlp
-    goes stale -> breakage). Adversarial upstream (PO tokens / bot detection).
+== COMMITS SHIPPED THIS SESSION (all live on anzac3, in order) ==
+  fix(update): re-pin VPN dependents when gluetun is recreated        [reattach guard, update path]
+  fix(trash-sync): route recyclarr through DC with --no-deps          [bare compose -> DC(); --no-deps]
+  refactor(vpn): single fail-closed reattach guard on up and update   [extracted vpn_reattach_guard(), called from cmd_up + cmd_update]
+  feat(update): cascade-recreate gluetun's VPN group together         [gluetun in targets -> force-recreate it + borrowers as a group]
+  fix(lint): clear shellcheck warnings; document recyclarr depends_on [SC2010/2178/2155; recyclarr depends_on marked inert-but-retained]
+  fix(doctor): tier config-perm ownership; probe writability as the true check  [item 8 — see below]
+  fix(update): defer health verdict to the health gate, not compose's up        [item 11 — apply_up()]
+  feat(vpn): boot/daemon guard unit for reattach coverage            [item 9 — mediastack-vpnguard.service]
+  polish: plainer VPN wording in summaries; duration hints           [item 5 + 6]
+  feat(list): machine-readable service lister for UI/dropdown consumption        [list verb — OliveTin groundwork]
+  ci(frontdoor): audit that mediastack.sh stays safe to expose via a front door  [scripts/audit-frontdoor-safety.sh in lint.yml]
+  feat(list): --json mode emitting entity records for UI dropdowns    [list --json -> {"name":"<svc>"}]
+
+The VPN fault-class is now CLOSED on every stack-driven path:
+  - PREVENTION: cascade recreates gluetun+borrowers together on update (no drift arises).
+  - CURE: vpn_reattach_guard runs on up + update, detects any ID mismatch, force-recreates, dies loud if
+    a re-pin fails (+ ops notify). Verifies against gluetun's live full ID (leak-test's proof idiom).
+  - BOOT/DAEMON: mediastack-vpnguard.service (oneshot, After/Requires=docker.service) runs the guard on
+    every boot and docker restart, waiting for gluetun health first. PROVEN live: manufactured a ghost,
+    the unit repaired 13 orphans, leak-test green. Installed idempotently by cmd_up; removed by uninstall.
+  NOT covered: a raw out-of-band `docker compose up` mid-session (no reboot). That's the ONE residual hole;
+  only Model B (internal-network topology) closes it, and we deliberately did NOT do Model B (see below).
 
 
-== NEXT STEPS (priority order) ==
-1. anzac2 -> anzac3 MIGRATION — STILL BLOCKED on Nick (unchanged; this session was a VPN detour).
-   Needs: beta-isolation decision + `qm config <anzac2-vmid>`. All discovery banked in prior handoff +
-   docs/migration-existing.md. This is the real next priority.
-2. (optional) Add vpn_gen coverage to the harness — it's the one recent feature with no h4 tests.
-3. (optional) Ship Pinchflat when appetite exists (lightest candidate; mind the two caveats).
+== KEY DECISIONS THIS SESSION ==
+- Model A (script guard) chosen over Model B (internal:true no-egress network). Model B is the "true"
+  fail-closed fix but BREAKS THE LOCALHOST CONTRACT the arrs depend on (prowlarr->flaresolverr,
+  recyclarr->arrs all use localhost BECAUSE they share gluetun's netns). Rejected as too invasive for the
+  benefit; documented. Revisit only if the stress test proves the guards insufficient.
+- item 7 (smarter backup — stop only affected services): CLOSED as WON'T-FIX. Nick's call: snapshots must
+  be whole-stack for consistency; per-service is a project for marginal gain. Backups stay atomic.
+- item 12 (cleanuparr ~2895 err/24h): diagnosed BENIGN. It's connection-refused bursts during gluetun
+  recreates (cleanuparr health-checks the arrs on a timer; each recreate window = a burst). ~15 recreates
+  this session inflated the count. WATCH-ITEM for production: the doctor error-line-count WARN will keep
+  tripping after gluetun updates; if it becomes alarm-fatigue in prod, tier it (like we did kavita). Left
+  as-is for now (option A) — the WARN is honest and self-clears in 24h.
+- CORRECTION: mediastack has NO NetBird scope. Earlier plan wrongly assumed "reach OliveTin over NetBird"
+  (NetBird is Nick's separate infra, netbird-kit project). Scrubbed. OliveTin reachability = Traefik like
+  other services (LAN), WAN only via a deliberate separate port-forward, not mediastack's concern.
+
+
+== ITEM 8 (the original bug) — how it actually resolved ==
+Chain of misdiagnosis, evidence-corrected each step:
+  - kavita/audiobookshelf run as ROOT (images ignore PUID) -> write cache files as root.
+  - doctor's ownership check FAILed on ANY mis-owned file, short-circuiting BEFORE the writability probe.
+  - kavita's ONLY drift: one root-owned file at cache-long/update/github_latest_release_cache.json. Cosmetic.
+  - my /config writability test was a RED HERRING — kavita mounts /kavita/config, not /config. doctor's
+    own probe resolves the real mount dynamically; only the ownership gate was the problem.
+Fix (fix(doctor)): writability probe is now the DEFINITIVE pass/fail (live, at the real mount path).
+Ownership drift is TIERED: real config files -> FAIL; regenerable paths (cache|cache-long|logs|tmp|backups)
+-> loud WARN, cosmetic. Probe always runs now (no longer gated behind ownership). VERIFIED live: kavita
+now WARNs on the cache file (not FAIL), audiobookshelf clean, doctor all-passed.
+Note: the runtime-audit "no process runs as UID 13028 — PUID may be ignored" WARNs for kavita/audiobookshelf
+are CORRECT and intentional (they truthfully report root-by-image); leave them.
+
+
+== ANZAC2 INVESTIGATION (prod is fine, but understand why) ==
+Checked whether prod (anzac2) has the same leak bug. Findings:
+  - anzac2 is the LEGACY stack: monolithic docker-compose.yml, installer.sh, NO mediastack.sh, NO
+    compose.d/. Its source is the repo's `legacy` branch (per Nick).
+  - Topology: SAME Model A (10 services `network_mode: "service:gluetun"`, all on container:960fc871...).
+    NOT Model B. Nick's recollection that it was Model B was WRONG (a sealed Model A and a working Model B
+    look identical from outside — the whole point).
+  - Currently SEALED/clean: qbit egress = a VPN IP, not host 50.53.111.129. All borrowers on live gluetun.
+  - WHY anzac2 survived months w/ no guard: it runs WATCHTOWER (updates ALL containers, gluetun in scope,
+    no label-scoping). Watchtower's recreate IS dependency-aware — it recreates gluetun's netns dependents
+    WITH gluetun. Compose's partial `up` (what bit anzac3) is NOT. So anzac2 dodged the bug by using a
+    smarter recreator, NOT by having a safer design. Both boxes are equally fail-open topologically.
+  - Migration implication: anzac2->anzac3 is a LATERAL move (Model A -> Model A), to a box that's BETTER
+    guarded (guard present, no rogue watchtower). Not an architecture change.
+
+
+== OLIVETIN FRONT DOOR — investigation + partial build (the big second-half thread) ==
+GOAL: a web UI of buttons/dropdowns over mediastack.sh's safe verbs (update, enable/disable, vpn toggle,
+wire, doctor/status/leak-test), so Nick can drive the stack from a browser/phone. QOL, zero new capability.
+
+WHY OliveTin (researched, current as of this session): purpose-built "safe front door over your CLI" —
+Go binary, tiny, FOSS, actively maintained. Its OWN security guidance MATCHES our design (non-root/
+container, narrow sudo to only the needed script, auth, reverse proxy). Alternatives rejected: Semaphore/
+Rundeck/AWX (fleet/Ansible platforms — overkill, wrong model); Portainer/Dockge (drive raw compose ->
+BYPASS the guard -> disqualified); Cockpit (host admin, complements but doesn't run our verbs); Homepage
+(read-only dashboard — good future pairing for status tiles + service blurbs, safe because read-only).
+
+ARCHITECTURE (decided, docs-verified):
+  - OliveTin runs as an UNPRIVILEGED CONTAINER in the stack (no docker.sock, not privileged, not root).
+  - It reaches the host via SSH-TO-HOST (OliveTin's OWN documented preferred pattern; image ships an ssh
+    client). Use the MANUAL ssh setup (host-key checking ON), NOT the "easy" one (which disables it).
+  - Two independent narrowings + the CI audit guard the path to root:
+      #1 forced-command SSH key: authorized_keys pins command="/usr/local/bin/olivetin-frontdoor". That
+         wrapper whitelists verbs, rejects ALL shell metacharacters, then calls mediastack.sh via sudo.
+         WRAPPER LOGIC PROVEN IN SANDBOX: every allowed verb runs; every attack (;, &&, |, $(), ``, >,
+         path traversal, quoted-spaces, off-whitelist verbs) rejected.
+      #2 narrow sudoers: host `olivetin` user may `sudo` ONLY mediastack.sh.
+      #3 mediastack.sh itself is injection-free (front-door audit) and re-validates every service arg.
+  - Dropdowns are ENTITY-BACKED (OliveTin reads a JSON file; my earlier `choicesCommand` was FICTIONAL —
+    corrected via docs). A cron/startup OliveTin action refreshes the entity file via `ssh ... list <subset>
+    --json` (that's why list + list --json were built and shipped). enable->list disabled, disable->list
+    enabled, vpn->list vpntoggle, wire->list wire.
+  - AUTH (interim): OliveTin's BUILT-IN local-user auth, ON, even on LAN (the panel can change the stack,
+    so it's higher-stakes than the media services). Real SSO (Authelia/Keycloak) is future hardening.
+  - REACHABILITY: Traefik route like other services (LAN). NOT public. WAN only via deliberate portforward.
+  - PASSWORD: frontdoor-install will PROMPT interactively at install time and hash via OliveTin's argon2
+    helper. Deliberately NOT via mediastack.sh set-credentials — a password must never flow through the
+    front-door-exposed script's argv. set-credentials stays for media-service creds only.
+
+SECURITY AUDIT OF mediastack.sh (done, clean): no eval; every service arg whitelisted via svc_exists
+(exact grep -qx) + label checks; NO user input reaches any `sh -c` (all static single-quoted); container
+names quoted. Verdict: SAFE to expose via narrow sudo. The CI tripwire (scripts/audit-frontdoor-safety.sh,
+in lint.yml) now ENFORCES the two properties (no eval, no interpolating sh -c) so a regression fails CI.
+See docs/frontdoor-safety.md for the full contract (incl. host-side reqs the audit can't check).
+
+DELIBERATELY NOT EXPOSED via front door: set-credentials, traefik-setup, new-service, invite, configure,
+install, uninstall (free-text/config), and logs (follows -f, would hang the action).
+
+
+== NEXT SESSION — clean opener, fully de-risked ==
+1. BUILD `frontdoor-install` verb (the big one — do it FRESH, test EACH path, it writes sudoers/creates
+   users/generates keys). It should, idempotently:
+     - create unprivileged host `olivetin` user (distinct from alethio, NO shared write-group — that's what
+       makes mode-755 on the script sufficient; VERIFY groups first)
+     - install narrow sudoers via visudo -c validation
+     - generate the dedicated ed25519 keypair; install the forced-command wrapper (embed it in
+       mediastack.sh as a heredoc — Option A, matches the systemd-unit pattern; keeps it under the CI audit)
+     - pin authorized_keys with command="..."+no-pty+no-forwarding
+     - harden: chown root + chmod 755 mediastack.sh; VERIFY olivetin can't write it. NOTE the upgrade
+       tension: `upgrade` git-pulls as alethio; likely resolution is "accept alethio ownership, rely on
+       755 + distinct user" (root-own is belt, not load-bearing).
+     - PROMPT interactively for the OliveTin admin password, hash it, write config
+     - write compose.d/olivetin.yml (Traefik-routed, LAN, unprivileged, ssh key mounted ro, NO
+       mediastack.managed label — it's control-plane infra), the OliveTin config.yaml (entity dropdowns,
+       cron-refresh action, confirmations on destructive actions, concurrency limit on update, NO
+       experimental features.* flags), and the initial entity files
+     - VERIFY both narrowings before declaring success (fail loud otherwise)
+2. Then Piece 3 = LIVE DEPLOY on anzac3 (Nick at console, me directing): run frontdoor-install, add
+   "olivetin" to COMPOSE_PROFILES, up, and the ONE live-tuning pass (confirm entity dropdowns render;
+   the entity-file/refresh wiring is the last unverified bit — everything else is docs-verified).
+3. Old drafts in /mnt/user-data/outputs/olivetin-drafts/ are SUPERSEDED (they had the choicesCommand
+   error, NetBird refs, and the broken in-container-sudo compose). Rebuild fresh from the decisions above;
+   only the sshkey wrapper LOGIC survives (it was proven). Do NOT commit the .DRAFT files.
+
+REAL NEXT PRIORITY after OliveTin: anzac2->anzac3 MIGRATION (still blocked on Nick: beta-isolation decision
++ `qm config <anzac2-vmid>`). Unchanged from prior handoffs. Plus the STRESS TEST (rapid build/rebuild)
+Nick wants before migrating — the boot guard (item 9) was built specifically to make that safe; the test
+must run through ./mediastack.sh (script-driven), since raw-compose-mid-session is the one unguarded path.
+
+
+== HARDENING BACKLOG (codified this session — do post-migration, when stack is stable) ==
+  - Real SSO (Authelia/Keycloak) in front of OliveTin, replacing interim built-in local auth.
+  - Move OliveTin off LAN-open once SSO exists (or internal-only Traefik route w/ IP-allowlist middleware).
+  - Phase-2 sudo narrowing (D1 deferral): read-only verbs (doctor/status/leak-test/list) -> docker-group
+    user WITHOUT sudo; only state-changing verbs (update/enable/disable/vpn/wire) keep sudo-root. Shrinks
+    the root surface. The OliveTin config draft notes exactly which lines change.
+  - Staging -> production certs on anzac3 (ACME_ENV=production) when it stops being a test box.
+  - cleanuparr doctor-WARN noise: tier it if it becomes alarm-fatigue in prod (see item 12 above).
+  - recyclarr depends_on: now inert (--no-deps + guard); latent trigger only if something else starts
+    recyclarr. Low.
+  - Model B (internal-network fail-closed) reconsideration IF the stress test surfaces out-of-band leaks
+    the guards can't catch. Documented tradeoff: closes the last hole, costs the localhost-contract rewrite.
+  - Eventual: split mediastack.sh (4400+ lines) into sourced modules. A real refactor with its own risk
+    to the current single-file simplicity — Nick flagged it for "later, with a proper org standard".
 
 
 == OPEN QUESTIONS / KNOWN GAPS ==
-  - vpn_gen: no automated harness; verified by emit-tests + anzac3 only.
-  - gluetun status VPN cell shows `self` (cosmetic, resolved this session).
-  - The vpn list and status VPN view overlap by design (kept redundant, both informational).
-  - Pre-existing (not VPN-related): kavita version column shows base-OS "24.04"; lazylibrarian has no
-    native Apprise hub notifier (documented gap).
-
-
-== KEY FILE PATHS ==
-  mediastack.sh — vpn_gen, cmd_vpn, vpn_list, vpn_onoff, vpn_effective, vpn_rname, vpn_base_json,
-                  vpn_traefik_labels; VPN_TORRENT_CLIENTS guard; DC() loads local/vpn-overlay.yml;
-                  cmd_status VPN column (on/off/self/*).
-  compose.d/*.yml — 13 toggle fragments neutralised (vpntoggle label, no static network wiring);
-                  gluetun.yml static per-service block emptied except flaresolverr + 6881.
-  local/vpn-overlay.yml — GENERATED, gitignored (do not edit).
-  docs/vpn-membership.md — the vpn command, workflow, defaults, pinned exceptions, hostport, both views.
-  docs/adding-a-service.md — label contract incl. mediastack.vpntoggle / mediastack.hostport.
-  docs/candidates.md — deferred-services watchlist (CWA, YouTube archiving, ROMM/Kapowarr/Bindery/Komga).
+  - OliveTin entity-dropdown refresh wiring is the one thing unverifiable without a live instance — the
+    single live-tuning item for Piece 3. Everything else is docs-verified.
+  - The out-of-band `docker compose up` mid-session path remains unguarded (Model A limit, by design).
+  - anzac2 stays on watchtower-recreates-everything; fine as-is, it's being migrated off.
 
 
 == STANDING RULES (still active) ==
-  - Verify upstream against the DEPLOYED image tag, not master.
-  - Never head-truncate contract files. Every patch-script replace asserts anchor is unique.
-  - Probe-everything-at-once before choosing a healthcheck tool (nc/wget/curl lesson).
-  - Permissive healthchecks for SPA/redirect-fronted apps (accept 2xx/3xx).
-  - anzac3 is the truth oracle; mocks/emit-tests prove code agreement only.
-  - Nick's long pastes auto-convert to EMPTY attachments — ask for trimmed inline text.
-  - Delivery: never chain rm after git am; double-apply guard via git log before apply blocks.
-  - YouTube archiving, if ever added, must NOT ride gluetun and can't be reproducibly tag-pinned.
+  - Verify upstream/topology against the DEPLOYED reality (docker inspect), not against doctor or assumptions
+    — doctor was WRONG about the "bypass" this session; the daemon was the truth oracle.
+  - Every patch built against the LIVE repo HEAD, anchor-asserted, bash -n + shellcheck clean, and where
+    possible logic-tested in-sandbox before shipping. Rebuild base cleanly for format-patch (a base-juggling
+    slip twice produced full-file-add patches this session — caught before delivery; watch for it).
+  - Delivery: sha256 verify -> git log guard (title absent) -> git am -> push -> upgrade. The 100755 MINGW
+    "type" warning on every git am is harmless (exec bit; git doesn't track it).
+  - `./mediastack.sh logs <svc>` FOLLOWS (-f) — it hangs waiting for lines, it is NOT stuck. Ctrl-C. (Bit
+    Nick twice; a bounded-tail default is a possible future QOL fix, item 6-adjacent.)
+  - sudo journal: `journalctl -u <unit>` shows "no entries" to a non-adm user; use `sudo journalctl`.
+  - Front-door safety: NEVER add an eval or an interpolating `sh -c "…$var…"` to mediastack.sh (CI now
+    fails on both). Any new verb taking free-text must NOT be front-door-exposed. See docs/frontdoor-safety.md.
