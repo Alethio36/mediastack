@@ -874,7 +874,7 @@ vpn_reattach_guard() {
         [[ "$nm" == "container:$gid" ]] || stale+=("$vd")
     done
     if (( ${#stale[@]} )); then
-        warn "gluetun was recreated — dependents still joined to the old namespace: ${stale[*]}"
+        warn "gluetun was recreated — dependents still joined to the old gluetun (dead tunnel): ${stale[*]}"
         info "re-pinning them onto the live gluetun..."
         DC up -d --force-recreate --no-deps "${stale[@]}"
         for vd in "${stale[@]}"; do
@@ -1045,7 +1045,7 @@ cmd_backup() {
       done; } | sudo tee "$dest/images.lock" >/dev/null
     [[ -s "$dest/images.lock" ]] || warn "images.lock is empty — image-exact rollback unavailable for this point"
 
-    info "Stopping stack for a consistent snapshot..."
+    info "Stopping stack for a consistent snapshot... (all services briefly stop; ~20-40s)"
     DC stop >/dev/null
     local rc=0
     for s in $(svc_managed); do
@@ -1055,7 +1055,7 @@ cmd_backup() {
     sudo cp "$ENV_FILE" "$dest/env"; sudo chmod 600 "$dest/env"
     [[ -s "$PINS_FILE" ]] && sudo cp "$PINS_FILE" "$dest/pins.yml"
     ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' )
-    info "Restarting stack..."
+    info "Restarting stack... (waiting on gluetun health; can take up to ~1min)"
     DC up -d >/dev/null
     if (( rc == 0 )); then ok "Restore point complete: $dest"
     else
@@ -1272,6 +1272,7 @@ cmd_update() {
     fi
 
     hr "Pulling images"
+    info "pulling from registries — the slowest step on a full update; a minute or two is normal"
     local after changed=()
     local -A before=()
     for s in "${targets[@]}"; do before[$s]=$(c_version "$(svc_cname "$s")"); done
@@ -1653,7 +1654,7 @@ cmd_doctor() {
             [[ "$dnm" == "container:$dgid" ]] || dbad+="$s "
         done
         if (( dchecked == 0 )); then info "no running VPN'd services to audit"
-        elif [[ -z "$dbad" ]]; then ok "all VPN'd services attached to gluetun's namespace"
+        elif [[ -z "$dbad" ]]; then ok "all VPN'd services routed through the gluetun tunnel"
         else d_fail "VPN'd services NOT attached to gluetun: $dbad" "their traffic bypasses the VPN entirely" "./mediastack.sh up   (recreates with correct attachment), then ./mediastack.sh leak-test"; fi
     fi
     if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
@@ -1813,7 +1814,7 @@ cmd_leak_test() {
         svc_enabled "$s" || continue
         cn=$(svc_cname "$s"); [[ "$(c_state "$cn")" == running ]] || { info "$s not running — skipped"; continue; }
         nm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$cn" | tr -d '\n')
-        if [[ "$nm" == "container:$gid" ]]; then ok "$s runs inside gluetun's namespace"
+        if [[ "$nm" == "container:$gid" ]]; then ok "$s routed through the gluetun tunnel"
         else fail "$s is NOT joined to gluetun (mode: ${nm:0:40}...) — this IS a leak path"; rc=1; fi
     done
 
