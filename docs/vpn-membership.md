@@ -140,3 +140,19 @@ background activity (update checks, log rotation, nightly backups) and it does
 not threaten config integrity. Backup *health* (validity, recency) is audited
 separately in the vpn+backups section, so treating backup-file *ownership* as
 cosmetic here does not hide a broken backup.
+
+### Boot/daemon guard (systemd)
+
+vpn_reattach_guard only runs when the script runs, so a reboot or
+`systemctl restart docker` — which brings containers back by restart-policy
+without the script — could leave borrowers on a recreated gluetun's dead
+namespace with nothing to catch it. A oneshot unit,
+`mediastack-vpnguard.service` (After/Requires=docker.service,
+WantedBy=multi-user.target), runs `mediastack.sh vpn-guard --boot` on every
+boot and docker restart. It waits (bounded) for gluetun to become healthy
+first — at boot, containers start asynchronously, so checking too early would
+race the startup it guards — then runs the same reattach guard. It does NOT
+cover a raw `docker compose up` while the system is already running (only
+script paths and daemon/boot events). The unit is installed unconditionally
+and idempotently by every `cmd_up` (a removed unit reappears on next `up`), and
+both uninstall paths remove it.

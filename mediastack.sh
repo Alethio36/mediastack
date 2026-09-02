@@ -904,6 +904,7 @@ cmd_up()   {
         DC up -d --remove-orphans
     fi
     vpn_reattach_guard   # fail-closed: no service may run pinned to a dead gluetun
+    vpnguard_ensure      # (re)install the boot/daemon guard unit
     ok "Stack started."
     cat <<'EOT'
 Check on it:   ./mediastack.sh status    (what's running, health, versions)
@@ -1361,6 +1362,62 @@ cmd_update() {
                             notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded.\nInspect: \`./mediastack.sh trash-sync\`" failure
                             exit 1; }
     fi
+}
+
+# --------------------------------------------------------- vpn boot guard --
+# The reattach guard (vpn_reattach_guard) only runs when the script runs. A
+# reboot or `systemctl restart docker` brings containers back by restart-policy
+# WITHOUT the script, so a gluetun recreated on boot could leave borrowers on a
+# dead namespace with nothing to catch it until the next manual up/update. This
+# oneshot unit runs the guard on every boot and docker restart, closing that
+# out-of-band window. It does NOT cover a raw `docker compose up` while the
+# system is already running — only script paths and daemon/boot events. Install
+# is unconditional (pure safety, no reason to gate) and idempotent, refreshed on
+# every cmd_up so a removed unit reappears.
+VPNGUARD_UNIT=/etc/systemd/system/mediastack-vpnguard.service
+
+vpnguard_ensure() {
+    # Write/refresh the boot-guard unit. Cheap and idempotent; only reloads
+    # systemd when the file actually changed, to avoid needless daemon-reloads
+    # on every up.
+    local tmp; tmp=$(mktemp)
+    cat >"$tmp" <<EOF
+[Unit]
+Description=Mediastack VPN attachment guard (boot/daemon)
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=$SCRIPT_DIR
+ExecStart=$SCRIPT_DIR/mediastack.sh vpn-guard --boot
+[Install]
+WantedBy=multi-user.target
+EOF
+    if ! sudo cmp -s "$tmp" "$VPNGUARD_UNIT" 2>/dev/null; then
+        sudo cp "$tmp" "$VPNGUARD_UNIT"
+        sudo systemctl daemon-reload
+        sudo systemctl enable mediastack-vpnguard.service >/dev/null 2>&1 || true
+        info "VPN boot-guard unit installed/updated"
+    fi
+    rm -f "$tmp"
+}
+
+cmd_vpn_guard() {
+    load_env
+    local boot=0; [[ "${1:-}" == --boot ]] && boot=1
+    # On boot, docker starts containers asynchronously — gluetun may not be
+    # healthy yet. Wait (bounded) before judging attachment, or we would race
+    # the very startup we are guarding and falsely repair/​fail. Mirrors cmd_up's
+    # gluetun health-race handling.
+    local gcn t=0; gcn=$(svc_cname gluetun)
+    if [[ $(c_state "$gcn") == absent ]]; then
+        (( boot )) && { info "vpn-guard: gluetun not present — stack not up, nothing to guard"; return 0; }
+        die "vpn-guard: gluetun container not found — is the stack up?"
+    fi
+    while [[ $(c_health "$gcn") != healthy && $t -lt 120 ]]; do sleep 5; t=$((t+5)); done
+    [[ $(c_health "$gcn") == healthy ]] \
+        || { warn "vpn-guard: gluetun not healthy after ${t}s — deferring (next boot/up will retry)"; return 0; }
+    vpn_reattach_guard
 }
 
 cmd_apply_timer() {
@@ -1886,7 +1943,8 @@ cmd_nuke() {
     [[ "$really" == "nuke mediastack" ]] || { info "Aborted — nothing touched."; return 1; }
 
     sudo systemctl disable --now mediastack-update.timer 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer
+    sudo systemctl disable --now mediastack-vpnguard.service 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer /etc/systemd/system/mediastack-vpnguard.service
     sudo systemctl daemon-reload
     ok "systemd units removed"
     sudo docker ps -aq --filter "label=com.docker.compose.project=mediastack" \
@@ -1920,7 +1978,8 @@ cmd_uninstall() {
     confirm "Proceed with tier 1?" || return 0
     DC down --remove-orphans --volumes; ok "containers removed (anonymous volumes included)"
     sudo systemctl disable --now mediastack-update.timer 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer
+    sudo systemctl disable --now mediastack-vpnguard.service 2>/dev/null || true
+    sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer /etc/systemd/system/mediastack-vpnguard.service
     sudo systemctl daemon-reload
     echo; echo "Tier 2: remove the service system users + group"
     if confirm "Also remove users/group?"; then
@@ -3674,6 +3733,7 @@ main() {
         logs)         cmd_logs "$@" ;;
         update)       cmd_update "$@" ;;
         apply-timer)  cmd_apply_timer ;;
+        vpn-guard)    cmd_vpn_guard "$@" ;;
         backup)       if [[ "${1:-}" == verify ]]; then shift; cmd_backup_verify "$@"; else cmd_backup "$@"; fi ;;
         restore)      cmd_restore "$@" ;;
         rollback)     cmd_rollback "$@" ;;
