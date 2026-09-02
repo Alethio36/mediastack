@@ -978,18 +978,35 @@ c_restarts(){ local o; o=$(sudo docker inspect --format '{{.RestartCount}}' "$1"
 # take. Read-only: renders the config and prints names, changes nothing.
 cmd_list() {
     load_env
-    local subset="${1:-managed}"
+    # optional --json emits one Olivetin-style entity record per line
+    # ({"name":"<svc>"}), for feeding an entity file that backs a UI dropdown.
+    # Default is plain names, one per line.
+    local json=0 subset="managed" a
+    for a in "$@"; do
+        case "$a" in
+            --json) json=1 ;;
+            all|managed|enabled|disabled|vpntoggle|wire) subset="$a" ;;
+            *) die "usage: list [all|managed|enabled|disabled|vpntoggle|wire] [--json]" ;;
+        esac
+    done
+    local names
     case "$subset" in
-        all)        svc_all | sort ;;
-        managed)    svc_managed | sort ;;
-        enabled)    local s; for s in $(svc_managed); do svc_enabled "$s" && echo "$s"; done | sort ;;
-        disabled)   local s; for s in $(svc_managed); do svc_enabled "$s" || echo "$s"; done | sort ;;
-        vpntoggle)  render; jq -r '.services | to_entries[]
+        all)        names=$(svc_all | sort) ;;
+        managed)    names=$(svc_managed | sort) ;;
+        enabled)    names=$(local s; for s in $(svc_managed); do svc_enabled "$s" && echo "$s"; done | sort) ;;
+        disabled)   names=$(local s; for s in $(svc_managed); do svc_enabled "$s" || echo "$s"; done | sort) ;;
+        vpntoggle)  render; names=$(jq -r '.services | to_entries[]
                         | select(.value.labels["mediastack.vpntoggle"]=="true") | .key' \
-                        <<<"$RENDERED_JSON" | sort ;;
-        wire)       printf '%s\n' qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr all ;;
-        *) die "usage: list [all|managed|enabled|disabled|vpntoggle|wire]" ;;
+                        <<<"$RENDERED_JSON" | sort) ;;
+        wire)       names=$(printf '%s\n' qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr all) ;;
     esac
+    [[ -z "$names" ]] && return 0
+    if (( json )); then
+        # jq -R reads each raw line; build a safe object (handles any chars).
+        printf '%s\n' "$names" | jq -R '{name: .}' -c
+    else
+        printf '%s\n' "$names"
+    fi
 }
 
 cmd_status() {
