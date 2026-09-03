@@ -785,7 +785,7 @@ provision() {
         local stub
         while read -r stub; do
             [[ -z "$stub" ]] && continue
-            [[ -e "$stub" ]] && continue
+            sudo test -e "$stub" && continue   # stat as root: these mounts are root/olivetin-owned
             sudo mkdir -p "$stub"
             [[ -n "$uid" ]] && sudo chown "$uid:mediacenter" "$stub"
         done < <(jq -r --arg s "$s" '
