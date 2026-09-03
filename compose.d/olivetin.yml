@@ -2,8 +2,12 @@
 # mediastack.sh's safe verbs. It holds NO docker access; every action is one
 # narrow SSH call to the host that lands as `sudo mediastack.sh <verb>` through
 # a forced-command wrapper (see `frontdoor-install`, which writes the config,
-# key and host user this unit mounts). Control-plane infra: deliberately no
-# `mediastack.managed` label, so managed-service logic leaves it alone.
+# key and host user this unit mounts). Carries `mediastack.managed` like traefik
+# so it rides the normal health-gated `update` flow (the `:latest` tag only
+# moves when update runs — no-foreign-watchtower blocks out-of-band bumps). This
+# also lists it in `status` and the panel's Disable dropdown: disabling it kills
+# the panel itself — intentional, the operator keeps full control (see
+# docs/frontdoor-safety.md).
 #
 # Runs as the host 'olivetin' uid (OLIVETIN_UID/GID, set by frontdoor-install)
 # so it can read its key and write its own entity cache — nothing world-readable,
@@ -45,8 +49,12 @@ services:
     networks: [mediastack]
     security_opt:
       - no-new-privileges:true
+    # No healthcheck on purpose: the image ships no shell/wget, so a CMD-SHELL
+    # probe can never exec and would peg the container 'unhealthy' forever. The
+    # update health-gate treats a healthcheck-less container as pass.
     labels:
       <<: *no-foreign-watchtower
+      mediastack.managed: "true"
       mediastack.port: "1337"
       traefik.enable: "true"
       traefik.http.routers.olivetin.rule: "Host(`${OLIVETIN_HOST:-panel}.${TRAEFIK_DOMAIN:-unset.invalid}`)"

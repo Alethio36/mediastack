@@ -109,7 +109,7 @@ Run
 | `up` / `down` | start / stop the stack |
 | `enable <svc>` / `disable <svc>` | turn one service on/off (dependencies handled) |
 | `status [svc]` | overview table (ports, VPN, health, versions, URLs) or one-service deep view |
-| `logs <svc>` | follow one service's logs |
+| `logs <svc> [--no-follow]` | follow one service's logs; `--no-follow` prints a bounded snapshot and returns (used by the web panel) |
 
 Maintain
 | command | what it does |
