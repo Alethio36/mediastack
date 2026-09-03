@@ -3816,16 +3816,16 @@ frontdoor_teardown() {
 # ❌ = not running.
 frontdoor_status_json() {
     render
-    local s cn st h glyph
+    local s cn st h glyph cls
     for s in $(svc_managed); do
         svc_enabled "$s" || continue
         cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
         case "$st" in
-            running) case "$h" in healthy|-) glyph="✅" ;; *) glyph="⚠️" ;; esac ;;
-            *)       glyph="❌" ;;
+            running) case "$h" in healthy|-) glyph="✅"; cls="ms-up" ;; *) glyph="⚠️"; cls="ms-warn" ;; esac ;;
+            *)       glyph="❌"; cls="ms-down" ;;
         esac
-        jq -nc --arg name "$s" --arg state "$st" --arg health "$h" --arg glyph "$glyph" \
-            '{name:$name,state:$state,health:$health,glyph:$glyph}'
+        jq -nc --arg name "$s" --arg state "$st" --arg health "$h" --arg glyph "$glyph" --arg cls "$cls" \
+            '{name:$name,state:$state,health:$health,glyph:$glyph,cls:$cls}'
     done
 }
 
@@ -3994,6 +3994,9 @@ FRONTDOOR_WRAPPER
 # Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install.
 logLevel: "INFO"
 pageTitle: "Mediastack"
+# custom-webui/themes/mediastack/theme.css (written by frontdoor-install) styles
+# the status tiles into a coloured grid.
+themeName: "mediastack"
 # hide the small on-start indicator badges on each button, for a cleaner grid
 showNavigateOnStartIcons: false
 
@@ -4233,8 +4236,10 @@ dashboards:
       - title: '{{ status.glyph }} {{ status.name }}'
         entity: status
         type: fieldset
+        cssClass: ms-status
         contents:
           - type: display
+            cssClass: '{{ status.cls }}'
             title: 'state: {{ status.state }} · health: {{ status.health }}'
       - title: Diagnostics
         type: fieldset
@@ -4265,6 +4270,59 @@ OTCFG_TAIL
     } > "$ctmp"
     sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$otdir/config.yaml"; rm -f "$ctmp"
     ok "wrote $otdir/config.yaml"
+
+    # Theme: pack the per-service status rows into a coloured, wrapping grid.
+    # :has() scopes the flex override to the dashboard that has status tiles, so
+    # other views (Diagnostics/Entities/Logs) are untouched. Class names come
+    # from the status fieldset (ms-status) and the host-computed cls field.
+    local themedir="$otdir/custom-webui/themes/mediastack"
+    sudo mkdir -p "$themedir"
+    local ttmp; ttmp=$(mktemp)
+    cat > "$ttmp" <<'THEME_CSS'
+/* Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install. */
+
+/* Only reflow the content area that holds status tiles (the Mediastack
+   dashboard); leave every other view's section.transparent alone. */
+main > section.transparent:has(fieldset.ms-status) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+/* a status tile = the dashboard-row that directly holds a status fieldset */
+main > section.transparent:has(fieldset.ms-status) > .dashboard-row:has(> fieldset.ms-status) {
+  width: 190px;
+  margin: 0;
+}
+main > section.transparent:has(fieldset.ms-status) > .dashboard-row:has(> fieldset.ms-status) h2 {
+  font-size: 1rem;
+  text-align: center;
+  margin: 0.2rem 0;
+}
+
+/* action rows (Diagnostics/Services/Maintenance) keep a full-width line */
+main > section.transparent:has(fieldset.ms-status) > .dashboard-row:not(:has(> fieldset.ms-status)) {
+  flex: 1 1 100%;
+}
+
+/* the tile's status box: fill the tile, small text, colour bar by state */
+fieldset.ms-status {
+  grid-template-columns: 1fr;
+  padding: 0.3rem;
+}
+fieldset.ms-status .display {
+  font-size: 0.8rem;
+  padding: 0.4rem;
+  border-left: 3px solid transparent;
+}
+.display.ms-up   { border-left-color: #3fb950; }
+.display.ms-warn { border-left-color: #d29922; }
+.display.ms-down { border-left-color: #f85149; }
+THEME_CSS
+    sudo install -m 0644 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ttmp" "$themedir/theme.css"; rm -f "$ttmp"
+    ok "wrote $themedir/theme.css"
 
     # Minimal passwd so the container ssh client can resolve its own uid
     # (it runs as OLIVETIN_UID:GID, which is absent from the image passwd).
