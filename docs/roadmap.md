@@ -1,4 +1,84 @@
-# Candidate services — evaluated, deferred
+# Mediastack — goals & roadmap
+
+The project's north star, its forward direction, and services evaluated but
+deferred. The direction is a **radar, not a mandate**: items marked *(explore)*
+are pursued only if the appetite is real, and "lean scope" (below) is itself a
+goal — new work must earn its place.
+
+## Project goals
+
+- **FOSS-only, self-hosted, private.** Every component is open-source; nothing
+  phones home; the stack runs entirely on operator-controlled hardware.
+- **One script, one source of truth.** `mediastack.sh` is the only supported
+  entry point — a finite set of validated, idempotent verbs. Operations go
+  through it, never raw `docker compose` mid-session (that is the VPN safety
+  boundary).
+- **Modular by service.** One `compose.d/` fragment per service, explicitly
+  included; user additions live in `docker-compose.override.yml` and survive
+  upgrades.
+- **Safe by construction.** VPN-gated, leak-tested torrent path; a front door
+  that runs only allowlisted verbs; fail-loud over silent fallbacks; changes are
+  health-gated and reversible (backup/restore, pinned images, rollback).
+- **Lean scope.** Feature-complete for what it sets out to do; new services and
+  features must earn their place against complexity and operational cost, not
+  novelty.
+- **Reproducible & recoverable.** Any box rebuilds from a restore point; every
+  failure `doctor` reports states its own fix.
+
+## Direction
+
+Candidate directions, grouped by theme — where the project *could* go next, not
+a committed plan.
+
+### End-user experience
+- Web panel polishing.
+- Script polishing for the end user (clearer prompts, output, ergonomics).
+- Extend `--dry-run` / what-if beyond `update` to `enable`/`disable`/`wire`/
+  `vpn-apply`, so more operations are previewable before they apply.
+
+### Extensibility
+- An easier path to add services *beyond* the built-in framework.
+- Rework `wire`: make it modular/pluggable (per-service wiring definitions)
+  instead of one hardcoded list — easier to extend and reason about.
+
+### Portability
+- De-hardcode Debian; open up the OS assumptions.
+- Podman support, alongside or instead of Docker.
+- Multi-arch / ARM as an explicit target.
+- Rootless operation *(explore)* — folds together with the phase-2 sudo
+  narrowing below into one "shrink the root surface" goal.
+
+### Structure
+- Revisit the folder structure — config files and compose shards.
+- Formalize the `.env` config schema and validate it (it is the whole config
+  surface; `doctor`-style checks for it).
+
+### Security & access
+- **SSO in front of the panel** *(explore)* — Authelia or Keycloak. An optional
+  but interesting area: it would let the panel move off LAN-open and gate the
+  `credentials` verb, and it is a natural candidate for the whole stack's app
+  logins, not just the panel.
+- Post-migration hardening: move the panel off LAN-open once SSO lands; phase-2
+  sudo narrowing (read-only verbs drop root); staging→production certs once a box
+  stops being a test box.
+- Secrets handling *(explore)* — Docker secrets or an external store instead of
+  plaintext `.env`.
+
+### Project health
+- **Optimization & project-health pass.** The build phase prioritized capability
+  over refinement. A deliberate sweep: audit `mediastack.sh` for dead code,
+  redundant logic, and oversized functions; confirm every verb still earns its
+  place; tighten style and error-handling consistency; find lean-ness wins
+  (fewer moving parts, faster common paths); verify docs match behavior; re-check
+  the whole against the goals above. A lean-and-correct sweep, not a rewrite.
+- Expand CI/tests: a shellcheck gate, `docker compose config` validation across
+  every fragment, and a render/`--dry-run` smoke test.
+- First-class host-to-host migration (a `migrate` / export-import verb) — turns
+  the manual cutover procedure into a validated command.
+
+---
+
+## Candidate services — evaluated, deferred
 
 Services that were assessed for the stack and consciously *not* shipped
 yet, with the reasoning, so the decision isn't re-litigated from scratch
@@ -44,7 +124,7 @@ community fork (`Calibre-Web-NextGen`) exists to ship CWA's PR backlog
 faster — a mild single-maintainer-bottleneck signal, but canonical is
 clearly alive. Stay on canonical, pin a tag.
 
-**Why deferred (Nick's call — radar, not roadmap):** it is *not* a drop-in
+**Why deferred (a deliberate scope decision — radar, not roadmap):** it is *not* a drop-in
 sidecar. CWA manages a **Calibre library** (`metadata.db` + Calibre's
 Author/Title folder scheme), which is a different on-disk structure than
 the flat `${DATA_ROOT}/media/{books,comics}` tree Kavita reads and

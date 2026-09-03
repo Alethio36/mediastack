@@ -331,7 +331,7 @@ it with the exact values to paste, and stores the key. After that:
 ./mediastack.sh invite --expires 7   # or 1 | 30 days
 ```
 
-## Roadmap
+## Status
 
 Shipped: one-fragment-per-service architecture · app wiring (`wire`) ·
 TRaSH Guides sync with ownership model and nightly automation · HTTPS edge
@@ -346,7 +346,8 @@ sync and backup (WatchState) · a dedicated music server (Navidrome) ·
 audiobook/podcast and ebook/comic serving (Audiobookshelf, Kavita).
 
 The stack is feature-complete for its scope; changes from here are
-maintenance and fixes.
+maintenance, fixes, and polish. Project goals and forward direction live
+in [docs/roadmap.md](docs/roadmap.md).
 
 ## Docs
 
@@ -356,7 +357,7 @@ maintenance and fixes.
 * [docs/adding-a-service.md](docs/adding-a-service.md) — extend the stack
 * [docs/migration-existing.md](docs/migration-existing.md) — adopt an existing deployment
 * [docs/disaster-recovery.md](docs/disaster-recovery.md) — full rebuild from a restore point
-* [docs/candidates.md](docs/candidates.md) — services evaluated but deferred, with reasoning
+* [docs/roadmap.md](docs/roadmap.md) — project goals, forward direction, and services evaluated but deferred
 
 ## License
 
