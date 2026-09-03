@@ -3859,69 +3859,11 @@ cmd_frontdoor_refresh() {
     ok "refreshed OliveTin entity lists + status tiles"
 }
 
-cmd_frontdoor_install() {
-    load_env
-    need_cmd argon2; need_cmd openssl; need_cmd ssh-keygen
-    local script="$SCRIPT_DIR/mediastack.sh"
-    local otdir keydir ent
-    otdir="$(env_get CONFIG_ROOT)/olivetin"; keydir="$otdir/ssh"; ent="$otdir/entities"
-
-    hr "OliveTin front door — install"
-
-    # 1. Unprivileged, no-login host user. --system + nologin: it can never open
-    #    an interactive session; its ONLY reachable path is the forced-command
-    #    key below. Distinct from the repo owner so mode-755 on the script is a
-    #    real barrier (verified in step 3).
-    if id -u "$FRONTDOOR_USER" >/dev/null 2>&1; then
-        ok "host user '$FRONTDOOR_USER' already present"
-    else
-        sudo useradd --system --create-home --shell /bin/sh "$FRONTDOOR_USER"
-        ok "created host user '$FRONTDOOR_USER' (system, /bin/sh)"
-    fi
-    local ot_uid ot_gid ot_home
-    sudo usermod -s /bin/sh "$FRONTDOOR_USER"   # sshd execs the forced command via this shell
-    ot_uid=$(id -u "$FRONTDOOR_USER"); ot_gid=$(id -g "$FRONTDOOR_USER")
-    ot_home=$(getent passwd "$FRONTDOOR_USER" | cut -d: -f6)
-    [[ -n "$ot_home" ]] || die "could not resolve $FRONTDOOR_USER home directory"
-    # The container runs as this same numeric uid/gid so it can read its key and
-    # write its own entity cache, without any file being world-readable.
-    env_set OLIVETIN_UID "$ot_uid"; env_set OLIVETIN_GID "$ot_gid"
-
-    # 2. Harden the sudo target: owner keeps write (upgrade git-pulls as the repo
-    #    owner), group/other read-only. With a distinct olivetin user this makes
-    #    the script unwritable by the front door — asserted next.
-    sudo chmod 755 "$script"
-
-    # 3. THE load-bearing check: prove olivetin cannot rewrite what it can run as
-    #    root. If it can, the whole model is void — fail loud, change nothing.
-    if sudo -u "$FRONTDOOR_USER" /usr/bin/test -w "$script"; then
-        die "SECURITY: '$FRONTDOOR_USER' can WRITE $script — a compromise would run as root.
-  Fix perms/ownership so $FRONTDOOR_USER cannot write it (it must share no write-group with the owner)."
-    fi
-    ok "verified: '$FRONTDOOR_USER' cannot write $script"
-
-    # 4. Narrow sudoers: olivetin may sudo ONLY this script (no password). The
-    #    wrapper (step 5) is what bounds WHICH verbs; sudoers bounds WHICH binary.
-    #    Validated with visudo -c before install so a typo can't wedge sudo.
-    local stmp; stmp=$(mktemp)
-    printf '# Managed by mediastack.sh frontdoor-install. Do not edit.\n%s ALL=(root) NOPASSWD: %s\n' \
-        "$FRONTDOOR_USER" "$script" > "$stmp"
-    sudo visudo -cf "$stmp" >/dev/null || { rm -f "$stmp"; die "sudoers validation failed — not installed."; }
-    sudo install -m 0440 -o root -g root "$stmp" "$FRONTDOOR_SUDOERS"; rm -f "$stmp"
-    ok "sudoers installed: $FRONTDOOR_USER may sudo only $script"
-
-    # 5. Dedicated key + forced-command wrapper + pinned authorized_keys.
-    sudo mkdir -p "$keydir"
-    if sudo test -f "$keydir/id_ed25519"; then
-        ok "ssh keypair already present"
-    else
-        sudo ssh-keygen -t ed25519 -N '' -C 'olivetin-frontdoor' -f "$keydir/id_ed25519" >/dev/null
-        ok "generated ed25519 keypair"
-    fi
-    # Install the wrapper (embedded below as a literal heredoc — kept in this
-    # file so the CI front-door audit covers it too), pinned to this script.
-    local wtmp; wtmp=$(mktemp)
-    sed "s#__MEDIASTACK__#$script#" > "$wtmp" <<'FRONTDOOR_WRAPPER'
+# --- front-door static payloads (kept in this file so the CI audit covers the
+#     wrapper; emitted verbatim, byte-for-byte identical to the former inline
+#     heredocs). See cmd_frontdoor_install for how they are assembled. ---
+_fd_wrapper_src() {
+    cat <<'FRONTDOOR_WRAPPER'
 #!/usr/bin/env bash
 # olivetin-frontdoor — SSH forced-command wrapper (the path-to-root chokepoint).
 # authorized_keys pins this as the ONLY command the olivetin key may run; the
@@ -3944,59 +3886,10 @@ esac
 (( ${#args[@]} <= 2 )) || { echo "frontdoor: too many arguments" >&2; exit 5; }
 exec sudo -n "$MEDIASTACK" "$verb" "${args[@]}"
 FRONTDOOR_WRAPPER
-    sudo install -m 0755 -o root -g root "$wtmp" "$FRONTDOOR_WRAPPER"; rm -f "$wtmp"
-    ok "forced-command wrapper installed at $FRONTDOOR_WRAPPER"
+}
 
-    local akdir="$ot_home/.ssh" pub
-    pub=$(sudo cat "$keydir/id_ed25519.pub")
-    sudo mkdir -p "$akdir"
-    printf 'command="%s",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding %s\n' \
-        "$FRONTDOOR_WRAPPER" "$pub" | sudo tee "$akdir/authorized_keys" >/dev/null
-    sudo chown -R "$FRONTDOOR_USER:$FRONTDOOR_USER" "$akdir"
-    sudo chmod 700 "$akdir"; sudo chmod 600 "$akdir/authorized_keys"
-    ok "authorized_keys pinned (forced command, no pty, no forwarding)"
-
-    # 6. known_hosts for the container->host hop. The host key is IP-independent,
-    #    so scan it via loopback and label it for the name the container uses
-    #    (host.docker.internal). StrictHostKeyChecking stays ON in the panel.
-    local hostpub=/etc/ssh/ssh_host_ed25519_key.pub
-    sudo test -f "$hostpub" || die "host ed25519 key $hostpub not found — is openssh-server installed?"
-    # authoritative source; ssh-keyscan can capture the banner line instead of the key
-    sudo awk '{print "host.docker.internal", $1, $2}' "$hostpub" | sudo tee "$keydir/known_hosts" >/dev/null
-    ok "pinned host key for host.docker.internal (from $hostpub)"
-
-    # 7. Panel admin password. Reuse the existing hash on re-runs (so config-only
-    #    updates don't force a re-auth); prompt only on first install or when
-    #    --set-password is given. The hash is offline (OliveTin's own hasher needs
-    #    a running instance); the password is read on the terminal and piped on
-    #    stdin — never in argv or the process list.
-    local hash="" setpw=0 a
-    for a in "$@"; do [[ "$a" == --set-password ]] && setpw=1; done
-    if (( ! setpw )) && sudo test -f "$otdir/config.yaml"; then
-        hash=$(sudo sed -n "s/^ *password: '\(.*\)'\$/\1/p" "$otdir/config.yaml" | head -1)
-    fi
-    if [[ -n "$hash" ]]; then
-        ok "reusing existing admin password (change it with: frontdoor-install --set-password)"
-    else
-        [[ -t 0 ]] || die "run frontdoor-install interactively to set the panel password."
-        hr "OliveTin admin password"
-        local pw pw2
-        read -rs -p "Set OliveTin admin password: " pw; echo
-        read -rs -p "Confirm password: "            pw2; echo
-        [[ -n "$pw" ]] || die "empty password."
-        [[ "$pw" == "$pw2" ]] || die "passwords did not match."
-        hash=$(printf '%s' "$pw" | argon2 "$(openssl rand -base64 16)" -id -t 4 -m 16 -p 6 -l 32 -e)
-        unset pw pw2
-        [[ "$hash" == '$argon2id$'* ]] || die "argon2 did not produce an argon2id hash — aborting."
-        ok "password hashed (argon2id)"
-    fi
-
-    # 8. Write the OliveTin config. Static parts via literal heredocs; the hash is
-    #    concatenated between them so its $-laden text is never shell-expanded.
-    sudo mkdir -p "$otdir" "$ent"
-    local ctmp; ctmp=$(mktemp)
-    {
-        cat <<'OTCFG_HEAD'
+_fd_otcfg_head() {
+    cat <<'OTCFG_HEAD'
 # Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install.
 logLevel: "INFO"
 pageTitle: "Mediastack"
@@ -4023,8 +3916,10 @@ authLocalUsers:
     - username: admin
       usergroup: admins
 OTCFG_HEAD
-        printf "      password: '%s'\n" "$hash"
-        cat <<'OTCFG_TAIL'
+}
+
+_fd_otcfg_tail() {
+    cat <<'OTCFG_TAIL'
 
 # Service lists backing the dropdowns; refreshed on the host by the timer
 # (and by the panel's Refresh button).
@@ -4273,18 +4168,10 @@ dashboards:
           - title: Fix perms
           - title: Refresh panel
 OTCFG_TAIL
-    } > "$ctmp"
-    sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$otdir/config.yaml"; rm -f "$ctmp"
-    ok "wrote $otdir/config.yaml"
+}
 
-    # Theme: pack the per-service status rows into a coloured, wrapping grid.
-    # :has() scopes the flex override to the dashboard that has status tiles, so
-    # other views (Diagnostics/Entities/Logs) are untouched. Class names come
-    # from the status fieldset (ms-status) and the host-computed cls field.
-    local themedir="$otdir/custom-webui/themes/mediastack"
-    sudo mkdir -p "$themedir"
-    local ttmp; ttmp=$(mktemp)
-    cat > "$ttmp" <<'THEME_CSS'
+_fd_theme_css() {
+    cat <<'THEME_CSS'
 /* Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install. */
 
 /* Only reflow the content area that holds status tiles (the Mediastack
@@ -4327,6 +4214,134 @@ fieldset.ms-status .display {
 .display.ms-warn { border-left-color: #d29922; }
 .display.ms-down { border-left-color: #f85149; }
 THEME_CSS
+}
+
+cmd_frontdoor_install() {
+    load_env
+    need_cmd argon2; need_cmd openssl; need_cmd ssh-keygen
+    local script="$SCRIPT_DIR/mediastack.sh"
+    local otdir keydir ent
+    otdir="$(env_get CONFIG_ROOT)/olivetin"; keydir="$otdir/ssh"; ent="$otdir/entities"
+
+    hr "OliveTin front door — install"
+
+    # 1. Unprivileged, no-login host user. --system + nologin: it can never open
+    #    an interactive session; its ONLY reachable path is the forced-command
+    #    key below. Distinct from the repo owner so mode-755 on the script is a
+    #    real barrier (verified in step 3).
+    if id -u "$FRONTDOOR_USER" >/dev/null 2>&1; then
+        ok "host user '$FRONTDOOR_USER' already present"
+    else
+        sudo useradd --system --create-home --shell /bin/sh "$FRONTDOOR_USER"
+        ok "created host user '$FRONTDOOR_USER' (system, /bin/sh)"
+    fi
+    local ot_uid ot_gid ot_home
+    sudo usermod -s /bin/sh "$FRONTDOOR_USER"   # sshd execs the forced command via this shell
+    ot_uid=$(id -u "$FRONTDOOR_USER"); ot_gid=$(id -g "$FRONTDOOR_USER")
+    ot_home=$(getent passwd "$FRONTDOOR_USER" | cut -d: -f6)
+    [[ -n "$ot_home" ]] || die "could not resolve $FRONTDOOR_USER home directory"
+    # The container runs as this same numeric uid/gid so it can read its key and
+    # write its own entity cache, without any file being world-readable.
+    env_set OLIVETIN_UID "$ot_uid"; env_set OLIVETIN_GID "$ot_gid"
+
+    # 2. Harden the sudo target: owner keeps write (upgrade git-pulls as the repo
+    #    owner), group/other read-only. With a distinct olivetin user this makes
+    #    the script unwritable by the front door — asserted next.
+    sudo chmod 755 "$script"
+
+    # 3. THE load-bearing check: prove olivetin cannot rewrite what it can run as
+    #    root. If it can, the whole model is void — fail loud, change nothing.
+    if sudo -u "$FRONTDOOR_USER" /usr/bin/test -w "$script"; then
+        die "SECURITY: '$FRONTDOOR_USER' can WRITE $script — a compromise would run as root.
+  Fix perms/ownership so $FRONTDOOR_USER cannot write it (it must share no write-group with the owner)."
+    fi
+    ok "verified: '$FRONTDOOR_USER' cannot write $script"
+
+    # 4. Narrow sudoers: olivetin may sudo ONLY this script (no password). The
+    #    wrapper (step 5) is what bounds WHICH verbs; sudoers bounds WHICH binary.
+    #    Validated with visudo -c before install so a typo can't wedge sudo.
+    local stmp; stmp=$(mktemp)
+    printf '# Managed by mediastack.sh frontdoor-install. Do not edit.\n%s ALL=(root) NOPASSWD: %s\n' \
+        "$FRONTDOOR_USER" "$script" > "$stmp"
+    sudo visudo -cf "$stmp" >/dev/null || { rm -f "$stmp"; die "sudoers validation failed — not installed."; }
+    sudo install -m 0440 -o root -g root "$stmp" "$FRONTDOOR_SUDOERS"; rm -f "$stmp"
+    ok "sudoers installed: $FRONTDOOR_USER may sudo only $script"
+
+    # 5. Dedicated key + forced-command wrapper + pinned authorized_keys.
+    sudo mkdir -p "$keydir"
+    if sudo test -f "$keydir/id_ed25519"; then
+        ok "ssh keypair already present"
+    else
+        sudo ssh-keygen -t ed25519 -N '' -C 'olivetin-frontdoor' -f "$keydir/id_ed25519" >/dev/null
+        ok "generated ed25519 keypair"
+    fi
+    # Install the wrapper (embedded below as a literal heredoc — kept in this
+    # file so the CI front-door audit covers it too), pinned to this script.
+    local wtmp; wtmp=$(mktemp)
+    _fd_wrapper_src | sed "s#__MEDIASTACK__#$script#" > "$wtmp"
+    sudo install -m 0755 -o root -g root "$wtmp" "$FRONTDOOR_WRAPPER"; rm -f "$wtmp"
+    ok "forced-command wrapper installed at $FRONTDOOR_WRAPPER"
+
+    local akdir="$ot_home/.ssh" pub
+    pub=$(sudo cat "$keydir/id_ed25519.pub")
+    sudo mkdir -p "$akdir"
+    printf 'command="%s",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding %s\n' \
+        "$FRONTDOOR_WRAPPER" "$pub" | sudo tee "$akdir/authorized_keys" >/dev/null
+    sudo chown -R "$FRONTDOOR_USER:$FRONTDOOR_USER" "$akdir"
+    sudo chmod 700 "$akdir"; sudo chmod 600 "$akdir/authorized_keys"
+    ok "authorized_keys pinned (forced command, no pty, no forwarding)"
+
+    # 6. known_hosts for the container->host hop. The host key is IP-independent,
+    #    so scan it via loopback and label it for the name the container uses
+    #    (host.docker.internal). StrictHostKeyChecking stays ON in the panel.
+    local hostpub=/etc/ssh/ssh_host_ed25519_key.pub
+    sudo test -f "$hostpub" || die "host ed25519 key $hostpub not found — is openssh-server installed?"
+    # authoritative source; ssh-keyscan can capture the banner line instead of the key
+    sudo awk '{print "host.docker.internal", $1, $2}' "$hostpub" | sudo tee "$keydir/known_hosts" >/dev/null
+    ok "pinned host key for host.docker.internal (from $hostpub)"
+
+    # 7. Panel admin password. Reuse the existing hash on re-runs (so config-only
+    #    updates don't force a re-auth); prompt only on first install or when
+    #    --set-password is given. The hash is offline (OliveTin's own hasher needs
+    #    a running instance); the password is read on the terminal and piped on
+    #    stdin — never in argv or the process list.
+    local hash="" setpw=0 a
+    for a in "$@"; do [[ "$a" == --set-password ]] && setpw=1; done
+    if (( ! setpw )) && sudo test -f "$otdir/config.yaml"; then
+        hash=$(sudo sed -n "s/^ *password: '\(.*\)'\$/\1/p" "$otdir/config.yaml" | head -1)
+    fi
+    if [[ -n "$hash" ]]; then
+        ok "reusing existing admin password (change it with: frontdoor-install --set-password)"
+    else
+        [[ -t 0 ]] || die "run frontdoor-install interactively to set the panel password."
+        hr "OliveTin admin password"
+        local pw pw2
+        read -rs -p "Set OliveTin admin password: " pw; echo
+        read -rs -p "Confirm password: "            pw2; echo
+        [[ -n "$pw" ]] || die "empty password."
+        [[ "$pw" == "$pw2" ]] || die "passwords did not match."
+        hash=$(printf '%s' "$pw" | argon2 "$(openssl rand -base64 16)" -id -t 4 -m 16 -p 6 -l 32 -e)
+        unset pw pw2
+        [[ "$hash" == '$argon2id$'* ]] || die "argon2 did not produce an argon2id hash — aborting."
+        ok "password hashed (argon2id)"
+    fi
+
+    # 8. Write the OliveTin config. Static parts via literal heredocs; the hash is
+    #    concatenated between them so its $-laden text is never shell-expanded.
+    sudo mkdir -p "$otdir" "$ent"
+    local ctmp; ctmp=$(mktemp)
+    { _fd_otcfg_head; printf "      password: '%s'\n" "$hash"; _fd_otcfg_tail; } > "$ctmp"
+    sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$otdir/config.yaml"; rm -f "$ctmp"
+    ok "wrote $otdir/config.yaml"
+
+    # Theme: pack the per-service status rows into a coloured, wrapping grid.
+    # :has() scopes the flex override to the dashboard that has status tiles, so
+    # other views (Diagnostics/Entities/Logs) are untouched. Class names come
+    # from the status fieldset (ms-status) and the host-computed cls field.
+    local themedir="$otdir/custom-webui/themes/mediastack"
+    sudo mkdir -p "$themedir"
+    local ttmp; ttmp=$(mktemp)
+    _fd_theme_css > "$ttmp"
     sudo install -m 0644 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ttmp" "$themedir/theme.css"; rm -f "$ttmp"
     ok "wrote $themedir/theme.css"
 
