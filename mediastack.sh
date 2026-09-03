@@ -951,7 +951,20 @@ cmd_disable() {
     ok "'$svc' disabled; its container was removed (config kept, still backed up)."
 }
 
-cmd_logs() { load_env; DC logs -f --tail=100 "${1:?usage: logs <service>}"; }
+cmd_logs() {
+    load_env
+    # Interactive default follows; --no-follow returns a bounded snapshot, which
+    # is what the web front door calls (a following stream would hang the action).
+    local svc="" follow=(-f) a
+    for a in "$@"; do
+        case "$a" in
+            --no-follow) follow=() ;;
+            *)           svc="$a" ;;
+        esac
+    done
+    [[ -n "$svc" ]] || die "usage: logs <service> [--no-follow]"
+    DC logs "${follow[@]}" --tail=100 "$svc"
+}
 
 # ------------------------------------------------------------------ status --
 # NOTE: on a missing container, some docker versions emit a blank stdout line
@@ -986,8 +999,8 @@ cmd_list() {
     for a in "$@"; do
         case "$a" in
             --json) json=1 ;;
-            all|managed|enabled|disabled|vpntoggle|wire) subset="$a" ;;
-            *) die "usage: list [all|managed|enabled|disabled|vpntoggle|wire] [--json]" ;;
+            all|managed|enabled|disabled|vpntoggle|wire|pinned) subset="$a" ;;
+            *) die "usage: list [all|managed|enabled|disabled|vpntoggle|wire|pinned] [--json]" ;;
         esac
     done
     local names
@@ -1000,6 +1013,11 @@ cmd_list() {
                         | select(.value.labels["mediastack.vpntoggle"]=="true") | .key' \
                         <<<"$RENDERED_JSON" | sort) ;;
         wire)       names=$(printf '%s\n' qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr all) ;;
+        pinned)     if [[ -s "$PINS_FILE" ]]; then
+                        # service keys are 2-space-indented `  <svc>:`; the image
+                        # line is 4-space-indented and won't match.
+                        names=$(grep -oE '^  [a-z0-9][a-z0-9-]*:' "$PINS_FILE" | tr -d ' :' | sort || true)
+                    else names=""; fi ;;
     esac
     [[ -z "$names" ]] && return 0
     if (( json )); then
