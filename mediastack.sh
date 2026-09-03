@@ -3902,7 +3902,7 @@ cmd=${SSH_ORIGINAL_COMMAND:-}
 read -r -a argv <<<"$cmd"
 verb=${argv[0]}; args=("${argv[@]:1}")
 case "$verb" in
-    update|enable|disable|vpn|vpn-apply|wire|doctor|status|leak-test|list) ;;
+    update|enable|disable|vpn|vpn-apply|wire|doctor|status|leak-test|list|logs|backup|rollback|unpin|up|fix-perms|frontdoor-refresh) ;;
     *) echo "frontdoor: verb '$verb' not permitted" >&2; exit 4 ;;
 esac
 (( ${#args[@]} <= 2 )) || { echo "frontdoor: too many arguments" >&2; exit 5; }
