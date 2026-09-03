@@ -785,9 +785,15 @@ provision() {
         local stub
         while read -r stub; do
             [[ -z "$stub" ]] && continue
-            sudo test -e "$stub" && continue   # stat as root: these mounts are root/olivetin-owned
-            sudo mkdir -p "$stub"
-            [[ -n "$uid" ]] && sudo chown "$uid:mediacenter" "$stub"
+            # One atomic elevated call: test -> create -> own, in a single sudo
+            # invocation with detached stdin. Collapsing the previous
+            # test/&&/mkdir/chown sequence sidesteps whatever interaction it had
+            # with this loop's input stream inside the live provision run (the
+            # two-call form skipped existing paths correctly in isolation, but
+            # not in situ). Path and uid pass as argv; the body is single-quoted
+            # (no interpolation), so the front-door audit stays green.
+            sudo sh -c 'test -e "$1" && exit 0; mkdir -p "$1" && { [ -z "$2" ] || chown "$2:mediacenter" "$1"; }' \
+                _ "$stub" "$uid" </dev/null
         done < <(jq -r --arg s "$s" '
             (.services[$s].volumes // []) | map(select(.type=="bind")) as $v
             | [ $v[] as $o | $v[] as $i
