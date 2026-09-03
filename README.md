@@ -148,8 +148,24 @@ Other
 | `uninstall [--nuke]` | tiered removal; `--nuke` = everything, one confirmation. Media and backups are never touched |
 | `menu` | interactive menu wrapping all of the above |
 
+Web front door
+| command | what it does |
+|---|---|
+| `frontdoor-install` | install/refresh the OliveTin web panel over the safe verbs; first interactive run sets the admin password (`--set-password` to change it) |
+| `frontdoor-refresh` | regenerate the panel's dropdown + status-tile data (also on a 5-min timer and the panel's Refresh button) |
+
 This table mirrors `./mediastack.sh help` as of the current version; the
 script's own help is always authoritative.
+
+## Web front door
+
+An optional OliveTin web panel exposes the stack's safe verbs as buttons, so
+routine operations don't need a shell — live per-service status tiles plus
+Diagnostics / Services / Maintenance actions. It is thin by design: no Docker
+access, and it can only run a fixed allowlist of verbs, each as one SSH call
+through a forced-command wrapper. Enable it with `./mediastack.sh
+frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
+[docs/frontdoor-safety.md](docs/frontdoor-safety.md) for the safety model.
 
 ## The rules the tooling enforces
 
@@ -343,7 +359,8 @@ cleanup (cleanuparr) · credential rotation, including one-password mode
 `doctor` · manual grabs from Prowlarr · user services via
 `docker-compose.override.yml` · service URLs in `status` · watch-state
 sync and backup (WatchState) · a dedicated music server (Navidrome) ·
-audiobook/podcast and ebook/comic serving (Audiobookshelf, Kavita).
+audiobook/podcast and ebook/comic serving (Audiobookshelf, Kavita) ·
+a web control panel over the safe verbs (OliveTin front door).
 
 The stack is feature-complete for its scope; changes from here are
 maintenance, fixes, and polish. Project goals and forward direction live
@@ -358,6 +375,8 @@ in [docs/roadmap.md](docs/roadmap.md).
 * [docs/migration-existing.md](docs/migration-existing.md) — adopt an existing deployment
 * [docs/disaster-recovery.md](docs/disaster-recovery.md) — full rebuild from a restore point
 * [docs/roadmap.md](docs/roadmap.md) — project goals, forward direction, and services evaluated but deferred
+* [docs/frontdoor.md](docs/frontdoor.md) — the OliveTin web panel: what it is, enabling it, the buttons
+* [docs/frontdoor-safety.md](docs/frontdoor-safety.md) — the front door's safety model and what is (and isn't) exposable
 
 ## License
 
