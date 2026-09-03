@@ -25,6 +25,42 @@ goal — new work must earn its place.
 - **Reproducible & recoverable.** Any box rebuilds from a restore point; every
   failure `doctor` reports states its own fix.
 
+## Architecture rules
+
+Standing decisions about how the stack is structured. Unlike the Direction
+below, these are settled, not exploratory.
+
+### Shards — the unit of isolation
+
+The stack is organised into **shards**: one `compose.d/` fragment per shard.
+
+- **A single-container service is its own shard.**
+- **A multi-container service is a single shard** when every extra container
+  exists *exclusively* to serve it — its own database, cache, or worker. These
+  **private dependencies live inside the service's shard**, never in a shard of
+  their own. One fragment holds the whole stack (e.g. an `authentik.yml` holding
+  server + worker + Postgres + Redis).
+- **Anything shared across services gets its own shard.** Cross-cutting
+  infrastructure — the edge proxy (Traefik), the VPN gateway (gluetun), the web
+  front door — is shared by design, so it is neither folded into a consumer's
+  shard nor duplicated per consumer; it stands alone in its own fragment.
+- **The primary container owns the shard.** The `mediastack.managed` label, and
+  the shard's identity in `status`, the dropdowns, and `enable`/`disable`, sit
+  on the **primary** container. Private dependencies are members of the same
+  shard with their health gated to the primary — the primary depends on them, so
+  its health represents the whole shard; `status` reports the shard by its
+  primary, not one row per container.
+
+### No shared data tiers
+
+A database — or cache, or similar stateful backend — is a **private dependency
+by definition**, so each service or service-stack that needs one runs **its
+own**, inside its own shard. Data tiers are **never shared** across services.
+The marginal tidiness of a shared instance is not worth coupling independent
+services' failure domains, upgrade cycles, and backup granularity — a shared
+database's outage or bad migration would take down every service behind it. One
+service, one shard, one database.
+
 ## Direction
 
 Candidate directions, grouped by theme — where the project *could* go next, not
@@ -49,7 +85,7 @@ a committed plan.
   narrowing below into one "shrink the root surface" goal.
 
 ### Structure
-- Revisit the folder structure — config files and compose shards.
+- Revisit the folder structure for config files (the compose-shard model is now settled — see Architecture rules above).
 - Formalize the `.env` config schema and validate it (it is the whole config
   surface; `doctor`-style checks for it).
 
