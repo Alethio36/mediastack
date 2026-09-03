@@ -42,12 +42,42 @@ does not verify (3); do not read a green audit as "safe to expose any verb."
 - Front-door arguments come from **enumerated lists** (see the `list` verb),
   never free text.
 
-## Verbs considered safe to expose
+## Where the line is
 
-Validated-argument, bounded-operation verbs: `update`, `enable`, `disable`,
-`vpn`, `wire`, plus the read-only reports `doctor`, `status`, `leak-test`,
-`list`. Free-text/config verbs (`set-credentials`, `traefik-setup`,
-`new-service`, `invite`, `configure`, `install`, `uninstall`) stay CLI-only.
+Two independent lines decide whether a verb can go on the panel:
 
-`logs` follows (`-f`) and would hang a front-end action — do not expose it
-without a bounded variant.
+1. **No free-text input reaches a verb (architectural, enforced).** The wrapper
+   guarantees it: charset allowlist, verb whitelist, a 2-arg cap, and argv is
+   never a shell string. In the panel this becomes one invariant — *every action
+   argument is an entity/choice dropdown or a confirmation, never a bare
+   `type: string` text box.* This is the big line and it's mechanical.
+2. **Blast radius (judgment).** A few verbs take no free text yet are too
+   destructive to sit one tap away on a LAN-open, no-SSO panel. That — not input
+   safety — is the only reason they stay off.
+
+## Verbs exposed through the front door
+
+Whitelisted in the wrapper and surfaced on the panel: `update`, `enable`,
+`disable`, `vpn-apply`, `wire`, `backup` (+`backup verify`), `rollback`,
+`unpin`, `up`, `fix-perms`, `frontdoor-refresh`, plus the read-only reports
+`doctor`, `status`, `leak-test`, `logs`, and `list` (internal). `vpn` (stage-
+only) is whitelisted but unused — `vpn-apply` is the one-shot the panel uses.
+
+`logs` is exposed via `logs <svc> --no-follow` — the bounded snapshot. The
+interactive default still follows (`-f`), which would hang a front-end action,
+so the panel always passes `--no-follow` (a literal in the action, not input).
+
+Held CLI-only:
+- **Secrets:** `credentials`, `set-credentials` — until real SSO fronts the panel.
+- **Blast radius:** `restore` (overwrites config + re-pins images across the
+  whole stack), `down`, `uninstall`. Note `rollback <svc>` — the single-service
+  half of `restore` — *is* exposed; the stack-wide forms are not.
+- **Free text (fails line 1):** `new-service`, `configure`, `add-mount`,
+  `invite`, `traefik-setup`, `install`, `upgrade`, `frontdoor-install`.
+
+## Control-plane services are disable-able from the panel — on purpose
+
+`traefik` and `olivetin` both carry `mediastack.managed`, so they appear in the
+panel's Disable dropdown. Disabling `traefik` kills all HTTPS routing; disabling
+`olivetin` kills the panel itself. This is intentional — the operator keeps full
+control from the panel. There is no guard; treat those two entries with care.
