@@ -137,6 +137,9 @@ adding it would look like, and the trigger to revisit.
 | TubeArchivist | Video (YouTube) | Deferred | Heavy (Elasticsearch + Redis + app) |
 | ytdl-sub | Video (YouTube) | Alternative | No UI — wrong for unknown end users |
 | TubeSync | Video (YouTube) | Alternative | Pinchflat is lighter with more momentum |
+| **authentik** | Identity/SSO | Deferred (post-migration) | 4-container DB stack; needs the `wire` rework |
+| Authelia (+ file / + LLDAP) | Identity/SSO | Lighter alternative | Leanest; no enrolment UI |
+| Kanidm | Identity/SSO | Lighter alternative | No built-in forward-auth (needs a proxy) |
 
 ---
 
@@ -374,3 +377,73 @@ client, updates the media server on new media.
 
 **Why not the pick:** fine, but Pinchflat has the lighter footprint and the
 momentum.
+
+---
+
+# Identity & SSO
+
+The stack has no single sign-on today — each app has its own login. SSO is a
+Direction item (Security & access); this is the candidate landscape. Short
+version: real pooled logins across the whole stack is achievable but **not
+uniform** — apps split into three tiers (native OIDC / forward-auth gate /
+LDAP), and Jellyfin's native clients are the constraint that shapes everything.
+
+## authentik — full identity provider
+
+**What it is:** a complete self-hosted IdP — OIDC, SAML, SCIM, an LDAP outpost,
+and a forward-auth proxy, plus native user enrollment, groups/RBAC, and a
+polished admin UI. The "does everything" option.
+
+**Why it's a candidate:** the only option that delivers *both* halves of the
+SSO goal at once — pooled logins **and** self-service enrollment (invite links,
+self-registration, MFA enrolment, password recovery). Groups become the access
+switches: enrol a user into a default `jellyfin-users` group, then grant more
+services later by adding groups from the dashboard — no per-app provisioning.
+
+**How the stack would attach (three tiers):**
+
+- **OIDC apps** (Kavita, Audiobookshelf, Navidrome web) → native OIDC, gated by
+  an authentik group policy. Real per-user SSO.
+- **Forward-auth apps** (the *arrs, qBittorrent, Pi-hole) → a Traefik
+  middleware gate. It's a *gate*, not per-user SSO — the arrs don't read
+  identity headers. Each needs an explicit per-app `/api` bypass or the
+  inter-service automation hangs (the fiddly, error-prone part).
+- **Jellyfin** → the LDAP plugin against authentik's LDAP outpost. Works on
+  *all* clients (native apps included) because Jellyfin mints its own session —
+  but it's username/password, so authentik's MFA doesn't reach it (the
+  JellyfinSecurity plugin can add 2FA / device-pairing back on top).
+- **Jellyseerr** → stays on Sign-in-with-Jellyfin and rides the chain
+  (Jellyseerr → Jellyfin → authentik). Its own OIDC is **preview-only**
+  (`preview-new-oidc`, no auto account-linking), so not a stable path.
+
+**Why deferred:** the biggest scope expansion discussed. It's a **4-container
+DB-backed stack** (server + worker + PostgreSQL + Redis) — under the shard
+rules, its own shard with its own DB, ~2 GB RAM floor, a migration-aware
+`update`, and `pg_dump`-based `backup` (the same DB-backed pattern as ROMM
+option (b)). And the integration *is* the **`wire` rework**: SSO wiring isn't
+one action, it's per-service descriptors (OIDC vs forward-auth vs LDAP) —
+exactly the pluggable-`wire` Direction item. Payoff worth naming: if `wire`
+*generates* the per-app forward-auth bypass rules, it turns the single most
+error-prone piece into regenerable config.
+
+**Revisit when:** self-service enrollment for a real, changing user base is a
+firm requirement *and* the `wire` rework + a DB-backed-service pattern are in
+place. Post-migration. If enrolment isn't firm, a lighter option below wins.
+
+## Lighter alternatives (same pooled-logins goal, less weight)
+
+- **Authelia + file backend** — the leanest: one container, a YAML users file
+  (< 50 MB), no DB, no directory. Forward-auth for admin UIs + its own OIDC
+  provider for the good-citizen apps, and Jellyfin via `jellyfin-plugin-authelia`
+  (native form → all clients, no MFA). No enrolment UI — add users by editing
+  YAML. **The default if self-service isn't required.**
+- **Kanidm** — the middle: one Rust container, native OIDC + LDAP-for-Jellyfin +
+  some self-service, fully FOSS (MPL). Best philosophical fit for the project's
+  lean / FOSS / safe / CLI-driven goals — *but* no built-in forward-auth, so
+  admin-UI gating needs a small separate proxy (traefik-oidc-auth / oauth2-proxy).
+- **LLDAP** — a tiny SQLite-backed LDAP directory with a web UI, if you want a
+  real directory (groups, a management UI) behind Authelia without a full DC.
+- **Samba4 AD** — already on the management plane; could be the shared user
+  store (Authelia via LDAP + Jellyfin LDAP plugin), but it's the sledgehammer
+  and couples the media stack's identity to the DC. Too heavy *for this
+  project*; relevant only if identity is unified across the wider platform.
