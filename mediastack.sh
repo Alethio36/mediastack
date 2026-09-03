@@ -778,9 +778,14 @@ provision() {
         fi
         # Nested bind mounts (e.g. cache inside config): docker creates the
         # inner mountpoint stub as root if missing — pre-create it owned right.
+        # Only when MISSING: some services (olivetin) nest *file* mounts under a
+        # dir mount, already written by their own installer; mkdir -p there would
+        # error ("File exists") or, if the file were absent, create a directory
+        # over it and break the mount.
         local stub
         while read -r stub; do
             [[ -z "$stub" ]] && continue
+            [[ -e "$stub" ]] && continue
             sudo mkdir -p "$stub"
             [[ -n "$uid" ]] && sudo chown "$uid:mediacenter" "$stub"
         done < <(jq -r --arg s "$s" '
