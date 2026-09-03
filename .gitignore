@@ -9,3 +9,6 @@ config/
 cache/
 backups/
 local/
+
+# Per-session working notes (handoffs) — local state, kept out of the public repo
+session.txt
