@@ -3804,11 +3804,32 @@ frontdoor_teardown() {
     sudo systemctl daemon-reload 2>/dev/null || true
 }
 
-# frontdoor-refresh: (re)write the entity lists that back the panel dropdowns.
-# Runs on the HOST via the mediastack-frontdoor-refresh timer (and once at
-# install), so the panel container needs no write access and no dependency on
-# OliveTin's in-container scheduler. Internal verb: NOT front-door-exposed and
-# NOT in the wrapper whitelist (it writes files).
+# frontdoor_status_json: JSONL for the panel's live up/down tiles — one
+# {name,state,health,glyph} record per enabled service. The glyph is computed
+# HERE because the panel container has no docker access; the host owns it.
+# ✅ = running (healthy or no healthcheck), ⚠️ = running but unhealthy/starting,
+# ❌ = not running.
+frontdoor_status_json() {
+    render
+    local s cn st h glyph
+    for s in $(svc_managed); do
+        svc_enabled "$s" || continue
+        cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
+        case "$st" in
+            running) case "$h" in healthy|-) glyph="✅" ;; *) glyph="⚠️" ;; esac ;;
+            *)       glyph="❌" ;;
+        esac
+        jq -nc --arg name "$s" --arg state "$st" --arg health "$h" --arg glyph "$glyph" \
+            '{name:$name,state:$state,health:$health,glyph:$glyph}'
+    done
+}
+
+# frontdoor-refresh: (re)write the entity lists that back the panel dropdowns
+# and the live status tiles. Runs on the HOST via the mediastack-frontdoor-
+# refresh timer, once at install, and on demand from the panel's Refresh button,
+# so the panel container needs no docker access and no dependency on OliveTin's
+# in-container scheduler. It is front-door-exposed (0-arg, whitelisted): all it
+# does is regenerate these entity files.
 cmd_frontdoor_refresh() {
     load_env
     local ent; ent="$(env_get CONFIG_ROOT)/olivetin/entities"
@@ -3818,9 +3839,13 @@ cmd_frontdoor_refresh() {
     cmd_list enabled   --json | sudo tee "$ent/disable.json" >/dev/null
     cmd_list vpntoggle --json | sudo tee "$ent/vpn.json"     >/dev/null
     cmd_list wire      --json | sudo tee "$ent/wire.json"    >/dev/null
-    sudo chown "$FRONTDOOR_USER:$FRONTDOOR_USER" "$ent"/enable.json "$ent"/disable.json "$ent"/vpn.json "$ent"/wire.json
-    sudo chmod 644 "$ent"/enable.json "$ent"/disable.json "$ent"/vpn.json "$ent"/wire.json
-    ok "refreshed OliveTin entity lists"
+    cmd_list pinned    --json | sudo tee "$ent/pinned.json"  >/dev/null
+    frontdoor_status_json     | sudo tee "$ent/status.json"  >/dev/null
+    sudo chown "$FRONTDOOR_USER:$FRONTDOOR_USER" \
+        "$ent"/enable.json "$ent"/disable.json "$ent"/vpn.json "$ent"/wire.json "$ent"/pinned.json "$ent"/status.json
+    sudo chmod 644 \
+        "$ent"/enable.json "$ent"/disable.json "$ent"/vpn.json "$ent"/wire.json "$ent"/pinned.json "$ent"/status.json
+    ok "refreshed OliveTin entity lists + status tiles"
 }
 
 cmd_frontdoor_install() {
@@ -3987,7 +4012,8 @@ OTCFG_HEAD
         printf "      password: '%s'\n" "$hash"
         cat <<'OTCFG_TAIL'
 
-# Service lists backing the dropdowns; refreshed on the host by the timer.
+# Service lists backing the dropdowns; refreshed on the host by the timer
+# (and by the panel's Refresh button).
 entities:
   - name: svc_enable
     file: entities/enable.json
@@ -3997,7 +4023,23 @@ entities:
     file: entities/vpn.json
   - name: svc_wire
     file: entities/wire.json
+  # logs / rollback / fix-perms all target an ENABLED service — the same set the
+  # Disable dropdown offers — so they read disable.json rather than duplicate it.
+  - name: svc_logs
+    file: entities/disable.json
+  - name: svc_rollback
+    file: entities/disable.json
+  - name: svc_fixperms
+    file: entities/disable.json
+  # unpin only makes sense for a currently-pinned service.
+  - name: svc_unpin
+    file: entities/pinned.json
+  # live up/down tiles: one record per enabled service, glyph computed on the host.
+  - name: status
+    file: entities/status.json
 
+# Actions MUST be defined here; the dashboard below only references them by
+# title (OliveTin "pulls" them out of the default Actions view).
 actions:
   # -- diagnostics (read-only) --
   - title: Doctor
@@ -4017,6 +4059,18 @@ actions:
     timeout: 120
     onclick: execution-dialog
     shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal leak-test
+
+  - title: View logs
+    icon: "📜"
+    timeout: 60
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal logs {{ svc }} --no-follow
+    arguments:
+      - name: svc
+        entity: svc_logs
+        title: Service
+        choices:
+          - value: '{{ svc_logs.name }}'
 
   # -- services (pick one from the dropdown; confirm to run) --
   - title: Enable service
@@ -4090,6 +4144,118 @@ actions:
     arguments:
       - title: Confirm — updates every service
         type: confirmation
+
+  - title: Backup now
+    icon: "💾"
+    timeout: 300
+    maxConcurrent: 1
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal backup
+    arguments:
+      - title: Confirm — writes a new restore point
+        type: confirmation
+
+  - title: Verify backup
+    icon: "🔍"
+    timeout: 120
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal backup verify
+
+  - title: Rollback service
+    icon: "⏮️"
+    timeout: 300
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal rollback {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_rollback
+        title: Service to roll back
+        choices:
+          - value: '{{ svc_rollback.name }}'
+      - title: Confirm — restores config + image from the last restore point
+        type: confirmation
+
+  - title: Unpin service
+    icon: "📌"
+    timeout: 180
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal unpin {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_unpin
+        title: Service to unpin
+        choices:
+          - value: '{{ svc_unpin.name }}'
+      - title: Confirm — resumes updates for this service
+        type: confirmation
+
+  - title: Apply / reconcile
+    icon: "🔁"
+    timeout: 300
+    maxConcurrent: 1
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal up
+    arguments:
+      - title: Confirm — applies pending compose state
+        type: confirmation
+
+  - title: Fix perms
+    icon: "🔧"
+    timeout: 120
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal fix-perms {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_fixperms
+        title: Service
+        choices:
+          - value: '{{ svc_fixperms.name }}'
+      - title: Confirm
+        type: confirmation
+
+  - title: Refresh panel
+    icon: "♻️"
+    timeout: 60
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal frontdoor-refresh
+
+# Putting every action on a dashboard makes OliveTin hide the default "Actions"
+# sidebar tab. The status fieldset iterates the `status` entity to render one
+# live up/down tile per enabled service (host-refreshed).
+dashboards:
+  - title: Mediastack
+    contents:
+      - title: '{{ status.glyph }} {{ status.name }}'
+        entity: status
+        type: fieldset
+        contents:
+          - type: display
+            title: 'state: {{ status.state }} · health: {{ status.health }}'
+      - title: Diagnostics
+        type: fieldset
+        contents:
+          - title: Doctor
+          - title: Status
+          - title: VPN leak test
+          - title: View logs
+      - title: Services
+        type: fieldset
+        contents:
+          - title: Enable service
+          - title: Disable service
+          - title: Toggle VPN
+          - title: Wire service
+      - title: Maintenance
+        type: fieldset
+        contents:
+          - title: Update stack
+          - title: Backup now
+          - title: Verify backup
+          - title: Rollback service
+          - title: Unpin service
+          - title: Apply / reconcile
+          - title: Fix perms
+          - title: Refresh panel
 OTCFG_TAIL
     } > "$ctmp"
     sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$otdir/config.yaml"; rm -f "$ctmp"
