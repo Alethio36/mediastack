@@ -61,7 +61,9 @@ audit_file() {
     #    the exec bit, so this mainly guards a future switch to a writable mode.
     local mode
     mode=$(git ls-files -s "$script" 2>/dev/null | awk '{print $1}' || true)
-    [[ -n "$mode" ]] && ok "$tag git file mode: $mode (enforce root-owned, non-writable on the host)"
+    if [[ -n "$mode" ]]; then
+        ok "$tag git file mode: $mode (enforce root-owned, non-writable on the host)"
+    fi
 }
 
 for f in "${files[@]}"; do audit_file "$f"; done
