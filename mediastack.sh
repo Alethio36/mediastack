@@ -506,11 +506,9 @@ configure_root() { # configure_root VAR title "explanation..." allow_network(yes
     done
 }
 
-cmd_configure() {
-    need_cmd jq; need_cmd docker
-    [[ -f "$ENV_FILE" ]] || { cp .env.example "$ENV_FILE"; chmod 600 "$ENV_FILE"; info "Created .env from .env.example"; }
-    chmod 600 "$ENV_FILE" || true
-
+# --- configure wizard steps (one helper per `# -- …` block; each persists to
+#     .env via env_set, so the driver's call order is the only sequencing). ---
+_configure_timezone() {
     # -- timezone
     local tz_host tz_cur
     tz_host=$(timedatectl show -p Timezone --value 2>/dev/null || echo Etc/UTC)
@@ -531,6 +529,9 @@ cmd_configure() {
             | sed 's|/usr/share/zoneinfo/||' | grep -i "${REPLY_VAL##*/}" | head -5 || true
     done
 
+}
+
+_configure_roots() {
     # -- roots
     configure_root CONFIG_ROOT "Config directory" \
 "Where every service keeps its settings and databases. A few GB.
@@ -560,6 +561,9 @@ ENCOURAGED — backups on the same disk as the configs aren't backups.
         warn "DATA_ROOT and its torrent subdir are on different filesystems — hardlinks will not work: imports fall back to slow, space-doubling copies. Union the drives (e.g. mergerfs) and use the pool as DATA_ROOT (see README)."
     fi
 
+}
+
+_configure_selfheal() {
     # -- self-heal FIRST: adopt any *_UID / *_UPDATE vars new fragments
     # reference, so the render below never sees unset variables
     info "Checking for newly added services..."
@@ -579,6 +583,9 @@ ENCOURAGED — backups on the same disk as the configs aren't backups.
     done < <(grep -rhoE '\$\{[A-Z0-9_]+_(UID|UPDATE)[^}]*\}' docker-compose.yml compose.d/ docker-compose.override.yml 2>/dev/null \
              | sed -E 's/\$\{([A-Z0-9_]+).*/\1/' | sort -u)
 
+}
+
+_configure_services() {
     # -- services (à la carte)
     render
     local STD="gluetun qbittorrent sonarr radarr prowlarr jellyfin npm meilisearch jellysearch seerr"
@@ -617,6 +624,9 @@ search engine). Change any of this later with enable/disable." \
     ok "Enabled: $(env_get COMPOSE_PROFILES)"
 
 
+}
+
+_configure_vpn() {
     # -- VPN
     explain "VPN (gluetun)" \
 "All download traffic runs inside a VPN container. Supported: any gluetun
@@ -663,6 +673,9 @@ key, then paste it below. Country selection works the same for all."
             ask VPN_SERVER_COUNTRIES "Server country (empty = auto)" "$(env_get VPN_SERVER_COUNTRIES)"; env_set VPN_SERVER_COUNTRIES "$REPLY_VAL" ;;
     esac
 
+}
+
+_configure_secrets() {
     # -- secrets
     if [[ -z "$(env_get MEILI_MASTER_KEY)" ]]; then
         env_set MEILI_MASTER_KEY "$(openssl rand -base64 32 2>/dev/null || head -c32 /dev/urandom | base64)"
@@ -689,6 +702,9 @@ Service names resolve — cloudflared shares the stack's network."
         ok "Generated Pi-hole admin password (view it any time in .env)."
     fi
 
+}
+
+_configure_schedule() {
     # -- update schedule
     local sched_cur; sched_cur=$(env_get UPDATE_SCHEDULE)
     explain "Automatic updates" \
@@ -737,6 +753,21 @@ services, so pick a quiet time for YOUR users." \
         fi
         break
     done
+
+}
+
+cmd_configure() {
+    need_cmd jq; need_cmd docker
+    [[ -f "$ENV_FILE" ]] || { cp .env.example "$ENV_FILE"; chmod 600 "$ENV_FILE"; info "Created .env from .env.example"; }
+    chmod 600 "$ENV_FILE" || true
+
+    _configure_timezone
+    _configure_roots
+    _configure_selfheal
+    _configure_services
+    _configure_vpn
+    _configure_secrets
+    _configure_schedule
 
     provision
     [[ -n "$(env_get UPDATE_SCHEDULE)" ]] && cmd_apply_timer
