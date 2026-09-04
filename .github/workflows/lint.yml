@@ -6,7 +6,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: shellcheck
-        run: shellcheck -S warning mediastack.sh
+        run: shellcheck -S warning -x mediastack.sh lib/*.sh
       - name: front-door safety audit
         run: bash scripts/audit-frontdoor-safety.sh
       - name: compose renders

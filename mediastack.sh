@@ -20,8 +20,11 @@ PINS_FILE="$SCRIPT_DIR/.pins.yml"
 SCRIPT_SCHEMA=12
 
 # Shared base: output primitives + .env access (see lib/common.sh).
+# shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=lib/frontdoor.sh
 source "$SCRIPT_DIR/lib/frontdoor.sh"
+# shellcheck source=lib/integrations.sh
 source "$SCRIPT_DIR/lib/integrations.sh"
 
 load_env() {
