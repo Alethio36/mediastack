@@ -1524,8 +1524,9 @@ EOF
 D_FAILS=0
 d_fail() { fail "$1"; printf '     why : %s\n     fix : %s\n' "$2" "$3"; D_FAILS=$((D_FAILS+1)); }
 
-cmd_doctor() {
-    load_env; need_cmd jq; render
+# --- doctor section checks (one helper per `hr "doctor: …"` block; each self-contained,
+#     reporting via ok/warn/info/d_fail into the file-scope D_FAILS accumulator). ---
+_doctor_environment() {
     hr "doctor: environment"
     local root
     for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT BACKUP_ROOT; do
@@ -1538,6 +1539,9 @@ cmd_doctor() {
         || ok "CONFIG_ROOT filesystem: $fs"
     require_mounts && ok "mount identity checks pass"
 
+}
+
+_doctor_containers() {
     hr "doctor: containers"
     local s cn st h
     local pending=()
@@ -1577,6 +1581,9 @@ cmd_doctor() {
         done
     fi
 
+}
+
+_doctor_permissions() {
     hr "doctor: permissions"
     # Two independent questions, deliberately not conflated:
     #   1. Can the app write its own config? (the true invariant — probed live)
@@ -1648,7 +1655,11 @@ cmd_doctor() {
     [[ $(sudo find "$croot" -maxdepth 1 -name '*.pre-restore.*' 2>/dev/null | wc -l) -gt 0 ]] \
         && warn "old *.pre-restore.* trees under CONFIG_ROOT — remove once you trust the restore"
 
+}
+
+_doctor_resources() {
     hr "doctor: host resources"
+    local croot; croot=$(env_get CONFIG_ROOT)
     df -h "$croot" "$(env_get DATA_ROOT)" 2>/dev/null | tail -n +2 | sort -u | while read -r line; do
         local pct; pct=$(awk '{print $5}' <<<"$line" | tr -d %)
         (( pct >= 90 )) && warn "disk >90%: $line" || ok "disk: $line"
@@ -1667,6 +1678,9 @@ cmd_doctor() {
         ok "load $l1 / $l5 / $l15 (1/5/15min) on $cores cores"
     fi
 
+}
+
+_doctor_storage() {
     hr "doctor: docker storage"
     local dtype dtot dact dsize drecl dpct
     while IFS='|' read -r dtype dtot dact dsize drecl; do
@@ -1695,6 +1709,9 @@ cmd_doctor() {
         ok "no orphaned volumes"
     fi
 
+}
+
+_doctor_neighbours() {
     hr "doctor: host neighbours"
     sudo docker ps --format '{{.Names}} {{.Image}}' | grep -Ei 'watchtower|ouroboros|autoheal' | grep -v mediastack \
         && warn "foreign auto-updater found on this host — it may update mediastack containers behind the backup system's back (our labels tell watchtower no; verify it honours them)" \
@@ -1709,6 +1726,9 @@ cmd_doctor() {
              --format '{{range .IPAM.Config}}{{.Subnet}}{{println}}{{end}}' 2>/dev/null \
              | grep -oE '^[0-9.]+' || true)
 
+}
+
+_doctor_vpn_backups() {
     hr "doctor: vpn + backups"
     if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
         local dgid dnm dbad="" dchecked=0
@@ -1767,6 +1787,9 @@ cmd_doctor() {
         fi
     fi
 
+}
+
+_doctor_apps() {
     hr "doctor: apps"
     if svc_enabled jellyfin && [[ "$(c_state "$(svc_cname jellyfin)")" == running ]]; then
         local jpub
@@ -1799,6 +1822,9 @@ cmd_doctor() {
         fi
     fi
 
+}
+
+_doctor_runtime_audit() {
     hr "doctor: runtime audit"
     # per-service error volume, last 24h — noisy logs surface real problems
     local noisy=0 cnt
@@ -1843,6 +1869,19 @@ cmd_doctor() {
         fi
     fi
 
+}
+
+cmd_doctor() {
+    load_env; need_cmd jq; render
+    _doctor_environment
+    _doctor_containers
+    _doctor_permissions
+    _doctor_resources
+    _doctor_storage
+    _doctor_neighbours
+    _doctor_vpn_backups
+    _doctor_apps
+    _doctor_runtime_audit
     echo
     if (( D_FAILS )); then
         fail "doctor: $D_FAILS problem(s) — fixes listed above."
