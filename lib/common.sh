@@ -4,6 +4,7 @@
 # (after SCRIPT_DIR and ENV_FILE are set); not executed directly.
 
 # ------------------------------------------------------------------ output --
+# shellcheck disable=SC2034  # colour vars are consumed by callers in the entrypoint and other libs
 if [[ -t 1 ]]; then
     C_RED=$'\e[31m'; C_GRN=$'\e[32m'; C_YLW=$'\e[33m'; C_BLU=$'\e[34m'
     C_BLD=$'\e[1m'; C_RST=$'\e[0m'
