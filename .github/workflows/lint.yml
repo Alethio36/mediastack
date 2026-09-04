@@ -8,7 +8,7 @@ jobs:
       - name: shellcheck
         run: shellcheck -S warning mediastack.sh
       - name: front-door safety audit
-        run: bash scripts/audit-frontdoor-safety.sh mediastack.sh
+        run: bash scripts/audit-frontdoor-safety.sh
       - name: compose renders
         run: |
           cp .env.example .env
