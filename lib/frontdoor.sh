@@ -436,6 +436,9 @@ cmd_frontdoor_install() {
     load_env
     need_cmd argon2; need_cmd openssl; need_cmd ssh-keygen
     local script="$SCRIPT_DIR/mediastack.sh"
+    # mediastack.sh sources lib/*.sh, and sudo runs the lot as root — so every lib
+    # is part of the same root-executed surface and must be non-writable too.
+    local sudo_targets=("$script" "$SCRIPT_DIR"/lib/*.sh) t
     local otdir keydir ent
     otdir="$(env_get CONFIG_ROOT)/olivetin"; keydir="$otdir/ssh"; ent="$otdir/entities"
 
@@ -464,14 +467,17 @@ cmd_frontdoor_install() {
     #    owner), group/other read-only. With a distinct olivetin user this makes
     #    the script unwritable by the front door — asserted next.
     sudo chmod 755 "$script"
+    sudo chmod 644 "$SCRIPT_DIR"/lib/*.sh          # sourced as root; must not be writable
 
     # 3. THE load-bearing check: prove olivetin cannot rewrite what it can run as
     #    root. If it can, the whole model is void — fail loud, change nothing.
-    if sudo -u "$FRONTDOOR_USER" /usr/bin/test -w "$script"; then
-        die "SECURITY: '$FRONTDOOR_USER' can WRITE $script — a compromise would run as root.
+    for t in "${sudo_targets[@]}"; do
+        if sudo -u "$FRONTDOOR_USER" /usr/bin/test -w "$t"; then
+            die "SECURITY: '$FRONTDOOR_USER' can WRITE $t — a compromise would run as root.
   Fix perms/ownership so $FRONTDOOR_USER cannot write it (it must share no write-group with the owner)."
-    fi
-    ok "verified: '$FRONTDOOR_USER' cannot write $script"
+        fi
+    done
+    ok "verified: '$FRONTDOOR_USER' cannot write the sudo target ($script) or its libraries"
 
     # 4. Narrow sudoers: olivetin may sudo ONLY this script (no password). The
     #    wrapper (step 5) is what bounds WHICH verbs; sudoers bounds WHICH binary.
@@ -612,8 +618,10 @@ EOF
     cmd_frontdoor_refresh   # populate now so dropdowns render on first start
 
     # 11. Re-verify both narrowings before declaring success.
-    sudo -u "$FRONTDOOR_USER" /usr/bin/test -w "$script" \
-        && die "post-check FAILED: $FRONTDOOR_USER can write $script."
+    for t in "${sudo_targets[@]}"; do
+        sudo -u "$FRONTDOOR_USER" /usr/bin/test -w "$t" \
+            && die "post-check FAILED: $FRONTDOOR_USER can write $t."
+    done
     sudo visudo -cf "$FRONTDOOR_SUDOERS" >/dev/null \
         || die "post-check FAILED: installed sudoers is invalid."
     grep -q '^command=' "$akdir/authorized_keys" 2>/dev/null \
