@@ -671,7 +671,7 @@ wire_apprise() {
     # an existing config is never touched (edit in apprise's UI or re-add)
     code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)
     if [[ "$code" == 200 ]]; then
-        ok "notification endpoints configured — untouched (yours to manage; UI: http://<this-host>:$(env_get APPRISE_PORT 8000))"
+        ok "notification endpoints configured — untouched (yours to manage; UI: $(svc_url apprise))"
     elif (( WIRE_DRY )); then
         w_would "store notification endpoints (URLs asked per tag on the real run)" || true
     elif [[ ! -t 0 ]]; then
