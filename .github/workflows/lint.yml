@@ -9,6 +9,12 @@ jobs:
         run: shellcheck -S warning -x mediastack.sh lib/*.sh
       - name: front-door safety audit
         run: bash scripts/audit-frontdoor-safety.sh
+      - name: no placeholder host literals
+        run: |
+          if grep -rnE '<this-host>|<this_host>|<your-host>' mediastack.sh lib/*.sh; then
+            echo "::error::placeholder host literal in a runtime string — use svc_url or a real host expression"
+            exit 1
+          fi
       - name: compose renders
         run: |
           cp .env.example .env
