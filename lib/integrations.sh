@@ -1275,7 +1275,7 @@ wire_wizarr() {
         explain "Wizarr first-run (one-time, in its UI)" \
 "Wizarr's admin account and API keys can only be created in its web UI —
 there is no automation API for this by upstream design. Once, ever:
-  1. open ${domain:+https://$host.$domain (or }http://<this-host>:$(svc_label wizarr mediastack.port)${domain:+)}
+  1. open ${domain:+https://$host.$domain (or }http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_label wizarr mediastack.port)${domain:+)}
   2. create the admin account
   3. Settings -> Servers -> Add Server:
        Name            jellyfin
