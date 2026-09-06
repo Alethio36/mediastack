@@ -196,10 +196,14 @@ svc_cname()    { render; jq -r --arg s "$1" '.services[$s].container_name // $s'
 uvar()         { echo "${1^^}" | tr '-' '_' | tr -cd 'A-Z0-9_'; } # service -> env var stem (radarr-4k -> RADARR_4K)
 svc_enabled()  { [[ ",$(env_get COMPOSE_PROFILES)," == *",$1,"* ]]; }
 svc_url() { # where a browser reaches the service, best effort
-    local s="$1" sub port
+    local s="$1" sub port domain
     [[ "$s" == traefik ]] && { echo "-"; return; }   # it IS the https edge
+    domain=$(env_get TRAEFIK_DOMAIN)
     sub=$(env_get "$(uvar "$s")_HOST"); [[ -n "$sub" ]] || sub=$(svc_label "$s" mediastack.subdomain)
-    if [[ -n "$sub" ]]; then echo "https://${sub}.$(env_get TRAEFIK_DOMAIN unset)"; return; fi
+    # a subdomain only yields an https URL when a domain is actually configured;
+    # without one, fall through to the host:port (or internal) form below rather
+    # than printing a dead https://<sub>.unset
+    if [[ -n "$sub" && -n "$domain" ]]; then echo "https://${sub}.${domain}"; return; fi
     port=$(svc_label "$s" mediastack.port)
     [[ -z "$port" ]] && { echo "-"; return; }
     [[ "$(svc_label "$s" mediastack.internal)" == "true" ]] \
