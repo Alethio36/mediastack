@@ -34,6 +34,22 @@ api() { # api METHOD URL APIKEY [json-body] -> body on stdout, rc from http
     [[ "$code" =~ ^2 ]]
 }
 
+# ensure_field <svc> <endpoint> <key> <cur_json> <field> <want> <noun>
+#   Idempotent single-field set for a JSON config API that round-trips its whole
+#   object. <cur_json> is what the caller already GET from <endpoint>; <field> is
+#   a top-level scalar key. If it already equals <want>, report and skip; else,
+#   w_would-gated, PUT the object with .<field>=<want> and report. <noun> labels
+#   the evidence line; a rejected PUT fails loud via wfail.
+ensure_field() {
+    local svc="$1" endpoint="$2" key="$3" cur="$4" field="$5" want="$6" noun="$7" have
+    have=$(jq -r --arg f "$field" '.[$f] // empty' <<<"$cur" 2>/dev/null)
+    [[ "$have" == "$want" ]] && { ok "$svc: $noun '$have'"; return 0; }
+    w_would "$svc: set $noun to '$want'" || return 0
+    api PUT "$endpoint" "$key" "$(jq -c --arg f "$field" --arg v "$want" '.[$f]=$v' <<<"$cur")" >/dev/null \
+        && ok "$svc: $noun set to '$want'" \
+        || wfail "$svc: $noun update rejected — set it in its UI"
+}
+
 arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialising)
     sudo grep -oP '<ApiKey>\K[^<]+' "$(env_get CONFIG_ROOT)/$1/config.xml" 2>/dev/null | head -1 || true
 }
@@ -58,22 +74,20 @@ arr_pretty_name() { # sonarr-anime -> "Sonarr (Anime)", radarr-4k -> "Radarr (4K
 
 arr_instance_name() { # brand the instance so notifications are tellable apart;
                       # only replaces the stock default — a custom name is yours
-    local s="$1" key url cur have want
+    local s="$1" key ep cur have want
     key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
-    url=$(arr_url "$s")
-    cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)
+    ep="$(arr_url "$s")/api/$(arr_apiver "$s")/config/host"
+    cur=$(api GET "$ep" "$key" || true)
     have=$(jq -r '.instanceName // empty' <<<"$cur" 2>/dev/null)
     want=$(arr_pretty_name "$s")
-    if [[ "$have" == "$want" ]]; then
-        ok "$s: instance name '$have'"
-    elif [[ -n "$have" && "${have,,}" != "$(svc_label "$s" mediastack.arrtype)" ]]; then
-        ok "$s: instance name '$have' (custom) — untouched"
-    elif w_would "$s: name the instance '$want' (distinguishes its notifications)"; then
-        api PUT "$url/api/$(arr_apiver "$s")/config/host" "$key" \
-            "$(jq -c --arg n "$want" '.instanceName=$n' <<<"$cur")" >/dev/null \
-            && ok "$s: instance name set to '$want'" \
-            || wfail "$s: instance rename rejected — set it in its UI (Settings -> General)"
+    # one-off (stays inline, not an ensure_field concern): a custom name — non-empty,
+    # different from what we'd set, and not the stock lowercase default — is the
+    # operator's, so never touch it. Must check "!= want" first so a correctly
+    # branded instance (e.g. "Radarr (4K)") reads as already-set, not custom.
+    if [[ -n "$have" && "$have" != "$want" && "${have,,}" != "$(svc_label "$s" mediastack.arrtype)" ]]; then
+        ok "$s: instance name '$have' (custom) — untouched"; return 0
     fi
+    ensure_field "$s" "$ep" "$key" "$cur" instanceName "$want" "instance name"
 }
 
 arr_forms_login() { # shared operator login on an arr-family UI; idempotent
