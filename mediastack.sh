@@ -1873,15 +1873,19 @@ _doctor_runtime_audit() {
 
 cmd_doctor() {
     load_env; need_cmd jq; render
-    _doctor_environment
-    _doctor_containers
-    _doctor_permissions
-    _doctor_resources
-    _doctor_storage
-    _doctor_neighbours
-    _doctor_vpn_backups
-    _doctor_apps
-    _doctor_runtime_audit
+    # Sections are report-only: real problems are counted in D_FAILS, never
+    # signalled by exit code. Under `set -e` a section whose last command is a
+    # false `[[ ]] && warn` returns non-zero and would abort the whole audit at
+    # the bare call, so every section is invoked non-fatally.
+    _doctor_environment   || true
+    _doctor_containers    || true
+    _doctor_permissions   || true
+    _doctor_resources     || true
+    _doctor_storage       || true
+    _doctor_neighbours    || true
+    _doctor_vpn_backups   || true
+    _doctor_apps          || true
+    _doctor_runtime_audit || true
     echo
     if (( D_FAILS )); then
         fail "doctor: $D_FAILS problem(s) — fixes listed above."
