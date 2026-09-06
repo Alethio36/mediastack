@@ -61,6 +61,85 @@ services' failure domains, upgrade cycles, and backup granularity — a shared
 database's outage or bad migration would take down every service behind it. One
 service, one shard, one database.
 
+### Runtime & control plane — the deliberate choice
+
+The stack is **Docker Compose driven by a single bash entry point**, and that is a
+decision, not a default we haven't gotten around to revisiting. It is what makes
+the project usable across its whole intended audience — from a newbie's first
+self-host to a hardened veteran's box. The two invariants worth naming explicitly,
+because they are what the old "one script" rule was really protecting:
+
+- **One front door.** Operators drive the stack through `mediastack.sh` — a finite
+  set of validated, idempotent, health-gated verbs. The *implementation* behind a
+  verb is free to change; the guarded entry point is not. (This replaces the older,
+  overloaded "one script" framing, which conflated the front door with an incidental
+  "everything must be one bash file" preference. The front door is load-bearing; the
+  single-file bit is not.)
+- **One safety boundary.** The VPN leak boundary is inviolable: nothing may touch
+  the container/network layer outside the guarded verbs, because raw
+  `docker compose` mid-session is the one unguarded path that can drop the
+  killswitch. `network_mode: "service:gluetun"` + a health-gated `depends_on` is the
+  whole leak-proofing, and its legibility (one line a beginner can read) is a
+  feature, not an accident.
+
+**The rule for adopting any future tool or control surface:** it earns a place only
+if it (a) reconciles its own domain natively — a real declarative diff of live
+state, not a relocation of imperative logic — **and** (b) does not raise the floor
+for the least-experienced user. A tool that fails either test is at most an opt-in
+advanced path, never a dependency of the default install.
+
+### Runtime & tooling — evaluated, rejected
+
+Alternatives assessed and consciously *not* adopted, with the reasoning, so the
+"shouldn't we use X?" question isn't re-opened from scratch. The verdict in every
+case is the same: each buys one benefit at the cost of raising the newbie floor or
+forcing dual-maintenance, and neither price is worth paying for an open,
+accessibility-first project under lean scope.
+
+- **Kubernetes — rejected (default and as an owned optional target).** A newbie
+  cannot stand up k8s; Compose is the on-ramp. Owning a second runtime means dual
+  maintenance, a split doc/support surface, and — worst — the killswitch stops being
+  one readable compose line and becomes pods + a default-deny NetworkPolicy + native
+  sidecar ordering, i.e. the most safety-critical thing requires the most expertise
+  to reason about. Pod rescheduling is itself a leak vector the static compose model
+  doesn't have. A veteran who wants k8s can port `compose.d/` downstream; the project
+  won't carry it.
+
+- **Ansible — rejected.** `ansible.builtin.uri` is a dumb HTTP client: it does not
+  diff remote state, so the arr wiring you'd want declaratively still has to be
+  hand-written (`changed_when` / GET-then-conditional-PUT) — Ansible's idempotency
+  covers files/packages/services, not REST config. The genuinely hard services
+  (qBittorrent password mint, Jellyfin claim, seerr-through-jellyfin) drop to `shell:`
+  blocks — bash inside YAML, strictly worse. Plus a Python/ansible-core runtime and a
+  second entry point against the front-door model. Its good ideas (`until/retries`
+  readiness, `--check` dry-run, `--diff` drift) are worth borrowing into the native
+  wire engine; its runtime is not.
+
+- **Terraform / OpenTofu — rejected as a runtime dependency; viable only as an
+  optional generated export.** The `devopsarr` providers are real and maintained, and
+  `plan` / `plan -detailed-exitcode` give dry-run and drift detection for free — a
+  genuinely good fit for the arr *converge*. But as part of the default `wire` it adds
+  an OpenTofu binary, provider downloads (a network/airgap failure surface), a state
+  file holding secrets, and HCL as a second config language — it fails the
+  newbie-floor test. As a co-equal alternative engine it re-introduces the
+  dual-maintenance trap. It also can't touch the bootstrap 20% (bash stays), and
+  authentik is better served by native Blueprints (no state file) than by the TF
+  provider. If IaC is ever wanted, the accessibility-respecting shape is a
+  `mediastack.sh`-generated `wire.d/arr/` HCL export a veteran can manage themselves —
+  not a dependency imposed on everyone. (FOSS note: it would be OpenTofu (MPL), never
+  HashiCorp Terraform (BSL), per the FOSS-only goal.)
+
+- **Podman — not adopted as default; retained as an opt-in hardening path.** Docker's
+  ubiquity *is* the newbie on-ramp, so it stays the default runtime. Rootful Podman is
+  close to a drop-in (a `CE` container-engine indirection over the ~70 `docker` calls,
+  the compose-on-podman-socket path to preserve `depends_on: service_healthy`
+  fidelity, repoint Traefik's socket) but delivers no security payoff — still root.
+  Rootless Podman is the real prize ("shrink the root surface") but is a genuine
+  redesign of the three riskiest subsystems — the provisioner's UID/bind-mount model
+  vs userns remapping, privileged-port binding at the edge, and `NET_ADMIN` + tun for
+  gluetun — and it stresses the killswitch directly, so it ships only behind an
+  exhaustive `leak-test` pass, as a documented veteran mode, never the default.
+
 ## Direction
 
 Candidate directions, grouped by theme — where the project *could* go next, not
