@@ -50,6 +50,23 @@ ensure_field() {
         || wfail "$svc: $noun update rejected — set it in its UI"
 }
 
+# ensure_resource <exists> <would_desc> <ok_msg> <fail_msg> -- <create-cmd...>
+#   Create-if-missing skeleton. <exists> is "yes" when the caller has already
+#   found the resource present in the live list — the caller owns the observe
+#   and the match (patterns and whitespace handling differ per API). When
+#   missing: w_would-gated, run <create-cmd>, capturing its output so a failure
+#   carries the API's own words. <ok_msg> covers both already-present and
+#   just-created; <fail_msg> gets the API response appended.
+ensure_resource() {
+    local exists="$1" would="$2" okmsg="$3" failmsg="$4"; shift 4
+    [[ "${1:-}" == -- ]] && shift
+    [[ "$exists" == yes ]] && { ok "$okmsg"; return 0; }
+    w_would "$would" || return 0
+    local out
+    if out=$("$@"); then ok "$okmsg"
+    else wfail "$failmsg — API said: $(head -c180 <<<"$out")"; fi
+}
+
 arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialising)
     sudo grep -oP '<ApiKey>\K[^<]+' "$(env_get CONFIG_ROOT)/$1/config.xml" 2>/dev/null | head -1 || true
 }
@@ -318,32 +335,25 @@ operator). Stored in .env (view: credentials)."
         # root folder
         t=$(svc_label "$s" mediastack.arrtype)
         cur=$(api GET "$url/api/$(arr_apiver "$s")/rootfolder" "$key" || true)
-        if grep -q "\"path\":\"$root\"" <<<"${cur//[[:space:]]/}"; then
-            ok "$s: root folder $root registered"
-        elif w_would "$s: register root folder $root"; then
-            local rbody rresp
-            if [[ "$t" == lidarr ]]; then
-                # lidarr root folders carry library defaults (unlike sonarr/radarr);
-                # profile IDs 1 = the built-in Standard profiles on a fresh install
-                rbody="{\"name\":\"Music\",\"path\":\"$root\",\"defaultMetadataProfileId\":1,\"defaultQualityProfileId\":1,\"defaultMonitorOption\":\"all\",\"defaultTags\":[]}"
-            else
-                rbody="{\"path\":\"$root\"}"
-            fi
-            if rresp=$(api POST "$url/api/$(arr_apiver "$s")/rootfolder" "$key" "$rbody"); then
-                ok "$s: root folder registered"
-            else
-                wfail "$s: root folder rejected — API said: $(head -c180 <<<"$rresp")"
-            fi
+        local rexists=no; grep -q "\"path\":\"$root\"" <<<"${cur//[[:space:]]/}" && rexists=yes
+        local rbody
+        if [[ "$t" == lidarr ]]; then
+            # lidarr root folders carry library defaults (unlike sonarr/radarr);
+            # profile IDs 1 = the built-in Standard profiles on a fresh install
+            rbody="{\"name\":\"Music\",\"path\":\"$root\",\"defaultMetadataProfileId\":1,\"defaultQualityProfileId\":1,\"defaultMonitorOption\":\"all\",\"defaultTags\":[]}"
+        else
+            rbody="{\"path\":\"$root\"}"
         fi
+        ensure_resource "$rexists" "$s: register root folder $root" \
+            "$s: root folder $root registered" "$s: root folder rejected" \
+            -- api POST "$url/api/$(arr_apiver "$s")/rootfolder" "$key" "$rbody"
         # download client
         [[ -n "$pass" ]] || continue
         cat=$(svc_label "$s" mediastack.category)
         case "$t" in sonarr) catfield=tvCategory ;; radarr) catfield=movieCategory ;; lidarr) catfield=musicCategory ;; esac
         cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key" || true)
-        if grep -q '"qBittorrent (mediastack)"' <<<"$cur"; then
-            ok "$s: download client registered"
-        elif w_would "$s: register qBittorrent (category $cat)"; then
-            api POST "$url/api/$(arr_apiver "$s")/downloadclient" "$key" "$(cat <<JSON
+        local dexists=no; grep -q '"qBittorrent (mediastack)"' <<<"$cur" && dexists=yes
+        local dbody; dbody=$(cat <<JSON
 {"enable":true,"protocol":"torrent","priority":1,
  "removeCompletedDownloads":true,"removeFailedDownloads":true,
  "name":"qBittorrent (mediastack)","implementation":"QBittorrent",
@@ -354,9 +364,10 @@ operator). Stored in .env (view: credentials)."
    {"name":"username","value":"$user"},{"name":"password","value":"$pass"},
    {"name":"$catfield","value":"$cat"}]}
 JSON
-)" >/dev/null && ok "$s: download client registered" \
-              || wfail "$s: download client registration failed — API said no; check: logs $s"
-        fi
+)
+        ensure_resource "$dexists" "$s: register qBittorrent (category $cat)" \
+            "$s: download client registered" "$s: download client registration failed — check: logs $s" \
+            -- api POST "$url/api/$(arr_apiver "$s")/downloadclient" "$key" "$dbody"
     done
 }
 
