@@ -11,6 +11,13 @@
 WIRE_DRY=0
 WIRE_CHANGES=0
 WIRE_FAILS=0
+# The roles `wire` drives, in the order `wire all` runs them. This is the single
+# source of truth for the role list: arg validation, the usage string, and
+# dispatch all derive from it. Order is load-bearing — seerr signs in via
+# jellyfin's admin and wizarr's first-run UI wants jellyfin claimed first, so
+# jellyfin precedes both. To add an integration: append its role here and define
+# a matching wire_<role> function below.
+WIRE_ROLES=(qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr)
 wfail() { fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); }
 
 w_would() { # w_would "description" -> 0 if execution should proceed
@@ -1296,13 +1303,18 @@ Paste nothing to skip for now — re-run 'wire wizarr' any time."
     fi
 }
 
+wire_usage() { local IFS='|'; die "usage: wire [${WIRE_ROLES[*]}] [--dry-run]"; }
+
 cmd_wire() {
     load_env; render
     local section="all"
     while [[ $# -gt 0 ]]; do case "$1" in
         --dry-run) WIRE_DRY=1; shift ;;
-        qbit|arr|prowlarr|bazarr|apprise|cleanuparr|lazylibrarian|jellyfin|seerr|wizarr|all) section="$1"; shift ;;
-        *) die "usage: wire [qbit|arr|prowlarr|bazarr|apprise|cleanuparr|lazylibrarian|jellyfin|seerr|wizarr] [--dry-run]" ;;
+        all) section="all"; shift ;;
+        *)  local r matched=""
+            for r in "${WIRE_ROLES[@]}"; do [[ "$1" == "$r" ]] && { matched=1; break; }; done
+            [[ -n "$matched" ]] || wire_usage
+            section="$1"; shift ;;
     esac; done
     (( WIRE_DRY )) && hr "wire --dry-run: showing changes, touching nothing"
     if (( ! WIRE_DRY )) && [[ ! -f "$SCRIPT_DIR/.wired" ]]; then
@@ -1328,21 +1340,15 @@ cmd_wire() {
                 || warn "still settling: $pending_s— wiring anyway; anything that refuses gets a per-item FAIL and a re-run picks it up"
         fi
     fi
-    case "$section" in
-        qbit)     wire_qbit ;;
-        arr)      wire_arr ;;
-        prowlarr) wire_prowlarr ;;
-        bazarr)   wire_bazarr ;;
-        apprise)  wire_apprise ;;
-        cleanuparr) wire_cleanuparr ;;
-        lazylibrarian) wire_lazylibrarian ;;
-        jellyfin) wire_jellyfin ;;
-        seerr)    wire_seerr ;;
-        wizarr)   wire_wizarr ;;
-        # order matters: seerr signs in via jellyfin's admin; wizarr's UI
-        # first-run wants jellyfin claimed first
-        all)      wire_qbit; wire_arr; wire_prowlarr; wire_bazarr; wire_apprise; wire_cleanuparr; wire_lazylibrarian; wire_jellyfin; wire_seerr; wire_wizarr ;;
-    esac
+    # dispatch by the WIRE_ROLES registry: `all` runs every role in order,
+    # a section runs its one wire_<role>. Both resolve the function by name,
+    # so there is no second list to keep in sync with the one above.
+    local role
+    if [[ "$section" == all ]]; then
+        for role in "${WIRE_ROLES[@]}"; do "wire_$role"; done
+    else
+        "wire_$section"
+    fi
     echo
     if (( WIRE_DRY )); then
         info "dry-run complete: $WIRE_CHANGES change(s) would be applied. Run without --dry-run to apply."
