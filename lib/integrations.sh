@@ -272,26 +272,20 @@ type your own to use it instead. Stored in .env (view: credentials)."
     qb_bind_tun0
     # categories: one per arr instance, distinct save paths = hardlink discipline
     [[ -n "$QB_COOKIE" ]] || { info "no qBittorrent session — categories skipped"; return 0; }
-    local existing s cat
+    local existing s cat cexists
     existing=$(qb_api /torrents/categories || true)
     for s in $(arr_instances); do
         cat=$(svc_label "$s" mediastack.category)
-        if grep -q "\"$cat\"" <<<"$existing"; then
-            ok "category '$cat' exists"
-        elif w_would "create category '$cat' -> /data/torrent/$cat"; then
-            qb_api /torrents/createCategory "category=$cat" "savePath=/data/torrent/$cat" >/dev/null \
-                && ok "category '$cat' created" \
-                || { wfail "category '$cat' creation failed"; }
-        fi
+        cexists=no; grep -q "\"$cat\"" <<<"$existing" && cexists=yes
+        ensure_resource "$cexists" "create category '$cat' -> /data/torrent/$cat" \
+            "category '$cat' exists" "category '$cat' creation failed" \
+            -- qb_api /torrents/createCategory "category=$cat" "savePath=/data/torrent/$cat"
     done
     # manual grabs from prowlarr get their own bucket
-    if grep -q '"prowlarr"' <<<"$existing"; then
-        ok "category 'prowlarr' exists"
-    elif w_would "create category 'prowlarr' -> /data/torrent/prowlarr (manual grabs)"; then
-        qb_api /torrents/createCategory "category=prowlarr" "savePath=/data/torrent/prowlarr" >/dev/null \
-            && ok "category 'prowlarr' created" \
-            || wfail "category 'prowlarr' creation failed"
-    fi
+    cexists=no; grep -q '"prowlarr"' <<<"$existing" && cexists=yes
+    ensure_resource "$cexists" "create category 'prowlarr' -> /data/torrent/prowlarr (manual grabs)" \
+        "category 'prowlarr' exists" "category 'prowlarr' creation failed" \
+        -- qb_api /torrents/createCategory "category=prowlarr" "savePath=/data/torrent/prowlarr"
 }
 
 # ---- arr root folders + download client ----
