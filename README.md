@@ -89,6 +89,7 @@ explanation.
 | flaresolverr | captcha bypass helper for some indexers |
 | deluge / transmission | extra torrent clients (most people need neither) |
 | ersatztv | virtual live-TV channels from your library |
+| olivetin | the web front door — the stack's safe verbs as buttons ([docs/frontdoor.md](docs/frontdoor.md)) |
 
 Recyclarr rides along as a tool container (not a service) powering
 `trash-sync`. The recommended "standard" pick: gluetun, qbittorrent, the
@@ -114,7 +115,7 @@ Run
 Maintain
 | command | what it does |
 |---|---|
-| `update [svc] [--to TAG] [--dry-run] [--now]` | container images: backup → pull → apply → health gate; nightly via timer |
+| `update [svc] [--to TAG] [--dry-run] [--now]` | container images: backup → pull → apply → health gate; nightly via timer (`--auto`, timer-only) |
 | `apply-timer` | install/refresh the scheduled-update systemd timer |
 | `backup` / `backup verify [ts]` | restore point now / verify checksums + archives |
 | `restore --service <svc>\|--all [--from TS]` | restore configs + exact image |
@@ -124,10 +125,10 @@ Maintain
 Connect
 | command | what it does |
 |---|---|
-| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr] [--dry-run]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten |
+| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr] [--dry-run\|--verify]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
 | `invite [--expires 1\|7\|30]` | mint a Wizarr invitation, print the ready-to-share URL (default: never expires) |
 | `set-credentials <arr\|qbit\|jellyfin\|pihole\|traefik\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `all` sets one password across the stack (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
-| `trash-sync` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update |
+| `trash-sync [--dry-run]` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update. `--dry-run` previews the drift (`recyclarr --preview`) and changes nothing |
 | `traefik-setup` | HTTPS wizard: domain, Cloudflare token, cert environment, dashboard login |
 | `traefik-setup --hosts` | guided rename of every service's subdomain |
 | `traefik-setup --certs` | switch staging/production certificates (applied end to end) |
@@ -147,6 +148,7 @@ Other
 | `new-service <name>` | scaffold a service into `docker-compose.override.yml` (untracked, upgrade-safe) |
 | `uninstall [--nuke]` | tiered removal; `--nuke` = everything, one confirmation. Media and backups are never touched |
 | `menu` | interactive menu wrapping all of the above |
+| `help` | the command list (also: no arguments) |
 
 Web front door
 | command | what it does |
@@ -154,8 +156,17 @@ Web front door
 | `frontdoor-install` | install/refresh the OliveTin web panel over the safe verbs; first interactive run sets the admin password (`--set-password` to change it) |
 | `frontdoor-refresh` | regenerate the panel's dropdown + status-tile data (also on a 5-min timer and the panel's Refresh button) |
 
-This table mirrors `./mediastack.sh help` as of the current version; the
-script's own help is always authoritative.
+Internal (called by the panel, timers and units — not meant for hand use)
+| command | what it does |
+|---|---|
+| `list [all\|managed\|enabled\|disabled\|vpntoggle\|wire\|pinned] [--json]` | enumerate services by set — the panel's dropdown source |
+| `vpn-apply <svc> on\|off` | the one-shot the panel's Toggle VPN button runs (`vpn` is the interactive form) |
+| `vpn-guard [--boot]` | re-attach VPN'd services after a host boot / docker restart (systemd unit) |
+
+Every verb rejects arguments it does not accept — a typo or an unsupported
+flag fails with the verb's contract instead of silently running the default
+form. The user-facing rows above mirror `./mediastack.sh help`; the script's
+own help is always authoritative.
 
 ## Web front door
 
@@ -356,7 +367,8 @@ retention · Jellyfin + Seerr automated setup · JellySearch routing ·
 invite management (Wizarr) · notification hub (Apprise) · download
 cleanup (cleanuparr) · credential rotation, including one-password mode
 (`set-credentials all`) · tunnel interface binding · runtime audits in
-`doctor` · manual grabs from Prowlarr · user services via
+`doctor` · drift checks (`wire --verify`, `trash-sync --dry-run`) ·
+manual grabs from Prowlarr · user services via
 `docker-compose.override.yml` · service URLs in `status` · watch-state
 sync and backup (WatchState) · a dedicated music server (Navidrome) ·
 audiobook/podcast and ebook/comic serving (Audiobookshelf, Kavita) ·

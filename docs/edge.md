@@ -34,10 +34,10 @@ warns persistently while staging certificates are live.
 
 ## Hostnames
 
-Defaults: dash, jellyfin, requests (seerr), invites (wizarr), notify
-(apprise), cleanup (cleanuparr), watch (watchstate), music (navidrome), audiobooks (audiobookshelf), books (kavita), books-dl (lazylibrarian),
-tv (ersatztv),
-pihole, qbit, sonarr,
+Defaults: dash (traefik dashboard), panel (olivetin front door), jellyfin,
+requests (seerr), invites (wizarr), notify (apprise), cleanup (cleanuparr),
+watch (watchstate), music (navidrome), audiobooks (audiobookshelf), books
+(kavita), books-dl (lazylibrarian), tv (ersatztv), pihole, qbit, sonarr,
 radarr, prowlarr, lidarr, bazarr, radarr-4k, sonarr-anime, deluge,
 transmission — all under `TRAEFIK_DOMAIN`. Rename any of them with the guided pass:
 
