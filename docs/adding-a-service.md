@@ -29,7 +29,19 @@ backups and the update pipeline like any shipped service.
 | `mediastack.cache: "true"` | owns `${CACHE_ROOT}/<service>` (provisioned, never backed up) |
 | `mediastack.internal: "true"` | reachable on the LAN only — status marks it instead of printing a URL |
 | `mediastack.subdomain: "x"` | default hostname for the status URL column (`<X>_HOST` in `.env` overrides) |
+| `mediastack.port: "1234"` | the host-side port the service is reached on — drives the status table, `wire`'s API calls, `vpn_gen`'s published port, and the readiness gates |
+| `mediastack.desc: "…"` | one-line description shown in the `configure` service picker |
 | `traefik.http.routers.*` labels | HTTPS hostname — native Traefik labels, see docs/edge.md |
+
+Labels the arr family carries (only meaningful with `wire arr` / `trash-sync`):
+
+| Label | Meaning |
+|---|---|
+| `mediastack.arrtype: "sonarr\|radarr\|lidarr"` | which arr this instance is — selects the API version, the download-client category field, and the TRaSH profile menu |
+| `mediastack.category: "movies-4k"` | its qBittorrent category (`wire qbit` creates it; `wire arr` sets it on the download client) |
+| `mediastack.rootfolder: "/data/media/movies-4k"` | its root folder inside the container (`wire arr` registers it; seerr and jellyfin libraries derive from it) |
+| `mediastack.datadirs: "torrent/movies-4k media/movies-4k"` | extra `${DATA_ROOT}` subtrees `configure` provisions for this instance |
+| `mediastack.appport: "7879"` | in-app listening port seeded into `config.xml` before first boot — extra instances share gluetun's namespace, so the image default would collide |
 
 Conventions: config dir name == service name; env var stem == service name
 uppercased (`myapp` → `MYAPP_UID`, `MYAPP_UPDATE`, `MYAPP_NAME`, `MYAPP_PORT`).

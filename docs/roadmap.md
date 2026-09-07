@@ -148,13 +148,37 @@ a committed plan.
 ### End-user experience
 - Web panel polishing.
 - Script polishing for the end user (clearer prompts, output, ergonomics).
-- Extend `--dry-run` / what-if beyond `update` to `enable`/`disable`/`wire`/
-  `vpn-apply`, so more operations are previewable before they apply.
+- **`help` from a verb registry** *(next)*. Today a verb lives in three
+  hand-kept lists — the dispatch table in `main()`, `cmd_help`'s prose, and
+  README's command table — and they drift (an audit found `list`, `vpn-apply`,
+  `vpn-guard`, `frontdoor-refresh` and several flags absent from `help`). The
+  fix is the same move `WIRE_ROLES` and `DOCTOR_SECTIONS` made: one registry
+  line per verb carrying its name, accepted arguments, an `internal` mark, and
+  a one-line description; `main()` dispatches from it, the `args_*` guards
+  derive from its arguments column, and `help` renders it. Verbs and flags
+  then cannot drift from `help` because there is nothing to drift from. README
+  stays prose (install walkthrough, concepts) and gets a small bash/awk CI
+  check that every registry verb is mentioned. Trade-off: `help` flattens to
+  one line per verb; depth moves to README, which is arguably the right split.
+- Extend `--dry-run` / what-if to `enable`/`disable`/`vpn-apply`. (`update`,
+  `wire` and `trash-sync` have it; `wire --verify` adds a non-zero exit on
+  drift for scripts and cron.)
 
 ### Extensibility
 - An easier path to add services *beyond* the built-in framework.
-- Rework `wire`: make it modular/pluggable (per-service wiring definitions)
-  instead of one hardcoded list — easier to extend and reason about.
+- `wire` rework — **shape settled and landed**: bash recipe files keyed by role
+  (`WIRE_ROLES` registry; adding an integration = append the role + define
+  `wire_<role>`), built on two reconcile primitives, `ensure_field` (idempotent
+  single-field set on a round-tripping JSON config API) and `ensure_resource`
+  (create-if-missing / set-if-different with a caller-owned observe + match).
+  Every `wire_arr`, `wire_qbit` and `wire_prowlarr` step now runs through them.
+  Rule of thumb that keeps the primitives small: a nuance that recurs across
+  services earns a primitive; a one-off stays inline in its recipe — never a
+  per-case flag on the primitive. Remaining: `bazarr`, `lazylibrarian` and
+  `seerr` write without observing (one settings blob / blind `writeCFG`), so
+  they carry no drift signal and are listed in `WIRE_BLIND`; making them
+  observe is per-recipe API work, deferred until beta shows whether blind-write
+  drift happens in practice.
 
 ### Portability
 - De-hardcode Debian; open up the OS assumptions.
@@ -186,8 +210,9 @@ a committed plan.
   place; tighten style and error-handling consistency; find lean-ness wins
   (fewer moving parts, faster common paths); verify docs match behavior; re-check
   the whole against the goals above. A lean-and-correct sweep, not a rewrite.
-- Expand CI/tests: a shellcheck gate, `docker compose config` validation across
-  every fragment, and a render/`--dry-run` smoke test.
+- Expand CI/tests: `docker compose config` validation across every fragment
+  and a render/`--dry-run` smoke test. (In place: shellcheck over the entrypoint
+  and every lib, the front-door safety audit, and the placeholder-host guard.)
 - First-class host-to-host migration (a `migrate` / export-import verb) — turns
   the manual cutover procedure into a validated command.
 
@@ -216,6 +241,8 @@ adding it would look like, and the trigger to revisit.
 | TubeArchivist | Video (YouTube) | Deferred | Heavy (Elasticsearch + Redis + app) |
 | ytdl-sub | Video (YouTube) | Alternative | No UI — wrong for unknown end users |
 | TubeSync | Video (YouTube) | Alternative | Pinchflat is lighter with more momentum |
+| spotDL | Music (playlist → local audio) | Deferred, radar | YouTube-sourced audio (lossy ceiling, adversarial upstream); overlaps lidarr's role |
+| SongMirror | Music (playlist sync) | Deferred, watch | Very young (single maintainer, no published image, no UI login); spotDL underneath |
 | **authentik** | Identity/SSO | Deferred (post-migration) | 4-container DB stack; needs the `wire` rework |
 | Authelia (+ file / + LLDAP) | Identity/SSO | Lighter alternative | Leanest; no enrolment UI |
 | Kanidm | Identity/SSO | Lighter alternative | No built-in forward-auth (needs a proxy) |
@@ -456,6 +483,94 @@ client, updates the media server on new media.
 
 **Why not the pick:** fine, but Pinchflat has the lighter footprint and the
 momentum.
+
+---
+
+# Music — playlist-driven acquisition
+
+Two candidates that come at music from the *playlist* side rather than the
+*artist/album* side lidarr works from. Both are MIT, both are Python, and both
+ultimately fetch audio from YouTube (spotDL uses Spotify only for metadata),
+which puts them in the same adversarial-upstream bucket as the YouTube
+archivers above: yt-dlp breakage, bot walls, and a **lossy audio ceiling**
+(~128–160 kbps without a YouTube Music Premium cookie; 256 kbps AAC with one).
+That last point is the real tension with this stack, where lidarr + TRaSH aim
+at lossless or high-bitrate releases. Record it: these are for "I want my
+Spotify playlists playable on Jellyfin/Navidrome," not for building the
+library.
+
+## spotDL — Spotify playlist → tagged local files
+
+**What it is:** the established CLI (spotDL v4): give it a Spotify
+track/album/playlist URL, it resolves the metadata from Spotify, finds the
+audio on YouTube Music, downloads via yt-dlp, and writes tagged files with
+album art and lyrics. Official image on Docker Hub (`spotdl/spotify-downloader`)
+plus a built-in web UI when run with no arguments; needs ffmpeg (bundled in
+the image) and, increasingly, Deno for some YouTube downloads.
+
+**Why deferred:** (1) it is a *downloader*, not a library manager — no
+monitoring, no quality profiles, no import pipeline; it would land files next
+to a lidarr-managed tree and the two do not know about each other. (2) The
+audio is transcoded from YouTube, which is at odds with the quality bar the
+rest of the acquisition chain enforces. (3) Adversarial upstream: same
+pin-vs-freshness problem as Pinchflat — a pinned image's bundled yt-dlp goes
+stale in weeks.
+
+**What adding it would look like:** a `spotdl` shard on the LAN side (**not**
+gluetun — YouTube flags VPN/datacenter exits harder, same rule as Pinchflat),
+its own stack UID, output into a separate `${DATA_ROOT}/media/music-playlists`
+subtree so lidarr's tree stays lidarr's, one Navidrome/Jellyfin library
+pointed at it. Web UI behind a `spotdl` router. No `wire` recipe — it holds no
+config worth reconciling. Nightly-refresh the image rather than pin it.
+
+**Revisit when:** a real user wants Spotify playlists on the stack and accepts
+lossy output as the price. If the wish is *lossless* music from a playlist,
+the answer is lidarr's own import lists (Settings → Import Lists has Spotify
+playlists / followed artists / saved albums) feeding the normal
+Prowlarr-quality pipeline — no new service.
+
+## SongMirror — N-way playlist sync + Jellyfin-ready local mirror
+
+**What it is:** a self-hosted Soundiiz/TuneMyMusic alternative: keeps
+playlists mirrored across Spotify, Apple Music and YouTube Music (its README
+headline; the repo description also claims Deezer, TIDAL, Qobuz and Amazon
+Music — check the connector list under `songmirror/services/accounts` before
+counting on those) with ISRC-first matching, one-way / authoritative / bidirectional modes, dry-run by
+default, removal caps. Its **local download mirror** uses spotDL to keep one
+folder per playlist in Jellyfin's `AlbumArtist/Album` layout with covers and an
+auto-maintained `.m3u8`, and can upload playlist covers through the Jellyfin
+API. FastAPI + React, single container, SQLite state under `./data`.
+
+**Why deferred (watch, not adopt):**
+
+* **Very young.** Single maintainer, a handful of stars, no published image
+  (`docker compose up -d --build` from source), no releases. Nothing wrong with
+  that, but it fails the deployed-tag rule — there is no tag to pin.
+* **No UI login.** The README says so itself: bind it to the LAN, never
+  port-forward. Behind Traefik that means either forward-auth in front of it
+  (the SSO item) or accepting an unauthenticated panel that holds Spotify and
+  Google OAuth tokens. Not acceptable on a shared-household edge as-is.
+* **Credential burden.** Each user supplies their own Spotify developer app
+  and a Google Cloud project with the YouTube Data API enabled and an OAuth
+  consent screen in *production* mode (else tokens expire in 7 days); Apple
+  Music needs two headers scraped from DevTools every few months. That is a
+  lot of ceremony for a newbie install.
+* **spotDL underneath** for the local mirror, so everything in the spotDL
+  entry (lossy ceiling, adversarial upstream) applies here too.
+
+**What adding it would look like:** one shard, LAN side, its `./data` on the
+config bind (SQLite only — no DB-backed-service question), `DOWNLOAD_DIR`
+onto the same `music-playlists` subtree as spotDL would use, `JELLYFIN_URL`
+pointed at the stack's Jellyfin with a dedicated API key minted by `wire`.
+Traefik router `playlists`, gated by forward-auth once SSO exists. Until an
+image is published, the fragment would carry a `build:` — the first in the
+stack, and an `update`-pipeline exception.
+
+**Revisit when:** it publishes a tagged image and grows a login (or the SSO
+gate exists), *and* someone on the stack actually curates playlists on two or
+more streaming services. The pure "get my Spotify playlists onto Jellyfin"
+case is spotDL alone; SongMirror earns its place only when the multi-service
+sync is the point.
 
 ---
 
