@@ -161,12 +161,14 @@ DC() { # compose wrapper: project dir pinned, pin-override applied when present
     # so materialised membership is authoritative, before pins so pins win
     [[ -e local/vpn-overlay.yml ]] && files+=(-f local/vpn-overlay.yml)
     [[ -s "$PINS_FILE" ]] && files+=(-f "$PINS_FILE")
+    [[ " $* " == *" config "* ]] || INSPECT_JSON=""   # see CACHE RULE at c_inspect
     sudo docker compose --project-directory "$SCRIPT_DIR" "${files[@]}" "$@"
 }
 
 compose_renders() { DC config >/dev/null; } # rc-only; compose errors pass through
 
 RENDERED_JSON=""
+INSPECT_JSON=""   # `docker inspect` cache — see CACHE RULE at c_inspect
 render() { # cache rendered config as json for discovery
     # CACHING SEMANTICS: helpers run inside $( ) subshells, so a render
     # triggered there does NOT populate the parent shell. Any function that
@@ -829,7 +831,7 @@ reconcile_disabled() {
     for s in $(svc_disabled_managed); do
         cn=$(svc_cname "$s")
         if [[ $(c_state "$cn") != absent ]]; then
-            sudo docker rm -f -v "$cn" >/dev/null
+            sudo docker rm -f -v "$cn" >/dev/null; INSPECT_JSON=""
             info "removed container for disabled service: $s"
         fi
     done
@@ -849,17 +851,17 @@ reconcile_disabled() {
 # catch them when started. Called from cmd_up and cmd_update so neither path
 # can leave a ghost behind.
 vpn_reattach_guard() {
-    render
+    render; c_inspect_all
     local gid vd nm vdeps=() stale=()
     mapfile -t vdeps < <(jq -r '.services | to_entries[]
         | select((.value.network_mode // "") == "service:gluetun") | .key' \
         <<<"$RENDERED_JSON" | sort)
     (( ${#vdeps[@]} )) || { warn "vpn guard: no service:gluetun dependents in the rendered config — nothing to verify"; return 0; }
-    gid=$(sudo docker inspect --format '{{.Id}}' "$(svc_cname gluetun)" 2>/dev/null | tr -d '\n')
+    gid=$(c_id "$(svc_cname gluetun)")
     [[ -n "$gid" ]] || die "vpn guard: cannot resolve the live gluetun container — VPN attachment unverifiable. Inspect gluetun, then re-run."
     for vd in "${vdeps[@]}"; do
         [[ "$(c_state "$(svc_cname "$vd")")" == running ]] || continue
-        nm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$(svc_cname "$vd")" | tr -d '\n')
+        nm=$(c_netmode "$(svc_cname "$vd")")
         [[ "$nm" == "container:$gid" ]] || stale+=("$vd")
     done
     if (( ${#stale[@]} )); then
@@ -867,7 +869,7 @@ vpn_reattach_guard() {
         info "re-pinning them onto the live gluetun..."
         DC up -d --force-recreate --no-deps "${stale[@]}"
         for vd in "${stale[@]}"; do
-            nm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$(svc_cname "$vd")" 2>/dev/null | tr -d '\n')
+            nm=$(c_netmode "$(svc_cname "$vd")")
             [[ "$nm" == "container:$gid" ]] && continue
             notify ops "Mediastack VPN re-pin FAILED" "VPN dependents detached from gluetun and re-pin FAILED: **${stale[*]}**\nFix now: \`./mediastack.sh up\` then \`./mediastack.sh leak-test\`" failure
             die "vpn guard: $vd is still not joined to the live gluetun after recreate — VPN egress is broken. Fix this before anything else."
@@ -1002,13 +1004,44 @@ cmd_logs() {
 }
 
 # ------------------------------------------------------------------ status --
-# NOTE: on a missing container, some docker versions emit a blank stdout line
-# alongside the stderr error — strip newlines and treat empty as the sentinel.
-c_state()  { local o; o=$(sudo docker inspect --format '{{.State.Status}}' "$1" 2>/dev/null | tr -d '\n'); echo "${o:-absent}"; }
-c_health() { local o; o=$(sudo docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}-{{end}}' "$1" 2>/dev/null | tr -d '\n'); echo "${o:--}"; }
+# Container facts come from `docker inspect` JSON. A reporting command calls
+# c_inspect_all once (one privileged call for every managed container) and
+# every c_* reads the cache; without it, c_* inspects that one container —
+# the same JSON, one call per fact. CACHE RULE: anything that creates,
+# recreates, starts, stops or removes a container clears INSPECT_JSON (DC does
+# it for every compose verb but config; raw `sudo docker` mutations do it
+# explicitly), so a health poll after `up` never reads a stale snapshot.
+c_inspect() { # c_inspect <cname>... -> JSON array of the containers that exist
+    # a missing container is a normal state (before the first `up`); anything
+    # else on stderr — daemon down, permission denied — is zero evidence: die
+    local err out; err=$(mktemp)
+    out=$(sudo docker inspect --type container "$@" 2>"$err") || true
+    if grep -vE 'No such (object|container)' "$err" | grep -q .; then
+        cat "$err" >&2; rm -f "$err"
+        die "docker inspect failed — container state is unverifiable (evidence above)"
+    fi
+    rm -f "$err"; echo "${out:-[]}"
+}
+c_inspect_all() { # fill the cache for every managed container (see CACHE RULE)
+    render
+    local names
+    names=$(jq -r '.services | to_entries[]
+        | select(.value.labels["mediastack.managed"] == "true")
+        | .value.container_name // .key' <<<"$RENDERED_JSON")
+    [[ -n "$names" ]] || { INSPECT_JSON="[]"; return 0; }
+    # shellcheck disable=SC2086  # one name per word
+    INSPECT_JSON=$(c_inspect $names)
+}
+c_get() { # c_get <cname> <jq path> -> the value, "" when the container is absent
+    local j
+    if [[ -n "$INSPECT_JSON" ]]; then j=$INSPECT_JSON; else j=$(c_inspect "$1"); fi
+    jq -r --arg n "/$1" ".[] | select(.Name == \$n) | $2 // \"\"" <<<"$j"
+}
+c_state()  { local o; o=$(c_get "$1" '.State.Status'); echo "${o:-absent}"; }
+c_health() { local o; o=$(c_get "$1" '.State.Health.Status'); echo "${o:--}"; }
 c_uptime() { # human-readable duration since container start (e.g. 3d4h, 12m, 45s)
     local st sec
-    st=$(sudo docker inspect --format '{{.State.StartedAt}}' "$1" 2>/dev/null | tr -d '\n')
+    st=$(c_get "$1" '.State.StartedAt')
     [[ -n "$st" ]] || { echo "-"; return; }
     sec=$(( $(date +%s) - $(date -d "$st" +%s 2>/dev/null || date +%s) ))
     (( sec < 0 )) && sec=0
@@ -1017,8 +1050,10 @@ c_uptime() { # human-readable duration since container start (e.g. 3d4h, 12m, 45
     elif (( sec >= 60 ));    then echo "$((sec/60))m$((sec%60))s"
     else echo "${sec}s"; fi
 }
-c_version(){ sudo docker inspect --format '{{index .Config.Labels "org.opencontainers.image.version"}}' "$1" 2>/dev/null | tr -d '\n' || true; }
-c_restarts(){ local o; o=$(sudo docker inspect --format '{{.RestartCount}}' "$1" 2>/dev/null | tr -d '\n'); echo "${o:-0}"; }
+c_version(){ c_get "$1" '.Config.Labels["org.opencontainers.image.version"]'; }
+c_restarts(){ local o; o=$(c_get "$1" '.RestartCount'); echo "${o:-0}"; }
+c_netmode(){ c_get "$1" '.HostConfig.NetworkMode'; }   # "container:<id>" when joined to another namespace
+c_id()     { c_get "$1" '.Id'; }
 
 # Machine-readable service lister — one service name per line, nothing else.
 # Built for consumers that need a clean list to parse (e.g. a web UI populating
@@ -1066,6 +1101,7 @@ cmd_list() {
 cmd_status() {
     load_env; render
     if [[ -n "${1:-}" ]]; then status_one "$1"; return; fi
+    c_inspect_all
     hr "Mediastack status"
     printf "%-14s %-5s %-5s %-9s %-10s %-12s %-8s %-9s %s\n" SERVICE PORT VPN STATE HEALTH VERSION PINNED UPTIME URL
     local s cn pin vpn port rec bvpn
@@ -1097,15 +1133,23 @@ cmd_status() {
 
 status_one() {
     local s="$1"; svc_exists "$s" || die "No service '$s'. Known: $(svc_managed | tr '\n' ' ')"
-    local cn; cn=$(svc_cname "$s")
+    local cn st; cn=$(svc_cname "$s")
+    INSPECT_JSON=$(c_inspect "$cn")   # one call; every fact below reads it
+    st=$(c_state "$cn")
     hr "$s"
     echo "container : $cn"
-    echo "state     : $(c_state "$cn")   health: $(c_health "$cn")"
+    echo "state     : $st   health: $(c_health "$cn")"
     echo "image     : $(svc_image "$s")  version: $(c_version "$cn")"
-    echo "user      : $(sudo docker inspect --format '{{.Config.User}}' "$cn" 2>/dev/null || echo -)"
-    echo "restarts  : $(sudo docker inspect --format '{{.RestartCount}}' "$cn" 2>/dev/null || echo -)"
-    echo "mounts    :"
-    sudo docker inspect --format '{{range .Mounts}}  {{.Source}} -> {{.Destination}}{{println}}{{end}}' "$cn" 2>/dev/null || true
+    if [[ "$st" == absent ]]; then
+        echo "user      : -"
+        echo "restarts  : -"
+        echo "mounts    :"
+    else
+        echo "user      : $(c_get "$cn" '.Config.User')"
+        echo "restarts  : $(c_get "$cn" '.RestartCount')"
+        echo "mounts    :"
+        c_get "$cn" '(.Mounts[] | "  \(.Source) -> \(.Destination)")'
+    fi
     hr "last 15 log lines"
     sudo docker logs --tail 15 "$cn" 2>&1 || true
 }
@@ -1130,10 +1174,11 @@ cmd_backup() {
 
     # images.lock BEFORE stopping (inspect needs the containers)
     local s cn img ref
+    c_inspect_all
     { for s in $(svc_managed); do
         cn=$(svc_cname "$s")
         # RepoDigests is an IMAGE field: resolve container -> image -> digest
-        img=$(sudo docker inspect --format '{{.Image}}' "$cn" 2>/dev/null | tr -d '\n' || true)
+        img=$(c_get "$cn" '.Image')
         [[ -n "$img" ]] || continue
         ref=$(sudo docker image inspect --format '{{index .RepoDigests 0}}' "$img" 2>/dev/null | tr -d '\n' || true)
         [[ -n "$ref" ]] && echo "$s $ref"
@@ -1661,8 +1706,7 @@ _doctor_permissions() {
         local cn dest out rc
         cn=$(svc_cname "$s")
         if [[ $(c_state "$cn") == running ]]; then
-            dest=$(sudo docker inspect "$cn" 2>/dev/null \
-                   | jq -r --arg src "$croot/$s" '.[0].Mounts[]? | select(.Source==$src) | .Destination' | head -1)
+            dest=$(c_get "$cn" "(.Mounts[]? | select(.Source==\"$croot/$s\") | .Destination)" | head -1)
             if [[ -n "$dest" ]]; then
                 out=$(sudo docker exec "$cn" test -w "$dest" 2>&1) && rc=0 || rc=$?
                 if (( rc == 0 )); then ok "$s config writable from inside the container"
@@ -1769,11 +1813,11 @@ _doctor_vpn_backups() {
     hr "doctor: vpn + backups"
     if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
         local dgid dnm dbad="" dchecked=0
-        dgid=$(sudo docker inspect --format '{{.Id}}' "$(svc_cname gluetun)" | tr -d '\n')
+        dgid=$(c_id "$(svc_cname gluetun)")
         for s in $(svc_managed_where mediastack.vpn true); do
             svc_enabled "$s" || continue
             [[ $(c_state "$(svc_cname "$s")") == running ]] || continue
-            dnm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$(svc_cname "$s")" | tr -d '\n')
+            dnm=$(c_netmode "$(svc_cname "$s")")
             dchecked=1
             [[ "$dnm" == "container:$dgid" ]] || dbad+="$s "
         done
@@ -1917,6 +1961,7 @@ cmd_doctor() {
     # a bare call, so the loop invokes every section non-fatally — in one
     # place, so a new section cannot forget it.
     local sec
+    c_inspect_all   # in the parent scope: a daemon failure dies here, not inside a section's $( )
     for sec in "${DOCTOR_SECTIONS[@]}"; do "_doctor_$sec" || true; done
     echo
     if (( D_FAILS )); then
@@ -1944,6 +1989,7 @@ cmd_leak_test() {
     load_env
     local killswitch=0; [[ "${1:-}" == --killswitch ]] && killswitch=1
     local gcn; gcn=$(svc_cname gluetun)
+    c_inspect_all
     [[ "$(c_state "$gcn")" == running ]] || die "gluetun is not running — start the stack first."
 
     hr "leak-test: attachment audit"
@@ -1951,11 +1997,11 @@ cmd_leak_test() {
     # never verify the join. The truth is NetworkMode: docker enforces
     # container:<id> joins atomically — matching gluetun's full ID is proof.
     local gid rc=0 s cn nm
-    gid=$(sudo docker inspect --format '{{.Id}}' "$gcn" | tr -d '\n')
+    gid=$(c_id "$gcn")
     for s in $(svc_managed_where mediastack.vpn true); do
         svc_enabled "$s" || continue
         cn=$(svc_cname "$s"); [[ "$(c_state "$cn")" == running ]] || { info "$s not running — skipped"; continue; }
-        nm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$cn" | tr -d '\n')
+        nm=$(c_netmode "$cn")
         if [[ "$nm" == "container:$gid" ]]; then ok "$s routed through the gluetun tunnel"
         else fail "$s is NOT joined to gluetun (mode: ${nm:0:40}...) — this IS a leak path"; rc=1; fi
     done
@@ -2008,7 +2054,7 @@ cmd_leak_test() {
         DC restart gluetun >/dev/null
 
         warn "Hard-stop proof: stopping gluetun ENTIRELY (~30s of downtime)..."
-        sudo docker stop "$gcn" >/dev/null
+        sudo docker stop "$gcn" >/dev/null; INSPECT_JSON=""
         local pcn; pcn=$(svc_cname qbittorrent)
         if [[ $(c_state "$pcn") == running ]]; then
             if sudo docker exec "$pcn" curl -fsS --max-time 6 https://ipinfo.io/ip >/dev/null 2>&1; then
@@ -2019,12 +2065,12 @@ cmd_leak_test() {
             else ok "no fallback route appeared — docker cannot re-home a joined container"; fi
         else info "qbittorrent not running — hard-stop probe skipped"; fi
         info "Restarting gluetun and re-joining dependents..."
-        sudo docker start "$gcn" >/dev/null
+        sudo docker start "$gcn" >/dev/null; INSPECT_JSON=""
         local t=0; while [[ $(c_health "$gcn") != healthy && $t -lt 90 ]]; do sleep 3; t=$((t+3)); done
         local rs
         for rs in $(svc_managed_where mediastack.vpn true); do
             svc_enabled "$rs" || continue
-            sudo docker restart "$(svc_cname "$rs")" >/dev/null && info "  rejoined: $rs"
+            INSPECT_JSON=""; sudo docker restart "$(svc_cname "$rs")" >/dev/null && info "  rejoined: $rs"
         done
     fi
 
@@ -2090,7 +2136,7 @@ cmd_nuke() {
     frontdoor_teardown
     ok "systemd units removed"
     sudo docker ps -aq --filter "label=com.docker.compose.project=mediastack" \
-        | xargs -r sudo docker rm -f -v >/dev/null
+        | xargs -r sudo docker rm -f -v >/dev/null; INSPECT_JSON=""
     ok "containers removed (with their anonymous volumes)"
     rm -f "$PINS_FILE"
     sudo docker network rm mediastack >/dev/null 2>&1 && ok "network removed" || true
@@ -3437,6 +3483,7 @@ DYNAMIC
     if [[ "$prehash" != "$posthash" ]] \
         && sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$(svc_cname traefik)"; then
         info "config changed — restarting traefik to load it"
+        INSPECT_JSON=""
         sudo docker restart "$(svc_cname traefik)" >/dev/null \
             && ok "traefik restarted" \
             || wfail "traefik restart failed — restart it manually: sudo docker restart $(svc_cname traefik)"

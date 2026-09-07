@@ -37,7 +37,7 @@ frontdoor_teardown() {
 # ✅ = running (healthy or no healthcheck), ⚠️ = running but unhealthy/starting,
 # ❌ = not running.
 frontdoor_status_json() {
-    render
+    render; c_inspect_all
     local s cn st h glyph cls
     for s in $(svc_enabled_managed); do
         cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
