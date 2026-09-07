@@ -143,7 +143,8 @@ arr_instances() { # arr_instances [type] -> enabled arr services (optionally by 
         svc_enabled "$s" || continue
         t=$(svc_label "$s" mediastack.arrtype)
         [[ -n "$t" ]] || continue
-        [[ -z "${1:-}" || "$t" == "$1" ]] && echo "$s"
+        [[ -z "${1:-}" || "$t" == "$1" ]] || continue
+        echo "$s"
     done
 }
 

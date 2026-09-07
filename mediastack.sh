@@ -189,7 +189,7 @@ render() { # cache rendered config as json for discovery
 
 svc_all()      { render; jq -r '.services | keys[]' <<<"$RENDERED_JSON"; }
 svc_label()    { render; jq -r --arg s "$1" --arg l "$2" '.services[$s].labels[$l] // ""' <<<"$RENDERED_JSON"; }
-svc_managed()  { local s; for s in $(svc_all); do [[ $(svc_label "$s" mediastack.managed) == "true" ]] && echo "$s"; done; }
+svc_managed()  { local s; for s in $(svc_all); do [[ $(svc_label "$s" mediastack.managed) == "true" ]] || continue; echo "$s"; done; }
 svc_exists()   { svc_all | grep -qx "$1"; }
 svc_image()    { render; jq -r --arg s "$1" '.services[$s].image' <<<"$RENDERED_JSON"; }
 svc_cname()    { render; jq -r --arg s "$1" '.services[$s].container_name // $s' <<<"$RENDERED_JSON"; }
@@ -2530,7 +2530,8 @@ main() {
 
 trash_instances() {
     local s; for s in sonarr sonarr-anime radarr radarr-4k; do
-        svc_enabled "$s" && echo "$s"
+        svc_enabled "$s" || continue
+        echo "$s"
     done
 }
 
