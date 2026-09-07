@@ -473,26 +473,25 @@ wire_prowlarr() {
     [[ -n "$pkey" ]] || { wfail "prowlarr: no ApiKey yet — re-run wire shortly"; return 0; }
     # prowlarr has no arrtype label so wire_arr's loop never sees it: gate here
     arr_forms_login prowlarr
-    local s key t impl cur
+    local s key t impl cur aexists abody
     cur=$(api GET "$purl/api/v1/applications" "$pkey" || true)
     for s in $(arr_instances); do
         t=$(svc_label "$s" mediastack.arrtype)
         case "$t" in sonarr) impl=Sonarr ;; radarr) impl=Radarr ;; lidarr) impl=Lidarr ;; *) continue ;; esac
         key=$(arr_key "$s") || true
         [[ -n "$key" ]] || { wfail "prowlarr<-$s: $s has no ApiKey yet"; continue; }
-        if grep -q "\"$s (mediastack)\"" <<<"$cur"; then
-            ok "prowlarr -> $s registered"
-        elif w_would "register $s in prowlarr (Full Sync)"; then
-            api POST "$purl/api/v1/applications" "$pkey" "$(cat <<JSON
+        aexists=no; grep -q "\"$s (mediastack)\"" <<<"$cur" && aexists=yes
+        abody=$(cat <<JSON
 {"name":"$s (mediastack)","syncLevel":"fullSync",
  "implementation":"$impl","configContract":"${impl}Settings",
  "fields":[{"name":"prowlarrUrl","value":"$purl"},
    {"name":"baseUrl","value":"$(arr_url "$s")"},
    {"name":"apiKey","value":"$key"}]}
 JSON
-)" >/dev/null && ok "prowlarr -> $s registered (Full Sync)" \
-              || wfail "prowlarr -> $s failed — check: logs prowlarr"
-        fi
+)
+        ensure_resource "$aexists" "register $s in prowlarr (Full Sync)" \
+            "prowlarr -> $s registered" "prowlarr -> $s failed — check: logs prowlarr" \
+            -- api POST "$purl/api/v1/applications" "$pkey" "$abody"
     done
     # LazyLibrarian is a first-class Prowlarr app — register it so its book
     # indexers sync exactly like the arrs (needs its API key from config.ini)
@@ -501,18 +500,19 @@ JSON
         llkey=$(ll_key)
         if [[ -z "$llkey" ]]; then
             info "prowlarr -> lazylibrarian: skipped (no API key yet — run 'wire lazylibrarian' first)"
-        elif grep -q '"LazyLibrarian (mediastack)"' <<<"$cur"; then
-            ok "prowlarr -> lazylibrarian registered"
-        elif w_would "register lazylibrarian in prowlarr (Full Sync)"; then
-            api POST "$purl/api/v1/applications" "$pkey" "$(cat <<JSON
+        else
+            aexists=no; grep -q '"LazyLibrarian (mediastack)"' <<<"$cur" && aexists=yes
+            abody=$(cat <<JSON
 {"name":"LazyLibrarian (mediastack)","syncLevel":"fullSync",
  "implementation":"LazyLibrarian","configContract":"LazyLibrarianSettings",
  "fields":[{"name":"prowlarrUrl","value":"$purl"},
    {"name":"baseUrl","value":"http://localhost:5299"},
    {"name":"apiKey","value":"$llkey"}]}
 JSON
-)" >/dev/null && ok "prowlarr -> lazylibrarian registered (Full Sync)" \
-              || wfail "prowlarr -> lazylibrarian failed — check: logs prowlarr"
+)
+            ensure_resource "$aexists" "register lazylibrarian in prowlarr (Full Sync)" \
+                "prowlarr -> lazylibrarian registered" "prowlarr -> lazylibrarian failed — check: logs prowlarr" \
+                -- api POST "$purl/api/v1/applications" "$pkey" "$abody"
         fi
     fi
     if svc_enabled flaresolverr; then
