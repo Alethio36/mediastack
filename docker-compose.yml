@@ -31,6 +31,7 @@ include:
   - compose.d/traefik.yml
   - compose.d/watchstate.yml
   - compose.d/navidrome.yml
+  - compose.d/npm.yml
   - compose.d/audiobookshelf.yml
   - compose.d/kavita.yml
   - compose.d/lazylibrarian.yml
