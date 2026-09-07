@@ -710,7 +710,7 @@ Next steps:
   1. ./mediastack.sh up          start everything
   2. ./mediastack.sh doctor      verify the deployment
   3. ./mediastack.sh leak-test   prove the VPN cannot leak
-Then open the apps (ports in README) and connect them to each other.
+Then open the apps (URLs and ports: ./mediastack.sh status) and connect them to each other.
 EOF
 }
 
