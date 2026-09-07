@@ -137,7 +137,7 @@ Connect
 Check
 | command | what it does |
 |---|---|
-| `doctor` | full health/permission/cert/backup audit — every failure states its fix |
+| `doctor` | full health/permission/cert/backup/host-port audit — every failure states its fix |
 | `leak-test [--killswitch]` | prove no VPN'd service can leak (`--killswitch` = destructive proof) |
 | `vpn [svc on/off]` | show or change which services run behind the VPN (torrent clients need `--i-know` to leave) |
 | `fix-perms [svc]` | repair config ownership from the UID map |
