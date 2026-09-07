@@ -2508,10 +2508,19 @@ tunnel adds latency and gains them nothing). Flip it any time:
     _ns_ask "Choice" "1"; data="$REPLY_VAL"
     [[ "$data" =~ ^[123]$ ]] || die "Choice must be 1, 2 or 3."
     explain "Permissions" \
-"Most images honour PUID/PGID and run as the dedicated user mediastack
-creates for the service. Some run as root by design (their docs say so);
-for those answer no — the variables are omitted and doctor will not
-expect a non-root process."
+"Every mediastack service runs as its own system user (a PUID such as
+13029) in the shared 'mediacenter' group (PGID), so each app can only
+write its own config folder plus the media it is allowed to touch, and
+files it creates stay readable by the other apps. An image that honours
+PUID/PGID (linuxserver.io, hotio and most *arr images) switches to that
+user at start-up when the two variables are set.
+
+Some images ignore them and run as root, or as a fixed user of their own
+(nginx, many official Docker Hub images, Jellyfin's official image). Check
+the image's docs for 'PUID' or 'user:'. For those answer no: the variables
+are omitted, the config folder is created without a private owner, and
+doctor will not warn that no process runs as the expected UID. Nothing
+else changes — it is still backed up, updated and audited like the rest."
     _ns_ask "Does the image honour PUID/PGID? [Y/n]" ""
     [[ "${REPLY_VAL,,}" == n* ]] && puid=false || puid=true
 
@@ -2566,6 +2575,7 @@ expect a non-root process."
         echo "  ./mediastack.sh enable $name      create its user/folders and start it"
         echo "  ./mediastack.sh vpn $name on|off  change VPN membership (now: $(vpn_onoff "$vpn"))"
         echo "  ./mediastack.sh status            its URL and health"
+        _new_service_footer "$name"
         return
     fi
     cmd_enable "$name"
@@ -2583,6 +2593,19 @@ expect a non-root process."
     [[ -n "$(env_get TRAEFIK_DOMAIN)" ]] || echo "  (an HTTPS hostname appears once Traefik is set up: ./mediastack.sh traefik-setup)"
     echo "  VPN: $(vpn_onoff "$vpn")   change: ./mediastack.sh vpn $name on|off"
     echo "  Row: ./mediastack.sh status"
+    _new_service_footer "$name"
+}
+
+_new_service_footer() { # where to go for anything the questions did not cover
+    cat <<EOT
+
+Its definition is the '$1:' block in docker-compose.override.yml — plain
+compose YAML, yours to edit: extra environment variables (API keys, a base
+URL), devices (/dev/dri for hardware transcoding), more volumes, a
+healthcheck. Edit, then: ./mediastack.sh up
+Host port:  $(uvar "$1")_PORT=<port> in .env   HTTPS name: $(uvar "$1")_HOST=<sub> in .env
+Removing it later: docs/adding-a-service.md, "Removing your service".
+EOT
 }
 
 _new_service_fragment() { # <name> <stem> <image> <cport> <host> <desc> <vpn> <cfg> <data> <puid> -> YAML on stdout
