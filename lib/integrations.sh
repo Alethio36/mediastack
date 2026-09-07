@@ -229,6 +229,8 @@ wire_qbit() {
         info "restarting qBittorrent to mint a fresh temporary password (~20s)..."
         ts=$(date +%s)
         sudo docker restart "$qcn" >/dev/null
+        # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+        INSPECT_JSON=""
         while [[ -z "$tmp" && $t -lt 90 ]]; do
             sleep 5; t=$((t+5))
             # relative window covering everything since our restart
