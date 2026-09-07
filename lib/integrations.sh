@@ -76,7 +76,7 @@ arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialisin
     sudo grep -oP '<ApiKey>\K[^<]+' "$(env_get CONFIG_ROOT)/$1/config.xml" 2>/dev/null | head -1 || true
 }
 
-arr_url() { echo "http://127.0.0.1:$(svc_label "$1" mediastack.port)"; }
+arr_url() { local p; p=$(svc_hostport "$1") || return 1; echo "http://127.0.0.1:$p"; }
 arr_apiver() { # prowlarr and lidarr speak v1; the content arrs are v3
     [[ "$1" == prowlarr ]] && { echo v1; return; }
     case "$(svc_label "$1" mediastack.arrtype)" in lidarr) echo v1 ;; *) echo v3 ;; esac
@@ -170,6 +170,7 @@ qb_bind_tun0() { # requires QB_COOKIE
     fi
 }
 
+qb_url() { local p; p=$(svc_hostport qbittorrent) || return 1; echo "http://127.0.0.1:$p"; }
 qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = unreachable
              # QB_LOGIN_BODY always carries the server's reply / curl error
     local r
@@ -177,7 +178,7 @@ qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = 
     jar=$(mktemp)
     if ! r=$(curl -sS -m 10 -c "$jar" -w $'\n%{http_code}' \
         --data-urlencode "username=$1" --data-urlencode "password=$2" \
-        "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2/auth/login" 2>&1); then
+        "$(qb_url)/api/v2/auth/login" 2>&1); then
         QB_LOGIN_BODY="unreachable: ${r:-<no detail>}"
         rm -f "$jar"; return 2
     fi
@@ -195,7 +196,7 @@ qb_api() { # qb_api PATH [data...] (form-encoded) -> body on stdout, rc from htt
     local args=(); local a; for a in "$@"; do args+=(--data-urlencode "$a"); done
     local out code
     out=$(curl -sS -m 20 -b "$QB_COOKIE" "${args[@]}" -w '\n%{http_code}' \
-          "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2$p" 2>&1) || { echo "$out"; return 1; }
+          "$(qb_url)/api/v2$p" 2>&1) || { echo "$out"; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
 }
@@ -207,7 +208,7 @@ wire_qbit() {
     # avoids misreading a boot gap as bad credentials on re-runs
     local qt=0
     while [[ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' \
-             "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2/app/webapiVersion" 2>/dev/null || echo 000)" == 000 ]]; do
+             "$(qb_url)/api/v2/app/webapiVersion" 2>/dev/null || echo 000)" == 000 ]]; do
         (( qt >= 45 )) && die "qBittorrent's WebUI never started listening — inspect: ./mediastack.sh logs qbittorrent"
         sleep 3; qt=$((qt+3)); info "qBittorrent WebUI not accepting connections yet (${qt}s)..."
     done
@@ -252,7 +253,7 @@ wire_qbit() {
         done
         case $lrc in
             0) ok "logged in with the freshly minted password" ;;
-            2) die "qBittorrent's WebUI never became reachable on port $(svc_label qbittorrent mediastack.port) within 45s.
+            2) die "qBittorrent's WebUI never became reachable on port $(svc_port qbittorrent) within 45s.
   Last state: $QB_LOGIN_BODY
   Inspect: ./mediastack.sh logs qbittorrent" ;;
             *) die "qBittorrent rejected the password it just printed — genuinely unexpected
@@ -405,7 +406,7 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
         || wfail "prowlarr: download client rejected: $(head -c200 <<<"$resp")"
 }
 
-ll_url() { echo "http://127.0.0.1:$(env_get LAZYLIBRARIAN_PORT 5299)"; }
+ll_url() { local p; p=$(svc_hostport lazylibrarian) || return 1; echo "http://127.0.0.1:$p"; }
 ll_key() { # LazyLibrarian mints its API key on first run into config.ini
     local f
     f="$(env_get CONFIG_ROOT)/lazylibrarian/config.ini"
@@ -572,7 +573,7 @@ wire_bazarr() {
     local bkey burl
     bkey=$(sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | head -1 || true)
     [[ -n "$bkey" ]] || { wfail "bazarr: no api key found yet (config/config.yaml) — re-run wire shortly"; return 0; }
-    burl="http://127.0.0.1:$(svc_label bazarr mediastack.port)"
+    burl=$(arr_url bazarr)
     # readiness gate: on a virgin install bazarr is still migrating its DB when
     # wire reaches it and resets the connection (HTTP 000). Poll before posting.
     if (( ! WIRE_DRY )); then
@@ -665,7 +666,7 @@ jf_server_name() { # the name apps/casting show; container default is the ID has
 # ---- apprise (wave 5): one notification hub for the whole stack ----
 # apprise-api in gluetun's namespace. Tags route messages: ops (pipeline,
 # backups, doctor), activity (arr events), users (wizarr invites).
-apprise_url() { echo "http://127.0.0.1:$(env_get APPRISE_PORT 8000)"; }
+apprise_url() { local p; p=$(svc_hostport apprise) || return 1; echo "http://127.0.0.1:$p"; }
 
 NOTIFY_WARNED=0
 notify() { # notify TAG TITLE BODY [TYPE] — never blocks, never fails the caller
@@ -807,7 +808,7 @@ Getting a URL:
 # Bootstrap the account (reusing the stack's arr login), store the API key,
 # point it at qBittorrent and every arr, and switch the queue cleaner on
 # with its conservative upstream defaults. Existing entries: untouched.
-cup_url() { echo "http://127.0.0.1:$(env_get CLEANUPARR_PORT 11011)"; }
+cup_url() { local p; p=$(svc_hostport cleanuparr) || return 1; echo "http://127.0.0.1:$p"; }
 CUP_CODE_F="${TMPDIR:-/tmp}/.mediastack-cup-code.$$"
 cup_code() { cat "$CUP_CODE_F" 2>/dev/null || echo 000; }
 cup_api() { # cup_api METHOD PATH AUTHHDR [json-body] -> body; rc = http 2xx
@@ -949,7 +950,7 @@ JF_AUTH_HDR='Authorization: MediaBrowser Client="mediastack", Device="mediastack
 # to the subshell — the last HTTP code crosses back via a per-PID file.
 JF_CODE_F="${TMPDIR:-/tmp}/.mediastack-jf-code.$$"
 jf_code() { cat "$JF_CODE_F" 2>/dev/null || echo 000; }
-jf_url() { echo "http://127.0.0.1:$(svc_label jellyfin mediastack.port)"; }
+jf_url() { local p; p=$(svc_hostport jellyfin) || return 1; echo "http://127.0.0.1:$p"; }
 jf_api() { # jf_api METHOD PATH TOKEN [json-body] -> body on stdout; rc = http 2xx
     local m="$1" p="$2" tok="$3" b="${4:-}" out code
     if ! out=$(curl -sS -m 20 -X "$m" -H "$JF_AUTH_HDR" \
@@ -1115,7 +1116,7 @@ credentials)."
 # seerr only: first sign-in as the jellyfin admin (which creates seerr's
 # owner), library sync + enable, one server entry per arr, initialise. An
 # initialised seerr is never touched — its settings are GUI territory.
-seerr_url() { echo "http://127.0.0.1:$(svc_label seerr mediastack.port)"; }
+seerr_url() { local p; p=$(svc_hostport seerr) || return 1; echo "http://127.0.0.1:$p"; }
 SEERR_CODE_F="${TMPDIR:-/tmp}/.mediastack-seerr-code.$$"
 seerr_code() { cat "$SEERR_CODE_F" 2>/dev/null || echo 000; }
 seerr_api() { # seerr_api METHOD PATH JAR [json-body] -> body; rc = http 2xx
@@ -1272,7 +1273,7 @@ wire_seerr() {
 # by upstream design — no bootstrap API exists. One documented first-run in
 # the UI, then wire holds the API key and './mediastack.sh invite' does the
 # rest forever.
-wizarr_url() { echo "http://127.0.0.1:$(svc_label wizarr mediastack.port)"; }
+wizarr_url() { local p; p=$(svc_hostport wizarr) || return 1; echo "http://127.0.0.1:$p"; }
 
 wire_wizarr() {
     hr "wire: wizarr"
@@ -1303,7 +1304,7 @@ wire_wizarr() {
         explain "Wizarr first-run (one-time, in its UI)" \
 "Wizarr's admin account and API keys can only be created in its web UI —
 there is no automation API for this by upstream design. Once, ever:
-  1. open ${domain:+https://$host.$domain (or }http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_label wizarr mediastack.port)${domain:+)}
+  1. open ${domain:+https://$host.$domain (or }http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_hostport wizarr)${domain:+)}
   2. create the admin account
   3. Settings -> Servers -> Add Server:
        Name            jellyfin

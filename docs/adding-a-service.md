@@ -29,7 +29,7 @@ backups and the update pipeline like any shipped service.
 | `mediastack.cache: "true"` | owns `${CACHE_ROOT}/<service>` (provisioned, never backed up) |
 | `mediastack.internal: "true"` | reachable on the LAN only — status marks it instead of printing a URL |
 | `mediastack.subdomain: "x"` | default hostname for the status URL column (`<X>_HOST` in `.env` overrides) |
-| `mediastack.port: "1234"` | the host-side port the service is reached on — drives the status table, `wire`'s API calls, `vpn_gen`'s published port, and the readiness gates |
+| `mediastack.port: "1234"` | the port the app listens on INSIDE its container — `vpn_gen`'s published port, the Traefik backend port, and what other containers dial. The host-side port is derived from the rendered `ports:` (`svc_port`), so a `${MYAPP_PORT:-1234}:1234` mapping keeps the status table, `wire`'s API calls and the readiness gates on the overridden port |
 | `mediastack.desc: "…"` | one-line description shown in the `configure` service picker |
 | `traefik.http.routers.*` labels | HTTPS hostname — native Traefik labels, see docs/edge.md |
 
