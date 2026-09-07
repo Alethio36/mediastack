@@ -48,9 +48,9 @@ Two independent lines decide whether a verb can go on the panel:
 
 1. **No free-text input reaches a verb (architectural, enforced).** The wrapper
    guarantees it: charset allowlist, verb whitelist, a 2-arg cap, and argv is
-   never a shell string. Behind the wrapper, `main()` declares each verb's
-   argument contract (`args_none` / `args_max N` / `args_allow "<flags>"`) and
-   rejects anything outside it, so an argument the wrapper lets through still
+   never a shell string. Behind the wrapper, the verb registry (`VERBS`
+   in `mediastack.sh`) declares each verb's argument contract (`none` /
+   `max=N` / `allow=<flags>`) and `main()` rejects anything outside it, so an argument the wrapper lets through still
    has to be one the verb accepts. In the panel this becomes one invariant — *every action
    argument is an entity/choice dropdown or a confirmation, never a bare
    `type: string` text box.* This is the big line and it's mechanical.

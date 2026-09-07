@@ -269,82 +269,22 @@ require_mounts() {
 }
 
 # =============================================================== subcommands
-cmd_help() {
-    cat <<EOF
-${C_BLD}Mediastack${C_RST} — usage: ./mediastack.sh <command>
-
-Setup
-  install        Install host dependencies (docker, jq, ...). Run once.
-  configure      Interactive setup wizard. Writes .env, creates users and
-                 folders. Safe to re-run any time — existing answers become
-                 the defaults, and it auto-adopts newly added services.
-  add-mount      Guided NFS/SMB mount on this host (fstab automount +
-                 poison layer). NAS-side share setup is out of scope.
-Run
-  up             Start the stack (everything enabled in COMPOSE_PROFILES).
-  down           Stop the stack. Configs and data are untouched.
-  enable SVC     Turn one service on (dependencies come along) and start it.
-  disable SVC    Turn one service off (refused while others depend on it).
-  status [svc]   Overview table of every service (state, health, version,
-                 URL) — or a deep view of one (mounts, uid, recent logs).
-  logs SVC       Follow one service's logs.
-Maintain
-  update         CONTAINER IMAGES: backup, then pull + apply (respects
-                 per-service toggles and pins). Options: SVC (one service),
-                 SVC --to TAG (step to an exact version and pin there),
-                 --dry-run (preview), --now (skip deferral).
-                 For mediastack itself, see: upgrade.
-  apply-timer    Install/refresh the systemd timer from UPDATE_SCHEDULE.
-  backup         Take a restore point now (cold: brief stop/start).
-                 'backup verify [TS]' checks checksums and archives.
-  restore        Restore configs+image from a restore point:
-                 --service SVC | --all  [--from TIMESTAMP]
-  rollback SVC   Shortcut: restore SVC from the newest restore point.
-  unpin SVC      Release a pinned service back to normal updates.
-  upgrade        MEDIASTACK ITSELF: git pull + .env migration. Container
-                 images stay put — that's: update.
-Connect
-  wire           Connect the apps to each other — credentials, folders,
-                 download clients, notifications, first-run setup.
-                 Idempotent: re-run any time; anything you configured in a
-                 GUI is never overwritten. --dry-run previews; --verify
-                 previews and exits 1 on drift (for scripts and cron).
-                 One app only: wire <qbit|arr|prowlarr|bazarr|apprise|
-                 cleanuparr|lazylibrarian|jellyfin|seerr|wizarr>. Preview: wire --dry-run.
-  invite         Mint a Wizarr invitation and print the ready-to-share URL.
-                 Options: --expires 1|7|30 (default: never expires).
-  credentials    Show the app logins wire created/stored.
-  set-credentials Rotate a stored login everywhere it lives, atomically:
-                 set-credentials <arr|qbit|jellyfin|pihole|traefik|all>;
-                 'all' sets ONE password across the stack (Wizarr's
-                 admin excluded).
-  traefik-setup  Configure the HTTPS edge: domain, Cloudflare token, cert
-                 environment (staging/production), dashboard login. Auto-runs
-                 on 'up' when traefik is enabled and unconfigured.
-                 --hosts: guided rename of every service's subdomain.
-                 --certs: switch staging/production certificates (applied
-                 immediately — store reset + traefik restart, no .env edit).
-  trash-sync     Sync TRaSH Guides quality profiles (Recyclarr) to the arrs.
-                 First run asks per-instance choices; overrides survive in
-                 local/trash-overrides.yml. --dry-run previews the drift
-                 (recyclarr --preview) and changes nothing. See docs/trash-sync.md.
-Check
-  doctor         Full health/permission/resource audit with fix instructions.
-  leak-test      Verify no VPN'd service can leak (--killswitch for the
-                 disruptive drop-the-tunnel proof).
-  vpn [svc on|off]  Show or change which services run behind the VPN. No args
-                 lists membership; 'vpn <svc> on|off' flips it (torrent clients
-                 need --i-know to leave the tunnel). Apply with: up.
-  fix-perms [s]  Repair config-dir ownership from the UID map.
-Other
-  new-service N  Add your own service N (asks image/port/VPN/folders, then enables + starts it)
-                 (untracked, merged automatically, upgrade-safe).
-  uninstall      Remove the stack (tiered: containers / users / configs).
-  frontdoor-install  Install the OliveTin web panel over the safe verbs.
-                 --nuke: everything in one confirmed shot; works even on a
-                 broken tree. Media and backups are never touched.
-  menu           Interactive menu wrapping all of the above.
-EOF
+cmd_help() { # rendered from VERBS: one line per verb, grouped; depth lives in README
+    echo "${C_BLD}Mediastack${C_RST} — usage: ./mediastack.sh <command> [args]"
+    local g e usage desc w=0
+    for e in "${VERBS[@]}"; do usage=$(cut -d'~' -f2 <<<"$e"); (( ${#usage} > w )) && w=${#usage}; done
+    for g in Setup Run Maintain Connect Check Other Internal; do
+        echo
+        [[ "$g" == Internal ]] && echo "Internal (used by the panel, timers and units — not meant for hand use)" || echo "$g"
+        for e in "${VERBS[@]}"; do
+            [[ "$(cut -d'~' -f4 <<<"$e")" == "$g" ]] || continue
+            usage=$(cut -d'~' -f2 <<<"$e"); desc=$(cut -d'~' -f5 <<<"$e")
+            printf '  %-*s  %s\n' "$w" "$usage" "$desc"
+        done
+    done
+    echo
+    echo "Every verb rejects arguments it does not accept. Details, options and"
+    echo "worked examples: README.md and docs/."
 }
 
 cmd_menu() {
@@ -1160,7 +1100,11 @@ status_one() {
 # ------------------------------------------------------------------ backup --
 ts_now() { date +%Y%m%d-%H%M%S; }
 
+# shellcheck disable=SC2120  # arguments arrive via main()'s registry dispatch
 cmd_backup() {
+    # 'backup verify [TS]' is a subcommand; anything else is not an argument
+    if [[ "${1:-}" == verify ]]; then shift; args_max 1 "$@"; cmd_backup_verify "$@"; return; fi
+    args_none "$@"
     load_env; require_mounts
     local broot croot dest need have
     broot=$(env_get BACKUP_ROOT); croot=$(env_get CONFIG_ROOT)
@@ -2690,6 +2634,62 @@ EOF
 
 # -------------------------------------------------------------- dispatcher --
 
+# ---- verb registry ----
+# ONE line per verb: verb~usage~args~group~description (~ separates fields; main() dispatches
+# usage text may contain |). main() dispatches from it (cmd_<verb>, dashes as
+# underscores), the args column is the
+# verb's argument contract, and help renders the table — so a verb cannot
+# exist without a contract or a help line, and CI checks every verb is
+# documented in README (depth lives there; help is one line each).
+#   args:  none            no arguments
+#          max=N           up to N positional arguments
+#          allow=A,B       only these arguments, any order
+#          allow=A max=N   both
+#          free            the verb parses its own (its `*)` arm dies on unknown input)
+#   group: Setup Run Maintain Connect Check Other Internal — Internal verbs
+#          exist for the panel, timers and units and are listed last.
+VERBS=(
+    "help~help~~Other~This list."
+    "install~install~none~Setup~Install host dependencies (docker, jq, ...). Run once."
+    "configure~configure~none~Setup~Interactive setup wizard: .env, users, folders. Safe to re-run."
+    "add-mount~add-mount~none~Setup~Guided NFS/SMB mount on this host (fstab automount + poison layer)."
+    "up~up~none~Run~Start the stack (everything enabled in COMPOSE_PROFILES)."
+    "down~down~none~Run~Stop the stack. Configs and data are untouched."
+    "enable~enable <svc>~max=1~Run~Turn one service on (dependencies come along) and start it."
+    "disable~disable <svc>~max=1~Run~Turn one service off (refused while others depend on it)."
+    "status~status [svc]~max=1~Run~Overview table of every service, or a deep view of one."
+    "logs~logs <svc> [--no-follow]~free~Run~Follow one service's logs (--no-follow: bounded snapshot)."
+    "update~update [svc] [--to TAG] [--dry-run|--now]~free~Maintain~Container images: backup, pull, apply (toggles + pins respected)."
+    "apply-timer~apply-timer~none~Maintain~Install/refresh the systemd timer from UPDATE_SCHEDULE."
+    "backup~backup [verify [TS]]~free~Maintain~Take a restore point now (cold); 'verify' checks checksums and archives."
+    "restore~restore --service <svc>|--all [--from TS]~free~Maintain~Restore configs + image from a restore point."
+    "rollback~rollback <svc>~max=1~Maintain~Restore one service from the newest restore point and pin it there."
+    "unpin~unpin <svc>~max=1~Maintain~Release a pinned service back to normal updates."
+    "upgrade~upgrade~none~Maintain~Mediastack itself: git pull + .env migration (images stay put: update)."
+    "wire~wire [app] [--dry-run|--verify]~free~Connect~Connect the apps to each other; idempotent, GUI changes never overwritten."
+    "invite~invite [--expires 1|7|30]~free~Connect~Mint a Wizarr invitation and print the ready-to-share URL."
+    "credentials~credentials~none~Connect~Show the app logins wire created/stored."
+    "set-credentials~set-credentials <target|all>~max=1~Connect~Rotate a stored login everywhere it lives, atomically."
+    "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login)."
+    "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift)."
+    "doctor~doctor~none~Check~Full health/permission/port/backup audit; every failure states its fix."
+    "leak-test~leak-test [--killswitch]~allow=--killswitch~Check~Prove no VPN'd service can leak (--killswitch: disruptive tunnel-drop proof)."
+    "vpn~vpn [svc on|off] [--i-know]~max=3~Check~Show or change which services run behind the VPN; apply with: up."
+    "fix-perms~fix-perms [svc]~max=1~Check~Repair config-dir ownership from the UID map."
+    "new-service~new-service <name>~max=1~Other~Add your own service: asks image/port/VPN/folders, then enables and starts it."
+    "frontdoor-install~frontdoor-install [--set-password]~allow=--set-password~Other~Install the OliveTin web panel over the safe verbs."
+    "uninstall~uninstall [--nuke]~allow=--nuke~Other~Remove the stack (tiered; --nuke: one confirmed shot). Media and backups are never touched."
+    "menu~menu~none~Other~Interactive menu wrapping the common verbs."
+    "list~list [--json]~free~Internal~Enabled services, one per line (--json: panel entity records)."
+    "vpn-apply~vpn-apply <svc> on|off~max=2~Internal~Set a service's VPN membership AND apply it (panel button)."
+    "vpn-guard~vpn-guard [--boot]~allow=--boot~Internal~Re-pin VPN dependents onto the live gluetun (boot/daemon unit)."
+    "frontdoor-refresh~frontdoor-refresh~none~Internal~Regenerate the panel's config and entity files."
+)
+
+verb_entry() { # verb_entry <verb> -> its registry line, rc 1 if unknown
+    local e; for e in "${VERBS[@]}"; do [[ "${e%%~*}" == "$1" ]] && { echo "$e"; return 0; }; done; return 1
+}
+
 # ---- argument discipline ----
 # Every verb declares what it accepts; anything else is rejected before it
 # runs, so a typo or an unsupported flag never silently falls through to the
@@ -2702,48 +2702,28 @@ args_allow() { # args_allow "<space-separated allowed args>" "$@" — anything e
     for a in "$@"; do [[ " $allowed " == *" $a "* ]] || die "unknown argument '$a' for '$CMD' (accepts: ${allowed:-nothing})"; done
     return 0
 }
+args_check() { # args_check "<args column>" "$@" — apply a registry contract
+    local spec="$1" tok; shift
+    for tok in $spec; do
+        case "$tok" in
+            none)    args_none "$@" ;;
+            free)    ;;
+            max=*)   args_max "${tok#max=}" "$@" ;;
+            allow=*) tok=${tok#allow=}; args_allow "${tok//,/ }" "$@" ;;
+            *)       die "registry: unknown args token '$tok' for '$CMD'" ;;
+        esac
+    done
+}
 
 main() {
     local cmd="${1:-help}"; shift || true
+    case "$cmd" in -h|--help) cmd=help ;; esac
     CMD="$cmd"
-    case "$cmd" in
-        help|-h|--help) cmd_help ;;
-        menu)         args_none "$@"; cmd_menu ;;
-        install)      args_none "$@"; cmd_install ;;
-        configure)    args_none "$@"; cmd_configure ;;
-        up)           args_none "$@"; cmd_up ;;
-        down)         args_none "$@"; cmd_down ;;
-        enable)       args_max 1 "$@"; cmd_enable "$@" ;;
-        disable)      args_max 1 "$@"; cmd_disable "$@" ;;
-        status)       args_max 1 "$@"; cmd_status "$@" ;;
-        list)         cmd_list "$@" ;;
-        logs)         cmd_logs "$@" ;;
-        update)       cmd_update "$@" ;;
-        apply-timer)  args_none "$@"; cmd_apply_timer ;;
-        vpn-guard)    args_allow "--boot" "$@"; cmd_vpn_guard "$@" ;;
-        backup)       if [[ "${1:-}" == verify ]]; then shift; args_max 1 "$@"; cmd_backup_verify "$@"; else args_none "$@"; cmd_backup; fi ;;
-        restore)      cmd_restore "$@" ;;
-        rollback)     args_max 1 "$@"; cmd_rollback "$@" ;;
-        unpin)        args_max 1 "$@"; cmd_unpin "$@" ;;
-        doctor)       args_none "$@"; cmd_doctor ;;
-        leak-test)    args_allow "--killswitch" "$@"; cmd_leak_test "$@" ;;
-        vpn)          args_max 3 "$@"; cmd_vpn "$@" ;;
-        vpn-apply)    args_max 2 "$@"; cmd_vpn_apply "$@" ;;
-        fix-perms)    args_max 1 "$@"; cmd_fix_perms "$@" ;;
-        add-mount)    args_none "$@"; cmd_add_mount ;;
-        wire)         cmd_wire "$@" ;;
-        invite)       cmd_invite "$@" ;;
-        set-credentials) args_max 1 "$@"; cmd_set_credentials "$@" ;;
-        credentials)  args_none "$@"; cmd_credentials ;;
-        trash-sync)   args_allow "--dry-run" "$@"; cmd_trash_sync "$@" ;;
-        traefik-setup) args_allow "--hosts --certs" "$@"; args_max 1 "$@"; cmd_traefik_setup "$@" ;;
-        new-service)  args_max 1 "$@"; cmd_new_service "$@" ;;
-        upgrade)      args_none "$@"; cmd_upgrade ;;
-        frontdoor-install) args_allow "--set-password" "$@"; cmd_frontdoor_install "$@" ;;
-        frontdoor-refresh) args_none "$@"; cmd_frontdoor_refresh ;;
-        uninstall)    args_allow "--nuke" "$@"; cmd_uninstall "$@" ;;
-        *) fail "Unknown command '$cmd'"; echo; cmd_help; exit 1 ;;
-    esac
+    local entry
+    entry=$(verb_entry "$cmd") || { fail "Unknown command '$cmd'"; echo; cmd_help; exit 1; }
+    local spec; spec=$(cut -d'~' -f3 <<<"$entry")
+    args_check "$spec" "$@"
+    "cmd_${cmd//-/_}" "$@"
 }
 # =================================================================== trash --
 # Wave 2: TRaSH Guides sync via Recyclarr (guide-backed profiles, v8 schema).
@@ -2988,6 +2968,7 @@ trash_preview_summarize() { # $1 = captured `sync --preview` log -> "<count>|<su
         }'
 }
 
+# shellcheck disable=SC2120  # arguments arrive via main()'s registry dispatch
 cmd_trash_sync() { # trash-sync [--dry-run]
     WIRE_FAILS=0; WIRE_CHANGES=0; WIRE_DRY=0
     [[ "${1:-}" == --dry-run ]] && WIRE_DRY=1
