@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=12
+SCRIPT_SCHEMA=13
 
 # Shared base: output primitives + .env access (see lib/common.sh).
 # shellcheck source=lib/common.sh
@@ -149,6 +149,22 @@ migrate_env_11_to_12() {
         info "New service variable LAZYLIBRARIAN_UID -> $(env_get LAZYLIBRARIAN_UID)"
     fi
     grep -qE '^LAZYLIBRARIAN_UPDATE=' "$ENV_FILE" || env_set LAZYLIBRARIAN_UPDATE true
+}
+migrate_env_12_to_13() {
+    # NPM left the stack when Traefik replaced it (its fragment is gone), but
+    # its profile name and variables lingered in .env.example and in every
+    # .env written from it. A profile that selects nothing is noise in
+    # COMPOSE_PROFILES; drop it and the two dead variables.
+    local cur out="" tok
+    cur=$(env_get COMPOSE_PROFILES)
+    for tok in ${cur//,/ }; do [[ "$tok" == npm ]] || out+="$tok,"; done
+    [[ "${out%,}" == "$cur" ]] || { env_set COMPOSE_PROFILES "${out%,}"; info "COMPOSE_PROFILES: dropped 'npm' (no such service since Traefik replaced it)"; }
+    env_del NPM_UPDATE; env_del NPM_HTTP_PORT
+    # the panel's host user is written by frontdoor-install; declared empty
+    # here so a render never warns about an unset variable
+    grep -qE '^OLIVETIN_UID=' "$ENV_FILE" || env_set OLIVETIN_UID ""
+    grep -qE '^OLIVETIN_GID=' "$ENV_FILE" || env_set OLIVETIN_GID ""
+    grep -qE '^CF_DNS_API_TOKEN=' "$ENV_FILE" || env_set CF_DNS_API_TOKEN ""
 }
 
 # ------------------------------------------------------------ compose layer --
@@ -539,13 +555,15 @@ _configure_selfheal() {
 _configure_services() {
     # -- services (à la carte)
     render
-    local STD="gluetun qbittorrent sonarr radarr prowlarr jellyfin npm meilisearch jellysearch seerr"
+    local STD="gluetun qbittorrent sonarr radarr prowlarr jellyfin meilisearch jellysearch seerr"
     explain "Services" \
 "Pick exactly what runs — anything, à la carte. Dependencies are handled
 for you (picking qBittorrent brings the VPN; JellySearch brings its
 search engine). Change any of this later with enable/disable." \
 "  1) standard    the recommended setup: VPN, qBittorrent, Sonarr, Radarr," \
-"                 Prowlarr, Jellyfin + instant search, proxy, request site" \
+"                 Prowlarr, Jellyfin + instant search, request site." \
+"                 No proxy: services answer on http://<host>:<port>; add" \
+"                 HTTPS names later with: enable traefik + traefik-setup" \
 "  2) everything  all $(svc_managed | wc -l) services" \
 "  3) custom      yes/no through each service"
     local mode sel="" cur_en s d dp
@@ -641,9 +659,10 @@ connector. One-time setup in their dashboard:" \
 "  3. From the install step, copy ONLY the long token string" \
 "     (the part after '--token' in the command they show)" \
 "AFTER the stack is up, routing also lives in that dashboard: add Public
-Hostnames pointing at http://npm:80 (recommended — reuses your proxy
-hosts and certificates) or directly at a service, e.g. http://jellyfin:8096.
-Service names resolve — cloudflared shares the stack's network."
+Hostnames pointing at http://traefik:80 if Traefik is enabled (one
+hostname per service, same names as your HTTPS routes) or directly at a
+service, e.g. http://jellyfin:8096. Service names resolve — cloudflared
+shares the stack's network."
         read -r -p "Tunnel token: " REPLY_VAL
         [[ -n "$REPLY_VAL" ]] && env_set CLOUDFLARE_TUNNEL_TOKEN "$REPLY_VAL" \
             || warn "No token — cloudflared will crash-loop until one is set in .env."
