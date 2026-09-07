@@ -46,6 +46,12 @@ Labels the arr family carries (only meaningful with `wire arr` / `trash-sync`):
 Conventions: config dir name == service name; env var stem == service name
 uppercased (`myapp` → `MYAPP_UID`, `MYAPP_UPDATE`, `MYAPP_NAME`, `MYAPP_PORT`).
 
+Host ports must be unique across everything enabled. `up` and `enable` refuse
+to proceed when two services would publish the same host port (a VPN'd
+service's port counts against gluetun, which publishes it), naming both;
+`doctor` reports the same finding. Fix by setting `<SVC>_PORT=<free port>` in
+`.env` for one of them.
+
 ## Changing a shipped service
 
 Same file: put overrides for shipped services in

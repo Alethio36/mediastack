@@ -921,9 +921,47 @@ vpn_reattach_guard() {
     ok "VPN attachment verified: ${#vdeps[@]} dependent(s) on the live gluetun"
 }
 
+# ------------------------------------------------------- host port audit --
+port_collisions() { # port_collisions [profiles] -> one line per host port published twice
+    # Reads the rendered config (the VPN overlay decides who publishes what,
+    # so call it after vpn_gen with the render cache cleared). A service is in
+    # scope when its name is in COMPOSE_PROFILES — the same test svc_enabled
+    # uses; pass a prospective list to check before enabling. gluetun's
+    # mappings bind whenever gluetun runs (the overlay publishes every
+    # toggle-enabled service through it, enabled or not), so gluetun counts as
+    # a whole; each of its mappings is attributed to the namespace-sharing
+    # service listening on that target port, so the finding names the app.
+    render
+    jq -r --arg prof ",${1:-$(env_get COMPOSE_PROFILES)}," '
+        .services as $all
+        | ($all | to_entries
+            | map(select((.value.network_mode // "") == "service:gluetun")
+                  | {key: (.value.labels["mediastack.port"] // ""), value: .key})
+            | from_entries) as $owner
+        | [ $all | to_entries[]
+            | .key as $s
+            | select($prof | contains("," + $s + ","))
+            | .value.ports[]?
+            | select((.published // "") != "")
+            | { port: "\(.host_ip // "")\(.published)/\(.protocol // "tcp")",
+                who:  (if $s == "gluetun" and ($owner[.target|tostring] // "") != ""
+                       then "\($owner[.target|tostring]) (via gluetun)" else $s end) } ]
+        | group_by(.port) | map(select(length > 1))[]
+        | "\(.[0].port): \(map(.who) | join(" and "))"' <<<"$RENDERED_JSON"
+}
+require_free_ports() { # require_free_ports [profiles]; dies before docker can fail mid-apply
+    local found
+    found=$(port_collisions "$@") || die "port audit could not evaluate the rendered config — nothing verified (see jq's message above)"
+    [[ -z "$found" ]] || die "host port collision — the same port would be published twice:
+$(sed 's/^/  /' <<<"$found")
+  Docker would refuse the second bind halfway through starting the stack.
+  Fix: give one of them a free host port in .env (<SVC>_PORT=…; see docs/adding-a-service.md), then re-run."
+}
+
 cmd_up()   {
     load_env; require_mounts; reconcile_disabled
     vpn_gen   # materialise per-service VPN membership before compose renders
+    RENDERED_JSON=""; require_free_ports   # overlay may have changed since reconcile_disabled rendered
     traefik_ensure
     if ! DC up -d --remove-orphans; then
         warn "First start attempt failed — usually gluetun's health race after a recreate."
@@ -962,6 +1000,7 @@ cmd_enable() {
     local sel cur; cur=$(env_get COMPOSE_PROFILES | tr ',' ' ')
     # shellcheck disable=SC2086  # word splitting intended: service list
     sel=$(resolve_deps "$svc" $cur)
+    require_free_ports "$(echo "$sel" | paste -sd, -)"   # refuse before .env changes
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     require_mounts; provision >/dev/null   # users/dirs for the new services
     traefik_ensure   # wizard + config gen if traefik just came into the set
@@ -1606,6 +1645,17 @@ _doctor_containers() {
 
 }
 
+_doctor_ports() {
+    hr "doctor: host ports"
+    local found line
+    # an evaluation error is UNCONFIRMED, never "no collisions"
+    found=$(port_collisions) || { d_fail "host port audit could not run" "the rendered config could not be evaluated (jq's message above)" "run: ./mediastack.sh up — compose reports the config error"; return; }
+    if [[ -z "$found" ]]; then ok "no host port published twice among enabled services"; return; fi
+    while IFS= read -r line; do
+        d_fail "host port collision: $line" "docker fails the second bind, so one of them cannot start" "set <SVC>_PORT=<free port> in .env for one of them (see docs/adding-a-service.md), then: ./mediastack.sh up"
+    done <<<"$found"
+}
+
 _doctor_permissions() {
     hr "doctor: permissions"
     # Two independent questions, deliberately not conflated:
@@ -1896,7 +1946,7 @@ _doctor_runtime_audit() {
 
 # doctor runs these in order; adding a section = append here + define
 # _doctor_<name>. Mirrors WIRE_ROLES: one registry, no second list to sync.
-DOCTOR_SECTIONS=(environment containers permissions resources storage neighbours vpn_backups apps runtime_audit)
+DOCTOR_SECTIONS=(environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit)
 
 cmd_doctor() {
     load_env; need_cmd jq; render
