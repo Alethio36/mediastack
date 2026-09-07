@@ -1029,9 +1029,17 @@ c_inspect_all() { # fill the cache for every managed container (see CACHE RULE)
         | select(.value.labels["mediastack.managed"] == "true")
         | .value.container_name // .key' <<<"$RENDERED_JSON")
     [[ -n "$names" ]] || { INSPECT_JSON="[]"; return 0; }
+    # projected to the fields c_get reads: a full inspect of 30 containers is
+    # hundreds of KB that every c_* would re-parse — this keeps it to a few
     # shellcheck disable=SC2086  # one name per word
-    INSPECT_JSON=$(c_inspect $names)
+    INSPECT_JSON=$(c_inspect $names | jq -c '[ .[] | {Name, Id, Image, RestartCount,
+        State: {Status: .State.Status, StartedAt: .State.StartedAt, Health: .State.Health},
+        HostConfig: {NetworkMode: .HostConfig.NetworkMode},
+        Config: {User: .Config.User, Labels: {"org.opencontainers.image.version": .Config.Labels["org.opencontainers.image.version"]}},
+        Mounts: [ .Mounts[] | {Source, Destination} ] } ]')
 }
+# ADDING A FIELD TO c_get's READS = ADDING IT TO THE PROJECTION ABOVE, or the
+# cached path silently returns "" where the uncached one returns the value.
 c_get() { # c_get <cname> <jq path> -> the value, "" when the container is absent
     local j
     if [[ -n "$INSPECT_JSON" ]]; then j=$INSPECT_JSON; else j=$(c_inspect "$1"); fi
