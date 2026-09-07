@@ -2771,13 +2771,14 @@ trash_preview_summarize() { # $1 = captured `sync --preview` log -> "<count>|<su
     # Counts the pipelines that would change; the caller adds that to
     # WIRE_CHANGES (this runs inside $(...), so it cannot do so itself).
     sed 's/\x1b\[[0-9;]*m//g' "$1" | awk '
-        /^── .* \(Preview\) \[[a-z0-9-]+\] ──/ { open=1; name=$0; sub(/.*\[/, "", name); sub(/\].*/, "", name); next }
+        /^── .* \(Preview\) \[[a-z0-9-]+\] ──/ { blocks++; open=1; name=$0; sub(/.*\[/, "", name); sub(/\].*/, "", name); next }
         open && /^No changes/ { open=0; next }
         open && NF { drift++; open=0; per[name]++ }
         END {
             out=""; for (i in per) out = out (out ? " " : "") i "(" per[i] ")"
-            if (drift == 0) print "0|all in sync, no drift"
-            else            print drift "|would change: " out " (pipelines per instance)"
+            if (blocks == 0)     print "0|FAIL"   # nothing rendered: drift is UNKNOWN, not zero
+            else if (drift == 0) print "0|all in sync, no drift (" blocks " pipeline blocks checked)"
+            else                 print drift "|would change: " out " (pipelines per instance)"
         }'
 }
 
@@ -2834,10 +2835,12 @@ cmd_trash_sync() { # trash-sync [--dry-run]
         sudo rm -f "$preview"
         summary=$(trash_preview_summarize "$slog"); rm -f "$slog"
         WIRE_CHANGES=$((WIRE_CHANGES + ${summary%%|*})); summary=${summary#*|}
-        if (( rc == 0 )); then
-            ok "preview complete — $summary"
-        else
+        if (( rc != 0 )); then
             wfail "recyclarr preview failed — output above is the evidence"
+        elif [[ "$summary" == FAIL ]]; then
+            wfail "recyclarr rendered no '(Preview)' blocks — drift UNCONFIRMED (a clean preview prints one block per pipeline per instance; check the output above and: docs/trash-sync.md)"
+        else
+            ok "preview complete — $summary"
         fi
         echo
         if (( WIRE_FAILS )); then fail "dry-run finished with $WIRE_FAILS failure(s)."; return 1; fi
