@@ -108,22 +108,22 @@ arr_instance_name() { # brand the instance so notifications are tellable apart;
 }
 
 arr_forms_login() { # shared operator login on an arr-family UI; idempotent
-    local s="$1" auser apass key url cur verb=enable
+    local s="$1" auser apass key url cur body verb=enable match=no
     [[ "${2:-}" == force ]] && verb=rotate
     auser=$(env_get ARR_USER); apass=$(env_get ARR_PASSWORD)
     [[ -n "$auser" && -n "$apass" ]] || { info "$s: shared arr login not set yet — 'wire arr' creates it"; return 0; }
     key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
     url=$(arr_url "$s")
     cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)
-    if [[ "${2:-}" != force ]] && jq -e --arg u "$auser" '.authenticationMethod=="forms" and .username==$u' <<<"$cur" >/dev/null 2>&1; then
-        ok "$s: forms login already set for '$auser'"
-    elif w_would "$s: $verb forms login for '$auser'"; then
-        api PUT "$url/api/$(arr_apiver "$s")/config/host" "$key" "$(jq -c --arg u "$auser" --arg p "$apass" \
-            '.authenticationMethod="forms" | .authenticationRequired="enabled"
-             | .username=$u | .password=$p | .passwordConfirmation=$p' <<<"$cur")" >/dev/null \
-            && ok "$s: forms login enabled" \
-            || wfail "$s: auth setup rejected by the API — set it once in its UI; check: logs $s"
-    fi
+    # match on the readable subset (the password is write-only); a forced
+    # rotate never matches — one-off, stays inline
+    [[ "${2:-}" != force ]] && jq -e --arg u "$auser" '.authenticationMethod=="forms" and .username==$u' <<<"$cur" >/dev/null 2>&1 && match=yes
+    body=$(jq -c --arg u "$auser" --arg p "$apass" \
+        '.authenticationMethod="forms" | .authenticationRequired="enabled"
+         | .username=$u | .password=$p | .passwordConfirmation=$p' <<<"$cur")
+    ensure_resource "$match" "$s: $verb forms login for '$auser'" \
+        "$s: forms login already set for '$auser'" "$s: auth setup rejected by the API — set it once in its UI; check: logs $s" \
+        -- api PUT "$url/api/$(arr_apiver "$s")/config/host" "$key" "$body"
 }
 
 wire_gate() { # refuse to wire what isn't up
