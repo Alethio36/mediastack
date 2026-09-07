@@ -46,6 +46,11 @@ echo ":: 1. fresh .env.example"
 vpn_gen
 [[ -s local/vpn-overlay.yml ]] || t_fail "vpn_gen wrote no overlay"
 renders "" || t_fail "base config does not render"
+# every variable a fragment reads is declared in .env.example (a value may be
+# empty — a secret written later — but an UNDECLARED one is a stale example)
+unset_vars=$(sudo docker compose --project-directory "$work" -f docker-compose.yml -f local/vpn-overlay.yml \
+    --profile "*" config -q 2>&1 | grep -oE 'The \\?"[A-Z0-9_]+\\?" variable is not set' || true)
+[[ -z "$unset_vars" ]] || t_fail "variables read by a fragment but absent from .env.example:"$'\n'"$unset_vars"
 cp local/vpn-overlay.yml "$work/overlay.first"
 vpn_gen
 cmp -s local/vpn-overlay.yml "$work/overlay.first" || t_fail "vpn_gen is not byte-stable for identical inputs"
