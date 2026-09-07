@@ -5,13 +5,28 @@ into every stack operation automatically, and upgrade-safe. Never add
 services to `compose.d/` or edit `docker-compose.yml`: those are the
 repo's territory, and local changes there block `upgrade` by design.
 
-1. `./mediastack.sh new-service myapp` scaffolds the service into
-   `docker-compose.override.yml` (creates the file if needed, verifies
-   the result still renders, rolls back if it doesn't). Edit the image,
-   ports and volumes.
-2. `./mediastack.sh configure` — detects the new `MYAPP_UID` /
-   `MYAPP_UPDATE` variables, assigns the next free UID, creates the
-   system user and config folder. Then `./mediastack.sh enable myapp`.
+`./mediastack.sh new-service myapp` does the whole thing at a terminal:
+
+1. asks for the image (verified against its registry — an unverifiable
+   image is a question, not a silent accept), the port the app listens on
+   inside its container, the HTTPS hostname (default: the name), a
+   description, VPN membership (default off — acquisition apps in, serving
+   apps out), whether it has a config folder, its data access (none /
+   media read-only for serving / torrent+media read-write as one mount for
+   acquisition, so imports hardlink), and whether the image honours
+   PUID/PGID (answer no for root-by-design images: the variables are
+   omitted and `doctor` won't expect a non-root process);
+2. writes a complete service into `docker-compose.override.yml` on the
+   toggle model (metadata labels only — `vpn_gen` generates its network,
+   host port and Traefik route), verifies it renders and rolls back if not;
+3. refuses a host port that something enabled already publishes and asks
+   for another (`MYAPP_PORT` in `.env`), allocates `MYAPP_UID`/`MYAPP_UPDATE`
+   like any new fragment, then — on "Start it now?" — enables it (system
+   user, folders, start), waits for it to report healthy and prints its URL.
+   "n" prints the `enable` command for later.
+
+The result is an ordinary override service: edit the YAML any time,
+compose merges it, and `upgrade` never touches it.
 
 The script discovers services from compose labels — it contains no
 service lists, so override services get status rows, doctor checks,
