@@ -664,6 +664,22 @@ jf_server_name() { # the name apps/casting show; container default is the ID has
         || wfail "Jellyfin rejected the server name [HTTP $(jf_code)] — set it in Dashboard -> General"
 }
 
+JF_TRANSCODE_PATH=/cache/transcodes   # inside the container: ${CACHE_ROOT}/jellyfin/transcodes on the host
+jf_transcode_path() { # transcodes belong on the cache volume, not in /config
+    # Jellyfin's default is <data>/transcodes = /config/data/transcodes: the
+    # config volume, which backup archives and which sits wherever CONFIG_ROOT
+    # does. Segments are written at source bitrate for the whole session.
+    local tok="$1" cfg have
+    cfg=$(jf_api GET /System/Configuration/encoding "$tok" || true)
+    [[ "$(jf_code)" =~ ^2 ]] || { wfail "could not read jellyfin's encoding settings [HTTP $(jf_code)]: $(head -c200 <<<"$cfg")"; return 1; }
+    have=$(jq -r '.TranscodingTempPath // empty' <<<"$cfg" 2>/dev/null)
+    if [[ "$have" == "$JF_TRANSCODE_PATH" ]]; then ok "transcodes go to $JF_TRANSCODE_PATH (the cache volume)"; return 0; fi
+    w_would "point jellyfin's transcodes at $JF_TRANSCODE_PATH (now: ${have:-the default, /config/data/transcodes})" || return 0
+    jf_api POST /System/Configuration/encoding "$tok" "$(jq -c --arg p "$JF_TRANSCODE_PATH" '.TranscodingTempPath=$p' <<<"$cfg")" >/dev/null \
+        && ok "transcodes now go to $JF_TRANSCODE_PATH" \
+        || wfail "Jellyfin rejected the transcode path [HTTP $(jf_code)] — set Dashboard -> Playback -> Transcoding -> Transcode path to $JF_TRANSCODE_PATH"
+}
+
 # ---- apprise (wave 5): one notification hub for the whole stack ----
 # apprise-api in gluetun's namespace. Tags route messages: ops (pipeline,
 # backups, doctor), activity (arr events), users (wizarr invites).
@@ -1052,6 +1068,7 @@ credentials)."
     tok=$(jq -r '.AccessToken // empty' <<<"$auth")
     [[ -n "$tok" ]] || { wfail "jellyfin login succeeded but returned no token: $(head -c200 <<<"$auth")"; return 1; }
     jf_server_name "$tok"
+    jf_transcode_path "$tok"
     jf_plugin_webhook "$tok"
 
     # --- libraries: create-if-path-missing, derived from the arrs' own
