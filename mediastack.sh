@@ -1149,6 +1149,7 @@ status_one() {
         echo "restarts  : $(c_get "$cn" '.RestartCount')"
         echo "mounts    :"
         c_get "$cn" '(.Mounts[] | "  \(.Source) -> \(.Destination)")'
+        echo
     fi
     hr "last 15 log lines"
     sudo docker logs --tail 15 "$cn" 2>&1 || true
