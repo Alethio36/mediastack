@@ -1,0 +1,266 @@
+## <none>
+CALL cmd_help [0]
+## -h
+CALL cmd_help [0]
+## --help
+CALL cmd_help [0]
+## bogus
+FAIL Unknown command 'bogus'
+
+CALL cmd_help [0]
+rc=1
+## bogus --flag
+FAIL Unknown command 'bogus'
+
+CALL cmd_help [0]
+rc=1
+## help extra
+CALL cmd_help [1] extra
+## help
+CALL cmd_help [0]
+## help a b c
+CALL cmd_help [3] a b c
+## install
+CALL cmd_install [0]
+## install x
+ERROR 'install' takes no arguments (got: x)
+rc=1
+## configure
+CALL cmd_configure [0]
+## configure x
+ERROR 'configure' takes no arguments (got: x)
+rc=1
+## add-mount
+CALL cmd_add_mount [0]
+## add-mount x
+ERROR 'add-mount' takes no arguments (got: x)
+rc=1
+## up
+CALL cmd_up [0]
+## up x
+ERROR 'up' takes no arguments (got: x)
+rc=1
+## down
+CALL cmd_down [0]
+## down x
+ERROR 'down' takes no arguments (got: x)
+rc=1
+## enable
+CALL cmd_enable [0]
+## enable a
+CALL cmd_enable [1] a
+## enable a b c d
+ERROR 'enable' takes at most 1 argument(s) (got: a b c d)
+rc=1
+## disable
+CALL cmd_disable [0]
+## disable a
+CALL cmd_disable [1] a
+## disable a b c d
+ERROR 'disable' takes at most 1 argument(s) (got: a b c d)
+rc=1
+## status
+CALL cmd_status [0]
+## status a
+CALL cmd_status [1] a
+## status a b c d
+ERROR 'status' takes at most 1 argument(s) (got: a b c d)
+rc=1
+## logs
+CALL cmd_logs [0]
+## logs a
+CALL cmd_logs [1] a
+## logs a b c d e
+CALL cmd_logs [5] a b c d e
+## logs --bogus
+CALL cmd_logs [1] --bogus
+## update
+CALL cmd_update [0]
+## update a
+CALL cmd_update [1] a
+## update a b c d e
+CALL cmd_update [5] a b c d e
+## update --bogus
+CALL cmd_update [1] --bogus
+## apply-timer
+CALL cmd_apply_timer [0]
+## apply-timer x
+ERROR 'apply-timer' takes no arguments (got: x)
+rc=1
+## backup
+CALL cmd_backup [0]
+## backup a
+CALL cmd_backup [1] a
+## backup a b c d e
+CALL cmd_backup [5] a b c d e
+## backup --bogus
+CALL cmd_backup [1] --bogus
+## restore
+CALL cmd_restore [0]
+## restore a
+CALL cmd_restore [1] a
+## restore a b c d e
+CALL cmd_restore [5] a b c d e
+## restore --bogus
+CALL cmd_restore [1] --bogus
+## rollback
+CALL cmd_rollback [0]
+## rollback a
+CALL cmd_rollback [1] a
+## rollback a b c d
+ERROR 'rollback' takes at most 1 argument(s) (got: a b c d)
+rc=1
+## unpin
+CALL cmd_unpin [0]
+## unpin a
+CALL cmd_unpin [1] a
+## unpin a b c d
+ERROR 'unpin' takes at most 1 argument(s) (got: a b c d)
+rc=1
+## upgrade
+CALL cmd_upgrade [0]
+## upgrade x
+ERROR 'upgrade' takes no arguments (got: x)
+rc=1
+## wire
+CALL cmd_wire [0]
+## wire a
+CALL cmd_wire [1] a
+## wire a b c d e
+CALL cmd_wire [5] a b c d e
+## wire --bogus
+CALL cmd_wire [1] --bogus
+## invite
+CALL cmd_invite [0]
+## invite a
+CALL cmd_invite [1] a
+## invite a b c d e
+CALL cmd_invite [5] a b c d e
+## invite --bogus
+CALL cmd_invite [1] --bogus
+## credentials
+CALL cmd_credentials [0]
+## credentials x
+ERROR 'credentials' takes no arguments (got: x)
+rc=1
+## set-credentials
+CALL cmd_set_credentials [0]
+## set-credentials a
+CALL cmd_set_credentials [1] a
+## set-credentials a b c d
+ERROR 'set-credentials' takes at most 1 argument(s) (got: a b c d)
+rc=1
+## traefik-setup
+CALL cmd_traefik_setup [0]
+## traefik-setup --hosts
+CALL cmd_traefik_setup [1] --hosts
+## traefik-setup --certs
+CALL cmd_traefik_setup [1] --certs
+## traefik-setup --bogus
+ERROR unknown argument '--bogus' for 'traefik-setup' (accepts: --hosts --certs)
+rc=1
+## traefik-setup --hosts --hosts
+ERROR 'traefik-setup' takes at most 1 argument(s) (got: --hosts --hosts)
+rc=1
+## trash-sync
+CALL cmd_trash_sync [0]
+## trash-sync --dry-run
+CALL cmd_trash_sync [1] --dry-run
+## trash-sync --bogus
+ERROR unknown argument '--bogus' for 'trash-sync' (accepts: --dry-run)
+rc=1
+## trash-sync --dry-run --dry-run
+CALL cmd_trash_sync [2] --dry-run --dry-run
+## doctor
+CALL cmd_doctor [0]
+## doctor x
+ERROR 'doctor' takes no arguments (got: x)
+rc=1
+## leak-test
+CALL cmd_leak_test [0]
+## leak-test --killswitch
+CALL cmd_leak_test [1] --killswitch
+## leak-test --bogus
+ERROR unknown argument '--bogus' for 'leak-test' (accepts: --killswitch)
+rc=1
+## leak-test --killswitch --killswitch
+CALL cmd_leak_test [2] --killswitch --killswitch
+## vpn
+CALL cmd_vpn [0]
+## vpn a
+CALL cmd_vpn [1] a
+## vpn a b
+CALL cmd_vpn [2] a b
+## vpn a b c
+CALL cmd_vpn [3] a b c
+## vpn a b c d
+ERROR 'vpn' takes at most 3 argument(s) (got: a b c d)
+rc=1
+## fix-perms
+CALL cmd_fix_perms [0]
+## fix-perms a
+CALL cmd_fix_perms [1] a
+## fix-perms a b c d
+ERROR 'fix-perms' takes at most 1 argument(s) (got: a b c d)
+rc=1
+## new-service
+CALL cmd_new_service [0]
+## new-service a
+CALL cmd_new_service [1] a
+## new-service a b c d
+ERROR 'new-service' takes at most 1 argument(s) (got: a b c d)
+rc=1
+## frontdoor-install
+CALL cmd_frontdoor_install [0]
+## frontdoor-install --set-password
+CALL cmd_frontdoor_install [1] --set-password
+## frontdoor-install --bogus
+ERROR unknown argument '--bogus' for 'frontdoor-install' (accepts: --set-password)
+rc=1
+## frontdoor-install --set-password --set-password
+CALL cmd_frontdoor_install [2] --set-password --set-password
+## uninstall
+CALL cmd_uninstall [0]
+## uninstall --nuke
+CALL cmd_uninstall [1] --nuke
+## uninstall --bogus
+ERROR unknown argument '--bogus' for 'uninstall' (accepts: --nuke)
+rc=1
+## uninstall --nuke --nuke
+CALL cmd_uninstall [2] --nuke --nuke
+## menu
+CALL cmd_menu [0]
+## menu x
+ERROR 'menu' takes no arguments (got: x)
+rc=1
+## list
+CALL cmd_list [0]
+## list a
+CALL cmd_list [1] a
+## list a b c d e
+CALL cmd_list [5] a b c d e
+## list --bogus
+CALL cmd_list [1] --bogus
+## vpn-apply
+CALL cmd_vpn_apply [0]
+## vpn-apply a
+CALL cmd_vpn_apply [1] a
+## vpn-apply a b
+CALL cmd_vpn_apply [2] a b
+## vpn-apply a b c d
+ERROR 'vpn-apply' takes at most 2 argument(s) (got: a b c d)
+rc=1
+## vpn-guard
+CALL cmd_vpn_guard [0]
+## vpn-guard --boot
+CALL cmd_vpn_guard [1] --boot
+## vpn-guard --bogus
+ERROR unknown argument '--bogus' for 'vpn-guard' (accepts: --boot)
+rc=1
+## vpn-guard --boot --boot
+CALL cmd_vpn_guard [2] --boot --boot
+## frontdoor-refresh
+CALL cmd_frontdoor_refresh [0]
+## frontdoor-refresh x
+ERROR 'frontdoor-refresh' takes no arguments (got: x)
+rc=1
