@@ -2310,7 +2310,7 @@ sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
         local user="$1" pass="$2" s
         qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" \
             || die "cannot sign in to qBittorrent with the stored credentials — fix that first (wire qbit)"
-        qb_api /app/setPreferences "json=$(jq -cn --arg u "$user" --arg p "$pass" '{web_ui_username:$u,web_ui_password:$p}')" >/dev/null
+        qb_api /app/setPreferences "json=$(jq -cn --arg u "$user" --arg p "$pass" '{web_ui_username:$u,web_ui_password:$p}')" >/dev/null || true  # re-login below is the verdict
         sleep 2
         qb_login "$user" "$pass" || die "qBittorrent did not accept the new credentials — inspect: logs qbittorrent"
         env_set QBITTORRENT_USER "$user"; env_set QBITTORRENT_PASSWORD "$pass"

@@ -157,7 +157,7 @@ qb_bind_tun0() { # requires QB_COOKIE
     if [[ "$cur" == tun0 ]]; then
         ok "transfers bound to tun0"
     elif w_would "bind qBittorrent's transfers to tun0 (VPN interface)"; then
-        qb_api /app/setPreferences 'json={"current_network_interface":"tun0"}' >/dev/null
+        qb_api /app/setPreferences 'json={"current_network_interface":"tun0"}' >/dev/null || true  # read-back below is the verdict
         cur=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null || true)
         [[ "$cur" == tun0 ]] && ok "transfers bound to tun0" \
             || wfail "interface bind did not stick (reads back '$cur') — set it in the UI: Advanced -> Network interface"
@@ -184,11 +184,14 @@ qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = 
     rm -f "$jar"
     [[ -n "$QB_COOKIE" ]] || return 1
 }
-qb_api() { # qb_api PATH [data...] (form-encoded)
+qb_api() { # qb_api PATH [data...] (form-encoded) -> body on stdout, rc from http
     local p="$1"; shift
     local args=(); local a; for a in "$@"; do args+=(--data-urlencode "$a"); done
-    curl -sS -m 20 -b "$QB_COOKIE" "${args[@]}" \
-        "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2$p"
+    local out code
+    out=$(curl -sS -m 20 -b "$QB_COOKIE" "${args[@]}" -w '\n%{http_code}' \
+          "http://127.0.0.1:$(svc_label qbittorrent mediastack.port)/api/v2$p" 2>&1) || { echo "$out"; return 1; }
+    code=${out##*$'\n'}; echo "${out%$'\n'*}"
+    [[ "$code" =~ ^2 ]]
 }
 
 wire_qbit() {
@@ -258,7 +261,7 @@ type your own to use it instead. Stored in .env (view: credentials)."
         ask_secret "Password" "$gen"; pass="$REPLY_VAL"
         if w_would "set permanent qBittorrent credentials"; then
             qb_api /app/setPreferences \
-                "json={\"web_ui_username\":\"$user\",\"web_ui_password\":\"$pass\"}" >/dev/null
+                "json={\"web_ui_username\":\"$user\",\"web_ui_password\":\"$pass\"}" >/dev/null || true  # re-login below is the verdict
             env_set QBITTORRENT_USER "$user"; env_set QBITTORRENT_PASSWORD "$pass"
             sleep 2   # let the preference write settle
             local vrc=0; qb_login "$user" "$pass" || vrc=$?
