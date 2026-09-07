@@ -148,18 +148,14 @@ a committed plan.
 ### End-user experience
 - Web panel polishing.
 - Script polishing for the end user (clearer prompts, output, ergonomics).
-- **`help` from a verb registry** *(next)*. Today a verb lives in three
+- **`help` from a verb registry** *(landed)*. A verb used to live in three
   hand-kept lists — the dispatch table in `main()`, `cmd_help`'s prose, and
-  README's command table — and they drift (an audit found `list`, `vpn-apply`,
-  `vpn-guard`, `frontdoor-refresh` and several flags absent from `help`). The
-  fix is the same move `WIRE_ROLES` and `DOCTOR_SECTIONS` made: one registry
-  line per verb carrying its name, accepted arguments, an `internal` mark, and
-  a one-line description; `main()` dispatches from it, the `args_*` guards
-  derive from its arguments column, and `help` renders it. Verbs and flags
-  then cannot drift from `help` because there is nothing to drift from. README
-  stays prose (install walkthrough, concepts) and gets a small bash/awk CI
-  check that every registry verb is mentioned. Trade-off: `help` flattens to
-  one line per verb; depth moves to README, which is arguably the right split.
+  README's command table — and they drifted (`list`, `vpn-apply`, `vpn-guard`,
+  `frontdoor-refresh` and several flags were absent from `help`). Now `VERBS`
+  carries one line per verb (name, usage, argument contract, group,
+  description); `main()` dispatches from it, the contract is applied from its
+  arguments column, `help` renders it one line per verb, and CI fails when a
+  registry verb is not mentioned in README. Depth lives in README and docs/.
 - Extend `--dry-run` / what-if to `enable`/`disable`/`vpn-apply`. (`update`,
   `wire` and `trash-sync` have it; `wire --verify` adds a non-zero exit on
   drift for scripts and cron.)
