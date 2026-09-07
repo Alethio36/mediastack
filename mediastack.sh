@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=13
+SCRIPT_SCHEMA=14
 
 # Shared base: output primitives + .env access (see lib/common.sh).
 # shellcheck source=lib/common.sh
@@ -168,6 +168,11 @@ migrate_env_12_to_13() {
     grep -qE '^OLIVETIN_UID=' "$ENV_FILE" || env_set OLIVETIN_UID ""
     grep -qE '^OLIVETIN_GID=' "$ENV_FILE" || env_set OLIVETIN_GID ""
     grep -qE '^CF_DNS_API_TOKEN=' "$ENV_FILE" || env_set CF_DNS_API_TOKEN ""
+}
+migrate_env_13_to_14() {
+    # NPM returns as a shipped fragment (an alternative edge, not wired);
+    # root-by-image, so only its update toggle is adopted
+    grep -qE '^NPM_UPDATE=' "$ENV_FILE" || env_set NPM_UPDATE true
 }
 
 # ------------------------------------------------------------ compose layer --
