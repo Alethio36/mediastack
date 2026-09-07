@@ -145,7 +145,7 @@ Check
 Other
 | command | what it does |
 |---|---|
-| `new-service <name>` | scaffold a service into `docker-compose.override.yml` (untracked, upgrade-safe) |
+| `new-service <name>` | interactive: define, enable and start your own service in `docker-compose.override.yml` (untracked, upgrade-safe) |
 | `uninstall [--nuke]` | tiered removal; `--nuke` = everything, one confirmation. Media and backups are never touched |
 | `menu` | interactive menu wrapping all of the above |
 | `help` | the command list (also: no arguments) |
@@ -214,12 +214,14 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
 
 ## Adding your own services
 
-`./mediastack.sh new-service <name>` scaffolds a service into
-`docker-compose.override.yml` — untracked, merged automatically into every
-stack operation, and upgrade-safe. Fill in the image, run `configure`
-(adopts the new UID), then `enable <name>`. Never add services to
-`compose.d/` or edit `docker-compose.yml`: those are the repo's territory
-and local changes there block `upgrade` by design.
+`./mediastack.sh new-service <name>` asks for the image, container port,
+hostname, VPN membership, folders and permissions, writes a complete
+service into `docker-compose.override.yml` — untracked, merged automatically
+into every stack operation, upgrade-safe — then enables and starts it and
+prints its URL. Its HTTPS route and VPN membership are generated like a
+shipped service's (`vpn <name> on|off` works immediately). Never add
+services to `compose.d/` or edit `docker-compose.yml`: those are the repo's
+territory and local changes there block `upgrade` by design.
 
 ## Notifications (Apprise)
 

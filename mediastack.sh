@@ -335,7 +335,7 @@ Check
                  need --i-know to leave the tunnel). Apply with: up.
   fix-perms [s]  Repair config-dir ownership from the UID map.
 Other
-  new-service N  Scaffold service N into docker-compose.override.yml
+  new-service N  Add your own service N (asks image/port/VPN/folders, then enables + starts it)
                  (untracked, merged automatically, upgrade-safe).
   uninstall      Remove the stack (tiered: containers / users / configs).
   frontdoor-install  Install the OliveTin web panel over the safe verbs.
@@ -2501,10 +2501,69 @@ cmd_new_service() {
     # automatically, it is untracked, and upgrades never conflict with it.
     # compose.d/ and docker-compose.yml are the repo's territory — a scaffold
     # there would trip the clean-tree gate on the next upgrade.
-    local name="${1:?usage: new-service <name>}"
+    #
+    # The scaffold is emitted on the TOGGLE MODEL: the fragment carries only
+    # metadata (mediastack.* labels); vpn_gen generates its network, host
+    # port and Traefik route, so `vpn <name> on|off` works from day one and no
+    # routing YAML is ever hand-written.
+    local name="${1:?usage: new-service <n>}"
     [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "Service names: lowercase letters, digits, dashes."
-    load_env
+    [[ -t 0 ]] || die "new-service is interactive — run it at a terminal."
+    load_env; need_cmd jq; need_cmd docker
     svc_exists "$name" && die "A service '$name' already exists in the rendered stack."
+    local stem; stem=$(uvar "$name")
+
+    # ---- questions (configure-style: explain, then ask; Enter = default) ----
+    _ns_ask() { local hint=""; [[ -n "$2" ]] && hint=" [$2]"; read -r -p "$1$hint: " REPLY_VAL; REPLY_VAL="${REPLY_VAL:-$2}"; }
+    local image cport host desc vpn cfg data puid
+    explain "New service: $name" \
+"A few questions produce a complete, working service definition in
+docker-compose.override.yml — image, port, HTTPS hostname, VPN membership,
+folders and permissions — then it is enabled and started. Nothing to edit."
+    while true; do
+        _ns_ask "Docker image (repository:tag)" ""; image="$REPLY_VAL"
+        [[ -n "$image" ]] || { warn "an image is required"; continue; }
+        [[ "$image" == *CHANGEME* ]] && { warn "that is a placeholder, not an image"; continue; }
+        if sudo docker manifest inspect "$image" >/dev/null 2>&1; then
+            ok "image found in its registry"; break
+        fi
+        warn "could not verify '$image' in its registry (typo? private image? offline?)"
+        _ns_ask "Use it anyway? [y/N]" ""
+        [[ "${REPLY_VAL,,}" == y* ]] && break
+    done
+    while true; do
+        _ns_ask "Port the app listens on INSIDE the container (see its docs)" ""; cport="$REPLY_VAL"
+        [[ "$cport" =~ ^[0-9]+$ ]] && (( cport > 0 && cport < 65536 )) && break
+        warn "a port is a number 1-65535"
+    done
+    _ns_ask "HTTPS hostname (<name>.$(env_get TRAEFIK_DOMAIN '<your domain>'))" "$name"; host="$REPLY_VAL"
+    [[ "$host" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "Hostnames: lowercase letters, digits, dashes."
+    _ns_ask "One-line description (shown in configure and status)" "$name"; desc="$REPLY_VAL"
+    explain "VPN" \
+"Rule of thumb: apps that ACQUIRE content (torrent clients, indexers) run
+inside the VPN; apps that SERVE your own media to you run outside it (the
+tunnel adds latency and gains them nothing). Flip it any time:
+./mediastack.sh vpn $name on|off"
+    _ns_ask "Route $name through the VPN? [y/N]" ""
+    [[ "${REPLY_VAL,,}" == y* ]] && vpn=true || vpn=false
+    _ns_ask "Does it keep settings/state in a config folder? [Y/n]" ""
+    [[ "${REPLY_VAL,,}" == n* ]] && cfg=false || cfg=true
+    explain "Data access" \
+"  1) none         it needs no media at all
+  2) serving      read-only view of the media library (players, readers)
+  3) acquisition  read-write torrent + media trees as ONE mount, so imports
+                  hardlink instead of copy (downloaders, *arr-style importers)"
+    _ns_ask "Choice" "1"; data="$REPLY_VAL"
+    [[ "$data" =~ ^[123]$ ]] || die "Choice must be 1, 2 or 3."
+    explain "Permissions" \
+"Most images honour PUID/PGID and run as the dedicated user mediastack
+creates for the service. Some run as root by design (their docs say so);
+for those answer no — the variables are omitted and doctor will not
+expect a non-root process."
+    _ns_ask "Does the image honour PUID/PGID? [Y/n]" ""
+    [[ "${REPLY_VAL,,}" == n* ]] && puid=false || puid=true
+
+    # ---- scaffold ----
     local f="docker-compose.override.yml" had_file=0 snap=""
     if [[ -e "$f" ]]; then
         had_file=1; snap=$(cat "$f")
@@ -2513,43 +2572,112 @@ cmd_new_service() {
     else
         printf '# Your services live here — untracked, merged automatically, upgrade-safe.\nservices:\n' > "$f"
     fi
-    sed -e "s/__NAME__/${name}/g" -e "s/__UPPER__/$(uvar "$name")/g" >> "$f" <<'EOF'
+    _new_service_fragment "$name" "$stem" "$image" "$cport" "$host" "$desc" "$vpn" "$cfg" "$data" "$puid" >> "$f"
+    # anything failing from here until the stack is touched reverts the file
+    # AND the overlay: a stanza for a service that no longer exists would make
+    # every later render fail ("neither an image nor a build context")
+    _new_service_rollback() {
+        if (( had_file )); then printf '%s' "$snap" > "$f"; else rm -f "$f"; fi
+        (( overlay_made )) && vpn_gen
+        return 0
+    }
+    local overlay_made=0
+    if ! compose_renders; then
+        _new_service_rollback
+        die "The scaffold broke compose rendering — reverted. See compose's message above."
+    fi
+    RENDERED_JSON=""
+    vpn_gen; overlay_made=1   # its network/port/route now exist in the overlay
+    ok "scaffolded '$name' in $f"
 
-  # __NAME__ — fill in image/ports/volumes, then:
-  #   ./mediastack.sh configure   (adopts the new UID/UPDATE vars)
-  #   ./mediastack.sh enable __NAME__
-  __NAME__:
-    image: CHANGEME:latest
-    container_name: ${__UPPER___NAME:-mediastack-__NAME__}
-    profiles: ["__NAME__"]
+    # host port: the container port by default (${stem}_PORT overrides). A
+    # collision with something already published is refused here, not by
+    # docker halfway through `up`.
+    local prof found; prof="$(env_get COMPOSE_PROFILES),$name"
+    found=$(port_collisions "$prof") || { _new_service_rollback; die "port audit could not evaluate the rendered config — reverted"; }
+    if [[ -n "$found" ]]; then
+        warn "host port $cport is already published: $found"
+        _ns_ask "Host port to publish $name on instead" ""
+        [[ "$REPLY_VAL" =~ ^[0-9]+$ ]] || { _new_service_rollback; die "not a port — reverted"; }
+        env_set "${stem}_PORT" "$REPLY_VAL"
+        RENDERED_JSON=""; vpn_gen
+        found=$(port_collisions "$prof") || { env_del "${stem}_PORT"; _new_service_rollback; die "port audit could not evaluate the rendered config — reverted"; }
+        [[ -z "$found" ]] || { env_del "${stem}_PORT"; _new_service_rollback; die "still colliding: $found — reverted"; }
+        ok "host port ${REPLY_VAL} (${stem}_PORT in .env)"
+    fi
+    _configure_selfheal   # allocate ${stem}_UID / _UPDATE like any new fragment
+
+    # ---- enable + start ----
+    _ns_ask "Start it now? [Y/n]" ""
+    if [[ "${REPLY_VAL,,}" == n* ]]; then
+        hr "Next steps"
+        echo "  ./mediastack.sh enable $name      create its user/folders and start it"
+        echo "  ./mediastack.sh vpn $name on|off  change VPN membership (now: $(vpn_onoff "$vpn"))"
+        echo "  ./mediastack.sh status            its URL and health"
+        return
+    fi
+    cmd_enable "$name"
+    local cn t=0; cn=$(svc_cname "$name")
+    info "Waiting for $name to report healthy (up to 120s; images without a healthcheck report '-')..."
+    while [[ "$(c_health "$cn")" == starting && $t -lt 120 ]]; do sleep 5; t=$((t+5)); done
+    case "$(c_health "$cn")" in
+        healthy) ok "$name is healthy" ;;
+        -)       [[ "$(c_state "$cn")" == running ]] && ok "$name is running (no healthcheck in the image)" \
+                     || die "$name is not running — inspect: ./mediastack.sh logs $name" ;;
+        *)       die "$name is $(c_health "$cn") after ${t}s — inspect: ./mediastack.sh logs $name" ;;
+    esac
+    hr "$name"
+    echo "  URL: $(svc_url "$name")"
+    [[ -n "$(env_get TRAEFIK_DOMAIN)" ]] || echo "  (an HTTPS hostname appears once Traefik is set up: ./mediastack.sh traefik-setup)"
+    echo "  VPN: $(vpn_onoff "$vpn")   change: ./mediastack.sh vpn $name on|off"
+    echo "  Row: ./mediastack.sh status"
+}
+
+_new_service_fragment() { # <name> <stem> <image> <cport> <host> <desc> <vpn> <cfg> <data> <puid> -> YAML on stdout
+    local name="$1" stem="$2" image="$3" cport="$4" host="$5" desc="$6" vpn="$7" cfg="$8" data="$9" puid="${10}"
+    # values land inside double-quoted YAML scalars: escape what would break out
+    desc=${desc//\\/\\\\}; desc=${desc//\"/\\\"}
+    cat <<EOF
+
+  # $name — scaffolded by: ./mediastack.sh new-service $name
+  # Network, host port and HTTPS route are generated from the labels below
+  # (local/vpn-overlay.yml). VPN membership: ./mediastack.sh vpn $name on|off
+  $name:
+    image: $image
+    container_name: \${${stem}_NAME:-mediastack-$name}
+    profiles: ["$name"]
     environment:
-      - TZ=${TZ}
-      - PUID=${__UPPER___UID}
-      - PGID=${MEDIA_GROUP_GID}
+      - TZ=\${TZ}
+EOF
+    if [[ "$puid" == true ]]; then cat <<EOF
+      - PUID=\${${stem}_UID}
+      - PGID=\${MEDIA_GROUP_GID}
       - UMASK=002
-    volumes:
-      - ${CONFIG_ROOT}/__NAME__:/config
+EOF
+    fi
+    if [[ "$cfg" == true || "$data" != 1 ]]; then echo "    volumes:"; fi
+    [[ "$cfg" == true ]] && echo "      - \${CONFIG_ROOT}/$name:/config"
+    case "$data" in
+        2) echo "      - \${DATA_ROOT}/media:/data/media:ro" ;;
+        3) echo "      - \${DATA_ROOT}:/data" ;;
+    esac
+    cat <<EOF
     labels:
       com.centurylinklabs.watchtower.enable: "false"
       mediastack.managed: "true"
-      mediastack.vpn: "false"
-      mediastack.config: "true"
-    networks: [mediastack]
+      mediastack.desc: "$desc"
+      mediastack.vpn: "$vpn"
+      mediastack.vpntoggle: "true"
+      mediastack.config: "$cfg"
+      mediastack.subdomain: "$host"
+      mediastack.port: "$cport"
     logging:
       driver: json-file
       options:
-        max-size: ${LOG_MAX_SIZE:-10m}
-        max-file: ${LOG_MAX_FILE:-3}
+        max-size: \${LOG_MAX_SIZE:-10m}
+        max-file: \${LOG_MAX_FILE:-3}
     restart: unless-stopped
 EOF
-    # the scaffold must render before it is kept: CHANGEME image is fine at
-    # config time, structural YAML mistakes are not
-    if ! compose_renders; then
-        if (( had_file )); then printf '%s' "$snap" > "$f"; else rm -f "$f"; fi
-        die "The scaffold broke compose rendering — reverted. See compose's message above."
-    fi
-    ok "Scaffolded '$name' in $f — edit it, then run: ./mediastack.sh configure && ./mediastack.sh enable $name"
-    info "Nothing else to edit: $f is untracked and merges automatically."
 }
 
 # -------------------------------------------------------------- dispatcher --
