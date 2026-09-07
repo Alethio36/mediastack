@@ -2770,7 +2770,8 @@ trash_preview_summarize() { # $1 = captured `sync --preview` log -> "<count>|<su
     # pipeline per instance, each followed by "No changes" or a change table.
     # Counts the pipelines that would change; the caller adds that to
     # WIRE_CHANGES (this runs inside $(...), so it cannot do so itself).
-    sed 's/\x1b\[[0-9;]*m//g' "$1" | awk '
+    # a pty emits ANSI colour and CRLF line endings: strip both before matching
+    sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\r$//' "$1" | awk '
         /^── .* \(Preview\) \[[a-z0-9-]+\] ──/ { blocks++; open=1; name=$0; sub(/.*\[/, "", name); sub(/\].*/, "", name); next }
         open && /^No changes/ { open=0; next }
         open && NF { drift++; open=0; per[name]++ }
@@ -2799,6 +2800,10 @@ cmd_trash_sync() { # trash-sync [--dry-run]
         # a preview needs a provisioned recyclarr and answered profile choices:
         # both are decisions the real run makes, and a dry run makes none
         sudo test -d "$rdir" || die "recyclarr is not provisioned yet — run './mediastack.sh trash-sync' once, then preview"
+        # recyclarr renders its preview with Spectre.Console and discards ALL of
+        # that when its stdout is not a TTY (its "log mode"); the run below
+        # forces a pty, which needs a terminal on our stdin to attach
+        [[ -t 0 ]] || die "trash-sync --dry-run needs a terminal (recyclarr only renders a preview on a TTY)"
         for s in $insts; do
             [[ -n "$(env_get "$(trash_envkey "$s")")" ]] \
                 || die "$s: no TRaSH profile chosen yet — run './mediastack.sh trash-sync' once to choose, then preview"
@@ -2830,7 +2835,9 @@ cmd_trash_sync() { # trash-sync [--dry-run]
     local slog rc summary
     slog=$(mktemp)
     if (( WIRE_DRY )); then
-        DC run --rm --no-deps recyclarr sync --preview --config /config/recyclarr.preview.yml 2>&1 | tee "$slog"
+        # -t: force a pseudo-TTY even though our stdout is a pipe — without it
+        # recyclarr enters log mode and prints no preview at all
+        DC run --rm -t --no-deps recyclarr sync --preview --config /config/recyclarr.preview.yml 2>&1 | tee "$slog"
         rc=${PIPESTATUS[0]}
         sudo rm -f "$preview"
         summary=$(trash_preview_summarize "$slog"); rm -f "$slog"
