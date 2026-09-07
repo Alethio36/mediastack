@@ -1000,7 +1000,8 @@ cmd_enable() {
     local sel cur; cur=$(env_get COMPOSE_PROFILES | tr ',' ' ')
     # shellcheck disable=SC2086  # word splitting intended: service list
     sel=$(resolve_deps "$svc" $cur)
-    require_free_ports "$(echo "$sel" | paste -sd, -)"   # refuse before .env changes
+    vpn_gen   # a toggle service enabled for the first time needs its overlay stanza before compose sees it
+    RENDERED_JSON=""; require_free_ports "$(echo "$sel" | paste -sd, -)"   # refuse before .env changes
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     require_mounts; provision >/dev/null   # users/dirs for the new services
     traefik_ensure   # wizard + config gen if traefik just came into the set
@@ -3024,7 +3025,12 @@ vpn_rname() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik rou
 vpn_onoff() { [[ "$1" == true ]] && echo "on" || echo "off"; }   # membership -> on/off
 
 vpn_base_json() {   # base compose ONLY — never include the overlay (no self-reference)
-    sudo docker compose --project-directory "$SCRIPT_DIR" -f docker-compose.yml \
+    # The user's override IS base: a toggle-enabled service scaffolded there
+    # must be seen, or vpn_gen never generates its network/port/route. An
+    # explicit -f disables compose's automatic override merge, so pass it.
+    local files=(-f docker-compose.yml)
+    [[ -e docker-compose.override.yml ]] && files+=(-f docker-compose.override.yml)
+    sudo docker compose --project-directory "$SCRIPT_DIR" "${files[@]}" \
         --profile "*" config --format json 2>/dev/null
 }
 
