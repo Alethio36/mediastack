@@ -39,8 +39,7 @@ frontdoor_teardown() {
 frontdoor_status_json() {
     render
     local s cn st h glyph cls
-    for s in $(svc_managed); do
-        svc_enabled "$s" || continue
+    for s in $(svc_enabled_managed); do
         cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
         case "$st" in
             running) case "$h" in healthy|-) glyph="✅"; cls="ms-up" ;; *) glyph="⚠️"; cls="ms-warn" ;; esac ;;
