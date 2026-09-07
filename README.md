@@ -75,6 +75,7 @@ explanation.
 | jellyfin | the media server your users watch |
 | meilisearch + jellysearch | instant, typo-tolerant Jellyfin search |
 | traefik | HTTPS edge: hostnames + certificates for every UI |
+| npm | Nginx Proxy Manager — GUI reverse proxy, the alternative edge (shipped, not wired: add hosts in its UI) |
 | seerr | request/discovery site for your users |
 | bazarr | subtitle automation |
 | wizarr | invitation links — "set up my account" becomes a URL |

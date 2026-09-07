@@ -1,0 +1,50 @@
+# NPM (Nginx Proxy Manager): a point-and-click reverse proxy with its own
+# certificate handling — the alternative to Traefik for people who want a
+# GUI, don't have a Cloudflare-hosted domain, or already know NPM.
+#
+# Shipped, not wired: the stack does not generate NPM's proxy hosts (Traefik's
+# routes come from the fragments' labels; NPM's live in its own database).
+# Add hosts in its UI at http://<host>:81 (default login in NPM's docs).
+# It publishes 80/443 like Traefik does, so enabling both is refused by the
+# host-port collision gate — pick one edge.
+# Runs as root by image design (no PUID/PGID): doctor expects that.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  npm:
+    image: jc21/nginx-proxy-manager:latest
+    container_name: ${NPM_NAME:-mediastack-npm}
+    profiles: ["npm"]
+    environment:
+      - TZ=${TZ}
+    ports:
+      - "${NPM_HTTP_PORT:-80}:80"
+      - "${NPM_HTTPS_PORT:-443}:443"
+      - "${NPM_ADMIN_PORT:-81}:81"
+    volumes:
+      - ${CONFIG_ROOT}/npm/data:/data
+      - ${CONFIG_ROOT}/npm/letsencrypt:/etc/letsencrypt
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.port: "81"
+      mediastack.desc: "GUI reverse proxy + certificates (alternative to traefik)"
+      mediastack.vpn: "false"
+      mediastack.config: "true"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:81/api"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped
