@@ -1,0 +1,15 @@
+# test-render.sh fixture: one toggle-model service the way new-service
+# scaffolds it (metadata labels only; vpn_gen generates network/port/route)
+services:
+  hello:
+    image: nginx:alpine
+    container_name: mediastack-hello
+    profiles: ["hello"]
+    labels:
+      mediastack.managed: "true"
+      mediastack.port: "80"
+      mediastack.desc: "render-test toggle service"
+      mediastack.vpn: "false"
+      mediastack.vpntoggle: "true"
+      mediastack.subdomain: "hello"
+    restart: unless-stopped

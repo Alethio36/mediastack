@@ -6,7 +6,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: shellcheck
-        run: shellcheck -S warning -x mediastack.sh lib/*.sh
+        run: shellcheck -S warning -x mediastack.sh lib/*.sh scripts/*.sh
       - name: front-door safety audit
         run: bash scripts/audit-frontdoor-safety.sh
       - name: no placeholder host literals
@@ -22,10 +22,10 @@ jobs:
             grep -qE "\`$v( |\`)" README.md || { echo "::error::verb '$v' is in the registry but not mentioned in README.md"; rc=1; }
           done
           exit $rc
-      - name: compose renders
-        run: |
-          cp .env.example .env
-          docker compose --profile "*" config -q
+      - name: dispatch contracts (scripts/test-dispatch.sh)
+        run: scripts/test-dispatch.sh
+      - name: compose renders across the override lifecycle (scripts/test-render.sh)
+        run: scripts/test-render.sh
       - name: schema bump enforced
         if: github.event_name == 'pull_request'
         run: |
