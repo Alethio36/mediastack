@@ -18,6 +18,11 @@ WIRE_FAILS=0
 # jellyfin precedes both. To add an integration: append its role here and define
 # a matching wire_<role> function below.
 WIRE_ROLES=(qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr)
+# roles that write without observing (one big settings blob / blind writeCFG):
+# their dry-run always says "would", so --verify cannot read drift from them
+WIRE_BLIND=(bazarr lazylibrarian seerr)
+WIRE_VERIFY=0
+wire_is_blind() { local r; for r in "${WIRE_BLIND[@]}"; do [[ "$1" == "$r" ]] && return 0; done; return 1; }
 wfail() { fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); }
 
 w_would() { # w_would "description" -> 0 if execution should proceed
@@ -1326,20 +1331,27 @@ Paste nothing to skip for now — re-run 'wire wizarr' any time."
     fi
 }
 
-wire_usage() { local IFS='|'; die "usage: wire [${WIRE_ROLES[*]}] [--dry-run]"; }
+wire_usage() { local IFS='|'; die "usage: wire [${WIRE_ROLES[*]}] [--dry-run|--verify]"; }
 
 cmd_wire() {
     load_env; render
     local section="all"
     while [[ $# -gt 0 ]]; do case "$1" in
         --dry-run) WIRE_DRY=1; shift ;;
+        --verify)  WIRE_DRY=1; WIRE_VERIFY=1; shift ;;
         all) section="all"; shift ;;
         *)  local r matched=""
             for r in "${WIRE_ROLES[@]}"; do [[ "$1" == "$r" ]] && { matched=1; break; }; done
             [[ -n "$matched" ]] || wire_usage
             section="$1"; shift ;;
     esac; done
-    (( WIRE_DRY )) && hr "wire --dry-run: showing changes, touching nothing"
+    if (( WIRE_VERIFY )); then
+        hr "wire --verify: checking for drift, touching nothing"
+        [[ "$section" != all ]] && wire_is_blind "$section" \
+            && die "wire --verify: '$section' writes without observing, so drift cannot be read from it (see WIRE_BLIND)"
+    elif (( WIRE_DRY )); then
+        hr "wire --dry-run: showing changes, touching nothing"
+    fi
     if (( ! WIRE_DRY )) && [[ ! -f "$SCRIPT_DIR/.wired" ]]; then
         if confirm "First wire on this deployment — take a restore point first? (recommended)"; then
             cmd_backup
@@ -1366,14 +1378,25 @@ cmd_wire() {
     # dispatch by the WIRE_ROLES registry: `all` runs every role in order,
     # a section runs its one wire_<role>. Both resolve the function by name,
     # so there is no second list to keep in sync with the one above.
-    local role
+    local role skipped=""
     if [[ "$section" == all ]]; then
-        for role in "${WIRE_ROLES[@]}"; do "wire_$role"; done
+        for role in "${WIRE_ROLES[@]}"; do
+            if (( WIRE_VERIFY )) && wire_is_blind "$role"; then skipped+="$role "; continue; fi
+            "wire_$role"
+        done
     else
         "wire_$section"
     fi
     echo
-    if (( WIRE_DRY )); then
+    if (( WIRE_VERIFY )); then
+        [[ -n "$skipped" ]] && info "not verifiable (write blind, skipped): ${skipped% }"
+        if (( WIRE_FAILS )); then
+            fail "wire --verify: $WIRE_FAILS check(s) could not run — see the FAIL lines above"; exit 1
+        elif (( WIRE_CHANGES )); then
+            fail "wire --verify: $WIRE_CHANGES drift item(s) — see the would: lines above. Apply: ./mediastack.sh wire"; exit 1
+        fi
+        ok "wire --verify: no drift"
+    elif (( WIRE_DRY )); then
         info "dry-run complete: $WIRE_CHANGES change(s) would be applied. Run without --dry-run to apply."
         info "note: items marked as pending on credentials resolve mid-run — the real run creates them in order."
     else

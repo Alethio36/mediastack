@@ -286,7 +286,8 @@ Connect
   wire           Connect the apps to each other — credentials, folders,
                  download clients, notifications, first-run setup.
                  Idempotent: re-run any time; anything you configured in a
-                 GUI is never overwritten.
+                 GUI is never overwritten. --dry-run previews; --verify
+                 previews and exits 1 on drift (for scripts and cron).
                  One app only: wire <qbit|arr|prowlarr|bazarr|apprise|
                  cleanuparr|lazylibrarian|jellyfin|seerr|wizarr>. Preview: wire --dry-run.
   invite         Mint a Wizarr invitation and print the ready-to-share URL.
