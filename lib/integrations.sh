@@ -144,8 +144,7 @@ wire_gate() { # refuse to wire what isn't up
 # shellcheck disable=SC2120  # type argument is optional by design
 arr_instances() { # arr_instances [type] -> enabled arr services (optionally by type)
     local s t
-    for s in $(svc_managed); do
-        svc_enabled "$s" || continue
+    for s in $(svc_enabled_managed); do
         t=$(svc_label "$s" mediastack.arrtype)
         [[ -n "$t" ]] || continue
         [[ -z "${1:-}" || "$t" == "$1" ]] || continue
