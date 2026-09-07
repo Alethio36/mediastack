@@ -40,7 +40,9 @@ cmd_backup() {
     local rc=0
     for s in $(svc_managed_where mediastack.config true); do
         [[ -d "$croot/$s" ]] || continue
-        sudo tar -C "$croot" -czf "$dest/$s.tar.gz" "$s" || { fail "tar failed for $s"; rc=1; }
+        # jellyfin's default transcode dir is inside /config; in-flight or
+        # orphaned HLS segments are not config (wire moves them to /cache)
+        sudo tar -C "$croot" --exclude="$s/data/transcodes" -czf "$dest/$s.tar.gz" "$s" || { fail "tar failed for $s"; rc=1; }
     done
     sudo cp "$ENV_FILE" "$dest/env"; sudo chmod 600 "$dest/env"
     [[ -s "$PINS_FILE" ]] && sudo cp "$PINS_FILE" "$dest/pins.yml"
