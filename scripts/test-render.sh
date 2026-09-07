@@ -24,7 +24,6 @@ git -C "$repo" ls-files -z | (cd "$repo" && xargs -0 cp --parents -t "$work")
 cd "$work"
 cp .env.example .env
 
-fail() { echo "ERROR $*" >&2; exit 1; }
 renders() { # renders <label> -> 0 if the full profile set renders
     local err; err=$(mktemp)
     if sudo docker compose --project-directory "$work" \
@@ -40,33 +39,35 @@ lib=$(mktemp .test-render.XXXXXX)
 sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"; rm -f "$lib"
+# defined AFTER the source: the entrypoint has its own fail() that only prints
+t_fail() { echo "ERROR $*" >&2; exit 1; }
 
 echo ":: 1. fresh .env.example"
 vpn_gen
-[[ -s local/vpn-overlay.yml ]] || fail "vpn_gen wrote no overlay"
-renders "" || fail "base config does not render"
+[[ -s local/vpn-overlay.yml ]] || t_fail "vpn_gen wrote no overlay"
+renders "" || t_fail "base config does not render"
 cp local/vpn-overlay.yml "$work/overlay.first"
 vpn_gen
-cmp -s local/vpn-overlay.yml "$work/overlay.first" || fail "vpn_gen is not byte-stable for identical inputs"
+cmp -s local/vpn-overlay.yml "$work/overlay.first" || t_fail "vpn_gen is not byte-stable for identical inputs"
 echo "OK base renders; overlay byte-stable ($(grep -c '^  [a-z0-9-]*:$' local/vpn-overlay.yml) stanzas)"
 
 echo ":: 2. toggle service added in docker-compose.override.yml"
 cp "$repo/scripts/fixtures/toggle-service.override.yml" docker-compose.override.yml
 vpn_gen
-grep -q '^  hello:$' local/vpn-overlay.yml || fail "overlay has no stanza for the override service"
-renders docker-compose.override.yml || fail "config with the override service does not render"
+grep -q '^  hello:$' local/vpn-overlay.yml || t_fail "overlay has no stanza for the override service"
+renders docker-compose.override.yml || t_fail "config with the override service does not render"
 echo "OK override service seen by vpn_gen and renders"
 
 echo ":: 3. override removed, overlay stale"
 rm docker-compose.override.yml
 if renders "" 2>/dev/null; then
-    fail "a stale overlay stanza rendered — this test no longer proves the up-order regen matters"
+    t_fail "a stale overlay stanza rendered — this test no longer proves the up-order regen matters"
 fi
 echo "OK stale overlay breaks the render (as expected)"
 
 echo ":: 4. vpn_gen before render (the up order)"
 vpn_gen
-grep -q '^  hello:$' local/vpn-overlay.yml && fail "overlay still carries the removed service"
-renders "" || fail "config does not render after vpn_gen"
-cmp -s local/vpn-overlay.yml "$work/overlay.first" || fail "overlay differs from the original after add+remove"
+grep -q '^  hello:$' local/vpn-overlay.yml && t_fail "overlay still carries the removed service"
+renders "" || t_fail "config does not render after vpn_gen"
+cmp -s local/vpn-overlay.yml "$work/overlay.first" || t_fail "overlay differs from the original after add+remove"
 echo "OK render: overlay regenerated, config renders, identical to step 1"
