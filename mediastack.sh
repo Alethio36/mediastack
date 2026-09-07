@@ -1874,21 +1874,19 @@ _doctor_runtime_audit() {
 
 }
 
+# doctor runs these in order; adding a section = append here + define
+# _doctor_<name>. Mirrors WIRE_ROLES: one registry, no second list to sync.
+DOCTOR_SECTIONS=(environment containers permissions resources storage neighbours vpn_backups apps runtime_audit)
+
 cmd_doctor() {
     load_env; need_cmd jq; render
     # Sections are report-only: real problems are counted in D_FAILS, never
     # signalled by exit code. Under `set -e` a section whose last command is a
     # false `[[ ]] && warn` returns non-zero and would abort the whole audit at
-    # the bare call, so every section is invoked non-fatally.
-    _doctor_environment   || true
-    _doctor_containers    || true
-    _doctor_permissions   || true
-    _doctor_resources     || true
-    _doctor_storage       || true
-    _doctor_neighbours    || true
-    _doctor_vpn_backups   || true
-    _doctor_apps          || true
-    _doctor_runtime_audit || true
+    # a bare call, so the loop invokes every section non-fatally — in one
+    # place, so a new section cannot forget it.
+    local sec
+    for sec in "${DOCTOR_SECTIONS[@]}"; do "_doctor_$sec" || true; done
     echo
     if (( D_FAILS )); then
         fail "doctor: $D_FAILS problem(s) — fixes listed above."
