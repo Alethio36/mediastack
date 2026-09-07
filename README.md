@@ -200,6 +200,12 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
   and `leak-test` proves the chain. Membership is operator-selectable with the
   `vpn` command and audited by the tooling — see
   [docs/vpn-membership.md](docs/vpn-membership.md).
+* **Host ports are yours to move, and never collide.** Every service's
+  host port is `<SVC>_PORT` in `.env` (default: its container port); the
+  status table, `wire`, `doctor` and the readiness gates all follow the
+  override. `up` and `enable` refuse to proceed when two enabled services
+  would publish the same host port, naming both — you fix it in `.env`
+  instead of docker failing halfway through a start.
 * **One wildcard certificate, nothing exposed.** HTTPS via Let's Encrypt
   DNS-01: the hostnames point at your LAN, no ports are forwarded, and a
   staging mode exists so testing never hits production rate limits
