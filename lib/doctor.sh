@@ -154,10 +154,24 @@ _doctor_permissions() {
 _doctor_resources() {
     hr "doctor: host resources"
     local croot; croot=$(env_get CONFIG_ROOT)
-    df -h "$croot" "$(env_get DATA_ROOT)" 2>/dev/null | tail -n +2 | sort -u | while read -r line; do
+    df -h "$croot" "$(env_get DATA_ROOT)" "$(env_get CACHE_ROOT)" 2>/dev/null | tail -n +2 | sort -u | while read -r line; do
         local pct; pct=$(awk '{print $5}' <<<"$line" | tr -d %)
         (( pct >= 90 )) && warn "disk >90%: $line" || ok "disk: $line"
     done
+    # transcodes on the config volume: Jellyfin's default until `wire jellyfin`
+    # points it at /cache; a session that died leaves its segments behind
+    local jt="$croot/jellyfin/data/transcodes" jmb
+    if sudo test -d "$jt"; then
+        jmb=$(sudo du -sm "$jt" 2>/dev/null | cut -f1)
+        [[ -n "$jmb" ]] || jmb=UNKNOWN
+        if [[ "$jmb" == UNKNOWN ]]; then
+            warn "jellyfin transcodes: could not size $jt"
+        elif (( jmb >= 1024 )); then
+            warn "jellyfin: ${jmb}MB of transcode segments on the CONFIG volume ($jt) — './mediastack.sh wire jellyfin' moves transcodes to CACHE_ROOT; segments from a dead session clear when jellyfin restarts"
+        else
+            ok "jellyfin transcodes on the config volume: ${jmb}MB"
+        fi
+    fi
     local memfree l1 l5 l15 cores
     memfree=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo)
     read -r l1 l5 l15 _ < /proc/loadavg; cores=$(nproc)
