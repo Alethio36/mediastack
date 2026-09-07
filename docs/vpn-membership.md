@@ -2,7 +2,11 @@
 
 Which services run inside the VPN is an operator choice, changed with the
 `vpn` command. No fragment editing and no compose overrides: membership is
-generated into `local/vpn-overlay.yml` and applied on the next `up`.
+generated into `local/vpn-overlay.yml` and applied on the next `up`. Your
+own services get the same treatment: `new-service` writes them on the
+toggle model, so `vpn <name> on|off` works for them from day one. (Removing
+one of yours: delete its block, then `up` — the overlay is regenerated
+before anything renders; see docs/adding-a-service.md.)
 
 Two views show membership: `./mediastack.sh vpn` (this listing, with the
 recommended setting per service) and `./mediastack.sh status` (its `VPN`
