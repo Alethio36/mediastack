@@ -191,7 +191,24 @@ render() { # cache rendered config as json for discovery
 
 svc_all()      { render; jq -r '.services | keys[]' <<<"$RENDERED_JSON"; }
 svc_label()    { render; jq -r --arg s "$1" --arg l "$2" '.services[$s].labels[$l] // ""' <<<"$RENDERED_JSON"; }
-svc_managed()  { local s; for s in $(svc_all); do [[ $(svc_label "$s" mediastack.managed) == "true" ]] || continue; echo "$s"; done; }
+svc_managed()  { svc_managed_where mediastack.managed true; }
+svc_managed_where() { # svc_managed_where LABEL VALUE — managed services whose LABEL == VALUE, one jq
+    render
+    jq -r --arg l "$1" --arg v "$2" '
+        [ .services | to_entries[]
+          | select(.value.labels["mediastack.managed"] == "true" and .value.labels[$l] == $v)
+          | .key ] | sort[]' <<<"$RENDERED_JSON"
+}
+svc_enabled_managed()  { _svc_managed_by_profile true; }
+svc_disabled_managed() { _svc_managed_by_profile false; }
+_svc_managed_by_profile() { # one env read + one jq, same test as svc_enabled per service
+    render
+    local profiles; profiles=",$(env_get COMPOSE_PROFILES),"
+    jq -r --arg p "$profiles" --argjson want "$1" '
+        [ .services | to_entries[]
+          | select(.value.labels["mediastack.managed"] == "true")
+          | .key as $k | select(($p | contains("," + $k + ",")) == $want) | $k ] | sort[]' <<<"$RENDERED_JSON"
+}
 svc_exists()   { svc_all | grep -qx "$1"; }
 svc_image()    { render; jq -r --arg s "$1" '.services[$s].image' <<<"$RENDERED_JSON"; }
 svc_cname()    { render; jq -r --arg s "$1" '.services[$s].container_name // $s' <<<"$RENDERED_JSON"; }
@@ -721,8 +738,7 @@ provision() {
     getent group mediacenter >/dev/null || { sudo groupadd -g "$gid" mediacenter; ok "group mediacenter ($gid)"; }
     local s v uid croot droot cache
     croot=$(env_get CONFIG_ROOT); droot=$(env_get DATA_ROOT); cache=$(env_get CACHE_ROOT)
-    for s in $(svc_managed); do
-        svc_enabled "$s" || continue
+    for s in $(svc_enabled_managed); do
         v="$(uvar "$s")_UID"; uid=$(env_get "$v")
         if [[ -n "$uid" ]] && ! getent passwd "$s" >/dev/null; then
             # no -r: it only warns about our (deliberate) high UIDs; with an
@@ -767,8 +783,7 @@ provision() {
     done
     # per-instance data dirs from the label contract
     local dd
-    for s in $(svc_managed); do
-        svc_enabled "$s" || continue
+    for s in $(svc_enabled_managed); do
         for dd in $(svc_label "$s" mediastack.datadirs); do
             sudo mkdir -p "$droot/$dd"
             sudo chown ":mediacenter" "$droot/$dd"
@@ -811,8 +826,7 @@ reconcile_disabled() {
     # Remove them explicitly. -v drops their anonymous volumes too.
     render
     local s cn
-    for s in $(svc_managed); do
-        svc_enabled "$s" && continue
+    for s in $(svc_disabled_managed); do
         cn=$(svc_cname "$s")
         if [[ $(c_state "$cn") != absent ]]; then
             sudo docker rm -f -v "$cn" >/dev/null
@@ -1028,8 +1042,8 @@ cmd_list() {
     case "$subset" in
         all)        names=$(svc_all | sort) ;;
         managed)    names=$(svc_managed | sort) ;;
-        enabled)    names=$(local s; for s in $(svc_managed); do svc_enabled "$s" && echo "$s" || true; done | sort) ;;
-        disabled)   names=$(local s; for s in $(svc_managed); do svc_enabled "$s" || echo "$s"; done | sort) ;;
+        enabled)    names=$(svc_enabled_managed) ;;
+        disabled)   names=$(svc_disabled_managed) ;;
         vpntoggle)  render; names=$(jq -r '.services | to_entries[]
                         | select(.value.labels["mediastack.vpntoggle"]=="true") | .key' \
                         <<<"$RENDERED_JSON" | sort) ;;
@@ -1056,8 +1070,7 @@ cmd_status() {
     printf "%-14s %-5s %-5s %-9s %-10s %-12s %-8s %-9s %s\n" SERVICE PORT VPN STATE HEALTH VERSION PINNED UPTIME URL
     local s cn pin vpn port rec bvpn
     bvpn=$(vpn_base_json)   # base (pre-overlay) labels = recommended VPN settings
-    for s in $(svc_managed); do
-        svc_enabled "$s" || continue
+    for s in $(svc_enabled_managed); do
         cn=$(svc_cname "$s")
         pin=no; [[ -s "$PINS_FILE" ]] && grep -q "^  $s:" "$PINS_FILE" && pin="${C_YLW}yes${C_RST}"
         vpn=off; [[ $(svc_label "$s" mediastack.vpn) == "true" ]] && vpn=on
@@ -1074,7 +1087,7 @@ cmd_status() {
     echo
     info "VPN: on = via the tunnel, off = direct, self = the tunnel itself · * = changed from recommended · change: ./mediastack.sh vpn"
     local off="" p
-    for p in $(svc_managed); do svc_enabled "$p" || off+="$p "; done
+    for p in $(svc_disabled_managed); do off+="$p "; done
     [[ -n "$off" ]] && info "Available, not enabled: $off"
     local last; last=$(ls -1 "$(env_get BACKUP_ROOT)" 2>/dev/null | tail -1 || true)
     info "Latest restore point: ${last:-none yet (run: ./mediastack.sh backup)}"
@@ -1130,8 +1143,8 @@ cmd_backup() {
     info "Stopping stack for a consistent snapshot... (all services briefly stop; ~20-40s)"
     DC stop >/dev/null
     local rc=0
-    for s in $(svc_managed); do
-        [[ $(svc_label "$s" mediastack.config) == "true" && -d "$croot/$s" ]] || continue
+    for s in $(svc_managed_where mediastack.config true); do
+        [[ -d "$croot/$s" ]] || continue
         sudo tar -C "$croot" -czf "$dest/$s.tar.gz" "$s" || { fail "tar failed for $s"; rc=1; }
     done
     sudo cp "$ENV_FILE" "$dest/env"; sudo chmod 600 "$dest/env"
@@ -1326,8 +1339,7 @@ cmd_update() {
     # build target list honouring toggles + pins
     [[ -n "$one" ]] && ! svc_enabled "$one" && die "'$one' is not enabled — enable it first or skip it."
     local targets=() s
-    for s in $(svc_managed); do
-        svc_enabled "$s" || continue
+    for s in $(svc_enabled_managed); do
         [[ -n "$one" && "$s" != "$one" ]] && continue
         [[ -z "$one" ]] && { [[ "$(env_get "$(uvar "$s")_UPDATE" true)" == true ]] || continue; }
         [[ -s "$PINS_FILE" ]] && grep -q "^  $s:" "$PINS_FILE" && [[ -z "$to_tag" ]] \
@@ -1624,8 +1636,7 @@ _doctor_permissions() {
     croot=$(env_get CONFIG_ROOT); gid=$(env_get MEDIA_GROUP_GID)
     # path segments whose ownership is cosmetic (regenerable, non-config)
     local ephemeral_re='/(cache|cache-long|logs?|te?mp|[Bb]ackups?)(/|$)'
-    for s in $(svc_managed); do
-        [[ $(svc_label "$s" mediastack.config) == "true" ]] || continue
+    for s in $(svc_managed_where mediastack.config true); do
         v="$(uvar "$s")_UID"; uid=$(env_get "$v"); [[ -n "$uid" && -d "$croot/$s" ]] || continue
 
         # Ownership audit, tiered: split drift into config vs ephemeral.
@@ -1759,8 +1770,7 @@ _doctor_vpn_backups() {
     if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
         local dgid dnm dbad="" dchecked=0
         dgid=$(sudo docker inspect --format '{{.Id}}' "$(svc_cname gluetun)" | tr -d '\n')
-        for s in $(svc_managed); do
-            [[ $(svc_label "$s" mediastack.vpn) == "true" ]] || continue
+        for s in $(svc_managed_where mediastack.vpn true); do
             svc_enabled "$s" || continue
             [[ $(c_state "$(svc_cname "$s")") == running ]] || continue
             dnm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$(svc_cname "$s")" | tr -d '\n')
@@ -1854,8 +1864,7 @@ _doctor_runtime_audit() {
     hr "doctor: runtime audit"
     # per-service error volume, last 24h — noisy logs surface real problems
     local noisy=0 cnt
-    for s in $(svc_managed); do
-        svc_enabled "$s" || continue
+    for s in $(svc_enabled_managed); do
         cn=$(svc_cname "$s")
         [[ "$(c_state "$cn")" == running ]] || continue
         cnt=$(sudo docker logs --since 24h "$cn" 2>&1 | grep -ciE '\b(error|fatal)\b' || true)
@@ -1868,8 +1877,7 @@ _doctor_runtime_audit() {
     # effective UID: the process must actually run as the UID .env assigns —
     # PUID images silently ignore bad values, this catches that
     local expect uids drift=0
-    for s in $(svc_managed); do
-        svc_enabled "$s" || continue
+    for s in $(svc_enabled_managed); do
         cn=$(svc_cname "$s")
         [[ "$(c_state "$cn")" == running ]] || continue
         expect=$(env_get "$(uvar "$s")_UID")
@@ -1944,8 +1952,7 @@ cmd_leak_test() {
     # container:<id> joins atomically — matching gluetun's full ID is proof.
     local gid rc=0 s cn nm
     gid=$(sudo docker inspect --format '{{.Id}}' "$gcn" | tr -d '\n')
-    for s in $(svc_managed); do
-        [[ $(svc_label "$s" mediastack.vpn) == "true" ]] || continue
+    for s in $(svc_managed_where mediastack.vpn true); do
         svc_enabled "$s" || continue
         cn=$(svc_cname "$s"); [[ "$(c_state "$cn")" == running ]] || { info "$s not running — skipped"; continue; }
         nm=$(sudo docker inspect --format '{{.HostConfig.NetworkMode}}' "$cn" | tr -d '\n')
@@ -2015,16 +2022,14 @@ cmd_leak_test() {
         sudo docker start "$gcn" >/dev/null
         local t=0; while [[ $(c_health "$gcn") != healthy && $t -lt 90 ]]; do sleep 3; t=$((t+3)); done
         local rs
-        for rs in $(svc_managed); do
-            [[ $(svc_label "$rs" mediastack.vpn) == "true" ]] || continue
+        for rs in $(svc_managed_where mediastack.vpn true); do
             svc_enabled "$rs" || continue
             sudo docker restart "$(svc_cname "$rs")" >/dev/null && info "  rejoined: $rs"
         done
     fi
 
     hr "leak-test: host port sweep"
-    for s in $(svc_managed); do
-        [[ $(svc_label "$s" mediastack.vpn) == "true" ]] || continue
+    for s in $(svc_managed_where mediastack.vpn true); do
         render
         jq -e --arg s "$s" '.services[$s].ports // [] | length == 0' <<<"$RENDERED_JSON" >/dev/null \
             && ok "$s publishes no ports of its own" \
