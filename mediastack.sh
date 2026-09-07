@@ -182,7 +182,9 @@ render() { # cache rendered config as json for discovery
         echo "${C_RED}compose said:${C_RST}" >&2
         sed 's/^/  /' "$rerr" >&2; rm -f "$rerr"
         die "docker compose could not render the config (see compose's message above).
-  Needs compose >= 2.24 ('include:' + wildcard profiles); check .env syntax."
+  Needs compose >= 2.24 ('include:' + wildcard profiles); check .env syntax.
+  Just removed a service from docker-compose.override.yml? Its generated
+  stanza is stale: ./mediastack.sh up regenerates local/vpn-overlay.yml."
     fi
     rm -f "$rerr"
 }
@@ -959,9 +961,15 @@ $(sed 's/^/  /' <<<"$found")
 }
 
 cmd_up()   {
-    load_env; require_mounts; reconcile_disabled
-    vpn_gen   # materialise per-service VPN membership before compose renders
-    RENDERED_JSON=""; require_free_ports   # overlay may have changed since reconcile_disabled rendered
+    load_env
+    # vpn_gen FIRST: it reads base + override only, never the overlay, so it
+    # always succeeds — and it must run before anything renders, because a
+    # stale overlay (a stanza for a service since removed from the override)
+    # makes every render fail. Regenerating it here is what makes
+    # "disable, delete its block, up" the whole removal procedure.
+    vpn_gen
+    require_mounts; reconcile_disabled
+    require_free_ports
     traefik_ensure
     if ! DC up -d --remove-orphans; then
         warn "First start attempt failed — usually gluetun's health race after a recreate."
