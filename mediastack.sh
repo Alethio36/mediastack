@@ -970,7 +970,8 @@ cmd_logs() {
     for a in "$@"; do
         case "$a" in
             --no-follow) follow=() ;;
-            *)           svc="$a" ;;
+            -*)          die "unknown option '$a' (usage: logs <service> [--no-follow])" ;;
+            *)           [[ -z "$svc" ]] || die "logs takes one service (got '$svc' and '$a')"; svc="$a" ;;
         esac
     done
     [[ -n "$svc" ]] || die "usage: logs <service> [--no-follow]"
@@ -1289,8 +1290,9 @@ cmd_update() {
         --dry-run) dry=1; shift ;;
         --now) now=1; shift ;;
         --auto) auto=1; shift ;;
-        --to) to_tag="$2"; shift 2 ;;
-        *) one="$1"; shift ;;
+        --to) [[ -n "${2:-}" ]] || die "--to needs a tag (usage: update <svc> --to <tag>)"; to_tag="$2"; shift 2 ;;
+        -*) die "unknown option '$1' (usage: update [svc] [--dry-run] [--now] [--auto] [--to TAG])" ;;
+        *) [[ -z "$one" ]] || die "update takes one service (got '$one' and '$1')"; one="$1"; shift ;;
     esac; done
     [[ -n "$to_tag" && -z "$one" ]] && die "--to requires a service: update <svc> --to <tag>"
     [[ -n "$one" ]] && { svc_exists "$one" || die "No service '$one'."; }
@@ -2482,44 +2484,58 @@ EOF
 
 # -------------------------------------------------------------- dispatcher --
 
+# ---- argument discipline ----
+# Every verb declares what it accepts; anything else is rejected before it
+# runs, so a typo or an unsupported flag never silently falls through to the
+# default behaviour (e.g. 'trash-sync --dry-run' once ran a real sync).
+CMD=""
+args_none()  { (( $# == 0 )) || die "'$CMD' takes no arguments (got: $*)"; }
+args_max()   { local n="$1"; shift; (( $# <= n )) || die "'$CMD' takes at most $n argument(s) (got: $*)"; }
+args_allow() { # args_allow "<space-separated allowed args>" "$@" — anything else is rejected
+    local allowed="$1" a; shift
+    for a in "$@"; do [[ " $allowed " == *" $a "* ]] || die "unknown argument '$a' for '$CMD' (accepts: ${allowed:-nothing})"; done
+    return 0
+}
+
 main() {
     local cmd="${1:-help}"; shift || true
+    CMD="$cmd"
     case "$cmd" in
         help|-h|--help) cmd_help ;;
-        menu)         cmd_menu ;;
-        install)      cmd_install ;;
-        configure)    cmd_configure ;;
-        up)           cmd_up ;;
-        down)         cmd_down ;;
-        enable)       cmd_enable "$@" ;;
-        disable)      cmd_disable "$@" ;;
-        status)       cmd_status "$@" ;;
+        menu)         args_none "$@"; cmd_menu ;;
+        install)      args_none "$@"; cmd_install ;;
+        configure)    args_none "$@"; cmd_configure ;;
+        up)           args_none "$@"; cmd_up ;;
+        down)         args_none "$@"; cmd_down ;;
+        enable)       args_max 1 "$@"; cmd_enable "$@" ;;
+        disable)      args_max 1 "$@"; cmd_disable "$@" ;;
+        status)       args_max 1 "$@"; cmd_status "$@" ;;
         list)         cmd_list "$@" ;;
         logs)         cmd_logs "$@" ;;
         update)       cmd_update "$@" ;;
-        apply-timer)  cmd_apply_timer ;;
-        vpn-guard)    cmd_vpn_guard "$@" ;;
-        backup)       if [[ "${1:-}" == verify ]]; then shift; cmd_backup_verify "$@"; else cmd_backup "$@"; fi ;;
+        apply-timer)  args_none "$@"; cmd_apply_timer ;;
+        vpn-guard)    args_allow "--boot" "$@"; cmd_vpn_guard "$@" ;;
+        backup)       if [[ "${1:-}" == verify ]]; then shift; args_max 1 "$@"; cmd_backup_verify "$@"; else args_none "$@"; cmd_backup; fi ;;
         restore)      cmd_restore "$@" ;;
-        rollback)     cmd_rollback "$@" ;;
-        unpin)        cmd_unpin "$@" ;;
-        doctor)       cmd_doctor ;;
-        leak-test)    cmd_leak_test "$@" ;;
-        vpn)          cmd_vpn "$@" ;;
-        vpn-apply)    cmd_vpn_apply "$@" ;;
-        fix-perms)    cmd_fix_perms "$@" ;;
-        add-mount)    cmd_add_mount ;;
+        rollback)     args_max 1 "$@"; cmd_rollback "$@" ;;
+        unpin)        args_max 1 "$@"; cmd_unpin "$@" ;;
+        doctor)       args_none "$@"; cmd_doctor ;;
+        leak-test)    args_allow "--killswitch" "$@"; cmd_leak_test "$@" ;;
+        vpn)          args_max 3 "$@"; cmd_vpn "$@" ;;
+        vpn-apply)    args_max 2 "$@"; cmd_vpn_apply "$@" ;;
+        fix-perms)    args_max 1 "$@"; cmd_fix_perms "$@" ;;
+        add-mount)    args_none "$@"; cmd_add_mount ;;
         wire)         cmd_wire "$@" ;;
         invite)       cmd_invite "$@" ;;
-        set-credentials) cmd_set_credentials "$@" ;;
-        credentials)  cmd_credentials ;;
-        trash-sync)   cmd_trash_sync "$@" ;;
-        traefik-setup) cmd_traefik_setup "$@" ;;
-        new-service)  cmd_new_service "$@" ;;
-        upgrade)      cmd_upgrade ;;
-        frontdoor-install) cmd_frontdoor_install "$@" ;;
-        frontdoor-refresh) cmd_frontdoor_refresh ;;
-        uninstall)    cmd_uninstall "$@" ;;
+        set-credentials) args_max 1 "$@"; cmd_set_credentials "$@" ;;
+        credentials)  args_none "$@"; cmd_credentials ;;
+        trash-sync)   args_none "$@"; cmd_trash_sync ;;
+        traefik-setup) args_allow "--hosts --certs" "$@"; args_max 1 "$@"; cmd_traefik_setup "$@" ;;
+        new-service)  args_max 1 "$@"; cmd_new_service "$@" ;;
+        upgrade)      args_none "$@"; cmd_upgrade ;;
+        frontdoor-install) args_allow "--set-password" "$@"; cmd_frontdoor_install "$@" ;;
+        frontdoor-refresh) args_none "$@"; cmd_frontdoor_refresh ;;
+        uninstall)    args_allow "--nuke" "$@"; cmd_uninstall "$@" ;;
         *) fail "Unknown command '$cmd'"; echo; cmd_help; exit 1 ;;
     esac
 }
@@ -2995,7 +3011,8 @@ cmd_vpn_apply() {
 cmd_vpn() {
     load_env
     local svc="${1:-}" act="${2:-}" iknow=0 a
-    for a in "$@"; do [[ "$a" == --i-know ]] && iknow=1; done
+    for a in "$@"; do case "$a" in --i-know) iknow=1 ;; -*) die "unknown option '$a' (usage: vpn [<svc> on|off] [--i-know])" ;; esac; done
+    [[ "$svc" == --i-know ]] && die "usage: vpn [<svc> on|off] [--i-know]"
     [[ -z "$svc" ]] && { vpn_list; return; }
     svc_exists "$svc" || die "vpn: no such service '$svc'"
     [[ $(svc_label "$svc" mediastack.vpntoggle) == "true" ]] \
