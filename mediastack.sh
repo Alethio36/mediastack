@@ -1028,7 +1028,7 @@ cmd_list() {
     case "$subset" in
         all)        names=$(svc_all | sort) ;;
         managed)    names=$(svc_managed | sort) ;;
-        enabled)    names=$(local s; for s in $(svc_managed); do svc_enabled "$s" && echo "$s"; done | sort) ;;
+        enabled)    names=$(local s; for s in $(svc_managed); do svc_enabled "$s" && echo "$s" || true; done | sort) ;;
         disabled)   names=$(local s; for s in $(svc_managed); do svc_enabled "$s" || echo "$s"; done | sort) ;;
         vpntoggle)  render; names=$(jq -r '.services | to_entries[]
                         | select(.value.labels["mediastack.vpntoggle"]=="true") | .key' \
