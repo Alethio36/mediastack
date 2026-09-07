@@ -193,6 +193,25 @@ svc_managed()  { local s; for s in $(svc_all); do [[ $(svc_label "$s" mediastack
 svc_exists()   { svc_all | grep -qx "$1"; }
 svc_image()    { render; jq -r --arg s "$1" '.services[$s].image' <<<"$RENDERED_JSON"; }
 svc_cname()    { render; jq -r --arg s "$1" '.services[$s].container_name // $s' <<<"$RENDERED_JSON"; }
+svc_port() { # host port a service is published on for its mediastack.port
+    # (the CONTAINER port). Read from the rendered config, so it honours every
+    # `${<SVC>_PORT:-…}` override — on the service itself, or on gluetun when
+    # the service shares gluetun's namespace. Empty when nothing publishes it
+    # (Traefik-only services); use svc_hostport where a host port is required.
+    render
+    local cport; cport=$(svc_label "$1" mediastack.port)
+    [[ -n "$cport" ]] || return 0
+    jq -r --arg s "$1" --argjson t "$cport" '
+        ((.services[$s].network_mode // "")
+         | if startswith("service:") then ltrimstr("service:") else $s end) as $pub
+        | [ .services[$pub].ports[]? | select(.target == $t and .protocol == "tcp") | .published ]
+        | first // ""' <<<"$RENDERED_JSON"
+}
+svc_hostport() { # svc_port, but a missing host port is an error (API callers)
+    local p; p=$(svc_port "$1")
+    [[ -n "$p" ]] || die "$1 publishes no host port for its mediastack.port label — unreachable from this host"
+    echo "$p"
+}
 uvar()         { echo "${1^^}" | tr '-' '_' | tr -cd 'A-Z0-9_'; } # service -> env var stem (radarr-4k -> RADARR_4K)
 svc_enabled()  { [[ ",$(env_get COMPOSE_PROFILES)," == *",$1,"* ]]; }
 svc_url() { # where a browser reaches the service, best effort
@@ -204,7 +223,7 @@ svc_url() { # where a browser reaches the service, best effort
     # without one, fall through to the host:port (or internal) form below rather
     # than printing a dead https://<sub>.unset
     if [[ -n "$sub" && -n "$domain" ]]; then echo "https://${sub}.${domain}"; return; fi
-    port=$(svc_label "$s" mediastack.port)
+    port=$(svc_port "$s")
     [[ -z "$port" ]] && { echo "-"; return; }
     [[ "$(svc_label "$s" mediastack.internal)" == "true" ]] \
         && echo "internal :${port}" \
@@ -1060,7 +1079,7 @@ cmd_status() {
             rec=$(vpn_onoff "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpn"]//"false"' <<<"$bvpn")")
             [[ "$vpn" == "$rec" ]] || vpn+="*"
         fi
-        port=$(svc_label "$s" mediastack.port); port=${port:--}
+        port=$(svc_port "$s"); port=${port:--}
         printf "%-14s %-5s %-5s %-9s %-10s %-12s %-8s %-9s %s\n" \
             "$s" "$port" "$vpn" "$(c_state "$cn")" "$(c_health "$cn")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")" "$(svc_url "$s")"
     done
@@ -1253,7 +1272,7 @@ cmd_rollback() { cmd_restore --service "${1:?usage: rollback <service>}"; }
 
 # ------------------------------------------------------------------ update --
 jellyfin_sessions_active() {
-    local key host; key=$(env_get JELLYFIN_API_KEY); host="http://127.0.0.1:$(env_get JELLYFIN_PORT 8096)"
+    local key host; key=$(env_get JELLYFIN_API_KEY); host=$(jf_url)
     [[ -n "$key" ]] || return 1
     local n
     n=$(curl -fsS --max-time 5 "$host/Sessions?api_key=$key" 2>/dev/null \
@@ -1797,7 +1816,7 @@ _doctor_apps() {
     hr "doctor: apps"
     if svc_enabled jellyfin && [[ "$(c_state "$(svc_cname jellyfin)")" == running ]]; then
         local jpub
-        jpub=$(curl -s -m 10 "http://127.0.0.1:$(svc_label jellyfin mediastack.port)/System/Info/Public" 2>/dev/null || true)
+        jpub=$(curl -s -m 10 "$(jf_url)/System/Info/Public" 2>/dev/null || true)
         case "$(jq -r '.StartupWizardCompleted' <<<"$jpub" 2>/dev/null)" in
             true)  ok "jellyfin first-run wizard completed" ;;
             false) d_fail "jellyfin first-run wizard NOT completed" "an unclaimed jellyfin lets any visitor create the admin account" "./mediastack.sh wire jellyfin" ;;
@@ -1806,7 +1825,7 @@ _doctor_apps() {
     fi
     if svc_enabled seerr && [[ "$(c_state "$(svc_cname seerr)")" == running ]]; then
         local spub
-        spub=$(curl -s -m 10 "http://127.0.0.1:$(svc_label seerr mediastack.port)/api/v1/settings/public" 2>/dev/null || true)
+        spub=$(curl -s -m 10 "$(seerr_url)/api/v1/settings/public" 2>/dev/null || true)
         case "$(jq -r '.initialized' <<<"$spub" 2>/dev/null)" in
             true)  ok "seerr initialised" ;;
             false) warn "seerr not initialised yet — run: ./mediastack.sh wire seerr" ;;
@@ -1820,7 +1839,7 @@ _doctor_apps() {
             warn "wizarr has no stored API key — invites need it: ./mediastack.sh wire wizarr"
         else
             wcode=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-API-Key: $wkey" \
-                    "http://127.0.0.1:$(svc_label wizarr mediastack.port)/api/invitations" 2>/dev/null || echo 000)
+                    "$(wizarr_url)/api/invitations" 2>/dev/null || echo 000)
             [[ "$wcode" =~ ^2 ]] && ok "wizarr API key works ('invite' is ready)" \
                 || d_fail "wizarr rejected the stored API key [HTTP $wcode]" "'invite' cannot mint links" "recreate the key in wizarr's Settings -> API Keys, then: ./mediastack.sh wire wizarr"
         fi
@@ -2418,7 +2437,7 @@ cmd_invite() { # mint a wizarr invitation and print the ready-to-share URL
     [[ -n "$url" ]] || die "invitation created but no URL in the reply: $(head -c300 <<<"$out")"
     host=$(env_get WIZARR_HOST invites); domain=$(env_get TRAEFIK_DOMAIN)
     if [[ -n "$domain" ]]; then base="https://$host.$domain"
-    else base="http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_label wizarr mediastack.port)"; fi
+    else base="http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_hostport wizarr)"; fi
     exp_line="never expires"
     [[ -n "$expires" ]] && exp_line="expires in $expires day(s)"
     hr "Invitation ready"
