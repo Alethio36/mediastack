@@ -67,6 +67,20 @@ service's port counts against gluetun, which publishes it), naming both;
 `doctor` reports the same finding. Fix by setting `<SVC>_PORT=<free port>` in
 `.env` for one of them.
 
+## Removing your service
+
+```
+./mediastack.sh disable myapp          # stops and removes its container
+# delete its block from docker-compose.override.yml (remove the file if it was the only one)
+sed -i '/^MYAPP_/d' .env               # its UID/UPDATE/PORT/VPN/HOST variables
+sudo rm -rf config/myapp               # its settings, if you're sure
+./mediastack.sh up                     # regenerates local/vpn-overlay.yml without it
+```
+
+`up` must be the step that follows the deletion: the generated overlay still
+carries the service's network/port stanza until then, and `status`/`doctor`
+cannot render with it (they say so and point here).
+
 ## Changing a shipped service
 
 Same file: put overrides for shipped services in
