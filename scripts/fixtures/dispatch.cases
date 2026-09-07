@@ -1,0 +1,190 @@
+# one invocation per line, literal argv; blank lines and # comments ignored
+# generated once from the registry; extend by hand when a verb's contract changes
+
+# no verb / help aliases / unknown
+<none>
+-h
+--help
+bogus
+bogus --flag
+help extra
+
+# help  (unconstrained)
+help
+help a b c
+
+# install  (none)
+install
+install x
+
+# configure  (none)
+configure
+configure x
+
+# add-mount  (none)
+add-mount
+add-mount x
+
+# up  (none)
+up
+up x
+
+# down  (none)
+down
+down x
+
+# enable  (max=1)
+enable
+enable a
+enable a b c d
+
+# disable  (max=1)
+disable
+disable a
+disable a b c d
+
+# status  (max=1)
+status
+status a
+status a b c d
+
+# logs  (free)
+logs
+logs a
+logs a b c d e
+logs --bogus
+
+# update  (free)
+update
+update a
+update a b c d e
+update --bogus
+
+# apply-timer  (none)
+apply-timer
+apply-timer x
+
+# backup  (free)
+backup
+backup a
+backup a b c d e
+backup --bogus
+
+# restore  (free)
+restore
+restore a
+restore a b c d e
+restore --bogus
+
+# rollback  (max=1)
+rollback
+rollback a
+rollback a b c d
+
+# unpin  (max=1)
+unpin
+unpin a
+unpin a b c d
+
+# upgrade  (none)
+upgrade
+upgrade x
+
+# wire  (free)
+wire
+wire a
+wire a b c d e
+wire --bogus
+
+# invite  (free)
+invite
+invite a
+invite a b c d e
+invite --bogus
+
+# credentials  (none)
+credentials
+credentials x
+
+# set-credentials  (max=1)
+set-credentials
+set-credentials a
+set-credentials a b c d
+
+# traefik-setup  (allow=--hosts,--certs max=1)
+traefik-setup
+traefik-setup --hosts
+traefik-setup --certs
+traefik-setup --bogus
+traefik-setup --hosts --hosts
+
+# trash-sync  (allow=--dry-run)
+trash-sync
+trash-sync --dry-run
+trash-sync --bogus
+trash-sync --dry-run --dry-run
+
+# doctor  (none)
+doctor
+doctor x
+
+# leak-test  (allow=--killswitch)
+leak-test
+leak-test --killswitch
+leak-test --bogus
+leak-test --killswitch --killswitch
+
+# vpn  (max=3)
+vpn
+vpn a
+vpn a b
+vpn a b c
+vpn a b c d
+
+# fix-perms  (max=1)
+fix-perms
+fix-perms a
+fix-perms a b c d
+
+# new-service  (max=1)
+new-service
+new-service a
+new-service a b c d
+
+# frontdoor-install  (allow=--set-password)
+frontdoor-install
+frontdoor-install --set-password
+frontdoor-install --bogus
+frontdoor-install --set-password --set-password
+
+# uninstall  (allow=--nuke)
+uninstall
+uninstall --nuke
+uninstall --bogus
+uninstall --nuke --nuke
+
+# menu  (none)
+menu
+menu x
+
+# list  (free)
+list
+list a
+list a b c d e
+list --bogus
+
+# vpn-apply  (max=2)
+vpn-apply
+vpn-apply a
+vpn-apply a b
+vpn-apply a b c d
+
+# vpn-guard  (allow=--boot)
+vpn-guard
+vpn-guard --boot
+vpn-guard --bogus
+vpn-guard --boot --boot
+
+# frontdoor-refresh  (none)
+frontdoor-refresh
+frontdoor-refresh x

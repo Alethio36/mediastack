@@ -206,9 +206,14 @@ a committed plan.
   place; tighten style and error-handling consistency; find lean-ness wins
   (fewer moving parts, faster common paths); verify docs match behavior; re-check
   the whole against the goals above. A lean-and-correct sweep, not a rewrite.
-- Expand CI/tests: `docker compose config` validation across every fragment
-  and a render/`--dry-run` smoke test. (In place: shellcheck over the entrypoint
-  and every lib, the front-door safety audit, and the placeholder-host guard.)
+- **Tests in CI** *(first two landed)*. `scripts/test-dispatch.sh` drives
+  `main()` with every registry verb (cmd_* removed, so the call and its argv
+  are printed) against a committed expected file — a contract change is a
+  diff. `scripts/test-render.sh` renders `.env.example` through `vpn_gen`,
+  adds a toggle service in the override, removes it, and asserts that the
+  stale overlay breaks the render until `vpn_gen` runs (the `up` order). Both
+  run in the lint workflow beside shellcheck, the front-door safety audit and
+  the placeholder-host guard. Still to come: a `--dry-run` smoke test.
 - First-class host-to-host migration (a `migrate` / export-import verb) — turns
   the manual cutover procedure into a validated command.
 
