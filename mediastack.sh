@@ -370,7 +370,7 @@ move_root_contents() { # move_root_contents VAR old new -> 0 proceed with new, 1
     n=$(sudo find "$old" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
     (( n > 0 )) || return 0
     size=$(sudo du -sh "$old" 2>/dev/null | cut -f1)
-    warn "$var is moving: $old -> $new, and the old path is not empty ($n entries, $size)."
+    warn "$var is moving: $old -> $new, and the old path is not empty ($n $( (( n == 1 )) && echo entry || echo entries), $size)."
     if [[ "$var" == DATA_ROOT ]]; then
         explain "Media stays where it is" \
 "This script never moves a media library: it is usually huge, often on a
@@ -419,7 +419,7 @@ then enter the path here.
         sudo find "$old" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
     fi
     env_del "${var}_PREVIOUS"
-    ok "$var contents moved to $new ($n entries, $size)"
+    ok "$var contents moved to $new ($n $( (( n == 1 )) && echo entry || echo entries), $size)"
 }
 
 # --- configure wizard steps (one helper per `# -- …` block; each persists to
@@ -513,6 +513,11 @@ _configure_services() {
     # -- services (à la carte)
     render
     local STD="gluetun qbittorrent sonarr radarr prowlarr jellyfin meilisearch jellysearch seerr"
+    # a re-run keeps what is enabled unless asked otherwise: option 0 exists
+    # (and is the default) only when something is enabled already
+    local cur_list cur_n=0 def=1
+    cur_list=$(env_get COMPOSE_PROFILES)
+    [[ -n "$cur_list" ]] && { cur_n=$(tr ',' '\n' <<<"$cur_list" | grep -c .); def=0; }
     explain "Services" \
 "Pick exactly what runs — anything, à la carte. Dependencies are handled
 for you (picking qBittorrent brings the VPN; JellySearch brings its
@@ -522,11 +527,15 @@ search engine). Change any of this later with enable/disable." \
 "                 No proxy: services answer on http://<host>:<port>; add" \
 "                 HTTPS names later with: enable traefik + traefik-setup" \
 "  2) everything  all $(svc_managed | wc -l) services" \
-"  3) custom      yes/no through each service"
+"  3) custom      yes/no through each service" \
+"$( (( cur_n )) && echo "  0) keep current: $cur_n enabled ($(tr ',' ' ' <<<"$cur_list"))" )"
     local mode sel="" cur_en s d dp
-    ask SVC_MODE "Choice" "1"; mode="$REPLY_VAL"
-    cur_en=",$(env_get COMPOSE_PROFILES),"
+    ask SVC_MODE "Choice" "$def"; mode="$REPLY_VAL"
+    cur_en=",$cur_list,"
     case "$mode" in
+        0) (( cur_n )) || die "Nothing is enabled yet — pick 1, 2 or 3."
+           ok "Keeping the current $cur_n service(s): $cur_list"; return 0 ;;
+        1) sel="$STD" ;;
         2) sel=$(svc_managed | tr '\n' ' ') ;;
         3) for s in $(svc_managed); do
                d=$(svc_label "$s" mediastack.desc)
@@ -541,7 +550,7 @@ search engine). Change any of this later with enable/disable." \
                REPLY_VAL="${REPLY_VAL:-$def}"
                [[ "${REPLY_VAL,,}" == y* ]] && sel+="$s "
            done ;;
-        *) sel="$STD" ;;
+        *) die "Unknown choice '$mode' — expected 0, 1, 2 or 3." ;;
     esac
     [[ -n "$sel" ]] || die "No services selected — nothing to run."
     info "Resolving dependencies..."
