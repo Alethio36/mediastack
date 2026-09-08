@@ -784,6 +784,11 @@ cmd_up()   {
     vpn_gen
     require_mounts; reconcile_disabled
     require_free_ports
+    # label-owned directories BEFORE compose sees them: a missing bind source
+    # is created by docker as a root-owned dir, and a service running as its
+    # PUID cannot write into that. `enable` and `configure` provision; `up`
+    # after an upgrade that added a mount, or after a root moved, did not.
+    provision >/dev/null
     traefik_ensure
     if ! DC up -d --remove-orphans; then
         warn "First start attempt failed — usually gluetun's health race after a recreate."
