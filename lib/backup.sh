@@ -331,11 +331,11 @@ cmd_update() {
     if (( ${#bad[@]} )); then
         fail "Unhealthy after update: ${bad[*]}"
         echo "  Roll back any of them with: ./mediastack.sh rollback <service>"
-        notify ops "Mediastack update FAILED" "Unhealthy after update: **${bad[*]}**\nRoll back: \`./mediastack.sh rollback <service>\`" failure
+        notify ops "Mediastack update FAILED" "Unhealthy after update: **${bad[*]}**"$'\n'"Roll back: \`./mediastack.sh rollback <service>\`" failure
         exit 1
     fi
     ok "All updated services healthy."
-    (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '`%s`\\n' "${changed[@]}")" success
+    (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '`%s`\n' "${changed[@]}")" success
 
     # nightly TRaSH sync rides the update pipeline: same schedule the
     # operator already chose, guides drift-window stays at one cycle.
