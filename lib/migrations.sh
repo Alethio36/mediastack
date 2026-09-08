@@ -144,3 +144,14 @@ migrate_env_13_to_14() {
     # root-by-image, so only its update toggle is adopted
     grep -qE '^NPM_UPDATE=' "$ENV_FILE" || env_set NPM_UPDATE true
 }
+migrate_env_14_to_15() {
+    # transcodes get their own root: a few GB per stream at source bitrate,
+    # written and read back while someone watches — the one part of the cache
+    # that must not sit on a network share. Existing installs keep it under
+    # their cache (where wire jellyfin already pointed it); configure asks
+    # where it should really live.
+    if [[ -z "$(env_get TRANSCODE_ROOT)" ]]; then
+        env_set TRANSCODE_ROOT "$(env_get CACHE_ROOT)/transcodes"
+        info "New root TRANSCODE_ROOT -> $(env_get TRANSCODE_ROOT) (relocate with: ./mediastack.sh configure)"
+    fi
+}

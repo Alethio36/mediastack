@@ -664,7 +664,7 @@ jf_server_name() { # the name apps/casting show; container default is the ID has
         || wfail "Jellyfin rejected the server name [HTTP $(jf_code)] — set it in Dashboard -> General"
 }
 
-JF_TRANSCODE_PATH=/cache/transcodes   # inside the container: ${CACHE_ROOT}/jellyfin/transcodes on the host
+JF_TRANSCODE_PATH=/cache/transcodes   # inside the container; ${TRANSCODE_ROOT}/jellyfin on the host
 jf_transcode_path() { # transcodes belong on the cache volume, not in /config
     # Jellyfin's default is <data>/transcodes = /config/data/transcodes: the
     # config volume, which backup archives and which sits wherever CONFIG_ROOT
