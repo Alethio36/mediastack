@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=14
+SCRIPT_SCHEMA=15
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -172,7 +172,7 @@ resolve_deps() { # expand a service set to include all transitive dependencies
 # ------------------------------------------------------------------ mounts --
 require_mounts() {
     local root path expect actual
-    for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT BACKUP_ROOT; do
+    for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT TRANSCODE_ROOT BACKUP_ROOT; do
         path=$(env_get "$root"); expect=$(env_get "${root}_SOURCE")
         [[ -z "$path" || -z "$expect" ]] && continue
         actual=$(timeout 5 findmnt -rn -o SOURCE --target "$path" 2>/dev/null) || {
@@ -257,7 +257,7 @@ Next step:   ./mediastack.sh configure
 That's the guided setup. Every question explains itself and offers a
 sensible default — pressing Enter through it gives a working stack.
 It will ask about:
-  * where configs, media, cache and backups live (defaults are fine)
+  * where configs, media, cache, transcodes and backups live (defaults are fine)
   * which services to run (a recommended set is offered)
   * your VPN — HAVE THIS READY: a NordVPN access token
     (nordvpn.com -> Services -> NordVPN -> "Set up NordVPN manually"),
@@ -397,9 +397,17 @@ often on a NAS or a big second drive, NOT the system disk.
   * Keep torrents and media on the SAME drive or imports become slow
     full copies instead of instant hardlinks (checked below)." yes
     configure_root CACHE_ROOT "Cache directory" \
-"Disposable data: transcodes, image caches, the search index. Losing it
-costs a regeneration, nothing more. Network storage is fine; note that
-transcode segments on NFS can stutter playback on transcoding hosts." yes
+"Disposable data: image caches, metadata, the search index. Losing it
+costs a regeneration, nothing more. Network storage is fine." yes
+    configure_root TRANSCODE_ROOT "Transcode directory" \
+"Where Jellyfin (and any other transcoding app) writes video segments while
+someone is watching: a few GB per concurrent stream, written and read back
+at the video's bitrate, deleted when the stream ends.
+  * Local SSD is right. A network share here stutters playback — every
+    segment crosses the wire twice.
+  * Have RAM to spare? A tmpfs mount (e.g. 4G) is the fastest option and
+    empties itself on reboot.
+  * Nothing here is kept or backed up." yes
     configure_root BACKUP_ROOT "Backup directory" \
 "Where restore points are written before every update. A NAS path is
 ENCOURAGED — backups on the same disk as the configs aren't backups.
@@ -638,8 +646,8 @@ provision() {
     load_env; render
     local gid; gid=$(env_get MEDIA_GROUP_GID 13000)
     getent group mediacenter >/dev/null || { sudo groupadd -g "$gid" mediacenter; ok "group mediacenter ($gid)"; }
-    local s v uid croot droot cache
-    croot=$(env_get CONFIG_ROOT); droot=$(env_get DATA_ROOT); cache=$(env_get CACHE_ROOT)
+    local s v uid croot droot cache tcode
+    croot=$(env_get CONFIG_ROOT); droot=$(env_get DATA_ROOT); cache=$(env_get CACHE_ROOT); tcode=$(env_get TRANSCODE_ROOT)
     for s in $(svc_enabled_managed); do
         v="$(uvar "$s")_UID"; uid=$(env_get "$v")
         if [[ -n "$uid" ]] && ! getent passwd "$s" >/dev/null; then
@@ -656,6 +664,10 @@ provision() {
         if [[ $(svc_label "$s" mediastack.cache) == "true" ]]; then
             sudo mkdir -p "$cache/$s"
             [[ -n "$uid" ]] && sudo chown "$uid:mediacenter" "$cache/$s"
+        fi
+        if [[ $(svc_label "$s" mediastack.transcode) == "true" ]]; then
+            sudo mkdir -p "$tcode/$s"
+            [[ -n "$uid" ]] && sudo chown "$uid:mediacenter" "$tcode/$s"
         fi
         # Nested bind mounts (e.g. cache inside config): docker creates the
         # inner mountpoint stub as root if missing — pre-create it owned right.
@@ -1060,7 +1072,7 @@ cmd_nuke() {
     # project label; users by the mediacenter group in /etc/passwd.
     hr "NUKE: remove everything the installer created"
     echo "Removes: containers, docker network, systemd units,"
-    echo "         service users + group, CONFIG_ROOT, CACHE_ROOT."
+    echo "         service users + group, CONFIG_ROOT, CACHE_ROOT, TRANSCODE_ROOT."
     echo "Keeps  : DATA_ROOT (your media), BACKUP_ROOT (restore points),"
     echo "         .env, this repo folder, and pulled docker images (shared"
     echo "         cache — 'docker image prune -a' reclaims them)."
@@ -1091,11 +1103,12 @@ cmd_nuke() {
         sudo groupdel mediacenter 2>/dev/null && ok "group mediacenter removed"
     fi
 
-    local croot cache
+    local croot cache tcode
     croot=$(env_get CONFIG_ROOT "$SCRIPT_DIR/config")
     cache=$(env_get CACHE_ROOT "$SCRIPT_DIR/cache")
-    sudo rm -rf "$croot" "$cache"
-    ok "removed $croot and $cache"
+    tcode=$(env_get TRANSCODE_ROOT "$SCRIPT_DIR/transcodes")
+    sudo rm -rf "$croot" "$cache" "$tcode"
+    ok "removed $croot, $cache and $tcode"
     ok "Nuked. Media and backups untouched. Safe to delete this folder now."
 }
 

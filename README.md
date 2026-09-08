@@ -295,10 +295,10 @@ own hostname that captures `?searchTerm` requests at a higher priority
 one admin account (the operator/recovery login, stored in `.env` — view:
 `credentials`), remote access on with UPnP off, a server name you choose
 (the container default is a random ID hash), the transcode path moved
-to the cache volume (`/cache/transcodes` — Jellyfin's default is inside
-`/config`, which `backup` archives; segments are written at source bitrate
-for the whole session, so size `CACHE_ROOT` for a few GB per concurrent
-transcode, on local disk — a NAS share stutters, a tmpfs flies), and
+to `TRANSCODE_ROOT` (Jellyfin's default is inside `/config`, which
+`backup` archives; segments are written at source bitrate for the whole
+session, so give `TRANSCODE_ROOT` a few GB per concurrent stream on local
+disk — a NAS share stutters, a tmpfs flies), and
 libraries derived from the arrs' root folders — you name each library at
 creation. Everything
 else is yours to manage in the GUI, and wire can't undo you: libraries

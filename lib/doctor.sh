@@ -14,7 +14,7 @@ d_fail() { fail "$1"; printf '     why : %s\n     fix : %s\n' "$2" "$3"; D_FAILS
 _doctor_environment() {
     hr "doctor: environment"
     local root
-    for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT BACKUP_ROOT; do
+    for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT TRANSCODE_ROOT BACKUP_ROOT; do
         [[ -n "$(env_get "$root")" ]] && ok "$root=$(env_get "$root")" \
             || d_fail "$root unset" "the stack cannot locate its files" "run: ./mediastack.sh configure"
     done
@@ -154,20 +154,23 @@ _doctor_permissions() {
 _doctor_resources() {
     hr "doctor: host resources"
     local croot; croot=$(env_get CONFIG_ROOT)
-    df -h "$croot" "$(env_get DATA_ROOT)" "$(env_get CACHE_ROOT)" 2>/dev/null | tail -n +2 | sort -u | while read -r line; do
+    df -h "$croot" "$(env_get DATA_ROOT)" "$(env_get CACHE_ROOT)" "$(env_get TRANSCODE_ROOT)" 2>/dev/null | tail -n +2 | sort -u | while read -r line; do
         local pct; pct=$(awk '{print $5}' <<<"$line" | tr -d %)
         (( pct >= 90 )) && warn "disk >90%: $line" || ok "disk: $line"
     done
     # transcodes on the config volume: Jellyfin's default until `wire jellyfin`
     # points it at /cache; a session that died leaves its segments behind
-    local jt="$croot/jellyfin/data/transcodes" jmb
+    local jt="$croot/jellyfin/data/transcodes" jmb tfs
+    tfs=$(fstype_of "$(env_get TRANSCODE_ROOT)" 2>/dev/null || true)
+    [[ "$tfs" =~ ^(nfs|nfs4|cifs|smb3)$ ]] \
+        && warn "TRANSCODE_ROOT is on a network share ($tfs) — transcodes cross the wire twice per segment; playback will stutter. Move it to local disk or a tmpfs: ./mediastack.sh configure"
     if sudo test -d "$jt"; then
         jmb=$(sudo du -sm "$jt" 2>/dev/null | cut -f1)
         [[ -n "$jmb" ]] || jmb=UNKNOWN
         if [[ "$jmb" == UNKNOWN ]]; then
             warn "jellyfin transcodes: could not size $jt"
         elif (( jmb >= 1024 )); then
-            warn "jellyfin: ${jmb}MB of transcode segments on the CONFIG volume ($jt) — './mediastack.sh wire jellyfin' moves transcodes to CACHE_ROOT; segments from a dead session clear when jellyfin restarts"
+            warn "jellyfin: ${jmb}MB of transcode segments on the CONFIG volume ($jt) — './mediastack.sh wire jellyfin' moves transcodes to TRANSCODE_ROOT; segments from a dead session clear when jellyfin restarts"
         else
             ok "jellyfin transcodes on the config volume: ${jmb}MB"
         fi
