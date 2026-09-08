@@ -228,9 +228,11 @@ cmd_install() {
         *) die "This installer supports Debian/Ubuntu (apt). Detected: ${PRETTY_NAME:-unknown}.
   Docker + compose v2.20+, jq, curl and git installed manually will also work." ;;
     esac
-    info "Installing base packages (curl, git, jq, ca-certificates, argon2)..."
+    local base_pkgs="curl git jq ca-certificates argon2 rsync"   # rsync: cross-filesystem root moves (configure)
+    info "Installing base packages (${base_pkgs// /, })..."
     sudo apt-get update -qq
-    sudo apt-get install -y -qq curl git jq ca-certificates argon2 rsync >/dev/null
+    # shellcheck disable=SC2086  # one package per word
+    sudo apt-get install -y -qq $base_pkgs >/dev/null
     if ! command -v docker >/dev/null 2>&1; then
         info "Installing Docker from Docker's official repository..."
         sudo install -m 0755 -d /etc/apt/keyrings
