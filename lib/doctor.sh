@@ -18,6 +18,17 @@ _doctor_environment() {
         [[ -n "$(env_get "$root")" ]] && ok "$root=$(env_get "$root")" \
             || d_fail "$root unset" "the stack cannot locate its files" "run: ./mediastack.sh configure"
     done
+    # a root that moved with "leave" keeps pointing at what it left behind
+    local prev pn
+    for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT TRANSCODE_ROOT BACKUP_ROOT; do
+        prev=$(env_get "${root}_PREVIOUS"); [[ -n "$prev" ]] || continue
+        pn=$(sudo find "$prev" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+        if (( pn > 0 )); then
+            warn "$root moved away from $prev, which still holds $pn entries ($(sudo du -sh "$prev" 2>/dev/null | cut -f1)) — merge or delete them, then remove ${root}_PREVIOUS from .env"
+        else
+            info "$root: previous path $prev is empty/gone — remove ${root}_PREVIOUS from .env"
+        fi
+    done
     local fs; fs=$(fstype_of "$(env_get CONFIG_ROOT)")
     [[ "$fs" =~ ^(nfs|nfs4|cifs|smb3)$ ]] \
         && d_fail "CONFIG_ROOT on $fs" "SQLite databases corrupt on network shares" "move configs to local disk (see docs/migration-existing.md)" \
