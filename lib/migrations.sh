@@ -155,3 +155,4 @@ migrate_env_14_to_15() {
         info "New root TRANSCODE_ROOT -> $(env_get TRANSCODE_ROOT) (relocate with: ./mediastack.sh configure)"
     fi
 }
+migrate_env_15_to_16() { :; } # .env.example default change only (DATA_ROOT=./data); existing values stand

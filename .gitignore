@@ -7,6 +7,7 @@
 docker-compose.override.yml
 config/
 cache/
+data/
 transcodes/
 backups/
 local/
