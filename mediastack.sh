@@ -230,7 +230,7 @@ cmd_install() {
     esac
     info "Installing base packages (curl, git, jq, ca-certificates, argon2)..."
     sudo apt-get update -qq
-    sudo apt-get install -y -qq curl git jq ca-certificates argon2 >/dev/null
+    sudo apt-get install -y -qq curl git jq ca-certificates argon2 rsync >/dev/null
     if ! command -v docker >/dev/null 2>&1; then
         info "Installing Docker from Docker's official repository..."
         sudo install -m 0755 -d /etc/apt/keyrings
@@ -348,11 +348,76 @@ configure_root() { # configure_root VAR title "explanation..." allow_network(yes
         fi
         [[ "$allow_net" == yes && "$fs" =~ ^(nfs|nfs4|cifs|smb3)$ ]] \
             && info "Network share detected ($fs) — fine for this root."
+        # a root that moves takes its contents with it (or says why not)
+        [[ -n "$cur" && "$(abspath "$cur")" != "$val" ]] && { move_root_contents "$var" "$(abspath "$cur")" "$val" || continue; }
         env_set "$var" "$val"
         env_set "${var}_SOURCE" "$(findmnt -rn -o SOURCE --target "$val")"
         ok "$var = $val"
         break
     done
+}
+
+move_root_contents() { # move_root_contents VAR old new -> 0 proceed with new, 1 keep old
+    # Called when a root's path changes. Anything at the old path is the
+    # user's state: it moves with the root, stays behind on purpose (noted in
+    # .env as <VAR>_PREVIOUS so doctor keeps pointing at it), or the change is
+    # abandoned. DATA_ROOT is never moved by this script — a media library is
+    # a human-sized decision — but it gets the same warning.
+    local var="$1" old="$2" new="$3" size n choice
+    sudo test -d "$old" || return 0
+    n=$(sudo find "$old" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+    (( n > 0 )) || return 0
+    size=$(sudo du -sh "$old" 2>/dev/null | cut -f1)
+    warn "$var is moving: $old -> $new, and the old path is not empty ($n entries, $size)."
+    if [[ "$var" == DATA_ROOT ]]; then
+        explain "Media stays where it is" \
+"This script never moves a media library: it is usually huge, often on a
+NAS, and the arrs know it by path. Move or re-mount it yourself first,
+then enter the path here.
+  keep   keep $var = $old (recommended unless the media is already at the new path)
+  new    use $new; the old path is noted in .env and doctor keeps reminding you"
+        ask MV "Choice [keep/new]" "keep"; choice="$REPLY_VAL"
+        case "$choice" in
+            new)  env_set "${var}_PREVIOUS" "$old"; return 0 ;;
+            keep) return 1 ;;
+            *)    die "Unknown choice '$choice' — expected keep or new." ;;
+        esac
+    fi
+    explain "What happens to the existing contents?" \
+"  move   copy everything to $new, verify, remove the old copy
+         (the stack is stopped first if it is running; start it after: up)
+  leave  start empty at the new path; the old path is noted in .env and
+         doctor warns until it is gone
+  keep   keep $var = $old and change nothing"
+    ask MV "Choice [move/leave/keep]" "keep"; choice="$REPLY_VAL"
+    case "$choice" in
+        keep)  return 1 ;;
+        leave) env_set "${var}_PREVIOUS" "$old"; info "$old left in place — see doctor"; return 0 ;;
+        move)  ;;
+        *)     die "Unknown choice '$choice' — expected move, leave or keep." ;;
+    esac
+    # no merge semantics: the new path must be empty, or the move is refused
+    if (( $(sudo find "$new" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l) > 0 )); then
+        fail "$new is not empty — a move needs an empty destination. Empty it (or pick another path) and re-enter; $var stays at $old for now."
+        return 1
+    fi
+    if [[ -n "$(c_inspect_all; jq -r '.[] | select(.State.Status=="running") | .Name' <<<"$INSPECT_JSON")" ]]; then
+        info "stopping the stack for a consistent move..."; DC stop >/dev/null
+    fi
+    if [[ "$(fsdev_of "$old")" == "$(fsdev_of "$new")" ]]; then
+        sudo find "$old" -mindepth 1 -maxdepth 1 -exec mv -t "$new" {} + \
+            || die "move failed — nothing was removed; $var still points at $old"
+    else
+        need_cmd rsync
+        sudo rsync -a "$old"/ "$new"/ || die "copy failed — nothing was removed; $var still points at $old"
+        # verify before deleting: a dry re-sync must have nothing to do
+        if [[ -n "$(sudo rsync -a -n --itemize-changes "$old"/ "$new"/ | grep -v '^\.d\.\.t')" ]]; then
+            die "copy verification failed — the old copy at $old is intact; $var still points at $old. Compare the two by hand before retrying."
+        fi
+        sudo find "$old" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    fi
+    env_del "${var}_PREVIOUS"
+    ok "$var contents moved to $new ($n entries, $size)"
 }
 
 # --- configure wizard steps (one helper per `# -- …` block; each persists to
