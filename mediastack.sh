@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=15
+SCRIPT_SCHEMA=16
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -460,7 +460,9 @@ often on a NAS or a big second drive, NOT the system disk.
   * Network shares are fine here — but this wizard does NOT create mounts.
     Set one up first with './mediastack.sh add-mount', then enter its path;
     the wizard records the mount and refuses to start if it ever drops.
-  * Just testing? Accept the default local path.
+  * Default keeps it inside this folder like everything else — fine to
+    start with; point it at the big disk later and the wizard tells you
+    how the move works.
   * Keep torrents and media on the SAME drive or imports become slow
     full copies instead of instant hardlinks (checked below)." yes
     configure_root CACHE_ROOT "Cache directory" \
@@ -1185,7 +1187,15 @@ cmd_nuke() {
     tcode=$(env_get TRANSCODE_ROOT "$SCRIPT_DIR/transcodes")
     sudo rm -rf "$croot" "$cache" "$tcode"
     ok "removed $croot, $cache and $tcode"
-    ok "Nuked. Media and backups untouched. Safe to delete this folder now."
+    local inside=""
+    [[ "$(env_get DATA_ROOT "$SCRIPT_DIR/data")" == "$SCRIPT_DIR/"* ]] && inside+="media ($(env_get DATA_ROOT "$SCRIPT_DIR/data")) "
+    [[ "$(env_get BACKUP_ROOT "$SCRIPT_DIR/backups")" == "$SCRIPT_DIR/"* ]] && inside+="backups ($(env_get BACKUP_ROOT "$SCRIPT_DIR/backups")) "
+    if [[ -n "$inside" ]]; then
+        ok "Nuked. Media and backups untouched."
+        warn "Still INSIDE this folder: ${inside}— move them out before deleting it."
+    else
+        ok "Nuked. Media and backups untouched. Safe to delete this folder now."
+    fi
 }
 
 cmd_uninstall() {
