@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=16
+SCRIPT_SCHEMA=17
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -174,6 +174,11 @@ require_mounts() {
     local root path expect actual
     for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT TRANSCODE_ROOT BACKUP_ROOT; do
         path=$(env_get "$root"); expect=$(env_get "${root}_SOURCE")
+        # a relative root means .env was copied by hand: compose resolves it
+        # against compose.d/ (the include files' directory), not this folder
+        [[ -z "$path" || "$path" == /* ]] \
+            || die "$root is a relative path ('$path') — compose would resolve it against compose.d/, not this folder.
+  Run: ./mediastack.sh configure   (it stores absolute paths; Enter keeps every other answer)"
         [[ -z "$path" || -z "$expect" ]] && continue
         actual=$(timeout 5 findmnt -rn -o SOURCE --target "$path" 2>/dev/null) || {
             die "$root ($path): mount check timed out — stale or hung network mount.

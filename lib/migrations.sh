@@ -156,3 +156,4 @@ migrate_env_14_to_15() {
     fi
 }
 migrate_env_15_to_16() { :; } # .env.example default change only (DATA_ROOT=./data); existing values stand
+migrate_env_16_to_17() { :; } # .env.example comment only (relative roots are refused at runtime)
