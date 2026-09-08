@@ -102,7 +102,7 @@ Setup
 | command | what it does |
 |---|---|
 | `install` | host dependencies (Docker, jq, ...) on Debian/Ubuntu |
-| `configure` | interactive wizard; safe to re-run, answers become defaults |
+| `configure` | interactive wizard; safe to re-run, answers become defaults. Changing a root's path offers to move its contents (stack stopped, copy verified before the old copy goes) or to leave them and have `doctor` remind you; `DATA_ROOT` is never moved by the script |
 | `add-mount` | guided NFS/SMB mount for media (fstab automount + poison layer) |
 
 Run
