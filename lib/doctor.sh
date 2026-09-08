@@ -15,8 +15,13 @@ _doctor_environment() {
     hr "doctor: environment"
     local root
     for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT TRANSCODE_ROOT BACKUP_ROOT; do
-        [[ -n "$(env_get "$root")" ]] && ok "$root=$(env_get "$root")" \
-            || d_fail "$root unset" "the stack cannot locate its files" "run: ./mediastack.sh configure"
+        if [[ -z "$(env_get "$root")" ]]; then
+            d_fail "$root unset" "the stack cannot locate its files" "run: ./mediastack.sh configure"
+        elif [[ "$(env_get "$root")" != /* ]]; then
+            d_fail "$root is relative: $(env_get "$root")" "compose resolves it against compose.d/, not this folder — the wrong directories get created" "run: ./mediastack.sh configure (stores absolute paths)"
+        else
+            ok "$root=$(env_get "$root")"
+        fi
     done
     # a root that moved with "leave" keeps pointing at what it left behind
     local prev pn
