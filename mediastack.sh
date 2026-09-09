@@ -1020,6 +1020,17 @@ c_version(){ c_get "$1" '.Config.Labels["org.opencontainers.image.version"]'; }
 c_restarts(){ local o; o=$(c_get "$1" '.RestartCount'); echo "${o:-0}"; }
 c_netmode(){ c_get "$1" '.HostConfig.NetworkMode'; }   # "container:<id>" when joined to another namespace
 c_id()     { c_get "$1" '.Id'; }
+c_host_path() { # c_host_path <cname> <container-path> -> the host path behind it, "" if no mount covers it
+    # longest-prefix match over the container's bind mounts; "/x" is not a
+    # prefix of "/xy", so the boundary is the mount itself or a "/" after it
+    local j
+    if [[ -n "$INSPECT_JSON" ]]; then j=$INSPECT_JSON; else j=$(c_inspect "$1"); fi
+    jq -r --arg n "/$1" --arg p "$2" '
+        [ .[] | select(.Name == $n) | .Mounts[] | . as $m
+          | select($m.Destination == $p or ($p | startswith($m.Destination + "/"))) ]
+        | sort_by(.Destination | length) | last
+        | if . == null then "" else .Source + $p[(.Destination | length):] end' <<<"$j"
+}
 
 # Machine-readable service lister — one service name per line, nothing else.
 # Built for consumers that need a clean list to parse (e.g. a web UI populating
