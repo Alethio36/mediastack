@@ -1076,21 +1076,38 @@ credentials)."
     jf_plugin_webhook "$tok"
 
     # --- libraries: create-if-path-missing, derived from the arrs' own
-    # rootfolder labels. Match by PATH so GUI renames/merges are respected.
-    local vf droot; vf=$(jf_api GET /Library/VirtualFolders "$tok" || true)
+    # rootfolder labels. Match by the HOST directory a library's location
+    # resolves to through the container's mounts, not by the container path:
+    # a migrated jellyfin sees the same tree under an alias (an extra mount
+    # in the override, e.g. /data/tvshows) and must not be offered a twin
+    # at /media/tv. GUI renames/merges are respected the same way.
+    local vf droot jcn; vf=$(jf_api GET /Library/VirtualFolders "$tok" || true)
     [[ "$(jf_code)" =~ ^2 ]] || { wfail "could not list jellyfin libraries [HTTP $(jf_code)]: $(head -c200 <<<"$vf")"; return 1; }
-    droot=$(env_get DATA_ROOT)
+    droot=$(env_get DATA_ROOT); jcn=$(svc_cname jellyfin)
+    local -A covered=()   # host dir -> the container location a library uses for it
+    local loc hp
+    while IFS= read -r loc; do
+        [[ -n "$loc" ]] || continue
+        hp=$(c_host_path "$jcn" "$loc")
+        [[ -n "$hp" ]] || { warn "jellyfin library location $loc is not backed by any mount of the container — a library pointing at nothing"; continue; }
+        covered[$(readlink -f "$hp" 2>/dev/null || echo "$hp")]=$loc
+    done < <(jq -r '.[].Locations[]?' <<<"$vf")
     local -A seen=()
-    local s rf base path ctype lname enc_n enc_p resp
+    local s rf base path hdir ctype lname enc_n enc_p resp
     for s in $(arr_instances); do
         rf=$(svc_label "$s" mediastack.rootfolder); base=${rf##*/}
         [[ -n "$base" && -z "${seen[$base]:-}" ]] || continue; seen[$base]=1
         path="/media/$base"
+        hdir=$(readlink -f "$droot/media/$base" 2>/dev/null || echo "$droot/media/$base")
         case "$(svc_label "$s" mediastack.arrtype)" in
             radarr) ctype=movies ;; sonarr) ctype=tvshows ;; lidarr) ctype=music ;; *) continue ;;
         esac
-        if jq -e --arg p "$path" 'any(.[].Locations[]?; . == $p)' <<<"$vf" >/dev/null 2>&1; then
-            ok "a library already covers $path — untouched (yours to manage in the GUI)"
+        if [[ -n "${covered[$hdir]:-}" ]]; then
+            if [[ "${covered[$hdir]}" == "$path" ]]; then
+                ok "a library already covers $path — untouched (yours to manage in the GUI)"
+            else
+                ok "a library already covers $hdir (as ${covered[$hdir]} inside the container) — untouched (yours to manage in the GUI)"
+            fi
             continue
         fi
         if (( WIRE_DRY )); then
