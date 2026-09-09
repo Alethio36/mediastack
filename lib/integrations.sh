@@ -992,14 +992,14 @@ jf_ready() { # container "running" != API "ready"
         sleep 5; t=$((t+5)); info "waiting for jellyfin's API (${t}s)..."
     done
 }
-jf_libname() { # default library name for a media subdir
+jf_libname() { # jf_libname <arr service> <media subdir> -> default library name
     case "$1" in
-        movies)    echo "Movies" ;;
-        movies-4k) echo "Movies (4K)" ;;
-        tv)        echo "TV Shows" ;;
-        tv-anime)  echo "Anime" ;;
-        music)     echo "Music" ;;
-        *)         echo "${1^}" ;;
+        radarr)       echo "Movies" ;;
+        radarr-4k)    echo "Movies (4K)" ;;
+        sonarr)       echo "TV Shows" ;;
+        sonarr-anime) echo "Anime" ;;
+        lidarr)       echo "Music" ;;
+        *)            echo "${2^}" ;;
     esac
 }
 
@@ -1122,7 +1122,7 @@ credentials)."
         # library is born broken. Same ownership pattern as configure's tree.
         sudo test -d "$droot/media/$base" \
             || { sudo install -d -m 2775 -g mediacenter "$droot/media/$base" && info "created $droot/media/$base (was missing)"; }
-        ask JF_LN "Library name for $path" "$(jf_libname "$base")"; lname="$REPLY_VAL"
+        ask JF_LN "Library name for $path" "$(jf_libname "$s" "$base")"; lname="$REPLY_VAL"
         if w_would "create jellyfin library '$lname' -> $path"; then
             enc_n=$(jq -rn --arg v "$lname" '$v|@uri'); enc_p=$(jq -rn --arg v "$path" '$v|@uri')
             resp=$(jf_api POST "/Library/VirtualFolders?name=${enc_n}&collectionType=${ctype}&paths=${enc_p}&refreshLibrary=true" "$tok" '{"LibraryOptions":{}}') \

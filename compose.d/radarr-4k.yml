@@ -34,8 +34,8 @@ services:
                                       # radarrs share gluetun's namespace
       mediastack.arrtype: "radarr"
       mediastack.category: "movies-4k"
-      mediastack.rootfolder: "/data/media/movies-4k"
-      mediastack.datadirs: "torrent/movies-4k media/movies-4k"
+      mediastack.rootfolder: "/data/media/${MEDIA_DIR_MOVIES_4K:-movies-4k}"
+      mediastack.datadirs: "torrent/movies-4k media/${MEDIA_DIR_MOVIES_4K:-movies-4k}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:7879/ping"]
       interval: 30s
