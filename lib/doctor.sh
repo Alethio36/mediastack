@@ -325,6 +325,17 @@ _doctor_apps() {
             false) d_fail "jellyfin first-run wizard NOT completed" "an unclaimed jellyfin lets any visitor create the admin account" "./mediastack.sh wire jellyfin" ;;
             *)     warn "jellyfin public info unreadable — API may still be warming up" ;;
         esac
+        # the stack key must open an authenticated endpoint: update's session
+        # check, backup and wire all ride on it
+        local jkey; jkey=$(env_get JELLYFIN_API_KEY)
+        if [[ -n "$jkey" ]]; then
+            jf_api GET /System/Info "$jkey" >/dev/null 2>&1 || true
+            case "$(jf_code)" in
+                2*)  ok "jellyfin accepts the stack API key (JELLYFIN_API_KEY)" ;;
+                401) d_fail "jellyfin rejects the stack API key (HTTP 401)" "the key was revoked, or the server refuses the auth carrier (Jellyfin 12+ disables legacy X-Emby-Token/api_key)" "./mediastack.sh wire jellyfin  # re-mints the key; script auth is already on the MediaBrowser header" ;;
+                *)   warn "jellyfin API key check inconclusive (HTTP $(jf_code))" ;;
+            esac
+        fi
     fi
     if svc_enabled seerr && [[ "$(c_state "$(svc_cname seerr)")" == running ]]; then
         local spub
