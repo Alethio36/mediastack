@@ -963,6 +963,10 @@ wire_cleanuparr() {
 # anything: rename/merge/tune libraries in the GUI freely — wire matches by
 # path, not name, so it will not recreate or touch them.
 JF_AUTH_HDR='Authorization: MediaBrowser Client="mediastack", Device="mediastack", DeviceId="mediastack-wire", Version="1.0"'
+# The token rides INSIDE the MediaBrowser header. Jellyfin 12.0 disables the
+# legacy carriers (X-Emby-Token / X-Emby-Authorization / ?api_key=) by default
+# and a migration switches them off on existing installs, so they 401.
+jf_auth_hdr() { printf '%s%s' "$JF_AUTH_HDR" "${1:+, Token=\"$1\"}"; }
 # jf_api runs inside $( ) at every call site, so a plain global would be lost
 # to the subshell — the last HTTP code crosses back via a per-PID file.
 JF_CODE_F="${TMPDIR:-/tmp}/.mediastack-jf-code.$$"
@@ -970,8 +974,8 @@ jf_code() { cat "$JF_CODE_F" 2>/dev/null || echo 000; }
 jf_url() { local p; p=$(svc_hostport jellyfin) || return 1; echo "http://127.0.0.1:$p"; }
 jf_api() { # jf_api METHOD PATH TOKEN [json-body] -> body on stdout; rc = http 2xx
     local m="$1" p="$2" tok="$3" b="${4:-}" out code
-    if ! out=$(curl -sS -m 20 -X "$m" -H "$JF_AUTH_HDR" \
-          ${tok:+-H "X-Emby-Token: $tok"} -H "Content-Type: application/json" \
+    if ! out=$(curl -sS -m 20 -X "$m" -H "$(jf_auth_hdr "$tok")" \
+          -H "Content-Type: application/json" \
           ${b:+-d "$b"} -w $'\n%{http_code}' "$(jf_url)$p" 2>&1); then
         printf '000' > "$JF_CODE_F"; echo "$out"; return 1
     fi

@@ -177,7 +177,7 @@ jellyfin_sessions_active() {
     local key host; key=$(env_get JELLYFIN_API_KEY); host=$(jf_url)
     [[ -n "$key" ]] || return 1
     local n
-    n=$(curl -fsS --max-time 5 "$host/Sessions?api_key=$key" 2>/dev/null \
+    n=$(curl -fsS --max-time 5 -H "$(jf_auth_hdr "$key")" "$host/Sessions" 2>/dev/null \
         | jq '[.[] | select(.NowPlayingItem != null)] | length' 2>/dev/null || echo 0)
     (( n > 0 ))
 }
