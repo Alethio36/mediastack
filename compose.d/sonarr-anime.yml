@@ -32,8 +32,8 @@ services:
       mediastack.appport: "8990"
       mediastack.arrtype: "sonarr"
       mediastack.category: "tv-anime"
-      mediastack.rootfolder: "/data/media/tv-anime"
-      mediastack.datadirs: "torrent/tv-anime media/tv-anime"
+      mediastack.rootfolder: "/data/media/${MEDIA_DIR_TV_ANIME:-tv-anime}"
+      mediastack.datadirs: "torrent/tv-anime media/${MEDIA_DIR_TV_ANIME:-tv-anime}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8990/ping"]
       interval: 30s
