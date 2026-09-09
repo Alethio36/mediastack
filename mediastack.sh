@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=17
+SCRIPT_SCHEMA=18
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -802,9 +802,15 @@ provision() {
     # on a real library this is TBs — never re-walk it on every configure.
     local d
     for sub in tv movies music books other; do sudo mkdir -p "$droot/torrent/$sub"; done
-    # media carries the reading/listening trees too (audiobookshelf, kavita)
-    for sub in tv movies music books audiobooks podcasts comics manga other; do
+    # media carries the reading/listening trees too (audiobookshelf, kavita);
+    # the arr trees take their names from the rootfolder labels (MEDIA_DIR_*)
+    for sub in books audiobooks podcasts comics manga other; do
         sudo mkdir -p "$droot/media/$sub"
+    done
+    local rf
+    for s in $(svc_managed); do
+        rf=$(svc_label "$s" mediastack.rootfolder)
+        [[ -n "$rf" ]] && sudo mkdir -p "$droot/media/${rf##*/}"
     done
     if [[ "$(stat -c %G "$droot" 2>/dev/null)" != mediacenter ]]; then
         info "first-time data tree ownership pass (may take a while on large trees)..."

@@ -33,7 +33,7 @@ services:
       mediastack.port: "7878"
       mediastack.arrtype: "radarr"
       mediastack.category: "movies"
-      mediastack.rootfolder: "/data/media/movies"
+      mediastack.rootfolder: "/data/media/${MEDIA_DIR_MOVIES:-movies}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:7878/ping"]
       interval: 30s

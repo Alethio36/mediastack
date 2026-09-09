@@ -33,7 +33,7 @@ services:
       mediastack.port: "8989"
       mediastack.arrtype: "sonarr"
       mediastack.category: "tv"
-      mediastack.rootfolder: "/data/media/tv"
+      mediastack.rootfolder: "/data/media/${MEDIA_DIR_TV:-tv}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8989/ping"]
       interval: 30s

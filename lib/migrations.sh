@@ -157,3 +157,12 @@ migrate_env_14_to_15() {
 }
 migrate_env_15_to_16() { :; } # .env.example default change only (DATA_ROOT=./data); existing values stand
 migrate_env_16_to_17() { :; } # .env.example comment only (relative roots are refused at runtime)
+migrate_env_17_to_18() {
+    # media subdirectory names become .env-driven (MEDIA_DIR_*); the values
+    # written here are the names every existing install already uses
+    local kv
+    for kv in MEDIA_DIR_MOVIES=movies MEDIA_DIR_MOVIES_4K=movies-4k MEDIA_DIR_TV=tv \
+              MEDIA_DIR_TV_ANIME=tv-anime MEDIA_DIR_MUSIC=music; do
+        grep -qE "^${kv%%=*}=" "$ENV_FILE" || env_set "${kv%%=*}" "${kv#*=}"
+    done
+}

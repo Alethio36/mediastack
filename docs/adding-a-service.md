@@ -55,8 +55,8 @@ Labels the arr family carries (only meaningful with `wire arr` / `trash-sync`):
 |---|---|
 | `mediastack.arrtype: "sonarr\|radarr\|lidarr"` | which arr this instance is — selects the API version, the download-client category field, and the TRaSH profile menu |
 | `mediastack.category: "movies-4k"` | its qBittorrent category (`wire qbit` creates it; `wire arr` sets it on the download client) |
-| `mediastack.rootfolder: "/data/media/movies-4k"` | its root folder inside the container (`wire arr` registers it; seerr and jellyfin libraries derive from it) |
-| `mediastack.datadirs: "torrent/movies-4k media/movies-4k"` | extra `${DATA_ROOT}` subtrees `configure` provisions for this instance |
+| `mediastack.rootfolder: "/data/media/${MEDIA_DIR_MOVIES_4K:-movies-4k}"` | its root folder inside the container (`wire arr` registers it; seerr and jellyfin libraries derive from it; `configure` creates the directory). The subdir name comes from `.env` so an existing tree's names can be adopted |
+| `mediastack.datadirs: "torrent/movies-4k media/${MEDIA_DIR_MOVIES_4K:-movies-4k}"` | extra `${DATA_ROOT}` subtrees `configure` provisions for this instance |
 | `mediastack.appport: "7879"` | in-app listening port seeded into `config.xml` before first boot — extra instances share gluetun's namespace, so the image default would collide |
 
 Conventions: config dir name == service name; env var stem == service name

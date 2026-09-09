@@ -33,7 +33,7 @@ services:
       mediastack.port: "8686"
       mediastack.arrtype: "lidarr"
       mediastack.category: "music"
-      mediastack.rootfolder: "/data/media/music"
+      mediastack.rootfolder: "/data/media/${MEDIA_DIR_MUSIC:-music}"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:8686/ping"]
       interval: 30s
