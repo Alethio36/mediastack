@@ -79,7 +79,7 @@ explanation.
 | seerr | request/discovery site for your users |
 | bazarr | subtitle automation |
 | wizarr | invitation links — "set up my account" becomes a URL |
-| apprise | one notification hub for the whole stack (ops/activity/users) |
+| apprise | one notification hub for the whole stack (ops/users) |
 | cleanuparr | strikes stalled downloads, cleans the queue |
 | watchstate | syncs + backs up per-user watch state across media servers |
 | navidrome | music server (Subsonic API) over lidarr's library |
@@ -232,12 +232,19 @@ territory and local changes there block `upgrade` by design.
 
 ## Notifications (Apprise)
 
-The `apprise` profile gives the stack one notification hub with three
-streams: **ops** (update pipeline results, backup failures, doctor
-problems), **activity** (arr grabs, imports, health events), **users**
-(invite activity). `wire apprise` asks for your endpoints once,
-stores them under one key, and connects every arr to the hub. Endpoints
-already stored are never touched.
+The `apprise` profile gives the stack one notification hub with two
+streams, routed by audience: **ops** (you — errors, the update
+pipeline, backups, doctor, incoming requests) and **users** (the
+household — new media, invites, and service notices like restarts and
+updates). `wire apprise` asks for your endpoints once, stores them
+under one key, and connects every arr to the hub. Endpoints already
+stored are never touched.
+
+Upgrading an existing install: this change retagged `activity` into
+`ops`, but stored endpoints and already-created arr/seerr connections
+are never overwritten. To move them, clear the `mediastack` config in
+the Apprise UI and delete each arr's `mediastack-apprise` connection
+(and seerr's webhook), then re-run `wire apprise`.
 
 Prowlarr also registers qBittorrent as its own download client, so a
 manual search in Prowlarr's UI can send a grab straight to qbit — those

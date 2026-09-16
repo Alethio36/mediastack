@@ -681,8 +681,9 @@ jf_transcode_path() { # transcodes belong on the cache volume, not in /config
 }
 
 # ---- apprise (wave 5): one notification hub for the whole stack ----
-# apprise-api in gluetun's namespace. Tags route messages: ops (pipeline,
-# backups, doctor), activity (arr events), users (wizarr invites).
+# apprise-api in gluetun's namespace. Two tags route by audience: ops (you —
+# pipeline, updates, backups, doctor, requests), users (household — new media,
+# restarts, updates, invites).
 apprise_url() { local p; p=$(svc_hostport apprise) || return 1; echo "http://127.0.0.1:$p"; }
 
 NOTIFY_WARNED=0
@@ -724,23 +725,20 @@ wire_apprise() {
         info "no notification endpoints stored yet — run './mediastack.sh wire apprise' interactively to add them"
     else
         explain "Notifications (Apprise)" \
-"One hub, three streams — give each one or more Apprise URLs
+"One hub, two streams — give each one or more Apprise URLs
 (comma-separated), or leave blank to skip a stream:
-  ops       update pipeline, backup failures, doctor problems
-  activity  arr grabs, imports, health events
-  users     invite activity (wizarr)
+  ops    you: errors, update pipeline, backups, doctor, requests
+  users  household: new media, restarts, updates, invites
 Getting a URL:
   Discord   channel -> gear -> Integrations -> Webhooks -> New Webhook
             -> Copy Webhook URL, and paste that https://... URL as-is
   ntfy      pick any unique topic name: ntfy://ntfy.sh/your-topic
             (subscribe to the topic in the ntfy app — zero signup)
   anything  else: https://github.com/caronc/apprise/wiki"
-        local ops_u act_u usr_u cfg="" u
+        local ops_u usr_u cfg="" u
         ask AP_OPS "URLs for ops" ""; ops_u="$REPLY_VAL"
-        ask AP_ACT "URLs for activity" ""; act_u="$REPLY_VAL"
         ask AP_USR "URLs for users" ""; usr_u="$REPLY_VAL"
         for u in ${ops_u//,/ }; do cfg+="ops=$u"$'\n'; done
-        for u in ${act_u//,/ }; do cfg+="activity=$u"$'\n'; done
         for u in ${usr_u//,/ }; do cfg+="users=$u"$'\n'; done
         if [[ -z "$cfg" ]]; then
             info "no URLs given — notifications stay off until 'wire apprise' stores some"
@@ -760,7 +758,7 @@ Getting a URL:
         fi
     fi
 
-    # --- each arr notifies the hub (tag: activity); create-if-missing by
+    # --- each arr notifies the hub (tag: ops); create-if-missing by
     # name, schema-driven so per-type event flags stay version-proof
     local s ty key url ver have schema tmpl body resp
     for s in $(arr_instances); do
@@ -773,7 +771,7 @@ Getting a URL:
             ok "$s already notifies the hub — untouched"
             continue
         fi
-        if ! w_would "$s: notify the hub on grab/import/health (tag: activity)"; then continue; fi
+        if ! w_would "$s: notify the hub on grab/import/health (tag: ops)"; then continue; fi
         schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)
         tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
         [[ -n "$tmpl" ]] || { wfail "$s: its API offers no Apprise notification type — is the image very old?"; continue; }
@@ -782,7 +780,7 @@ Getting a URL:
             | .fields = [ .fields[]
                 | if .name == "serverUrl"         then .value = $srv
                   elif .name == "configurationKey" then .value = "mediastack"
-                  elif .name == "tags"             then .value = ["activity"]
+                  elif .name == "tags"             then .value = ["ops"]
                   else . end ]
             | reduce ("onGrab","onDownload","onUpgrade","onReleaseImport",
                       "onImportComplete","onHealthIssue","onHealthRestored",
@@ -1276,19 +1274,19 @@ wire_seerr() {
             || wfail "$s: seerr rejected the server entry [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
     done
 
-    # request/media events -> the hub (tag: activity), when the hub is wired.
+    # request/media events -> the hub (tag: ops), when the hub is wired.
     # An enabled webhook agent (whatever it points at) is never overwritten.
     if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
         local wh
         wh=$(seerr_api GET /settings/notifications/webhook "$jar" || true)
         if [[ "$(jq -r '.enabled' <<<"$wh" 2>/dev/null)" == true ]]; then
             ok "webhook notifications already enabled — untouched (yours to manage in the GUI)"
-        elif w_would "notify the hub on requests/approvals/availability (tag: activity)"; then
+        elif w_would "notify the hub on requests/approvals/availability (tag: ops)"; then
             out=$(seerr_api POST /settings/notifications/webhook "$jar" "$(jq -cn '
                 {enabled:true, embedPoster:false, types:222,
                  options:{webhookUrl:"http://gluetun:8000/notify/mediastack",
                           authHeader:"",
-                          jsonPayload:"{\"title\":\"Seerr\",\"body\":\"{{event}}\\n{{subject}}\\n{{message}}\",\"tag\":\"activity\",\"type\":\"info\"}"}}')") \
+                          jsonPayload:"{\"title\":\"Seerr\",\"body\":\"{{event}}\\n{{subject}}\\n{{message}}\",\"tag\":\"ops\",\"type\":\"info\"}"}}')") \
                 && ok "seerr now notifies the hub" \
                 || wfail "seerr rejected the webhook agent [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
         fi
