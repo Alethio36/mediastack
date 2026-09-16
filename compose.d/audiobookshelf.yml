@@ -39,6 +39,7 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.hostport: "false"
       mediastack.config: "true"
+      mediastack.user_facing: "true"
       mediastack.cache: "true"
       mediastack.subdomain: "audiobooks"
     healthcheck:

@@ -129,6 +129,7 @@ Connect
 | `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr] [--dry-run\|--verify]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
 | `invite [--expires 1\|7\|30]` | mint a Wizarr invitation, print the ready-to-share URL (default: never expires) |
 | `set-credentials <arr\|qbit\|jellyfin\|pihole\|traefik\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `all` sets one password across the stack (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
+| `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
 | `trash-sync [--dry-run]` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update. `--dry-run` previews the drift (`recyclarr --preview`) and changes nothing |
 | `traefik-setup` | HTTPS wizard: domain, Cloudflare token, cert environment, dashboard login |
 | `traefik-setup --hosts` | guided rename of every service's subdomain |
@@ -240,14 +241,23 @@ updates). `wire apprise` asks for your endpoints once, stores them
 under one key, and connects every arr to the hub. Endpoints already
 stored are never touched.
 
-Every update sends the **users** stream a heads-up before the
-restore-point backup bounces the stack, and a follow-up once it is back
-(with a note that it may take a few minutes to fully warm up). If
-someone is streaming, the update also pauses `NOTIFY_GRACE` seconds
-(default 30; `0` = no pause) first so viewers can reach a stopping
-point. Automatic (`--auto`) updates instead defer while a stream is
-active (`UPDATE_DEFER_IF_ACTIVE`, on by default; `UPDATE_DEFER_MAX_MIN`
-caps the wait before proceeding).
+When an update bounces a **user-facing** service, the **users** stream
+gets a heads-up before the restore-point backup and a follow-up once it
+is back (with a note that it may take a few minutes to fully warm up). A
+full update or `update gluetun` bounces the whole stack ("Mediastack
+maintenance"); a targeted `update <svc>` notifies only if that service
+is user-facing, named for it. Which services count is the
+`mediastack.user_facing` label (jellyfin, navidrome, audiobookshelf,
+kavita and seerr by default) — change it per deployment with
+`set-user-facing <svc> true|false`. Services that aren't user-facing
+(the arrs, prowlarr, torrent clients, …) update quietly to `ops` only.
+
+If someone is streaming, an update that bounces jellyfin also pauses
+`NOTIFY_GRACE` seconds (default 30; `0` = no pause) first so viewers can
+reach a stopping point — the pause is jellyfin-only, since it's the one
+service with a live-session check. Automatic (`--auto`) updates instead
+defer while a stream is active (`UPDATE_DEFER_IF_ACTIVE`, on by default;
+`UPDATE_DEFER_MAX_MIN` caps the wait before proceeding).
 
 Upgrading an existing install: this change retagged `activity` into
 `ops`, but stored endpoints and already-created arr/seerr connections

@@ -101,6 +101,14 @@ svc_managed_where() { # svc_managed_where LABEL VALUE — managed services whose
 }
 svc_enabled_managed()  { _svc_managed_by_profile true; }
 svc_disabled_managed() { _svc_managed_by_profile false; }
+# is_user_facing <svc> — true when the service is household-facing (updates
+# notify the 'users' stream). A ${STEM}_USER_FACING override in .env (set via
+# set-user-facing) wins over the fragment's mediastack.user_facing default.
+is_user_facing() {
+    local ov; ov=$(env_get "$(uvar "$1")_USER_FACING" "")
+    [[ -n "$ov" ]] && { [[ "$ov" == true ]]; return; }
+    [[ "$(svc_label "$1" mediastack.user_facing)" == true ]]
+}
 _svc_managed_by_profile() { # one env read + one jq, same test as svc_enabled per service
     render
     local profiles; profiles=",$(env_get COMPOSE_PROFILES),"
@@ -1563,6 +1571,43 @@ cmd_invite() { # mint a wizarr invitation and print the ready-to-share URL
     echo "  ($exp_line — manage or revoke in wizarr's UI)"
 }
 
+user_facing_list() {
+    render; local s tag
+    echo "user-facing services — updates notify the household ('users' stream):"
+    for s in $(svc_managed); do
+        is_user_facing "$s" || continue
+        [[ -n "$(env_get "$(uvar "$s")_USER_FACING" "")" ]] && tag=" (override)" || tag=""
+        printf '  %s%s\n' "$s" "$tag"
+    done
+}
+# set-user-facing [<svc> true|false] — no args lists the set; otherwise toggles
+# whether a service notifies the household on update. Mirrors `vpn`'s idiom: the
+# fragment ships the default (mediastack.user_facing), and a ${STEM}_USER_FACING
+# line is written to .env ONLY when it deviates (cleared when it matches), so the
+# choice is upgrade-safe and no tracked fragment is ever rewritten.
+cmd_set_user_facing() {
+    load_env
+    local svc="${1:-}" act="${2:-}"
+    [[ -z "$svc" ]] && { user_facing_list; return; }
+    svc_exists "$svc" || die "set-user-facing: no such service '$svc'"
+    local target
+    case "$act" in
+        true|on|yes)  target=true ;;
+        false|off|no) target=false ;;
+        *) die "usage: ./mediastack.sh set-user-facing [<svc> true|false]" ;;
+    esac
+    local stem default
+    stem=$(uvar "$svc")
+    default=$(svc_label "$svc" mediastack.user_facing); default=${default:-false}
+    if [[ "$target" == "$default" ]]; then
+        env_del "${stem}_USER_FACING"
+        ok "set-user-facing: $svc = $target (matches shipped default — override cleared)"
+    else
+        env_set "${stem}_USER_FACING" "$target"
+        ok "set-user-facing: $svc = $target (override stored in .env)"
+    fi
+}
+
 cmd_new_service() {
     # User services live in docker-compose.override.yml: compose merges it
     # automatically, it is untracked, and upgrades never conflict with it.
@@ -1808,6 +1853,7 @@ VERBS=(
     "invite~invite [--expires 1|7|30]~free~Connect~Mint a Wizarr invitation and print the ready-to-share URL."
     "credentials~credentials~none~Connect~Show the app logins wire created/stored."
     "set-credentials~set-credentials <target|all>~max=1~Connect~Rotate a stored login everywhere it lives, atomically."
+    "set-user-facing~set-user-facing [<svc> true|false]~max=2~Connect~Show or change which services notify the household on update (the 'users' stream)."
     "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login)."
     "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift)."
     "doctor~doctor~none~Check~Full health/permission/port/backup audit; every failure states its fix."

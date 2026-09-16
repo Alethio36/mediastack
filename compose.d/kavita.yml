@@ -38,6 +38,7 @@ services:
       mediastack.desc: "reading server for ebooks, comics and manga"
       mediastack.vpn: "false"
       mediastack.config: "true"
+      mediastack.user_facing: "true"
       mediastack.subdomain: "books"
     healthcheck:
       # this image ships curl but not wget/nc; /api/health returns Ok
