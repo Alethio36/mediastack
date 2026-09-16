@@ -328,25 +328,29 @@ cmd_update() {
         return 0
     fi
 
-    # Household (users) heads-up before the restore-point backup — only when
-    # this run actually bounces Jellyfin: a full update or `update gluetun` take
-    # the stop-the-world backup (whole stack — yes); `update jellyfin` stops
-    # jellyfin for its scoped snapshot (yes); any other targeted update is scoped
-    # to that one service and never touches jellyfin (no notice). Wording matches
-    # the scope. The NOTIFY_GRACE pause applies only when someone is streaming.
-    local ntitle="" nstart="" ndone=""
+    # Household (users) heads-up before the restore-point backup — only when this
+    # run bounces a user-facing service (is_user_facing: the mediastack.user_facing
+    # label, with a per-install set-user-facing override). Full update / gluetun
+    # bounce the whole stack; a targeted update bounces only $one. Wording matches
+    # the scope. The NOTIFY_GRACE pause is a courtesy that needs a live-session
+    # check — only jellyfin has one — so it fires only when jellyfin is bounced.
+    local ntitle="" nstart="" ndone="" notify_users=0 jf_affected=0 u
     if [[ -z "$one" || "$one" == gluetun ]]; then
+        for u in $(svc_enabled_managed); do is_user_facing "$u" && { notify_users=1; break; }; done
+        svc_enabled jellyfin && jf_affected=1
         ntitle="Mediastack maintenance"
-        nstart="Scheduled maintenance is starting — the media server will restart briefly and your stream will drop for a moment."
+        nstart="Scheduled maintenance is starting — services will restart briefly and anything you're watching or listening to will drop for a moment."
         ndone="Everything's back up. It can take a few minutes to fully warm up, so if something isn't loading yet, give it a moment."
-    elif [[ "$one" == jellyfin ]]; then
-        ntitle="Jellyfin maintenance"
-        nstart="Maintenance starting now — Jellyfin will restart briefly and your stream will drop for a moment."
-        ndone="Jellyfin is back up. It can take a few minutes to fully warm up, so if something isn't loading yet, give it a moment."
+    else
+        is_user_facing "$one" && notify_users=1
+        [[ "$one" == jellyfin ]] && jf_affected=1
+        ntitle="${one^} maintenance"
+        nstart="${one^} is restarting briefly for maintenance — back in a moment."
+        ndone="${one^} is back up. It can take a few minutes to fully warm up, so if something isn't loading yet, give it a moment."
     fi
-    if [[ -n "$ntitle" ]]; then
+    if (( notify_users )); then
         notify_interruption "$ntitle" "$nstart"
-        if jellyfin_sessions_active; then
+        if (( jf_affected )) && jellyfin_sessions_active; then
             local grace; grace=$(env_get NOTIFY_GRACE 30)
             (( grace > 0 )) && { info "active stream(s) — warned users, pausing ${grace}s before maintenance"; sleep "$grace"; }
         fi
@@ -443,7 +447,7 @@ cmd_update() {
         exit 1
     fi
     ok "All updated services healthy."
-    [[ -n "$ntitle" ]] && notify_interruption "$ntitle complete" "$ndone" success
+    (( notify_users )) && notify_interruption "$ntitle complete" "$ndone" success
     (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '`%s`\n' "${changed[@]}")" success
 
     # nightly TRaSH sync rides the update pipeline: same schedule the

@@ -44,6 +44,7 @@ services:
       mediastack.desc: "music server (Subsonic API) over lidarr's library"
       mediastack.vpn: "false"
       mediastack.config: "true"
+      mediastack.user_facing: "true"
       mediastack.subdomain: "music"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:4533/ping || exit 1"]

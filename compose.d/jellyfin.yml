@@ -47,6 +47,7 @@ services:
       mediastack.desc: "the media server your users watch"
       mediastack.vpn: "false"
       mediastack.config: "true"
+      mediastack.user_facing: "true"
       mediastack.cache: "true"
       mediastack.transcode: "true"
       mediastack.subdomain: "jellyfin"

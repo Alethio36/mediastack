@@ -38,6 +38,7 @@ services:
       mediastack.desc: "request/discovery site for your users"
       mediastack.vpn: "false"
       mediastack.config: "true"
+      mediastack.user_facing: "true"
       mediastack.cache: "true"
       mediastack.subdomain: "requests"
     healthcheck:
