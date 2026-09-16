@@ -240,6 +240,11 @@ updates). `wire apprise` asks for your endpoints once, stores them
 under one key, and connects every arr to the hub. Endpoints already
 stored are never touched.
 
+Before an update restarts Jellyfin while someone is streaming, the
+**users** stream gets a heads-up and the update pauses `NOTIFY_GRACE`
+seconds (default 30; `0` warns without pausing) so viewers can reach a
+stopping point. Idle-hour updates send nothing.
+
 Upgrading an existing install: this change retagged `activity` into
 `ops`, but stored endpoints and already-created arr/seerr connections
 are never overwritten. To move them, clear the `mediastack` config in
