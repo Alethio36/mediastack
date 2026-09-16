@@ -254,6 +254,18 @@ cmd_update() {
         return 0
     fi
 
+    # heads-up to the household before the restore-point backup bounces the
+    # whole stack (Jellyfin included, ~20-40s) — only when someone is streaming.
+    # Fires before cmd_backup because that stop-the-world is the real
+    # stream-dropping moment; every update triggers it, not just jellyfin ones.
+    # NOTIFY_GRACE seconds of lead time; 0 warns without pausing.
+    if jellyfin_sessions_active; then
+        notify_interruption "Jellyfin maintenance" \
+            "Maintenance starting now — Jellyfin will restart briefly and your stream will drop for a moment."
+        local grace; grace=$(env_get NOTIFY_GRACE 30)
+        (( grace > 0 )) && { info "active stream(s) — warned users, pausing ${grace}s before maintenance"; sleep "$grace"; }
+    fi
+
     hr "Update: restore point first"
     cmd_backup
 
@@ -270,15 +282,6 @@ cmd_update() {
     for s in "${targets[@]}"; do before[$s]=$(c_version "$(svc_cname "$s")"); done
     DC pull "${targets[@]}"
     hr "Applying"
-    # heads-up to the household before Jellyfin recreates — only when it is
-    # actually in this run AND someone is streaming (no idle-hours noise).
-    # NOTIFY_GRACE seconds of lead time; 0 warns without pausing.
-    if printf '%s\n' "${targets[@]}" | grep -qx jellyfin && jellyfin_sessions_active; then
-        notify_interruption "Jellyfin maintenance" \
-            "Applying an update now — Jellyfin will restart briefly and your stream will drop for a moment."
-        local grace; grace=$(env_get NOTIFY_GRACE 30)
-        (( grace > 0 )) && { info "active stream(s) — warned users, pausing ${grace}s before recreate"; sleep "$grace"; }
-    fi
     # Cascade: recreating gluetun gives it a new container ID, and compose does
     # NOT recreate its network_mode:service:gluetun borrowers when only their
     # namespace-host changed — they would be left on the dead ID (the ghost).
