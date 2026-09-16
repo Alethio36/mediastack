@@ -37,3 +37,19 @@ Defaults give ~6 months of reach at 17 points steady state. `0` disables a
 tier. The newest point is never pruned, and nothing in `BACKUP_ROOT` that
 isn't a restore-point directory is ever touched. Every prune prints what it
 removed and a `retention 7d/4w/6m: kept X, pruned Y` summary.
+
+### Pre-update points (separate pool)
+
+A targeted `update <svc>` takes a *scoped* restore point — it stops and
+snapshots only that one service, leaving the rest of the stack running — and
+writes it under `BACKUP_ROOT/pre-update/` instead of the top-level pool. The
+grandfather-father-son schedule above **never sees this pool** (it globs
+top-level timestamp dirs only), so scoped update points can't displace a
+daily/weekly/monthly slot. They have their own retention, `BACKUP_KEEP_PREUPDATE`
+(3) — the newest N "undo that update" points, pruned after each targeted update.
+
+`rollback <svc>` automatically restores from the newest point covering that
+service, preferring a pre-update point over an older nightly full. A full
+`restore --all` only ever draws from the top-level GFS pool, never a partial
+pre-update point. Full `update` (all services) and `update gluetun` still take
+the full stop-the-world restore point into the GFS pool as before.
