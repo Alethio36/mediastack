@@ -159,20 +159,32 @@ a committed plan.
 - Extend `--dry-run` / what-if to `enable`/`disable`/`vpn-apply`. (`update`,
   `wire` and `trash-sync` have it; `wire --verify` adds a non-zero exit on
   drift for scripts and cron.)
-- **Service-interruption notifications — Jellyfin toast rejected; Apprise-only
-  if ever built.** Warn active users before an `update`/restart/backup drops
-  their stream. The Jellyfin toast (`POST /Sessions/{id}/Message`, the
-  `MessageCommand` `Header`/`Text`/`TimeoutMs`) was tested live on 12.0: the
-  request is SDK-correct and delivery works from an external API caller — the
-  #15865 "commands 204-no-op / empty `SupportedCommands`" regression does *not*
-  bite the web client (`DisplayMessage` is advertised and the toast is
-  delivered). Rejected anyway: jellyfin-web clamps the toast to ~5s in both
-  playback and idle regardless of `TimeoutMs` (the cap is the client's and
-  undocumented), position is client-fixed, and a 204 is not a delivery ack. A
-  ~5s flash is too brief to read, so it is not worth the code. If picked up
-  later it is Apprise-only, via the existing household channel carrying the real
-  content; the toast stays dropped unless jellyfin-web ever renders
-  `DisplayMessage` as a persistent element instead of a transient toast.
+- **Service-interruption notifications — *(landed, Apprise-only)*.** Households
+  are warned before an update restarts a user-facing service and told when it is
+  back. Shipped: two audience-shaped Apprise streams (`ops` = you: errors,
+  pipeline, backups, requests; `users` = household: new media, restarts,
+  invites — the old `activity` stream retired, all behind-the-scenes emitters
+  folded into `ops`); a scope-aware notice on every update that bounces a
+  user-facing service, named for the scope ("Mediastack maintenance" for a full
+  update or `gluetun`, "<Service> maintenance" for a targeted one); which
+  services count is the `mediastack.user_facing` label, toggled per-install with
+  `set-user-facing`; a `NOTIFY_GRACE` pause for active viewers before the bounce
+  (jellyfin-only — the one service with a live-session API — a courtesy, not a
+  guarantee); and auto-updates that defer while a stream is active
+  (`UPDATE_DEFER_IF_ACTIVE`, now on by default). Apprise is the reliable path;
+  there is no in-app toast (see below).
+- **Jellyfin in-app toast — evaluated and rejected** (kept so it is not
+  retried). `POST /Sessions/{id}/Message` works on 12.0 from an external API
+  caller — the #15865 "204-no-op / empty `SupportedCommands`" regression does
+  *not* bite the web client (`DisplayMessage` is advertised and delivered) — but
+  jellyfin-web clamps the toast to ~5s regardless of `TimeoutMs`, its position
+  is client-fixed, and a 204 is not a delivery ack. A ~5s flash is too brief to
+  read, so it stays dropped unless jellyfin-web ever renders `DisplayMessage` as
+  a persistent element instead of a transient toast.
+- **Notification follow-ups, not built.** A `notify` management verb
+  (`test` a stream, re-runnable `set`, redacted `status`, `clear`) and a curated
+  "new media available → `users`" event (the raw arr import firehose is too
+  noisy to point at the household directly).
 
 ### Extensibility
 - An easier path to add services *beyond* the built-in framework.
