@@ -166,3 +166,4 @@ migrate_env_17_to_18() {
         grep -qE "^${kv%%=*}=" "$ENV_FILE" || env_set "${kv%%=*}" "${kv#*=}"
     done
 }
+migrate_env_18_to_19() { :; } # NOTIFY_GRACE added to .env.example; env_get default (30) stands for existing installs

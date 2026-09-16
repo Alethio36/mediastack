@@ -702,6 +702,10 @@ notify() { # notify TAG TITLE BODY [TYPE] — never blocks, never fails the call
     return 0
 }
 
+notify_interruption() { # notify_interruption TITLE BODY — household heads-up before a service disruption
+    notify users "$1" "$2" warning
+}
+
 wire_apprise() {
     hr "wire: apprise"
     svc_enabled apprise || { info "apprise not enabled — skipped"; return 0; }
