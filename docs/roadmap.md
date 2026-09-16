@@ -159,6 +159,20 @@ a committed plan.
 - Extend `--dry-run` / what-if to `enable`/`disable`/`vpn-apply`. (`update`,
   `wire` and `trash-sync` have it; `wire --verify` adds a non-zero exit on
   drift for scripts and cron.)
+- **Service-interruption notifications — Jellyfin toast rejected; Apprise-only
+  if ever built.** Warn active users before an `update`/restart/backup drops
+  their stream. The Jellyfin toast (`POST /Sessions/{id}/Message`, the
+  `MessageCommand` `Header`/`Text`/`TimeoutMs`) was tested live on 12.0: the
+  request is SDK-correct and delivery works from an external API caller — the
+  #15865 "commands 204-no-op / empty `SupportedCommands`" regression does *not*
+  bite the web client (`DisplayMessage` is advertised and the toast is
+  delivered). Rejected anyway: jellyfin-web clamps the toast to ~5s in both
+  playback and idle regardless of `TimeoutMs` (the cap is the client's and
+  undocumented), position is client-fixed, and a 204 is not a delivery ack. A
+  ~5s flash is too brief to read, so it is not worth the code. If picked up
+  later it is Apprise-only, via the existing household channel carrying the real
+  content; the toast stays dropped unless jellyfin-web ever renders
+  `DisplayMessage` as a persistent element instead of a transient toast.
 
 ### Extensibility
 - An easier path to add services *beyond* the built-in framework.
