@@ -258,10 +258,14 @@ cmd_update() {
     # whole stack (Jellyfin included, ~20-40s) — only when someone is streaming.
     # Fires before cmd_backup because that stop-the-world is the real
     # stream-dropping moment; every update triggers it, not just jellyfin ones.
-    # NOTIFY_GRACE seconds of lead time; 0 warns without pausing.
+    # heads-up to the household before the restore-point backup bounces the
+    # whole stack (Jellyfin included, ~20-40s) — sent on every update. The
+    # NOTIFY_GRACE pause only applies when someone is streaming (no point
+    # delaying an idle-hours run). Fires before cmd_backup because that
+    # stop-the-world is the real stream-dropping moment.
+    notify_interruption "Jellyfin maintenance" \
+        "Maintenance starting now — Jellyfin will restart briefly and your stream will drop for a moment."
     if jellyfin_sessions_active; then
-        notify_interruption "Jellyfin maintenance" \
-            "Maintenance starting now — Jellyfin will restart briefly and your stream will drop for a moment."
         local grace; grace=$(env_get NOTIFY_GRACE 30)
         (( grace > 0 )) && { info "active stream(s) — warned users, pausing ${grace}s before maintenance"; sleep "$grace"; }
     fi
@@ -347,6 +351,8 @@ cmd_update() {
         exit 1
     fi
     ok "All updated services healthy."
+    notify_interruption "Jellyfin maintenance complete" \
+        "All done — Jellyfin is back up. It can take a few minutes to fully warm up, so if something isn't loading yet, give it a moment." success
     (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '`%s`\n' "${changed[@]}")" success
 
     # nightly TRaSH sync rides the update pipeline: same schedule the
