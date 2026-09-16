@@ -406,7 +406,8 @@ cmd_update() {
     for s in "${targets[@]}"; do
         local cn h; cn=$(svc_cname "$s")
         while :; do
-            h=$(c_health "$cn")
+            INSPECT_JSON=""   # poll live — a prior c_inspect_all (e.g. vpn_reattach_guard)
+            h=$(c_health "$cn")   # left a frozen snapshot the loop must not read
             [[ "$h" == healthy || "$h" == "-" ]] && break
             (( $(date +%s) > deadline )) && { bad+=("$s"); break; }
             sleep 5
