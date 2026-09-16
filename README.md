@@ -116,11 +116,11 @@ Run
 Maintain
 | command | what it does |
 |---|---|
-| `update [svc] [--to TAG] [--dry-run] [--now]` | container images: backup → pull → apply → health gate; nightly via timer (`--auto`, timer-only) |
+| `update [svc] [--to TAG] [--dry-run] [--now]` | container images: backup → pull → apply → health gate. A targeted `update <svc>` bounces only that service (scoped restore point; the rest stay up); a full update stops the whole stack. Warns the household first when a user-facing service is affected. Nightly via timer (`--auto`) |
 | `apply-timer` | install/refresh the scheduled-update systemd timer |
 | `backup` / `backup verify [ts]` | restore point now / verify checksums + archives |
 | `restore --service <svc>\|--all [--from TS]` | restore configs + exact image |
-| `rollback <svc>` / `unpin <svc>` | restore from newest point and pin / release the pin |
+| `rollback <svc>` / `unpin <svc>` | restore from the newest point covering it (prefers the scoped pre-update point) and pin / release the pin |
 | `upgrade` | mediastack itself: git pull + `.env` migration (images stay put — that's `update`) |
 
 Connect
