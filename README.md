@@ -240,10 +240,14 @@ updates). `wire apprise` asks for your endpoints once, stores them
 under one key, and connects every arr to the hub. Endpoints already
 stored are never touched.
 
-Before an update restarts Jellyfin while someone is streaming, the
-**users** stream gets a heads-up and the update pauses `NOTIFY_GRACE`
-seconds (default 30; `0` warns without pausing) so viewers can reach a
-stopping point. Idle-hour updates send nothing.
+Every update sends the **users** stream a heads-up before the
+restore-point backup bounces the stack, and a follow-up once it is back
+(with a note that it may take a few minutes to fully warm up). If
+someone is streaming, the update also pauses `NOTIFY_GRACE` seconds
+(default 30; `0` = no pause) first so viewers can reach a stopping
+point. Automatic (`--auto`) updates instead defer while a stream is
+active (`UPDATE_DEFER_IF_ACTIVE`, on by default; `UPDATE_DEFER_MAX_MIN`
+caps the wait before proceeding).
 
 Upgrading an existing install: this change retagged `activity` into
 `ops`, but stored endpoints and already-created arr/seerr connections
