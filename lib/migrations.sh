@@ -168,3 +168,4 @@ migrate_env_17_to_18() {
 }
 migrate_env_18_to_19() { :; } # NOTIFY_GRACE added to .env.example; env_get default (30) stands for existing installs
 migrate_env_19_to_20() { :; } # .env.example default change only (UPDATE_DEFER_IF_ACTIVE=true); existing values stand
+migrate_env_20_to_21() { :; } # BACKUP_KEEP_PREUPDATE added to .env.example; env_get default (3) stands

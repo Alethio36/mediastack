@@ -102,6 +102,66 @@ prune_backups() {
     ok "restore points: kept $(( ${#all[@]} - pruned )), pruned $pruned — policy: the last $keepd backups, plus one per week for $keepw weeks, plus one per month for $keepm months (change via BACKUP_KEEP_* in .env)"
 }
 
+# Scoped pre-update restore point: stops and snapshots ONLY the named
+# service(s), leaving the rest of the stack running. Lands under
+# $BACKUP_ROOT/pre-update/ — a pool the GFS prune_backups never scans (it
+# globs top-level timestamp dirs only), so scheduled retention is untouched.
+# Retained by its own count-based prune_preupdate. Used by targeted
+# `update <svc>`. No whole-croot space precheck (a single service tar is
+# small); a failed tar still fails loud below.
+preupdate_backup() {
+    local broot croot dest ts s cn img ref rc=0
+    broot=$(env_get BACKUP_ROOT); croot=$(env_get CONFIG_ROOT)
+    ts=$(ts_now); dest="$broot/pre-update/$ts"; sudo mkdir -p "$dest"
+    info "Pre-update restore point (scoped to: $*): $dest"
+
+    # images.lock for the scoped service(s), BEFORE stopping (inspect needs them)
+    c_inspect_all
+    { for s in "$@"; do
+        cn=$(svc_cname "$s")
+        img=$(c_get "$cn" '.Image'); [[ -n "$img" ]] || continue
+        ref=$(sudo docker image inspect --format '{{index .RepoDigests 0}}' "$img" 2>/dev/null | tr -d '\n' || true)
+        [[ -n "$ref" ]] && echo "$s $ref"
+      done; } | sudo tee "$dest/images.lock" >/dev/null
+
+    for s in "$@"; do
+        info "snapshotting $s (only this service stops)..."
+        DC stop "$s" >/dev/null
+        # same transcode exclude as the full backup (canonical: cmd_backup)
+        [[ -d "$croot/$s" ]] && { sudo tar -C "$croot" --exclude="$s/data/transcodes" -czf "$dest/$s.tar.gz" "$s" || { fail "tar failed for $s"; rc=1; }; }
+        DC up -d "$s" >/dev/null
+    done
+    sudo cp "$ENV_FILE" "$dest/env"; sudo chmod 600 "$dest/env"
+    [[ -s "$PINS_FILE" ]] && sudo cp "$PINS_FILE" "$dest/pins.yml"
+    ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' )
+    if (( rc == 0 )); then ok "Pre-update restore point complete: $dest"
+    else
+        notify ops "Mediastack pre-update backup FAILED" "Scoped restore point \`$dest\` finished with errors — **do not trust it**. Inspect on the host." failure
+        die "Pre-update backup finished WITH ERRORS — do not trust $dest."
+    fi
+    prune_preupdate
+}
+
+# Pre-update pool retention: keep the newest BACKUP_KEEP_PREUPDATE scoped
+# points, prune the rest. Independent of the GFS prune_backups; only ever
+# touches $BACKUP_ROOT/pre-update/.
+prune_preupdate() {
+    local broot keep pud d n=0 pruned=0
+    broot=$(env_get BACKUP_ROOT); keep=$(env_get BACKUP_KEEP_PREUPDATE 3)
+    pud="$broot/pre-update"; [[ -d "$pud" ]] || return 0
+    local -a all=()
+    for d in "$pud"/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]; do
+        [[ -d "$d" ]] && all+=("$(basename "$d")")
+    done
+    (( ${#all[@]} )) || return 0
+    mapfile -t all < <(printf '%s\n' "${all[@]}" | sort -r)
+    for d in "${all[@]}"; do
+        n=$((n+1)); (( n <= keep )) && continue
+        sudo rm -rf "${pud:?}/$d"; pruned=$((pruned+1))
+    done
+    ok "pre-update points: kept $(( ${#all[@]} - pruned )), pruned $pruned (BACKUP_KEEP_PREUPDATE=$keep)"
+}
+
 cmd_backup_verify() {
     load_env
     local broot t="${1:-}"
@@ -148,8 +208,22 @@ cmd_restore() {
     esac; done
     (( all_svcs )) || [[ -n "$svc" ]] || die "usage: restore --service SVC | --all  [--from TIMESTAMP]"
     local broot; broot=$(env_get BACKUP_ROOT)
-    [[ -n "$from" ]] || from=$(ls -1 "$broot" 2>/dev/null | tail -1)
-    [[ -n "$from" && -d "$broot/$from" ]] || die "No restore point found. Available: $(ls -1 "$broot" 2>/dev/null | tr '\n' ' ')"
+    local tsglob='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]'
+    if [[ -z "$from" ]]; then
+        if [[ -n "$svc" ]]; then
+            # rollback: newest point covering this service across BOTH pools —
+            # the scoped pre-update point is the exact pre-update state, so it
+            # wins over an older nightly full when it's newer. $from carries the
+            # $broot-relative path (may be "pre-update/<ts>").
+            from=$( { for d in "$broot"/pre-update/$tsglob "$broot"/$tsglob; do
+                        [[ -d "$d" && -f "$d/$svc.tar.gz" ]] && printf '%s\t%s\n' "$(basename "$d")" "${d#"$broot"/}"
+                     done; } | sort -r | head -1 | cut -f2 )
+        else
+            # full restore: newest GFS point only — never a partial pre-update one
+            from=$(ls -1d "$broot"/$tsglob 2>/dev/null | sort -r | head -1); from=${from:+$(basename "$from")}
+        fi
+    fi
+    [[ -n "$from" && -d "$broot/$from" ]] || die "No restore point found. Available: $(ls -1 "$broot" 2>/dev/null | grep -E "^$tsglob$" | tr '\n' ' ')"
     info "Restoring from $from"
     local targets; if (( all_svcs )); then targets=$(svc_managed); else targets="$svc"; fi
     local croot ts s ref
@@ -270,8 +344,17 @@ cmd_update() {
         (( grace > 0 )) && { info "active stream(s) — warned users, pausing ${grace}s before maintenance"; sleep "$grace"; }
     fi
 
-    hr "Update: restore point first"
-    cmd_backup
+    # Targeted single-service update (not gluetun) → scoped pre-update point:
+    # only that service stops, the rest of the stack stays up. Full updates and
+    # gluetun keep the full stop-the-world restore point (gluetun cascades its
+    # borrower recreate, so it can't be a single-service snapshot).
+    if [[ -n "$one" && "$one" != gluetun ]]; then
+        hr "Update: pre-update restore point (scoped to $one)"
+        preupdate_backup "$one"
+    else
+        hr "Update: restore point first"
+        cmd_backup
+    fi
 
     if [[ -n "$to_tag" ]]; then
         local base; base=$(svc_image "$one" | cut -d: -f1)
