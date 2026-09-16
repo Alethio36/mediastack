@@ -975,6 +975,10 @@ cmd_logs() {
 # recreates, starts, stops or removes a container clears INSPECT_JSON (DC does
 # it for every compose verb but config; raw `sudo docker` mutations do it
 # explicitly), so a health poll after `up` never reads a stale snapshot.
+# A POLLING loop must handle one case itself: a plain read (c_inspect_all in
+# another helper) can repopulate the cache between the last mutation and the
+# poll, so a loop watching for a state change must clear INSPECT_JSON each
+# iteration to re-inspect live (see the update health gate).
 c_inspect() { # c_inspect <cname>... -> JSON array of the containers that exist
     # a missing container is a normal state (before the first `up`); anything
     # else on stderr — daemon down, permission denied — is zero evidence: die

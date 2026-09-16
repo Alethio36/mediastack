@@ -328,20 +328,28 @@ cmd_update() {
         return 0
     fi
 
-    # heads-up to the household before the restore-point backup bounces the
-    # whole stack (Jellyfin included, ~20-40s) — only when someone is streaming.
-    # Fires before cmd_backup because that stop-the-world is the real
-    # stream-dropping moment; every update triggers it, not just jellyfin ones.
-    # heads-up to the household before the restore-point backup bounces the
-    # whole stack (Jellyfin included, ~20-40s) — sent on every update. The
-    # NOTIFY_GRACE pause only applies when someone is streaming (no point
-    # delaying an idle-hours run). Fires before cmd_backup because that
-    # stop-the-world is the real stream-dropping moment.
-    notify_interruption "Jellyfin maintenance" \
-        "Maintenance starting now — Jellyfin will restart briefly and your stream will drop for a moment."
-    if jellyfin_sessions_active; then
-        local grace; grace=$(env_get NOTIFY_GRACE 30)
-        (( grace > 0 )) && { info "active stream(s) — warned users, pausing ${grace}s before maintenance"; sleep "$grace"; }
+    # Household (users) heads-up before the restore-point backup — only when
+    # this run actually bounces Jellyfin: a full update or `update gluetun` take
+    # the stop-the-world backup (whole stack — yes); `update jellyfin` stops
+    # jellyfin for its scoped snapshot (yes); any other targeted update is scoped
+    # to that one service and never touches jellyfin (no notice). Wording matches
+    # the scope. The NOTIFY_GRACE pause applies only when someone is streaming.
+    local ntitle="" nstart="" ndone=""
+    if [[ -z "$one" || "$one" == gluetun ]]; then
+        ntitle="Mediastack maintenance"
+        nstart="Scheduled maintenance is starting — the media server will restart briefly and your stream will drop for a moment."
+        ndone="Everything's back up. It can take a few minutes to fully warm up, so if something isn't loading yet, give it a moment."
+    elif [[ "$one" == jellyfin ]]; then
+        ntitle="Jellyfin maintenance"
+        nstart="Maintenance starting now — Jellyfin will restart briefly and your stream will drop for a moment."
+        ndone="Jellyfin is back up. It can take a few minutes to fully warm up, so if something isn't loading yet, give it a moment."
+    fi
+    if [[ -n "$ntitle" ]]; then
+        notify_interruption "$ntitle" "$nstart"
+        if jellyfin_sessions_active; then
+            local grace; grace=$(env_get NOTIFY_GRACE 30)
+            (( grace > 0 )) && { info "active stream(s) — warned users, pausing ${grace}s before maintenance"; sleep "$grace"; }
+        fi
     fi
 
     # Targeted single-service update (not gluetun) → scoped pre-update point:
@@ -435,8 +443,7 @@ cmd_update() {
         exit 1
     fi
     ok "All updated services healthy."
-    notify_interruption "Jellyfin maintenance complete" \
-        "All done — Jellyfin is back up. It can take a few minutes to fully warm up, so if something isn't loading yet, give it a moment." success
+    [[ -n "$ntitle" ]] && notify_interruption "$ntitle complete" "$ndone" success
     (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '`%s`\n' "${changed[@]}")" success
 
     # nightly TRaSH sync rides the update pipeline: same schedule the
