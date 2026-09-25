@@ -282,11 +282,12 @@ _doctor_vpn_backups() {
     for d in "$broot"/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]; do
         [[ -d "$d" ]] && last=$(basename "$d")
     done
-    if [[ -n "$last" ]]; then
-        age=$(( ( $(date +%s) - $(date -d "$(sed -E 's/([0-9]{8})-([0-9]{2})([0-9]{2}).*/\1 \2:\3/' <<<"$last")" +%s 2>/dev/null || date +%s) ) / 3600 ))
-        (( age > 48 )) && warn "latest restore point is ${age}h old — run: ./mediastack.sh backup" || ok "latest restore point ${age}h old"
-    else
+    if [[ -z "$last" ]]; then
         warn "no restore points yet — run: ./mediastack.sh backup"
+    elif ! age=$(ts_age_hours "$last"); then
+        d_fail "restore point name '$last' is not a real date" "backup freshness cannot be judged" "inspect $broot/$last — rename or remove it"
+    else
+        (( age > 48 )) && warn "latest restore point is ${age}h old — run: ./mediastack.sh backup" || ok "latest restore point ${age}h old"
     fi
     _doctor_manifest
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
@@ -332,8 +333,9 @@ _doctor_manifest() { # called from the vpn + backups section
     last=$(manifest_list | tail -1)
     if [[ -z "$last" ]]; then
         warn "no media manifest yet — run: ./mediastack.sh manifest"
+    elif ! mage=$(ts_age_hours "$last"); then
+        d_fail "media manifest name '$last' is not a real date" "manifest freshness cannot be judged" "inspect $(manifest_dir)/$last — rename or remove it"
     else
-        mage=$(( ( $(date +%s) - $(date -d "$(sed -E 's/([0-9]{8})-([0-9]{2})([0-9]{2}).*/\1 \2:\3/' <<<"$last")" +%s) ) / 3600 ))
         (( mage > 48 )) && warn "latest media manifest is ${mage}h old — check: systemctl status mediastack-manifest.service" \
                         || ok "latest media manifest ${mage}h old"
     fi
