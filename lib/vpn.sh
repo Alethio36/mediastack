@@ -361,7 +361,7 @@ cmd_vpn() {
     [[ -z "$svc" ]] && { vpn_list; return; }
     svc_exists "$svc" || die "vpn: no such service '$svc'"
     [[ $(svc_label "$svc" mediastack.vpntoggle) == "true" ]] \
-        || die "vpn: '$svc' is not toggle-enabled (no mediastack.vpntoggle label — not yet migrated to the generated model)."
+        || die "vpn: '$svc' is not toggle-enabled (no mediastack.vpntoggle label — its fragment fixes where it runs)."
     local stem target; stem=$(uvar "$svc")
     case "$act" in
         on|true)   target=true ;;

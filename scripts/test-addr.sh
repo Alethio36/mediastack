@@ -4,8 +4,11 @@
 # network layout; a VPN toggle made them point at nothing (apprise off the VPN
 # silently cut every arr's notifications). Proven live, the rule is: target
 # behind the VPN -> gluetun:<port>, target outside -> <service>:<port>, from
-# any caller. Pins that rule, the drift report, and — statically — that no
-# wiring code writes a hard-coded loopback or gluetun address again.
+# any caller. Pins that rule; re-pointing (only addresses mediastack wrote,
+# per field; masked secrets survive; a key-authenticated qBittorrent entry gets
+# no login); one-line rejection messages; and, statically, that no wiring code
+# writes a hard-coded loopback or gluetun address, and no API read swallows
+# its failure without a '# soft read:' reason.
 #
 #   scripts/test-addr.sh     run (exit 1 on the first failed check)
 set -euo pipefail

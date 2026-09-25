@@ -91,7 +91,8 @@ arr_url() { local p; p=$(svc_hostport "$1") || return 1; echo "http://127.0.0.1:
 # service outside the VPN is reached by its service name on the stack network,
 # from either side. The address depends only on the TARGET: moving a caller
 # in or out of the VPN never breaks a connection, moving a target means
-# re-pointing its callers.
+# re-pointing its callers — addr_stale/addr_repoint do it, and after a VPN
+# toggle `up` runs them for every caller in WIRE_CALLERS.
 svc_host() { # svc_host <target> -> gluetun | <target>, from its effective VPN membership
     if [[ "$(vpn_effective "$1" "$(svc_label "$1" mediastack.vpn)")" == true ]]; then echo gluetun; else echo "$1"; fi
 }
