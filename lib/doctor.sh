@@ -63,6 +63,12 @@ _doctor_containers() {
         local deadline=$(( $(date +%s) + 90 )) rc_now still
         while (( ${#pending[@]} )) && (( $(date +%s) < deadline )); do
             sleep 5
+            # re-inspect live: cmd_doctor filled the cache once up front, and a
+            # poll that reads that snapshot never sees the change it waits for
+            # (CACHE RULE at c_inspect). Refilled in this scope, so the checks
+            # below and every later section read the fresh state.
+            # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+            INSPECT_JSON=""; c_inspect_all
             still=()
             for s in "${pending[@]}"; do
                 cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
