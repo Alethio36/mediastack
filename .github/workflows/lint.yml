@@ -11,7 +11,8 @@ jobs:
         run: bash scripts/audit-frontdoor-safety.sh
       - name: no placeholder host literals
         run: |
-          if grep -rnE '<this-host>|<this_host>|<your-host>' mediastack.sh lib/*.sh; then
+          # an escaped \${X_HOST:-...} in script output is a host placeholder printed verbatim
+          if grep -rnE '<this-host>|<this_host>|<your-host>|\\\$\{[A-Z0-9_]+_HOST:-' mediastack.sh lib/*.sh; then
             echo "::error::placeholder host literal in a runtime string — use svc_url or a real host expression"
             exit 1
           fi
