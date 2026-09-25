@@ -3,8 +3,8 @@
 # "Compose definitions changed — apply them" for any file under compose.d/
 # (a comment edit included), and ran migrations in the process that did the
 # pull — the OLD code, which cannot know the new ones. Pins: compose_pending
-# is Docker's own verdict (config-hash vs each container's label: changed,
-# new, removed; nothing -> nothing; a failed render fails loud), the
+# is Compose's own dry run of up (changed, new, removed, stopped; Running /
+# Waiting / Healthy are no change; a failed dry run fails loud), the
 # hand-over (a real pull re-runs the pulled script with the old commit; up to
 # date does not; the second half never pulls), and the three verdicts.
 #
@@ -24,28 +24,33 @@ pass()  { checks=$((checks+1)); }
 fail_() { echo "FAIL: $*" >&2; exit 1; }
 eq()    { [[ "$2" == "$3" ]] || fail_ "$1: got '$2' want '$3'"; }
 
-# ---- compose_pending: stub compose's config hashes and docker's labels
-WANT=""; HAVE=""; DC_FAILS=0
-DC()   { [[ "$*" == "config --hash *" ]] || fail_ "unexpected DC call: $*"; (( ! DC_FAILS )) || return 1; printf '%s' "$WANT"; }
-sudo() { "$@"; }
-docker() { printf '%s' "$HAVE"; }
+# ---- compose_pending: stub compose's dry run with the output format seen live
+DRY=""; DC_FAILS=0
+DC()   { [[ "$*" == "--dry-run up -d --remove-orphans" ]] || fail_ "unexpected DC call: $*"; printf '%s' "$DRY"; (( ! DC_FAILS )); }
 pending() { compose_pending | paste -sd'|'; }
+unchanged=$' Container mediastack-radarr Running\n Container mediastack-gluetun Running\n Container mediastack-gluetun Waiting\n Container mediastack-gluetun Healthy\n'
 
-WANT=$'radarr aaa\nsonarr bbb\n'; HAVE=$'radarr aaa\nsonarr bbb\n'
-eq "nothing changed" "$(pending)" ""; pass
-WANT=$'radarr aaa\nsonarr NEW\n'
-eq "a changed definition" "$(pending)" "sonarr"; pass
-WANT=$'radarr aaa\nsonarr bbb\nkavita ccc\n'
-eq "an enabled service with no container" "$(pending)" "kavita (new)"; pass
-WANT=$'radarr aaa\n'
-eq "a container whose service is gone" "$(pending)" "sonarr (removed)"; pass
-DC_FAILS=1
+DRY=$unchanged
+eq "nothing changed (Running / Waiting / Healthy)" "$(pending)" ""; pass
+DRY=$unchanged$' Container mediastack-sonarr Recreate\n Container mediastack-sonarr Recreated\n Container mediastack-sonarr Starting\n Container mediastack-sonarr Started\n'
+eq "a changed definition (its restart is not a second verdict)" "$(pending)" "sonarr"; pass
+DRY=$unchanged$' Container mediastack-kavita Creating\n Container mediastack-kavita Created\n Container mediastack-kavita Starting\n'
+eq "a new service (Creating/Created)" "$(pending)" "kavita (new)"; pass
+DRY=$unchanged$' Container mediastack-kavita Creating\n'
+eq "Creating alone still counts (stems, not whole words)" "$(pending)" "kavita (new)"; pass
+DRY=$unchanged$' Container mediastack-deluge Stopping\n Container mediastack-deluge Removing\n Container mediastack-deluge Removed\n'
+eq "a removed service" "$(pending)" "deluge (removed)"; pass
+DRY=$unchanged$' Container mediastack-bazarr Starting\n Container mediastack-bazarr Started\n'
+eq "a stopped service" "$(pending)" "bazarr (stopped)"; pass
+DRY=$' Container mediastack-radarr Recreate\n Container mediastack-apprise Created\n'
+eq "several, sorted" "$(pending)" "apprise (new)|radarr"; pass
+DRY="error: something broke"; DC_FAILS=1
 set +e; (compose_pending >/dev/null 2>&1); rc=$?; set -e
-(( rc != 0 )) || fail_ "a failed render must fail loud, never read as 'nothing to apply'"; pass
+(( rc != 0 )) || fail_ "a failed dry run must fail loud, never read as 'nothing to apply'"; pass
 DC_FAILS=0
 
 # ---- the hand-over
-unset -f DC docker
+unset -f DC
 REV=(); LOG=$T/log
 # rev-parse runs inside $(...) — a subshell — so its position lives in a file
 git() {
