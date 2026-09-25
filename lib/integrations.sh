@@ -109,7 +109,7 @@ addr_repoint() { # addr_repoint <what> <stored> <want> -- <command...> — re-po
     local what="$1" stored="$2" want="$3" out; shift 3; [[ "${1:-}" == -- ]] && shift
     w_would "$what: re-point $stored -> $want" || return 0
     if out=$("$@" 2>&1); then ok "$what: re-pointed to $want"
-    else wfail "$what: re-point to $want rejected — $(head -c200 <<<"$out")"; fi
+    else wfail "$what: re-point to $want rejected — $(tr -s '[:space:]' ' ' <<<"$out" | head -c300)"; fi
 }
 arr_repoint() { # arr_repoint <api base> <key> <resource> <list JSON> <entry name> field=value...
     # PUT the entry back with just those fields changed. Secrets the API masked
@@ -477,7 +477,8 @@ JSON
             if addr_stale "$s -> qbittorrent" qbittorrent "$dst"; then
                 addr_repoint "$s -> qbittorrent" "$dst" "$(svc_addr qbittorrent)" -- \
                     arr_repoint "$url/api/$(arr_apiver "$s")" "$key" downloadclient "$cur" "qBittorrent (mediastack)" \
-                    "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)"
+                    "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)" \
+                    "username=$(env_get QBITTORRENT_USER)" "password=$(env_get QBITTORRENT_PASSWORD)"
             fi
         fi
         ensure_resource "$dexists" "$s: register qBittorrent (category $cat)" \
@@ -518,7 +519,8 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
         if addr_stale "prowlarr -> qbittorrent" qbittorrent "$dst"; then
             addr_repoint "prowlarr -> qbittorrent" "$dst" "$(svc_addr qbittorrent)" -- \
                 arr_repoint "$url/api/$ver" "$key" downloadclient "$dcs" qbittorrent \
-                "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)"
+                "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)" \
+                "username=$(env_get QBITTORRENT_USER)" "password=$(env_get QBITTORRENT_PASSWORD)"
         fi
         return 0
     fi
@@ -1033,7 +1035,8 @@ wire_cleanuparr() {
         ok "qbittorrent already connected — untouched"
         local cst cbody; cst=$(addr_of "$(jq -r '.clients[]? | select(.name=="qbittorrent") | .host' <<<"$cdc" 2>/dev/null | head -1)")
         if addr_stale "cleanuparr -> qbittorrent" qbittorrent "$cst"; then
-            cbody=$(jq -c --arg h "http://$(svc_addr qbittorrent)" '[.clients[]? | select(.name=="qbittorrent")][0] | .host = $h' <<<"$cdc")
+            cbody=$(jq -c --arg h "http://$(svc_addr qbittorrent)" --arg u "$(env_get QBITTORRENT_USER)" --arg p "$(env_get QBITTORRENT_PASSWORD)" \
+                '[.clients[]? | select(.name=="qbittorrent")][0] | .host = $h | .username = $u | .password = $p' <<<"$cdc")
             addr_repoint "cleanuparr -> qbittorrent" "$cst" "$(svc_addr qbittorrent)" -- \
                 cup_api PUT "/configuration/download_client/$(jq -r '.id' <<<"$cbody")" "$KH" "$cbody"
         fi

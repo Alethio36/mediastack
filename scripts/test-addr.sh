@@ -87,6 +87,12 @@ addr_repoint "x -> apprise" localhost:8000 gluetun:8000 -- touch "$T/ran" > "$T/
 addr_repoint "x -> apprise" localhost:8000 gluetun:8000 -- false > "$T/out"
 [[ $WIRE_FAILS == 1 ]] && grep -q 'FAIL x -> apprise: re-point to gluetun:8000 rejected' "$T/out" || fail_ "a rejected re-point must FAIL: $(cat "$T/out")"; pass
 
+multi() { printf '[\n  {\n    "propertyName": "Host",\n    "errorMessage": "Unable to connect"\n  }\n]\n'; return 1; }
+addr_repoint "x -> qbittorrent" localhost:8085 gluetun:8085 -- multi > "$T/out"
+# the notice line + ONE FAIL line carrying the whole reply; no stray JSON lines
+! grep -qvE '^(:: |FAIL )' "$T/out" && grep -q '^FAIL .*"errorMessage": "Unable to connect"' "$T/out" \
+    || fail_ "a multi-line rejection must come out whole, on one line: $(cat "$T/out")"; pass
+
 # arr_repoint: PUT the entry back with ONLY the named fields changed
 api() { printf '%s\n%s\n' "$1 $2" "$4" > "$T/put"; }
 dcs='[{"id":3,"name":"other","fields":[{"name":"host","value":"x"}]},
@@ -99,6 +105,10 @@ eq "host changed"         "$(jq -r '.fields[] | select(.name=="host") | .value' 
 eq "port stays a number"  "$(jq -r '.fields[] | select(.name=="port") | .value | type' <<<"$put")" number; pass
 eq "masked secret kept"   "$(jq -r '.fields[] | select(.name=="password") | .value' <<<"$put")" '********'; pass
 eq "other field kept"     "$(jq -r '.fields[] | select(.name=="tvCategory") | .value' <<<"$put")" tv; pass
+
+# credentials re-sent from .env replace the mask (repairs a stale password)
+arr_repoint http://h/api/v3 k downloadclient "$dcs" "qBittorrent (mediastack)" host=gluetun password=s3cret
+eq "re-sent password replaces the mask" "$(sed -n 2p "$T/put" | jq -r '.fields[] | select(.name=="password") | .value')" s3cret; pass
 
 # prowlarr_app_repoint: a hand-set direction survives a re-point of the other
 apps='[{"id":4,"name":"radarr (mediastack)","fields":[{"name":"baseUrl","value":"http://nas.lan:7878"},
