@@ -67,6 +67,23 @@ Toggle-enabled services carry `mediastack.vpntoggle: "true"` and are wired by
 * **Outside:** its own `networks: [mediastack]`, host port, and Traefik router
   on the service itself.
 
+### Other apps follow the move
+
+Moving a service changes how the rest of the stack reaches it. The rule
+(proven live): a service behind the VPN is reached as `gluetun:<port>`, one
+outside it by its own name, `<service>:<port>` — from any caller, on either
+side. Only the *target's* side matters, so moving a service means re-pointing
+the apps that call it, never the other way round.
+
+That happens by itself: `vpn` marks the service (only when its side really
+changes), and the next `up` re-runs the `wire` steps that write its address —
+`WIRE_CALLERS` in `lib/integrations.sh` lists who calls whom. For example,
+moving apprise re-points the arrs', Prowlarr's, cleanuparr's and seerr's
+notifications. Only addresses mediastack wrote are changed; one you set by hand
+is reported and left alone. If a re-point fails, the mark stays: the next `up`
+retries, and `doctor` shows "re-pointing pending" until it succeeds.
+`wire --verify` reports any address that is out of date.
+
 Because the wiring is generated, the fragment of a toggle service carries no
 `network_mode`, `networks`, `ports`, or Traefik router labels — only the
 metadata the generator reads: `mediastack.port`, `mediastack.subdomain`,

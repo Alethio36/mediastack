@@ -1,12 +1,13 @@
 # Apprise: the stack's single notification hub (apprise-api).
-# Everything notifies ONE place, tagged: ops (pipeline/backups/doctor),
-# activity (arr grabs/imports), users (wizarr invites). Your real endpoints
-# (ntfy, Discord, email, ...) are configured once via `wire apprise`.
+# Everything notifies ONE place, tagged by audience: ops (you — errors,
+# pipeline, backups, requests) and users (the household — new media, restarts,
+# invites). Your real endpoints (ntfy, Discord, email, ...) are configured
+# once via `wire apprise`.
 #
-# Lives in gluetun's namespace like the arrs do: they reach it at
-# localhost:8000 (container names don't resolve through gluetun's DNS), and
-# outbound notifications ride the VPN. Known property: if the tunnel is hard
-# down, push notifications are down with it — the script still logs locally.
+# Behind the VPN by default (outbound notifications ride the tunnel; if the
+# tunnel is hard down, push notifications are down with it — the script still
+# logs locally). Toggleable: `vpn apprise off` moves it out, and the next `up`
+# re-points every app that notifies it (docs/vpn-membership.md).
 
 x-logging: &logging
   driver: json-file
