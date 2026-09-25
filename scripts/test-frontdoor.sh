@@ -65,10 +65,15 @@ ssh_as "logs radarr --no-follow extra"
 # table integrity
 ents=$(_fd_otcfg_tail | sed -n 's/^  - name: //p')
 for row in "${PANEL[@]}"; do
-    IFS='~' read -r group title _ _ cmd _ flags <<<"$row"
+    IFS='~' read -r group title _ _ cmd confirm flags <<<"$row"
     verb_entry "${cmd%% *}" >/dev/null || fail_ "button '$title' runs '${cmd%% *}', which is not a registry verb"
     [[ -n "${PANEL_GROUP_NOTE[$group]:-}" ]] || fail_ "button '$title': group '$group' has no PANEL_GROUP_NOTE"
     [[ -z "$flags" || "$flags" == single ]] || fail_ "button '$title': unknown flag '$flags'"
+    # the dialog's label column is as wide as its longest label: explanations
+    # belong in the help part (Label|help), not the label
+    label=${confirm%%|*}
+    (( ${#label} <= 16 )) \
+        || fail_ "button '$title': confirm label '$label' is too long — put the explanation after '|' (help text)"
     rest=$cmd
     while [[ "$rest" =~ $FD_PLACEHOLDER ]]; do
         [[ "${BASH_REMATCH[2]}" == choices ]] || grep -qx "${BASH_REMATCH[3]}" <<<"$ents" \
