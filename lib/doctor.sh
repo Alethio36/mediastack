@@ -14,7 +14,7 @@ d_fail() { fail "$1"; printf '     why : %s\n     fix : %s\n' "$2" "$3"; D_FAILS
 _doctor_environment() {
     hr "doctor: environment"
     local root
-    for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT TRANSCODE_ROOT BACKUP_ROOT; do
+    for root in "${ROOTS[@]}"; do
         if [[ -z "$(env_get "$root")" ]]; then
             d_fail "$root unset" "the stack cannot locate its files" "run: ./mediastack.sh configure"
         elif [[ "$(env_get "$root")" != /* ]]; then
@@ -25,7 +25,7 @@ _doctor_environment() {
     done
     # a root that moved with "leave" keeps pointing at what it left behind
     local prev pn
-    for root in CONFIG_ROOT DATA_ROOT CACHE_ROOT TRANSCODE_ROOT BACKUP_ROOT; do
+    for root in "${ROOTS[@]}"; do
         prev=$(env_get "${root}_PREVIOUS"); [[ -n "$prev" ]] || continue
         pn=$(sudo find "$prev" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
         if (( pn > 0 )); then
