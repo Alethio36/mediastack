@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# check-start-wait.sh — doctor's startup wait (DOCTOR_START_WAIT) must exceed
+# check-start-wait.sh — the health-verdict wait (START_WAIT) must exceed
 # every fragment's Docker verdict window, start_period + interval x retries;
-# otherwise doctor FAILs a service Docker hasn't judged yet. Durations are
+# otherwise a wait FAILs a service Docker hasn't judged yet. Durations are
 # plain seconds ("60s") — anything else fails loud here rather than being
 # silently skipped.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-wait=$(sed -nE 's/^DOCTOR_START_WAIT=([0-9]+).*/\1/p' lib/doctor.sh)
-[[ -n "$wait" ]] || { echo "ERROR DOCTOR_START_WAIT not found in lib/doctor.sh" >&2; exit 1; }
+wait=$(sed -nE 's/^START_WAIT=([0-9]+).*/\1/p' mediastack.sh)
+[[ -n "$wait" ]] || { echo "ERROR START_WAIT not found in mediastack.sh" >&2; exit 1; }
 
 max=0 worst="" rc=0
 for f in compose.d/*.yml; do
@@ -30,7 +30,7 @@ for f in compose.d/*.yml; do
 done
 (( rc )) && exit 1
 if (( wait <= max )); then
-    echo "ERROR DOCTOR_START_WAIT=${wait}s does not exceed $worst's verdict window (${max}s) — raise it in lib/doctor.sh" >&2
+    echo "ERROR START_WAIT=${wait}s does not exceed $worst's verdict window (${max}s) — raise it in mediastack.sh" >&2
     exit 1
 fi
-echo "OK start wait: DOCTOR_START_WAIT=${wait}s > longest verdict window ${max}s ($worst)"
+echo "OK start wait: START_WAIT=${wait}s > longest verdict window ${max}s ($worst)"

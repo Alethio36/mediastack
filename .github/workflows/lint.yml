@@ -28,8 +28,10 @@ jobs:
         run: scripts/test-manifest.sh
       - name: UID ownership handover contract (scripts/test-handover.sh)
         run: scripts/test-handover.sh
-      - name: doctor's startup wait outlasts every healthcheck window (scripts/check-start-wait.sh)
+      - name: the health-verdict wait outlasts every healthcheck window (scripts/check-start-wait.sh)
         run: scripts/check-start-wait.sh
+      - name: health verdict contract (scripts/test-verdict.sh)
+        run: scripts/test-verdict.sh
       - name: no literal backslash-n in notification bodies
         run: |
           # a double-quoted \n is two characters to bash: Discord shows '\n'.
