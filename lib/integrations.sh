@@ -77,6 +77,38 @@ arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialisin
 }
 
 arr_url() { local p; p=$(svc_hostport "$1") || return 1; echo "http://127.0.0.1:$p"; }
+
+# ---- app-to-app addresses ----
+# How one app reaches another — what wire writes INTO an app's settings (the
+# script's own API calls use the host ports above instead). One rule, proven
+# live on the stack: a service behind the VPN listens in gluetun's namespace,
+# so every caller, behind the VPN or not, reaches it as gluetun:<port>; a
+# service outside the VPN is reached by its service name on the stack network,
+# from either side. The address depends only on the TARGET: moving a caller
+# in or out of the VPN never breaks a connection, moving a target means
+# re-pointing its callers.
+svc_host() { # svc_host <target> -> gluetun | <target>, from its effective VPN membership
+    if [[ "$(vpn_effective "$1" "$(svc_label "$1" mediastack.vpn)")" == true ]]; then echo gluetun; else echo "$1"; fi
+}
+svc_cport() { svc_label "$1" mediastack.port; }   # the port it listens on inside its namespace
+svc_addr()  { echo "$(svc_host "$1"):$(svc_cport "$1")"; }
+addr_of() { # addr_of <url | host:port> -> host:port (scheme and path dropped)
+    local a=${1#*://}; echo "${a%%/*}"
+}
+addr_check() { # addr_check <what> <stored host:port> <want host:port> — report a stale address
+    [[ -z "$2" || "$2" == "$3" ]] && return 0
+    if (( WIRE_DRY )); then
+        w_would "$1: re-point $2 -> $3" || true
+    else
+        warn "$1 points at $2 — this deployment's address is $3 (a VPN toggle moved it). Re-point it in that app's settings until wire does it for you."
+    fi
+}
+arr_entry_fields() { # arr_entry_fields <list JSON> <entry name> -> "field=value" lines
+    jq -r --arg n "$2" '.[]? | select(.name == $n) | .fields[]? | "\(.name)=\(.value // "" | tostring)"' <<<"$1" 2>/dev/null || true
+}
+arr_entry_field() { # arr_entry_field <list JSON> <entry name> <field> -> value
+    arr_entry_fields "$1" "$2" | sed -n "s/^$3=//p" | head -1
+}
 # ARR_META — every per-type fact wire needs, one row per arr type, so a new
 # type (readarr, whisparr) is a row here instead of a hunt through recipes.
 #   api       API version path            impl      Prowlarr implementation name
@@ -412,13 +444,15 @@ operator). Stored in .env (view: credentials)."
  "removeCompletedDownloads":true,"removeFailedDownloads":true,
  "name":"qBittorrent (mediastack)","implementation":"QBittorrent",
  "implementationName":"qBittorrent","configContract":"QBittorrentSettings",
- "fields":[{"name":"host","value":"localhost"},
-   {"name":"port","value":$(svc_label qbittorrent mediastack.port)},
+ "fields":[{"name":"host","value":"$(svc_host qbittorrent)"},
+   {"name":"port","value":$(svc_cport qbittorrent)},
    {"name":"useSsl","value":false},
    {"name":"username","value":"$user"},{"name":"password","value":"$pass"},
    {"name":"$catfield","value":"$cat"}]}
 JSON
 )
+        [[ "$dexists" == yes ]] && addr_check "$s -> qbittorrent" \
+            "$(arr_entry_field "$cur" "qBittorrent (mediastack)" host):$(arr_entry_field "$cur" "qBittorrent (mediastack)" port)" "$(svc_addr qbittorrent)"
         ensure_resource "$dexists" "$s: register qBittorrent (category $cat)" \
             "$s: download client registered" "$s: download client registration failed — check: logs $s" \
             -- api POST "$url/api/$(arr_apiver "$s")/downloadclient" "$key" "$dbody"
@@ -427,25 +461,27 @@ JSON
 
 # ---- prowlarr: applications + flaresolverr proxy ----
 prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
-    local key url ver have qu qp schema tmpl body resp qport
+    local key url ver have qu qp schema tmpl body resp
     key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr)
     [[ -n "$key" ]] || { wfail "prowlarr: no ApiKey readable — re-run wire in a minute"; return 1; }
     qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
     [[ -n "$qu" && -n "$qp" ]] || { info "prowlarr download client pends on 'wire qbit' storing credentials"; return 0; }
-    qport=$(svc_label qbittorrent mediastack.port)
-    have=$(api GET "$url/api/$ver/downloadclient" "$key" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
+    local dcs; dcs=$(api GET "$url/api/$ver/downloadclient" "$key" || true)
+    have=$(jq -r '[.[].name] | join(" ")' <<<"$dcs" 2>/dev/null || true)
     if [[ " $have " == *" qbittorrent "* ]]; then
         ok "prowlarr download client registered"
+        addr_check "prowlarr -> qbittorrent" \
+            "$(arr_entry_field "$dcs" qbittorrent host):$(arr_entry_field "$dcs" qbittorrent port)" "$(svc_addr qbittorrent)"
         return 0
     fi
     w_would "prowlarr: register qBittorrent as its download client (manual grabs -> category 'prowlarr')" || return 0
     schema=$(api GET "$url/api/$ver/downloadclient/schema" "$key" || true)
     tmpl=$(jq -c '[.[] | select(.implementation=="QBittorrent")][0] // empty' <<<"$schema" 2>/dev/null)
     [[ -n "$tmpl" ]] || { wfail "prowlarr: its API offers no QBittorrent client type — is the image very old?"; return 1; }
-    body=$(jq -c --arg u "$qu" --arg p "$qp" --argjson port "$qport" '
+    body=$(jq -c --arg u "$qu" --arg p "$qp" --arg host "$(svc_host qbittorrent)" --argjson port "$(svc_cport qbittorrent)" '
         .name = "qbittorrent" | .enable = true
         | .fields = [ .fields[]
-            | if   .name == "host"     then .value = "localhost"
+            | if   .name == "host"     then .value = $host
               elif .name == "port"     then .value = $port
               elif .name == "username" then .value = $u
               elif .name == "password" then .value = $p
@@ -487,18 +523,17 @@ wire_lazylibrarian() {
     fi
     ok "API key found"
 
-    # download client: qBittorrent, reachable in-namespace at localhost:8085
+    # download client: qBittorrent, at its app-to-app address (svc_addr)
     (( WIRE_DRY )) && { w_would "point lazylibrarian at qBittorrent and set its book folder" || true; }
     if ! (( WIRE_DRY )); then
-        local qu qp qport
+        local qu qp
         qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
-        qport=$(svc_label qbittorrent mediastack.port)
         if [[ -z "$qu" || -z "$qp" ]]; then
             wfail "no qBittorrent credentials in .env — run 'wire qbit' first"
         else
             # LazyLibrarian's qBittorrent settings live in [QBITTORRENT]
-            ll_api writeCFG "name=HOST&group=QBITTORRENT&value=http://localhost" >/dev/null
-            ll_api writeCFG "name=PORT&group=QBITTORRENT&value=$qport" >/dev/null
+            ll_api writeCFG "name=HOST&group=QBITTORRENT&value=http://$(svc_host qbittorrent)" >/dev/null
+            ll_api writeCFG "name=PORT&group=QBITTORRENT&value=$(svc_cport qbittorrent)" >/dev/null
             ll_api writeCFG "name=USER&group=QBITTORRENT&value=$qu" >/dev/null
             ll_api writeCFG "name=PASS&group=QBITTORRENT&value=$qp" >/dev/null
             ll_api writeCFG "name=LABEL&group=QBITTORRENT&value=prowlarr" >/dev/null
@@ -533,11 +568,15 @@ wire_prowlarr() {
         key=$(arr_key "$s") || true
         [[ -n "$key" ]] || { wfail "prowlarr<-$s: $s has no ApiKey yet"; continue; }
         aexists=no; grep -q "\"$s (mediastack)\"" <<<"$cur" && aexists=yes
+        if [[ "$aexists" == yes ]]; then
+            addr_check "prowlarr -> $s" "$(addr_of "$(arr_entry_field "$cur" "$s (mediastack)" baseUrl)")" "$(svc_addr "$s")"
+            addr_check "$s -> prowlarr" "$(addr_of "$(arr_entry_field "$cur" "$s (mediastack)" prowlarrUrl)")" "$(svc_addr prowlarr)"
+        fi
         abody=$(cat <<JSON
 {"name":"$s (mediastack)","syncLevel":"fullSync",
  "implementation":"$impl","configContract":"${impl}Settings",
- "fields":[{"name":"prowlarrUrl","value":"$purl"},
-   {"name":"baseUrl","value":"$(arr_url "$s")"},
+ "fields":[{"name":"prowlarrUrl","value":"http://$(svc_addr prowlarr)"},
+   {"name":"baseUrl","value":"http://$(svc_addr "$s")"},
    {"name":"apiKey","value":"$key"}]}
 JSON
 )
@@ -554,11 +593,15 @@ JSON
             info "prowlarr -> lazylibrarian: skipped (no API key yet — run 'wire lazylibrarian' first)"
         else
             aexists=no; grep -q '"LazyLibrarian (mediastack)"' <<<"$cur" && aexists=yes
+            if [[ "$aexists" == yes ]]; then
+                addr_check "prowlarr -> lazylibrarian" "$(addr_of "$(arr_entry_field "$cur" "LazyLibrarian (mediastack)" baseUrl)")" "$(svc_addr lazylibrarian)"
+                addr_check "lazylibrarian -> prowlarr" "$(addr_of "$(arr_entry_field "$cur" "LazyLibrarian (mediastack)" prowlarrUrl)")" "$(svc_addr prowlarr)"
+            fi
             abody=$(cat <<JSON
 {"name":"LazyLibrarian (mediastack)","syncLevel":"fullSync",
  "implementation":"LazyLibrarian","configContract":"LazyLibrarianSettings",
- "fields":[{"name":"prowlarrUrl","value":"$purl"},
-   {"name":"baseUrl","value":"http://localhost:5299"},
+ "fields":[{"name":"prowlarrUrl","value":"http://$(svc_addr prowlarr)"},
+   {"name":"baseUrl","value":"http://$(svc_addr lazylibrarian)"},
    {"name":"apiKey","value":"$llkey"}]}
 JSON
 )
@@ -596,11 +639,13 @@ JSON
             else
                 ok "flaresolverr proxy registered"
             fi
+            addr_check "prowlarr -> flaresolverr" \
+                "$(addr_of "$(arr_entry_field "$cur" "FlareSolverr (mediastack)" host)")" "$(svc_addr flaresolverr)"
         elif w_would "register FlareSolverr as indexer proxy"; then
             api POST "$purl/api/v1/indexerproxy" "$pkey" "$(cat <<JSON
 {"name":"FlareSolverr (mediastack)","implementation":"FlareSolverr",
  "configContract":"FlareSolverrSettings","tags":[${fid:-}],
- "fields":[{"name":"host","value":"http://localhost:8191/"},
+ "fields":[{"name":"host","value":"http://$(svc_addr flaresolverr)/"},
    {"name":"requestTimeout","value":60}]}
 JSON
 )" >/dev/null && ok "flaresolverr proxy registered (tag 'flared')" \
@@ -650,8 +695,8 @@ wire_bazarr() {
         for ((i=0; i<${#pairs[@]}; i+=2)); do
             t=${pairs[i]}; skey=${pairs[i+1]}
             form+=("settings-general-use_${t}=true"
-                   "settings-${t}-ip=localhost"
-                   "settings-${t}-port=$(svc_label "$t" mediastack.port)"
+                   "settings-${t}-ip=$(svc_host "$t")"
+                   "settings-${t}-port=$(svc_cport "$t")"
                    "settings-${t}-base_url=/"
                    "settings-${t}-ssl=false"
                    "settings-${t}-apikey=${skey}")
@@ -808,16 +853,18 @@ Getting a URL:
         arr_known "$ty" || continue
         key=$(arr_key "$s"); url=$(arr_url "$s"); ver=$(arr_apiver "$s")
         [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; continue; }
-        have=$(api GET "$url/api/$ver/notification" "$key" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
+        local notes; notes=$(api GET "$url/api/$ver/notification" "$key" || true)
+        have=$(jq -r '[.[].name] | join(" ")' <<<"$notes" 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "$s already notifies the hub — untouched"
+            addr_check "$s -> apprise" "$(addr_of "$(arr_entry_field "$notes" mediastack-apprise serverUrl)")" "$(svc_addr apprise)"
             continue
         fi
         if ! w_would "$s: notify the hub on grab/import/health (tag: ops)"; then continue; fi
         schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)
         tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
         [[ -n "$tmpl" ]] || { wfail "$s: its API offers no Apprise notification type — is the image very old?"; continue; }
-        body=$(jq -c --arg srv "http://localhost:8000" '
+        body=$(jq -c --arg srv "http://$(svc_addr apprise)" '
             .name = "mediastack-apprise"
             | .fields = [ .fields[]
                 | if .name == "serverUrl"         then .value = $srv
@@ -835,16 +882,18 @@ Getting a URL:
     # prowlarr too — indexer/health events are ops signal
     if svc_enabled prowlarr; then
         key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr)
-        have=$(api GET "$url/api/$ver/notification" "$key" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
+        local pnotes; pnotes=$(api GET "$url/api/$ver/notification" "$key" || true)
+        have=$(jq -r '[.[].name] | join(" ")' <<<"$pnotes" 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "prowlarr already notifies the hub — untouched"
+            addr_check "prowlarr -> apprise" "$(addr_of "$(arr_entry_field "$pnotes" mediastack-apprise serverUrl)")" "$(svc_addr apprise)"
         elif w_would "prowlarr: notify the hub on indexer/health events (tag: ops)"; then
             schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)
             tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
             if [[ -z "$tmpl" ]]; then
                 wfail "prowlarr: its API offers no Apprise notification type — is the image very old?"
             else
-                body=$(jq -c --arg srv "http://localhost:8000" '
+                body=$(jq -c --arg srv "http://$(svc_addr apprise)" '
                     .name = "mediastack-apprise"
                     | .fields = [ .fields[]
                         | if .name == "serverUrl"          then .value = $srv
@@ -920,16 +969,19 @@ wire_cleanuparr() {
     # download client: create-if-missing by name
     local qu qp have
     qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
-    have=$(cup_api GET /configuration/download_client "$KH" | jq -r '[.clients[]?.name] | join(" ")' 2>/dev/null || true)
+    local cdc; cdc=$(cup_api GET /configuration/download_client "$KH" || true)
+    have=$(jq -r '[.clients[]?.name] | join(" ")' <<<"$cdc" 2>/dev/null || true)
     if [[ " $have " == *" qbittorrent "* ]]; then
         ok "qbittorrent already connected — untouched"
+        addr_check "cleanuparr -> qbittorrent" \
+            "$(addr_of "$(jq -r '.clients[]? | select(.name=="qbittorrent") | .host' <<<"$cdc" 2>/dev/null | head -1)")" "$(svc_addr qbittorrent)"
     elif [[ -z "$qu" || -z "$qp" ]]; then
         wfail "no qBittorrent credentials in .env — run 'wire qbit' first"
     else
         local dc
-        dc=$(jq -cn --arg u "$qu" --arg p "$qp" \
+        dc=$(jq -cn --arg u "$qu" --arg p "$qp" --arg h "http://$(svc_addr qbittorrent)" \
              '{enabled:true,name:"qbittorrent",typeName:"qBittorrent",type:"Torrent",
-               host:"http://gluetun:8085",urlBase:"",username:$u,password:$p}')
+               host:$h,urlBase:"",username:$u,password:$p}')
         out=$(cup_api POST /configuration/download_client/test "$KH" "$dc") \
             || { wfail "cleanuparr could not reach qBittorrent [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 1; }
         out=$(cup_api POST /configuration/download_client "$KH" "$dc") \
@@ -948,13 +1000,15 @@ wire_cleanuparr() {
         names=$(jq -r '[.instances[]?.name] | join(" ")' <<<"$cfg" 2>/dev/null)
         if [[ " $names " == *" $s "* ]]; then
             ok "$s already connected — untouched"
+            addr_check "cleanuparr -> $s" \
+                "$(addr_of "$(jq -r --arg n "$s" '.instances[]? | select(.name==$n) | .url' <<<"$cfg" 2>/dev/null | head -1)")" "$(svc_addr "$s")"
             continue
         fi
         # version = the arr application major, exactly the value cleanuparr's
         # own UI offers per type (ARR_META major)
         local aver; aver=$(arr_meta "$ty" major)
         out=$(cup_api POST "/configuration/$ty/instances" "$KH" \
-              "$(jq -cn --arg n "$s" --arg u "http://gluetun:$port" --arg k "$key" --argjson v "$aver" \
+              "$(jq -cn --arg n "$s" --arg u "http://$(svc_addr "$s")" --arg k "$key" --argjson v "$aver" \
                  '{enabled:true,name:$n,url:$u,apiKey:$k,version:$v}')") \
             && ok "$s connected" \
             || wfail "$s: cleanuparr rejected it [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
@@ -974,13 +1028,16 @@ wire_cleanuparr() {
 
     # ops notifications via the hub, when the hub is wired
     if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
-        have=$(cup_api GET /configuration/notification_providers "$KH" | jq -r '[.providers[]?.name] | join(" ")' 2>/dev/null || true)
+        local cnp; cnp=$(cup_api GET /configuration/notification_providers "$KH" || true)
+        have=$(jq -r '[.providers[]?.name] | join(" ")' <<<"$cnp" 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "already notifies the hub — untouched"
+            addr_check "cleanuparr -> apprise" \
+                "$(addr_of "$(jq -r '.providers[]? | select(.name=="mediastack-apprise") | (.url // .configuration.url // "")' <<<"$cnp" 2>/dev/null | head -1)")" "$(svc_addr apprise)"
         else
             out=$(cup_api POST /configuration/notification_providers/apprise "$KH" \
-                  "$(jq -cn '{name:"mediastack-apprise",isEnabled:true,mode:"Api",
-                              url:"http://gluetun:8000",key:"mediastack",tags:"ops",
+                  "$(jq -cn --arg u "http://$(svc_addr apprise)" '{name:"mediastack-apprise",isEnabled:true,mode:"Api",
+                              url:$u,key:"mediastack",tags:"ops",
                               onQueueItemDeleted:true,onDownloadCleaned:true,
                               onStalledStrike:true,onFailedImportStrike:true}')") \
                 && ok "now notifies the hub (tag: ops)" \
@@ -1225,8 +1282,8 @@ wire_seerr() {
     # partial bootstrap leaves it stored, and re-sending it is a hard 500
     local jfport out
     jfport=$(svc_label jellyfin mediastack.port)
-    out=$(seerr_api POST /auth/jellyfin "$jar" "$(jq -cn --arg u "$juser" --arg p "$jpass" --argjson port "$jfport" \
-          '{username:$u,password:$p,hostname:"jellyfin",port:$port,useSsl:false,urlBase:"",serverType:2}')") || {
+    out=$(seerr_api POST /auth/jellyfin "$jar" "$(jq -cn --arg u "$juser" --arg p "$jpass" --arg h "$(svc_host jellyfin)" --argjson port "$jfport" \
+          '{username:$u,password:$p,hostname:$h,port:$port,useSsl:false,urlBase:"",serverType:2}')") || {
         if grep -q "already configured" <<<"$out"; then
             $seerr_initialized || info "seerr already holds the jellyfin hostname (earlier attempt) — signing in without it"
             out=$(seerr_api POST /auth/jellyfin "$jar" "$(jq -cn --arg u "$juser" --arg p "$jpass" \
@@ -1278,7 +1335,8 @@ wire_seerr() {
         is4k=false; [[ "$s" == *-4k ]] && is4k=true
         body=$(jq -cn --arg name "$s" --argjson port "$port" --arg key "$key" \
                      --argjson pid "$pid" --arg pname "$pname" --arg root "$root" --argjson is4k "$is4k" \
-              '{name:$name,hostname:"gluetun",port:$port,apiKey:$key,useSsl:false,baseUrl:"",
+                     --arg host "$(svc_host "$s")" \
+              '{name:$name,hostname:$host,port:$port,apiKey:$key,useSsl:false,baseUrl:"",
                 activeProfileId:$pid,activeProfileName:$pname,activeDirectory:$root,
                 tags:[],is4k:$is4k,isDefault:true,syncEnabled:true,preventSearch:false,
                 tagRequests:false,overrideRule:[]}')
@@ -1303,9 +1361,9 @@ wire_seerr() {
         if [[ "$(jq -r '.enabled' <<<"$wh" 2>/dev/null)" == true ]]; then
             ok "webhook notifications already enabled — untouched (yours to manage in the GUI)"
         elif w_would "notify the hub on requests/approvals/availability (tag: ops)"; then
-            out=$(seerr_api POST /settings/notifications/webhook "$jar" "$(jq -cn '
+            out=$(seerr_api POST /settings/notifications/webhook "$jar" "$(jq -cn --arg u "http://$(svc_addr apprise)/notify/mediastack" '
                 {enabled:true, embedPoster:false, types:222,
-                 options:{webhookUrl:"http://gluetun:8000/notify/mediastack",
+                 options:{webhookUrl:$u,
                           authHeader:"",
                           jsonPayload:"{\"title\":\"Seerr\",\"body\":\"{{event}}\\n{{subject}}\\n{{message}}\",\"tag\":\"ops\",\"type\":\"info\"}"}}')") \
                 && ok "seerr now notifies the hub" \
@@ -1361,7 +1419,7 @@ there is no automation API for this by upstream design. Once, ever:
   3. Settings -> Servers -> Add Server:
        Name            jellyfin
        Server Type     Jellyfin
-       URL (Internal)  http://jellyfin:8096
+       URL (Internal)  http://$(svc_addr jellyfin)
        API Key         $jfkey
      then Test & Add
   4. Settings -> API Keys -> create one, and paste it below
