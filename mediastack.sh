@@ -1673,7 +1673,7 @@ cmd_new_service() {
 
     # ---- questions (configure-style: explain, then ask; Enter = default) ----
     _ns_ask() { local hint=""; [[ -n "$2" ]] && hint=" [$2]"; read -r -p "$1$hint: " REPLY_VAL; REPLY_VAL="${REPLY_VAL:-$2}"; }
-    local image cport host desc vpn cfg data puid
+    local image cport host desc vpn cfg data ident
     explain "New service: $name" \
 "A few questions produce a complete, working service definition in
 docker-compose.override.yml — image, port, HTTPS hostname, VPN membership,
@@ -1714,21 +1714,29 @@ tunnel adds latency and gains them nothing). Flip it any time:
     _ns_ask "Choice" "1"; data="$REPLY_VAL"
     [[ "$data" =~ ^[123]$ ]] || die "Choice must be 1, 2 or 3."
     explain "Permissions" \
-"Every mediastack service runs as its own system user (a PUID such as
-13029) in the shared 'mediacenter' group (PGID), so each app can only
-write its own config folder plus the media it is allowed to touch, and
-files it creates stay readable by the other apps. An image that honours
-PUID/PGID (linuxserver.io, hotio and most *arr images) switches to that
-user at start-up when the two variables are set.
+"Every mediastack service runs as its own system user (a UID such as
+13029) in the shared 'mediacenter' group, so each app can only write its
+own config folder plus the media it is allowed to touch, and files it
+creates stay readable by the other apps. HOW that user is applied depends
+on the image — and a wrong answer is silent: the app just runs as root.
+Check the image's docs (or its Dockerfile) for 'PUID' and 'USER'.
 
-Some images ignore them and run as root, or as a fixed user of their own
-(nginx, many official Docker Hub images, Jellyfin's official image). Check
-the image's docs for 'PUID' or 'user:'. For those answer no: the variables
-are omitted, the config folder is created without a private owner, and
-doctor will not warn that no process runs as the expected UID. Nothing
-else changes — it is still backed up, updated and audited like the rest."
-    _ns_ask "Does the image honour PUID/PGID? [Y/n]" ""
-    [[ "${REPLY_VAL,,}" == n* ]] && puid=false || puid=true
+  1) PUID/PGID   the image switches user itself when PUID/PGID are set
+                 (linuxserver.io, hotio, most *arr images)
+  2) user:       the image runs as whoever starts it (most official images:
+                 Jellyfin, Seerr, Navidrome, Kavita, Audiobookshelf); every
+                 file it writes must land in its folders, and it must not
+                 listen on a port below 1024
+  3) neither     it must run as root or as its own fixed user (nginx-style
+                 images): no private owner, doctor won't expect its UID
+
+doctor checks the running processes: if they aren't running as the
+service's UID, it fails and tells you to switch to 2)."
+    _ns_ask "Choice" "1"; ident="$REPLY_VAL"
+    [[ "$ident" =~ ^[123]$ ]] || die "Choice must be 1, 2 or 3."
+    if [[ "$ident" == 2 ]] && (( cport < 1024 )); then
+        warn "port $cport is below 1024: running as its own user, the app may be refused that port (depends on the host). If it won't start, move it with the app's own port setting and re-run new-service with that port."
+    fi
 
     # ---- scaffold ----
     local f="docker-compose.override.yml" had_file=0 snap=""
@@ -1739,7 +1747,7 @@ else changes — it is still backed up, updated and audited like the rest."
     else
         printf '# Your services live here — untracked, merged automatically, upgrade-safe.\nservices:\n' > "$f"
     fi
-    _new_service_fragment "$name" "$stem" "$image" "$cport" "$host" "$desc" "$vpn" "$cfg" "$data" "$puid" >> "$f"
+    _new_service_fragment "$name" "$stem" "$image" "$cport" "$host" "$desc" "$vpn" "$cfg" "$data" "$ident" >> "$f"
     # anything failing from here until the stack is touched reverts the file
     # AND the overlay: a stanza for a service that no longer exists would make
     # every later render fail ("neither an image nor a build context")
@@ -1814,8 +1822,8 @@ Removing it later: docs/adding-a-service.md, "Removing your service".
 EOT
 }
 
-_new_service_fragment() { # <name> <stem> <image> <cport> <host> <desc> <vpn> <cfg> <data> <puid> -> YAML on stdout
-    local name="$1" stem="$2" image="$3" cport="$4" host="$5" desc="$6" vpn="$7" cfg="$8" data="$9" puid="${10}"
+_new_service_fragment() { # <name> <stem> <image> <cport> <host> <desc> <vpn> <cfg> <data> <ident 1|2|3> -> YAML on stdout
+    local name="$1" stem="$2" image="$3" cport="$4" host="$5" desc="$6" vpn="$7" cfg="$8" data="$9" ident="${10}"
     # values land inside double-quoted YAML scalars: escape what would break out
     desc=${desc//\\/\\\\}; desc=${desc//\"/\\\"}
     cat <<EOF
@@ -1827,10 +1835,14 @@ _new_service_fragment() { # <name> <stem> <image> <cport> <host> <desc> <vpn> <c
     image: $image
     container_name: \${${stem}_NAME:-mediastack-$name}
     profiles: ["$name"]
+EOF
+    # identity: 1 = PUID/PGID (image switches), 2 = user: (image runs as its starter), 3 = neither
+    [[ "$ident" == 2 ]] && echo "    user: \"\${${stem}_UID}:\${MEDIA_GROUP_GID}\""
+    cat <<EOF
     environment:
       - TZ=\${TZ}
 EOF
-    if [[ "$puid" == true ]]; then cat <<EOF
+    if [[ "$ident" == 1 ]]; then cat <<EOF
       - PUID=\${${stem}_UID}
       - PGID=\${MEDIA_GROUP_GID}
       - UMASK=002

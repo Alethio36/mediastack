@@ -13,9 +13,10 @@ repo's territory, and local changes there block `upgrade` by design.
    description, VPN membership (default off — acquisition apps in, serving
    apps out), whether it has a config folder, its data access (none /
    media read-only for serving / torrent+media read-write as one mount for
-   acquisition, so imports hardlink), and whether the image honours
-   PUID/PGID (answer no for root-by-design images: the variables are
-   omitted and `doctor` won't expect a non-root process);
+   acquisition, so imports hardlink), and how the image takes its user
+   (PUID/PGID, `user:`, or neither for root-by-design images — see
+   *Identity* below; `doctor` fails a service whose processes don't run as
+   its UID);
 2. writes a complete service into `docker-compose.override.yml` on the
    toggle model (metadata labels only — `vpn_gen` generates its network,
    host port and Traefik route), verifies it renders and rolls back if not;
@@ -121,4 +122,3 @@ audiobookshelf dropped its UID variables in 2.4.0 and kavita commented its
 entrypoint user-switch out, and both ran as root here since they shipped, behind
 fragments that set `PUID`. `doctor`'s runtime audit now FAILs any service
 whose processes don't run as its `<SVC>_UID` — check it on first start.
-
