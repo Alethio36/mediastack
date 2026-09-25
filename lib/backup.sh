@@ -470,7 +470,7 @@ cmd_update() {
         fi
         echo
         cmd_trash_sync || { fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"
-                            notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded.\nInspect: \`./mediastack.sh trash-sync\`" failure
+                            notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded."$'\n'"Inspect: \`./mediastack.sh trash-sync\`" failure
                             exit 1; }
     fi
 }

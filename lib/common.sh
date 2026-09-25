@@ -24,6 +24,13 @@ confirm() { # confirm "question" -> 0 yes / 1 no
     [[ "${ans,,}" == y || "${ans,,}" == yes ]]
 }
 
+ts_age_hours() { # ts_age_hours YYYYMMDD-HHMMSS[...] -> whole hours since then; rc 1 if unparseable
+    local t
+    [[ "$1" =~ ^([0-9]{8})-([0-9]{2})([0-9]{2})([0-9]{2}) ]] || return 1
+    t=$(date -d "${BASH_REMATCH[1]} ${BASH_REMATCH[2]}:${BASH_REMATCH[3]}:${BASH_REMATCH[4]}" +%s 2>/dev/null) || return 1
+    echo $(( ( $(date +%s) - t ) / 3600 ))
+}
+
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed. Run: ./mediastack.sh install"; }
 
 # --------------------------------------------------------------- env layer --
