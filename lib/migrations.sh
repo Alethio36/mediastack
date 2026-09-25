@@ -169,3 +169,11 @@ migrate_env_17_to_18() {
 migrate_env_18_to_19() { :; } # NOTIFY_GRACE added to .env.example; env_get default (30) stands for existing installs
 migrate_env_19_to_20() { :; } # .env.example default change only (UPDATE_DEFER_IF_ACTIVE=true); existing values stand
 migrate_env_20_to_21() { :; } # BACKUP_KEEP_PREUPDATE added to .env.example; env_get default (3) stands
+migrate_env_21_to_22() {
+    # media manifest: read-only and cheap, so on by default for existing
+    # installs too; the timer itself needs apply-timer (doctor says so)
+    if ! grep -qE '^MANIFEST_SCHEDULE=' "$ENV_FILE"; then
+        env_set MANIFEST_SCHEDULE "*-*-* 03:30"
+        info "New: nightly media manifest (MANIFEST_SCHEDULE=*-*-* 03:30). Install its timer: ./mediastack.sh apply-timer"
+    fi
+}
