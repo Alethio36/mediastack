@@ -7,6 +7,18 @@
 # ------------------------------------------------------------------ backup --
 ts_now() { date +%Y%m%d-%H%M%S; }
 
+# latest_restore_point -> the newest GFS restore point's name, "" if none.
+# The ONE way to find it: BACKUP_ROOT also holds pre-update/ and manifest/,
+# and "newest entry in the folder" picks those (status and backup verify did).
+# Bash sorts the glob, so the last match is the newest timestamp.
+latest_restore_point() {
+    local d last=""
+    for d in "$(env_get BACKUP_ROOT)"/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]; do
+        [[ -d "$d" ]] && last=$(basename "$d")
+    done
+    echo "$last"
+}
+
 # shellcheck disable=SC2120  # arguments arrive via main()'s registry dispatch
 cmd_backup() {
     # 'backup verify [TS]' is a subcommand; anything else is not an argument
@@ -166,8 +178,8 @@ cmd_backup_verify() {
     load_env
     local broot t="${1:-}"
     broot=$(env_get BACKUP_ROOT)
-    [[ -n "$t" ]] || t=$(ls -1 "$broot" | tail -1)
-    [[ -d "$broot/$t" ]] || die "No restore point '$t' under $broot"
+    [[ -n "$t" ]] || t=$(latest_restore_point)
+    [[ -n "$t" && -d "$broot/$t" ]] || die "No restore point '${t:-(none yet)}' under $broot"
     ( cd "$broot/$t" && sudo sha256sum -c SHA256SUMS ) && ok "Checksums OK for $t"
     local f; for f in "$broot/$t"/*.tar.gz; do
         sudo tar -tzf "$f" >/dev/null || die "Corrupt archive: $f"
@@ -220,7 +232,7 @@ cmd_restore() {
                      done; } | sort -r | head -1 | cut -f2 )
         else
             # full restore: newest GFS point only — never a partial pre-update one
-            from=$(ls -1d "$broot"/$tsglob 2>/dev/null | sort -r | head -1); from=${from:+$(basename "$from")}
+            from=$(latest_restore_point)
         fi
     fi
     if [[ -z "$from" || ! -d "$broot/$from" ]]; then
