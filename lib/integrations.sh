@@ -40,6 +40,10 @@ api() { # api METHOD URL APIKEY [json-body] -> body on stdout, rc from http
     [[ "$code" =~ ^2 ]]
 }
 
+# The two reconcile primitives every wire recipe is built on. Rule that keeps
+# them small: a nuance that recurs across services earns a primitive; a
+# one-off stays inline in its recipe — never a per-case flag on the primitive.
+#
 # ensure_field <svc> <endpoint> <key> <cur_json> <field> <want> <noun>
 #   Idempotent single-field set for a JSON config API that round-trips its whole
 #   object. <cur_json> is what the caller already GET from <endpoint>; <field> is
