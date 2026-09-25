@@ -97,29 +97,36 @@ upgrade_finish() { # upgrade_finish <commit before the pull> — run by the pull
     fi
 }
 
-compose_pending() { # the services `up` would create, recreate or remove — Docker's own verdict
-    # Every container carries the hash of the definition it was created from
-    # (com.docker.compose.config-hash); `config --hash` prints what each
-    # enabled service's definition hashes to now. A difference, a missing
-    # container, or a container for a service no longer enabled is exactly
-    # what `up` acts on. Comments and unrelated files never show up here.
-    local want have s h
-    local -A running=()
-    local -a out=()
-    want=$(DC config --hash '*') || die "could not render the compose config to compare with what runs"
-    have=$(sudo docker ps -a --filter label=com.docker.compose.project=mediastack \
-             --format '{{.Label "com.docker.compose.service"}} {{.Label "com.docker.compose.config-hash"}}') \
-        || die "could not list the stack's containers"
-    while read -r s h; do [[ -n "$s" ]] && running[$s]=$h; done <<<"$have"
-    while read -r s h; do
-        [[ -n "$s" ]] || continue
-        if [[ -z "${running[$s]+set}" ]]; then out+=("$s (new)")
-        elif [[ "${running[$s]}" != "$h" ]]; then out+=("$s")
-        fi
-        unset "running[$s]"
-    done <<<"$want"
-    for s in "${!running[@]}"; do out+=("$s (removed)"); done
-    printf '%s\n' "${out[@]}" | sort
+compose_pending() { # the services `up` would change — Compose's own dry run of it
+    # `--dry-run up` runs up's real convergence logic and touches nothing. Each
+    # container prints one progress line per step; an unchanged one only says
+    # Running (or Waiting/Healthy while its dependencies are checked). What
+    # counts: Recreate (definition changed), Create (new), Remov… (disabled or
+    # gone), Start (stopped). Comparing config-hash labels instead was tried and
+    # failed live: services in gluetun's namespace never match a fresh render.
+    local out s act
+    local -A seen=()
+    out=$(DC --dry-run up -d --remove-orphans 2>&1) || die "compose dry run failed — $(oneline "$out")"
+    while read -r s act; do
+        case "${seen[$s]:-}:$act" in              # one verdict per service, strongest first
+            *:Recreate)            seen[$s]=Recreate ;;
+            Recreate:*)            ;;
+            *:Create)              seen[$s]=Create ;;
+            Create:*)              ;;
+            *:Remove)              seen[$s]=Remove ;;
+            Remove:*)              ;;
+            *:Start)               seen[$s]=Start ;;
+        esac
+    done < <(sed -nE 's/^ *Container mediastack-([^ ]+) (Recreat|Creat|Remov|Start)[a-z]*$/\1 \2/p' <<<"$out" \
+             | sed -E 's/ Recreat$/ Recreate/; s/ Creat$/ Create/; s/ Remov$/ Remove/')   # stems: every tense Compose prints
+    for s in "${!seen[@]}"; do
+        case "${seen[$s]}" in
+            Recreate) echo "$s" ;;
+            Create)   echo "$s (new)" ;;
+            Remove)   echo "$s (removed)" ;;
+            Start)    echo "$s (stopped)" ;;
+        esac
+    done | sort
 }
 
 cmd_nuke() {
