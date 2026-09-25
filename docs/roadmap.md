@@ -182,5 +182,11 @@ in place (docs/disaster-recovery.md); still to build:
 - **A `--dry-run` smoke test in CI.** The rest of the suite is in place: each
   `scripts/test-*.sh` / `check-*.sh` states in its header what it pins, and the
   lint workflow runs them all.
-- First-class host-to-host migration (a `migrate` / export-import verb) — turns
-  the manual cutover procedure into a validated command.
+- First-class migration (a `migrate` verb) — turns the manual cutover
+  procedure into a validated command. The source is either a local path (old
+  stack on the same machine) or a remote host over SSH (`--from host:/path`);
+  the steps after the copy are identical. It copies app configs cold (source
+  apps stopped — live SQLite copies corrupt), maps old config folders to
+  `CONFIG_ROOT/<service>`, keeps database-stored paths valid (bind-mount
+  reshaping over database surgery), hands files to each service's own user,
+  and lets `wire` adopt the result. First run: against a fresh install.
