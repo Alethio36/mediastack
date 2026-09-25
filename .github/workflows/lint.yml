@@ -24,6 +24,16 @@ jobs:
           exit $rc
       - name: dispatch contracts (scripts/test-dispatch.sh)
         run: scripts/test-dispatch.sh
+      - name: media manifest loss-vs-churn contract (scripts/test-manifest.sh)
+        run: scripts/test-manifest.sh
+      - name: no literal backslash-n in notification bodies
+        run: |
+          # a double-quoted \n is two characters to bash: Discord shows '\n'.
+          # Line breaks go in as $'\n' (or printf's \n inside $(printf ...)).
+          if grep -nE 'notify(_interruption)? [a-z]+ "[^"]*" "[^"]*\\n' mediastack.sh lib/*.sh | grep -v '\$(printf'; then
+            echo "::error::literal \\n in a notification body — use \$'\\n'"
+            exit 1
+          fi
       - name: compose renders across the override lifecycle (scripts/test-render.sh)
         run: scripts/test-render.sh
       - name: schema bump enforced
