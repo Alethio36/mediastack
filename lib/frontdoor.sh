@@ -160,7 +160,7 @@ PANEL=(
     "Diagnostics~View logs~📜~60~logs {svc:entity=svc_logs:Service} --no-follow~~"
     "Services~Enable service~▶️~180~enable {svc:entity=svc_enable:Service to enable}~Confirm~"
     "Services~Disable service~⏹️~180~disable {svc:entity=svc_disable:Service to disable}~Confirm~"
-    "Services~Toggle VPN~🔒~300~vpn-apply {svc:entity=svc_vpn:Service} {state:choices=on,off:VPN}~Confirm~"
+    "Services~Toggle VPN~🔒~300~vpn-apply {svc:entity=svc_vpn:Service} {state:choices=on,off:VPN}~Confirm — restarts the VPN and every service behind it (about 1 min; downloads resume)~"
     "Services~Wire service~🔗~180~wire {svc:entity=svc_wire:Service to wire}~Confirm~"
     "Maintenance~Update stack~⬆️~300~update~Confirm — updates every service~single"
     "Maintenance~Backup now~💾~300~backup~Confirm — writes a new restore point~single"
