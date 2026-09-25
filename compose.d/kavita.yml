@@ -17,9 +17,13 @@ services:
     image: jvmilazz0/kavita:latest
     container_name: ${KAVITA_NAME:-mediastack-kavita}
     profiles: ["kavita"]
+    # The official image ignores PUID/PGID (its entrypoint's user switch is
+    # commented out upstream) and runs as whoever starts it, so `user:` sets
+    # the identity. Safe non-root: every runtime write lands under
+    # /kavita/config, and the one write into the image (index.html base URL)
+    # is skipped by Kavita itself when non-root with the default base URL.
+    user: "${KAVITA_UID}:${MEDIA_GROUP_GID}"
     environment:
-      - PUID=${KAVITA_UID}
-      - PGID=${MEDIA_GROUP_GID}
       - TZ=${TZ}
     volumes:
       - ${CONFIG_ROOT}/kavita:/kavita/config

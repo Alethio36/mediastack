@@ -144,7 +144,7 @@ Check
 | `doctor` | full health/permission/cert/backup/host-port audit — every failure states its fix |
 | `leak-test [--killswitch]` | prove no VPN'd service can leak (`--killswitch` = destructive proof) |
 | `vpn [svc on/off]` | show or change which services run behind the VPN (torrent clients need `--i-know` to leave) |
-| `fix-perms [svc]` | repair config ownership from the UID map |
+| `fix-perms [svc]` | repair ownership of a service's config, cache and transcode folders from the UID map |
 
 Other
 | command | what it does |

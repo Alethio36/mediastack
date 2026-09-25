@@ -97,3 +97,28 @@ files, no judgment calls. Every fragment carries its own `x-logging` and
 `x-armour` disables a FOREIGN watchtower on the same host, which would
 otherwise auto-update our containers behind the backup/rollback system's
 back; our own update pipeline does not use those labels.
+
+### Identity: PUID/PGID or `user:` — verify, never assume
+
+Every service runs as its own UID (`<SVC>_UID`) in the `mediacenter` group.
+How that is applied depends on the image, and getting it wrong is silent:
+an image that ignores `PUID`/`PGID` just runs as root, writes root-owned
+files, and later locks itself out when anything corrects the ownership.
+
+* **The image switches user itself** (linuxserver.io, hotio, most *arr
+  images): set `PUID=${X_UID}` and `PGID=${MEDIA_GROUP_GID}`.
+* **The image runs as whoever starts it** (most official images — jellyfin,
+  seerr, navidrome, kavita, audiobookshelf): set
+  `user: "${X_UID}:${MEDIA_GROUP_GID}"` and no PUID/PGID. Before shipping,
+  confirm from the image's Dockerfile/entrypoint and source that every
+  runtime write lands on a bind mount (the image's own tree is root-owned),
+  and that it does not bind a port below 1024 (move it with the app's own
+  port setting rather than relying on the host's
+  `ip_unprivileged_port_start`).
+
+A `PUID` the image never reads is the failure mode this guards against:
+audiobookshelf dropped its UID variables in 2.4.0 and kavita commented its
+entrypoint user-switch out, and both ran as root here since they shipped, behind
+fragments that set `PUID`. `doctor`'s runtime audit now FAILs any service
+whose processes don't run as its `<SVC>_UID` — check it on first start.
+

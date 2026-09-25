@@ -177,3 +177,12 @@ migrate_env_21_to_22() {
         info "New: nightly media manifest (MANIFEST_SCHEDULE=*-*-* 03:30). Install its timer: ./mediastack.sh apply-timer"
     fi
 }
+migrate_env_22_to_23() {
+    # audiobookshelf + kavita now run as their own UIDs via `user:` — their
+    # images ignore PUID, so everything they wrote until now is root-owned.
+    # The handover (stop, chown) must happen right before `up` recreates them,
+    # not here: migrations also run from `upgrade` and the panel's 5-minute
+    # refresh timer, and stopping them there would leave them down unattended.
+    env_set UID_HANDOVER "audiobookshelf kavita"
+    info "audiobookshelf + kavita will run as their own users from the next 'up' (their files are handed over then)."
+}

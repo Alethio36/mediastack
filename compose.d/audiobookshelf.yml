@@ -17,13 +17,17 @@ services:
     image: ghcr.io/advplyr/audiobookshelf:latest
     container_name: ${AUDIOBOOKSHELF_NAME:-mediastack-audiobookshelf}
     profiles: ["audiobookshelf"]
+    # The image has no entrypoint and no USER: node runs as root and PUID/PGID
+    # are ignored (its own UID variables were removed in 2.4.0), so `user:`
+    # sets the identity. PORT moves it off :80 — a non-root bind below 1024
+    # depends on the host's ip_unprivileged_port_start (upstream #4144).
+    user: "${AUDIOBOOKSHELF_UID}:${MEDIA_GROUP_GID}"
     # Network, host-port and route are generated into local/vpn-overlay.yml by
-    # vpn_gen. Traefik-only (mediastack.hostport=false — no host publish; :80
-    # would collide with Traefik). Defaults OUT of the VPN; toggle with:
+    # vpn_gen. Traefik-only (mediastack.hostport=false — no host publish).
+    # Defaults OUT of the VPN; toggle with:
     #   ./mediastack.sh vpn audiobookshelf on
     environment:
-      - PUID=${AUDIOBOOKSHELF_UID}
-      - PGID=${MEDIA_GROUP_GID}
+      - PORT=13378
       - TZ=${TZ}
     volumes:
       - ${CONFIG_ROOT}/audiobookshelf:/config
@@ -33,7 +37,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
-      mediastack.port: "80"
+      mediastack.port: "13378"
       mediastack.desc: "audiobook + podcast server with progress sync"
       mediastack.vpn: "false"
       mediastack.vpntoggle: "true"
@@ -43,7 +47,7 @@ services:
       mediastack.cache: "true"
       mediastack.subdomain: "audiobooks"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1/healthcheck || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:13378/healthcheck || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
