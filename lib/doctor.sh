@@ -7,6 +7,7 @@
 
 # ------------------------------------------------------------------ doctor --
 D_FAILS=0
+DOCTOR_START_WAIT=300   # see the startup wait in _doctor_containers
 d_fail() { fail "$1"; printf '     why : %s\n     fix : %s\n' "$2" "$3"; D_FAILS=$((D_FAILS+1)); }
 
 # --- doctor section checks (one helper per `hr "doctor: …"` block; each self-contained,
@@ -59,8 +60,13 @@ _doctor_containers() {
         esac
     done
     if (( ${#pending[@]} )); then
-        info "${#pending[@]} service(s) in their startup window — waiting (up to 90s, shared)..."
-        local deadline=$(( $(date +%s) + 90 )) rc_now still
+        # Wait for Docker's own verdict (healthy or unhealthy), never pre-empt
+        # it: "starting" means undecided. DOCTOR_START_WAIT must exceed the
+        # longest start_period + interval x retries in compose.d (jellyfin's
+        # 120+3x30 = 210s; watchstate's 180+3x30 = 270s), so it only ever cuts
+        # off a healthcheck that hangs rather than fails.
+        info "${#pending[@]} service(s) in their startup window — waiting for Docker's verdict (up to ${DOCTOR_START_WAIT}s, shared)..."
+        local deadline=$(( $(date +%s) + DOCTOR_START_WAIT )) rc_now still
         while (( ${#pending[@]} )) && (( $(date +%s) < deadline )); do
             sleep 5
             # re-inspect live: cmd_doctor filled the cache once up front, and a
@@ -84,7 +90,7 @@ _doctor_containers() {
             pending=("${still[@]}")
         done
         for s in "${pending[@]}"; do
-            d_fail "$s still not healthy after 90s (health: $(c_health "$(svc_cname "$s")"))" "startup is taking abnormally long or the healthcheck cannot pass" "./mediastack.sh logs $s"
+            d_fail "$s still undecided after ${DOCTOR_START_WAIT}s (health: $(c_health "$(svc_cname "$s")"))" "its healthcheck neither passes nor fails — it is probably hanging" "./mediastack.sh logs $s"
         done
     fi
 

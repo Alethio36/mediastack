@@ -45,7 +45,9 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 60s
+      # every start runs database maintenance that grows with watch history
+      # (~2 min on a loaded cold start); a passing check still ends it early
+      start_period: 180s
     networks: [mediastack]
     logging: *logging
     restart: unless-stopped
