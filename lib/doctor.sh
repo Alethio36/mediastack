@@ -288,6 +288,7 @@ _doctor_vpn_backups() {
     else
         warn "no restore points yet — run: ./mediastack.sh backup"
     fi
+    _doctor_manifest
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
         if [[ -s cache/trash-last-sync ]]; then
             local tage=$(( ( $(date +%s) - $(cat cache/trash-last-sync) ) / 3600 ))
@@ -317,6 +318,31 @@ _doctor_vpn_backups() {
         fi
     fi
 
+}
+
+_doctor_manifest() { # called from the vpn + backups section
+    if [[ -z "$(env_get MANIFEST_SCHEDULE)" ]]; then
+        info "media manifest disabled (MANIFEST_SCHEDULE empty)"
+        return 0
+    fi
+    systemctl is-enabled --quiet mediastack-manifest.timer 2>/dev/null \
+        && ok "media manifest timer enabled ($(env_get MANIFEST_SCHEDULE))" \
+        || warn "MANIFEST_SCHEDULE is set but its timer is not installed — run: ./mediastack.sh apply-timer"
+    local last mage
+    last=$(manifest_list | tail -1)
+    if [[ -z "$last" ]]; then
+        warn "no media manifest yet — run: ./mediastack.sh manifest"
+    else
+        mage=$(( ( $(date +%s) - $(date -d "$(sed -E 's/([0-9]{8})-([0-9]{2})([0-9]{2}).*/\1 \2:\3/' <<<"$last")" +%s) ) / 3600 ))
+        (( mage > 48 )) && warn "latest media manifest is ${mage}h old — check: systemctl status mediastack-manifest.service" \
+                        || ok "latest media manifest ${mage}h old"
+    fi
+    local msrc bsrc
+    msrc=$(timeout 5 findmnt -rn -o SOURCE --target "$(manifest_root)" 2>/dev/null || true)
+    bsrc=$(timeout 5 findmnt -rn -o SOURCE --target "$(env_get BACKUP_ROOT)" 2>/dev/null || true)
+    [[ -n "$msrc" && "$msrc" == "$bsrc" ]] \
+        && warn "BACKUP_ROOT shares a filesystem with the media ($msrc) — if that disk dies, the manifest listing what was on it dies too. Relocate with: ./mediastack.sh configure"
+    return 0
 }
 
 _doctor_apps() {

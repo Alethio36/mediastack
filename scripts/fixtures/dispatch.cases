@@ -188,3 +188,16 @@ vpn-guard --boot --boot
 # frontdoor-refresh  (none)
 frontdoor-refresh
 frontdoor-refresh x
+
+# manifest  (free — sub-verbs validate their own arguments)
+manifest
+manifest --accept
+manifest diff
+manifest diff 20260901
+manifest diff 20260901 20260902
+manifest diff a b c
+manifest find
+manifest find movie
+manifest find a b
+manifest --bogus
+manifest --accept extra

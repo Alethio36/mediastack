@@ -264,3 +264,25 @@ CALL cmd_frontdoor_refresh [0]
 ## frontdoor-refresh x
 ERROR 'frontdoor-refresh' takes no arguments (got: x)
 rc=1
+## manifest
+CALL cmd_manifest [0]
+## manifest --accept
+CALL cmd_manifest [1] --accept
+## manifest diff
+CALL cmd_manifest [1] diff
+## manifest diff 20260901
+CALL cmd_manifest [2] diff 20260901
+## manifest diff 20260901 20260902
+CALL cmd_manifest [3] diff 20260901 20260902
+## manifest diff a b c
+CALL cmd_manifest [4] diff a b c
+## manifest find
+CALL cmd_manifest [1] find
+## manifest find movie
+CALL cmd_manifest [2] find movie
+## manifest find a b
+CALL cmd_manifest [3] find a b
+## manifest --bogus
+CALL cmd_manifest [1] --bogus
+## manifest --accept extra
+CALL cmd_manifest [2] --accept extra
