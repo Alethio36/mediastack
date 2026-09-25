@@ -111,6 +111,12 @@ addr_repoint() { # addr_repoint <what> <stored> <want> -- <command...> — re-po
     if out=$("$@" 2>&1); then ok "$what: re-pointed to $want"
     else wfail "$what: re-point to $want rejected — $(tr -s '[:space:]' ' ' <<<"$out" | head -c300)"; fi
 }
+qbit_login_fields() { # qbit_login_fields <list JSON> <entry name> -> the login to (re)send, one field per line
+    # none when the entry authenticates by qBittorrent API key: Sonarr, Radarr
+    # and Prowlarr reject an entry holding a key AND a username/password
+    [[ -n "$(arr_entry_field "$1" "$2" apiKey)" ]] && return 0
+    printf '%s\n' "username=$(env_get QBITTORRENT_USER)" "password=$(env_get QBITTORRENT_PASSWORD)"
+}
 arr_repoint() { # arr_repoint <api base> <key> <resource> <list JSON> <entry name> field=value...
     # PUT the entry back with just those fields changed. Secrets the API masked
     # on GET ("********") go back as-is and the app keeps its stored value — the
@@ -475,10 +481,10 @@ JSON
         if [[ "$dexists" == yes ]]; then
             local dst; dst="$(arr_entry_field "$cur" "qBittorrent (mediastack)" host):$(arr_entry_field "$cur" "qBittorrent (mediastack)" port)"
             if addr_stale "$s -> qbittorrent" qbittorrent "$dst"; then
+                local -a login; mapfile -t login < <(qbit_login_fields "$cur" "qBittorrent (mediastack)")
                 addr_repoint "$s -> qbittorrent" "$dst" "$(svc_addr qbittorrent)" -- \
                     arr_repoint "$url/api/$(arr_apiver "$s")" "$key" downloadclient "$cur" "qBittorrent (mediastack)" \
-                    "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)" \
-                    "username=$(env_get QBITTORRENT_USER)" "password=$(env_get QBITTORRENT_PASSWORD)"
+                    "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)" "${login[@]}"
             fi
         fi
         ensure_resource "$dexists" "$s: register qBittorrent (category $cat)" \
@@ -517,10 +523,10 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
         ok "prowlarr download client registered"
         local dst; dst="$(arr_entry_field "$dcs" qbittorrent host):$(arr_entry_field "$dcs" qbittorrent port)"
         if addr_stale "prowlarr -> qbittorrent" qbittorrent "$dst"; then
+            local -a login; mapfile -t login < <(qbit_login_fields "$dcs" qbittorrent)
             addr_repoint "prowlarr -> qbittorrent" "$dst" "$(svc_addr qbittorrent)" -- \
                 arr_repoint "$url/api/$ver" "$key" downloadclient "$dcs" qbittorrent \
-                "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)" \
-                "username=$(env_get QBITTORRENT_USER)" "password=$(env_get QBITTORRENT_PASSWORD)"
+                "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)" "${login[@]}"
         fi
         return 0
     fi
