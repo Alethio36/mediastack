@@ -1076,6 +1076,62 @@ c_uptime() { # human-readable duration since container start (e.g. 3d4h, 12m, 45
     else echo "${sec}s"; fi
 }
 c_version(){ c_get "$1" '.Config.Labels["org.opencontainers.image.version"]'; }
+
+# ------------------------------------------------------------ health verdict --
+# START_WAIT must exceed every fragment's Docker verdict window,
+# start_period + interval x retries (CI: scripts/check-start-wait.sh), so a
+# wait only ever cuts off a healthcheck that hangs rather than one that is slow.
+START_WAIT=300
+VERDICT_BAD=""
+declare -A VERDICT_WHY=()
+# wait_verdict SVC... — block until Docker has judged every service, or
+# START_WAIT runs out. The ONE definition of "came up" for every wait in the
+# script. A service passes when it is running and healthy — or running with no
+# healthcheck and no restart since the call. It fails on unhealthy (Docker's
+# own verdict, after the fragment's start_period + retries), on exited, dead
+# or absent, or on a restart (boot loop). "starting" keeps it waiting.
+# Prints an OK line per pass; failures are left to the caller's wording in
+# VERDICT_BAD (space-separated) and VERDICT_WHY[svc]. Returns 1 on any failure.
+# Re-inspects live on every poll (CACHE RULE at c_inspect), whatever the
+# caller's cache holds.
+# shellcheck disable=SC2034  # VERDICT_WHY: read by the callers (switched over in the next commit)
+wait_verdict() {
+    local deadline s cn st h left
+    local -A rc0=() vd=()
+    deadline=$(( $(date +%s) + START_WAIT ))
+    VERDICT_BAD=""; VERDICT_WHY=()
+    INSPECT_JSON=""; c_inspect_all
+    for s in "$@"; do rc0[$s]=$(c_restarts "$(svc_cname "$s")"); done
+    while :; do
+        for s in "$@"; do
+            [[ -z "${vd[$s]:-}" ]] || continue
+            cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
+            if (( $(c_restarts "$cn") > rc0[$s] )) || [[ "$st" == restarting ]]; then
+                VERDICT_WHY[$s]="is boot-looping (restarted $(c_restarts "$cn") times)"; vd[$s]=bad
+            elif [[ "$st" =~ ^(exited|dead|absent)$ ]]; then
+                VERDICT_WHY[$s]="is $st"; vd[$s]=bad
+            elif [[ "$st" == running && "$h" == unhealthy ]]; then
+                VERDICT_WHY[$s]="is unhealthy (Docker's verdict)"; vd[$s]=bad
+            elif [[ "$st" == running && ( "$h" == healthy || "$h" == "-" ) ]]; then
+                ok "$s (running${h:+, }${h/#-/no healthcheck})"; vd[$s]=ok
+            fi
+        done
+        left=0; for s in "$@"; do [[ -n "${vd[$s]:-}" ]] || left=$((left+1)); done
+        (( left == 0 )) && break
+        (( $(date +%s) < deadline )) || break
+        sleep 5
+        INSPECT_JSON=""; c_inspect_all
+    done
+    for s in "$@"; do
+        if [[ -z "${vd[$s]:-}" ]]; then
+            VERDICT_WHY[$s]="still undecided after ${START_WAIT}s (health: $(c_health "$(svc_cname "$s")")) — its healthcheck is probably hanging"
+            vd[$s]=bad
+        fi
+        [[ "${vd[$s]}" == bad ]] && VERDICT_BAD+="$s "
+    done
+    VERDICT_BAD=${VERDICT_BAD% }
+    [[ -z "$VERDICT_BAD" ]]
+}
 c_restarts(){ local o; o=$(c_get "$1" '.RestartCount'); echo "${o:-0}"; }
 c_netmode(){ c_get "$1" '.HostConfig.NetworkMode'; }   # "container:<id>" when joined to another namespace
 c_id()     { c_get "$1" '.Id'; }
