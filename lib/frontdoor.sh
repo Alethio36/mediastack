@@ -539,10 +539,13 @@ EOF
 
     echo
     hr "Front door ready"
+    # the panel is served only through Traefik (no host port): no domain, no URL
+    local url; url=$(svc_url olivetin)
+    [[ "$url" == https://* ]] || url="none yet — the panel is served through Traefik: ./mediastack.sh traefik-setup"
     cat <<EOT
 Bring it up:   ./mediastack.sh up        (starts the 'olivetin' container)
-Reach it:      https://\${OLIVETIN_HOST:-panel}.<your TRAEFIK_DOMAIN>  (LAN)
-Log in as 'admin' with the password you just set.
+Reach it:      $url  (LAN)
+Log in as 'admin' (change the password: ./mediastack.sh frontdoor-install --set-password).
 
 Host-side checks worth confirming once (needs the live box):
   * sshd accepts the olivetin key from containers (host-gateway reachable, sshd up)
