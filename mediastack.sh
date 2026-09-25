@@ -1026,11 +1026,15 @@ c_get() { # c_get <cname> <jq path> -> the value, "" when the container is absen
 c_state()  { local o; o=$(c_get "$1" '.State.Status'); echo "${o:-absent}"; }
 c_health() { local o; o=$(c_get "$1" '.State.Health.Status'); echo "${o:--}"; }
 c_uptime() { # human-readable duration since container start (e.g. 3d4h, 12m, 45s)
-    local st sec
+    # only a running container has an uptime; a stopped one keeps its last
+    # StartedAt and a never-started one reports 0001-01-01
+    [[ "$(c_state "$1")" == running ]] || { echo "-"; return; }
+    local st t sec
     st=$(c_get "$1" '.State.StartedAt')
-    [[ -n "$st" ]] || { echo "-"; return; }
-    sec=$(( $(date +%s) - $(date -d "$st" +%s 2>/dev/null || date +%s) ))
-    (( sec < 0 )) && sec=0
+    if ! t=$(date -d "$st" +%s 2>/dev/null) || (( (sec = $(date +%s) - t) < 0 )); then
+        warn "$1: unreadable start time '$st' — uptime shown as ?" >&2
+        echo "?"; return
+    fi
     if   (( sec >= 86400 )); then echo "$((sec/86400))d$(( (sec%86400)/3600 ))h"
     elif (( sec >= 3600 ));  then echo "$((sec/3600))h$(( (sec%3600)/60 ))m"
     elif (( sec >= 60 ));    then echo "$((sec/60))m$((sec%60))s"
