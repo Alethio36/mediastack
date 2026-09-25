@@ -24,6 +24,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.jflibrary: "Movies (4K)"
       mediastack.trashprofile: "uhd"
       mediastack.desc: "second Radarr just for 4K movies (own library + rules)"
       mediastack.vpn: "true"
