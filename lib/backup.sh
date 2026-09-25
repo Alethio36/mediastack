@@ -223,7 +223,11 @@ cmd_restore() {
             from=$(ls -1d "$broot"/$tsglob 2>/dev/null | sort -r | head -1); from=${from:+$(basename "$from")}
         fi
     fi
-    [[ -n "$from" && -d "$broot/$from" ]] || die "No restore point found. Available: $(ls -1 "$broot" 2>/dev/null | grep -E "^$tsglob$" | tr '\n' ' ')"
+    if [[ -z "$from" || ! -d "$broot/$from" ]]; then
+        local avail="" d
+        for d in "$broot"/$tsglob; do [[ -d "$d" ]] && avail+="$(basename "$d") "; done
+        die "No restore point found. Available: $avail"
+    fi
     info "Restoring from $from"
     local targets; if (( all_svcs )); then targets=$(svc_managed); else targets="$svc"; fi
     local croot ts s ref
@@ -418,6 +422,7 @@ cmd_update() {
     for s in "${targets[@]}"; do
         local cn h; cn=$(svc_cname "$s")
         while :; do
+            # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
             INSPECT_JSON=""   # poll live — a prior c_inspect_all (e.g. vpn_reattach_guard)
             h=$(c_health "$cn")   # left a frozen snapshot the loop must not read
             [[ "$h" == healthy || "$h" == "-" ]] && break
