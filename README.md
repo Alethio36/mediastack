@@ -108,7 +108,7 @@ Setup
 Run
 | command | what it does |
 |---|---|
-| `up` / `down` | start / stop the stack |
+| `up` / `down` | start / stop the stack. `up` also finishes any pending one-time step — re-pointing the apps that call a service you moved in or out of the VPN, or a service's file-ownership handover — and retries it until it succeeds |
 | `enable <svc>` / `disable <svc>` | turn one service on/off (dependencies handled) |
 | `status [svc]` | overview table (ports, VPN, health, versions, URLs) or one-service deep view |
 | `logs <svc> [--no-follow]` | follow one service's logs; `--no-follow` prints a bounded snapshot and returns (used by the web panel) |

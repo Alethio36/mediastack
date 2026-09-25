@@ -102,6 +102,22 @@ files, no judgment calls. Every fragment carries its own `x-logging` and
 otherwise auto-update our containers behind the backup/rollback system's
 back; our own update pipeline does not use those labels.
 
+### Wiring it to other apps (`wire`)
+
+If a `wire` role writes this service's address into another app's settings:
+
+* **Build the address with `svc_addr <svc>`** (or `svc_host` + `svc_cport`),
+  never a literal: it follows the service's VPN side (`gluetun:<port>` inside,
+  `<svc>:<port>` outside). CI (`scripts/test-addr.sh`) rejects a hard-coded
+  loopback or gluetun address.
+* **List who calls it in `WIRE_CALLERS`** (`lib/integrations.sh`), so a VPN
+  toggle re-points those roles. CI (`scripts/test-repoint.sh`) fails if `wire`
+  writes an address for a service the table doesn't list.
+* **A read that decides whether to create something must fail loud.** A refused
+  API read must never look like "nothing configured" — that creates duplicates.
+  CI rejects a swallowed read (`|| true`) that doesn't carry a
+  `# soft read: <why>` reason.
+
 ### Identity: PUID/PGID or `user:` — verify, never assume
 
 Every service runs as its own UID (`<SVC>_UID`) in the `mediacenter` group.
