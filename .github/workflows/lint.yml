@@ -43,6 +43,8 @@ jobs:
         run: scripts/test-frontdoor.sh
       - name: app-to-app addresses follow the target's VPN side (scripts/test-addr.sh)
         run: scripts/test-addr.sh
+      - name: a VPN toggle re-points every caller of the moved service (scripts/test-repoint.sh)
+        run: scripts/test-repoint.sh
       - name: no literal backslash-n in notification bodies
         run: |
           # a double-quoted \n is two characters to bash: Discord shows '\n'.

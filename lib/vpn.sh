@@ -375,6 +375,8 @@ cmd_vpn() {
     # config — the overlay reports the effective value, not the default.
     local default how
     default=$(vpn_base_json | jq -r --arg s "$svc" '.services[$s].labels["mediastack.vpn"] // "false"')
+    # its address moves with its side (svc_addr): callers get re-pointed at `up`
+    [[ "$(vpn_effective "$svc" "$default")" == "$target" ]] || repoint_mark "$svc"
     if [[ "$target" == "$default" ]]; then
         env_del "${stem}_VPN"; how="matches default"
     else
