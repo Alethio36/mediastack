@@ -6,14 +6,12 @@
 
 # =================================================================== trash --
 # Wave 2: TRaSH Guides sync via Recyclarr (guide-backed profiles, v8 schema).
-# Managed instances: sonarr, sonarr-anime, radarr, radarr-4k. Lidarr is out
-# of scope (recyclarr supports sonarr/radarr only).
+# Managed instances: every enabled arr of type sonarr or radarr (the
+# mediastack.arrtype label); lidarr is out of scope (recyclarr supports
+# sonarr/radarr only).
 
-trash_instances() {
-    local s; for s in sonarr sonarr-anime radarr radarr-4k; do
-        svc_enabled "$s" || continue
-        echo "$s"
-    done
+trash_instances() { # enabled arrs recyclarr can manage (types sonarr, radarr), in that order
+    arr_instances sonarr; arr_instances radarr
 }
 
 trash_envkey() { echo "TRASH_PROFILE_$(tr 'a-z-' 'A-Z_' <<<"$1")"; }
@@ -24,10 +22,11 @@ trash_menu() {
     for s in $(trash_instances); do
         key=$(trash_envkey "$s"); cur=$(env_get "$key")
         [[ -n "$cur" ]] && continue
-        case "$s" in
-            radarr-4k)    env_set "$key" uhd;   info "radarr-4k: pre-answered 'uhd' (that is its whole job)"; continue ;;
-            sonarr-anime) env_set "$key" anime; info "sonarr-anime: pre-answered 'anime'"; continue ;;
-        esac
+        # an instance with one obvious job carries it: mediastack.trashprofile
+        local pre; pre=$(svc_label "$s" mediastack.trashprofile)
+        if [[ -n "$pre" ]]; then
+            env_set "$key" "$pre"; info "$s: pre-answered '$pre' (that is its whole job)"; continue
+        fi
         if [[ ! -t 0 ]]; then
             env_set "$key" skip
             warn "$s: no TRaSH profile chosen and no terminal to ask — set to 'skip'; run './mediastack.sh trash-sync' interactively to choose"

@@ -39,6 +39,7 @@ backups and the update pipeline like any shipped service.
 |---|---|
 | `mediastack.managed: "true"` | required on every service |
 | `mediastack.vpn: "true"` | default VPN membership. On a **toggle-enabled** service this is only the default (override per deployment via `<SVC>_VPN` in `.env` / the `vpn` command); on a **static** service the fragment itself must set `network_mode: "service:gluetun"` with no own `ports:`. `leak-test` audits the live result either way |
+| `mediastack.torrent: "true"` | a torrent client: out of the VPN its traffic leaks on the host IP, so `vpn_gen` warns and `vpn <svc> off` refuses without `--i-know` |
 | `mediastack.vpntoggle: "true"` | opt into operator-selectable VPN membership: `vpn_gen` generates this service's network, host port and Traefik route from its metadata, so the fragment carries none of those directly. See docs/vpn-membership.md |
 | `mediastack.hostport: "false"` | (toggle services only) Traefik-only — publish no host port in either VPN state, for serving apps whose container port would collide on the host (e.g. `:80`). Default `"true"` |
 | `mediastack.config: "true"` | owns `${CONFIG_ROOT}/<service>` (provisioned, audited, backed up) |
@@ -56,6 +57,7 @@ Labels the arr family carries (only meaningful with `wire arr` / `trash-sync`):
 | Label | Meaning |
 |---|---|
 | `mediastack.arrtype: "sonarr\|radarr\|lidarr"` | which arr this instance is — selects the API version, the download-client category field, and the TRaSH profile menu |
+| `mediastack.trashprofile: "uhd"` | the TRaSH profile this instance exists for (`uhd`, `anime`, …) — `trash-sync` pre-answers it instead of asking. Any `sonarr`/`radarr`-type instance is managed by `trash-sync`; this only skips the question |
 | `mediastack.category: "movies-4k"` | its qBittorrent category (`wire qbit` creates it; `wire arr` sets it on the download client) |
 | `mediastack.rootfolder: "/data/media/${MEDIA_DIR_MOVIES_4K:-movies-4k}"` | its root folder inside the container (`wire arr` registers it; seerr and jellyfin libraries derive from it; `configure` creates the directory). The subdir name comes from `.env` so an existing tree's names can be adopted |
 | `mediastack.datadirs: "torrent/movies-4k media/${MEDIA_DIR_MOVIES_4K:-movies-4k}"` | extra `${DATA_ROOT}` subtrees `configure` provisions for this instance |

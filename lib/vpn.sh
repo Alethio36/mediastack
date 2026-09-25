@@ -216,7 +216,9 @@ cmd_leak_test() {
 # identical file and never trigger a spurious recreate. .env stays the single
 # source of truth for ports/hosts: the overlay emits ${VAR} placeholders, not
 # resolved values.
-VPN_TORRENT_CLIENTS="qbittorrent deluge transmission"
+# a torrent client outside the VPN leaks its traffic on the host IP: the
+# mediastack.torrent label marks one (vpn_gen warns, `vpn ... off` refuses)
+is_torrent_client() { [[ "$(svc_label "$1" mediastack.torrent)" == true ]]; }
 
 vpn_rname() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik router name
 vpn_onoff() { [[ "$1" == true ]] && echo "on" || echo "off"; }   # membership -> on/off
@@ -275,7 +277,7 @@ vpn_gen() {
             stanzas+="    depends_on:"$'\n'"      gluetun:"$'\n'"        condition: service_healthy"$'\n'
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"true\""$'\n'
         else
-            [[ " $VPN_TORRENT_CLIENTS " == *" $s "* ]] \
+            [[ "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.torrent"] // ""' <<<"$bj")" == true ]] \
                 && warn "vpn: $s (torrent client) is OUTSIDE the VPN — its traffic exits on the host IP"
             stanzas+="  ${s}:"$'\n'"    networks: [mediastack]"$'\n'
             [[ "$hp" != false ]] && stanzas+="    ports:"$'\n'"      - \"\${${stem}_PORT:-${cport}}:${cport}\""$'\n'
@@ -360,7 +362,7 @@ cmd_vpn() {
     case "$act" in
         on|true)   target=true ;;
         off|false)
-            if [[ " $VPN_TORRENT_CLIENTS " == *" $svc "* && $iknow -ne 1 ]]; then
+            if is_torrent_client "$svc" && (( iknow != 1 )); then
                 die "vpn: refusing to move torrent client '$svc' OUT of the VPN — that leaks its traffic on the host IP.
   If you really mean it: ./mediastack.sh vpn $svc off --i-know"
             fi
