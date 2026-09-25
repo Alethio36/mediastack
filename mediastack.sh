@@ -2188,19 +2188,9 @@ trash_gen_config() { # trash_gen_config [out-path] — default: the live recycla
 # container "running" is not API "ready" — after a cold restart the arrs
 # answer errors for a few seconds. Poll each instance before touching it.
 arr_api_ready() { # arr_api_ready <svc> <shared-deadline-epoch> -> 0 ready
-    local s="$1" deadline="$2" key url probe
-    key=$(arr_key "$s"); [[ -n "$key" ]] || return 1
-    url=$(arr_url "$s")
-    while :; do
-        probe=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' \
-                -H "X-Api-Key: $key" "$url/api/$(arr_apiver "$s")/system/status" 2>&1)
-        [[ "$probe" == 200 ]] && return 0
-        if (( $(date +%s) >= deadline )); then
-            wfail "$s: API not ready before the 90s budget ran out (last probe: $(head -c80 <<<"$probe"))"
-            return 1
-        fi
-        sleep 3
-    done
+    local key; key=$(arr_key "$1")
+    [[ -n "$key" ]] || { wfail "$1: no API key readable from its config — is it initialised? (./mediastack.sh wire arr)"; return 1; }
+    http_ready --until "$2" "$1" "$(arr_url "$1")/api/$(arr_apiver "$1")/system/status" '^200$' -H "X-Api-Key: $key"
 }
 
 TRASH_SENTINEL='[!] Synced by mediastack — tune via local/trash-overrides.yml'
@@ -2307,7 +2297,7 @@ cmd_trash_sync() { # trash-sync [--dry-run]
         trash_gen_config
     fi
     hr "trash-sync: ownership banners"
-    local deadline=$(( $(date +%s) + 90 ))
+    local deadline=$(( $(date +%s) + API_WAIT ))   # one budget shared by every instance
     for s in $insts; do
         [[ "$(env_get "$(trash_envkey "$s")")" == skip ]] && continue
         arr_api_ready "$s" "$deadline" || continue

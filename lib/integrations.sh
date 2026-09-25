@@ -141,6 +141,31 @@ wire_gate() { # refuse to wire what isn't up
   Start the stack first: ./mediastack.sh up   (then wait for healthy: status)"
 }
 
+# http_ready [--until EPOCH] SVC URL OK_RE [curl-args...] — poll URL until it
+# answers with an HTTP status matching OK_RE, or API_WAIT (or EPOCH, a shared
+# deadline across several calls) runs out. The ONE API-readiness wait: a
+# container being "running", even "healthy", doesn't prove the app answers
+# from the host through its published port (gluetun's namespace, warm-up).
+# 000 = no socket. On timeout: wfail with the last status, return 1.
+API_WAIT=90
+http_ready() {
+    local until=0 svc url re code t0 deadline
+    [[ "${1:-}" == --until ]] && { until="$2"; shift 2; }
+    svc="$1" url="$2" re="$3"; shift 3
+    t0=$(date +%s)
+    if (( until )); then deadline=$until; else deadline=$(( t0 + API_WAIT )); fi
+    while :; do
+        # curl already prints 000 when there is no socket — no "|| echo 000"
+        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$@" "$url" 2>/dev/null) || true
+        [[ "${code:=000}" =~ $re ]] && return 0
+        if (( $(date +%s) >= deadline )); then
+            wfail "$svc's API never became ready within $(( deadline - t0 ))s (last: HTTP $code) — inspect: ./mediastack.sh logs $svc"
+            return 1
+        fi
+        sleep 5; info "waiting for $svc's API ($(( $(date +%s) - t0 ))s)..."
+    done
+}
+
 # shellcheck disable=SC2120  # type argument is optional by design
 arr_instances() { # arr_instances [type] -> enabled arr services (optionally by type)
     local s t
@@ -205,12 +230,8 @@ wire_qbit() {
     wire_gate qbittorrent
     # auth-free settle: any HTTP status proves the listener (000 = no socket);
     # avoids misreading a boot gap as bad credentials on re-runs
-    local qt=0
-    while [[ "$(curl -s -m 3 -o /dev/null -w '%{http_code}' \
-             "$(qb_url)/api/v2/app/webapiVersion" 2>/dev/null || echo 000)" == 000 ]]; do
-        (( qt >= 45 )) && die "qBittorrent's WebUI never started listening — inspect: ./mediastack.sh logs qbittorrent"
-        sleep 3; qt=$((qt+3)); info "qBittorrent WebUI not accepting connections yet (${qt}s)..."
-    done
+    http_ready qbittorrent "$(qb_url)/api/v2/app/webapiVersion" '^[1-9]' \
+        || die "cannot wire qBittorrent without its WebUI (see above)"
     local user pass gen
     user=$(env_get QBITTORRENT_USER)
     pass=$(env_get QBITTORRENT_PASSWORD)
@@ -426,13 +447,7 @@ wire_lazylibrarian() {
     hr "wire: LazyLibrarian"
     svc_enabled lazylibrarian || { info "lazylibrarian not enabled — skipped"; return 0; }
     wire_gate lazylibrarian
-    local t=0 code
-    while :; do
-        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(ll_url)/" 2>/dev/null || echo 000)
-        [[ "$code" =~ ^(2|3)[0-9][0-9]$ || "$code" =~ ^(401|403)$ ]] && break
-        (( t >= 90 )) && { wfail "lazylibrarian never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
-        sleep 5; t=$((t+5)); info "waiting for lazylibrarian (${t}s)..."
-    done
+    http_ready lazylibrarian "$(ll_url)/" '^([23][0-9][0-9]|401|403)$' || return 1
     local key; key=$(ll_key)
     if [[ -z "$key" ]]; then
         # first-ever start: the API key is minted only after the web UI has
@@ -710,13 +725,7 @@ wire_apprise() {
     hr "wire: apprise"
     svc_enabled apprise || { info "apprise not enabled — skipped"; return 0; }
     wire_gate apprise
-    local t=0 code
-    while :; do
-        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(apprise_url)/status" 2>/dev/null || echo 000)
-        [[ "$code" =~ ^2 ]] && break
-        (( t >= 90 )) && { wfail "apprise never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs apprise"; return 1; }
-        sleep 5; t=$((t+5)); info "waiting for apprise (${t}s)..."
-    done
+    http_ready apprise "$(apprise_url)/status" '^2' || return 1
 
     # --- notification endpoints: stored once under key 'mediastack';
     # an existing config is never touched (edit in apprise's UI or re-add)
@@ -845,13 +854,7 @@ wire_cleanuparr() {
     hr "wire: cleanuparr"
     svc_enabled cleanuparr || { info "cleanuparr not enabled — skipped"; return 0; }
     wire_gate cleanuparr
-    local t=0 code
-    while :; do
-        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(cup_url)/health" 2>/dev/null || echo 000)
-        [[ "$code" =~ ^2 ]] && break
-        (( t >= 90 )) && { wfail "cleanuparr never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs cleanuparr"; return 1; }
-        sleep 5; t=$((t+5)); info "waiting for cleanuparr (${t}s)..."
-    done
+    http_ready cleanuparr "$(cup_url)/health" '^2' || return 1
 
     local user pass st out
     user=$(env_get ARR_USER); pass=$(env_get ARR_PASSWORD)
@@ -985,15 +988,7 @@ jf_api() { # jf_api METHOD PATH TOKEN [json-body] -> body on stdout; rc = http 2
     echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
 }
-jf_ready() { # container "running" != API "ready"
-    local t=0 code
-    while :; do
-        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(jf_url)/health" 2>/dev/null || echo 000)
-        [[ "$code" == 200 ]] && return 0
-        (( t >= 90 )) && { wfail "jellyfin's API never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs jellyfin"; return 1; }
-        sleep 5; t=$((t+5)); info "waiting for jellyfin's API (${t}s)..."
-    done
-}
+jf_ready() { http_ready jellyfin "$(jf_url)/health" '^200$'; }
 jf_libname() { # jf_libname <arr service> <media subdir> -> default library name
     case "$1" in
         radarr)       echo "Movies" ;;
@@ -1176,13 +1171,7 @@ wire_seerr() {
     svc_enabled seerr || { info "seerr not enabled — skipped"; return 0; }
     svc_enabled jellyfin || { wfail "seerr is enabled but jellyfin is not — seerr cannot function without it"; return 1; }
     wire_gate seerr jellyfin
-    local t=0 code
-    while :; do
-        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(seerr_url)/api/v1/status" 2>/dev/null || echo 000)
-        [[ "$code" == 200 ]] && break
-        (( t >= 90 )) && { wfail "seerr's API never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs seerr"; return 1; }
-        sleep 5; t=$((t+5)); info "waiting for seerr's API (${t}s)..."
-    done
+    http_ready seerr "$(seerr_url)/api/v1/status" '^200$' || return 1
     local jar pub
     jar=$(mktemp)
     pub=$(seerr_api GET /settings/public "$jar" || true)
@@ -1320,15 +1309,9 @@ wire_wizarr() {
     hr "wire: wizarr"
     svc_enabled wizarr || { info "wizarr not enabled — skipped"; return 0; }
     wire_gate wizarr
-    local t=0 code
-    while :; do
-        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$(wizarr_url)/health" 2>/dev/null || echo 000)
-        # a virgin wizarr 302s /health to /setup (onboarding middleware) —
-        # any 2xx/3xx means the app is up and serving
-        [[ "$code" =~ ^[23] ]] && break
-        (( t >= 90 )) && { wfail "wizarr never became ready within 90s (last: HTTP $code) — inspect: ./mediastack.sh logs wizarr"; return 1; }
-        sleep 5; t=$((t+5)); info "waiting for wizarr (${t}s)..."
-    done
+    # a virgin wizarr 302s /health to /setup (onboarding middleware) —
+    # any 2xx/3xx means the app is up and serving
+    http_ready wizarr "$(wizarr_url)/health" '^[23]' || return 1
     local key host domain
     key=$(env_get WIZARR_API_KEY)
     if [[ -z "$key" ]]; then

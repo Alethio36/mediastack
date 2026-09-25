@@ -32,6 +32,8 @@ jobs:
         run: scripts/check-start-wait.sh
       - name: health verdict contract (scripts/test-verdict.sh)
         run: scripts/test-verdict.sh
+      - name: API readiness contract (scripts/test-http-ready.sh)
+        run: scripts/test-http-ready.sh
       - name: no literal backslash-n in notification bodies
         run: |
           # a double-quoted \n is two characters to bash: Discord shows '\n'.
