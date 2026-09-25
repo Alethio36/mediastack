@@ -117,8 +117,12 @@ compose_pending() { # the services `up` would change — Compose's own dry run o
             Remove:*)              ;;
             *:Start)               seen[$s]=Start ;;
         esac
-    done < <(sed -nE 's/^ *Container mediastack-([^ ]+) (Recreat|Creat|Remov|Start)[a-z]*$/\1 \2/p' <<<"$out" \
-             | sed -E 's/ Recreat$/ Recreate/; s/ Creat$/ Create/; s/ Remov$/ Remove/')   # stems: every tense Compose prints
+    # Compose pads some progress lines (seen live: trailing characters after
+    # the state), so nothing is anchored to the line's end; CRs are dropped
+    # and anything before "Container" is tolerated. Stems catch every tense.
+    done < <(tr -d '\r' <<<"$out" \
+             | sed -nE 's/.*Container mediastack-([^ ]+) +(Recreat|Creat|Remov|Start).*/\1 \2/p' \
+             | sed -E 's/ Recreat$/ Recreate/; s/ Creat$/ Create/; s/ Remov$/ Remove/')
     for s in "${!seen[@]}"; do
         case "${seen[$s]}" in
             Recreate) echo "$s" ;;

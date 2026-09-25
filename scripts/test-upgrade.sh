@@ -44,6 +44,9 @@ DRY=$unchanged$' Container mediastack-bazarr Starting\n Container mediastack-baz
 eq "a stopped service" "$(pending)" "bazarr (stopped)"; pass
 DRY=$' Container mediastack-radarr Recreate\n Container mediastack-apprise Created\n'
 eq "several, sorted" "$(pending)" "apprise (new)|radarr"; pass
+# seen live: Compose pads some lines — trailing spaces, a CR, a prefix
+DRY=$' Container mediastack-radarr Recreate   \n Container mediastack-sonarr Recreated\r\nDRY-RUN MODE -  Container mediastack-lidarr  Recreate\n Container mediastack-traefik Running  \n'
+eq "padded lines still read (and a padded Running is still no change)" "$(pending)" "lidarr|radarr|sonarr"; pass
 DRY="error: something broke"; DC_FAILS=1
 set +e; (compose_pending >/dev/null 2>&1); rc=$?; set -e
 (( rc != 0 )) || fail_ "a failed dry run must fail loud, never read as 'nothing to apply'"; pass
