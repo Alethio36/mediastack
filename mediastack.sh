@@ -736,7 +736,7 @@ cmd_status() {
     local off="" p
     for p in $(svc_disabled_managed); do off+="$p "; done
     [[ -n "$off" ]] && info "Available, not enabled: $off"
-    local last; last=$(ls -1 "$(env_get BACKUP_ROOT)" 2>/dev/null | tail -1 || true)
+    local last; last=$(latest_restore_point)
     info "Latest restore point: ${last:-none yet (run: ./mediastack.sh backup)}"
     df -h "$(env_get CONFIG_ROOT)" "$(env_get DATA_ROOT)" 2>/dev/null | tail -n +2 | sort -u \
         | awk '{printf ":: disk %-24s %s used of %s (%s)\n", $6, $3, $2, $5}'
