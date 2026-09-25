@@ -181,6 +181,23 @@ a committed plan.
   is client-fixed, and a 204 is not a delivery ack. A ~5s flash is too brief to
   read, so it stays dropped unless jellyfin-web ever renders `DisplayMessage` as
   a persistent element instead of a transient toast.
+- **Media monitoring.** Answering "what happened to X?" after the fact.
+  - *Media manifest (landed).* Nightly read-only snapshot of `DATA_ROOT/media`
+    with a churn-aware compare (inode+size identity: arr renames and upgrades
+    are not losses), title-level ops alerts, a mass-drop guard against
+    unmounted shares, and `manifest diff` / `manifest find`. See
+    docs/disaster-recovery.md.
+  - *Arr recycle bin via `wire` (planned).* User-configurable: on/off,
+    location (default `${DATA_ROOT}/recycle/<svc>/`, must share the media
+    filesystem — an arr recycle is a move, cross-filesystem it becomes a full
+    copy), retention days (default 7; upgrades keep the old file for the whole
+    window, so 4K remux chains cost disk). Covers arr-initiated deletes only.
+  - *Deletion attribution via auditd (planned, opt-in).* Log only
+    unlink/rename/rmdir under the media root; each service's own UID names the
+    culprit; a report verb maps UIDs to services. Sees this host's syscalls
+    only (not NAS-side or other-host deletes — the manifest covers those).
+    Open question before building: whether a directory-scoped audit rule fires
+    reliably on an NFS client mount.
 - **Notification follow-ups, not built.** A `notify` management verb
   (`test` a stream, re-runnable `set`, redacted `status`, `clear`) and a curated
   "new media available → `users`" event (the raw arr import firehose is too

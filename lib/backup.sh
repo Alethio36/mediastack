@@ -477,24 +477,32 @@ cmd_update() {
 
 cmd_apply_timer() {
     load_env
-    local sched; sched=$(env_get UPDATE_SCHEDULE)
+    apply_timer mediastack-update "Mediastack update pipeline" "update --auto" UPDATE_SCHEDULE "Automatic updates"
+    apply_timer mediastack-manifest "Mediastack media manifest" "manifest" MANIFEST_SCHEDULE "Media manifest"
+}
+
+# apply_timer UNIT DESCRIPTION VERB SCHEDULE_VAR LABEL — install/refresh one
+# oneshot service + timer from an OnCalendar value in .env; empty disables it
+apply_timer() {
+    local unit="$1" desc="$2" verb="$3" var="$4" label="$5" sched
+    sched=$(env_get "$var")
     if [[ -z "$sched" ]]; then
-        sudo systemctl disable --now mediastack-update.timer 2>/dev/null || true
-        ok "Automatic updates disabled (UPDATE_SCHEDULE is empty)."
+        sudo systemctl disable --now "$unit.timer" 2>/dev/null || true
+        ok "$label disabled ($var is empty)."
         return
     fi
-    systemd-analyze calendar "$sched" >/dev/null 2>&1 || die "UPDATE_SCHEDULE '$sched' is invalid."
-    sudo tee /etc/systemd/system/mediastack-update.service >/dev/null <<EOF
+    systemd-analyze calendar "$sched" >/dev/null 2>&1 || die "$var '$sched' is invalid (not a systemd OnCalendar expression)."
+    sudo tee "/etc/systemd/system/$unit.service" >/dev/null <<EOF
 [Unit]
-Description=Mediastack update pipeline
+Description=$desc
 [Service]
 Type=oneshot
 WorkingDirectory=$SCRIPT_DIR
-ExecStart=$SCRIPT_DIR/mediastack.sh update --auto
+ExecStart=$SCRIPT_DIR/mediastack.sh $verb
 EOF
-    sudo tee /etc/systemd/system/mediastack-update.timer >/dev/null <<EOF
+    sudo tee "/etc/systemd/system/$unit.timer" >/dev/null <<EOF
 [Unit]
-Description=Mediastack scheduled update
+Description=$desc (scheduled)
 [Timer]
 OnCalendar=$sched
 Persistent=true
@@ -502,6 +510,6 @@ Persistent=true
 WantedBy=timers.target
 EOF
     sudo systemctl daemon-reload
-    sudo systemctl enable --now mediastack-update.timer
-    ok "Timer installed: $sched (next: $(systemctl show mediastack-update.timer -p NextElapseUSecRealtime --value 2>/dev/null || echo '?'))"
+    sudo systemctl enable --now "$unit.timer"
+    ok "$label timer installed: $sched (next: $(systemctl show "$unit.timer" -p NextElapseUSecRealtime --value 2>/dev/null || echo '?'))"
 }

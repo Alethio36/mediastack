@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=21
+SCRIPT_SCHEMA=22
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -38,6 +38,8 @@ source "$SCRIPT_DIR/lib/vpn.sh"
 source "$SCRIPT_DIR/lib/edge.sh"
 # shellcheck source=lib/backup.sh
 source "$SCRIPT_DIR/lib/backup.sh"
+# shellcheck source=lib/manifest.sh
+source "$SCRIPT_DIR/lib/manifest.sh"
 # shellcheck source=lib/doctor.sh
 source "$SCRIPT_DIR/lib/doctor.sh"
 
@@ -720,7 +722,7 @@ cmd_configure() {
     _configure_schedule
 
     provision
-    [[ -n "$(env_get UPDATE_SCHEDULE)" ]] && cmd_apply_timer
+    cmd_apply_timer
 
     echo; hr "Configure complete"
     cat <<EOF
@@ -1194,10 +1196,7 @@ cmd_nuke() {
     local really; read -r -p "Type 'nuke mediastack' to proceed: " really
     [[ "$really" == "nuke mediastack" ]] || { info "Aborted — nothing touched."; return 1; }
 
-    sudo systemctl disable --now mediastack-update.timer 2>/dev/null || true
-    sudo systemctl disable --now mediastack-vpnguard.service 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer /etc/systemd/system/mediastack-vpnguard.service
-    sudo systemctl daemon-reload
+    systemd_units_teardown
     frontdoor_teardown
     ok "systemd units removed"
     sudo docker ps -aq --filter "label=com.docker.compose.project=mediastack" \
@@ -1232,6 +1231,17 @@ cmd_nuke() {
     fi
 }
 
+systemd_units_teardown() { # every mediastack unit except the front door's (frontdoor_teardown)
+    local u
+    for u in mediastack-update.timer mediastack-manifest.timer mediastack-vpnguard.service; do
+        sudo systemctl disable --now "$u" 2>/dev/null || true
+    done
+    sudo rm -f /etc/systemd/system/mediastack-update.{service,timer} \
+               /etc/systemd/system/mediastack-manifest.{service,timer} \
+               /etc/systemd/system/mediastack-vpnguard.service
+    sudo systemctl daemon-reload
+}
+
 cmd_uninstall() {
     if [[ "${1:-}" == --nuke ]]; then cmd_nuke; return; fi
     load_env
@@ -1239,10 +1249,7 @@ cmd_uninstall() {
     echo "Tier 1: remove containers + docker network (configs, data, users kept)"
     confirm "Proceed with tier 1?" || return 0
     DC down --remove-orphans --volumes; ok "containers removed (anonymous volumes included)"
-    sudo systemctl disable --now mediastack-update.timer 2>/dev/null || true
-    sudo systemctl disable --now mediastack-vpnguard.service 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/mediastack-update.service /etc/systemd/system/mediastack-update.timer /etc/systemd/system/mediastack-vpnguard.service
-    sudo systemctl daemon-reload
+    systemd_units_teardown
     frontdoor_teardown
     echo; echo "Tier 2: remove the service system users + group"
     if confirm "Also remove users/group?"; then
@@ -1843,8 +1850,9 @@ VERBS=(
     "status~status [svc]~max=1~Run~Overview table of every service, or a deep view of one."
     "logs~logs <svc> [--no-follow]~free~Run~Follow one service's logs (--no-follow: bounded snapshot)."
     "update~update [svc] [--to TAG] [--dry-run|--now]~free~Maintain~Container images: backup, pull, apply (toggles + pins respected)."
-    "apply-timer~apply-timer~none~Maintain~Install/refresh the systemd timer from UPDATE_SCHEDULE."
+    "apply-timer~apply-timer~none~Maintain~Install/refresh the systemd timers from UPDATE_SCHEDULE and MANIFEST_SCHEDULE."
     "backup~backup [verify [TS]]~free~Maintain~Take a restore point now (cold); 'verify' checks checksums and archives."
+    "manifest~manifest [--accept|diff [A [B]]|find <text>]~free~Maintain~Snapshot the media library now; 'diff' shows what was lost between snapshots; 'find' says when a path was last seen."
     "restore~restore --service <svc>|--all [--from TS]~free~Maintain~Restore configs + image from a restore point."
     "rollback~rollback <svc>~max=1~Maintain~Restore one service from the newest restore point and pin it there."
     "unpin~unpin <svc>~max=1~Maintain~Release a pinned service back to normal updates."

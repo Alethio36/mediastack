@@ -53,3 +53,47 @@ service, preferring a pre-update point over an older nightly full. A full
 `restore --all` only ever draws from the top-level GFS pool, never a partial
 pre-update point. Full `update` (all services) and `update gluetun` still take
 the full stop-the-world restore point into the GFS pool as before.
+
+## Media manifest — what was in the library
+
+Restore points cover configs, not media. The media manifest is the record of
+the media itself: a read-only snapshot of every file under `DATA_ROOT/media`
+(size, mtime, inode, path), taken nightly by the `mediastack-manifest` timer
+(`MANIFEST_SCHEDULE`, default `*-*-* 03:30`) into `BACKUP_ROOT/manifest/`,
+one gzipped file per run, kept `MANIFEST_KEEP_DAYS` (365). The newest
+snapshot is never pruned. Nothing else in `BACKUP_ROOT` is touched, and the
+GFS schedule never sees this folder.
+
+**Answering "what happened to X?"**
+
+* `./mediastack.sh manifest find "the office"` — every path matching the
+  text (case-insensitive), with the first and last snapshot it appears in and
+  whether it is still there. The last-seen date bounds when it went.
+* `./mediastack.sh manifest diff` — the folders that lost media files between
+  the last two snapshots, with the file names; give timestamps (or a unique
+  prefix of one) to compare any two.
+
+**What alerts.** Files are identified by inode + size, so an arr renaming a
+file or a whole folder is a move, not a loss. A folder alerts (ops stream,
+warning) only when it lost more media files than it gained: an upgrade (one
+out, one in) is quiet; a deleted movie or episodes are not. Artwork, NFO and
+subtitle files never count. Known blind spot: an upgrade that also renames its
+folder reads as one loss in the old folder.
+
+**What refuses.** If the media-file count fell more than `MANIFEST_ALERT_PCT`
+(5%) — and by at least 25 files — or the media root came back empty, the run
+is refused: nothing is recorded, ops gets a failure, and the previous snapshot
+stays the baseline. That is almost always an unmounted or half-visible share.
+If the deletion was intended, `./mediastack.sh manifest --accept` records it.
+A scan that cannot read a path also refuses (a partial scan would look like
+lost media).
+
+**Where it lives.** Keep `BACKUP_ROOT` off the disk that holds the media —
+after a disk loss, the manifest is the list of what to re-add. `doctor` warns
+when they share a filesystem. A snapshot lists your whole library, so the
+script refuses to write one inside this repo unless the folder is gitignored
+(the default `./backups` is).
+
+**Limits.** The manifest says *what* went and *when* (to within a day), not
+*who* removed it. Attribution needs host auditing (planned). Existing installs
+get the schedule on `upgrade`; install its timer with `./mediastack.sh apply-timer`.
