@@ -132,12 +132,18 @@ in place (docs/disaster-recovery.md); still to build:
   filesystem — an arr recycle is a move, cross-filesystem it becomes a full
   copy), retention days (default 7; upgrades keep the old file for the whole
   window, so 4K remux chains cost disk). Covers arr-initiated deletes only.
-- *Deletion attribution via auditd (opt-in).* Log only
+- *Deletion attribution via auditd (opt-in) — ready to build.* Log only
   unlink/rename/rmdir under the media root; each service's own UID names the
   culprit; a report verb maps UIDs to services. Sees this host's syscalls
   only (not NAS-side or other-host deletes — the manifest covers those).
-  Open question before building: whether a directory-scoped audit rule fires
-  reliably on an NFS client mount.
+  The open question is settled (tested on anzac2's NFS mount, Sept 2026): a
+  directory-scoped rule (`-F dir=`) fires on an NFS client mount, for host
+  processes and for containers — which log their own UID (the test container
+  as `uid=1234`), so a UID → service map attributes directly. Build notes:
+  failed attempts are logged too (a host `mv` tried `renameat2`, which NFS
+  refuses, then `renameat`), so the report counts successes only; loading a
+  rule logs its own `sendto`, dropped by keeping only rename/unlink calls.
+  The opt-in step installs and configures auditd itself.
 
 ### Extensibility
 - An easier path to add services *beyond* the built-in framework.
