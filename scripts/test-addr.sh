@@ -110,6 +110,16 @@ eq "other field kept"     "$(jq -r '.fields[] | select(.name=="tvCategory") | .v
 arr_repoint http://h/api/v3 k downloadclient "$dcs" "qBittorrent (mediastack)" host=gluetun password=s3cret
 eq "re-sent password replaces the mask" "$(sed -n 2p "$T/put" | jq -r '.fields[] | select(.name=="password") | .value')" s3cret; pass
 
+# qbit_login_fields: login re-sent for a login entry; nothing for an API-key entry
+# (Sonarr/Radarr/Prowlarr reject an entry holding both)
+printf 'QBITTORRENT_USER=admin\nQBITTORRENT_PASSWORD=pw\n' >> "$ENV_FILE"
+lg='[{"name":"q","fields":[{"name":"apiKey","value":""},{"name":"username","value":"admin"}]}]'
+kk='[{"name":"q","fields":[{"name":"apiKey","value":"********"},{"name":"username","value":""}]}]'
+old='[{"name":"q","fields":[{"name":"username","value":"admin"}]}]'
+eq "login entry"           "$(qbit_login_fields "$lg" q | tr '\n' ' ')" "username=admin password=pw "; pass
+eq "pre-key app (no field)" "$(qbit_login_fields "$old" q | tr '\n' ' ')" "username=admin password=pw "; pass
+eq "API-key entry"         "$(qbit_login_fields "$kk" q)" ""; pass
+
 # prowlarr_app_repoint: a hand-set direction survives a re-point of the other
 apps='[{"id":4,"name":"radarr (mediastack)","fields":[{"name":"baseUrl","value":"http://nas.lan:7878"},
         {"name":"prowlarrUrl","value":"http://127.0.0.1:9696"},{"name":"apiKey","value":"********"}]}]'
