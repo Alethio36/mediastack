@@ -147,7 +147,9 @@ OTCFG_HEAD
 #             placeholders — there is no free-text input type at all:
 #               {NAME:entity=ENTITY:Title}   dropdown fed by a host-refreshed list
 #               {NAME:choices=a,b:Title}     fixed choices
-#   confirm   confirmation text (empty = no confirmation step)
+#   confirm   Label|help — the checkbox label (keep it short: the dialog's label
+#             column is as wide as its longest label) and the line of help
+#             shown beside it; empty = no confirmation step
 #   flags     single = one run at a time (maxConcurrent: 1)
 # The wrapper's verb whitelist and argument limit are DERIVED from the command
 # column at frontdoor-install (_fd_wrapper_render), so a verb is reachable
@@ -160,14 +162,14 @@ PANEL=(
     "Diagnostics~View logs~📜~60~logs {svc:entity=svc_logs:Service} --no-follow~~"
     "Services~Enable service~▶️~180~enable {svc:entity=svc_enable:Service to enable}~Confirm~"
     "Services~Disable service~⏹️~180~disable {svc:entity=svc_disable:Service to disable}~Confirm~"
-    "Services~Toggle VPN~🔒~300~vpn-apply {svc:entity=svc_vpn:Service} {state:choices=on,off:VPN}~Confirm — restarts the VPN and every service behind it (about 1 min; downloads resume)~"
+    "Services~Toggle VPN~🔒~300~vpn-apply {svc:entity=svc_vpn:Service} {state:choices=on,off:VPN}~Confirm|Restarts the VPN and every service behind it — about 1 minute; downloads resume.~"
     "Services~Wire service~🔗~180~wire {svc:entity=svc_wire:Service to wire}~Confirm~"
-    "Maintenance~Update stack~⬆️~300~update~Confirm — updates every service~single"
-    "Maintenance~Backup now~💾~300~backup~Confirm — writes a new restore point~single"
+    "Maintenance~Update stack~⬆️~300~update~Confirm|Takes a restore point, then pulls and applies new images for every service.~single"
+    "Maintenance~Backup now~💾~300~backup~Confirm|Stops the stack briefly and writes a new restore point.~single"
     "Maintenance~Verify backup~🔍~120~backup verify~~"
-    "Maintenance~Rollback service~⏮️~300~rollback {svc:entity=svc_rollback:Service to roll back}~Confirm — restores config + image from the last restore point~"
-    "Maintenance~Unpin service~📌~180~unpin {svc:entity=svc_unpin:Service to unpin}~Confirm — resumes updates for this service~"
-    "Maintenance~Apply / reconcile~🔁~300~up~Confirm — applies pending compose state~single"
+    "Maintenance~Rollback service~⏮️~300~rollback {svc:entity=svc_rollback:Service to roll back}~Confirm|Restores its config and image from the newest restore point, then pins it.~"
+    "Maintenance~Unpin service~📌~180~unpin {svc:entity=svc_unpin:Service to unpin}~Confirm|Releases the pin: the next update includes it again.~"
+    "Maintenance~Apply / reconcile~🔁~300~up~Confirm|Applies pending changes; services whose settings changed restart.~single"
     "Maintenance~Fix perms~🔧~120~fix-perms {svc:entity=svc_fixperms:Service}~Confirm~"
     "Maintenance~Refresh panel~♻️~60~frontdoor-refresh~~"
 )
@@ -266,7 +268,11 @@ OTCFG_ENTITIES
             if [[ "$kind" == entity ]]; then echo "          - value: '{{ $src.name }}'"
             else for c in ${src//,/ }; do echo "          - value: \"$c\""; done; fi
         done
-        [[ -z "$confirm" ]] || printf '      - title: %s\n        type: confirmation\n' "$confirm"
+        if [[ -n "$confirm" ]]; then
+            printf '      - title: %s\n        type: confirmation\n' "${confirm%%|*}"
+            # help text: a YAML double-quoted scalar, so ':' or '#' in it stay text
+            [[ "$confirm" == *"|"* ]] && printf '        description: "%s"\n' "$(sed 's/[\\"]/\\&/g' <<<"${confirm#*|}")"
+        fi
     done
     echo
     cat <<'OTCFG_DASHBOARD'
@@ -297,6 +303,13 @@ OTCFG_DASHBOARD
 _fd_theme_css() {
     cat <<'THEME_CSS'
 /* Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install. */
+
+/* Action dialogs: the help line beside a confirmation checkbox. OliveTin's
+   #666 is near-invisible on the dark theme. */
+.argument-description {
+  color: #b8b8b8;
+  line-height: 1.4;
+}
 
 /* Only reflow the content area that holds status tiles (the Mediastack
    dashboard); leave every other view's section.transparent alone. */
