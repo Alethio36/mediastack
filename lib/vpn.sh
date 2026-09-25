@@ -92,14 +92,13 @@ cmd_vpn_guard() {
     # healthy yet. Wait (bounded) before judging attachment, or we would race
     # the very startup we are guarding and falsely repair/​fail. Mirrors cmd_up's
     # gluetun health-race handling.
-    local gcn t=0; gcn=$(svc_cname gluetun)
+    local gcn; gcn=$(svc_cname gluetun)
     if [[ $(c_state "$gcn") == absent ]]; then
         (( boot )) && { info "vpn-guard: gluetun not present — stack not up, nothing to guard"; return 0; }
         die "vpn-guard: gluetun container not found — is the stack up?"
     fi
-    while [[ $(c_health "$gcn") != healthy && $t -lt 120 ]]; do sleep 5; t=$((t+5)); done
-    [[ $(c_health "$gcn") == healthy ]] \
-        || { warn "vpn-guard: gluetun not healthy after ${t}s — deferring (next boot/up will retry)"; return 0; }
+    wait_verdict --recover gluetun \
+        || { warn "vpn-guard: gluetun ${VERDICT_WHY[gluetun]} — deferring (next boot/up will retry)"; return 0; }
     vpn_reattach_guard
 }
 
@@ -185,7 +184,8 @@ cmd_leak_test() {
         else info "qbittorrent not running — hard-stop probe skipped"; fi
         info "Restarting gluetun and re-joining dependents..."
         sudo docker start "$gcn" >/dev/null; INSPECT_JSON=""
-        local t=0; while [[ $(c_health "$gcn") != healthy && $t -lt 90 ]]; do sleep 3; t=$((t+3)); done
+        wait_verdict --recover gluetun \
+            || warn "gluetun ${VERDICT_WHY[gluetun]} — rejoining its dependents anyway; if they stay dead: ./mediastack.sh up"
         local rs
         for rs in $(svc_managed_where mediastack.vpn true); do
             svc_enabled "$rs" || continue
