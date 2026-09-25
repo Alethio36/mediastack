@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=22
+SCRIPT_SCHEMA=23
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -734,6 +734,39 @@ Then open the apps (URLs and ports: ./mediastack.sh status) and connect them to 
 EOF
 }
 
+# uid_handover — one-time ownership handover for services that switched from
+# running as root to their own UID (listed in UID_HANDOVER by a migration).
+# Runs only from `up`/`enable`, immediately before compose recreates them:
+# stop the root-running container (it keeps creating root files, e.g. SQLite
+# -wal/-shm), give its config/cache folders to its UID, then clear the list.
+uid_handover() {
+    local pending s uid cn croot cache media gid
+    pending=$(env_get UID_HANDOVER); [[ -n "$pending" ]] || return 0
+    gid=$(env_get MEDIA_GROUP_GID 13000); croot=$(env_get CONFIG_ROOT)
+    cache=$(env_get CACHE_ROOT); media="$(env_get DATA_ROOT)/media"
+    hr "Ownership handover: $pending"
+    for s in $pending; do
+        uid=$(env_get "$(uvar "$s")_UID"); [[ -n "$uid" ]] || continue
+        cn=$(svc_cname "$s")
+        [[ "$(c_state "$cn")" == running ]] && { sudo docker stop "$cn" >/dev/null || die "could not stop $cn for its ownership handover — stop it by hand and re-run up"; }
+        INSPECT_JSON=""
+        local d; for d in "$croot/$s" "$cache/$s"; do
+            [[ -d "$d" ]] || continue
+            sudo chown -R "$uid:$gid" "$d" || die "ownership handover: chown of $d failed — fix it, then re-run up (UID_HANDOVER is kept)"
+        done
+        # audiobookshelf writes into its media trees (podcast downloads, metadata)
+        if [[ "$s" == audiobookshelf ]]; then
+            for d in "$media/audiobooks" "$media/podcasts"; do
+                [[ -d "$d" ]] || continue
+                sudo find "$d" -mindepth 1 -user 0 -exec chown "$uid:$gid" {} + \
+                    || die "ownership handover: could not hand over root-owned files in $d — fix it, then re-run up (UID_HANDOVER is kept)"
+            done
+        fi
+        ok "$s: files handed to $uid:$gid"
+    done
+    env_del UID_HANDOVER
+}
+
 provision() {
     hr "Provisioning users, group, folders"
     load_env; render
@@ -900,6 +933,7 @@ cmd_up()   {
     # PUID cannot write into that. `enable` and `configure` provision; `up`
     # after an upgrade that added a mount, or after a root moved, did not.
     provision >/dev/null
+    uid_handover
     traefik_ensure
     if ! DC up -d --remove-orphans; then
         warn "First start attempt failed — usually gluetun's health race after a recreate."
@@ -942,6 +976,7 @@ cmd_enable() {
     RENDERED_JSON=""; require_free_ports "$(echo "$sel" | paste -sd, -)"   # refuse before .env changes
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     require_mounts; provision >/dev/null   # users/dirs for the new services
+    uid_handover
     traefik_ensure   # wizard + config gen if traefik just came into the set
     DC up -d --remove-orphans; ok "'$svc' enabled and started."
 }
@@ -1871,7 +1906,7 @@ VERBS=(
     "doctor~doctor~none~Check~Full health/permission/port/backup audit; every failure states its fix."
     "leak-test~leak-test [--killswitch]~allow=--killswitch~Check~Prove no VPN'd service can leak (--killswitch: disruptive tunnel-drop proof)."
     "vpn~vpn [svc on|off] [--i-know]~max=3~Check~Show or change which services run behind the VPN; apply with: up."
-    "fix-perms~fix-perms [svc]~max=1~Check~Repair config-dir ownership from the UID map."
+    "fix-perms~fix-perms [svc]~max=1~Check~Repair ownership of a service's config/cache/transcode folders from the UID map."
     "new-service~new-service <name>~max=1~Other~Add your own service: asks image/port/VPN/folders, then enables and starts it."
     "frontdoor-install~frontdoor-install [--set-password]~allow=--set-password~Other~Install the OliveTin web panel over the safe verbs."
     "uninstall~uninstall [--nuke]~allow=--nuke~Other~Remove the stack (tiered; --nuke: one confirmed shot). Media and backups are never touched."
