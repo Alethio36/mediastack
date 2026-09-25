@@ -205,6 +205,20 @@ a committed plan.
     only (not NAS-side or other-host deletes — the manifest covers those).
     Open question before building: whether a directory-scoped audit rule fires
     reliably on an NFS client mount.
+- **qBittorrent API keys — evaluated, parked** (Sept 2026, verified in source at
+  the versions then running). qBittorrent 5.2+ has one WebUI API key
+  (`Authorization: Bearer`; `app/rotateAPIKey` / `app/deleteAPIKey`; readable
+  in preferences; a session is needed to create one). Consumer support: Sonarr
+  4.0.20, Radarr 6.4.4, Prowlarr 2.6.5 — yes; Lidarr 3.1.0 — no (on its develop
+  branch); cleanuparr and LazyLibrarian — no (login only). Servarr apps reject
+  an entry holding a key AND a username/password, so an entry is one or the
+  other. Parked because it cannot replace the login while cleanuparr and
+  LazyLibrarian lack it: two auth methods and two secrets for one client, for a
+  partial gain. If adopted: each entry's mode is derived at every `wire` run
+  from that app's own field list (never stored, never version-checked), so an
+  app that gains the field converts on the next run; one `set-credentials`
+  path rotates both. Already in place: re-point and `set-credentials qbit`
+  respect an entry someone switched to a key by hand (`qbit_login_fields`).
 - **Notification follow-ups, not built.** A `notify` management verb
   (`test` a stream, re-runnable `set`, redacted `status`, `clear`) and a curated
   "new media available → `users`" event (the raw arr import firehose is too
