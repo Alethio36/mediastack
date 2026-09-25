@@ -249,7 +249,7 @@ a committed plan.
   place; tighten style and error-handling consistency; find lean-ness wins
   (fewer moving parts, faster common paths); verify docs match behavior; re-check
   the whole against the goals above. A lean-and-correct sweep, not a rewrite.
-- **Tests in CI** *(three landed)*. `scripts/test-dispatch.sh` drives
+- **Tests in CI** *(four landed)*. `scripts/test-dispatch.sh` drives
   `main()` with every registry verb (cmd_* removed, so the call and its argv
   are printed) against a committed expected file — a contract change is a
   diff. `scripts/test-render.sh` renders `.env.example` through `vpn_gen`,
@@ -259,7 +259,10 @@ a committed plan.
   library (no root, no docker): arr renames/upgrades stay quiet, real losses
   alert once, an emptied root is refused, the guard floor holds, and an
   unreadable timestamp fails loud — each check was proven to fail against the
-  bug it guards. All run in the lint workflow beside shellcheck, the front-door
+  bug it guards. `scripts/test-handover.sh` pins the one-time UID ownership
+  handover: the migration only marks it (never stops services from
+  `upgrade` or the panel timer), `up` stops before it chowns, a failed chown
+  keeps the marker, and a second `up` is a no-op. All run in the lint workflow beside shellcheck, the front-door
   safety audit, the placeholder-host guard and a no-literal-`\n`-in-
   notifications guard. Still to come: a `--dry-run` smoke test.
 - First-class host-to-host migration (a `migrate` / export-import verb) — turns
