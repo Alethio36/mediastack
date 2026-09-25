@@ -16,7 +16,8 @@ migrate_env() {
         # the schema is part of the name: several steps run within one second,
         # and a timestamp alone made each overwrite the last (only the newest
         # pre-migration state survived — never the file the user started with)
-        cp "$ENV_FILE" "$ENV_FILE.bak.$(date +%Y%m%d%H%M%S).schema$have"
+        local bak; bak="$ENV_FILE.bak.$(date +%Y%m%d%H%M%S).schema$have"
+        cp "$ENV_FILE" "$bak"; repo_owned "$bak"
         local next=$((have + 1))
         info "Migrating .env schema $have -> $next (backup written)"
         "migrate_env_${have}_to_${next}"
