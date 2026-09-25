@@ -301,7 +301,11 @@ vpn_gen() {
         printf '%s' "$stanzas"
     } > "$tmp"
     if ! cmp -s "$tmp" local/vpn-overlay.yml 2>/dev/null; then
-        mv "$tmp" local/vpn-overlay.yml
+        # -f: the panel runs this as root, the CLI as the operator — a file the
+        # other one wrote must be replaced, never questioned (mv prompts on an
+        # unwritable target when stdin is a terminal). 0644: no secrets in it,
+        # only labels and ${VAR} references, so no mktemp 0600 carried over.
+        chmod 644 "$tmp"; mv -f "$tmp" local/vpn-overlay.yml
     else
         rm -f "$tmp"
     fi
