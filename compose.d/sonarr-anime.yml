@@ -23,6 +23,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.trashprofile: "anime"
       mediastack.desc: "second Sonarr just for anime (own library + rules)"
       mediastack.vpn: "true"
       mediastack.vpntoggle: "true"

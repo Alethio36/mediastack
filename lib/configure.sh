@@ -193,6 +193,8 @@ _configure_selfheal() {
 _configure_services() {
     # -- services (à la carte)
     render
+    # a curated preset, kept beside its description below — not discovery
+    # (status/backup/doctor/update never need a list edited), so not a label
     local STD="gluetun qbittorrent sonarr radarr prowlarr jellyfin meilisearch jellysearch seerr"
     # a re-run keeps what is enabled unless asked otherwise: option 0 exists
     # (and is the default) only when something is enabled already

@@ -28,6 +28,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.torrent: "true"
       mediastack.port: "9091"
       mediastack.desc: "extra torrent client (most people do not need it)"
       mediastack.vpn: "true"

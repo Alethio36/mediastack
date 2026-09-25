@@ -166,6 +166,18 @@ http_ready() {
     done
 }
 
+wire_services() { # the enabled services the wire roles touch — derived, so a new role can't be missed
+    local r s
+    for r in "${WIRE_ROLES[@]}"; do
+        case "$r" in
+            qbit) s=qbittorrent ;;
+            arr)  arr_instances; continue ;;
+            *)    s=$r ;;       # every other role is named for its service
+        esac
+        if svc_enabled "$s"; then echo "$s"; fi
+    done
+}
+
 # shellcheck disable=SC2120  # type argument is optional by design
 arr_instances() { # arr_instances [type] -> enabled arr services (optionally by type)
     local s t
@@ -1383,10 +1395,7 @@ cmd_wire() {
             # the backup bounced every container — let the apps come back
             # before wiring their APIs
             info "waiting for Docker's verdict on the wired apps after the restore point (up to ${START_WAIT}s)..."
-            local settle=()
-            for s in qbittorrent prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr $(arr_instances); do
-                svc_enabled "$s" && settle+=("$s")
-            done
+            local settle=(); mapfile -t settle < <(wire_services)
             (( ${#settle[@]} == 0 )) || wait_verdict "${settle[@]}" \
                 || warn "not settled: $VERDICT_BAD — wiring anyway; anything that refuses gets a per-item FAIL and a re-run picks it up"
         fi
