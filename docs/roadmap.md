@@ -148,6 +148,13 @@ a committed plan.
 ### End-user experience
 - Web panel polishing.
 - Script polishing for the end user (clearer prompts, output, ergonomics).
+  - *`up`/`down` output is truncated on short terminals (not built).*
+    Compose's interactive progress view draws only as many rows as fit the
+    terminal and folds the rest into "… N more", so a 29-container stack can
+    hide services. Preferred fix: keep Compose's live view as progress, then
+    print our own complete one-line-per-service result at the end (fits with
+    a verdict-based wait, so the list shows health, not just "Started").
+    Rejected: `--progress plain` — complete, but ~4 lines per container.
 - **`help` from a verb registry** *(landed)*. A verb used to live in three
   hand-kept lists — the dispatch table in `main()`, `cmd_help`'s prose, and
   README's command table — and they drifted (`list`, `vpn-apply`, `vpn-guard`,
