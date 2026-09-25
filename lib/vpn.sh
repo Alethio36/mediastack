@@ -249,7 +249,7 @@ vpn_traefik_labels() {   # <indent> <rname> <sub> <cport> <stem>  (router/servic
 }
 
 vpn_gen() {
-    install -d -m 755 local
+    install -d -m 755 local; repo_owned local
     local bj; bj=$(vpn_base_json) || die "vpn: could not read base compose config"
     local svcs
     svcs=$(jq -r '.services | to_entries[]
@@ -305,7 +305,7 @@ vpn_gen() {
         # other one wrote must be replaced, never questioned (mv prompts on an
         # unwritable target when stdin is a terminal). 0644: no secrets in it,
         # only labels and ${VAR} references, so no mktemp 0600 carried over.
-        chmod 644 "$tmp"; mv -f "$tmp" local/vpn-overlay.yml
+        chmod 644 "$tmp"; mv -f "$tmp" local/vpn-overlay.yml; repo_owned local/vpn-overlay.yml
     else
         rm -f "$tmp"
     fi

@@ -197,6 +197,7 @@ pin_service() { # pin_service svc image_ref
     else
         printf '  %s:\n    image: %s\n' "$1" "$2" >> "$PINS_FILE"
     fi
+    repo_owned "$PINS_FILE"
     ok "$1 pinned to $2 (updates hold; release with: ./mediastack.sh unpin $1)"
 }
 

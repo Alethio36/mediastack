@@ -80,7 +80,7 @@ traefik_gen() {
     done
     sudo test -d /run-traefik-setup-first && sudo rm -rf /run-traefik-setup-first
     sudo install -d -m 700 "$croot/traefik" "$croot/traefik/acme"
-    install -d -m 755 local/proxy.d
+    install -d -m 755 local/proxy.d; repo_owned local local/proxy.d
     env_set TRAEFIK_LOCAL_PROXY "$PWD/local/proxy.d"
     # env switch detection: staging certs must not survive into production
     # (and vice versa) — traefik would keep serving the cached ones forever

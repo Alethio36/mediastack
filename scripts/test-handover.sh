@@ -33,6 +33,10 @@ svc_cname()  { echo "mediastack-$1"; }
 c_state()    { [[ -f "$T/running.$1" ]] && echo running || echo exited; }
 docker()     { echo "docker $*" >> "$T/log"; [[ "$1" == stop ]] && rm -f "$T/running.$2"; return 0; }
 chown()      { echo "chown $*" >> "$T/log"; [[ ! -f "$T/chown-fails" ]]; }
+# the migration's own .env backup is handed to the repo owner (repo_owned) —
+# repo bookkeeping, not the service-file handover this test pins; stubbed so
+# the result does not depend on whether the test runs as root
+repo_owned() { :; }
 find()       { echo "find $*" >> "$T/log"; }
 
 checks=0
