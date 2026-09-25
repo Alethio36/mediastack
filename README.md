@@ -418,7 +418,8 @@ a web control panel over the safe verbs (OliveTin front door).
 
 The stack is feature-complete for its scope; changes from here are
 maintenance, fixes, and polish. Project goals and forward direction live
-in [docs/roadmap.md](docs/roadmap.md).
+in [docs/roadmap.md](docs/roadmap.md); what was evaluated and set aside, and
+what would reopen it, in [docs/watchlist.md](docs/watchlist.md).
 
 ## Docs
 
@@ -428,7 +429,8 @@ in [docs/roadmap.md](docs/roadmap.md).
 * [docs/adding-a-service.md](docs/adding-a-service.md) — extend the stack
 * [docs/migration-existing.md](docs/migration-existing.md) — adopt an existing deployment
 * [docs/disaster-recovery.md](docs/disaster-recovery.md) — full rebuild from a restore point
-* [docs/roadmap.md](docs/roadmap.md) — project goals, forward direction, and services evaluated but deferred
+* [docs/roadmap.md](docs/roadmap.md) — project goals, architecture rules, and open work
+* [docs/watchlist.md](docs/watchlist.md) — rejected, parked and deferred items, each with what would reopen it
 * [docs/frontdoor.md](docs/frontdoor.md) — the OliveTin web panel: what it is, enabling it, the buttons
 * [docs/frontdoor-safety.md](docs/frontdoor-safety.md) — the front door's safety model and what is (and isn't) exposable
 
