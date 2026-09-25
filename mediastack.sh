@@ -693,7 +693,7 @@ cmd_list() {
         vpntoggle)  render; names=$(jq -r '.services | to_entries[]
                         | select(.value.labels["mediastack.vpntoggle"]=="true") | .key' \
                         <<<"$RENDERED_JSON" | sort) ;;
-        wire)       names=$(printf '%s\n' qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr all) ;;
+        wire)       names=$(printf '%s\n' "${WIRE_ROLES[@]}" all) ;;
         pinned)     if [[ -s "$PINS_FILE" ]]; then
                         # service keys are 2-space-indented `  <svc>:`; the image
                         # line is 4-space-indented and won't match.
