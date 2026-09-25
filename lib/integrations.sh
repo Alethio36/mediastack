@@ -1691,7 +1691,7 @@ cmd_wire() {
         info "dry-run complete: $WIRE_CHANGES change(s) would be applied. Run without --dry-run to apply."
         info "note: items marked as pending on credentials resolve mid-run — the real run creates them in order."
     else
-        touch "$SCRIPT_DIR/.wired"
+        touch "$SCRIPT_DIR/.wired"; repo_owned "$SCRIPT_DIR/.wired"
         if (( WIRE_FAILS )); then
             fail "wire finished with $WIRE_FAILS failure(s) — see the FAIL lines above. Re-run after fixing; completed items just skip."
             exit 1

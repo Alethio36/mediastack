@@ -37,6 +37,16 @@ need_cmd() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not in
 # Every root a deployment has, in .env: where each kind of state lives.
 # shellcheck disable=SC2034  # read by the entrypoint and lib/doctor.sh
 ROOTS=(CONFIG_ROOT DATA_ROOT CACHE_ROOT TRANSCODE_ROOT BACKUP_ROOT)
+repo_owned() { # repo_owned <path>... — what the script makes in the repo belongs to the repo's owner
+    # The panel and every timer run this script as root; the operator's CLI runs
+    # it as themselves. A file or folder a root run created would otherwise lock
+    # the operator out of it (a root-owned local/ refuses their overlay, a
+    # root-owned .pins.yml refuses their pin). Root hands it over; a normal
+    # user already owns what they create, so this is a no-op for them.
+    (( $(id -u) == 0 )) || return 0
+    chown "$(stat -c '%u:%g' "$SCRIPT_DIR")" "$@"
+}
+
 env_get() { # env_get VAR [default]
     local line
     line=$(grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 || true)
@@ -47,7 +57,7 @@ env_del() { sed -i "/^$1=/d" "$ENV_FILE"; } # remove a variable entirely
 
 env_set() { # env_set VAR value  (idempotent upsert, preserves file order)
     local var="$1" val="$2"
-    touch "$ENV_FILE"
+    [[ -e "$ENV_FILE" ]] || { touch "$ENV_FILE"; repo_owned "$ENV_FILE"; }
     if grep -qE "^${var}=" "$ENV_FILE"; then
         # sed with | delimiter; escape | and & in value
         local esc=${val//\\/\\\\}; esc=${esc//|/\\|}; esc=${esc//&/\\&}

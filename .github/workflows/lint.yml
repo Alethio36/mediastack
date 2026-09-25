@@ -45,6 +45,8 @@ jobs:
         run: scripts/test-addr.sh
       - name: a VPN toggle re-points every caller of the moved service (scripts/test-repoint.sh)
         run: scripts/test-repoint.sh
+      - name: repo state stays the operator's, whoever ran the script (scripts/test-ownership.sh)
+        run: scripts/test-ownership.sh
       - name: no literal backslash-n in notification bodies
         run: |
           # a double-quoted \n is two characters to bash: Discord shows '\n'.
