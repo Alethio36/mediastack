@@ -27,7 +27,9 @@ RENDERED_JSON='{"services":{
   "apprise":{"labels":{"mediastack.vpn":"true","mediastack.port":"8000"}},
   "jellyfin":{"labels":{"mediastack.vpn":"false","mediastack.port":"8096"}},
   "flaresolverr":{"labels":{"mediastack.vpn":"true","mediastack.port":"8191"}},
-  "cleanuparr":{"labels":{"mediastack.port":"11011"}}}}'
+  "cleanuparr":{"labels":{"mediastack.port":"11011"}},
+  "radarr":{"labels":{"mediastack.vpn":"true","mediastack.port":"7878"}},
+  "prowlarr":{"labels":{"mediastack.vpn":"true","mediastack.port":"9696"}}}}'
 : > "$ENV_FILE"
 
 checks=0
@@ -58,26 +60,61 @@ list='[{"name":"qBittorrent (mediastack)","fields":[{"name":"host","value":"loca
 eq "entry host" "$(arr_entry_field "$list" "qBittorrent (mediastack)" host)" localhost; pass
 eq "entry port" "$(arr_entry_field "$list" "qBittorrent (mediastack)" port)" 8085; pass
 
-# drift report: silent when right or unreadable; counted as drift under
-# --dry-run/--verify; a WARN (never a failure) on a real run
-# WIRE_* are read by the sourced addr_check / w_would
+# addr_stale: only mediastack's own addresses are claimed
+stale() { addr_stale "t" "$@" >/dev/null; }
+echo "APPRISE_VPN=true" >> "$ENV_FILE"          # apprise back behind the VPN: want gluetun:8000
+stale apprise gluetun:8000 && fail_ "already right must not be stale"; pass
+stale apprise ""            && fail_ "unreadable must not be stale"; pass
+for ours in localhost:8000 127.0.0.1:8000 apprise:8000; do
+    stale apprise "$ours" || fail_ "'$ours' is a mediastack address for apprise — must be stale"
+done; pass
+for foreign in nas.lan:8000 localhost:9999 10.0.0.5:8000; do
+    stale apprise "$foreign" && fail_ "'$foreign' was set by hand — must be left alone"
+done; pass
+grep -q "yours: left alone" <<<"$(addr_stale "x -> apprise" apprise nas.lan:8000)" || fail_ "a foreign address must be reported"; pass
+
+# addr_repoint: dry-run says would and runs nothing; a real run acts and reports
+# WIRE_* are read by the sourced addr_repoint / w_would
 # shellcheck disable=SC2034
 WIRE_DRY=1 WIRE_CHANGES=0 WIRE_FAILS=0
-out=$(addr_check "x -> apprise" gluetun:8000 gluetun:8000); eq "match is silent" "$out" ""; pass
-out=$(addr_check "x -> apprise" "" gluetun:8000); eq "unreadable is silent" "$out" ""; pass
-addr_check "x -> apprise" localhost:8000 gluetun:8000 > "$T/out"
-[[ $WIRE_CHANGES == 1 ]] && grep -q 'would: x -> apprise: re-point localhost:8000 -> gluetun:8000' "$T/out" \
-    || fail_ "dry-run drift must count and say would: $(cat "$T/out") changes=$WIRE_CHANGES"; pass
+addr_repoint "x -> apprise" localhost:8000 gluetun:8000 -- touch "$T/ran" > "$T/out"
+[[ ! -e "$T/ran" && $WIRE_CHANGES == 1 ]] && grep -q 'would: x -> apprise: re-point localhost:8000 -> gluetun:8000' "$T/out" \
+    || fail_ "dry-run must only say would: $(cat "$T/out")"; pass
 # shellcheck disable=SC2034
-WIRE_DRY=0 WIRE_CHANGES=0
-addr_check "x -> apprise" localhost:8000 gluetun:8000 > "$T/out"
-[[ $WIRE_CHANGES == 0 && $WIRE_FAILS == 0 ]] && grep -q '^WARN x -> apprise points at localhost:8000' "$T/out" \
-    || fail_ "real-run drift must WARN only: $(cat "$T/out")"; pass
+WIRE_DRY=0
+addr_repoint "x -> apprise" localhost:8000 gluetun:8000 -- touch "$T/ran" > "$T/out"
+[[ -e "$T/ran" ]] && grep -q '^OK x -> apprise: re-pointed to gluetun:8000' "$T/out" || fail_ "real run must act: $(cat "$T/out")"; pass
+addr_repoint "x -> apprise" localhost:8000 gluetun:8000 -- false > "$T/out"
+[[ $WIRE_FAILS == 1 ]] && grep -q 'FAIL x -> apprise: re-point to gluetun:8000 rejected' "$T/out" || fail_ "a rejected re-point must FAIL: $(cat "$T/out")"; pass
+
+# arr_repoint: PUT the entry back with ONLY the named fields changed
+api() { printf '%s\n%s\n' "$1 $2" "$4" > "$T/put"; }
+dcs='[{"id":3,"name":"other","fields":[{"name":"host","value":"x"}]},
+      {"id":7,"name":"qBittorrent (mediastack)","fields":[{"name":"host","value":"localhost"},{"name":"port","value":8085},
+        {"name":"password","value":"********"},{"name":"tvCategory","value":"tv"}]}]'
+arr_repoint http://h/api/v3 k downloadclient "$dcs" "qBittorrent (mediastack)" host=gluetun port=8085
+put=$(sed -n 2p "$T/put")
+eq "PUT target" "$(sed -n 1p "$T/put")" "PUT http://h/api/v3/downloadclient/7"; pass
+eq "host changed"         "$(jq -r '.fields[] | select(.name=="host") | .value' <<<"$put")" gluetun; pass
+eq "port stays a number"  "$(jq -r '.fields[] | select(.name=="port") | .value | type' <<<"$put")" number; pass
+eq "masked secret kept"   "$(jq -r '.fields[] | select(.name=="password") | .value' <<<"$put")" '********'; pass
+eq "other field kept"     "$(jq -r '.fields[] | select(.name=="tvCategory") | .value' <<<"$put")" tv; pass
+
+# prowlarr_app_repoint: a hand-set direction survives a re-point of the other
+apps='[{"id":4,"name":"radarr (mediastack)","fields":[{"name":"baseUrl","value":"http://nas.lan:7878"},
+        {"name":"prowlarrUrl","value":"http://127.0.0.1:9696"},{"name":"apiKey","value":"********"}]}]'
+rm -f "$T/put"
+prowlarr_app_repoint radarr "radarr (mediastack)" "$apps" http://h k >/dev/null
+put=$(sed -n 2p "$T/put")
+eq "stale direction re-pointed" "$(jq -r '.fields[] | select(.name=="prowlarrUrl") | .value' <<<"$put")" http://gluetun:9696; pass
+eq "hand-set direction kept"    "$(jq -r '.fields[] | select(.name=="baseUrl") | .value' <<<"$put")" http://nas.lan:7878; pass
 
 # static guard: wiring writes addresses only through svc_addr/svc_host — the
-# script's own host-side API helpers (built on svc_hostport) are the exception
+# exceptions are the script's own host-side API helpers (built on svc_hostport)
+# and addr_stale's recogniser for the old forms it re-points
 if grep -nE 'localhost|127\.0\.0\.1|gluetun:' lib/integrations.sh lib/trash.sh lib/access.sh \
-        | grep -v 'svc_hostport' | grep -vE '^[^:]+:[0-9]+:\s*#'; then
+        | grep -v 'svc_hostport' | grep -vE '^[^:]+:[0-9]+:\s*#' \
+        | grep -vF '=~ ^(localhost|127\.0\.0\.1|gluetun|'; then   # addr_stale's recogniser for old addresses
     fail_ "a hard-coded app-to-app address is back (above) — use svc_addr / svc_host"
 fi; pass
 

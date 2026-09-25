@@ -128,7 +128,7 @@ Maintain
 Connect
 | command | what it does |
 |---|---|
-| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr] [--dry-run\|--verify]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
+| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr] [--dry-run\|--verify]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten, with one exception: an address mediastack itself wrote (how one app reaches another) is re-pointed when a VPN toggle moves its target — an address you set by hand is left alone. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
 | `invite [--expires 1\|7\|30]` | mint a Wizarr invitation, print the ready-to-share URL (default: never expires) |
 | `set-credentials <arr\|qbit\|jellyfin\|pihole\|traefik\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `all` sets one password across the stack (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
