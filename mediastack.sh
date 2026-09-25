@@ -842,7 +842,7 @@ VERBS=(
     "restore~restore --service <svc>|--all [--from TS]~free~Maintain~Restore configs + image from a restore point."
     "rollback~rollback <svc>~max=1~Maintain~Restore one service from the newest restore point and pin it there."
     "unpin~unpin <svc>~max=1~Maintain~Release a pinned service back to normal updates."
-    "upgrade~upgrade~none~Maintain~Mediastack itself: git pull + .env migration (images stay put: update)."
+    "upgrade~upgrade~none~Maintain~Mediastack itself: git pull + .env migration, then says whether up has anything to apply (images stay put: update)."
     "wire~wire [app] [--dry-run|--verify]~free~Connect~Connect the apps to each other; idempotent, GUI changes never overwritten (addresses it made follow VPN toggles)."
     "invite~invite [--expires 1|7|30]~free~Connect~Mint a Wizarr invitation and print the ready-to-share URL."
     "credentials~credentials~none~Connect~Show the app logins wire created/stored."
