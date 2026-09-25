@@ -276,8 +276,12 @@ _doctor_vpn_backups() {
         [[ -n "$vip" ]] && ok "tunnel public IP: $vip" \
             || d_fail "cannot fetch IP through tunnel" "VPN may be down; downloads are dead (not leaking — kill-switch)" "./mediastack.sh logs gluetun"
     fi
-    local last age broot; broot=$(env_get BACKUP_ROOT)
-    last=$(ls -1 "$broot" 2>/dev/null | tail -1 || true)
+    local last="" age broot d; broot=$(env_get BACKUP_ROOT)
+    # newest GFS restore point only — the pre-update pool and manifest/ are
+    # siblings in BACKUP_ROOT and must not be mistaken for one
+    for d in "$broot"/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]; do
+        [[ -d "$d" ]] && last=$(basename "$d")
+    done
     if [[ -n "$last" ]]; then
         age=$(( ( $(date +%s) - $(date -d "$(sed -E 's/([0-9]{8})-([0-9]{2})([0-9]{2}).*/\1 \2:\3/' <<<"$last")" +%s 2>/dev/null || date +%s) ) / 3600 ))
         (( age > 48 )) && warn "latest restore point is ${age}h old — run: ./mediastack.sh backup" || ok "latest restore point ${age}h old"
