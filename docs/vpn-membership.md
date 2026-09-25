@@ -138,10 +138,12 @@ probed live inside the container at its real mount path (not assumed to be
 `/config`; kavita, for instance, uses `/kavita/config`), and decides pass/fail.
 Ownership drift is reported separately and tiered: mis-owned files in actual
 config are a FAIL (`fix-perms` fixes them); mis-owned files confined to
-regenerable paths (`cache`, `logs`, `backups`, `tmp`) are a WARN, because
-images that ignore PUID and run as root write those as root through normal
-background activity (update checks, log rotation, nightly backups) and it does
-not threaten config integrity. Backup *health* (validity, recency) is audited
+regenerable paths (`cache`, `logs`, `backups`, `tmp`) are a WARN — they do not
+threaten config integrity, but they mean something wrote as the wrong user.
+The usual culprit is an image that ignores PUID and runs as root; that is not
+excused as normal: the runtime audit FAILs any service whose processes don't
+run as its `<SVC>_UID` (the fix is `user:` in the fragment — see
+docs/adding-a-service.md). Backup *health* (validity, recency) is audited
 separately in the vpn+backups section, so treating backup-file *ownership* as
 cosmetic here does not hide a broken backup.
 

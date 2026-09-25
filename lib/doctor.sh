@@ -125,7 +125,7 @@ _doctor_permissions() {
         if [[ -n "$cfgbad" ]]; then
             d_fail "$s: config files not owned $uid:$gid" "the app cannot write its own config" "./mediastack.sh fix-perms $s"
         elif [[ -n "$ephbad" ]]; then
-            warn "$s: $(grep -c . <<<"$ephbad") root-owned file(s) in cache/logs/backups — expected for a root-by-image app, cosmetic (clear with: ./mediastack.sh fix-perms $s)"
+            warn "$s: $(grep -c . <<<"$ephbad") mis-owned file(s) in cache/logs/backups — regenerable, but something wrote them as the wrong user (runtime audit below says whether the app itself does); clear with: ./mediastack.sh fix-perms $s"
         fi
 
         # True invariant: can the app write its config? Probe live, from inside
@@ -415,11 +415,17 @@ _doctor_runtime_audit() {
         [[ "$(c_state "$cn")" == running ]] || continue
         expect=$(env_get "$(uvar "$s")_UID")
         [[ -n "$expect" ]] || continue
+        if [[ " $(env_get UID_HANDOVER) " == *" $s "* ]]; then
+            warn "$s: switching to its own user (UID $expect) is pending — apply it: ./mediastack.sh up"
+            drift=$((drift+1)); continue
+        fi
         # docker's daemon locates the PID column via the ps TITLE row, so the
         # format must keep its headers; awk drops the title line
         uids=$(sudo docker top "$cn" -o uid,pid 2>/dev/null | awk 'NR>1{print $1}' | sort -u | tr '\n' ' ' || true)
         if [[ " $uids" == *" $expect "* ]]; then :; else
-            warn "$s: no process runs as UID $expect (saw: ${uids:-none}) — PUID may be ignored; check: logs $s"
+            d_fail "$s: no process runs as UID $expect (saw: ${uids:-none})" \
+                "the image ignores PUID/PGID, so the app runs as another user and writes files it will later be locked out of" \
+                "set user: \"\${$(uvar "$s")_UID}:\${MEDIA_GROUP_GID}\" on the service instead of PUID/PGID (docs/adding-a-service.md), then: ./mediastack.sh fix-perms $s && ./mediastack.sh up"
             drift=$((drift+1))
         fi
     done
@@ -462,13 +468,16 @@ cmd_doctor() {
 
 cmd_fix_perms() {
     load_env
-    local croot targets s v uid
-    croot=$(env_get CONFIG_ROOT)
+    local targets s uid label root
     targets="${1:-$(svc_managed)}"
     for s in $targets; do
-        [[ $(svc_label "$s" mediastack.config) == "true" ]] || continue
-        v="$(uvar "$s")_UID"; uid=$(env_get "$v"); [[ -n "$uid" && -d "$croot/$s" ]] || continue
-        sudo chown -R "$uid:mediacenter" "$croot/$s"
-        ok "$s -> $uid:mediacenter"
+        uid=$(env_get "$(uvar "$s")_UID"); [[ -n "$uid" ]] || continue
+        # every per-service folder provision creates: config, cache, transcode
+        for label in config:CONFIG_ROOT cache:CACHE_ROOT transcode:TRANSCODE_ROOT; do
+            [[ $(svc_label "$s" "mediastack.${label%%:*}") == "true" ]] || continue
+            root=$(env_get "${label#*:}"); [[ -d "$root/$s" ]] || continue
+            sudo chown -R "$uid:mediacenter" "$root/$s"
+            ok "$s: $root/$s -> $uid:mediacenter"
+        done
     done
 }
