@@ -273,7 +273,9 @@ a committed plan.
   pins `wait_verdict`, the one health wait behind doctor, the update gate,
   `up`, vpn-guard, leak-test, `new-service` and `wire` (virtual clock: a 300s
   wait runs in milliseconds); `scripts/check-start-wait.sh` keeps its
-  `START_WAIT` cap above every fragment's verdict window. All run in the lint workflow beside shellcheck, the front-door
+  `START_WAIT` cap above every fragment's verdict window.
+  `scripts/test-http-ready.sh` pins `http_ready`, the one API-readiness wait
+  behind `wire` and trash-sync. All run in the lint workflow beside shellcheck, the front-door
   safety audit, the placeholder-host guard and a no-literal-`\n`-in-
   notifications guard. Still to come: a `--dry-run` smoke test.
 - First-class host-to-host migration (a `migrate` / export-import verb) — turns
