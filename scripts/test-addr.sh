@@ -138,4 +138,11 @@ if grep -nE 'localhost|127\.0\.0\.1|gluetun:' lib/integrations.sh lib/trash.sh l
     fail_ "a hard-coded app-to-app address is back (above) — use svc_addr / svc_host"
 fi; pass
 
+# static guard: an app API read whose failure is swallowed must say why that is
+# harmless there. A refused read that looks like "nothing configured" created
+# duplicates (and skipped a password rotation) — those reads now fail loud.
+if grep -nE '(api|cup_api|seerr_api|jf_api) GET' mediastack.sh lib/*.sh | grep '|| true' | grep -v '# soft read:'; then
+    fail_ "an API read swallows its failure without a '# soft read: <why>' reason (above) — fail loud, or say why it is harmless"
+fi; pass
+
 echo "OK addr: $checks checks"

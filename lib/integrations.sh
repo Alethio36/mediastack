@@ -22,6 +22,7 @@ WIRE_ROLES=(qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin s
 # their dry-run always says "would", so --verify cannot read drift from them
 WIRE_BLIND=(bazarr lazylibrarian seerr)
 WIRE_VERIFY=0
+WIRE_ARRS_OK=0   # wire_arrs_ready passed this run
 wire_is_blind() { local r; for r in "${WIRE_BLIND[@]}"; do [[ "$1" == "$r" ]] && return 0; done; return 1; }
 wfail() { fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); }
 
@@ -109,7 +110,7 @@ addr_repoint() { # addr_repoint <what> <stored> <want> -- <command...> — re-po
     local what="$1" stored="$2" want="$3" out; shift 3; [[ "${1:-}" == -- ]] && shift
     w_would "$what: re-point $stored -> $want" || return 0
     if out=$("$@" 2>&1); then ok "$what: re-pointed to $want"
-    else wfail "$what: re-point to $want rejected — $(tr -s '[:space:]' ' ' <<<"$out" | head -c300)"; fi
+    else wfail "$what: re-point to $want rejected — $(oneline "$out")"; fi
 }
 # WIRE_CALLERS — who calls whom: for each service wire points OTHER apps at,
 # the wire roles that write its address. A VPN toggle moves that address
@@ -218,7 +219,7 @@ arr_instance_name() { # brand the instance so notifications are tellable apart;
     local s="$1" key ep cur have want
     key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
     ep="$(arr_url "$s")/api/$(arr_apiver "$s")/config/host"
-    cur=$(api GET "$ep" "$key" || true)
+    cur=$(api GET "$ep" "$key" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
     have=$(jq -r '.instanceName // empty' <<<"$cur" 2>/dev/null)
     want=$(arr_pretty_name "$s")
     # one-off (stays inline, not an ensure_field concern): a custom name — non-empty,
@@ -238,7 +239,7 @@ arr_forms_login() { # shared operator login on an arr-family UI; idempotent
     [[ -n "$auser" && -n "$apass" ]] || { info "$s: shared arr login not set yet — 'wire arr' creates it"; return 0; }
     key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
     url=$(arr_url "$s")
-    cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)
+    cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
     # match on the readable subset (the password is write-only); a forced
     # rotate never matches — one-off, stays inline
     [[ "${2:-}" != force ]] && jq -e --arg u "$auser" '.authenticationMethod=="forms" and .username==$u' <<<"$cur" >/dev/null 2>&1 && match=yes
@@ -296,6 +297,28 @@ wire_services() { # the enabled services the wire roles touch — derived, so a 
         if svc_enabled "$s"; then echo "$s"; fi
     done
 }
+
+# container "running" is not API "ready" — after a cold restart the arrs
+# answer errors for a few seconds. Poll each instance before touching it.
+arr_api_ready() { # arr_api_ready <svc> <shared-deadline-epoch> -> 0 ready
+    local key; key=$(arr_key "$1")
+    [[ -n "$key" ]] || { wfail "$1: no API key readable from its config — is it initialised? (./mediastack.sh wire arr)"; return 1; }
+    http_ready --until "$2" "$1" "$(arr_url "$1")/api/$(arr_apiver "$1")/system/status" '^200$' -H "X-Api-Key: $key"
+}
+wire_arrs_ready() { # every arr-family API answering before a role reads or writes it
+    # `up` runs roles right after recreating the VPN group, when the containers
+    # run (wire_gate passes) but their APIs still refuse — and a refused read
+    # must never look like "nothing configured". One shared budget; remembered
+    # for the rest of this run.
+    (( WIRE_ARRS_OK )) && return 0
+    local s deadline=$(( $(date +%s) + API_WAIT )) rc=0
+    for s in $(arr_instances) $(svc_enabled prowlarr && echo prowlarr); do
+        arr_api_ready "$s" "$deadline" || rc=1
+    done
+    (( rc )) || WIRE_ARRS_OK=1
+    return $rc
+}
+oneline() { tr -s '[:space:]' ' ' <<<"$1" | head -c 200; }   # an app's (multi-line JSON) reply, for a message
 
 # shellcheck disable=SC2120  # type argument is optional by design
 arr_instances() { # arr_instances [type] -> enabled arr services (optionally by type)
@@ -457,6 +480,7 @@ wire_arr() {
     local insts; insts=$(arr_instances)
     [[ -n "$insts" ]] || { info "no arr instances enabled"; return 0; }
     wire_gate $insts
+    wire_arrs_ready || true
     # --- arr login (the first-run "authentication required" gate) ---
     local auser apass
     auser=$(env_get ARR_USER); apass=$(env_get ARR_PASSWORD)
@@ -491,7 +515,8 @@ operator). Stored in .env (view: credentials)."
         arr_instance_name "$s"
         # root folder
         t=$(svc_label "$s" mediastack.arrtype)
-        cur=$(api GET "$url/api/$(arr_apiver "$s")/rootfolder" "$key" || true)
+        cur=$(api GET "$url/api/$(arr_apiver "$s")/rootfolder" "$key") \
+            || { wfail "$s: could not read its root folders — nothing created [$(oneline "$cur")]"; continue; }
         local rexists=no; grep -q "\"path\":\"$root\"" <<<"${cur//[[:space:]]/}" && rexists=yes
         local rbody
         if [[ "$t" == lidarr ]]; then
@@ -508,7 +533,8 @@ operator). Stored in .env (view: credentials)."
         [[ -n "$pass" ]] || continue
         cat=$(svc_label "$s" mediastack.category)
         catfield=$(arr_meta "$t" catfield)
-        cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key" || true)
+        cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key") \
+            || { wfail "$s: could not read its download clients — nothing created [$(oneline "$cur")]"; continue; }
         local dexists=no; grep -q '"qBittorrent (mediastack)"' <<<"$cur" && dexists=yes
         local dbody; dbody=$(cat <<JSON
 {"enable":true,"protocol":"torrent","priority":1,
@@ -561,7 +587,8 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
     [[ -n "$key" ]] || { wfail "prowlarr: no ApiKey readable — re-run wire in a minute"; return 1; }
     qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
     [[ -n "$qu" && -n "$qp" ]] || { info "prowlarr download client pends on 'wire qbit' storing credentials"; return 0; }
-    local dcs; dcs=$(api GET "$url/api/$ver/downloadclient" "$key" || true)
+    local dcs; dcs=$(api GET "$url/api/$ver/downloadclient" "$key") \
+        || { wfail "prowlarr: could not read its download clients — nothing created [$(oneline "$dcs")]"; return 1; }
     have=$(jq -r '[.[].name] | join(" ")' <<<"$dcs" 2>/dev/null || true)
     if [[ " $have " == *" qbittorrent "* ]]; then
         ok "prowlarr download client registered"
@@ -575,7 +602,7 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
         return 0
     fi
     w_would "prowlarr: register qBittorrent as its download client (manual grabs -> category 'prowlarr')" || return 0
-    schema=$(api GET "$url/api/$ver/downloadclient/schema" "$key" || true)
+    schema=$(api GET "$url/api/$ver/downloadclient/schema" "$key" || true)   # soft read: create path only: an empty schema FAILs below, nothing created
     tmpl=$(jq -c '[.[] | select(.implementation=="QBittorrent")][0] // empty' <<<"$schema" 2>/dev/null)
     [[ -n "$tmpl" ]] || { wfail "prowlarr: its API offers no QBittorrent client type — is the image very old?"; return 1; }
     body=$(jq -c --arg u "$qu" --arg p "$qp" --arg host "$(svc_host qbittorrent)" --argjson port "$(svc_cport qbittorrent)" '
@@ -655,12 +682,14 @@ wire_prowlarr() {
     hr "wire: Prowlarr"
     svc_enabled prowlarr || { info "prowlarr not enabled — skipped"; return 0; }
     wire_gate prowlarr
+    wire_arrs_ready || true
     local pkey purl; pkey=$(arr_key prowlarr); purl=$(arr_url prowlarr)
     [[ -n "$pkey" ]] || { wfail "prowlarr: no ApiKey yet — re-run wire shortly"; return 0; }
     # prowlarr has no arrtype label so wire_arr's loop never sees it: gate here
     arr_forms_login prowlarr
     local s key t impl cur aexists abody
-    cur=$(api GET "$purl/api/v1/applications" "$pkey" || true)
+    cur=$(api GET "$purl/api/v1/applications" "$pkey") \
+        || { wfail "prowlarr: could not read its apps — nothing created [$(oneline "$cur")]"; return 1; }
     for s in $(arr_instances); do
         t=$(svc_label "$s" mediastack.arrtype)
         arr_known "$t" || continue
@@ -713,7 +742,9 @@ JSON
         # prowlarr routes that indexer through the proxy. Nothing carries it
         # by default — only Cloudflare-protected indexers should pay the tax.
         local fid
-        fid=$(api GET "$purl/api/v1/tag" "$pkey" | jq -r '.[] | select(.label=="flared") | .id' 2>/dev/null | head -1 || true)
+        local tags; tags=$(api GET "$purl/api/v1/tag" "$pkey") \
+            || { wfail "prowlarr: could not read its tags — flaresolverr not set up [$(oneline "$tags")]"; prowlarr_download_client; return 1; }
+        fid=$(jq -r '.[] | select(.label=="flared") | .id' <<<"$tags" 2>/dev/null | head -1)
         if [[ -n "$fid" ]]; then
             ok "tag 'flared' exists"
         elif w_would "create prowlarr tag 'flared' (attach to indexers needing FlareSolverr)"; then
@@ -721,8 +752,9 @@ JSON
             [[ -n "$fid" && "$fid" != null ]] && ok "tag 'flared' created" \
                 || { wfail "prowlarr tag 'flared' creation failed — check: logs prowlarr"; fid=""; }
         fi
-        cur=$(api GET "$purl/api/v1/indexerproxy" "$pkey" || true)
-        if grep -q '"FlareSolverr (mediastack)"' <<<"$cur"; then
+        if ! cur=$(api GET "$purl/api/v1/indexerproxy" "$pkey"); then
+            wfail "prowlarr: could not read its indexer proxies — nothing created [$(oneline "$cur")]"
+        elif grep -q '"FlareSolverr (mediastack)"' <<<"$cur"; then
             if [[ -n "$fid" ]] && jq -e --argjson id "$fid" \
                     '.[] | select(.name=="FlareSolverr (mediastack)") | .tags | index($id) | not' \
                     <<<"$cur" >/dev/null 2>&1; then
@@ -820,7 +852,9 @@ wire_bazarr() {
 
 jf_plugin_webhook() { # install-if-missing; two consumers: WatchState + the hub
     local tok="$1" plugins
-    plugins=$(jf_api GET /Plugins "$tok" | jq -r '[.[].Name] | join(" ")' 2>/dev/null || true)
+    local plist; plist=$(jf_api GET /Plugins "$tok") \
+        || { wfail "could not list jellyfin plugins [HTTP $(jf_code)] — nothing installed, jellyfin not restarted"; return 1; }
+    plugins=$(jq -r '[.[].Name] | join(" ")' <<<"$plist" 2>/dev/null)
     if [[ " $plugins " == *" Webhook "* ]]; then
         ok "Webhook plugin installed"
         return 0
@@ -832,7 +866,7 @@ jf_plugin_webhook() { # install-if-missing; two consumers: WatchState + the hub
     info "plugin downloaded — restarting jellyfin to load it..."
     DC restart jellyfin >/dev/null 2>&1 || { wfail "jellyfin restart failed — restart it, then re-run wire jellyfin"; return 1; }
     jf_ready || return 1
-    plugins=$(jf_api GET /Plugins "$tok" | jq -r '[.[].Name] | join(" ")' 2>/dev/null || true)
+    plugins=$(jf_api GET /Plugins "$tok" | jq -r '[.[].Name] | join(" ")' 2>/dev/null || true)   # soft read: re-check after the install: empty FAILs below
     [[ " $plugins " == *" Webhook "* ]] \
         && ok "Webhook plugin installed and loaded" \
         || wfail "plugin not visible after restart — check Dashboard -> Plugins (a repository fetch may have failed)"
@@ -840,7 +874,7 @@ jf_plugin_webhook() { # install-if-missing; two consumers: WatchState + the hub
 
 jf_server_name() { # the name apps/casting show; container default is the ID hash
     local tok="$1" cfg have want
-    cfg=$(jf_api GET /System/Configuration "$tok" || true)
+    cfg=$(jf_api GET /System/Configuration "$tok" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
     have=$(jq -r '.ServerName // empty' <<<"$cfg" 2>/dev/null)
     if [[ -n "$have" && ! "$have" =~ ^[0-9a-f]{12}$ ]]; then
         ok "server name '$have'"
@@ -861,7 +895,7 @@ jf_transcode_path() { # transcodes belong on the cache volume, not in /config
     # config volume, which backup archives and which sits wherever CONFIG_ROOT
     # does. Segments are written at source bitrate for the whole session.
     local tok="$1" cfg have
-    cfg=$(jf_api GET /System/Configuration/encoding "$tok" || true)
+    cfg=$(jf_api GET /System/Configuration/encoding "$tok" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
     [[ "$(jf_code)" =~ ^2 ]] || { wfail "could not read jellyfin's encoding settings [HTTP $(jf_code)]: $(head -c200 <<<"$cfg")"; return 1; }
     have=$(jq -r '.TranscodingTempPath // empty' <<<"$cfg" 2>/dev/null)
     if [[ "$have" == "$JF_TRANSCODE_PATH" ]]; then ok "transcodes go to $JF_TRANSCODE_PATH (the cache volume)"; return 0; fi
@@ -902,6 +936,7 @@ wire_apprise() {
     svc_enabled apprise || { info "apprise not enabled — skipped"; return 0; }
     wire_gate apprise
     http_ready apprise "$(apprise_url)/status" '^2' || return 1
+    wire_arrs_ready || true
 
     # --- notification endpoints: stored once under key 'mediastack';
     # an existing config is never touched (edit in apprise's UI or re-add)
@@ -955,7 +990,8 @@ Getting a URL:
         arr_known "$ty" || continue
         key=$(arr_key "$s"); url=$(arr_url "$s"); ver=$(arr_apiver "$s")
         [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; continue; }
-        local notes; notes=$(api GET "$url/api/$ver/notification" "$key" || true)
+        local notes; notes=$(api GET "$url/api/$ver/notification" "$key") \
+            || { wfail "$s: could not read its notifications — nothing created [$(oneline "$notes")]"; continue; }
         have=$(jq -r '[.[].name] | join(" ")' <<<"$notes" 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "$s already notifies the hub — untouched"
@@ -967,7 +1003,8 @@ Getting a URL:
             continue
         fi
         if ! w_would "$s: notify the hub on grab/import/health (tag: ops)"; then continue; fi
-        schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)
+        schema=$(api GET "$url/api/$ver/notification/schema" "$key") \
+            || { wfail "$s: could not read its notification types — nothing created [$(oneline "$schema")]"; continue; }
         tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
         [[ -n "$tmpl" ]] || { wfail "$s: its API offers no Apprise notification type — is the image very old?"; continue; }
         body=$(jq -c --arg srv "http://$(svc_addr apprise)" '
@@ -988,9 +1025,10 @@ Getting a URL:
     # prowlarr too — indexer/health events are ops signal
     if svc_enabled prowlarr; then
         key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr)
-        local pnotes; pnotes=$(api GET "$url/api/$ver/notification" "$key" || true)
-        have=$(jq -r '[.[].name] | join(" ")' <<<"$pnotes" 2>/dev/null || true)
-        if [[ " $have " == *" mediastack-apprise "* ]]; then
+        local pnotes=""
+        if ! pnotes=$(api GET "$url/api/$ver/notification" "$key"); then
+            wfail "prowlarr: could not read its notifications — nothing created [$(oneline "$pnotes")]"
+        elif [[ " $(jq -r '[.[].name] | join(" ")' <<<"$pnotes" 2>/dev/null) " == *" mediastack-apprise "* ]]; then
             ok "prowlarr already notifies the hub — untouched"
             local pst; pst=$(addr_of "$(arr_entry_field "$pnotes" mediastack-apprise serverUrl)")
             if addr_stale "prowlarr -> apprise" apprise "$pst"; then
@@ -998,7 +1036,7 @@ Getting a URL:
                     arr_repoint "$url/api/$ver" "$key" notification "$pnotes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
             fi
         elif w_would "prowlarr: notify the hub on indexer/health events (tag: ops)"; then
-            schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)
+            schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)   # soft read: create path only: an empty schema FAILs below, nothing created
             tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
             if [[ -z "$tmpl" ]]; then
                 wfail "prowlarr: its API offers no Apprise notification type — is the image very old?"
@@ -1048,7 +1086,7 @@ wire_cleanuparr() {
     user=$(env_get ARR_USER); pass=$(env_get ARR_PASSWORD)
     [[ -n "$user" && -n "$pass" ]] || { wfail "cleanuparr bootstrap reuses the arr login — run 'wire arr' first (a full 'wire' does both in order)"; return 1; }
 
-    st=$(cup_api GET /auth/status "" || true)
+    st=$(cup_api GET /auth/status "" || true)   # soft read: unread = not set up: the setup call below answers 409 when it is, which is accepted
     if [[ "$(jq -r '.setupCompleted' <<<"$st" 2>/dev/null)" != true ]]; then
         if w_would "create cleanuparr's account ('$user' — same login as the arrs) and complete setup"; then
             out=$(cup_api POST /auth/setup/account "" "$(jq -cn --arg u "$user" --arg p "$pass" '{username:$u,password:$p}')")
@@ -1071,7 +1109,7 @@ wire_cleanuparr() {
      if you changed its password in the UI, this is expected — its config stays yours"; return 1; }
     tok=$(jq -r '.tokens.accessToken // empty' <<<"$out")
     [[ -n "$tok" ]] || { wfail "cleanuparr login gave no access token: $(head -c200 <<<"$out")"; return 1; }
-    akey=$(cup_api GET /account/api-key "Authorization: Bearer $tok" | jq -r '.apiKey // empty' 2>/dev/null || true)
+    akey=$(cup_api GET /account/api-key "Authorization: Bearer $tok" | jq -r '.apiKey // empty' 2>/dev/null || true)   # soft read: checked on the next line
     [[ -n "$akey" ]] || { wfail "could not read cleanuparr's API key [HTTP $(cup_code)]"; return 1; }
     [[ "$(env_get CLEANUPARR_API_KEY)" == "$akey" ]] || env_set CLEANUPARR_API_KEY "$akey"
     local KH="X-Api-Key: $akey"
@@ -1079,9 +1117,10 @@ wire_cleanuparr() {
     # download client: create-if-missing by name
     local qu qp have
     qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
-    local cdc; cdc=$(cup_api GET /configuration/download_client "$KH" || true)
-    have=$(jq -r '[.clients[]?.name] | join(" ")' <<<"$cdc" 2>/dev/null || true)
-    if [[ " $have " == *" qbittorrent "* ]]; then
+    local cdc=""
+    if ! cdc=$(cup_api GET /configuration/download_client "$KH"); then
+        wfail "cleanuparr: could not read its download clients — nothing created [HTTP $(cup_code)]"
+    elif [[ " $(jq -r '[.clients[]?.name] | join(" ")' <<<"$cdc" 2>/dev/null) " == *" qbittorrent "* ]]; then
         ok "qbittorrent already connected — untouched"
         local cst cbody; cst=$(addr_of "$(jq -r '.clients[]? | select(.name=="qbittorrent") | .host' <<<"$cdc" 2>/dev/null | head -1)")
         if addr_stale "cleanuparr -> qbittorrent" qbittorrent "$cst"; then
@@ -1105,13 +1144,15 @@ wire_cleanuparr() {
     fi
 
     # arrs: create-if-missing by name, per type
+    wire_arrs_ready || true
     local s ty key port cfg names
     for s in $(arr_instances); do
         ty=$(svc_label "$s" mediastack.arrtype)
         arr_known "$ty" || continue
         key=$(arr_key "$s"); port=$(svc_label "$s" mediastack.port)
         [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; continue; }
-        cfg=$(cup_api GET "/configuration/$ty" "$KH" || true)
+        cfg=$(cup_api GET "/configuration/$ty" "$KH") \
+            || { wfail "cleanuparr: could not read its $ty connections — nothing created [HTTP $(cup_code)]"; continue; }
         names=$(jq -r '[.instances[]?.name] | join(" ")' <<<"$cfg" 2>/dev/null)
         if [[ " $names " == *" $s "* ]]; then
             ok "$s already connected — untouched"
@@ -1134,7 +1175,7 @@ wire_cleanuparr() {
     done
 
     # queue cleaner: switch on, keep upstream's conservative defaults
-    cfg=$(cup_api GET /configuration/queue_cleaner "$KH" || true)
+    cfg=$(cup_api GET /configuration/queue_cleaner "$KH" || true)   # soft read: unread = nothing written: the PUT needs the config it read
     if [[ "$(jq -r '.enabled' <<<"$cfg" 2>/dev/null)" == true ]]; then
         ok "queue cleaner already on — its settings are yours to manage in the UI"
     elif [[ -n "$cfg" ]]; then
@@ -1147,9 +1188,10 @@ wire_cleanuparr() {
 
     # ops notifications via the hub, when the hub is wired
     if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
-        local cnp; cnp=$(cup_api GET /configuration/notification_providers "$KH" || true)
-        have=$(jq -r '[.providers[]?.name] | join(" ")' <<<"$cnp" 2>/dev/null || true)
-        if [[ " $have " == *" mediastack-apprise "* ]]; then
+        local cnp=""
+        if ! cnp=$(cup_api GET /configuration/notification_providers "$KH"); then
+            wfail "cleanuparr: could not read its notification providers — nothing created [HTTP $(cup_code)]"
+        elif [[ " $(jq -r '[.providers[]?.name] | join(" ")' <<<"$cnp" 2>/dev/null) " == *" mediastack-apprise "* ]]; then
             ok "already notifies the hub — untouched"
             local ast abody; ast=$(addr_of "$(jq -r '.providers[]? | select(.name=="mediastack-apprise") | (.url // .configuration.url // "")' <<<"$cnp" 2>/dev/null | head -1)")
             if addr_stale "cleanuparr -> apprise" apprise "$ast"; then
@@ -1216,7 +1258,7 @@ wire_jellyfin() {
     wire_gate jellyfin
     jf_ready || return 1
     local pub completed juser jpass
-    pub=$(jf_api GET /System/Info/Public "" || true)
+    pub=$(jf_api GET /System/Info/Public "" || true)   # soft read: checked two lines below
     # NB: jq's // operator treats false as missing — read booleans plainly
     completed=$(jq -r '.StartupWizardCompleted' <<<"$pub" 2>/dev/null)
     [[ "$completed" == true || "$completed" == false ]] \
@@ -1288,7 +1330,7 @@ credentials)."
     # a migrated jellyfin sees the same tree under an alias (an extra mount
     # in the override, e.g. /data/tvshows) and must not be offered a twin
     # at /media/tv. GUI renames/merges are respected the same way.
-    local vf droot jcn; vf=$(jf_api GET /Library/VirtualFolders "$tok" || true)
+    local vf droot jcn; vf=$(jf_api GET /Library/VirtualFolders "$tok" || true)   # soft read: checked on the next line
     [[ "$(jf_code)" =~ ^2 ]] || { wfail "could not list jellyfin libraries [HTTP $(jf_code)]: $(head -c200 <<<"$vf")"; return 1; }
     droot=$(env_get DATA_ROOT); jcn=$(svc_cname jellyfin)
     local -A covered=()   # host dir -> the container location a library uses for it
@@ -1340,7 +1382,8 @@ credentials)."
 
     # --- one API key for the stack (update-defer streaming check + doctor)
     local keys have
-    keys=$(jf_api GET /Auth/Keys "$tok" || true)
+    keys=$(jf_api GET /Auth/Keys "$tok") \
+        || { wfail "could not list jellyfin API keys [HTTP $(jf_code)] — nothing created"; return 1; }
     have=$(jq -r '.Items[]? | select(.AppName=="mediastack") | .AccessToken' <<<"$keys" 2>/dev/null | head -1)
     if [[ -n "$have" ]]; then
         [[ "$(env_get JELLYFIN_API_KEY)" == "$have" ]] || env_set JELLYFIN_API_KEY "$have"
@@ -1348,7 +1391,7 @@ credentials)."
     elif w_would "mint a jellyfin API key for the stack (app 'mediastack')"; then
         jf_api POST "/Auth/Keys?app=mediastack" "$tok" >/dev/null \
             || { wfail "API key creation rejected [HTTP $(jf_code)]"; return 1; }
-        keys=$(jf_api GET /Auth/Keys "$tok" || true)
+        keys=$(jf_api GET /Auth/Keys "$tok" || true)   # soft read: re-read after creating the key: empty FAILs below
         have=$(jq -r '.Items[]? | select(.AppName=="mediastack") | .AccessToken' <<<"$keys" 2>/dev/null | head -1)
         [[ -n "$have" ]] || { wfail "API key created but not readable back — check Dashboard -> API Keys"; return 1; }
         env_set JELLYFIN_API_KEY "$have"
@@ -1384,7 +1427,7 @@ wire_seerr() {
     http_ready seerr "$(seerr_url)/api/v1/status" '^200$' || return 1
     local jar pub
     jar=$(mktemp)
-    pub=$(seerr_api GET /settings/public "$jar" || true)
+    pub=$(seerr_api GET /settings/public "$jar" || true)   # soft read: unread = uninitialised: the hostname re-send below is handled as already configured
     local seerr_initialized=false
     [[ "$(jq -r '.initialized' <<<"$pub" 2>/dev/null)" == true ]] && seerr_initialized=true
     local juser jpass
@@ -1441,8 +1484,11 @@ wire_seerr() {
     # so 'gluetun' is their in-network hostname. Existing entries (matched by
     # name) are never touched — create-if-missing only.
     local have_radarr have_sonarr set_radarr set_sonarr
-    set_radarr=$(seerr_api GET /settings/radarr "$jar" || true)
-    set_sonarr=$(seerr_api GET /settings/sonarr "$jar" || true)
+    wire_arrs_ready || true
+    set_radarr=$(seerr_api GET /settings/radarr "$jar") \
+        || { wfail "seerr: could not read its radarr servers — nothing created [HTTP $(seerr_code)]"; rm -f "$jar"; return 1; }
+    set_sonarr=$(seerr_api GET /settings/sonarr "$jar") \
+        || { wfail "seerr: could not read its sonarr servers — nothing created [HTTP $(seerr_code)]"; rm -f "$jar"; return 1; }
     have_radarr=$(jq -r '[.[].name] | join(" ")' <<<"$set_radarr" 2>/dev/null || true)
     have_sonarr=$(jq -r '[.[].name] | join(" ")' <<<"$set_sonarr" 2>/dev/null || true)
     local s ty key port root profs pid pname body ep is4k
@@ -1464,7 +1510,7 @@ wire_seerr() {
         fi
         key=$(arr_key "$s"); port=$(svc_label "$s" mediastack.port); root=$(svc_label "$s" mediastack.rootfolder)
         [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — is it initialised? re-run wire in a minute"; continue; }
-        profs=$(api GET "$(arr_url "$s")/api/$(arr_apiver "$s")/qualityprofile" "$key" || true)
+        profs=$(api GET "$(arr_url "$s")/api/$(arr_apiver "$s")/qualityprofile" "$key" || true)   # soft read: empty FAILs below: that seerr entry is skipped
         pid=$(jq -r --arg n "$(env_get "TRASH_PROFILE_$(uvar "$s")")" \
               '(map(select(.name==$n)) + .)[0].id // empty' <<<"$profs" 2>/dev/null)
         pname=$(jq -r --arg n "$(env_get "TRASH_PROFILE_$(uvar "$s")")" \
@@ -1496,8 +1542,9 @@ wire_seerr() {
     # it is one mediastack made and a VPN toggle moved apprise (addr_stale).
     if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
         local wh
-        wh=$(seerr_api GET /settings/notifications/webhook "$jar" || true)
-        if [[ "$(jq -r '.enabled' <<<"$wh" 2>/dev/null)" == true ]]; then
+        if ! wh=$(seerr_api GET /settings/notifications/webhook "$jar"); then
+            wfail "seerr: could not read its webhook settings — left as they are [HTTP $(seerr_code)]"
+        elif [[ "$(jq -r '.enabled' <<<"$wh" 2>/dev/null)" == true ]]; then
             ok "webhook notifications already enabled — untouched (yours to manage in the GUI)"
             local wst; wst=$(addr_of "$(jq -r '.options.webhookUrl // ""' <<<"$wh")")
             if addr_stale "seerr -> apprise" apprise "$wst"; then
@@ -1523,7 +1570,7 @@ wire_seerr() {
     out=$(seerr_api POST /settings/initialize "$jar") \
         || { wfail "seerr initialise call failed [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
     local skey
-    skey=$(seerr_api GET /settings/main "$jar" | jq -r '.apiKey // empty' 2>/dev/null || true)
+    skey=$(seerr_api GET /settings/main "$jar" | jq -r '.apiKey // empty' 2>/dev/null || true)   # soft read: optional: stored only when read
     [[ -n "$skey" ]] && env_set SEERR_API_KEY "$skey"
     rm -f "$jar"
     ok "seerr initialised — users sign in with their jellyfin logins"

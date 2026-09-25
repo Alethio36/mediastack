@@ -166,20 +166,14 @@ trash_gen_config() { # trash_gen_config [out-path] — default: the live recycla
 # the ownership banner: a never-matching CF that sorts first in the GUI so
 # nobody hand-tunes what nightly sync will revert. Recyclarr cannot create
 # non-TRaSH CFs, so we push it ourselves (idempotent by name).
-# container "running" is not API "ready" — after a cold restart the arrs
-# answer errors for a few seconds. Poll each instance before touching it.
-arr_api_ready() { # arr_api_ready <svc> <shared-deadline-epoch> -> 0 ready
-    local key; key=$(arr_key "$1")
-    [[ -n "$key" ]] || { wfail "$1: no API key readable from its config — is it initialised? (./mediastack.sh wire arr)"; return 1; }
-    http_ready --until "$2" "$1" "$(arr_url "$1")/api/$(arr_apiver "$1")/system/status" '^200$' -H "X-Api-Key: $key"
-}
 
 TRASH_SENTINEL='[!] Synced by mediastack — tune via local/trash-overrides.yml'
 trash_sentinel() { # $1 = svc
     local s="$1" key url cur
     key=$(arr_key "$s") || true; [[ -n "$key" ]] || return 0
     url=$(arr_url "$s")
-    cur=$(api GET "$url/api/$(arr_apiver "$s")/customformat" "$key" || true)
+    cur=$(api GET "$url/api/$(arr_apiver "$s")/customformat" "$key") \
+        || { wfail "$s: could not read its custom formats — sentinel banner not checked [$(oneline "$cur")]"; return 1; }
     if jq -e --arg n "$TRASH_SENTINEL" 'any(.[]; .name == $n)' <<<"$cur" >/dev/null 2>&1; then
         ok "$s: sentinel banner present"
     elif w_would "$s: create sentinel banner custom format"; then
