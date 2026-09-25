@@ -56,7 +56,8 @@ Labels the arr family carries (only meaningful with `wire arr` / `trash-sync`):
 
 | Label | Meaning |
 |---|---|
-| `mediastack.arrtype: "sonarr\|radarr\|lidarr"` | which arr this instance is — selects the API version, the download-client category field, and the TRaSH profile menu |
+| `mediastack.arrtype: "sonarr\|radarr\|lidarr"` | which arr this instance is — every per-type fact (API version, download-client category field, Prowlarr and cleanuparr registration, Jellyfin library type) comes from its row in `ARR_META` (lib/integrations.sh); a new type is one row there, and CI fails if a fragment names a type without one |
+| `mediastack.jflibrary: "Movies (4K)"` | the Jellyfin library name `wire jellyfin` offers for this instance's folder (default: its type's name, e.g. "Movies") |
 | `mediastack.trashprofile: "uhd"` | the TRaSH profile this instance exists for (`uhd`, `anime`, …) — `trash-sync` pre-answers it instead of asking. Any `sonarr`/`radarr`-type instance is managed by `trash-sync`; this only skips the question |
 | `mediastack.category: "movies-4k"` | its qBittorrent category (`wire qbit` creates it; `wire arr` sets it on the download client) |
 | `mediastack.rootfolder: "/data/media/${MEDIA_DIR_MOVIES_4K:-movies-4k}"` | its root folder inside the container (`wire arr` registers it; seerr and jellyfin libraries derive from it; `configure` creates the directory). The subdir name comes from `.env` so an existing tree's names can be adopted |
