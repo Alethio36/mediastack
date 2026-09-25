@@ -420,12 +420,16 @@ cmd_update() {
     hr "Health gate"
     local deadline=$(( $(date +%s) + 300 )) bad=()
     for s in "${targets[@]}"; do
-        local cn h; cn=$(svc_cname "$s")
+        local cn h st; cn=$(svc_cname "$s")
         while :; do
             # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
             INSPECT_JSON=""   # poll live — a prior c_inspect_all (e.g. vpn_reattach_guard)
             h=$(c_health "$cn")   # left a frozen snapshot the loop must not read
-            [[ "$h" == healthy || "$h" == "-" ]] && break
+            st=$(c_state "$cn")
+            # "-" also means "no health to read" for an exited or missing
+            # container: only a RUNNING one without a healthcheck passes
+            [[ "$st" =~ ^(exited|dead|absent)$ ]] && { bad+=("$s"); break; }
+            [[ "$st" == running && ( "$h" == healthy || "$h" == "-" ) ]] && break
             (( $(date +%s) > deadline )) && { bad+=("$s"); break; }
             sleep 5
         done
