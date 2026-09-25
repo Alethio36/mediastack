@@ -77,9 +77,25 @@ arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialisin
 }
 
 arr_url() { local p; p=$(svc_hostport "$1") || return 1; echo "http://127.0.0.1:$p"; }
-arr_apiver() { # prowlarr and lidarr speak v1; the content arrs are v3
+# ARR_META — every per-type fact wire needs, one row per arr type, so a new
+# type (readarr, whisparr) is a row here instead of a hunt through recipes.
+#   api       API version path            impl      Prowlarr implementation name
+#   catfield  download-client category    major     app major (cleanuparr's "version")
+#   jftype    Jellyfin collection type    jfname    default Jellyfin library name
+declare -A ARR_META=(
+    [sonarr.api]=v3  [sonarr.impl]=Sonarr [sonarr.catfield]=tvCategory    [sonarr.major]=4 [sonarr.jftype]=tvshows [sonarr.jfname]="TV Shows"
+    [radarr.api]=v3  [radarr.impl]=Radarr [radarr.catfield]=movieCategory [radarr.major]=6 [radarr.jftype]=movies  [radarr.jfname]=Movies
+    [lidarr.api]=v1  [lidarr.impl]=Lidarr [lidarr.catfield]=musicCategory [lidarr.major]=3 [lidarr.jftype]=music   [lidarr.jfname]=Music
+)
+arr_known() { [[ -n "${ARR_META[${1:-?}.api]:-}" ]]; }   # arr_known TYPE — a type wire supports
+arr_meta() { # arr_meta TYPE FIELD — dies loud on a gap: a wrong default here is a silent misconfig
+    local v="${ARR_META[${1:-?}.$2]:-}"
+    [[ -n "$v" ]] || die "arr type '${1:-<none>}' has no '$2' in ARR_META (lib/integrations.sh)"
+    echo "$v"
+}
+arr_apiver() { # prowlarr speaks v1; every arr instance its type's version
     [[ "$1" == prowlarr ]] && { echo v1; return; }
-    case "$(svc_label "$1" mediastack.arrtype)" in lidarr) echo v1 ;; *) echo v3 ;; esac
+    arr_meta "$(svc_label "$1" mediastack.arrtype)" api
 }
 
 arr_pretty_name() { # sonarr-anime -> "Sonarr (Anime)", radarr-4k -> "Radarr (4K)"
@@ -388,7 +404,7 @@ operator). Stored in .env (view: credentials)."
         # download client
         [[ -n "$pass" ]] || continue
         cat=$(svc_label "$s" mediastack.category)
-        case "$t" in sonarr) catfield=tvCategory ;; radarr) catfield=movieCategory ;; lidarr) catfield=musicCategory ;; esac
+        catfield=$(arr_meta "$t" catfield)
         cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key" || true)
         local dexists=no; grep -q '"qBittorrent (mediastack)"' <<<"$cur" && dexists=yes
         local dbody; dbody=$(cat <<JSON
@@ -512,7 +528,8 @@ wire_prowlarr() {
     cur=$(api GET "$purl/api/v1/applications" "$pkey" || true)
     for s in $(arr_instances); do
         t=$(svc_label "$s" mediastack.arrtype)
-        case "$t" in sonarr) impl=Sonarr ;; radarr) impl=Radarr ;; lidarr) impl=Lidarr ;; *) continue ;; esac
+        arr_known "$t" || continue
+        impl=$(arr_meta "$t" impl)
         key=$(arr_key "$s") || true
         [[ -n "$key" ]] || { wfail "prowlarr<-$s: $s has no ApiKey yet"; continue; }
         aexists=no; grep -q "\"$s (mediastack)\"" <<<"$cur" && aexists=yes
@@ -788,7 +805,7 @@ Getting a URL:
     local s ty key url ver have schema tmpl body resp
     for s in $(arr_instances); do
         ty=$(svc_label "$s" mediastack.arrtype)
-        [[ "$ty" == sonarr || "$ty" == radarr || "$ty" == lidarr ]] || continue
+        arr_known "$ty" || continue
         key=$(arr_key "$s"); url=$(arr_url "$s"); ver=$(arr_apiver "$s")
         [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; continue; }
         have=$(api GET "$url/api/$ver/notification" "$key" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
@@ -924,7 +941,7 @@ wire_cleanuparr() {
     local s ty key port cfg names
     for s in $(arr_instances); do
         ty=$(svc_label "$s" mediastack.arrtype)
-        [[ "$ty" == sonarr || "$ty" == radarr || "$ty" == lidarr ]] || continue
+        arr_known "$ty" || continue
         key=$(arr_key "$s"); port=$(svc_label "$s" mediastack.port)
         [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; continue; }
         cfg=$(cup_api GET "/configuration/$ty" "$KH" || true)
@@ -934,9 +951,8 @@ wire_cleanuparr() {
             continue
         fi
         # version = the arr application major, exactly the value cleanuparr's
-        # own UI offers per type (sonarr 4, radarr 6, lidarr 3)
-        local aver
-        case "$ty" in sonarr) aver=4 ;; radarr) aver=6 ;; lidarr) aver=3 ;; esac
+        # own UI offers per type (ARR_META major)
+        local aver; aver=$(arr_meta "$ty" major)
         out=$(cup_api POST "/configuration/$ty/instances" "$KH" \
               "$(jq -cn --arg n "$s" --arg u "http://gluetun:$port" --arg k "$key" --argjson v "$aver" \
                  '{enabled:true,name:$n,url:$u,apiKey:$k,version:$v}')") \
@@ -1002,14 +1018,12 @@ jf_api() { # jf_api METHOD PATH TOKEN [json-body] -> body on stdout; rc = http 2
 }
 jf_ready() { http_ready jellyfin "$(jf_url)/health" '^200$'; }
 jf_libname() { # jf_libname <arr service> <media subdir> -> default library name
-    case "$1" in
-        radarr)       echo "Movies" ;;
-        radarr-4k)    echo "Movies (4K)" ;;
-        sonarr)       echo "TV Shows" ;;
-        sonarr-anime) echo "Anime" ;;
-        lidarr)       echo "Music" ;;
-        *)            echo "${2^}" ;;
-    esac
+    # an instance names its own library (mediastack.jflibrary: "Movies (4K)");
+    # otherwise its type's name; a type wire doesn't know, its folder's name
+    local n ty; n=$(svc_label "$1" mediastack.jflibrary); ty=$(svc_label "$1" mediastack.arrtype)
+    if [[ -n "$n" ]]; then echo "$n"
+    elif arr_known "$ty"; then arr_meta "$ty" jfname
+    else echo "${2^}"; fi
 }
 
 wire_jellyfin() {
@@ -1102,15 +1116,15 @@ credentials)."
         covered[$(readlink -f "$hp" 2>/dev/null || echo "$hp")]=$loc
     done < <(jq -r '.[].Locations[]?' <<<"$vf")
     local -A seen=()
-    local s rf base path hdir ctype lname enc_n enc_p resp
+    local s rf base path hdir ty ctype lname enc_n enc_p resp
     for s in $(arr_instances); do
         rf=$(svc_label "$s" mediastack.rootfolder); base=${rf##*/}
         [[ -n "$base" && -z "${seen[$base]:-}" ]] || continue; seen[$base]=1
         path="/media/$base"
         hdir=$(readlink -f "$droot/media/$base" 2>/dev/null || echo "$droot/media/$base")
-        case "$(svc_label "$s" mediastack.arrtype)" in
-            radarr) ctype=movies ;; sonarr) ctype=tvshows ;; lidarr) ctype=music ;; *) continue ;;
-        esac
+        ty=$(svc_label "$s" mediastack.arrtype)
+        arr_known "$ty" || continue
+        ctype=$(arr_meta "$ty" jftype)
         if [[ -n "${covered[$hdir]:-}" ]]; then
             if [[ "${covered[$hdir]}" == "$path" ]]; then
                 ok "a library already covers $path — untouched (yours to manage in the GUI)"
@@ -1271,7 +1285,9 @@ wire_seerr() {
         ep="/settings/$ty"
         [[ "$ty" == radarr ]] && body=$(jq -c '. + {minimumAvailability:"released"}' <<<"$body")
         [[ "$ty" == sonarr ]] && body=$(jq -c '. + {enableSeasonFolders:true}' <<<"$body")
-        [[ "$s" == sonarr-anime ]] && body=$(jq -c '. + {isDefault:false}' <<<"$body")
+        # seerr's default server per type: the base instance, or the 4K one
+        # (4K has its own default slot); any other extra instance is opt-in
+        [[ "$s" == "$ty" || "$is4k" == true ]] || body=$(jq -c '. + {isDefault:false}' <<<"$body")
         out=$(seerr_api POST "$ep/test" "$jar" "$body") \
             || { wfail "$s: seerr could not reach it [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; continue; }
         out=$(seerr_api POST "$ep" "$jar" "$body") \

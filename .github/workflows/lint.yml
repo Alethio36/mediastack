@@ -36,6 +36,8 @@ jobs:
         run: scripts/test-http-ready.sh
       - name: newest restore point, never pre-update/ or manifest/ (scripts/test-restore-point.sh)
         run: scripts/test-restore-point.sh
+      - name: every arr type has every per-type fact (scripts/test-arr-meta.sh)
+        run: scripts/test-arr-meta.sh
       - name: no literal backslash-n in notification bodies
         run: |
           # a double-quoted \n is two characters to bash: Discord shows '\n'.
