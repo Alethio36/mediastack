@@ -111,6 +111,50 @@ addr_repoint() { # addr_repoint <what> <stored> <want> -- <command...> — re-po
     if out=$("$@" 2>&1); then ok "$what: re-pointed to $want"
     else wfail "$what: re-point to $want rejected — $(tr -s '[:space:]' ' ' <<<"$out" | head -c300)"; fi
 }
+# WIRE_CALLERS — who calls whom: for each service wire points OTHER apps at,
+# the wire roles that write its address. A VPN toggle moves that address
+# (svc_addr), so after the move these roles re-run and re-point their entries
+# (wire_repoint_pending, from `up`). "arr" stands for every arr instance.
+# recyclarr's arr addresses need no role: trash-sync regenerates them each run.
+# CI (scripts/test-repoint.sh) fails if wire points at a service not listed.
+declare -A WIRE_CALLERS=(
+    [qbittorrent]="arr prowlarr cleanuparr lazylibrarian"
+    [apprise]="apprise cleanuparr seerr"
+    [arr]="prowlarr cleanuparr seerr bazarr"
+    [prowlarr]="prowlarr"
+    [lazylibrarian]="prowlarr"
+    [flaresolverr]="prowlarr"
+    [jellyfin]="seerr"
+)
+wire_callers() { # wire_callers <svc> -> the roles that write an address of <svc>, one per line
+    local key="$1"; [[ -n "$(svc_label "$1" mediastack.arrtype)" ]] && key=arr
+    tr ' ' '\n' <<<"${WIRE_CALLERS[$key]:-}" | awk NF
+}
+repoint_mark() { # repoint_mark <svc> — its address is about to move: re-point its callers after `up`
+    local cur; cur=$(env_get WIRE_REPOINT)
+    [[ " $cur " == *" $1 "* ]] || env_set WIRE_REPOINT "${cur:+$cur }$1"
+}
+wire_repoint_pending() { # after `up`: re-point the callers of every service a VPN toggle moved
+    local pending s role want="" roles="" failed=""
+    pending=$(env_get WIRE_REPOINT); [[ -n "$pending" ]] || return 0
+    # never wired: no app holds an address yet, so nothing can be stale
+    [[ -f "$SCRIPT_DIR/.wired" ]] || { env_del WIRE_REPOINT; return 0; }
+    for s in $pending; do want+=" $(wire_callers "$s" | tr '\n' ' ')"; done
+    for role in "${WIRE_ROLES[@]}"; do [[ " $want " == *" $role "* ]] && roles+="$role "; done   # wire's own order
+    [[ -n "$roles" ]] || { env_del WIRE_REPOINT; return 0; }
+    hr "Re-pointing what calls: $pending (moved in or out of the VPN)"
+    for role in $roles; do
+        # cmd_wire exits on failure: a subshell keeps `up` alive to report it
+        ( cmd_wire "$role" ) || failed+="$role "
+    done
+    if [[ -n "$failed" ]]; then
+        fail "re-pointing incomplete — wire ${failed% } reported failures (above). Fix, then: ./mediastack.sh up (retries) or ./mediastack.sh wire"
+        return 1
+    fi
+    env_del WIRE_REPOINT
+    ok "everything that calls ${pending} re-pointed"
+}
+
 qbit_login_fields() { # qbit_login_fields <list JSON> <entry name> -> the login to (re)send, one field per line
     # none when the entry authenticates by qBittorrent API key: Sonarr, Radarr
     # and Prowlarr reject an entry holding a key AND a username/password

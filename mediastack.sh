@@ -459,6 +459,7 @@ cmd_up()   {
     vpn_reattach_guard   # fail-closed: no service may run pinned to a dead gluetun
     vpnguard_ensure      # (re)install the boot/daemon guard unit
     ok "Stack started."
+    wire_repoint_pending # a VPN toggle moved a service: re-point what calls it
     cat <<'EOT'
 Check on it:   ./mediastack.sh status    (what's running, health, versions)
 Verify it:     ./mediastack.sh doctor    (full audit with fixes)
