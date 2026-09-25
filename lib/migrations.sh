@@ -187,3 +187,4 @@ migrate_env_22_to_23() {
     env_set UID_HANDOVER "audiobookshelf kavita"
     info "audiobookshelf + kavita will run as their own users from the next 'up' (their files are handed over then)."
 }
+migrate_env_23_to_24() { :; } # BACKUP_KEEP_MONTHLY added to .env.example (it was read, default 6, but never listed); existing values stand
