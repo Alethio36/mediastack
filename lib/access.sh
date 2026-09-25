@@ -142,6 +142,9 @@ sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
             cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key" || true)
             id=$(jq -r '.[] | select(.implementation=="QBittorrent") | .id' <<<"$cur" 2>/dev/null | head -1)
             [[ -n "$id" ]] || { info "$s: no qBittorrent download client entry — skipped"; continue; }
+            if [[ -n "$(jq -r --argjson i "$id" '.[] | select(.id==$i) | .fields[]? | select(.name=="apiKey") | .value // ""' <<<"$cur")" ]]; then
+                info "$s: signs in to qBittorrent with its API key — the login rotation does not apply"; continue
+            fi
             ent=$(jq -c --argjson i "$id" --arg u "$user" --arg p "$pass" '
                 .[] | select(.id==$i)
                 | .fields = [ .fields[]
