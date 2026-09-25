@@ -271,6 +271,8 @@ _doctor_vpn_backups() {
         (( age > 48 )) && warn "latest restore point is ${age}h old — run: ./mediastack.sh backup" || ok "latest restore point ${age}h old"
     fi
     _doctor_manifest
+    [[ -z "$(env_get WIRE_REPOINT)" ]] \
+        || warn "re-pointing pending for $(env_get WIRE_REPOINT) (a VPN toggle moved it) — apply: ./mediastack.sh up"
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
         if [[ -s cache/trash-last-sync ]]; then
             local tage=$(( ( $(date +%s) - $(cat cache/trash-last-sync) ) / 3600 ))

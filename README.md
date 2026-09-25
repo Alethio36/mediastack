@@ -143,7 +143,7 @@ Check
 |---|---|
 | `doctor` | full health/permission/cert/backup/host-port audit — every failure states its fix |
 | `leak-test [--killswitch]` | prove no VPN'd service can leak (`--killswitch` = destructive proof) |
-| `vpn [svc on/off]` | show or change which services run behind the VPN (torrent clients need `--i-know` to leave) |
+| `vpn [svc on/off]` | show or change which services run behind the VPN (torrent clients need `--i-know` to leave). A move changes how other apps reach the service, so the next `up` re-points everything wired to call it (`WIRE_CALLERS`); if that fails, the next `up` retries and `doctor` says it is pending |
 | `fix-perms [svc]` | repair ownership of a service's config, cache and transcode folders from the UID map |
 
 Other
