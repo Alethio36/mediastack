@@ -134,7 +134,9 @@ sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
         env_set QBITTORRENT_USER "$user"; env_set QBITTORRENT_PASSWORD "$pass"
         ok "qBittorrent login rotated and verified"
         local key url cur id ent
-        for s in $(arr_instances); do
+        # every arr-family app holding a qBittorrent entry — prowlarr's (manual
+        # grabs) included: missing it left a stale password there
+        for s in $(arr_instances) prowlarr; do
             svc_enabled "$s" || continue
             key=$(arr_key "$s"); url=$(arr_url "$s")
             cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key" || true)
@@ -162,6 +164,12 @@ sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
                     && ok "cleanuparr connection updated" \
                     || wfail "cleanuparr connection not updated [HTTP $(cup_code)] — fix in its UI"
             fi
+        fi
+        if svc_enabled lazylibrarian && [[ -n "$(ll_key)" ]]; then
+            ll_api writeCFG "name=USER&group=QBITTORRENT&value=$user" >/dev/null \
+                && ll_api writeCFG "name=PASS&group=QBITTORRENT&value=$pass" >/dev/null \
+                && ok "lazylibrarian qBittorrent login updated" \
+                || wfail "lazylibrarian qBittorrent login not updated — fix in its UI (Settings -> Downloaders)"
         fi
 }
 
