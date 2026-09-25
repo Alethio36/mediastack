@@ -937,11 +937,9 @@ cmd_up()   {
     traefik_ensure
     if ! DC up -d --remove-orphans; then
         warn "First start attempt failed — usually gluetun's health race after a recreate."
-        local gcn t=0; gcn=$(svc_cname gluetun)
-        info "Waiting for the tunnel (up to 120s)..."
-        while [[ $(c_health "$gcn") != healthy && $t -lt 120 ]]; do sleep 5; t=$((t+5)); done
-        [[ $(c_health "$gcn") == healthy ]] \
-            || die "gluetun never became healthy — nothing VPN'd was started.
+        info "Waiting for the tunnel (up to ${START_WAIT}s)..."
+        wait_verdict --recover gluetun \
+            || die "gluetun ${VERDICT_WHY[gluetun]} — nothing VPN'd was started.
   Inspect: ./mediastack.sh logs gluetun (bad credentials? provider outage?)"
         info "Tunnel up — starting the remaining services..."
         DC up -d --remove-orphans
@@ -1022,8 +1020,9 @@ cmd_logs() {
 # explicitly), so a health poll after `up` never reads a stale snapshot.
 # A POLLING loop must handle one case itself: a plain read (c_inspect_all in
 # another helper) can repopulate the cache between the last mutation and the
-# poll, so a loop watching for a state change must clear INSPECT_JSON each
-# iteration to re-inspect live (see the update health gate).
+# poll, so a loop watching for a state change must re-inspect live each
+# iteration. Waiting on container HEALTH: never hand-roll that loop — call
+# wait_verdict, which does it (a hand-rolled one shipped this bug twice).
 c_inspect() { # c_inspect <cname>... -> JSON array of the containers that exist
     # a missing container is a normal state (before the first `up`); anything
     # else on stderr — daemon down, permission denied — is zero evidence: die
@@ -1084,20 +1083,23 @@ c_version(){ c_get "$1" '.Config.Labels["org.opencontainers.image.version"]'; }
 START_WAIT=300
 VERDICT_BAD=""
 declare -A VERDICT_WHY=()
-# wait_verdict SVC... — block until Docker has judged every service, or
-# START_WAIT runs out. The ONE definition of "came up" for every wait in the
-# script. A service passes when it is running and healthy — or running with no
+# wait_verdict [--recover] SVC... — block until Docker has judged every
+# service, or START_WAIT runs out. The ONE definition of "came up" for every
+# wait in the script. A service passes when it is running and healthy — or running with no
 # healthcheck and no restart since the call. It fails on unhealthy (Docker's
 # own verdict, after the fragment's start_period + retries), on exited, dead
 # or absent, or on a restart (boot loop). "starting" keeps it waiting.
+# --recover: "unhealthy" is not final either — Docker flips it back on the
+# next passing check — for waits whose whole point is riding out a transient
+# failure (gluetun re-handshaking after a recreate).
 # Prints an OK line per pass; failures are left to the caller's wording in
 # VERDICT_BAD (space-separated) and VERDICT_WHY[svc]. Returns 1 on any failure.
 # Re-inspects live on every poll (CACHE RULE at c_inspect), whatever the
 # caller's cache holds.
-# shellcheck disable=SC2034  # VERDICT_WHY: read by the callers (switched over in the next commit)
 wait_verdict() {
-    local deadline s cn st h left
+    local deadline s cn st h left recover=0
     local -A rc0=() vd=()
+    [[ "${1:-}" == --recover ]] && { recover=1; shift; }
     deadline=$(( $(date +%s) + START_WAIT ))
     VERDICT_BAD=""; VERDICT_WHY=()
     INSPECT_JSON=""; c_inspect_all
@@ -1110,7 +1112,7 @@ wait_verdict() {
                 VERDICT_WHY[$s]="is boot-looping (restarted $(c_restarts "$cn") times)"; vd[$s]=bad
             elif [[ "$st" =~ ^(exited|dead|absent)$ ]]; then
                 VERDICT_WHY[$s]="is $st"; vd[$s]=bad
-            elif [[ "$st" == running && "$h" == unhealthy ]]; then
+            elif [[ "$st" == running && "$h" == unhealthy ]] && (( ! recover )); then
                 VERDICT_WHY[$s]="is unhealthy (Docker's verdict)"; vd[$s]=bad
             elif [[ "$st" == running && ( "$h" == healthy || "$h" == "-" ) ]]; then
                 ok "$s (running${h:+, }${h/#-/no healthcheck})"; vd[$s]=ok
@@ -1124,7 +1126,9 @@ wait_verdict() {
     done
     for s in "$@"; do
         if [[ -z "${vd[$s]:-}" ]]; then
-            VERDICT_WHY[$s]="still undecided after ${START_WAIT}s (health: $(c_health "$(svc_cname "$s")")) — its healthcheck is probably hanging"
+            h=$(c_health "$(svc_cname "$s")")
+            VERDICT_WHY[$s]="not healthy after ${START_WAIT}s (health: $h)"
+            [[ "$h" == starting ]] && VERDICT_WHY[$s]+=" — its healthcheck is probably hanging"
             vd[$s]=bad
         fi
         [[ "${vd[$s]}" == bad ]] && VERDICT_BAD+="$s "
@@ -1849,15 +1853,8 @@ service's UID, it fails and tells you to switch to 2)."
         return
     fi
     cmd_enable "$name"
-    local cn t=0; cn=$(svc_cname "$name")
-    info "Waiting for $name to report healthy (up to 120s; images without a healthcheck report '-')..."
-    while [[ "$(c_health "$cn")" == starting && $t -lt 120 ]]; do sleep 5; t=$((t+5)); done
-    case "$(c_health "$cn")" in
-        healthy) ok "$name is healthy" ;;
-        -)       [[ "$(c_state "$cn")" == running ]] && ok "$name is running (no healthcheck in the image)" \
-                     || die "$name is not running — inspect: ./mediastack.sh logs $name" ;;
-        *)       die "$name is $(c_health "$cn") after ${t}s — inspect: ./mediastack.sh logs $name" ;;
-    esac
+    info "Waiting for Docker's verdict on $name (up to ${START_WAIT}s; without a healthcheck it passes once running)..."
+    wait_verdict "$name" || die "$name ${VERDICT_WHY[$name]} — inspect: ./mediastack.sh logs $name"
     hr "$name"
     echo "  URL: $(svc_url "$name")"
     [[ -n "$(env_get TRAEFIK_DOMAIN)" ]] || echo "  (an HTTPS hostname appears once Traefik is set up: ./mediastack.sh traefik-setup)"

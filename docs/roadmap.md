@@ -269,7 +269,11 @@ a committed plan.
   bug it guards. `scripts/test-handover.sh` pins the one-time UID ownership
   handover: the migration only marks it (never stops services from
   `upgrade` or the panel timer), `up` stops before it chowns, a failed chown
-  keeps the marker, and a second `up` is a no-op. All run in the lint workflow beside shellcheck, the front-door
+  keeps the marker, and a second `up` is a no-op. `scripts/test-verdict.sh`
+  pins `wait_verdict`, the one health wait behind doctor, the update gate,
+  `up`, vpn-guard, leak-test, `new-service` and `wire` (virtual clock: a 300s
+  wait runs in milliseconds); `scripts/check-start-wait.sh` keeps its
+  `START_WAIT` cap above every fragment's verdict window. All run in the lint workflow beside shellcheck, the front-door
   safety audit, the placeholder-host guard and a no-literal-`\n`-in-
   notifications guard. Still to come: a `--dry-run` smoke test.
 - First-class host-to-host migration (a `migrate` / export-import verb) — turns
