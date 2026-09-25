@@ -26,6 +26,8 @@ jobs:
         run: scripts/test-dispatch.sh
       - name: media manifest loss-vs-churn contract (scripts/test-manifest.sh)
         run: scripts/test-manifest.sh
+      - name: UID ownership handover contract (scripts/test-handover.sh)
+        run: scripts/test-handover.sh
       - name: no literal backslash-n in notification bodies
         run: |
           # a double-quoted \n is two characters to bash: Discord shows '\n'.
