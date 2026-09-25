@@ -139,7 +139,8 @@ sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
         for s in $(arr_instances) prowlarr; do
             svc_enabled "$s" || continue
             key=$(arr_key "$s"); url=$(arr_url "$s")
-            cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key" || true)
+            cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key") \
+                || { wfail "$s: could not read its download clients — its qBittorrent login was NOT updated; fix in its UI [$(oneline "$cur")]"; continue; }
             id=$(jq -r '.[] | select(.implementation=="QBittorrent") | .id' <<<"$cur" 2>/dev/null | head -1)
             [[ -n "$id" ]] || { info "$s: no qBittorrent download client entry — skipped"; continue; }
             if [[ -n "$(jq -r --argjson i "$id" '.[] | select(.id==$i) | .fields[]? | select(.name=="apiKey") | .value // ""' <<<"$cur")" ]]; then
@@ -158,7 +159,8 @@ sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
         if svc_enabled cleanuparr && [[ -n "$(env_get CLEANUPARR_API_KEY)" ]]; then
             local KH dcs dcid dcent
             KH="X-Api-Key: $(env_get CLEANUPARR_API_KEY)"
-            dcs=$(cup_api GET /configuration/download_client "$KH" || true)
+            dcs=$(cup_api GET /configuration/download_client "$KH") \
+                || { wfail "cleanuparr: could not read its download clients — its qBittorrent login was NOT updated; fix in its UI [HTTP $(cup_code)]"; dcs=""; }
             dcid=$(jq -r '.clients[]? | select(.name=="qbittorrent") | .id' <<<"$dcs" 2>/dev/null | head -1)
             if [[ -n "$dcid" ]]; then
                 dcent=$(jq -c --arg i "$dcid" --arg u "$user" --arg p "$pass" \
