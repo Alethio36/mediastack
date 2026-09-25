@@ -60,11 +60,26 @@ Two independent lines decide whether a verb can go on the panel:
 
 ## Verbs exposed through the front door
 
-Whitelisted in the wrapper and surfaced on the panel: `update`, `enable`,
-`disable`, `vpn-apply`, `wire`, `backup` (+`backup verify`), `rollback`,
-`unpin`, `up`, `fix-perms`, `frontdoor-refresh`, plus the read-only reports
-`doctor`, `status`, `leak-test`, `logs`, and `list` (internal). `vpn` (stage-
-only) is whitelisted but unused — `vpn-apply` is the one-shot the panel uses.
+**One table decides:** `PANEL` in `lib/frontdoor.sh`, one line per button. The
+panel's actions and dashboard are generated from it, and so is the wrapper's
+verb whitelist and argument limit (at `frontdoor-install`) — a verb is
+reachable through the panel's key exactly when a button runs it, never
+otherwise. Arguments come only from placeholders (a dropdown fed by a
+host-refreshed list, or fixed choices); the format has no free-text input type,
+so rule 1 above holds by construction. Adding a line to `PANEL` is the security
+decision — review it as one. Existing installs pick up a changed whitelist on
+the next `frontdoor-install`; until then a new button is refused ("not
+permitted"): the table can never make the wrapper allow more than it lists.
+
+Today's buttons run: `update`, `enable`, `disable`, `vpn-apply`, `wire`,
+`backup` (+`backup verify`), `rollback`, `unpin`, `up`, `fix-perms`,
+`frontdoor-refresh`, plus the read-only reports `doctor`, `status`,
+`leak-test` and `logs`. (`vpn` and `list` were whitelisted with no button
+until the whitelist was generated; they are no longer reachable.)
+
+`scripts/test-frontdoor.sh` (CI) runs the real generated wrapper: every button
+passes; every CLI-only verb below is refused; shell metacharacters and extra
+arguments are refused.
 
 `logs` is exposed via `logs <svc> --no-follow` — the bounded snapshot. The
 interactive default still follows (`-f`), which would hang a front-end action,

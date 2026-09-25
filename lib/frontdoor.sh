@@ -94,13 +94,21 @@ cmd=${SSH_ORIGINAL_COMMAND:-}
     || { echo "frontdoor: rejected — illegal characters" >&2; exit 3; }
 read -r -a argv <<<"$cmd"
 verb=${argv[0]}; args=("${argv[@]:1}")
+# the verbs and the argument limit are generated from the panel's PANEL table
+# (lib/frontdoor.sh) at frontdoor-install — exactly what a button runs
 case "$verb" in
-    update|enable|disable|vpn|vpn-apply|wire|doctor|status|leak-test|list|logs|backup|rollback|unpin|up|fix-perms|frontdoor-refresh) ;;
+    __VERBS__) ;;
     *) echo "frontdoor: verb '$verb' not permitted" >&2; exit 4 ;;
 esac
-(( ${#args[@]} <= 2 )) || { echo "frontdoor: too many arguments" >&2; exit 5; }
+(( ${#args[@]} <= __MAXARGS__ )) || { echo "frontdoor: too many arguments" >&2; exit 5; }
 exec sudo -n "$MEDIASTACK" "$verb" "${args[@]}"
 FRONTDOOR_WRAPPER
+}
+
+_fd_wrapper_render() { # _fd_wrapper_render MEDIASTACK-PATH -> the wrapper, whitelist from PANEL
+    local verbs; verbs=$(_fd_panel_verbs | paste -sd'|')
+    [[ "$verbs" =~ ^[a-z0-9|-]+$ ]] || die "frontdoor: PANEL yields an unsafe verb list '$verbs'"
+    _fd_wrapper_src | sed -e "s#__MEDIASTACK__#$1#" -e "s#__VERBS__#$verbs#" -e "s#__MAXARGS__#$(_fd_panel_maxargs)#"
 }
 
 _fd_otcfg_head() {
@@ -133,8 +141,73 @@ authLocalUsers:
 OTCFG_HEAD
 }
 
+# ---- the panel: ONE table, everything else generated from it ----
+# One line per button: group~title~icon~timeout~command~confirm~flags
+#   command   the mediastack.sh argv the button runs. Arguments come ONLY from
+#             placeholders — there is no free-text input type at all:
+#               {NAME:entity=ENTITY:Title}   dropdown fed by a host-refreshed list
+#               {NAME:choices=a,b:Title}     fixed choices
+#   confirm   confirmation text (empty = no confirmation step)
+#   flags     single = one run at a time (maxConcurrent: 1)
+# The wrapper's verb whitelist and argument limit are DERIVED from the command
+# column at frontdoor-install (_fd_wrapper_render), so a verb is reachable
+# through the panel's key exactly when a button here runs it. Adding a line
+# here is the security decision: review it as one (docs/frontdoor-safety.md).
+PANEL=(
+    "Diagnostics~Doctor~🩺~300~doctor~~"
+    "Diagnostics~Status~📊~120~status~~"
+    "Diagnostics~VPN leak test~🛡️~120~leak-test~~"
+    "Diagnostics~View logs~📜~60~logs {svc:entity=svc_logs:Service} --no-follow~~"
+    "Services~Enable service~▶️~180~enable {svc:entity=svc_enable:Service to enable}~Confirm~"
+    "Services~Disable service~⏹️~180~disable {svc:entity=svc_disable:Service to disable}~Confirm~"
+    "Services~Toggle VPN~🔒~300~vpn-apply {svc:entity=svc_vpn:Service} {state:choices=on,off:VPN}~Confirm~"
+    "Services~Wire service~🔗~180~wire {svc:entity=svc_wire:Service to wire}~Confirm~"
+    "Maintenance~Update stack~⬆️~300~update~Confirm — updates every service~single"
+    "Maintenance~Backup now~💾~300~backup~Confirm — writes a new restore point~single"
+    "Maintenance~Verify backup~🔍~120~backup verify~~"
+    "Maintenance~Rollback service~⏮️~300~rollback {svc:entity=svc_rollback:Service to roll back}~Confirm — restores config + image from the last restore point~"
+    "Maintenance~Unpin service~📌~180~unpin {svc:entity=svc_unpin:Service to unpin}~Confirm — resumes updates for this service~"
+    "Maintenance~Apply / reconcile~🔁~300~up~Confirm — applies pending compose state~single"
+    "Maintenance~Fix perms~🔧~120~fix-perms {svc:entity=svc_fixperms:Service}~Confirm~"
+    "Maintenance~Refresh panel~♻️~60~frontdoor-refresh~~"
+)
+declare -A PANEL_GROUP_NOTE=(
+    [Diagnostics]="diagnostics (read-only)"
+    [Services]="services (pick one from the dropdown; confirm to run)"
+    [Maintenance]="maintenance"
+)
+FD_SSH='ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal'
+FD_PLACEHOLDER='\{([a-z]+):(entity|choices)=([^:}]+):([^}]*)\}'
+
+_fd_panel_argv() { # _fd_panel_argv COMMAND -> the argv with placeholders as {{ NAME }}
+    local cmd="$1" out=""
+    while [[ "$cmd" =~ $FD_PLACEHOLDER ]]; do
+        out+="${cmd%%"${BASH_REMATCH[0]}"*}{{ ${BASH_REMATCH[1]} }}"
+        cmd=${cmd#*"${BASH_REMATCH[0]}"}
+    done
+    echo "$out$cmd"
+}
+_fd_panel_verbs() { # the verbs the panel runs, one per line, sorted
+    local row cmd
+    for row in "${PANEL[@]}"; do
+        IFS='~' read -r _ _ _ _ cmd _ _ <<<"$row"
+        echo "${cmd%% *}"
+    done | sort -u
+}
+_fd_panel_maxargs() { # the most arguments any button passes
+    local row cmd argv max=0 n; local -a words
+    for row in "${PANEL[@]}"; do
+        IFS='~' read -r _ _ _ _ cmd _ _ <<<"$row"
+        # a placeholder is ONE argument: collapse "{{ svc }}" to "svc" to count
+        argv=$(_fd_panel_argv "$cmd"); argv=${argv//\{\{ /}; argv=${argv// \}\}/}
+        read -r -a words <<<"$argv"
+        n=$(( ${#words[@]} - 1 )); (( n > max )) && max=$n
+    done
+    echo "$max"
+}
+
 _fd_otcfg_tail() {
-    cat <<'OTCFG_TAIL'
+    cat <<'OTCFG_ENTITIES'
 
 # Service lists backing the dropdowns; refreshed on the host by the timer
 # (and by the panel's Refresh button).
@@ -165,184 +238,38 @@ entities:
 # Actions MUST be defined here; the dashboard below only references them by
 # title (OliveTin "pulls" them out of the default Actions view).
 actions:
-  # -- diagnostics (read-only) --
-  - title: Doctor
-    icon: "🩺"
-    timeout: 300
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal doctor
-
-  - title: Status
-    icon: "📊"
-    timeout: 120
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal status
-
-  - title: VPN leak test
-    icon: "🛡️"
-    timeout: 120
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal leak-test
-
-  - title: View logs
-    icon: "📜"
-    timeout: 60
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal logs {{ svc }} --no-follow
-    arguments:
-      - name: svc
-        entity: svc_logs
-        title: Service
-        choices:
-          - value: '{{ svc_logs.name }}'
-
-  # -- services (pick one from the dropdown; confirm to run) --
-  - title: Enable service
-    icon: "▶️"
-    timeout: 180
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal enable {{ svc }}
-    arguments:
-      - name: svc
-        entity: svc_enable
-        title: Service to enable
-        choices:
-          - value: '{{ svc_enable.name }}'
-      - title: Confirm
-        type: confirmation
-
-  - title: Disable service
-    icon: "⏹️"
-    timeout: 180
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal disable {{ svc }}
-    arguments:
-      - name: svc
-        entity: svc_disable
-        title: Service to disable
-        choices:
-          - value: '{{ svc_disable.name }}'
-      - title: Confirm
-        type: confirmation
-
-  - title: Toggle VPN
-    icon: "🔒"
-    timeout: 300
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal vpn-apply {{ svc }} {{ state }}
-    arguments:
-      - name: svc
-        entity: svc_vpn
-        title: Service
-        choices:
-          - value: '{{ svc_vpn.name }}'
-      - name: state
-        title: VPN
-        choices:
-          - value: "on"
-          - value: "off"
-      - title: Confirm
-        type: confirmation
-
-  - title: Wire service
-    icon: "🔗"
-    timeout: 180
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal wire {{ svc }}
-    arguments:
-      - name: svc
-        entity: svc_wire
-        title: Service to wire
-        choices:
-          - value: '{{ svc_wire.name }}'
-      - title: Confirm
-        type: confirmation
-
-  # -- maintenance --
-  - title: Update stack
-    icon: "⬆️"
-    timeout: 300
-    maxConcurrent: 1
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal update
-    arguments:
-      - title: Confirm — updates every service
-        type: confirmation
-
-  - title: Backup now
-    icon: "💾"
-    timeout: 300
-    maxConcurrent: 1
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal backup
-    arguments:
-      - title: Confirm — writes a new restore point
-        type: confirmation
-
-  - title: Verify backup
-    icon: "🔍"
-    timeout: 120
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal backup verify
-
-  - title: Rollback service
-    icon: "⏮️"
-    timeout: 300
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal rollback {{ svc }}
-    arguments:
-      - name: svc
-        entity: svc_rollback
-        title: Service to roll back
-        choices:
-          - value: '{{ svc_rollback.name }}'
-      - title: Confirm — restores config + image from the last restore point
-        type: confirmation
-
-  - title: Unpin service
-    icon: "📌"
-    timeout: 180
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal unpin {{ svc }}
-    arguments:
-      - name: svc
-        entity: svc_unpin
-        title: Service to unpin
-        choices:
-          - value: '{{ svc_unpin.name }}'
-      - title: Confirm — resumes updates for this service
-        type: confirmation
-
-  - title: Apply / reconcile
-    icon: "🔁"
-    timeout: 300
-    maxConcurrent: 1
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal up
-    arguments:
-      - title: Confirm — applies pending compose state
-        type: confirmation
-
-  - title: Fix perms
-    icon: "🔧"
-    timeout: 120
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal fix-perms {{ svc }}
-    arguments:
-      - name: svc
-        entity: svc_fixperms
-        title: Service
-        choices:
-          - value: '{{ svc_fixperms.name }}'
-      - title: Confirm
-        type: confirmation
-
-  - title: Refresh panel
-    icon: "♻️"
-    timeout: 60
-    onclick: execution-dialog
-    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal frontdoor-refresh
-
+OTCFG_ENTITIES
+    local row group title icon timeout cmd confirm flags lastgroup="" rest name kind src atitle c
+    local -a order=()
+    for row in "${PANEL[@]}"; do
+        IFS='~' read -r group title icon timeout cmd confirm flags <<<"$row"
+        if [[ "$group" != "$lastgroup" ]]; then
+            [[ -z "$lastgroup" ]] || echo
+            echo "  # -- ${PANEL_GROUP_NOTE[$group]} --"
+            order+=("$group"); lastgroup=$group
+        else
+            echo
+        fi
+        printf '  - title: %s\n    icon: "%s"\n    timeout: %s\n' "$title" "$icon" "$timeout"
+        [[ "$flags" == single ]] && echo "    maxConcurrent: 1"
+        echo "    onclick: execution-dialog"
+        echo "    shell: $FD_SSH $(_fd_panel_argv "$cmd")"
+        [[ "$cmd" =~ $FD_PLACEHOLDER || -n "$confirm" ]] && echo "    arguments:"
+        rest=$cmd
+        while [[ "$rest" =~ $FD_PLACEHOLDER ]]; do
+            name=${BASH_REMATCH[1]} kind=${BASH_REMATCH[2]} src=${BASH_REMATCH[3]} atitle=${BASH_REMATCH[4]}
+            rest=${rest#*"${BASH_REMATCH[0]}"}
+            echo "      - name: $name"
+            [[ "$kind" == entity ]] && echo "        entity: $src"
+            echo "        title: $atitle"
+            echo "        choices:"
+            if [[ "$kind" == entity ]]; then echo "          - value: '{{ $src.name }}'"
+            else for c in ${src//,/ }; do echo "          - value: \"$c\""; done; fi
+        done
+        [[ -z "$confirm" ]] || printf '      - title: %s\n        type: confirmation\n' "$confirm"
+    done
+    echo
+    cat <<'OTCFG_DASHBOARD'
 # Putting every action on a dashboard makes OliveTin hide the default "Actions"
 # sidebar tab. The status fieldset iterates the `status` entity to render one
 # live up/down tile per enabled service (host-refreshed).
@@ -357,32 +284,14 @@ dashboards:
           - type: display
             cssClass: '{{ status.cls }}'
             title: 'state: {{ status.state }} · health: {{ status.health }}'
-      - title: Diagnostics
-        type: fieldset
-        contents:
-          - title: Doctor
-          - title: Status
-          - title: VPN leak test
-          - title: View logs
-      - title: Services
-        type: fieldset
-        contents:
-          - title: Enable service
-          - title: Disable service
-          - title: Toggle VPN
-          - title: Wire service
-      - title: Maintenance
-        type: fieldset
-        contents:
-          - title: Update stack
-          - title: Backup now
-          - title: Verify backup
-          - title: Rollback service
-          - title: Unpin service
-          - title: Apply / reconcile
-          - title: Fix perms
-          - title: Refresh panel
-OTCFG_TAIL
+OTCFG_DASHBOARD
+    for group in "${order[@]}"; do
+        printf '      - title: %s\n        type: fieldset\n        contents:\n' "$group"
+        for row in "${PANEL[@]}"; do
+            IFS='~' read -r c title _ <<<"$row"
+            [[ "$c" == "$group" ]] && echo "          - title: $title"
+        done
+    done
 }
 
 _fd_theme_css() {
@@ -499,7 +408,7 @@ cmd_frontdoor_install() {
     # Install the wrapper (embedded below as a literal heredoc — kept in this
     # file so the CI front-door audit covers it too), pinned to this script.
     local wtmp; wtmp=$(mktemp)
-    _fd_wrapper_src | sed "s#__MEDIASTACK__#$script#" > "$wtmp"
+    _fd_wrapper_render "$script" > "$wtmp"
     sudo install -m 0755 -o root -g root "$wtmp" "$FRONTDOOR_WRAPPER"; rm -f "$wtmp"
     ok "forced-command wrapper installed at $FRONTDOOR_WRAPPER"
 
