@@ -95,13 +95,34 @@ svc_addr()  { echo "$(svc_host "$1"):$(svc_cport "$1")"; }
 addr_of() { # addr_of <url | host:port> -> host:port (scheme and path dropped)
     local a=${1#*://}; echo "${a%%/*}"
 }
-addr_check() { # addr_check <what> <stored host:port> <want host:port> — report a stale address
-    [[ -z "$2" || "$2" == "$3" ]] && return 0
-    if (( WIRE_DRY )); then
-        w_would "$1: re-point $2 -> $3" || true
-    else
-        warn "$1 points at $2 — this deployment's address is $3 (a VPN toggle moved it). Re-point it in that app's settings until wire does it for you."
-    fi
+addr_stale() { # addr_stale <what> <target> <stored host:port> -> 0 when mediastack's own address needs re-pointing
+    # Only addresses mediastack itself makes are claimed: the target's port on
+    # localhost, 127.0.0.1, gluetun or the target's name (any layout, before or
+    # after a toggle). Anything else was set by hand — reported, never touched.
+    local want; want=$(svc_addr "$2")
+    [[ -z "$3" || "$3" == "$want" ]] && return 1
+    if [[ "${3##*:}" == "$(svc_cport "$2")" && "${3%:*}" =~ ^(localhost|127\.0\.0\.1|gluetun|$2)$ ]]; then return 0; fi
+    info "$1 points at $3 — not an address mediastack makes, so it is yours: left alone"
+    return 1
+}
+addr_repoint() { # addr_repoint <what> <stored> <want> -- <command...> — re-point, or say it would
+    local what="$1" stored="$2" want="$3" out; shift 3; [[ "${1:-}" == -- ]] && shift
+    w_would "$what: re-point $stored -> $want" || return 0
+    if out=$("$@" 2>&1); then ok "$what: re-pointed to $want"
+    else wfail "$what: re-point to $want rejected — $(head -c200 <<<"$out")"; fi
+}
+arr_repoint() { # arr_repoint <api base> <key> <resource> <list JSON> <entry name> field=value...
+    # PUT the entry back with just those fields changed. Secrets the API masked
+    # on GET ("********") go back as-is and the app keeps its stored value — the
+    # same round trip its own UI does (Servarr SchemaBuilder.ReadFromSchema).
+    local base="$1" key="$2" res="$3" list="$4" name="$5" kv entry; shift 5
+    entry=$(jq -c --arg n "$name" '[.[]? | select(.name == $n)][0] // empty' <<<"$list")
+    [[ -n "$entry" ]] || { echo "entry '$name' is gone"; return 1; }
+    for kv in "$@"; do
+        entry=$(jq -c --arg f "${kv%%=*}" --arg v "${kv#*=}" \
+            '.fields |= map(if .name == $f then .value = (if (.value | type) == "number" then ($v | tonumber) else $v end) else . end)' <<<"$entry")
+    done
+    api PUT "$base/$res/$(jq -r '.id' <<<"$entry")" "$key" "$entry"
 }
 arr_entry_fields() { # arr_entry_fields <list JSON> <entry name> -> "field=value" lines
     jq -r --arg n "$2" '.[]? | select(.name == $n) | .fields[]? | "\(.name)=\(.value // "" | tostring)"' <<<"$1" 2>/dev/null || true
@@ -451,8 +472,14 @@ operator). Stored in .env (view: credentials)."
    {"name":"$catfield","value":"$cat"}]}
 JSON
 )
-        [[ "$dexists" == yes ]] && addr_check "$s -> qbittorrent" \
-            "$(arr_entry_field "$cur" "qBittorrent (mediastack)" host):$(arr_entry_field "$cur" "qBittorrent (mediastack)" port)" "$(svc_addr qbittorrent)"
+        if [[ "$dexists" == yes ]]; then
+            local dst; dst="$(arr_entry_field "$cur" "qBittorrent (mediastack)" host):$(arr_entry_field "$cur" "qBittorrent (mediastack)" port)"
+            if addr_stale "$s -> qbittorrent" qbittorrent "$dst"; then
+                addr_repoint "$s -> qbittorrent" "$dst" "$(svc_addr qbittorrent)" -- \
+                    arr_repoint "$url/api/$(arr_apiver "$s")" "$key" downloadclient "$cur" "qBittorrent (mediastack)" \
+                    "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)"
+            fi
+        fi
         ensure_resource "$dexists" "$s: register qBittorrent (category $cat)" \
             "$s: download client registered" "$s: download client registration failed — check: logs $s" \
             -- api POST "$url/api/$(arr_apiver "$s")/downloadclient" "$key" "$dbody"
@@ -460,6 +487,23 @@ JSON
 }
 
 # ---- prowlarr: applications + flaresolverr proxy ----
+prowlarr_app_repoint() { # <target> <entry name> <applications JSON> <prowlarr api url> <prowlarr key>
+    # an application entry holds BOTH directions; re-point only the fields that
+    # are stale AND mediastack-made, so a hand-set other direction survives
+    local t="$1" name="$2" cur="$3" purl="$4" pkey="$5" b pr
+    local -a fields=() was=() want=()
+    b=$(addr_of "$(arr_entry_field "$cur" "$name" baseUrl)")
+    pr=$(addr_of "$(arr_entry_field "$cur" "$name" prowlarrUrl)")
+    if addr_stale "prowlarr -> $t" "$t" "$b"; then
+        fields+=("baseUrl=http://$(svc_addr "$t")"); was+=("$b"); want+=("$(svc_addr "$t")")
+    fi
+    if addr_stale "$t -> prowlarr" prowlarr "$pr"; then
+        fields+=("prowlarrUrl=http://$(svc_addr prowlarr)"); was+=("$pr"); want+=("$(svc_addr prowlarr)")
+    fi
+    (( ${#fields[@]} )) || return 0
+    addr_repoint "prowlarr <-> $t" "${was[*]}" "${want[*]}" -- \
+        arr_repoint "$purl/api/v1" "$pkey" applications "$cur" "$name" "${fields[@]}"
+}
 prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
     local key url ver have qu qp schema tmpl body resp
     key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr)
@@ -470,8 +514,12 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
     have=$(jq -r '[.[].name] | join(" ")' <<<"$dcs" 2>/dev/null || true)
     if [[ " $have " == *" qbittorrent "* ]]; then
         ok "prowlarr download client registered"
-        addr_check "prowlarr -> qbittorrent" \
-            "$(arr_entry_field "$dcs" qbittorrent host):$(arr_entry_field "$dcs" qbittorrent port)" "$(svc_addr qbittorrent)"
+        local dst; dst="$(arr_entry_field "$dcs" qbittorrent host):$(arr_entry_field "$dcs" qbittorrent port)"
+        if addr_stale "prowlarr -> qbittorrent" qbittorrent "$dst"; then
+            addr_repoint "prowlarr -> qbittorrent" "$dst" "$(svc_addr qbittorrent)" -- \
+                arr_repoint "$url/api/$ver" "$key" downloadclient "$dcs" qbittorrent \
+                "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)"
+        fi
         return 0
     fi
     w_would "prowlarr: register qBittorrent as its download client (manual grabs -> category 'prowlarr')" || return 0
@@ -569,8 +617,7 @@ wire_prowlarr() {
         [[ -n "$key" ]] || { wfail "prowlarr<-$s: $s has no ApiKey yet"; continue; }
         aexists=no; grep -q "\"$s (mediastack)\"" <<<"$cur" && aexists=yes
         if [[ "$aexists" == yes ]]; then
-            addr_check "prowlarr -> $s" "$(addr_of "$(arr_entry_field "$cur" "$s (mediastack)" baseUrl)")" "$(svc_addr "$s")"
-            addr_check "$s -> prowlarr" "$(addr_of "$(arr_entry_field "$cur" "$s (mediastack)" prowlarrUrl)")" "$(svc_addr prowlarr)"
+            prowlarr_app_repoint "$s" "$s (mediastack)" "$cur" "$purl" "$pkey"
         fi
         abody=$(cat <<JSON
 {"name":"$s (mediastack)","syncLevel":"fullSync",
@@ -594,8 +641,7 @@ JSON
         else
             aexists=no; grep -q '"LazyLibrarian (mediastack)"' <<<"$cur" && aexists=yes
             if [[ "$aexists" == yes ]]; then
-                addr_check "prowlarr -> lazylibrarian" "$(addr_of "$(arr_entry_field "$cur" "LazyLibrarian (mediastack)" baseUrl)")" "$(svc_addr lazylibrarian)"
-                addr_check "lazylibrarian -> prowlarr" "$(addr_of "$(arr_entry_field "$cur" "LazyLibrarian (mediastack)" prowlarrUrl)")" "$(svc_addr prowlarr)"
+                prowlarr_app_repoint lazylibrarian "LazyLibrarian (mediastack)" "$cur" "$purl" "$pkey"
             fi
             abody=$(cat <<JSON
 {"name":"LazyLibrarian (mediastack)","syncLevel":"fullSync",
@@ -639,8 +685,12 @@ JSON
             else
                 ok "flaresolverr proxy registered"
             fi
-            addr_check "prowlarr -> flaresolverr" \
-                "$(addr_of "$(arr_entry_field "$cur" "FlareSolverr (mediastack)" host)")" "$(svc_addr flaresolverr)"
+            local fst; fst=$(addr_of "$(arr_entry_field "$cur" "FlareSolverr (mediastack)" host)")
+            if addr_stale "prowlarr -> flaresolverr" flaresolverr "$fst"; then
+                addr_repoint "prowlarr -> flaresolverr" "$fst" "$(svc_addr flaresolverr)" -- \
+                    arr_repoint "$purl/api/v1" "$pkey" indexerproxy "$cur" "FlareSolverr (mediastack)" \
+                    "host=http://$(svc_addr flaresolverr)/"
+            fi
         elif w_would "register FlareSolverr as indexer proxy"; then
             api POST "$purl/api/v1/indexerproxy" "$pkey" "$(cat <<JSON
 {"name":"FlareSolverr (mediastack)","implementation":"FlareSolverr",
@@ -857,7 +907,11 @@ Getting a URL:
         have=$(jq -r '[.[].name] | join(" ")' <<<"$notes" 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "$s already notifies the hub — untouched"
-            addr_check "$s -> apprise" "$(addr_of "$(arr_entry_field "$notes" mediastack-apprise serverUrl)")" "$(svc_addr apprise)"
+            local nst; nst=$(addr_of "$(arr_entry_field "$notes" mediastack-apprise serverUrl)")
+            if addr_stale "$s -> apprise" apprise "$nst"; then
+                addr_repoint "$s -> apprise" "$nst" "$(svc_addr apprise)" -- \
+                    arr_repoint "$url/api/$ver" "$key" notification "$notes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
+            fi
             continue
         fi
         if ! w_would "$s: notify the hub on grab/import/health (tag: ops)"; then continue; fi
@@ -886,7 +940,11 @@ Getting a URL:
         have=$(jq -r '[.[].name] | join(" ")' <<<"$pnotes" 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "prowlarr already notifies the hub — untouched"
-            addr_check "prowlarr -> apprise" "$(addr_of "$(arr_entry_field "$pnotes" mediastack-apprise serverUrl)")" "$(svc_addr apprise)"
+            local pst; pst=$(addr_of "$(arr_entry_field "$pnotes" mediastack-apprise serverUrl)")
+            if addr_stale "prowlarr -> apprise" apprise "$pst"; then
+                addr_repoint "prowlarr -> apprise" "$pst" "$(svc_addr apprise)" -- \
+                    arr_repoint "$url/api/$ver" "$key" notification "$pnotes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
+            fi
         elif w_would "prowlarr: notify the hub on indexer/health events (tag: ops)"; then
             schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)
             tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
@@ -973,8 +1031,12 @@ wire_cleanuparr() {
     have=$(jq -r '[.clients[]?.name] | join(" ")' <<<"$cdc" 2>/dev/null || true)
     if [[ " $have " == *" qbittorrent "* ]]; then
         ok "qbittorrent already connected — untouched"
-        addr_check "cleanuparr -> qbittorrent" \
-            "$(addr_of "$(jq -r '.clients[]? | select(.name=="qbittorrent") | .host' <<<"$cdc" 2>/dev/null | head -1)")" "$(svc_addr qbittorrent)"
+        local cst cbody; cst=$(addr_of "$(jq -r '.clients[]? | select(.name=="qbittorrent") | .host' <<<"$cdc" 2>/dev/null | head -1)")
+        if addr_stale "cleanuparr -> qbittorrent" qbittorrent "$cst"; then
+            cbody=$(jq -c --arg h "http://$(svc_addr qbittorrent)" '[.clients[]? | select(.name=="qbittorrent")][0] | .host = $h' <<<"$cdc")
+            addr_repoint "cleanuparr -> qbittorrent" "$cst" "$(svc_addr qbittorrent)" -- \
+                cup_api PUT "/configuration/download_client/$(jq -r '.id' <<<"$cbody")" "$KH" "$cbody"
+        fi
     elif [[ -z "$qu" || -z "$qp" ]]; then
         wfail "no qBittorrent credentials in .env — run 'wire qbit' first"
     else
@@ -1000,8 +1062,12 @@ wire_cleanuparr() {
         names=$(jq -r '[.instances[]?.name] | join(" ")' <<<"$cfg" 2>/dev/null)
         if [[ " $names " == *" $s "* ]]; then
             ok "$s already connected — untouched"
-            addr_check "cleanuparr -> $s" \
-                "$(addr_of "$(jq -r --arg n "$s" '.instances[]? | select(.name==$n) | .url' <<<"$cfg" 2>/dev/null | head -1)")" "$(svc_addr "$s")"
+            local ist ibody; ist=$(addr_of "$(jq -r --arg n "$s" '.instances[]? | select(.name==$n) | .url' <<<"$cfg" 2>/dev/null | head -1)")
+            if addr_stale "cleanuparr -> $s" "$s" "$ist"; then
+                ibody=$(jq -c --arg n "$s" --arg u "http://$(svc_addr "$s")" '[.instances[]? | select(.name==$n)][0] | .url = $u' <<<"$cfg")
+                addr_repoint "cleanuparr -> $s" "$ist" "$(svc_addr "$s")" -- \
+                    cup_api PUT "/configuration/$ty/instances/$(jq -r '.id' <<<"$ibody")" "$KH" "$ibody"
+            fi
             continue
         fi
         # version = the arr application major, exactly the value cleanuparr's
@@ -1032,8 +1098,16 @@ wire_cleanuparr() {
         have=$(jq -r '[.providers[]?.name] | join(" ")' <<<"$cnp" 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
             ok "already notifies the hub — untouched"
-            addr_check "cleanuparr -> apprise" \
-                "$(addr_of "$(jq -r '.providers[]? | select(.name=="mediastack-apprise") | (.url // .configuration.url // "")' <<<"$cnp" 2>/dev/null | head -1)")" "$(svc_addr apprise)"
+            local ast abody; ast=$(addr_of "$(jq -r '.providers[]? | select(.name=="mediastack-apprise") | (.url // .configuration.url // "")' <<<"$cnp" 2>/dev/null | head -1)")
+            if addr_stale "cleanuparr -> apprise" apprise "$ast"; then
+                # GET nests events{} and configuration{}; PUT takes them flat —
+                # a naive round trip would reset every event toggle to false
+                abody=$(jq -c --arg u "http://$(svc_addr apprise)" '[.providers[]? | select(.name=="mediastack-apprise")][0]
+                    | {name, isEnabled} + .events
+                      + (.configuration | {mode, url: $u, key, tags: (.tags // ""), serviceUrls})' <<<"$cnp")
+                addr_repoint "cleanuparr -> apprise" "$ast" "$(svc_addr apprise)" -- \
+                    cup_api PUT "/configuration/notification_providers/apprise/$(jq -r --arg n mediastack-apprise '.providers[]? | select(.name==$n) | .id' <<<"$cnp" | head -1)" "$KH" "$abody"
+            fi
         else
             out=$(cup_api POST /configuration/notification_providers/apprise "$KH" \
                   "$(jq -cn --arg u "http://$(svc_addr apprise)" '{name:"mediastack-apprise",isEnabled:true,mode:"Api",
@@ -1313,15 +1387,26 @@ wire_seerr() {
     # stack's own labels/keys. The arrs live in gluetun's network namespace,
     # so 'gluetun' is their in-network hostname. Existing entries (matched by
     # name) are never touched — create-if-missing only.
-    local have_radarr have_sonarr
-    have_radarr=$(seerr_api GET /settings/radarr "$jar" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
-    have_sonarr=$(seerr_api GET /settings/sonarr "$jar" | jq -r '[.[].name] | join(" ")' 2>/dev/null || true)
+    local have_radarr have_sonarr set_radarr set_sonarr
+    set_radarr=$(seerr_api GET /settings/radarr "$jar" || true)
+    set_sonarr=$(seerr_api GET /settings/sonarr "$jar" || true)
+    have_radarr=$(jq -r '[.[].name] | join(" ")' <<<"$set_radarr" 2>/dev/null || true)
+    have_sonarr=$(jq -r '[.[].name] | join(" ")' <<<"$set_sonarr" 2>/dev/null || true)
     local s ty key port root profs pid pname body ep is4k
     for s in $(arr_instances); do
         ty=$(svc_label "$s" mediastack.arrtype)
         [[ "$ty" == radarr || "$ty" == sonarr ]] || { info "$s: seerr does not manage $ty — skipped"; continue; }
         if [[ "$ty" == radarr && " $have_radarr " == *" $s "* ]] || [[ "$ty" == sonarr && " $have_sonarr " == *" $s "* ]]; then
             ok "$s already in seerr — untouched (yours to manage in the GUI)"
+            local sset sentry sst
+            if [[ "$ty" == radarr ]]; then sset=$set_radarr; else sset=$set_sonarr; fi
+            sentry=$(jq -c --arg n "$s" '[.[]? | select(.name == $n)][0] // empty' <<<"$sset")
+            sst="$(jq -r '.hostname // ""' <<<"$sentry"):$(jq -r '.port // ""' <<<"$sentry")"
+            if addr_stale "seerr -> $s" "$s" "$sst"; then
+                addr_repoint "seerr -> $s" "$sst" "$(svc_addr "$s")" -- \
+                    seerr_api PUT "/settings/$ty/$(jq -r '.id' <<<"$sentry")" "$jar" \
+                    "$(jq -c --arg h "$(svc_host "$s")" --argjson p "$(svc_cport "$s")" '.hostname = $h | .port = $p' <<<"$sentry")"
+            fi
             continue
         fi
         key=$(arr_key "$s"); port=$(svc_label "$s" mediastack.port); root=$(svc_label "$s" mediastack.rootfolder)
@@ -1354,12 +1439,19 @@ wire_seerr() {
     done
 
     # request/media events -> the hub (tag: ops), when the hub is wired.
-    # An enabled webhook agent (whatever it points at) is never overwritten.
+    # An enabled webhook agent is never overwritten — except its address, when
+    # it is one mediastack made and a VPN toggle moved apprise (addr_stale).
     if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
         local wh
         wh=$(seerr_api GET /settings/notifications/webhook "$jar" || true)
         if [[ "$(jq -r '.enabled' <<<"$wh" 2>/dev/null)" == true ]]; then
             ok "webhook notifications already enabled — untouched (yours to manage in the GUI)"
+            local wst; wst=$(addr_of "$(jq -r '.options.webhookUrl // ""' <<<"$wh")")
+            if addr_stale "seerr -> apprise" apprise "$wst"; then
+                addr_repoint "seerr -> apprise" "$wst" "$(svc_addr apprise)" -- \
+                    seerr_api POST /settings/notifications/webhook "$jar" \
+                    "$(jq -c --arg u "http://$(svc_addr apprise)/notify/mediastack" '.options.webhookUrl = $u' <<<"$wh")"
+            fi
         elif w_would "notify the hub on requests/approvals/availability (tag: ops)"; then
             out=$(seerr_api POST /settings/notifications/webhook "$jar" "$(jq -cn --arg u "http://$(svc_addr apprise)/notify/mediastack" '
                 {enabled:true, embedPoster:false, types:222,
