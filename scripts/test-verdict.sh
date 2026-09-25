@@ -96,7 +96,19 @@ run s1
 # a hanging healthcheck is cut off at START_WAIT, and says so
 reset; ctr s1 running starting
 run s1
-[[ $RC == 1 && $NOW -ge $START_WAIT && "${VERDICT_WHY[s1]}" == *undecided* ]] || fail_ "hang: rc=$RC after ${NOW}s"; pass
+[[ $RC == 1 && $NOW -ge $START_WAIT && "${VERDICT_WHY[s1]}" == *hanging* ]] || fail_ "hang: rc=$RC after ${NOW}s"; pass
+
+# --recover rides out a transient unhealthy (gluetun re-handshaking) ...
+reset; ctr s1 running unhealthy; at 60 s1 health healthy
+run --recover s1
+[[ $RC == 0 && $NOW -ge 60 && $NOW -le 65 ]] || fail_ "--recover must wait through unhealthy: rc=$RC at ${NOW}s"; pass
+# ... but not forever, and not through a crash
+reset; ctr s1 running unhealthy
+run --recover s1
+[[ $RC == 1 && $NOW -ge $START_WAIT && "${VERDICT_WHY[s1]}" == *"health: unhealthy"* ]] || fail_ "--recover cap: ${VERDICT_WHY[s1]:-}"; pass
+reset; ctr s1 exited -
+run --recover s1
+[[ $RC == 1 && $NOW == 0 ]] || fail_ "--recover must still fail an exited container at once"; pass
 
 # the caller's stale cache is ignored: live says healthy
 reset; ctr s1 running healthy

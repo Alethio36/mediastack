@@ -46,12 +46,11 @@ _doctor_containers() {
     hr "doctor: containers"
     local s cn st h
     local pending=()
-    local -A rc0=()
     for s in $(svc_managed); do
         cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
         case "$st:$h" in
             running:healthy|running:-) ok "$s ($st${h:+, $h})" ;;
-            running:starting) pending+=("$s"); rc0[$s]=$(c_restarts "$cn") ;;   # verdict deferred
+            running:starting) pending+=("$s") ;;   # verdict deferred
             absent:*) if svc_enabled "$s"; then
                           d_fail "$s enabled but not running" "container was never created or was removed" "./mediastack.sh up"
                       else info "$s not enabled — skipped"; fi ;;
@@ -59,37 +58,12 @@ _doctor_containers() {
         esac
     done
     if (( ${#pending[@]} )); then
-        # Wait for Docker's own verdict (healthy or unhealthy), never pre-empt
-        # it: "starting" means undecided. START_WAIT must exceed the
-        # longest start_period + interval x retries in compose.d (jellyfin's
-        # 120+3x30 = 210s; watchstate's 180+3x30 = 270s), so it only ever cuts
-        # off a healthcheck that hangs rather than fails.
+        # Docker's own verdict, never pre-empted: "starting" means undecided
+        # (wait_verdict: the shared definition, capped by START_WAIT)
         info "${#pending[@]} service(s) in their startup window — waiting for Docker's verdict (up to ${START_WAIT}s, shared)..."
-        local deadline=$(( $(date +%s) + START_WAIT )) rc_now still
-        while (( ${#pending[@]} )) && (( $(date +%s) < deadline )); do
-            sleep 5
-            # re-inspect live: cmd_doctor filled the cache once up front, and a
-            # poll that reads that snapshot never sees the change it waits for
-            # (CACHE RULE at c_inspect). Refilled in this scope, so the checks
-            # below and every later section read the fresh state.
-            # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
-            INSPECT_JSON=""; c_inspect_all
-            still=()
-            for s in "${pending[@]}"; do
-                cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
-                rc_now=$(c_restarts "$cn")
-                if (( rc_now > ${rc0[$s]} )) || [[ "$st" == restarting ]]; then
-                    d_fail "$s is boot-looping (restarted $rc_now times)" "it starts, crashes, and restarts — it will never become healthy" "./mediastack.sh logs $s"
-                elif [[ "$h" == healthy ]]; then ok "$s (running, healthy — came up during the wait)"
-                elif [[ "$h" == starting ]]; then still+=("$s")
-                elif [[ "$st" == running && "$h" == "-" ]]; then ok "$s (running)"
-                else d_fail "$s is $st/$h" "service failed its startup" "./mediastack.sh logs $s"
-                fi
-            done
-            pending=("${still[@]}")
-        done
-        for s in "${pending[@]}"; do
-            d_fail "$s still undecided after ${START_WAIT}s (health: $(c_health "$(svc_cname "$s")"))" "its healthcheck neither passes nor fails — it is probably hanging" "./mediastack.sh logs $s"
+        local b
+        wait_verdict "${pending[@]}" || for b in $VERDICT_BAD; do
+            d_fail "$b ${VERDICT_WHY[$b]}" "the service did not come up after its start" "./mediastack.sh logs $b"
         done
     fi
 

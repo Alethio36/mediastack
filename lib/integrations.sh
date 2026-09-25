@@ -1399,22 +1399,13 @@ cmd_wire() {
             cmd_backup
             # the backup bounced every container — let the apps come back
             # before wiring their APIs
-            info "waiting for services to settle after the restore point (up to 120s)..."
-            local wt=0 pending_s
-            while (( wt < 120 )); do
-                pending_s=""
-                for s in qbittorrent prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr $(arr_instances); do
-                    svc_enabled "$s" || continue
-                    case "$(c_health "$(svc_cname "$s")")" in
-                        healthy|-) : ;;
-                        *) pending_s+="$s " ;;
-                    esac
-                done
-                [[ -z "$pending_s" ]] && break
-                sleep 5; wt=$((wt+5))
+            info "waiting for Docker's verdict on the wired apps after the restore point (up to ${START_WAIT}s)..."
+            local settle=()
+            for s in qbittorrent prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr $(arr_instances); do
+                svc_enabled "$s" && settle+=("$s")
             done
-            [[ -z "$pending_s" ]] && ok "services settled" \
-                || warn "still settling: $pending_s— wiring anyway; anything that refuses gets a per-item FAIL and a re-run picks it up"
+            (( ${#settle[@]} == 0 )) || wait_verdict "${settle[@]}" \
+                || warn "not settled: $VERDICT_BAD — wiring anyway; anything that refuses gets a per-item FAIL and a re-run picks it up"
         fi
     fi
     # dispatch by the WIRE_ROLES registry: `all` runs every role in order,

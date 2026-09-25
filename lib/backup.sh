@@ -418,22 +418,14 @@ cmd_update() {
     vpn_reattach_guard
 
     hr "Health gate"
-    local deadline=$(( $(date +%s) + 300 )) bad=()
+    local bad=() b
+    # Docker's verdict per updated service (wait_verdict: live re-inspect,
+    # unhealthy / exited / boot-loop fail at once, capped by START_WAIT)
+    wait_verdict "${targets[@]}" || for b in $VERDICT_BAD; do
+        fail "$b ${VERDICT_WHY[$b]}"; bad+=("$b")
+    done
     for s in "${targets[@]}"; do
-        local cn h st; cn=$(svc_cname "$s")
-        while :; do
-            # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
-            INSPECT_JSON=""   # poll live — a prior c_inspect_all (e.g. vpn_reattach_guard)
-            h=$(c_health "$cn")   # left a frozen snapshot the loop must not read
-            st=$(c_state "$cn")
-            # "-" also means "no health to read" for an exited or missing
-            # container: only a RUNNING one without a healthcheck passes
-            [[ "$st" =~ ^(exited|dead|absent)$ ]] && { bad+=("$s"); break; }
-            [[ "$st" == running && ( "$h" == healthy || "$h" == "-" ) ]] && break
-            (( $(date +%s) > deadline )) && { bad+=("$s"); break; }
-            sleep 5
-        done
-        after=$(c_version "$cn")
+        after=$(c_version "$(svc_cname "$s")")
         [[ "${before[$s]}" != "$after" ]] && changed+=("$s: ${before[$s]:-?} -> ${after:-?}")
     done
     # search functional probe: index must exist and be non-empty
