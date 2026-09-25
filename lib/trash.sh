@@ -114,20 +114,19 @@ trash_gen_config() { # trash_gen_config [out-path] — default: the live recycla
         echo "# local/trash-overrides.yml. Regenerated on every trash-sync run."
         echo "# yaml-language-server: \$schema=https://schemas.recyclarr.dev/v8/config-schema.json"
     } > "$tmp"
-    local s key choice app port apikey ov n
+    local s key choice app apikey ov n
     local wrote_sonarr=0 wrote_radarr=0
     for s in $(trash_instances); do
         key=$(trash_envkey "$s"); choice=$(env_get "$key")
         [[ -z "$choice" || "$choice" == skip ]] && continue
         app=$(svc_label "$s" mediastack.arrtype)   # sonarr | radarr
-        port=$(svc_label "$s" mediastack.port)
         apikey=$(arr_key "$s")
         [[ -n "$apikey" ]] || { wfail "$s: no ApiKey yet — start it, then re-run trash-sync"; continue; }
         if [[ "$app" == sonarr && $wrote_sonarr == 0 ]]; then echo "sonarr:" >> "$tmp"; wrote_sonarr=1; fi
         if [[ "$app" == radarr && $wrote_radarr == 0 ]]; then echo "radarr:" >> "$tmp"; wrote_radarr=1; fi
         {
             echo "  $s:"
-            echo "    base_url: http://localhost:$port"
+            echo "    base_url: http://$(svc_addr "$s")"
             echo "    api_key: $apikey"
             case "$app/$choice" in
                 sonarr/anime) echo "    quality_definition: {type: anime}" ;;
