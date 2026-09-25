@@ -61,6 +61,8 @@ EOT
 # ----------------------------------------------------- upgrade/uninstall --
 cmd_upgrade() {
     need_cmd git
+    # second half, run by the freshly pulled script (see the hand-over below)
+    if [[ -n "${MS_UPGRADE_FROM:-}" ]]; then upgrade_finish "$MS_UPGRADE_FROM"; return; fi
     # -uno: untracked files (like the .wired marker) are deployment state,
     # not a pull hazard — only tracked modifications block an upgrade.
     [[ -z "$(git status --porcelain -uno 2>/dev/null)" ]] || die "Working tree has local changes to tracked files.
@@ -71,19 +73,53 @@ cmd_upgrade() {
     git pull --ff-only || die "git pull failed (diverged history?). Resolve manually."
     [[ "$before" == "$(git rev-parse HEAD)" ]] && { ok "Already up to date."; return; }
     hr "Changes pulled"; git log --oneline "$before..HEAD" | sed 's/^/  /'
-    load_env   # runs schema migrations
+    # Hand over: this process is still the code from before the pull, so it
+    # knows neither the new migrations nor what the new definitions mean.
+    # The pulled script finishes the job.
+    MS_UPGRADE_FROM="$before" exec "$SCRIPT_DIR/mediastack.sh" upgrade
+}
+
+upgrade_finish() { # upgrade_finish <commit before the pull> — run by the pulled script
+    local before="$1" changed pending
+    load_env                 # schema migrations: this code knows the new ones
     provision >/dev/null || true
-    # say what (if anything) the pull requires — images are never part of
-    # an upgrade, so they are never mentioned here (that's: update, nightly)
-    local changed
-    changed=$(git diff --name-only "$before..HEAD" 2>/dev/null || true)
-    if grep -qE '^(compose\.d/|docker-compose\.yml)' <<<"$changed"; then
-        ok "Upgrade complete. Compose definitions changed — apply them: ./mediastack.sh up"
+    vpn_gen >/dev/null       # the overlay from the pulled fragments — a stale one breaks every render (see cmd_up)
+    changed=$(git diff --name-only "$before..HEAD") || die "upgrade: cannot compare $before with HEAD"
+    # say what (if anything) the pull requires — images are never part of an
+    # upgrade, so they are never mentioned here (that's: update, nightly)
+    pending=$(compose_pending)
+    if [[ -n "$pending" ]]; then
+        ok "Upgrade complete. Apply with ./mediastack.sh up — it changes: $(paste -sd' ' <<<"$pending")"
     elif grep -qE '^(mediastack\.sh|lib/)' <<<"$changed"; then
-        ok "Upgrade complete. New tooling is live from the next command — nothing to apply."
+        ok "Upgrade complete. New tooling is live — nothing to apply."
     else
         ok "Upgrade complete. Docs/templates only — nothing to apply."
     fi
+}
+
+compose_pending() { # the services `up` would create, recreate or remove — Docker's own verdict
+    # Every container carries the hash of the definition it was created from
+    # (com.docker.compose.config-hash); `config --hash` prints what each
+    # enabled service's definition hashes to now. A difference, a missing
+    # container, or a container for a service no longer enabled is exactly
+    # what `up` acts on. Comments and unrelated files never show up here.
+    local want have s h
+    local -A running=()
+    local -a out=()
+    want=$(DC config --hash '*') || die "could not render the compose config to compare with what runs"
+    have=$(sudo docker ps -a --filter label=com.docker.compose.project=mediastack \
+             --format '{{.Label "com.docker.compose.service"}} {{.Label "com.docker.compose.config-hash"}}') \
+        || die "could not list the stack's containers"
+    while read -r s h; do [[ -n "$s" ]] && running[$s]=$h; done <<<"$have"
+    while read -r s h; do
+        [[ -n "$s" ]] || continue
+        if [[ -z "${running[$s]+set}" ]]; then out+=("$s (new)")
+        elif [[ "${running[$s]}" != "$h" ]]; then out+=("$s")
+        fi
+        unset "running[$s]"
+    done <<<"$want"
+    for s in "${!running[@]}"; do out+=("$s (removed)"); done
+    printf '%s\n' "${out[@]}" | sort
 }
 
 cmd_nuke() {
