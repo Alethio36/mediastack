@@ -196,6 +196,7 @@ manifest_take() { # manifest_take [--accept]
     sudo install -m 600 "$new" "$out"; rm -f "$new"
     ok "Manifest recorded: $out"
     prune_manifest
+    recycle_watch
 }
 
 # Keep MANIFEST_KEEP_DAYS of history; the newest snapshot (the baseline) is

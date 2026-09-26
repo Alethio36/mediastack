@@ -481,11 +481,13 @@ type your own to use it instead. Stored in .env (view: credentials)."
 
 # ---- arr root folders + download client ----
 wire_arr() {
-    hr "wire: arr instances (root folders + download client)"
+    hr "wire: arr instances (root folders + download client + recycle bin)"
     local insts; insts=$(arr_instances)
     [[ -n "$insts" ]] || { info "no arr instances enabled"; return 0; }
     wire_gate $insts
     wire_arrs_ready || true
+    local recycle_ok=1   # the bin's placement is checked once, before any arr
+    if recycle_on; then recycle_prepare || recycle_ok=0; fi
     # --- arr login (the first-run "authentication required" gate) ---
     local auser apass
     auser=$(env_get ARR_USER); apass=$(env_get ARR_PASSWORD)
@@ -518,6 +520,7 @@ operator). Stored in .env (view: credentials)."
         # authentication (forms login) — idempotent on method+username match
         arr_forms_login "$s"
         arr_instance_name "$s"
+        (( recycle_ok )) && arr_recycle "$s" "$url" "$key"
         # root folder
         t=$(svc_label "$s" mediastack.arrtype)
         cur=$(api GET "$url/api/$(arr_apiver "$s")/rootfolder" "$key") \
