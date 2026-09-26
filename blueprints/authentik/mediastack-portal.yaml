@@ -378,6 +378,9 @@ entries:
       name: mediastack-oidc-audiobookshelf
     attrs:
       client_type: confidential
+      # empty by default when made by a blueprint (the UI fills it in): with
+      # none, authentik refuses every login as invalid_request (found live)
+      grant_types: [authorization_code, refresh_token]
       client_id: mediastack-audiobookshelf
       client_secret: !Env [MEDIASTACK_ABS_CLIENT_SECRET, ""]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
