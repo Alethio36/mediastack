@@ -49,6 +49,8 @@ jobs:
         run: scripts/test-ownership.sh
       - name: upgrade's verdict is Docker's, given by the pulled code (scripts/test-upgrade.sh)
         run: scripts/test-upgrade.sh
+      - name: deletion attribution's host contract (scripts/test-audit.sh)
+        run: scripts/test-audit.sh
       - name: no literal backslash-n in notification bodies
         run: |
           # a double-quoted \n is two characters to bash: Discord shows '\n'.

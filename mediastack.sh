@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=24
+SCRIPT_SCHEMA=25
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -44,6 +44,8 @@ source "$SCRIPT_DIR/lib/backup.sh"
 source "$SCRIPT_DIR/lib/manifest.sh"
 # shellcheck source=lib/doctor.sh
 source "$SCRIPT_DIR/lib/doctor.sh"
+# shellcheck source=lib/audit.sh
+source "$SCRIPT_DIR/lib/audit.sh"
 # shellcheck source=lib/configure.sh
 source "$SCRIPT_DIR/lib/configure.sh"
 # shellcheck source=lib/lifecycle.sh
@@ -851,6 +853,7 @@ VERBS=(
     "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login)."
     "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift)."
     "doctor~doctor~none~Check~Full health/permission/port/backup audit; every failure states its fix."
+    "audit~audit [status|on|off]~allow=status,on,off max=1~Check~Deletion attribution (opt-in): log who deletes or renames media; 'status' proves it live."
     "leak-test~leak-test [--killswitch]~allow=--killswitch~Check~Prove no VPN'd service can leak (--killswitch: disruptive tunnel-drop proof)."
     "vpn~vpn [svc on|off] [--i-know]~max=3~Check~Show or change which services run behind the VPN; apply with: up."
     "fix-perms~fix-perms [svc]~max=1~Check~Repair ownership of a service's config/cache/transcode folders from the UID map."
