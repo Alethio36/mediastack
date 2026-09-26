@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # RENDERED_JSON is read by the sourced render()
 # test-render.sh — the compose config must render from a fresh .env.example
 # through vpn_gen, and keep rendering across the your-service lifecycle that
 # `new-service` and its documented removal go through:
@@ -10,6 +11,8 @@
 #      must break the render (this is the bug `up` regenerates first for —
 #      if it stops failing, the test no longer proves what it claims)
 #   4. vpn_gen (the `up` order) -> overlay drops the stanza, config renders
+#   5. the shard rules hold for every shipped fragment, and a two-container
+#      drop-in shard renders with its member found and not managed
 #
 # Runs on a throwaway copy of the repo; the working tree is never touched.
 # Needs `docker compose` (the standalone plugin renders without a daemon).
@@ -77,3 +80,14 @@ grep -q '^  hello:$' "$OVERLAY_FILE" && t_fail "overlay still carries the remove
 renders "" || t_fail "config does not render after vpn_gen"
 cmp -s "$OVERLAY_FILE" "$work/overlay.first" || t_fail "overlay differs from the original after add+remove"
 echo "OK render: overlay regenerated, config renders, identical to step 1"
+
+echo ":: 5. shards: the shipped fragments and a two-container drop-in"
+RENDERED_JSON=""; bad=$(shard_problems)
+[[ -z "$bad" ]] || t_fail "the shipped fragments break the shard rules:"$'\n'"$bad"
+cp "$repo/scripts/fixtures/shard-service.yml" custom/compose.d/shardapp.yml
+vpn_gen; RENDERED_JSON=""
+[[ "$(svc_members shardapp)" == shardapp-db ]] || t_fail "the drop-in's member was not found: $(svc_members shardapp)"
+bad=$(shard_problems); [[ -z "$bad" ]] || t_fail "a well-formed drop-in shard reported: $bad"
+svc_managed | grep -qx shardapp-db && t_fail "a member must not be listed as a managed service"
+rm custom/compose.d/shardapp.yml; vpn_gen
+echo "OK shard rules hold for the shipped fragments and a rendered drop-in shard"

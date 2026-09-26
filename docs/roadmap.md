@@ -46,6 +46,13 @@ The stack is organised into **shards**: one `compose.d/` fragment per shard.
   infrastructure — the edge proxy (Traefik), the VPN gateway (gluetun), the web
   front door — is shared by design, so it is neither folded into a consumer's
   shard nor duplicated per consumer; it stands alone in its own fragment.
+- **Members run as the primary's UID and keep their data inside the primary's
+  folders** (`CONFIG_ROOT/<primary>/…`), so ownership, `fix-perms` and backups —
+  all keyed to the primary's folders — cover them unchanged. A member carries
+  `mediastack.shard: <primary>` and no `mediastack.managed`, shares the
+  primary's profile, and the primary `depends_on` it; CI checks every rule
+  (`shard_problems`). Verbs that act on containers take the whole shard:
+  update, restore, logs, disable, status, doctor.
 - **The primary container owns the shard.** The `mediastack.managed` label, and
   the shard's identity in `status`, the dropdowns, and `enable`/`disable`, sit
   on the **primary** container. Private dependencies are members of the same
@@ -180,6 +187,11 @@ all built; what each still leaves open is noted below.
 - Multi-arch / ARM as an explicit target.
 - Rootless operation *(explore)* — folds together with the phase-2 sudo
   narrowing below into one "shrink the root surface" goal.
+
+### Maybe
+- JellySearch + Meilisearch as one shard *(to discuss)* — Meilisearch only serves
+  JellySearch, but it is its own fragment today; merging changes existing
+  installs' profiles.
 
 ### Security & access
 - **Protect the unauthenticated UIs — before migrate, without SSO.** Apprise's
