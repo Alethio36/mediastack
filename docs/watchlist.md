@@ -160,6 +160,18 @@ API work.
 
 **Revisit when:** beta shows blind-write drift happening in practice.
 
+### Announcing media that arrives outside Seerr
+
+Seerr's *media available* event covers what was requested through Seerr. A
+title an arr adds on its own (an import list, a manual add, RSS) is never
+announced. Covering it means asking Jellyfin what is new on a timer (one
+batched message per run, each title announced once ever by its TMDB/TVDB ID,
+the first run recording without sending), and skipping what Seerr already
+announced so requested titles are not announced twice.
+
+**Revisit when:** someone wants arrivals that did not come through Seerr
+announced to the household.
+
 ## Deferred services
 
 Services assessed for the stack and consciously *not* shipped yet. Adding any

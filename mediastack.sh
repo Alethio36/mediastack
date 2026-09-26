@@ -66,6 +66,8 @@ source "$SCRIPT_DIR/lib/audit.sh"
 source "$SCRIPT_DIR/lib/recycle.sh"
 # shellcheck source=lib/footprint.sh
 source "$SCRIPT_DIR/lib/footprint.sh"
+# shellcheck source=lib/notify.sh
+source "$SCRIPT_DIR/lib/notify.sh"
 # shellcheck source=lib/configure.sh
 source "$SCRIPT_DIR/lib/configure.sh"
 # shellcheck source=lib/lifecycle.sh
@@ -917,6 +919,7 @@ VERBS=(
     "invite~invite [--expires 1|7|30]~free~Connect~Mint a Wizarr invitation and print the ready-to-share URL."
     "credentials~credentials~none~Connect~Show the app logins wire created/stored."
     "set-credentials~set-credentials <target|all>~max=1~Connect~Rotate a stored login everywhere it lives, atomically."
+    "notify~notify [status|test [stream]|set <stream>|clear <stream>|send <stream> <title> <message> [--type T]]~free~Connect~Notification streams (ops, users): status, test, change or clear a stream's URLs, send your own message."
     "set-user-facing~set-user-facing [<svc> true|false]~max=2~Connect~Show or change which services notify the household on update (the 'users' stream)."
     "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login)."
     "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift)."
