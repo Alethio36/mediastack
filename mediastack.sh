@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=26
+SCRIPT_SCHEMA=27
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -46,6 +46,8 @@ source "$SCRIPT_DIR/lib/manifest.sh"
 source "$SCRIPT_DIR/lib/doctor.sh"
 # shellcheck source=lib/audit.sh
 source "$SCRIPT_DIR/lib/audit.sh"
+# shellcheck source=lib/recycle.sh
+source "$SCRIPT_DIR/lib/recycle.sh"
 # shellcheck source=lib/configure.sh
 source "$SCRIPT_DIR/lib/configure.sh"
 # shellcheck source=lib/lifecycle.sh
