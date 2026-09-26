@@ -36,8 +36,29 @@ for e in "${!SEERR_EVENT_BIT[@]}"; do [[ -n "${seen[$e]:-}" ]] || fail_ "Seerr s
 for e in "${!seen[@]}"; do [[ "$e" == TEST_NOTIFICATION || -n "${SEERR_EVENT_BIT[$e]:-}" ]] || fail_ "$e is routed but Seerr has no such event"; done; pass
 [[ "$(seerr_hub_types)" == 8158 ]] || fail_ "agent types: $(seerr_hub_types) (every event but the test: 8158)"; pass
 [[ "$(jq -r .tag <<<"$SEERR_HUB_PAYLOAD")" == '{{notification_type}}' ]] || fail_ "the payload must tag each event with its own name"; pass
-[[ "$(jq -c 'del(.tag)' <<<"$SEERR_HUB_PAYLOAD")" == "$(jq -c 'del(.tag)' <<<"$SEERR_HUB_PAYLOAD_V1")" ]] \
-    || fail_ "only the tag may differ from the payload mediastack wrote before (the wording stays Seerr's)"; pass
+for p in "${SEERR_HUB_PAYLOADS_BEFORE[@]}"; do
+    [[ "$(jq -c 'del(.tag)' <<<"$SEERR_HUB_PAYLOAD")" == "$(jq -c 'del(.tag)' <<<"$p")" ]] \
+        || fail_ "only the tag may differ from a template mediastack wrote before (the wording stays Seerr's)"; pass
+done
+
+# ---- Seerr's agent: the template is mediastack's, the events and poster are yours ----
+agent() { jq -cn --arg p "$1" --argjson t "$2" --argjson e "$3" \
+    '{enabled:true, embedPoster:$e, types:$t, options:{webhookUrl:"http://gluetun:8000/notify/mediastack", jsonPayload:$p, authHeader:"", customHeaders:[], supportVariables:false}}'; }
+# found live on anzac3: the first template (tag activity), events and poster changed in Seerr's UI
+got=$(seerr_agent_next "$(agent "${SEERR_HUB_PAYLOADS_BEFORE[0]}" 4062 true)")
+[[ "$(jq -r .options.jsonPayload <<<"$got")" == "$SEERR_HUB_PAYLOAD" && "$(jq -c '[.types, .embedPoster, .options.customHeaders, .options.webhookUrl]' <<<"$got")" == '[4062,true,[],"http://gluetun:8000/notify/mediastack"]' ]] \
+    || fail_ "an old template with events you chose: template updated, your events and poster kept: $got"; pass
+got=$(seerr_agent_next "$(agent "${SEERR_HUB_PAYLOADS_BEFORE[1]}" 222 false)")
+[[ "$(jq -r .types <<<"$got")" == 8158 && "$(jq -r .options.jsonPayload <<<"$got")" == "$SEERR_HUB_PAYLOAD" ]] || fail_ "still the old default events: raised to the current ones: $got"; pass
+[[ "$(seerr_agent_next "$(agent "$SEERR_HUB_PAYLOAD" 8158 false)")" == same ]] || fail_ "current agent: nothing to change"; pass
+[[ "$(seerr_agent_next "$(agent "$SEERR_HUB_PAYLOAD" 4062 true)")" == same ]] || fail_ "current template, your events: nothing to change"; pass
+[[ "$(seerr_agent_next "$(agent '{"title":"mine","tag":"x"}' 222 false)")" == yours ]] || fail_ "a template of yours: never touched"; pass
+
+# ---- leftover lines for streams mediastack no longer has ----
+[[ "$(notify_legacy_lines <<<$'activity=discord://1/tokenX
+activity,ops=discord://2/tokenY
+ops=discord://3/tokenZ' | tr '\n' ' ')" == "activity " ]] \
+    || fail_ "only a line tagged just 'activity' is a leftover — and its URL is never printed"; pass
 
 # ---- the configuration ----
 cfg='# my hub

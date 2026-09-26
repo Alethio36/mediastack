@@ -929,6 +929,7 @@ wire_apprise() {
         # the lines mediastack wrote are kept current, so Seerr's events route
         local cur want
         cur=$(notify_cfg_get); want=$(notify_cfg_edit retag <<<"$cur")
+        local t; while IFS= read -r t; do warn "$(notify_legacy_note "$t")"; done < <(notify_legacy_lines <<<"$cur")
         if [[ "$cur" == "$want" ]]; then
             ok "notification endpoints configured, routing current (manage: ./mediastack.sh notify)"
         elif w_would "tag the streams' URLs with the Seerr events each receives (${NOTIFY_EVENTS[users]// /, } -> users, the rest -> ops)"; then
@@ -1538,24 +1539,21 @@ wire_seerr() {
     # routing is upgraded); one edited in Seerr's UI is left alone — except
     # its address, when mediastack made it and a VPN toggle moved apprise.
     if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
-        local wh have_p have_t want_t hub
+        local wh want_t hub next
         want_t=$(seerr_hub_types); hub="http://$(svc_addr apprise)/notify/mediastack"
         if ! wh=$(seerr_api GET /settings/notifications/webhook "$jar"); then
             wfail "seerr: could not read its webhook settings — left as they are [HTTP $(seerr_code)]"
         elif [[ "$(jq -r '.enabled' <<<"$wh" 2>/dev/null)" == true ]]; then
-            have_p=$(jq -r '.options.jsonPayload // ""' <<<"$wh"); have_t=$(jq -r '.types // 0' <<<"$wh")
-            if [[ "$have_p" == "$SEERR_HUB_PAYLOAD" && "$have_t" == "$want_t" ]]; then
-                ok "seerr sends its events to the hub, routed per stream"
-            elif [[ "$have_p" == "$SEERR_HUB_PAYLOAD_V1" && "$have_t" == "$SEERR_HUB_TYPES_V1" ]]; then
-                if w_would "seerr: route its events per stream (${NOTIFY_EVENTS[users]// /, } -> users, the rest -> ops) and add the issue events"; then
-                    out=$(seerr_api POST /settings/notifications/webhook "$jar" \
-                          "$(jq -c --arg p "$SEERR_HUB_PAYLOAD" --argjson t "$want_t" '.types = $t | .options.jsonPayload = $p' <<<"$wh")") \
-                        && ok "seerr's events now route per stream" \
-                        || wfail "seerr rejected the updated webhook agent [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
-                fi
-            else
-                ok "seerr's webhook agent was set in its UI — untouched (per-stream routing needs the tag {{notification_type}})"
-            fi
+            next=$(seerr_agent_next "$wh")
+            case "$next" in
+                same)  ok "seerr sends its events to the hub, routed per stream" ;;
+                yours) ok "seerr's webhook agent has a template set in its UI — untouched (per-stream routing needs the tag {{notification_type}})" ;;
+                *)     if w_would "seerr: route its events per stream (${NOTIFY_EVENTS[users]// /, } -> users, the rest -> ops) — the events it has on and its poster setting stay as they are"; then
+                           out=$(seerr_api POST /settings/notifications/webhook "$jar" "$next") \
+                               && { ok "seerr's events now route per stream"; wh=$next; } \
+                               || wfail "seerr rejected the updated webhook agent [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
+                       fi ;;
+            esac
             local wst; wst=$(addr_of "$(jq -r '.options.webhookUrl // ""' <<<"$wh")")
             if addr_stale "seerr -> apprise" apprise "$wst"; then
                 addr_repoint "seerr -> apprise" "$wst" "$(svc_addr apprise)" -- \

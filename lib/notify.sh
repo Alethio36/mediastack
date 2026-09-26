@@ -36,14 +36,45 @@ declare -A SEERR_EVENT_BIT=(
 # the payload Seerr sends: its own wording, the event name as the tag
 # shellcheck disable=SC2034  # these three are read by wire_seerr (lib/integrations.sh)
 SEERR_HUB_PAYLOAD='{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"{{notification_type}}","type":"info"}'
-# what wire seerr wrote before per-event routing (every event to ops) —
-# recognised so an agent mediastack made is upgraded, a hand-edited one kept
-# shellcheck disable=SC2034
-SEERR_HUB_PAYLOAD_V1='{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"ops","type":"info"}'
-# shellcheck disable=SC2034
-SEERR_HUB_TYPES_V1=222
+# every template wire seerr wrote before (tag "activity", the stream before
+# ops; then "ops"): a template mediastack wrote is mediastack's to update —
+# the events turned on and the poster setting stay whoever set them
+SEERR_HUB_PAYLOADS_BEFORE=(
+    '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"activity","type":"info"}'
+    '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"ops","type":"info"}'
+)
+SEERR_HUB_TYPES_BEFORE=222   # the events every earlier version turned on
+NOTIFY_LEGACY_TAGS=(activity) # streams mediastack no longer has
 
 apprise_url() { local p; p=$(svc_hostport apprise) || return 1; echo "http://127.0.0.1:$p"; }
+
+seerr_agent_next() { # seerr_agent_next AGENT-JSON -> the agent as it should be; "same" when current; "yours" when not mediastack's
+    local have_p have_t want_t p mine=0
+    have_p=$(jq -r '.options.jsonPayload // ""' <<<"$1"); have_t=$(jq -r '.types // 0' <<<"$1")
+    want_t=$(seerr_hub_types)
+    [[ "$have_p" == "$SEERR_HUB_PAYLOAD" ]] && mine=1
+    for p in "${SEERR_HUB_PAYLOADS_BEFORE[@]}"; do [[ "$have_p" == "$p" ]] && mine=1; done
+    (( mine )) || { echo yours; return 0; }
+    # the template is mediastack's; the events turned on stay as set, unless
+    # still the old default — then the current one (it adds the issue events)
+    [[ "$have_t" == "$SEERR_HUB_TYPES_BEFORE" ]] && have_t=$want_t
+    if [[ "$have_p" == "$SEERR_HUB_PAYLOAD" && "$have_t" == "$(jq -r '.types // 0' <<<"$1")" ]]; then echo same; return 0; fi
+    jq -c --arg p "$SEERR_HUB_PAYLOAD" --argjson t "$have_t" '.types = $t | .options.jsonPayload = $p' <<<"$1"
+}
+
+notify_legacy_lines() { # stdin: config text -> the tags of lines for streams mediastack no longer has (URLs never printed)
+    local line tags t
+    while IFS= read -r line; do
+        [[ "$line" =~ ^([A-Za-z0-9_\ ,-]+)= ]] || continue
+        tags=${BASH_REMATCH[1]//,/ }
+        for t in "${NOTIFY_LEGACY_TAGS[@]}"; do [[ " $tags " == " $t " ]] && echo "$t"; done
+    done
+    return 0
+}
+
+notify_legacy_note() { # the sentence wire, status and doctor say about a leftover line
+    echo "the hub has a URL tagged '$1' — a stream mediastack no longer has (it became ops): nothing is sent to it. Remove that line in Apprise's UI ($(svc_url apprise 2>/dev/null || echo "port 8000")/cfg/$NOTIFY_KEY)"
+}
 
 seerr_hub_types() { # the agent's types: every routed event's bit, summed
     local e n=0
@@ -212,6 +243,7 @@ notify_status() {
         fi
     done
     info "Seerr events: ${NOTIFY_EVENTS[users]// /, } -> users; the rest -> ops"
+    local t; while IFS= read -r t; do warn "$(notify_legacy_note "$t")"; done < <(notify_legacy_lines <<<"$cfg")
 }
 
 notify_test() {
@@ -294,7 +326,10 @@ notify_send_cmd() { # notify send STREAM TITLE MESSAGE [--type info|success|warn
 _doctor_notify() {
     hr "doctor: notifications"
     if ! svc_enabled apprise; then info "the notification hub (apprise) is off"; return 0; fi
-    local s ok fail
+    local s ok fail t cfg
+    if [[ "$(c_state "$(svc_cname apprise)")" == running ]] && cfg=$( (notify_cfg_get) 2>/dev/null ); then
+        while IFS= read -r t; do warn "$(notify_legacy_note "$t")"; done < <(notify_legacy_lines <<<"$cfg")
+    fi
     for s in "${NOTIFY_STREAMS[@]}"; do
         ok=$(state_get "notify-$s-ok"); fail=$(state_get "notify-$s-fail")
         if [[ -n "$fail" && "${fail%% *}" -gt "${ok:-0}" ]]; then

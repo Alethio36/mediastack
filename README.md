@@ -380,11 +380,13 @@ service with a live-session check. Automatic (`--auto`) updates instead
 defer while a stream is active (`UPDATE_DEFER_IF_ACTIVE`, on by default;
 `UPDATE_DEFER_MAX_MIN` caps the wait before proceeding).
 
-Upgrading an existing install: this change retagged `activity` into
-`ops`, but stored endpoints and already-created arr/seerr connections
-are never overwritten. To move them, clear the `mediastack` config in
-the Apprise UI and delete each arr's `mediastack-apprise` connection
-(and seerr's webhook), then re-run `wire apprise`.
+Upgrading an existing install: `wire seerr` updates the message template
+of the agent it made in any earlier version (tag `activity`, then `ops`)
+to per-event routing; the events you turned on in Seerr and its poster
+setting stay as they are, and a template you wrote yourself is never
+touched. A hub line tagged `activity` (the stream before `ops`) receives
+nothing any more — `wire apprise`, `notify` and `doctor` name it; remove
+it in Apprise's UI.
 
 Prowlarr also registers qBittorrent as its own download client, so a
 manual search in Prowlarr's UI can send a grab straight to qbit — those
