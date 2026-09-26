@@ -881,30 +881,40 @@ wire_bazarr() {
 JF_LDAP_GUID=958aad66-3784-4d2a-b89a-a7b6fab6e25c           # "LDAP Authentication" (jellyfin/jellyfin-plugin-ldapauth)
 JF_LDAP_PROVIDER=Jellyfin.Plugin.LDAP_Auth.LdapAuthenticationProviderPlugin   # AuthenticationProviderId of users it created
 
+jf_plugin_ids() { # jf_plugin_ids PLUGINS-JSON -> "|id|id|" (dashes removed, lower case)
+    # by ID, not name: a plugin can load under another name than its catalog
+    # entry (found live: "LDAP Authentication" loads as "LDAP-Auth")
+    jq -r '"|" + ([.[].Id | ascii_downcase | gsub("-"; "")] | join("|")) + "|"' <<<"$1" 2>/dev/null
+}
+jf_guid() { tr -d '-' <<<"$1" | tr '[:upper:]' '[:lower:]'; }
+
 jf_plugins_ensure() { # jf_plugins_ensure TOKEN "Name|GUID|why"... — install what is missing, then ONE jellyfin restart
     local tok="$1"; shift
-    local plist plugins spec name guid why missing=()
+    local plist plugins spec name guid why missing=() mguids=()
     plist=$(jf_api GET /Plugins "$tok") \
         || { wfail "could not list jellyfin plugins [HTTP $(jf_code)] — nothing installed, jellyfin not restarted"; return 1; }
-    plugins=$(jq -r '[.[].Name] | join("|")' <<<"$plist" 2>/dev/null)
+    plugins=$(jf_plugin_ids "$plist")
     for spec in "$@"; do
         IFS='|' read -r name guid why <<<"$spec"
-        if [[ "|$plugins|" == *"|$name|"* ]]; then ok "$name plugin installed"; continue; fi
+        if [[ "$plugins" == *"|$(jf_guid "$guid")|"* ]]; then ok "$name plugin installed"; continue; fi
         w_would "install Jellyfin's $name plugin ($why)" || continue
         jf_api POST "/Packages/Installed/$(jq -rn --arg n "$name" '$n|@uri')?assemblyGuid=$guid" "$tok" >/dev/null \
             || { wfail "$name plugin install rejected [HTTP $(jf_code)] — install it in Dashboard -> Plugins -> Catalog"; return 1; }
-        missing+=("$name")
+        missing+=("$name"); mguids+=("$guid")
     done
     (( ${#missing[@]} )) || return 0
     info "plugin(s) downloaded (${missing[*]}) — restarting jellyfin once to load them..."
     is_user_facing jellyfin && notify_interruption "Jellyfin maintenance" "Jellyfin is restarting briefly for maintenance — back in a moment."
     DC restart jellyfin >/dev/null 2>&1 || { wfail "jellyfin restart failed — restart it, then re-run wire jellyfin"; return 1; }
     jf_ready || return 1
-    plugins=$(jf_api GET /Plugins "$tok" | jq -r '[.[].Name] | join("|")' 2>/dev/null || true)   # soft read: re-check after the install: empty FAILs below
-    for name in "${missing[@]}"; do
-        [[ "|$plugins|" == *"|$name|"* ]] && ok "$name plugin installed and loaded" \
-            || wfail "$name plugin not visible after restart — check Dashboard -> Plugins (a repository fetch may have failed)"
+    plist=$(jf_api GET /Plugins "$tok" || true)   # soft read: re-check after the install: empty FAILs below
+    plugins=$(jf_plugin_ids "$plist")
+    local i rc=0
+    for i in "${!missing[@]}"; do
+        if [[ "$plugins" == *"|$(jf_guid "${mguids[$i]}")|"* ]]; then ok "${missing[$i]} plugin installed and loaded"
+        else wfail "${missing[$i]} plugin not visible after restart — check Dashboard -> Plugins (a repository fetch may have failed)"; rc=1; fi
     done
+    return $rc
 }
 
 jf_plugin_webhook() { # its consumer is WatchState (the hub hears Seerr, not Jellyfin)
