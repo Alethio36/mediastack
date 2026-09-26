@@ -107,7 +107,7 @@ entries:
       type: text
       required: true
       placeholder: How you'd like to be shown
-      order: 0
+      order: 4
   - model: authentik_stages_prompt.prompt
     id: field-email
     identifiers:
@@ -118,8 +118,9 @@ entries:
       type: email
       required: true
       placeholder: For password resets
-      order: 1
+      order: 5
 
+  # one page: the welcome text describes every field it sits above
   - model: authentik_stages_prompt.promptstage
     id: stage-credentials
     identifiers:
@@ -130,14 +131,13 @@ entries:
         - !KeyOf field-username
         - !KeyOf field-password
         - !KeyOf field-password-repeat
-  - model: authentik_stages_prompt.promptstage
-    id: stage-details
-    identifiers:
-      name: mediastack-join-details
-    attrs:
-      fields:
         - !KeyOf field-name
         - !KeyOf field-email
+  # the earlier second page — removed (its binding goes with it)
+  - model: authentik_stages_prompt.promptstage
+    state: absent
+    identifiers:
+      name: mediastack-join-details
 
   - model: authentik_stages_user_write.userwritestage
     id: stage-write
@@ -166,11 +166,6 @@ entries:
       target: !KeyOf flow-join
       stage: !KeyOf stage-credentials
       order: 10
-  - model: authentik_flows.flowstagebinding
-    identifiers:
-      target: !KeyOf flow-join
-      stage: !KeyOf stage-details
-      order: 15
   - model: authentik_flows.flowstagebinding
     identifiers:
       target: !KeyOf flow-join
