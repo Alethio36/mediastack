@@ -23,10 +23,30 @@ cmd_credentials() {
         printf '%-22s %s\n' "Portal admin password" "$(env_get AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"
     fi
     printf '%-22s %s\n' "Wizarr API key"        "$(env_get WIZARR_API_KEY '(not set — run wire wizarr)')"
+    credentials_api_keys
     info "Seerr owner = the Jellyfin admin above; all Seerr sign-ins use Jellyfin accounts (no separate Seerr passwords exist)."
     info "The Jellyfin API key is what Wizarr's Add Server form asks for."
     info "Wizarr's ADMIN login is its own account — set-credentials does not cover it; rotate in Wizarr's UI."
     info "Meilisearch master key is machine-to-machine — apps use it, you never need it."
+}
+
+credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assistant…) ask for, with the address to give them
+    local s k rows=""
+    for s in $(arr_instances) prowlarr bazarr seerr; do
+        svc_enabled "$s" || continue
+        case "$s" in
+            bazarr) k=$(bazarr_key) ;;
+            seerr)  k=$(env_get SEERR_API_KEY) ;;
+            *)      k=$(arr_key "$s") ;;
+        esac
+        rows+=$(printf '%-14s %-44s %s' "$s" "$(svc_url "$s")" "${k:-(not created yet — start it once)}")$'\n'
+    done
+    [[ -n "$rows" ]] || return 0
+    hr "API keys (companion apps)"
+    printf '%s' "$rows"
+    if svc_enabled authentik; then
+        info "Give an app the https address and the key: behind the portal the /api path skips its login, the key still guards it."
+    fi
 }
 
 cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, atomically

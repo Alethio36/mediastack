@@ -83,6 +83,10 @@ arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialisin
 
 arr_url() { local p; p=$(svc_hostport "$1") || return 1; echo "http://127.0.0.1:$p"; }
 
+bazarr_key() { # bazarr_key -> api key from its config.yaml ("" while initialising)
+    sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | head -1 || true
+}
+
 # ---- app-to-app addresses ----
 # How one app reaches another — what wire writes INTO an app's settings (the
 # script's own API calls use the host ports above instead). One rule, proven
@@ -819,7 +823,7 @@ wire_bazarr() {
     svc_enabled bazarr || { info "bazarr not enabled — skipped"; return 0; }
     wire_gate bazarr
     local bkey burl
-    bkey=$(sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | head -1 || true)
+    bkey=$(bazarr_key)
     [[ -n "$bkey" ]] || { wfail "bazarr: no api key found yet (config/config.yaml) — re-run wire shortly"; return 0; }
     burl=$(arr_url bazarr)
     # readiness gate: on a virgin install bazarr is still migrating its DB when
