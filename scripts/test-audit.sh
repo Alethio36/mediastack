@@ -158,6 +158,22 @@ env_file_audit 365
 sed -i 's/AUDIT_ENABLED=true/AUDIT_ENABLED=false/' "$ENV_FILE"
 if (audit_extract) 2>/dev/null; then fail_ "a copy with attribution off must fail loud (a leftover timer)"; fi; pass
 
+# ---- who removed a folder (the manifest's alert asks this) ----
+BACKUP_ROOT_W=$T/who; mkdir -p "$BACKUP_ROOT_W/audit"
+audit_dir() { echo "$BACKUP_ROOT_W/audit"; }
+audit_root() { echo /srv/mediastack/data/media; }
+cp scripts/fixtures/audit.expected "$BACKUP_ROOT_W/audit/$(printf '%(%F)T' 1790391835).tsv"
+got=$(printf '%s\n' '.x y' 'movies/Film' 'music' 'tv/none' | audit_whodunit 1790391000 1790400000)
+[[ "$got" == $'.x y\tradarr ×2\nmovies/Film\toperator ×3\nmusic\toperator (as root) ×1\ntv/none\t-' ]] \
+    || fail_ "who removed each folder: $(cat -A <<<"$got")"; pass
+[[ "$(echo 'movies/Film' | audit_whodunit 1790391900 1790395000)" == $'movies/Film\t-' ]] \
+    || fail_ "an event outside the window (same day file) must not count"; pass
+printf '1790395000\t-\tgap\tx .. y\t\n' >> "$BACKUP_ROOT_W/audit/$(printf '%(%F)T' 1790391835).tsv"
+[[ "$(echo 'tv/none' | audit_whodunit 1790391000 1790400000)" == $'tv/none\t-gap' ]] \
+    || fail_ "no record plus a gap in the window must say so"; pass
+[[ "$(audit_whodunit_text -gap)" == *"gap"* && "$(audit_whodunit_text 'radarr ×2')" == "removed by: radarr ×2" ]] || fail_ "whodunit sentences"; pass
+rm -rf "$BACKUP_ROOT_W"; unset -f audit_dir
+
 # ---- report ----
 audit_report_args --since 2026-09-01 --path Film
 [[ "$REPORT_SINCE" == 2026-09-01 && "$REPORT_PATH" == Film ]] || fail_ "report args"; pass
