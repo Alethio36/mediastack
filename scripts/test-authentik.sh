@@ -269,4 +269,18 @@ sed -n '/^sc_rotate_arr() {/,/^}/p' lib/access.sh | grep -q 'arr_login "\$s"' ||
 sed -n '/^cmd_disable() {/,/^}/p' mediastack.sh | grep -q 'for a in $(arr_instances) $(svc_enabled prowlarr && echo prowlarr)' \
     || fail_ "disable authentik restores Prowlarr's login too"; pass
 
+# ---- credentials: the API keys companion apps need, with their addresses ----
+arr_instances() { printf '%s\n' sonarr radarr; }
+svc_enabled() { [[ " sonarr prowlarr bazarr authentik " == *" $1 "* ]]; }
+arr_key() { [[ "$1" == sonarr ]] && echo SONKEY; [[ "$1" == prowlarr ]] && echo; return 0; }
+bazarr_key() { echo BAZKEY; }
+svc_url() { echo "https://$1.media.example.com"; }
+hr() { echo "== $*"; }; info() { echo "INFO $*"; }
+out=$(credentials_api_keys)
+grep -qE '^sonarr +https://sonarr.media.example.com +SONKEY$' <<<"$out" || fail_ "an arr: its address and key: $out"; pass
+grep -qE '^bazarr +https://bazarr.media.example.com +BAZKEY$' <<<"$out" || fail_ "bazarr's key"; pass
+grep -qE '^prowlarr .*not created yet' <<<"$out" || fail_ "a key not minted yet says so"; pass
+! grep -q '^radarr' <<<"$out" || fail_ "a service that is not enabled is not listed"; pass
+grep -q 'the /api path skips its login' <<<"$out" || fail_ "behind the portal: how the app gets through"; pass
+
 echo "OK authentik: $checks checks"
