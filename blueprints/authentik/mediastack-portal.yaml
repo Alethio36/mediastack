@@ -340,3 +340,8 @@ entries:
       type: ldap
       providers:
         - !KeyOf provider-ldap
+      # required by authentik even for an outpost deployed by hand (found live);
+      # the address it shows for the outpost — the outpost itself reaches
+      # authentik on the stack network (AUTHENTIK_HOST in compose.d/authentik.yml)
+      config:
+        authentik_host: !Env [MEDIASTACK_PORTAL_URL, ""]

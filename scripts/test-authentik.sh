@@ -369,6 +369,7 @@ grep -q 'mediastack-ldap-allow:' lib/edge.sh && grep -q 'sourceRange: \["$(env_g
 grep -q 'traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"' compose.d/authentik.yml || fail_ "the LDAP route carries the allow-list"; pass
 bp=blueprints/authentik/mediastack-portal.yaml
 sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'mfa_support: false' || fail_ "LDAP binds: no MFA prompt (TV apps cannot answer one)"; pass
+sed -n '/model: authentik_outposts.outpost/,/^  - /p' "$bp" | grep -q '^      config:' || fail_ "an outpost needs its config block (authentik requires it; found live)"; pass
 grep -A3 'permissions:' "$bp" | grep -q 'permission: authentik_providers_ldap.search_full_directory' \
     || fail_ "only the search account may list the directory — by the full permission name (the dry run rejects the short form)"; pass
 grep -B2 -A3 'target: !KeyOf flow-ldap' "$bp" | grep -q 'policy: !KeyOf policy-ldap-reputation' || fail_ "LDAP binds are throttled by reputation"; pass
@@ -382,5 +383,15 @@ pin_service() { echo "PIN $1 $2"; }
 got=$(pin_shard_to authentik 2026.11 | sort | tr '\n' ';')
 [[ "$got" == "PIN authentik ghcr.io/goauthentik/server:2026.11;PIN authentik-ldap ghcr.io/goauthentik/ldap:2026.11;PIN authentik-worker ghcr.io/goauthentik/server:2026.11;" ]] \
     || fail_ "lockstep pinning: $got"; pass
+
+# ---- a rejected blueprint explains itself: authentik's validator, run dry ----
+svc_cname() { echo "c-$1"; }
+sudo() { [[ "$1 $2" == "docker exec" ]] && printf '%s\n' '{"event": "Imported related module"}' 'Blueprint invalid' \
+    "	authentik.blueprints.v1.importer: Entry invalid: Serializer errors {'config': [ErrorDetail(string='This field is required.', code='required')]}: {'entry': {'model': 'x'}}" \
+    '	authentik.blueprints.v1.importer: Blueprint validation failed: {}'; }
+why=$(authentik_blueprint_why)
+[[ "$why" == *"Entry invalid: Serializer errors {'config'"*"This field is required"* && "$why" != *"'entry':"* && "$why" != *Imported* ]] \
+    || fail_ "the validator's reason, without the entry dump or import noise: $why"; pass
+unset -f sudo
 
 echo "OK authentik: $checks checks"

@@ -175,6 +175,13 @@ authentik_blueprint_status() { # -> successful | warning | error | … | outdate
     jq -r '.status' <<<"$inst"
 }
 
+authentik_blueprint_why() { # authentik's own reasons for rejecting mediastack's blueprint (its validator, dry run — nothing applied)
+    # its logs and task records keep no reasons; this command states them
+    sudo docker exec "$(svc_cname authentik-worker)" ak apply_blueprint --dry-run mediastack/mediastack-portal.yaml 2>&1 \
+        | grep -E 'Entry invalid|Error|exception|Traceback|invalid' | grep -v 'Imported related module' \
+        | sed -E 's/^[[:space:]]+//; s/\{.entry.: .*//' | cut -c1-400 | tail -5
+}
+
 authentik_blueprint_apply() { # apply the current file now instead of waiting for the worker; -> its status
     local inst pk st t
     inst=$(authentik_blueprint_instance 2>&1) || { echo "$inst"; return 0; }
@@ -265,8 +272,8 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                 successful) ok "authentik: mediastack's portal setup applied (groups, sign-up by invitation)" ;;
                 "") warn "authentik has not applied mediastack's portal setup yet (it does within minutes of starting): ./mediastack.sh wire authentik" ;;
                 outdated) warn "authentik runs an earlier version of mediastack's portal setup — apply the current one: ./mediastack.sh wire authentik" ;;
-                *) d_fail "authentik: mediastack's portal setup is '$st'" "groups and sign-up may be missing or incomplete" \
-                       "./mediastack.sh logs authentik --no-follow | grep -i blueprint" ;;
+                *) d_fail "authentik rejected mediastack's portal setup ($st): $(authentik_blueprint_why | tr '\n' ' ')" \
+                       "groups, sign-up and LDAP may be missing or incomplete" "fix the entry named above in blueprints/authentik/, then: ./mediastack.sh up && ./mediastack.sh wire authentik" ;;
             esac
             if [[ -z "$(env_get AUTHENTIK_LDAP_TOKEN)" ]]; then
                 warn "authentik's LDAP outpost has no token yet (it keeps restarting until it does): ./mediastack.sh wire authentik"

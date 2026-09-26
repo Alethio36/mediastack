@@ -1689,7 +1689,9 @@ wire_authentik() {
         successful) ok "authentik: mediastack's portal setup applied (media-users, admins, sign-up by invitation)" ;;
         "") info "authentik: mediastack's portal setup not discovered yet — authentik finds it within minutes of starting; re-run to check"; return 0 ;;
         outdated) wfail "authentik: an earlier version of mediastack's portal setup is still in place — ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; return 0 ;;
-        *) wfail "authentik rejected mediastack's portal setup ($st) — the reason: ./mediastack.sh logs authentik --no-follow | grep -i 'apply_blueprint' | tail -3"; return 0 ;;
+        *) wfail "authentik rejected mediastack's portal setup ($st). Its validator says:"
+           authentik_blueprint_why | sed 's/^/       /'
+           return 0 ;;
     esac
     wire_authentik_gate
 }
