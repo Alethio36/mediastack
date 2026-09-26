@@ -30,6 +30,7 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "lidarr"
+      mediastack.auth: "native"   # handles its own login
       mediastack.port: "8686"
       mediastack.arrtype: "lidarr"
       mediastack.category: "music"

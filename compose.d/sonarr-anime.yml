@@ -30,6 +30,7 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "sonarr-anime"
+      mediastack.auth: "native"   # handles its own login
       mediastack.port: "8990"
       mediastack.appport: "8990"
       mediastack.arrtype: "sonarr"

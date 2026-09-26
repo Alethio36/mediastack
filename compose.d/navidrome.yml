@@ -46,6 +46,7 @@ services:
       mediastack.config: "true"
       mediastack.user_facing: "true"
       mediastack.subdomain: "music"
+      mediastack.auth: "native"   # handles its own login
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:4533/ping || exit 1"]
       interval: 30s

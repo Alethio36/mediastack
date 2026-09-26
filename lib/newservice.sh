@@ -208,6 +208,7 @@ EOF
       mediastack.vpntoggle: "true"
       mediastack.config: "$cfg"
       mediastack.subdomain: "$host"
+      mediastack.auth: "native"   # its own login; "gate" puts it behind the portal (authentik)
       mediastack.port: "$cport"
     logging:
       driver: json-file

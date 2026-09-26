@@ -42,6 +42,7 @@ services:
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "pihole"
+      mediastack.auth: "native"   # handles its own login
     # Pi-hole ships its own image HEALTHCHECK; keep it.
     networks: [mediastack]
     logging: *logging

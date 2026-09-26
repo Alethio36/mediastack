@@ -30,6 +30,7 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "bazarr"
+      mediastack.auth: "native"   # handles its own login
       mediastack.port: "6767"
     healthcheck:
       # Bazarr has no unauthenticated /ping; a 200 on / (login page) proves up.
