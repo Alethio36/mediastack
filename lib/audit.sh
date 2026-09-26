@@ -4,9 +4,11 @@
 # scope: the manifest says WHAT went missing, this says WHO — with the UID
 # that made the call. Each service runs as its own *_UID, so the UID names the
 # service; a person is named by their login UID, which survives sudo. Holds
-# cmd_audit (status|on|off), the teardown uninstall uses, and the doctor
-# section. Sourced by the entrypoint; relies on lib/common.sh, lib/doctor.sh
-# (d_fail) and lib/manifest.sh (manifest_root) at call time.
+# cmd_audit (status|on|off|report), cmd_audit_extract (the hourly copy into
+# the durable log), the teardown uninstall uses, and the doctor section.
+# Sourced by the entrypoint; relies on lib/common.sh, lib/doctor.sh (d_fail),
+# lib/manifest.sh (manifest_root, guard_gitignored), lib/backup.sh
+# (timer_write), notify and the render/svc helpers at call time.
 #
 # A host feature, not a container: the kernel keeps one audit rule set and one
 # audit daemon per host, not per container (docs/watchlist.md). Outside the
@@ -15,34 +17,92 @@
 # state exists to drift. auditd's own settings (auditd.conf; -b, -f, -e) are
 # never written: on a fresh install the package defaults stand, on a host
 # that already ran auditd they are the operator's. doctor reports on them.
+#
+# Durable log: auditd's own log rotates (Debian: 5 x 8 MB), so an hourly timer
+# copies new events into BACKUP_ROOT/audit/YYYY-MM-DD.tsv (local date), one
+# line per event:  epoch <TAB> who <TAB> op <TAB> path <TAB> new-path
+#   who  : a person (login UID, "name (as <service>)" when acting through a
+#          service's UID), else the service holding that *_UID ("a|b" when
+#          .env shares it), else "uid N (unmapped)"
+#   op   : delete | rmdir | rename | rename-over (the target existed and was
+#          replaced) | unparsed (an event of ours this parser does not know
+#          the shape of — reported, never dropped) | gap (events may be lost: auditd rotated its log before
+#          they were copied; path holds the window)
+#   path : host path. A container logs its own view (/data/media/x); it is
+#          translated through that service's bind mounts. When the UID maps
+#          to no service, or its mounts do not cover the path, it stays as
+#          "container:<path>" — never guessed.
+# Paths escape \ tab newline as \\ \t \n. Only the kernel's numeric fields are
+# read: the readable names auditd may append (log_format=ENRICHED) come from
+# the host's user database and are not relied on.
 
 AUDIT_KEY=mediastack-media
 # 99-: loads after every other rules file, so an error in it cannot keep
 # anyone else's rules from loading at boot
 AUDIT_RULES=/etc/audit/rules.d/99-mediastack.rules
-AUDIT_SYSCALLS=unlink,unlinkat,rename,renameat,renameat2,rmdir
+AUDIT_UNIT=mediastack-audit
+AUDIT_SYSCALLS=(unlink unlinkat rename renameat renameat2 rmdir)
 AUDIT_LOGDIR=/var/log/audit   # the package's; removed with it only when mediastack installed it
+AUDIT_CONF=/etc/audit/auditd.conf
+AUDIT_LOCK=/run/lock/mediastack-audit.lock   # runtime only: the timer and a report never copy at once
 AUDIT_MARK="# mediastack-installed-auditd:"
+AUDIT_CANARY_RE='/[.]mediastack-audit-canary-[0-9]+$'
 # every path this feature puts outside the repo (the shared host-footprint
 # registry planned in docs/roadmap.md → Structure will collect these lists)
-AUDIT_FOOTPRINT=("$AUDIT_RULES")
+AUDIT_FOOTPRINT=("$AUDIT_RULES" "/etc/systemd/system/$AUDIT_UNIT.service" "/etc/systemd/system/$AUDIT_UNIT.timer")
 
 audit_root() { # the watched tree, canonical; rc 1 when it does not exist
     realpath -e "$(manifest_root)" 2>/dev/null
 }
+audit_dir() { echo "$(env_get BACKUP_ROOT)/audit"; }
 
-audit_rules_render() { # audit_rules_render ROOT yes|no -> the rules file; same inputs, same bytes
+audit_keep_days() { # AUDIT_KEEP_DAYS, validated
+    local k; k=$(env_get AUDIT_KEEP_DAYS 365)
+    [[ "$k" =~ ^[1-9][0-9]*$ ]] || die "AUDIT_KEEP_DAYS='$k' is not a whole number of days (1 or more). Fix it in .env."
+    echo "$k"
+}
+
+# ------------------------------------------------------------ the rules --
+audit_abi() { # audit_abi b64|b32 [MACHINE] -> ausyscall's name for this host's 64-/32-bit ABI
+    local m="${2:-$(uname -m)}"
+    case "$1:$m" in
+        b64:x86_64|b64:aarch64|b64:ppc64le|b64:s390x|b64:riscv64) echo "$m" ;;
+        b32:x86_64) echo i386 ;;
+        b32:aarch64) echo arm ;;
+        b64:*) return 1 ;;   # a 32-bit kernel, or one not known here
+        b32:*) ;;            # no 32-bit mode worth watching
+    esac
+}
+
+audit_syscalls_for() { # audit_syscalls_for ABI -> the watched calls that ABI has, comma-joined
+    # ARM has no unlink/rename/rmdir (only the *at forms): ask ausyscall
+    # instead of assuming one architecture's table
+    local s out=()
+    for s in "${AUDIT_SYSCALLS[@]}"; do
+        sudo ausyscall "$1" "$s" --exact >/dev/null 2>&1 && out+=("$s")
+    done
+    (IFS=,; echo "${out[*]}")
+}
+
+audit_rules_render() { # audit_rules_render ROOT yes|no B64-CALLS [B32-CALLS] -> the rules file; same inputs, same bytes
     printf '%s\n' \
         "# Generated by mediastack.sh — do not edit. Rewrite: ./mediastack.sh audit on   Remove: ./mediastack.sh audit off" \
         "# Watch rules only: auditd's own settings (buffers, failure mode, lock) are never set here." \
         "$AUDIT_MARK $2"
-    local arch
-    for arch in b64 b32; do
-        # success=1: NFS refuses renameat2 and callers retry with renameat —
-        # the refused attempt is not a deletion, so the kernel drops it here
-        printf -- '-a always,exit -F arch=%s -S %s -F dir=%s -F success=1 -k %s\n' \
-            "$arch" "$AUDIT_SYSCALLS" "$1" "$AUDIT_KEY"
-    done
+    # success=1: NFS refuses renameat2 and callers retry with renameat — the
+    # refused attempt is not a deletion, so the kernel drops it here
+    printf -- '-a always,exit -F arch=b64 -S %s -F dir=%s -F success=1 -k %s\n' "$3" "$1" "$AUDIT_KEY"
+    [[ -z "${4:-}" ]] || printf -- '-a always,exit -F arch=b32 -S %s -F dir=%s -F success=1 -k %s\n' "$4" "$1" "$AUDIT_KEY"
+}
+
+audit_rules_current() { # audit_rules_current ROOT yes|no -> the rules file this host should have; rc 1 + reason on stderr
+    local abi b64 b32=""
+    abi=$(audit_abi b64) || { echo "this host is $(uname -m): audit supports 64-bit x86, ARM, POWER, s390x and RISC-V kernels" >&2; return 1; }
+    b64=$(audit_syscalls_for "$abi")
+    [[ -n "$b64" ]] || { echo "ausyscall knows none of the watched calls for $abi" >&2; return 1; }
+    abi=$(audit_abi b32)
+    [[ -z "$abi" ]] || b32=$(audit_syscalls_for "$abi")
+    audit_rules_render "$1" "$2" "$b64" "$b32"
 }
 
 # auditctl lives in /usr/sbin: on root's PATH (sudo's secure_path), not on
@@ -88,11 +148,25 @@ audit_canary() { # prove the watch fires: create and delete a file in the media 
     return 1
 }
 
+audit_canary_why() { # why a failed live check most likely failed, for this install
+    local root; root=$(audit_root) || { echo "the media root is missing"; return 0; }
+    if [[ "$(stat -c %u "$SCRIPT_DIR")" == 0 && "$(fstype_of "$root")" == nfs* ]]; then
+        echo "this repo is owned by root, and an NFS share maps root to nobody — the test file cannot be written (give the repo to your own user: sudo chown -R \$USER: $SCRIPT_DIR)"
+    else
+        echo "the watch does not see this filesystem (remounted since the rules loaded?), or the repo's owner cannot write to the media root"
+    fi
+}
+
+# --------------------------------------------------------------- verbs --
 cmd_audit() {
-    case "${1:-status}" in
-        status) audit_status ;;
-        on)     audit_on ;;
-        off)    audit_off ;;
+    local action="${1:-status}"
+    (( $# )) && shift
+    case "$action" in
+        status|on|off)
+            (( $# == 0 )) || die "'audit $action' takes no arguments (got: $*)"
+            "audit_$action" ;;
+        report) audit_report "$@" ;;
+        *) die "unknown 'audit' action '$action' (accepts: status, on, off, report)" ;;
     esac
 }
 
@@ -106,13 +180,19 @@ audit_status() {
 
 audit_on() {
     load_env
-    [[ "$(uname -m)" == x86_64 ]] || die "audit supports x86_64 hosts only so far (this one is $(uname -m)):
-  the syscalls it watches have different names on other architectures."
-    local root mark
+    local root mark keep rules why
     root=$(audit_root) || die "the media root $(manifest_root) does not exist.
   Run ./mediastack.sh up once (it creates the tree), then retry."
     [[ "$root" =~ [[:space:]] ]] && die "the media root '$root' contains whitespace, which an audit rule cannot express.
   Move DATA_ROOT (./mediastack.sh configure), then retry."
+    audit_abi b64 >/dev/null || die "this host is $(uname -m): audit supports 64-bit x86, ARM, POWER, s390x and RISC-V kernels."
+    guard_gitignored "$(audit_dir)" "Deletion log folder" "it lists every file removed from your library"
+    while true; do
+        ask KEEP "Keep the deletion history for how many days" "$(env_get AUDIT_KEEP_DAYS 365)"
+        [[ "$REPLY_VAL" =~ ^[1-9][0-9]*$ ]] && break
+        fail "'$REPLY_VAL' is not a whole number of days (1 or more)."
+    done
+    keep=$REPLY_VAL
     mark=$(audit_marker)
     if ! audit_have; then
         command -v apt-get >/dev/null 2>&1 || die "'audit on' installs auditd with apt, and this host has no apt.
@@ -124,9 +204,10 @@ audit_on() {
     elif [[ -z "$mark" ]]; then
         mark=no
         warn "auditd is already set up on this host — that setup is yours and stays untouched."
-        echo "  'audit on' adds one file, $AUDIT_RULES, holding only watch rules"
-        echo "  for $root. auditd.conf and your own rules are not changed; 'audit off'"
-        echo "  removes the file again."
+        echo "  'audit on' adds one rules file, $AUDIT_RULES, holding only watch"
+        echo "  rules for $root, and an hourly timer ($AUDIT_UNIT) that copies them"
+        echo "  into $(audit_dir). auditd.conf and your own rules are not changed;"
+        echo "  'audit off' removes both again."
         confirm "Add mediastack's watch rules to your auditd?" || { info "Nothing changed."; return 0; }
     fi
     systemctl is-active --quiet auditd || die "auditd is installed but not running.
@@ -139,41 +220,53 @@ audit_on() {
         *) die "kernel auditing is off (auditctl -s: enabled ${en:-unreadable}) — usually audit=0 on the kernel command line.
   Remove it, reboot, then retry." ;;
     esac
+    rules=$(audit_rules_current "$root" "$mark" 2>&1) || die "cannot build the watch rules: $rules"
     local tmp; tmp=$(mktemp)
-    audit_rules_render "$root" "$mark" > "$tmp"
+    printf '%s\n' "$rules" > "$tmp"
     sudo install -m 0640 -o root -g root "$tmp" "$AUDIT_RULES"
     rm -f "$tmp"
     # load only ours, straight from the file: the operator's live rules are
     # never reloaded; a re-run replaces ours (the key selects them)
     (( $(audit_loaded_count) == 0 )) || sudo auditctl -D -k "$AUDIT_KEY" >/dev/null
-    local out
+    local out want
     out=$(sudo auditctl -R "$AUDIT_RULES" 2>&1) || die "auditctl refused $AUDIT_RULES:
 $(sed 's/^/  /' <<<"$out")"
-    (( $(audit_loaded_count) == 2 )) || die "auditctl accepted $AUDIT_RULES but the kernel holds $(audit_loaded_count) of its 2 rules:
+    want=$(grep -c '^-a ' <<<"$rules")
+    (( $(audit_loaded_count) == want )) || die "auditctl accepted $AUDIT_RULES but the kernel holds $(audit_loaded_count) of its $want rules:
 $(audit_loaded | sed 's/^/  /')"
     env_set AUDIT_ENABLED true
-    audit_canary || die "the rules are loaded, but a test delete in $root was not logged.
-  Look for it: sudo ausearch -k $AUDIT_KEY -ts recent — then run: ./mediastack.sh audit status"
+    env_set AUDIT_KEEP_DAYS "$keep"
+    if ! audit_canary; then
+        why=$(audit_canary_why)
+        die "the rules are loaded, but a test delete in $root was not logged: $why.
+  Evidence: sudo ausearch -k $AUDIT_KEY -ts recent — then run: ./mediastack.sh audit status"
+    fi
+    timer_write "$AUDIT_UNIT" "Mediastack deletion log (copied from auditd)" audit-extract hourly
+    audit_extract
     ok "deletion attribution on: every delete and rename under $root is logged with who made it"
-    info "a test delete was made and found in the log (live proof)"
+    info "live proof: a test delete was made and found. History: ./mediastack.sh audit report (kept $keep days)"
 }
 
 audit_off() {
     load_env
     audit_teardown ask
     env_set AUDIT_ENABLED false
+    info "the history already recorded stays in $(audit_dir) (./mediastack.sh audit report reads it; delete the folder to drop it)"
 }
 
 audit_teardown() { # audit_teardown ask|yes — remove the footprint; needs no .env (nuke calls it)
-    local mark; mark=$(audit_marker)
-    if [[ -z "$mark" ]] && (( $(audit_loaded_count) == 0 )); then
+    local mark p left=""; mark=$(audit_marker)
+    for p in "${AUDIT_FOOTPRINT[@]}"; do sudo test -e "$p" && left+="$p "; done
+    if [[ -z "$left" ]] && (( $(audit_loaded_count) == 0 )); then
         info "deletion attribution is not set up on this host — nothing to remove."
         return 0
     fi
+    sudo systemctl disable --now "$AUDIT_UNIT.timer" >/dev/null 2>&1 || true   # absent when setup stopped before the timer
     (( $(audit_loaded_count) == 0 )) || sudo auditctl -D -k "$AUDIT_KEY" >/dev/null
     (( $(audit_loaded_count) == 0 )) || die "auditctl kept $(audit_loaded_count) rule(s) with key $AUDIT_KEY:
 $(audit_loaded | sed 's/^/  /')"
     sudo rm -f "${AUDIT_FOOTPRINT[@]}"
+    sudo systemctl daemon-reload
     ok "watch rules unloaded; removed ${AUDIT_FOOTPRINT[*]}"
     [[ "$mark" == yes ]] || return 0
     # the package came from 'audit on': offer it back, unless someone else
@@ -193,12 +286,271 @@ $(audit_loaded | sed 's/^/  /')"
     ok "auditd and its logs removed"
 }
 
+# ------------------------------------------------------ the durable log --
+audit_parse() { # stdin: `ausearch --raw` output; $1 $2: the last event already copied (epoch serial, "0 0" for none)
+    # -> "E <TAB> epoch <TAB> serial <TAB> auid <TAB> uid <TAB> op <TAB> path <TAB> new-path" per new event,
+    #    then "L <TAB> epoch <TAB> serial" for the newest event seen (canaries included, so they are never re-read)
+    LC_ALL=C awk -v key="$AUDIT_KEY" -v lt="$1" -v ls="$2" -v canary="$AUDIT_CANARY_RE" '
+    function hexval(c) { return index("0123456789ABCDEF", c) - 1 }
+    function decode(v,   i, o) {   # auditd quotes a plain string, hex-encodes one with spaces or odd bytes
+        if (v ~ /^"/) { sub(/^"/, "", v); sub(/"$/, "", v); return v }
+        if (v == "(null)" || v !~ /^[0-9A-F]+$/ || length(v) % 2) return v
+        o = ""
+        for (i = 1; i <= length(v); i += 2) o = o sprintf("%c", hexval(substr(v, i, 1)) * 16 + hexval(substr(v, i + 1, 1)))
+        return o
+    }
+    function field(rec, name,   i, rest) {   # the raw value of " name=" in the record
+        i = index(rec, " " name "=")
+        if (!i) return ""
+        rest = substr(rec, i + length(name) + 2)
+        if (rest ~ /^"/) { match(rest, /^"[^"]*"/); return substr(rest, 1, RLENGTH) }
+        match(rest, /^[^ ]*/); return substr(rest, 1, RLENGTH)
+    }
+    function absolute(p, c) {   # a relative name is relative to the caller'"'"'s working directory
+        if (p == "" || p ~ /^\//) return p
+        if (c == "") c = "/"
+        return (c ~ /\/$/ ? c : c "/") p
+    }
+    function esc(v,   i, c, o) {
+        o = ""
+        for (i = 1; i <= length(v); i++) {
+            c = substr(v, i, 1)
+            if (c == "\\") o = o "\\\\"; else if (c == "\t") o = o "\\t"; else if (c == "\n") o = o "\\n"; else o = o c
+        }
+        return o
+    }
+    {
+        line = $0
+        g = index(line, "\035"); if (g) line = substr(line, 1, g - 1)   # the kernel part; ENRICHED names follow 0x1d
+        if (!match(line, /msg=audit\([0-9.]+:[0-9]+\)/)) next
+        id = substr(line, RSTART + 10, RLENGTH - 11)
+        if (!(id in seen)) { seen[id] = 1; order[++n] = id }
+        type = substr(line, 6); sub(/ .*/, "", type)
+        if (type == "SYSCALL") {
+            k[id] = decode(field(line, "key")); au[id] = field(line, "auid"); u[id] = field(line, "uid")
+        } else if (type == "CWD") {
+            cwd[id] = decode(field(line, "cwd"))
+        } else if (type == "PATH") {
+            nt = field(line, "nametype"); nm = decode(field(line, "name"))
+            if (nt == "DELETE") { nd[id]++; dn[id, nd[id]] = nm; dm[id, nd[id]] = field(line, "mode") }
+            else if (nt == "CREATE") cr[id] = nm
+        }
+    }
+    END {
+        for (i = 1; i <= n; i++) {
+            id = order[i]
+            if (k[id] != key) continue   # rule loads: their CONFIG_CHANGE has the key, their SYSCALL does not
+            split(id, ts, ":")
+            if (ts[1] + 0 < lt + 0 || (ts[1] + 0 == lt + 0 && ts[2] + 0 <= ls + 0)) continue
+            if (lastt == "" || ts[1] + 0 > lastt + 0 || (ts[1] + 0 == lastt + 0 && ts[2] + 0 > lasts + 0)) { lastt = ts[1]; lasts = ts[2] }
+            old = ""; op = ""
+            if (!nd[id]) {   # ours, but no DELETE record: a shape this parser does not know — shown, never dropped
+                op = "unparsed"; new = absolute(cr[id], cwd[id])
+            } else if (cr[id] != "") {   # a rename: the DELETE that is not the new name is the old one
+                op = "rename"
+                for (j = 1; j <= nd[id]; j++) { if (dn[id, j] == cr[id]) op = "rename-over"; else if (old == "") old = dn[id, j] }
+                new = absolute(cr[id], cwd[id])
+            } else {
+                old = dn[id, 1]; new = ""
+                op = (dm[id, 1] ~ /^04/) ? "rmdir" : "delete"
+            }
+            old = absolute(old, cwd[id])
+            if (old ~ canary || new ~ canary) continue
+            print "E\t" ts[1] "\t" ts[2] "\t" au[id] "\t" u[id] "\t" op "\t" esc(old) "\t" esc(new)
+        }
+        if (lastt != "") print "L\t" lastt "\t" lasts
+    }'
+}
+
+audit_attribute() { # stdin: audit_parse's E lines; $1 ROOT, $2 uid map, $3 mounts, $4 login names (files)
+    # -> the durable log's lines: epoch <TAB> who <TAB> op <TAB> host-path <TAB> host-new-path
+    LC_ALL=C awk -F'\t' -v OFS='\t' -v root="$1" -v umap="$2" -v mounts="$3" -v users="$4" '
+    BEGIN {
+        while ((getline l < umap) > 0)  { split(l, a, "\t"); svc[a[1]] = a[2] }
+        while ((getline l < users) > 0) { split(l, a, "\t"); usr[a[1]] = a[2] }
+        while ((getline l < mounts) > 0) { split(l, a, "\t"); c = ++nm[a[1]]; mt[a[1], c] = a[2]; ms[a[1], c] = a[3] }
+    }
+    function label(id) { return (id in svc) ? svc[id] : (id == "0" ? "root" : "uid " id " (unmapped)") }
+    function via(s, p,   i, t, best, bl) {   # p through service s'"'"'s bind mounts: the longest matching target wins
+        best = ""; bl = -1
+        for (i = 1; i <= nm[s]; i++) {
+            t = mt[s, i]
+            if ((p == t || index(p, t "/") == 1) && length(t) > bl) { bl = length(t); best = ms[s, i] substr(p, length(t) + 1) }
+        }
+        return best
+    }
+    function host(p, id,   n, c, j, h, out) {
+        if (p == "" || p == root || index(p, root "/") == 1) return p   # already a host path under the watched root
+        if (!(id in svc)) return "container:" p
+        n = split(svc[id], c, "|"); out = ""
+        for (j = 1; j <= n; j++) {   # a shared UID: every candidate must agree
+            h = via(c[j], p)
+            if (h == "" || (out != "" && h != out)) return "container:" p
+            out = h
+        }
+        return out
+    }
+    $1 == "E" {
+        if ($4 != "4294967295" && $4 != "-1") {
+            who = ($4 in usr) ? usr[$4] : "uid " $4
+            if ($5 != $4) who = who " (as " label($5) ")"
+        } else who = label($5)
+        print int($2), who, $6, host($7, $5), host($8, $5)
+    }'
+}
+
+audit_uidmap() { # uid <TAB> service for every managed service with a *_UID; a shared UID lists all ("a|b")
+    render
+    local s id
+    for s in $(svc_managed); do
+        id=$(env_get "$(uvar "$s")_UID")
+        [[ -n "$id" ]] && printf '%s\t%s\n' "$id" "$s"
+    done | awk -F'\t' '{ m[$1] = ($1 in m) ? m[$1] "|" $2 : $2 } END { for (u in m) print u "\t" m[u] }' | sort
+}
+
+audit_mounts() { # service <TAB> container path <TAB> host path, for every bind mount
+    render
+    jq -r '.services | to_entries[] | .key as $s | (.value.volumes // [])[]
+           | select(.type == "bind") | [$s, .target, .source] | @tsv' <<<"$RENDERED_JSON"
+}
+
+audit_log_oldest() { # epoch of the oldest record auditd still holds; empty when it holds none
+    local lf n=0 oldest
+    lf=$(sudo awk -F= '/^[[:space:]]*log_file[[:space:]]*=/ { gsub(/[[:space:]]/, "", $2); print $2 }' "$AUDIT_CONF")
+    lf=${lf:-/var/log/audit/audit.log}
+    oldest=$lf
+    while sudo test -e "$lf.$((n + 1))"; do n=$((n + 1)); oldest="$lf.$n"; done
+    sudo test -s "$oldest" || return 0
+    sudo head -c 256 "$oldest" | sed -n '1s/.*msg=audit(\([0-9]*\)\..*/\1/p'
+}
+
+cmd_audit_extract() { load_env; audit_extract; }
+
+audit_extract() { # copy new events into the durable log; prune it; flag a gap
+    local dir raw rc=0 last ran now oldest tmp users umap mounts day line
+    local -A byday=()
+    [[ "$(env_get AUDIT_ENABLED false)" == true ]] || die "deletion attribution is off, yet its copy ran.
+  A leftover timer? Remove it: ./mediastack.sh audit off"
+    dir=$(audit_dir); guard_gitignored "$dir" "Deletion log folder" "it lists every file removed from your library"
+    sudo mkdir -p "$dir"; sudo chmod 700 "$dir"
+    [[ -e "$AUDIT_LOCK" ]] || : > "$AUDIT_LOCK"
+    exec 9<"$AUDIT_LOCK"
+    flock -w 300 9 || die "another copy of the deletion log has held $AUDIT_LOCK for 5 minutes — check: systemctl status $AUDIT_UNIT.service"
+    now=$(date +%s)
+    last=$(sudo cat "$dir/.last" 2>/dev/null || echo "0 0")   # no .last yet: the first copy takes everything
+    ran=$(sudo cat "$dir/.ran" 2>/dev/null || true)
+    # a gap: auditd's log now starts after our previous copy — whatever was
+    # logged in between may have rotated away before we read it
+    oldest=$(audit_log_oldest)
+    if [[ -n "$ran" && -n "$oldest" ]] && (( oldest > ran )); then
+        printf -v day '%(%F)T' "$now"
+        printf '%s\t-\tgap\t%s .. %s\t\n' "$now" "$(printf '%(%F %T)T' "$ran")" "$(printf '%(%F %T)T' "$oldest")" \
+            | audit_append "$dir" "$day"
+        warn "deletion log gap: auditd rotated its log before events from $(printf '%(%F %T)T' "$ran") to $(printf '%(%F %T)T' "$oldest") were copied"
+        notify ops "Mediastack: deletion log gap" "auditd rotated its log faster than the hourly copy: deletions from $(printf '%(%F %T)T' "$ran") to $(printf '%(%F %T)T' "$oldest") may be missing from \`audit report\`." warning
+    fi
+    raw=$(mktemp); tmp=$(mktemp); users=$(mktemp); umap=$(mktemp); mounts=$(mktemp)
+    # shellcheck disable=SC2024  # the temp file is ours; only ausearch needs root
+    sudo ausearch -k "$AUDIT_KEY" --raw >"$raw" 2>"$tmp" || rc=$?
+    if (( rc > 1 )); then   # 1 = no matching events, which is an answer
+        local why; why=$(head -3 "$tmp"); rm -f "$raw" "$tmp" "$users" "$umap" "$mounts"
+        die "ausearch failed (rc=$rc): $why"
+    fi
+    # shellcheck disable=SC2086  # "epoch serial": two arguments
+    audit_parse $last <"$raw" >"$tmp"
+    { grep '^E' "$tmp" || true; } | cut -f4 | sort -u | while read -r line; do   # login UIDs -> names, from this host
+        [[ "$line" == 4294967295 || "$line" == -1 ]] && continue
+        printf '%s\t%s\n' "$line" "$(getent passwd "$line" | cut -d: -f1)"
+    done > "$users"
+    audit_uidmap > "$umap"; audit_mounts > "$mounts"
+    while IFS= read -r line; do   # grouped by local day: one write per day file, not one per event
+        printf -v day '%(%F)T' "${line%%$'\t'*}"
+        byday[$day]+="$line"$'\n'
+    done < <({ grep '^E' "$tmp" || true; } | audit_attribute "$(audit_root || manifest_root)" "$umap" "$mounts" "$users")
+    while IFS= read -r day; do
+        printf '%s' "${byday[$day]}" | audit_append "$dir" "$day"
+    done < <(printf '%s\n' "${!byday[@]}" | sort | grep . || true)   # no new events: no day files touched
+    line=$({ grep '^L' "$tmp" || true; } | cut -f2,3 | tr '\t' ' ')
+    [[ -z "$line" ]] || printf '%s\n' "$line" | sudo tee "$dir/.last" >/dev/null
+    printf '%s\n' "$now" | sudo tee "$dir/.ran" >/dev/null
+    rm -f "$raw" "$tmp" "$users" "$umap" "$mounts"
+    audit_prune "$dir"
+    exec 9<&-
+}
+
+audit_append() { # stdin: log lines; $1 DIR, $2 YYYY-MM-DD -> appended to that day's file (mode 600)
+    local f="$1/$2.tsv"
+    sudo test -e "$f" || sudo install -m 600 /dev/null "$f"
+    sudo tee -a "$f" >/dev/null
+}
+
+audit_prune() { # drop day files older than AUDIT_KEEP_DAYS
+    local keep cutoff f
+    keep=$(audit_keep_days); cutoff=$(date -d "-$keep days" +%F)
+    while IFS= read -r f; do
+        [[ "${f%.tsv}" < "$cutoff" ]] && sudo rm -f "${1:?}/$f"
+    done < <(sudo find "$1" -maxdepth 1 -name '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].tsv' -printf '%f\n')
+    return 0
+}
+
+audit_report_args() { # audit_report_args ARGS... -> REPORT_SINCE (YYYY-MM-DD), REPORT_PATH
+    REPORT_SINCE=$(date -d '-7 days' +%F); REPORT_PATH=""
+    while (( $# )); do
+        case "$1" in
+            --since)
+                [[ -n "${2:-}" ]] || die "--since needs a date (YYYY-MM-DD)"
+                [[ "$2" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ && "$(date -d "$2" +%F 2>/dev/null)" == "$2" ]] \
+                    || die "--since '$2' is not a date (YYYY-MM-DD)"
+                REPORT_SINCE=$2; shift 2 ;;
+            --path)
+                [[ -n "${2:-}" ]] || die "--path needs some text to look for"
+                REPORT_PATH=$2; shift 2 ;;
+            *) die "unknown argument '$1' for 'audit report' (accepts: --since YYYY-MM-DD, --path TEXT)" ;;
+        esac
+    done
+}
+
+audit_report() { # audit report [--since YYYY-MM-DD] [--path TEXT]
+    audit_report_args "$@"
+    load_env
+    local dir; dir=$(audit_dir)
+    if [[ "$(env_get AUDIT_ENABLED false)" == true ]]; then
+        audit_extract   # up to the minute, not up to the last hourly copy
+    else
+        warn "deletion attribution is off — showing the history recorded while it was on"
+    fi
+    sudo test -d "$dir" || die "no deletion history in $dir. Turn it on: ./mediastack.sh audit on"
+    local files
+    files=$(sudo find "$dir" -maxdepth 1 -name '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].tsv' -printf '%f\n' | sort \
+            | awk -v s="$REPORT_SINCE" '$0 >= s ".tsv"')
+    hr "Deletions and renames since $REPORT_SINCE${REPORT_PATH:+ matching \"$REPORT_PATH\"}"
+    [[ -n "$files" ]] || { info "nothing recorded"; return 0; }
+    local f
+    for f in $files; do sudo cat "$dir/$f"; done | audit_report_format "$REPORT_PATH"
+}
+
+audit_report_format() { # stdin: log lines; $1: path filter (case-insensitive text, may be empty) -> the table
+    local n=0 t who op p np
+    while IFS=$'\t' read -r t who op p np; do
+        if [[ -n "$1" ]]; then
+            [[ "${p,,}" == *"${1,,}"* || "${np,,}" == *"${1,,}"* ]] || continue
+        fi
+        case "$op" in
+            gap) printf '%(%F %T)T  %sGAP%s  events from %s may be missing (auditd rotated its log before they were copied)\n' "$t" "$C_YLW" "$C_RST" "$p" ;;
+            rename|rename-over) printf '%(%F %T)T  %-24s %-11s %s\n%43s→ %s\n' "$t" "$who" "$op" "$p" "" "$np" ;;
+            *) printf '%(%F %T)T  %-24s %-11s %s\n' "$t" "$who" "$op" "$p" ;;
+        esac
+        n=$((n + 1))
+    done
+    (( n )) && info "$n event(s)" || info "nothing matched"
+}
+
 # ------------------------------------------------------------------ doctor --
 _doctor_audit() {
     hr "doctor: deletion attribution"
     if [[ "$(env_get AUDIT_ENABLED false)" != true ]]; then
-        local left=""
-        audit_rules_present && left+="$AUDIT_RULES "
+        local left="" p
+        for p in "${AUDIT_FOOTPRINT[@]}"; do sudo test -e "$p" && left+="$p "; done
         (( $(audit_loaded_count) > 0 )) && left+="loaded rules (key $AUDIT_KEY) "
         if [[ -n "$left" ]]; then
             d_fail "off, but its pieces remain: ${left% }" "they keep logging deletes nobody reads, and would outlive an uninstall" \
@@ -214,34 +566,62 @@ _doctor_audit() {
     fi
     systemctl is-active --quiet auditd && ok "auditd running" \
         || d_fail "auditd is not running" "deletions are not written anywhere" "sudo systemctl enable --now auditd"
-    local root
+    local root rules
     if ! root=$(audit_root); then
         d_fail "the media root $(manifest_root) does not exist" "there is nothing to watch" "./mediastack.sh up (creates the tree)"
         return 0
     fi
+    if ! rules=$(audit_rules_current "$root" "$(audit_marker)" 2>&1); then
+        d_fail "the watch rules cannot be built: $rules" "nothing can be watched on this host" "see the reason above"
+        return 0
+    fi
     if ! audit_rules_present; then
         d_fail "$AUDIT_RULES is missing" "the watch is gone after the next reboot" "./mediastack.sh audit on"
-    elif [[ "$(sudo cat "$AUDIT_RULES")" != "$(audit_rules_render "$root" "$(audit_marker)")" ]]; then
+    elif [[ "$(sudo cat "$AUDIT_RULES")" != "$rules" ]]; then
         d_fail "$AUDIT_RULES does not match this install (the media root moved, or it was edited)" \
             "deletes are watched in the wrong place" "./mediastack.sh audit on"
     else
         ok "rules file current (watching $root)"
     fi
-    local n; n=$(audit_loaded | grep -cF -- "dir=$root " || true)   # zero matches is the finding, not an error
-    (( n == 2 )) && ok "watch rules loaded" \
-        || d_fail "$n of 2 watch rules for $root are loaded" "deletes are not being recorded" "./mediastack.sh audit on"
+    local n want
+    n=$(audit_loaded | grep -cF -- "dir=$root " || true)   # zero matches is the finding, not an error
+    want=$(grep -c '^-a ' <<<"$rules")
+    (( n == want )) && ok "watch rules loaded" \
+        || d_fail "$n of $want watch rules for $root are loaded" "deletes are not being recorded" "./mediastack.sh audit on"
     _doctor_audit_kernel
     case "$(fstype_of "$root")" in
         cifs|smb3) warn "the media root is on SMB: deletion watching is proven on local disks and NFS only" ;;
     esac
     audit_canary && ok "live check: a test delete in $root was logged" \
-        || d_fail "live check: a test delete in $root was NOT logged" \
-            "the watch does not see this filesystem (remounted since the rules loaded?), or the operator cannot write there" \
+        || d_fail "live check: a test delete in $root was NOT logged" "$(audit_canary_why)" \
             "./mediastack.sh audit on, then re-check; evidence: sudo ausearch -k $AUDIT_KEY -ts recent"
+    _doctor_audit_log
     local dup; dup=$(audit_uid_dupes)
     [[ -z "$dup" ]] && ok "every service runs as its own UID" \
-        || d_fail "UIDs shared by more than one service in .env: ${dup% }" "a delete by that UID cannot be pinned to one service" \
-            "give each service its own *_UID in .env, then: ./mediastack.sh up && ./mediastack.sh fix-perms"
+        || warn "UIDs shared by more than one service in .env: ${dup% } — a delete by one of them names every candidate (give each service its own *_UID for a single name)"
+    return 0
+}
+
+_doctor_audit_log() { # the durable log: its timer, its last copy, recent gaps, its retention
+    local dir ran age gaps k
+    dir=$(audit_dir)
+    systemctl is-enabled --quiet "$AUDIT_UNIT.timer" 2>/dev/null && ok "hourly copy timer enabled" \
+        || d_fail "the hourly copy timer ($AUDIT_UNIT.timer) is not enabled" "auditd's log rotates: history is lost once it does" "./mediastack.sh audit on"
+    ran=$(sudo cat "$dir/.ran" 2>/dev/null || true)   # never copied yet: reported just below
+    if [[ -z "$ran" ]]; then
+        d_fail "the deletion log has never been copied into $dir" "nothing is kept past auditd's rotation" "sudo ./mediastack.sh audit-extract"
+    else
+        age=$(( ($(date +%s) - ran) / 3600 ))
+        (( age <= 2 )) && ok "deletion log copied ${age}h ago" \
+            || d_fail "the deletion log was last copied ${age}h ago" "the hourly copy is failing" "systemctl status $AUDIT_UNIT.service"
+    fi
+    gaps=$(sudo find "$dir" -maxdepth 1 -name '*.tsv' -newermt '7 days ago' -exec cat {} + | awk -F'\t' '$3 == "gap"' | wc -l)
+    (( ${gaps:-0} > 0 )) && warn "$gaps gap(s) in the deletion log this week: auditd rotated faster than the hourly copy (audit report shows them)"
+    if k=$(env_get AUDIT_KEEP_DAYS 365) && [[ "$k" =~ ^[1-9][0-9]*$ ]]; then
+        ok "deletion history kept $k days"
+    else
+        d_fail "AUDIT_KEEP_DAYS='$k' is not a whole number of days" "the log cannot be pruned" "set AUDIT_KEEP_DAYS in .env (default 365)"
+    fi
     return 0
 }
 

@@ -17,7 +17,7 @@ cd "$SCRIPT_DIR"
 
 ENV_FILE="$SCRIPT_DIR/.env"
 PINS_FILE="$SCRIPT_DIR/.pins.yml"
-SCRIPT_SCHEMA=25
+SCRIPT_SCHEMA=26
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -853,7 +853,7 @@ VERBS=(
     "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login)."
     "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift)."
     "doctor~doctor~none~Check~Full health/permission/port/backup audit; every failure states its fix."
-    "audit~audit [status|on|off]~allow=status,on,off max=1~Check~Deletion attribution (opt-in): log who deletes or renames media; 'status' proves it live."
+    "audit~audit [status|on|off|report [--since DATE] [--path TEXT]]~free~Check~Deletion attribution (opt-in): who deleted or renamed media; 'report' reads the history, 'status' proves it live."
     "leak-test~leak-test [--killswitch]~allow=--killswitch~Check~Prove no VPN'd service can leak (--killswitch: disruptive tunnel-drop proof)."
     "vpn~vpn [svc on|off] [--i-know]~max=3~Check~Show or change which services run behind the VPN; apply with: up."
     "fix-perms~fix-perms [svc]~max=1~Check~Repair ownership of a service's config/cache/transcode folders from the UID map."
@@ -865,6 +865,7 @@ VERBS=(
     "vpn-apply~vpn-apply <svc> on|off~max=2~Internal~Set a service's VPN membership AND apply it (panel button)."
     "vpn-guard~vpn-guard [--boot]~allow=--boot~Internal~Re-pin VPN dependents onto the live gluetun (boot/daemon unit)."
     "frontdoor-refresh~frontdoor-refresh~none~Internal~Regenerate the panel's config and entity files."
+    "audit-extract~audit-extract~none~Internal~Copy new deletion events from auditd's rotating log into the durable log (hourly timer)."
 )
 
 verb_entry() { # verb_entry <verb> -> its registry line, rc 1 if unknown

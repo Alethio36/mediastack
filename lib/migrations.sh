@@ -189,3 +189,4 @@ migrate_env_22_to_23() {
 }
 migrate_env_23_to_24() { :; } # BACKUP_KEEP_MONTHLY added to .env.example (it was read, default 6, but never listed); existing values stand
 migrate_env_24_to_25() { :; } # AUDIT_ENABLED added to .env.example; env_get default (false) stands
+migrate_env_25_to_26() { :; } # AUDIT_KEEP_DAYS added to .env.example; env_get default (365) stands
