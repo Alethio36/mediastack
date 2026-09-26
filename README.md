@@ -143,7 +143,7 @@ Check
 |---|---|
 | `doctor` | full health/permission/cert/backup/host-port audit — every failure states its fix |
 | `leak-test [--killswitch]` | prove no VPN'd service can leak (`--killswitch` = destructive proof) |
-| `audit [status\|on\|off]` | deletion attribution, opt-in: the kernel logs every delete and rename under `DATA_ROOT/media` with the UID that made it — each service runs as its own UID, so the UID names the service (the manifest says *what* went missing, this says *who*). `on` installs auditd if the host has none (a host that already runs auditd keeps its own setup: one rules file is added, nothing else is touched) and proves the watch with a test delete; `off` removes it again (and auditd, if mediastack installed it). `status` (default) is doctor's check, including the live test delete |
+| `audit [status\|on\|off\|report]` | deletion attribution, opt-in: the kernel logs every delete and rename under `DATA_ROOT/media` with who made it — each service runs as its own UID, so the UID names the service; a person is named by their login, even through sudo (the manifest says *what* went missing, this says *who*). `on` installs auditd if the host has none (a host that already runs auditd keeps its own setup: one rules file and one timer are added, nothing else is touched), asks how long to keep the history (`AUDIT_KEEP_DAYS`, default 365) and proves the watch with a test delete; `off` removes it again (and auditd, if mediastack installed it; the history stays). `report [--since YYYY-MM-DD] [--path TEXT]` lists what was deleted or renamed, by whom (default: the last 7 days); a container's paths are shown as host paths. `status` (default) is doctor's check, including the live test delete. Sees this host only — deletes made on the NAS itself or from another machine are the manifest's to catch |
 | `vpn [svc on/off]` | show or change which services run behind the VPN (torrent clients need `--i-know` to leave). A move changes how other apps reach the service, so the next `up` re-points everything wired to call it (`WIRE_CALLERS`); if that fails, the next `up` retries and `doctor` says it is pending |
 | `fix-perms [svc]` | repair ownership of a service's config, cache and transcode folders from the UID map |
 
@@ -167,6 +167,7 @@ Internal (called by the panel, timers and units — not meant for hand use)
 | `list [all\|managed\|enabled\|disabled\|vpntoggle\|wire\|pinned] [--json]` | enumerate services by set — the panel's dropdown source |
 | `vpn-apply <svc> on\|off` | the one-shot the panel's Toggle VPN button runs (`vpn` is the interactive form) |
 | `vpn-guard [--boot]` | re-attach VPN'd services after a host boot / docker restart (systemd unit) |
+| `audit-extract` | hourly (timer): copy new deletion events from auditd's rotating log into `BACKUP_ROOT/audit/`, prune it to `AUDIT_KEEP_DAYS`, flag a gap if auditd rotated first |
 
 Every verb rejects arguments it does not accept — a typo or an unsupported
 flag fails with the verb's contract instead of silently running the default
