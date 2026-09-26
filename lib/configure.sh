@@ -254,6 +254,12 @@ search engine). Change any of this later with enable/disable." \
         sel=$(printf '%s\n' $sel | grep -vx "$([[ "$keep" == "$a" ]] && echo "$b" || echo "$a")")
         ok "Keeping $keep"
     done < <(conflicts_in $sel)
+    if [[ " $(tr '\n' ' ' <<<"$sel") " == *" authentik "* ]]; then
+        explain "The portal's name" \
+"authentik is the portal your users sign up and log in at. Its name is shown
+on the login and sign-up pages (\"Join <name>\")."
+        ask PORTAL_TITLE "Portal name" "$(env_get PORTAL_TITLE Mediastack)"; env_set PORTAL_TITLE "$REPLY_VAL"
+    fi
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     ok "Enabled: $(env_get COMPOSE_PROFILES)"
 
