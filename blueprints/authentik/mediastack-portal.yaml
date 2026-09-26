@@ -301,8 +301,11 @@ entries:
       search_mode: cached
       bind_mode: cached
       mfa_support: false
+    # the full name: authentik validates a blueprint in a dry run first, where
+    # the short form fails as a "global" permission (found live, 2026.8); on
+    # the real apply it is still granted on this provider only
     permissions:
-      - permission: search_full_directory
+      - permission: authentik_providers_ldap.search_full_directory
         user: !KeyOf user-ldap-search
   - model: authentik_core.application
     id: app-ldap
