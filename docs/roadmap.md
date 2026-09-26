@@ -132,29 +132,29 @@ in place (docs/disaster-recovery.md); still to build:
   filesystem — an arr recycle is a move, cross-filesystem it becomes a full
   copy), retention days (default 7; upgrades keep the old file for the whole
   window, so 4K remux chains cost disk). Covers arr-initiated deletes only.
-- *Deletion attribution via auditd (opt-in) — phase 1 of 3 landed.* The
+- *Deletion attribution via auditd (opt-in) — phases 1–2 of 3 landed.* The
   `audit` verb: `on` installs auditd (or joins one the host already runs,
-  touching nothing of it) and loads two watch rules for the media root;
-  `off` removes them (and auditd, if mediastack installed it); `status` and
-  doctor check it, with a live test delete. Settled facts behind it (tested on
-  anzac2's NFS mount, Sept 2026): a directory-scoped rule (`-F dir=`) fires on
-  an NFS client mount, for host processes and for containers, which log their
-  own UID; NFS refuses `renameat2` and callers retry with `renameat`, so the
-  rules keep successes only (`-F success=1`). Sees this host's syscalls only —
-  NAS-side and other-host deletes are the manifest's to catch. Still to build:
-  - *Phase 2 — `audit report` + a durable log.* The raw audit log rotates
-    (Debian: 5 × 8 MB, about 30k deletes), so a mass delete can rotate out
-    its own start. An hourly timer extracts new events (ausearch checkpoint)
-    into `BACKUP_ROOT/audit/`, one line per event (time, who, operation,
-    path), pruned by `AUDIT_KEEP_DAYS` (default 365, user-set). Who: login
-    UID set → that person; else the process UID → the service holding that
-    `*_UID`; else `uid N (unmapped)`. The live-check canary files are left out.
+  touching nothing of it) and loads the watch for the media root; `off`
+  removes it (and auditd, if mediastack installed it); `status` and doctor
+  check it with a live test delete; `report` reads the durable log, which an
+  hourly timer copies out of auditd's rotating one (`BACKUP_ROOT/audit/`, kept
+  `AUDIT_KEEP_DAYS`, gaps flagged and notified). Proven live on anzac3 (local
+  disk, Sept 2026): operator and container deletes, a rename, a relative path,
+  rules surviving a reboot; a container logs its own view of the path
+  (`/data/media/x`), translated through that service's bind mounts. Earlier
+  (anzac2's NFS mount): a `-F dir=` rule fires on an NFS client mount, and NFS
+  refuses `renameat2` so callers retry with `renameat` — the rules keep
+  successes only. Sees this host's syscalls only: NAS-side and other-host
+  deletes are the manifest's to catch. Still open:
   - *Phase 3 — the manifest's "media removed" alert names who removed each
-    folder,* from the phase-2 log.
-  - *Unproven:* a watch loaded at boot onto an NFS automount that is not yet
-    mounted — does it follow the mount? Test by rebooting a host with an NFS
-    media root; doctor's live check catches it either way. SMB is untested
-    (doctor warns). x86_64 only (other architectures lack `unlink`/`rename`).
+    folder,* from the durable log.
+  - *Unproven live:* a watch loaded at boot onto an NFS automount that is not
+    yet mounted (reboot a host with an NFS media root; doctor's live check
+    catches it either way); SMB (doctor warns); ARM and the other 64-bit
+    architectures (the calls come from `ausyscall`, never proven on a real
+    one); and the parser's hand-built cases — hex-encoded names (any path with
+    a space), a rename over an existing file, `log_format=RAW` — until a real
+    capture of each replaces its line in `scripts/fixtures/audit-synthetic.raw`.
 
 ### Extensibility
 - An easier path to add services *beyond* the built-in framework.
