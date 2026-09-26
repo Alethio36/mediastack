@@ -112,6 +112,13 @@ Where the project goes next — decisions to make and work not yet built.
 - **Ship Calibre-Web-Automated?** Rated ship-worthy; forks the books tree onto
   a Calibre `metadata.db`. Evaluation:
   [watchlist.md](watchlist.md#calibre-web-automated-cwa--book-management--e-reader-delivery).
+- **A transcoding tool** *(to evaluate)*: re-encode media ahead of time
+  (smaller files, formats every client plays, fewer live transcodes in
+  Jellyfin). Candidates: HandBrake (manual, per file, web GUI), Tdarr
+  (library-wide rules, automated, can spread work over machines), Unmanic
+  (simpler automation). Hidden costs to weigh: sustained CPU/GPU load, disk
+  churn and temporary space, and the arrs noticing replaced files (re-import,
+  upgrade loops). Decide in the watchlist before shipping.
 
 ### Storage layout — before migrate
 To be discussed, not decided (tabled Sept 2026). Most users arrive with media
@@ -294,7 +301,10 @@ all built; what each still leaves open is noted below.
   e-mail the link, (3) authentik's own update notices reach its admins. Nothing
   else (no marketing, no digests). Email is already required at sign-up, so
   every account is ready for it. Until then invite links are copied by hand and
-  passwords are reset by the admin.
+  passwords are reset by the admin. **Follow-up when it lands:** turn Kavita's
+  verified-email check back on (Kavita → Settings → OpenID Connect → "Require
+  verified email") — it is off because authentik cannot vouch for an address
+  until it can send mail.
 - Post-migration hardening: move the panel off LAN-open once SSO lands; phase-2
   sudo narrowing (read-only verbs drop root); staging→production certs once a box
   stops being a test box.
