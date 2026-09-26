@@ -128,13 +128,12 @@ trash-sync --dry-run --dry-run
 doctor
 doctor x
 
-# audit  (allow=status,on,off max=1)
+# audit  (free)
 audit
 audit status
 audit on
-audit off
+audit report --since 2026-09-01 --path x
 audit bogus
-audit on off
 
 # leak-test  (allow=--killswitch)
 leak-test
@@ -209,3 +208,7 @@ manifest find movie
 manifest find a b
 manifest --bogus
 manifest --accept extra
+
+# audit-extract  (none)
+audit-extract
+audit-extract x

@@ -1,0 +1,10 @@
+1790390015	radarr	delete	/srv/mediastack/data/media/.t	
+1790390565	radarr	rename	/srv/mediastack/data/media/.a	/srv/mediastack/data/media/.b
+1790390565	radarr	delete	/srv/mediastack/data/media/.b	
+1790390565	radarr	delete	/srv/mediastack/data/media/.c	
+1790400000	radarr	delete	/srv/mediastack/data/media/movies/Some Film (2020)/Some Film (2020).mkv	
+1790400000	sonarr	rename-over	/srv/mediastack/data/media/tv/Show/ep.tmp	/srv/mediastack/data/media/tv/Show/ep.mkv
+1790400000	operator (as root)	rmdir	/srv/mediastack/data/media/music/Old Album	
+1790400000	deluge|transmission	delete	container:/data/torrent/a.mkv	
+1790400000	uid 911 (unmapped)	delete	container:/media/movies/b.mkv	
+1790400000	radarr	unparsed		

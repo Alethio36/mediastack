@@ -182,14 +182,10 @@ CALL cmd_audit [0]
 CALL cmd_audit [1] status
 ## audit on
 CALL cmd_audit [1] on
-## audit off
-CALL cmd_audit [1] off
+## audit report --since 2026-09-01 --path x
+CALL cmd_audit [5] report --since 2026-09-01 --path x
 ## audit bogus
-ERROR unknown argument 'bogus' for 'audit' (accepts: status on off)
-rc=1
-## audit on off
-ERROR 'audit' takes at most 1 argument(s) (got: on off)
-rc=1
+CALL cmd_audit [1] bogus
 ## leak-test
 CALL cmd_leak_test [0]
 ## leak-test --killswitch
@@ -300,3 +296,8 @@ CALL cmd_manifest [3] find a b
 CALL cmd_manifest [1] --bogus
 ## manifest --accept extra
 CALL cmd_manifest [2] --accept extra
+## audit-extract
+CALL cmd_audit_extract [0]
+## audit-extract x
+ERROR 'audit-extract' takes no arguments (got: x)
+rc=1
