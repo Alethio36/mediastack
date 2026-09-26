@@ -501,6 +501,12 @@ apply_timer() {
         return
     fi
     systemd-analyze calendar "$sched" >/dev/null 2>&1 || die "$var '$sched' is invalid (not a systemd OnCalendar expression)."
+    timer_write "$unit" "$desc" "$verb" "$sched"
+    ok "$label timer installed: $sched (next: $(systemctl show "$unit.timer" -p NextElapseUSecRealtime --value 2>/dev/null || echo '?'))"
+}
+
+timer_write() { # timer_write UNIT DESCRIPTION VERB ONCALENDAR — write, enable and start one oneshot service + timer
+    local unit="$1" desc="$2" verb="$3" sched="$4"
     sudo tee "/etc/systemd/system/$unit.service" >/dev/null <<EOF
 [Unit]
 Description=$desc
@@ -520,5 +526,4 @@ WantedBy=timers.target
 EOF
     sudo systemctl daemon-reload
     sudo systemctl enable --now "$unit.timer"
-    ok "$label timer installed: $sched (next: $(systemctl show "$unit.timer" -p NextElapseUSecRealtime --value 2>/dev/null || echo '?'))"
 }
