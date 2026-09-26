@@ -1713,6 +1713,25 @@ wire_authentik_gate() { # the gate on the built-in outpost, the first admin in `
     fi
     # 3. dashboard cards: admin tools (admins), household apps (media-users) — slugs mediastack-*: ours
     wire_authentik_cards
+    # 4. the LDAP outpost's token: the outpost can only start with it
+    wire_authentik_ldap_token
+}
+
+wire_authentik_ldap_token() { # fetch the mediastack-ldap outpost's token into .env; restart the outpost on a change
+    local out pk key
+    out=$(ak_api GET "/outposts/instances/?name__iexact=mediastack-ldap") || { wfail "authentik: outposts unreadable"; return 0; }
+    pk=$(jq -r '.results[0].pk // empty' <<<"$out")
+    [[ -n "$pk" ]] || { wfail "authentik: the LDAP outpost (mediastack-ldap) is missing — the blueprint creates it"; return 0; }
+    out=$(ak_api GET "/core/tokens/ak-outpost-$pk-api/view_key/") || { wfail "authentik: the LDAP outpost's token is unreadable"; return 0; }
+    key=$(jq -r '.key // empty' <<<"$out")
+    [[ -n "$key" ]] || { wfail "authentik answered without the LDAP outpost's token"; return 0; }
+    if [[ "$(env_get AUTHENTIK_LDAP_TOKEN)" == "$key" ]]; then ok "authentik: the LDAP outpost has its token"; return 0; fi
+    w_would "authentik: give the LDAP outpost its token, then start it" || return 0
+    env_set AUTHENTIK_LDAP_TOKEN "$key"
+    # shellcheck disable=SC2034  # the render cache lives in the entrypoint (read by DC's callers)
+    RENDERED_JSON=""
+    DC up -d --no-deps authentik-ldap >/dev/null && ok "authentik: LDAP outpost started with its token" \
+        || wfail "the LDAP outpost did not start: ./mediastack.sh logs authentik"
 }
 
 ak_group_pk() { # ak_group_pk NAME -> its pk (exact name, not a lookalike)

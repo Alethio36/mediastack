@@ -58,6 +58,8 @@ services:
         condition: service_healthy
       authentik-worker:
         condition: service_started
+      authentik-ldap:
+        condition: service_started
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
@@ -94,6 +96,7 @@ services:
       MEDIASTACK_PORTAL_TITLE: ${PORTAL_TITLE:-Mediastack}
       MEDIASTACK_PORTAL_URL: https://${AUTHENTIK_HOST:-portal}.${TRAEFIK_DOMAIN:-unset.invalid}
       MEDIASTACK_DOMAIN: ${TRAEFIK_DOMAIN:-unset.invalid}
+      MEDIASTACK_LDAP_BIND_PASSWORD: ${AUTHENTIK_LDAP_BIND_PASSWORD}
     volumes:
       - ${CONFIG_ROOT}/authentik/data:/data
       - ${CONFIG_ROOT}/authentik/templates:/templates
@@ -108,6 +111,32 @@ services:
       <<: *no-foreign-watchtower
       mediastack.shard: "authentik"
     healthcheck: *authentik-health
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped
+
+  authentik-ldap:
+    # authentik's LDAP front door (Jellyfin checks passwords here). The same
+    # release as the server, always — authentik requires outposts to match.
+    # Starts once `wire authentik` has fetched its token (AUTHENTIK_LDAP_TOKEN);
+    # reached only through Traefik: LDAPS on ldap.<domain>, from the stack network only.
+    image: ghcr.io/goauthentik/ldap:2026.8
+    container_name: ${AUTHENTIK_LDAP_NAME:-mediastack-authentik-ldap}
+    profiles: ["authentik"]
+    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID}"
+    environment:
+      AUTHENTIK_HOST: http://authentik:9000
+      AUTHENTIK_INSECURE: "true"   # the stack network, never the outside
+      AUTHENTIK_TOKEN: ${AUTHENTIK_LDAP_TOKEN}
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.shard: "authentik"
+      traefik.enable: "true"
+      traefik.tcp.routers.authentik-ldap.rule: "HostSNI(`${AUTHENTIK_LDAP_HOST:-ldap}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.tcp.routers.authentik-ldap.entrypoints: "websecure"
+      traefik.tcp.routers.authentik-ldap.tls: "true"
+      traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"
+      traefik.tcp.services.authentik-ldap.loadbalancer.server.port: "3389"
     networks: [mediastack]
     logging: *logging
     restart: unless-stopped

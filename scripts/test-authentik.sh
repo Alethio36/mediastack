@@ -62,6 +62,7 @@ if authentik_release_of ghcr.io/goauthentik/server:latest >/dev/null; then fail_
 tag=$(awk '/image: ghcr.io\/goauthentik\/server:/ { sub(/.*:/, ""); print; exit }' compose.d/authentik.yml)
 [[ " ${AUTHENTIK_RELEASES[*]} " == *" $(authentik_release_of "$tag") "* ]] || fail_ "the fragment's tag $tag is not in AUTHENTIK_RELEASES"; pass
 [[ "$(grep -c "image: ghcr.io/goauthentik/server:$tag$" compose.d/authentik.yml)" == 2 ]] || fail_ "server and worker must run the same tag"; pass
+grep -q "image: ghcr.io/goauthentik/ldap:$tag$" compose.d/authentik.yml || fail_ "the LDAP outpost must run the server's release (authentik requires it)"; pass
 
 # ---- secrets ----
 s=$(authentik_secret 60)
@@ -123,7 +124,7 @@ sed -n '/name: mediastack-join-email/,/^  - /p' "$bp" | grep -q 'required: true'
 # one page: every field on the credentials stage, and only one prompt stage bound
 sed -n '/name: mediastack-join-credentials/,/^  - /p' "$bp" | grep -c '!KeyOf field-' | grep -qx 6 \
     || fail_ "sign-up is one page: all six fields on one stage"; pass
-[[ "$(grep -c 'stage: !KeyOf stage-' "$bp")" == 4 ]] || fail_ "four stages bound: invitation, the page, write, login"; pass
+[[ "$(grep -A1 'target: !KeyOf flow-join' "$bp" | grep -c 'stage: !KeyOf stage-')" == 4 ]] || fail_ "four stages bound to sign-up: invitation, the page, write, login"; pass
 sed -n '/^  authentik-worker:/,/^  authentik-db:/p' compose.d/authentik.yml > "$T/worker"
 grep -q 'MEDIASTACK_PORTAL_TITLE: ${PORTAL_TITLE:-Mediastack}' "$T/worker" && grep -q 'MEDIASTACK_PORTAL_URL:' "$T/worker" \
     || fail_ "the worker passes the portal's name and address to the blueprint"; pass
@@ -346,5 +347,37 @@ grep -q '^POST /core/applications/ .*"slug":"mediastack-app-jellyfin".*"group":"
 [[ "$(grep -c '^POST /policies/bindings/ .*"group":"g-mu"' "$T/calls")" == 2 && "$(grep -c '^POST /policies/bindings/ .*"group":"g-adm"' "$T/calls")" == 3 ]] \
     || fail_ "household cards: media-users and admins; admin tools: admins"; pass
 grep -q '^DELETE /core/applications/mediastack-app-kavita/' "$T/calls" || fail_ "a household card for an app no longer enabled leaves"; pass
+
+# ---- LDAP: the outpost gets its token from authentik; the route answers the stack only ----
+rm -f "$T/calls"; printf '' > "$ENV_FILE"
+DC() { echo "DC $*" >> "$T/calls"; }
+ak_api() { echo "$1 $2" >> "$T/calls"
+    case "$1 $2" in
+        "GET /outposts/instances/?name__iexact=mediastack-ldap") echo '{"results":[{"pk":"op-ldap"}]}' ;;
+        "GET /core/tokens/ak-outpost-op-ldap-api/view_key/") echo '{"key":"LDAPTOKEN"}' ;;
+        *) echo '{}' ;;
+    esac; }
+wire_authentik_ldap_token >/dev/null
+[[ "$(env_get AUTHENTIK_LDAP_TOKEN)" == LDAPTOKEN ]] && grep -q '^DC up -d --no-deps authentik-ldap' "$T/calls" || fail_ "the outpost's token is fetched, then the outpost starts"; pass
+rm -f "$T/calls"; wire_authentik_ldap_token >/dev/null
+! grep -q '^DC ' "$T/calls" || fail_ "the same token: nothing restarts"; pass
+AK_ON=1; svc_enabled() { [[ "$1" == authentik && -n "${AK_ON:-}" ]]; }
+grep -q 'mediastack-ldap-allow:' lib/edge.sh && grep -q 'sourceRange: \["$(env_get MEDIASTACK_SUBNET 172.31.250.0/24)"\]' lib/edge.sh \
+    || fail_ "the LDAP route answers the stack network only"; pass
+grep -q 'traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"' compose.d/authentik.yml || fail_ "the LDAP route carries the allow-list"; pass
+bp=blueprints/authentik/mediastack-portal.yaml
+sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'mfa_support: false' || fail_ "LDAP binds: no MFA prompt (TV apps cannot answer one)"; pass
+grep -A3 'permissions:' "$bp" | grep -q 'permission: search_full_directory' || fail_ "only the search account may list the directory"; pass
+grep -B2 -A3 'target: !KeyOf flow-ldap' "$bp" | grep -q 'policy: !KeyOf policy-ldap-reputation' || fail_ "LDAP binds are throttled by reputation"; pass
+[[ "$(grep -c 'target: !KeyOf app-ldap' "$bp")" == 3 ]] || fail_ "binds: media-users, admins, the search account — nobody else"; pass
+
+# ---- update --to: the outpost and worker move with the server, the database stays ----
+svc_members() { printf '%s\n' authentik-db authentik-ldap authentik-worker; }
+svc_image() { case "$1" in authentik|authentik-worker) echo ghcr.io/goauthentik/server:2026.8 ;;
+    authentik-ldap) echo ghcr.io/goauthentik/ldap:2026.8 ;; authentik-db) echo postgres:16 ;; esac; }
+pin_service() { echo "PIN $1 $2"; }
+got=$(pin_shard_to authentik 2026.11 | sort | tr '\n' ';')
+[[ "$got" == "PIN authentik ghcr.io/goauthentik/server:2026.11;PIN authentik-ldap ghcr.io/goauthentik/ldap:2026.11;PIN authentik-worker ghcr.io/goauthentik/server:2026.11;" ]] \
+    || fail_ "lockstep pinning: $got"; pass
 
 echo "OK authentik: $checks checks"
