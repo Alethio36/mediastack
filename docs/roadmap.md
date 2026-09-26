@@ -181,8 +181,6 @@ all built; what each still leaves open is noted below.
   narrowing below into one "shrink the root surface" goal.
 
 ### Structure
-- Formalize the `.env` config schema and validate it (it is the whole config
-  surface; `doctor`-style checks for it).
 
 ### Security & access
 - **SSO in front of the panel** *(explore)* — Authelia or Keycloak. An optional

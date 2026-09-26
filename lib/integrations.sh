@@ -137,17 +137,17 @@ wire_callers() { # wire_callers <svc> -> the roles that write an address of <svc
     tr ' ' '\n' <<<"${WIRE_CALLERS[$key]:-}" | awk NF
 }
 repoint_mark() { # repoint_mark <svc> — its address is about to move: re-point its callers after `up`
-    local cur; cur=$(env_get WIRE_REPOINT)
-    [[ " $cur " == *" $1 "* ]] || env_set WIRE_REPOINT "${cur:+$cur }$1"
+    local cur; cur=$(state_get WIRE_REPOINT)
+    [[ " $cur " == *" $1 "* ]] || state_set WIRE_REPOINT "${cur:+$cur }$1"
 }
 wire_repoint_pending() { # after `up`: re-point the callers of every service a VPN toggle moved
     local pending s role want="" roles="" failed=""
-    pending=$(env_get WIRE_REPOINT); [[ -n "$pending" ]] || return 0
+    pending=$(state_get WIRE_REPOINT); [[ -n "$pending" ]] || return 0
     # never wired: no app holds an address yet, so nothing can be stale
-    [[ -f "$WIRED_FILE" ]] || { env_del WIRE_REPOINT; return 0; }
+    [[ -f "$WIRED_FILE" ]] || { state_del WIRE_REPOINT; return 0; }
     for s in $pending; do want+=" $(wire_callers "$s" | tr '\n' ' ')"; done
     for role in "${WIRE_ROLES[@]}"; do [[ " $want " == *" $role "* ]] && roles+="$role "; done   # wire's own order
-    [[ -n "$roles" ]] || { env_del WIRE_REPOINT; return 0; }
+    [[ -n "$roles" ]] || { state_del WIRE_REPOINT; return 0; }
     hr "Re-pointing what calls: $pending (moved in or out of the VPN)"
     for role in $roles; do
         # cmd_wire exits on failure: a subshell keeps `up` alive to report it
@@ -157,7 +157,7 @@ wire_repoint_pending() { # after `up`: re-point the callers of every service a V
         fail "re-pointing incomplete — wire ${failed% } reported failures (above). Fix, then: ./mediastack.sh up (retries) or ./mediastack.sh wire"
         return 1
     fi
-    env_del WIRE_REPOINT
+    state_del WIRE_REPOINT
     ok "everything that calls ${pending} re-pointed"
 }
 
