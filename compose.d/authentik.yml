@@ -26,12 +26,16 @@ x-authentik-env: &authentik-env
   AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
   AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
 
+# start_period: the first start runs authentik's whole migration history
+# before the server answers — about 3.5 minutes measured on a small VM (an
+# upgrade's migrations can take a while too). Shorter, and a healthy first
+# start is reported unhealthy (update's health gate would call it failed).
 x-authentik-health: &authentik-health
   test: ["CMD", "ak", "healthcheck"]
   interval: 30s
   timeout: 10s
   retries: 3
-  start_period: 90s
+  start_period: 300s
 
 services:
   authentik:
