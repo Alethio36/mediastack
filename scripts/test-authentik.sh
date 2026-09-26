@@ -372,7 +372,13 @@ sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'mfa_support: false' 
 sed -n '/model: authentik_outposts.outpost/,/^  - /p' "$bp" | grep -q '^      config:' || fail_ "an outpost needs its config block (authentik requires it; found live)"; pass
 grep -A3 'permissions:' "$bp" | grep -q 'permission: authentik_providers_ldap.search_full_directory' \
     || fail_ "only the search account may list the directory — by the full permission name (the dry run rejects the short form)"; pass
-grep -B2 -A3 'target: !KeyOf flow-ldap' "$bp" | grep -q 'policy: !KeyOf policy-ldap-reputation' || fail_ "LDAP binds are throttled by reputation"; pass
+# reputation: it PASSES for a bad score, so bound negated, at the login step
+# (the user is known there), by username only (every bind shares Traefik's IP)
+sed -n '/target: !KeyOf binding-ldap-login/,/^  - /p' "$bp" | grep -q 'policy: !KeyOf policy-ldap-reputation' \
+    && sed -n '/target: !KeyOf binding-ldap-login/,/^  - /p' "$bp" | grep -q 'negate: true' || fail_ "reputation: negated, at the login step"; pass
+sed -n '/name: mediastack-ldap-reputation/,/^  - /p' "$bp" | grep -q 'check_ip: false' || fail_ "reputation by username only — binds share one IP"; pass
+sed -n '/stage: !KeyOf stage-ldap-login/,/^  - /p' "$bp" | grep -q 're_evaluate_policies: true' || fail_ "the login step re-checks once the user is known"; pass
+grep -B3 'target: !KeyOf flow-ldap$' "$bp" | grep -q 'state: absent' || fail_ "the old flow-level binding is removed"; pass
 [[ "$(grep -c 'target: !KeyOf app-ldap' "$bp")" == 3 ]] || fail_ "binds: media-users, admins, the search account — nobody else"; pass
 
 # ---- update --to: the outpost and worker move with the server, the database stays ----

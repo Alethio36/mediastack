@@ -228,12 +228,17 @@ entries:
   # username and password and cannot answer a prompt — throttled by a
   # reputation policy (authentik's brute-force protection). Only the search
   # account may list the directory; only media-users and admins may bind.
+  # A reputation policy PASSES for a bad reputation (score <= threshold; it is
+  # made for "show these a captcha"), so it is bound negated: continue only
+  # with a good one. By username only — every bind reaches the outpost from
+  # Traefik's one address, so an IP check would let one person's typos lock
+  # everyone out (found live).
   - model: authentik_policies_reputation.reputationpolicy
     id: policy-ldap-reputation
     identifiers:
       name: mediastack-ldap-reputation
     attrs:
-      check_ip: true
+      check_ip: false
       check_username: true
       threshold: -5
   - model: authentik_stages_password.passwordstage
@@ -268,12 +273,27 @@ entries:
       target: !KeyOf flow-ldap
       stage: !KeyOf stage-ldap-identification
       order: 10
+  # checked at the login step, once the username is known — at the start of the
+  # flow nobody is identified yet, so a check there could throttle no one
   - model: authentik_flows.flowstagebinding
+    id: binding-ldap-login
     identifiers:
       target: !KeyOf flow-ldap
       stage: !KeyOf stage-ldap-login
       order: 30
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
   - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf binding-ldap-login
+      policy: !KeyOf policy-ldap-reputation
+      order: 0
+    attrs:
+      negate: true
+  # the earlier binding on the whole flow (it refused everyone in good standing)
+  - model: authentik_policies.policybinding
+    state: absent
     identifiers:
       target: !KeyOf flow-ldap
       policy: !KeyOf policy-ldap-reputation
