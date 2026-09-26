@@ -204,6 +204,43 @@ _svc_managed_by_profile() { # one env read + one jq, same test as svc_enabled pe
           | .key as $k | select(($p | contains("," + $k + ",")) == $want) | $k ] | sort[]' <<<"$RENDERED_JSON"
 }
 svc_exists()   { svc_all | grep -qx "$1"; }
+
+# Shards (docs/roadmap.md: Architecture rules — Shards). A service's private
+# containers (its database, its worker) are MEMBERS of its shard: each carries
+# `mediastack.shard: <primary>` and no mediastack.managed, shares the primary's
+# profile, runs as the primary's UID and keeps its data inside the primary's
+# folders — so provisioning, ownership, fix-perms and backups (all keyed to the
+# primary's folders) cover members unchanged. Only verbs that act on containers
+# expand a primary to its shard: update, restore, logs, disable, status, doctor.
+svc_members() { # svc_members <primary> -> its member services, sorted
+    render
+    jq -r --arg p "$1" '.services | to_entries[] | select(.value.labels["mediastack.shard"] == $p) | .key' \
+        <<<"$RENDERED_JSON" | sort
+}
+svc_shard() { # svc_shard <primary>... -> each primary followed by its members
+    local s
+    for s in "$@"; do echo "$s"; svc_members "$s"; done
+}
+shard_health() { # shard_health <primary> -> the primary's health, or "degraded" when a member is not up
+    local m st h
+    for m in $(svc_members "$1"); do
+        st=$(c_state "$(svc_cname "$m")"); h=$(c_health "$(svc_cname "$m")")
+        [[ "$st" == running && "$h" != unhealthy ]] || { echo degraded; return 0; }
+    done
+    c_health "$(svc_cname "$1")"
+}
+shard_problems() { # every shard rule the rendered config breaks, one line each (CI: test-render)
+    render
+    jq -r '.services as $all | $all | to_entries[] | select(.value.labels["mediastack.shard"] != null)
+        | .key as $m | .value as $v | ($v.labels["mediastack.shard"]) as $p
+        | if ($all[$p] == null) then "\($m): its primary \($p) does not exist"
+          elif ($all[$p].labels["mediastack.managed"] != "true") then "\($m): its primary \($p) is not a managed service"
+          elif ($v.labels["mediastack.managed"] != null) then "\($m): a member must not carry mediastack.managed"
+          elif (($v.profiles // []) != ($all[$p].profiles // [])) then "\($m): profiles differ from its primary \($p) (members start and stop with it)"
+          elif (($v.user // "") != ($all[$p].user // "")) then "\($m): runs as \($v.user // "the image default"), not as its primary \($p) (\($all[$p].user // "the image default"))"
+          elif ((($all[$p].depends_on // {}) | has($m)) | not) then "\($m): its primary \($p) must depend_on it (starting the primary starts the shard)"
+          else empty end' <<<"$RENDERED_JSON"
+}
 svc_image()    { render; jq -r --arg s "$1" '.services[$s].image' <<<"$RENDERED_JSON"; }
 svc_cname()    { render; jq -r --arg s "$1" '.services[$s].container_name // $s' <<<"$RENDERED_JSON"; }
 svc_port() { # host port a service is published on for its mediastack.port
@@ -455,7 +492,8 @@ reconcile_disabled() {
     # Remove them explicitly. -v drops their anonymous volumes too.
     render
     local s cn
-    for s in $(svc_disabled_managed); do
+    # shellcheck disable=SC2046  # service names, one word each
+    for s in $(svc_shard $(svc_disabled_managed)); do
         cn=$(svc_cname "$s")
         if [[ $(c_state "$cn") != absent ]]; then
             sudo docker rm -f -v "$cn" >/dev/null; INSPECT_JSON=""
@@ -592,7 +630,8 @@ cmd_logs() {
         esac
     done
     [[ -n "$svc" ]] || die "usage: logs <service> [--no-follow]"
-    DC logs "${follow[@]}" --tail=100 "$svc"
+    # shellcheck disable=SC2046  # a shard's containers, one word each
+    DC logs "${follow[@]}" --tail=100 $(svc_shard "$svc")
 }
 
 # ----------------------------------------------------- container inspect --
@@ -802,7 +841,7 @@ cmd_status() {
         fi
         port=$(svc_port "$s"); port=${port:--}
         printf "%-14s %-5s %-5s %-9s %-10s %-12s %-8s %-9s %s\n" \
-            "$s" "$port" "$vpn" "$(c_state "$cn")" "$(c_health "$cn")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")" "$(svc_url "$s")"
+            "$s" "$port" "$vpn" "$(c_state "$cn")" "$(shard_health "$s")" "$(c_version "$cn" | cut -c1-12)" "$pin" "$(c_uptime "$cn")" "$(svc_url "$s")"
     done
     echo
     info "VPN: on = via the tunnel, off = direct, self = the tunnel itself · * = changed from recommended · change: ./mediastack.sh vpn"

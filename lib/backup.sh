@@ -130,7 +130,7 @@ preupdate_backup() {
 
     # images.lock for the scoped service(s), BEFORE stopping (inspect needs them)
     c_inspect_all
-    { for s in "$@"; do
+    { for s in $(svc_shard "$@"); do   # every container's image, members included (rollback pins them all)
         cn=$(svc_cname "$s")
         img=$(c_get "$cn" '.Image'); [[ -n "$img" ]] || continue
         ref=$(sudo docker image inspect --format '{{index .RepoDigests 0}}' "$img" 2>/dev/null | tr -d '\n' || true)
@@ -139,7 +139,8 @@ preupdate_backup() {
 
     for s in "$@"; do
         info "snapshotting $s (only this service stops)..."
-        DC stop "$s" >/dev/null
+        # shellcheck disable=SC2046  # its shard stops with it: a consistent database
+        DC stop $(svc_shard "$s") >/dev/null
         # same transcode exclude as the full backup (canonical: cmd_backup)
         [[ -d "$croot/$s" ]] && { sudo tar -C "$croot" --exclude="$s/data/transcodes" -czf "$dest/$s.tar.gz" "$s" || { fail "tar failed for $s"; rc=1; }; }
         DC up -d "$s" >/dev/null
@@ -247,16 +248,20 @@ cmd_restore() {
     local targets; if (( all_svcs )); then targets=$(svc_managed); else targets="$svc"; fi
     local croot ts s ref
     croot=$(env_get CONFIG_ROOT); ts=$(ts_now)
+    local m
     for s in $targets; do
         svc_exists "$s" || die "No service '$s'."
-        DC stop "$s" >/dev/null
+        # shellcheck disable=SC2046  # the shard stops together (its data is one folder)
+        DC stop $(svc_shard "$s") >/dev/null
         if [[ -f "$broot/$from/$s.tar.gz" ]]; then
             [[ -d "$croot/$s" ]] && sudo mv "$croot/$s" "$croot/$s.pre-restore.$ts"
             sudo tar -C "$croot" -xzf "$broot/$from/$s.tar.gz"
             ok "$s config restored (previous kept at $s.pre-restore.$ts)"
         fi
-        ref=$(awk -v s="$s" '$1==s{print $2}' "$broot/$from/images.lock" 2>/dev/null || true)
-        [[ -n "$ref" ]] && pin_service "$s" "$ref"
+        for m in $(svc_shard "$s"); do
+            ref=$(awk -v s="$m" '$1==s{print $2}' "$broot/$from/images.lock" 2>/dev/null || true)
+            [[ -n "$ref" ]] && pin_service "$m" "$ref"
+        done
         RENDERED_JSON=""
         DC up -d "$s"
     done
@@ -337,6 +342,9 @@ cmd_update() {
         targets+=("$s")
     done
     (( ${#targets[@]} )) || { ok "Nothing to update."; return 0; }
+    # a shard updates as one: server and worker on the same version, its
+    # database pulled with it (pins and health are checked per container)
+    mapfile -t targets < <(svc_shard "${targets[@]}")
 
     if (( dry )); then
         hr "update --dry-run"
@@ -388,8 +396,12 @@ cmd_update() {
     fi
 
     if [[ -n "$to_tag" ]]; then
-        local base; base=$(svc_image "$one" | cut -d: -f1)
+        local base m; base=$(svc_image "$one" | cut -d: -f1)
         pin_service "$one" "$base:$to_tag"
+        # a member built from the same image (authentik's worker) moves with it
+        for m in $(svc_members "$one"); do
+            [[ "$(svc_image "$m" | cut -d: -f1)" == "$base" ]] && pin_service "$m" "$base:$to_tag"
+        done
         RENDERED_JSON=""
     fi
 

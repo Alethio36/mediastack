@@ -56,16 +56,19 @@ _doctor_containers() {
     hr "doctor: containers"
     local s cn st h
     local pending=()
-    for s in $(svc_managed); do
+    local p
+    for p in $(svc_managed); do
+      for s in $(svc_shard "$p"); do   # a shard's members are checked with it
         cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
         case "$st:$h" in
             running:healthy|running:-) ok "$s ($st${h:+, $h})" ;;
             running:starting) pending+=("$s") ;;   # verdict deferred
-            absent:*) if svc_enabled "$s"; then
+            absent:*) if svc_enabled "$p"; then
                           d_fail "$s enabled but not running" "container was never created or was removed" "./mediastack.sh up"
-                      else info "$s not enabled — skipped"; fi ;;
-            *) d_fail "$s is $st/$h (restarts: $(c_restarts "$cn"))" "service is not serving" "./mediastack.sh logs $s   (then: rollback $s if a recent update broke it)" ;;
+                      elif [[ "$s" == "$p" ]]; then info "$s not enabled — skipped"; fi ;;
+            *) d_fail "$s is $st/$h (restarts: $(c_restarts "$cn"))" "service is not serving" "./mediastack.sh logs $p   (then: rollback $p if a recent update broke it)" ;;
         esac
+      done
     done
     if (( ${#pending[@]} )); then
         # Docker's own verdict, never pre-empted: "starting" means undecided
