@@ -80,10 +80,68 @@ authentik_release_record() { # once authentik is healthy on a release, its datab
     sudo chown "$(env_get AUTHENTIK_UID):mediacenter" "$(authentik_dir)/$AUTHENTIK_MARK"
 }
 
-authentik_prepare() { # before `up`/`enable` start it: secrets, then the release step
+AUTHENTIK_BLUEPRINT="Mediastack - Portal"   # metadata.name in blueprints/authentik/mediastack-portal.yaml
+AUTHENTIK_JOIN_FLOW=mediastack-join          # its sign-up flow's slug (the invitation links)
+
+authentik_portal() { echo "https://$(env_get AUTHENTIK_HOST portal).$(env_get TRAEFIK_DOMAIN)"; }   # where people go
+authentik_url()    { echo "http://127.0.0.1:$(svc_hostport authentik)"; }                             # where the script goes
+
+ak_api() { # ak_api METHOD PATH [json] -> body on stdout; rc from HTTP (authentik's API, as the script's token)
+    local m="$1" p="$2" b="${3:-}" out code
+    out=$(curl -sS -m 20 -X "$m" -H "Authorization: Bearer $(env_get AUTHENTIK_API_TOKEN)" \
+          -H "Content-Type: application/json" ${b:+-d "$b"} -w '\n%{http_code}' "$(authentik_url)/api/v3$p" 2>&1) \
+        || { echo "$out"; return 1; }
+    code=${out##*$'\n'}; echo "${out%$'\n'*}"
+    [[ "$code" =~ ^2 ]]
+}
+
+authentik_blueprints_sync() { # the worker applies what is in CONFIG_ROOT/authentik/blueprints: keep it the repo's
+    local dst uid f n
+    dst="$(authentik_dir)/blueprints"; uid=$(env_get AUTHENTIK_UID)
+    sudo install -d -o "$uid" -g mediacenter -m 755 "$dst"
+    for f in "$SCRIPT_DIR"/blueprints/authentik/*.yaml; do
+        sudo cmp -s "$f" "$dst/${f##*/}" || { sudo install -o "$uid" -g mediacenter -m 644 "$f" "$dst/${f##*/}"; n=1; }
+    done
+    # a blueprint mediastack no longer ships leaves with it (the folder is ours alone)
+    for f in $(sudo find "$dst" -maxdepth 1 -name '*.yaml' -printf '%f\n'); do
+        [[ -e "$SCRIPT_DIR/blueprints/authentik/$f" ]] || { sudo rm -f "$dst/$f"; n=1; }
+    done
+    [[ -n "${n:-}" ]] && info "authentik: portal setup files updated — its worker applies them on change (check: ./mediastack.sh wire authentik)"
+    return 0
+}
+
+authentik_prepare() { # before `up`/`enable` start it: the edge, secrets, the release step, its setup files
     svc_enabled authentik || return 0
+    # the API is published on 127.0.0.1 only: people reach the portal through Traefik
+    svc_enabled traefik && [[ -n "$(env_get TRAEFIK_DOMAIN)" ]] \
+        || die "authentik (the portal) is reached at https://portal.<your domain>, through Traefik — enable and set it up first:
+  ./mediastack.sh enable traefik   (then: ./mediastack.sh traefik-setup)"
     authentik_secrets
     authentik_release_check
+    authentik_blueprints_sync
+}
+
+authentik_blueprint_status() { # -> successful | warning | error | ... | "" (not discovered yet) | "unreadable (…)"
+    local out
+    out=$(ak_api GET "/managed/blueprints/?page_size=200") || { echo "unreadable ($(head -c120 <<<"$out"))"; return 0; }
+    jq -r --arg n "$AUTHENTIK_BLUEPRINT" '[.results[] | select(.name == $n) | .status][0] // ""' <<<"$out"
+}
+
+authentik_invite() { # authentik_invite DAYS -> a single-use sign-up link, printed
+    local days="$1" flow name exp out pk
+    [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
+    out=$(ak_api GET "/flows/instances/?slug=$AUTHENTIK_JOIN_FLOW") \
+        || die "authentik's API refused the sign-up flow lookup: $(head -c200 <<<"$out")"
+    flow=$(jq -r '.results[0].pk // empty' <<<"$out")
+    [[ -n "$flow" ]] || die "authentik has no sign-up flow yet ($AUTHENTIK_JOIN_FLOW) — it applies mediastack's setup shortly after starting; check: ./mediastack.sh wire authentik"
+    name="invite-$(date +%Y%m%d-%H%M%S)"
+    exp=$(date -u -d "+$days days" +%Y-%m-%dT%H:%M:%SZ)
+    out=$(ak_api POST /stages/invitation/invitations/ \
+          "$(jq -cn --arg n "$name" --arg e "$exp" --arg f "$flow" '{name:$n, expires:$e, single_use:true, flow:$f}')") \
+        || die "authentik refused the invitation: $(head -c200 <<<"$out")"
+    pk=$(jq -r '.pk // empty' <<<"$out"); [[ -n "$pk" ]] || die "authentik answered without an invitation id: $(head -c200 <<<"$out")"
+    ok "Invitation created — single use, expires in $days day(s) ($(date -d "$exp" '+%Y-%m-%d %H:%M'))"
+    echo "$(authentik_portal)/if/flow/$AUTHENTIK_JOIN_FLOW/?itoken=$pk"
 }
 
 # ------------------------------------------------------------------ doctor --
@@ -109,6 +167,15 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
             warn "authentik runs $run but its database is recorded at $mark — it is not healthy on $run yet"
         else
             ok "authentik on release $mark (the next update may only step to the release after it)"
+        fi
+        if [[ "$(c_health "$(svc_cname authentik)")" == healthy ]]; then
+            local st; st=$(authentik_blueprint_status)
+            case "$st" in
+                successful) ok "authentik: mediastack's portal setup applied (groups, sign-up by invitation)" ;;
+                "") warn "authentik has not applied mediastack's portal setup yet (it does within minutes of starting): ./mediastack.sh wire authentik" ;;
+                *) d_fail "authentik: mediastack's portal setup is '$st'" "groups and sign-up may be missing or incomplete" \
+                       "./mediastack.sh logs authentik --no-follow | grep -i blueprint" ;;
+            esac
         fi
     elif svc_enabled wizarr; then
         info "accounts: Wizarr (each app keeps its own accounts)"

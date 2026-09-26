@@ -719,7 +719,7 @@ c_inspect_all() { # fill the cache for every managed container and its shard's m
         State: {Status: .State.Status, StartedAt: .State.StartedAt, Health: .State.Health},
         HostConfig: {NetworkMode: .HostConfig.NetworkMode},
         Config: {User: .Config.User, Labels: {"org.opencontainers.image.version": .Config.Labels["org.opencontainers.image.version"]}},
-        Mounts: [ .Mounts[] | {Source, Destination} ] } ]')
+        Mounts: [ .Mounts[] | {Source, Destination, RW} ] } ]')
 }
 # ADDING A FIELD TO c_get's READS = ADDING IT TO THE PROJECTION ABOVE, or the
 # cached path silently returns "" where the uncached one returns the value.

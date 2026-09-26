@@ -610,8 +610,9 @@ and password, land on authentik's app dashboard, and are put in `media-users` by
 the signup flow. Then: Jellyfin on the TV with the same username and password;
 Audiobookshelf's "Log in with authentik"; Seerr's "Sign in with Jellyfin";
 Navidrome's music apps after setting a Navidrome password. Household members are
-"external" users — authentik needs a default application for them or they hit
-"permission denied". Weak spots and their answers: no guided app setup (text in
+*internal* users without admin rights — authentik shows its app dashboard to
+internal users only (external users are sent straight to one default app;
+checked in its source, `BrandDefaultRedirectView`). Weak spots and their answers: no guided app setup (text in
 the signup flow and in each app's dashboard description — server address, which
 app to install, "same password"; a small getting-started page if that is not
 enough); forgotten passwords are reset by you until an email server is set up

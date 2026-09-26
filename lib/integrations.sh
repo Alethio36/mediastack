@@ -17,7 +17,7 @@ WIRE_FAILS=0
 # jellyfin's admin and wizarr's first-run UI wants jellyfin claimed first, so
 # jellyfin precedes both. To add an integration: append its role here and define
 # a matching wire_<role> function below.
-WIRE_ROLES=(qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr)
+WIRE_ROLES=(qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr authentik)
 # roles that write without observing (one big settings blob / blind writeCFG):
 # their dry-run always says "would", so --verify cannot read drift from them
 WIRE_BLIND=(bazarr lazylibrarian seerr)
@@ -1638,6 +1638,35 @@ Paste nothing to skip for now — re-run 'wire wizarr' any time."
         wfail "wizarr rejected the stored API key [HTTP $code] — recreate it in Settings -> API Keys, then re-run 'wire wizarr' (the old value stays in .env until replaced)"
         return 1
     fi
+}
+
+wire_authentik() {
+    hr "wire: authentik"
+    svc_enabled authentik || { info "authentik not enabled — skipped"; return 0; }
+    wire_gate authentik
+    http_ready authentik "$(authentik_url)/-/health/ready/" '^2' || return 1
+    # its base URL: the address in links it generates (invitations included).
+    # Set when unset, or when it is still the one mediastack last wrote (a
+    # renamed host); a URL you set in authentik's UI is left alone.
+    local want cur mine
+    want=$(authentik_portal); mine=$(state_get AUTHENTIK_BASE_URL)
+    cur=$(ak_api GET /admin/settings/ | jq -r '.base_url // ""') \
+        || { wfail "authentik: its settings are unreadable — is AUTHENTIK_API_TOKEN the one it started with?"; return 1; }
+    if [[ "$cur" == "$want" ]]; then
+        ok "authentik: base URL $want"
+    elif [[ -n "$cur" && "$cur" != "$mine" ]]; then
+        ok "authentik: base URL $cur was set in its UI — untouched"
+    elif w_would "authentik: set its base URL to $want (the address in the links it generates)"; then
+        if ak_api PATCH /admin/settings/ "$(jq -cn --arg u "$want" '{base_url:$u}')" >/dev/null; then
+            state_set AUTHENTIK_BASE_URL "$want"; ok "authentik: base URL set"
+        else wfail "authentik rejected the base URL $want"; fi
+    fi
+    local st; st=$(authentik_blueprint_status)
+    case "$st" in
+        successful) ok "authentik: mediastack's portal setup applied (media-users, admins, sign-up by invitation)" ;;
+        "") info "authentik: mediastack's portal setup not applied yet — it is, within minutes of starting; re-run to check" ;;
+        *) wfail "authentik: mediastack's portal setup is '$st' — ./mediastack.sh logs authentik --no-follow | grep -i blueprint" ;;
+    esac
 }
 
 wire_usage() { local IFS='|'; die "usage: wire [${WIRE_ROLES[*]}] [--dry-run|--verify]"; }

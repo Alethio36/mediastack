@@ -212,9 +212,14 @@ all built; what each still leaves open is noted below.
      stopped PostgreSQL copies consistently). The account model is either/or,
      declared by `mediastack.conflicts`: `enable` refuses the second,
      `configure` asks which one, doctor fails both enabled.
-  3. Blueprints: invitation signup into `media-users`, household users external
-     with a default application, dashboard cards with setup text, `admins` for
-     the gated tools. The LDAP outpost comes with Jellyfin (5).
+  3. *Done:* the portal's setup as a blueprint (`blueprints/authentik/`,
+     applied by the worker from a copy `up` keeps current): groups `media-users`
+     and `admins`, sign-up by invitation only (username, password, name, email —
+     all required) creating *internal* non-admin users in `media-users`, the
+     portal's name (`PORTAL_TITLE`, asked by `configure`), a "Getting started"
+     dashboard card. `wire authentik` sets the base URL; `invite` mints a
+     single-use link (7 days; `--expires 1|7|30`). The LDAP outpost comes with
+     Jellyfin (5).
   4. The `mediastack.auth` label on every web interface (`native` / `gate` /
      `open`, exception paths), CI-enforced; gated tools on 127.0.0.1 ports with
      their own login set to trust the gate; the gate's Traefik rules generated
@@ -226,9 +231,12 @@ all built; what each still leaves open is noted below.
      users, keeping watch history; Audiobookshelf/Kavita match by username) —
      test the Jellyfin LDAP takeover of an existing user first.
   First milestone: the gate in front of the panel and Apprise.
-- **Email server for authentik** *(later)* — self-service password reset and
-  invitation e-mails. Until then invite links are copied by hand and passwords
-  reset by the admin.
+- **Email server for authentik** *(later)* — the standard for what email is
+  used for: (1) a user resets their own forgotten password, (2) `invite` can
+  e-mail the link, (3) authentik's own update notices reach its admins. Nothing
+  else (no marketing, no digests). Email is already required at sign-up, so
+  every account is ready for it. Until then invite links are copied by hand and
+  passwords are reset by the admin.
 - Post-migration hardening: move the panel off LAN-open once SSO lands; phase-2
   sudo narrowing (read-only verbs drop root); staging→production certs once a box
   stops being a test box.

@@ -89,10 +89,15 @@ services:
       # API token for the script (lib/authentik.sh writes both)
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_ADMIN_PASSWORD}
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_API_TOKEN}
+      # read by mediastack's blueprint (blueprints/authentik/)
+      MEDIASTACK_PORTAL_TITLE: ${PORTAL_TITLE:-Mediastack}
+      MEDIASTACK_PORTAL_URL: https://${AUTHENTIK_HOST:-portal}.${TRAEFIK_DOMAIN:-unset.invalid}
     volumes:
       - ${CONFIG_ROOT}/authentik/data:/data
       - ${CONFIG_ROOT}/authentik/templates:/templates
       - ${CONFIG_ROOT}/authentik/certs:/certs
+      # mediastack's setup (a copy lib/authentik.sh keeps current), applied on every start
+      - ${CONFIG_ROOT}/authentik/blueprints:/blueprints/mediastack:ro
     shm_size: 512mb
     depends_on:
       authentik-db:

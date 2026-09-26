@@ -11,6 +11,11 @@
 #   * a shard member is never a dependency to enable (it comes with its
 #     primary's profile)
 #   * a service an upgrade adds gets its UID before it first starts
+#   * the portal's blueprint: sign-up needs an invitation, makes internal users
+#     in media-users, requires an email; the worker gets its values and mount
+#   * invitations: single use, bound to the sign-up flow, 7 days by default
+#   * the base URL is set when unset or still mediastack's, never over one
+#     set in authentik's UI
 #
 #   scripts/test-authentik.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -91,5 +96,66 @@ before=$(cat "$ENV_FILE"); rm -f "$T/info"; _configure_selfheal
 [[ "$(cat "$ENV_FILE")" == "$before" && ! -e "$T/info" ]] || fail_ "a second run changes nothing and says nothing"; pass
 grep -q '^    _configure_selfheal' <(sed -n '/^provision() {/,/^}/p' mediastack.sh) \
     || fail_ "provision (up, enable) must allocate new services' UIDs"; pass
+
+# ---- the portal's setup (blueprints/authentik/) ----
+bp=blueprints/authentik/mediastack-portal.yaml
+grep -q "^  name: $AUTHENTIK_BLUEPRINT\$" "$bp" || fail_ "the blueprint's name must be AUTHENTIK_BLUEPRINT ($AUTHENTIK_BLUEPRINT)"; pass
+grep -q "^      slug: $AUTHENTIK_JOIN_FLOW\$" "$bp" || fail_ "the sign-up flow's slug must be AUTHENTIK_JOIN_FLOW"; pass
+# household members are internal (external users never see the app dashboard), in media-users
+grep -A4 'model: authentik_stages_user_write.userwritestage' "$bp" | grep -q 'name: mediastack-join-write' \
+    && sed -n '/name: mediastack-join-write/,/^  - /p' "$bp" | grep -q 'user_type: internal' \
+    && sed -n '/name: mediastack-join-write/,/^  - /p' "$bp" | grep -q 'create_users_group: !KeyOf group-media-users' \
+    || fail_ "sign-up must create internal users in media-users"; pass
+sed -n '/name: mediastack-join-invitation/,/^  - /p' "$bp" | grep -q 'continue_flow_without_invitation: false' \
+    || fail_ "sign-up must need an invitation"; pass
+sed -n '/name: mediastack-join-email/,/^  - /p' "$bp" | grep -q 'required: true' || fail_ "email is required at sign-up"; pass
+sed -n '/^  authentik-worker:/,/^  authentik-db:/p' compose.d/authentik.yml > "$T/worker"
+grep -q 'MEDIASTACK_PORTAL_TITLE: ${PORTAL_TITLE:-Mediastack}' "$T/worker" && grep -q 'MEDIASTACK_PORTAL_URL:' "$T/worker" \
+    || fail_ "the worker passes the portal's name and address to the blueprint"; pass
+grep -q -- '- ${CONFIG_ROOT}/authentik/blueprints:/blueprints/mediastack:ro' "$T/worker" \
+    || fail_ "the worker mounts mediastack's blueprints read-only"; pass
+
+# ---- invitations ----
+TRAEFIK_ENV="AUTHENTIK_HOST=portal
+TRAEFIK_DOMAIN=media.example.com"
+printf '%s\n' "$TRAEFIK_ENV" > "$ENV_FILE"
+svc_cname() { echo "c-$1"; }; c_health() { echo healthy; }
+ak_api() {
+    echo "$1 $2 ${3:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /flows/instances/?slug=mediastack-join") echo '{"results":[{"pk":"flow-uuid"}]}' ;;
+        "POST /stages/invitation/invitations/")       echo '{"pk":"inv-uuid"}' ;;
+        *) return 1 ;;
+    esac
+}
+rm -f "$T/calls"
+link=$(authentik_invite 7 | tail -1)
+[[ "$link" == "https://portal.media.example.com/if/flow/mediastack-join/?itoken=inv-uuid" ]] || fail_ "invitation link: $link"; pass
+body=$(grep '^POST' "$T/calls" | cut -d' ' -f3-)
+[[ "$(jq -r '.single_use' <<<"$body")" == true && "$(jq -r '.flow' <<<"$body")" == flow-uuid ]] || fail_ "single use, bound to the sign-up flow: $body"; pass
+exp=$(jq -r '.expires' <<<"$body"); want=$(date -u -d '+7 days' +%s); got=$(date -u -d "$exp" +%s)
+(( got - want < 120 && want - got < 120 )) || fail_ "expires in 7 days: $exp"; pass
+
+# ---- the base URL: set when unset or still ours, never over one set in the UI ----
+state_get() { cat "$T/state" 2>/dev/null || true; }
+state_set() { echo "$2" > "$T/state"; }
+wire_gate() { :; }; http_ready() { :; }; hr() { :; }; info() { :; }; svc_enabled() { [[ "$1" == authentik ]]; }
+authentik_url() { echo http://127.0.0.1:9000; }
+WIRE_DRY=0; WIRE_CHANGES=0; WIRE_FAILS=0
+base() { # base CURRENT OURS -> the PATCH body sent, or "none"
+    CUR=$1; rm -f "$T/calls"; if [[ -n "$2" ]]; then echo "$2" > "$T/state"; else rm -f "$T/state"; fi
+    ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+        case "$1 $2" in
+            "GET /admin/settings/") jq -cn --arg u "$CUR" '{base_url:$u}' ;;
+            "PATCH /admin/settings/") : ;;
+            "GET /managed/blueprints/?page_size=200") echo '{"results":[{"name":"Mediastack - Portal","status":"successful"}]}' ;;
+        esac; }
+    wire_authentik >/dev/null
+    if grep -q '^PATCH' "$T/calls"; then grep '^PATCH' "$T/calls" | cut -d' ' -f3-; else echo none; fi
+}
+[[ "$(base "" "")" == '{"base_url":"https://portal.media.example.com"}' ]] || fail_ "unset: set it"; pass
+[[ "$(base "https://old.media.example.com" "https://old.media.example.com")" == *portal.media.example.com* ]] || fail_ "still ours (a renamed host): re-point it"; pass
+[[ "$(base "https://sso.mine.net" "")" == none ]] || fail_ "set in authentik's UI: never touched"; pass
+[[ "$(base "https://portal.media.example.com" "")" == none ]] || fail_ "already right: no write"; pass
 
 echo "OK authentik: $checks checks"

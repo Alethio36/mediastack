@@ -216,15 +216,24 @@ sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
         ok "Jellyfin admin password rotated and verified"
 }
 
-cmd_invite() { # mint a wizarr invitation and print the ready-to-share URL
+cmd_invite() { # mint an invitation (authentik's or Wizarr's, whichever runs) and print the ready-to-share URL
     load_env; render
+    if svc_enabled authentik; then
+        local days=7   # single use, a week: an unused link stops working on its own
+        while [[ $# -gt 0 ]]; do case "$1" in
+            --expires) case "${2:-}" in 1|7|30) days="$2"; shift 2 ;;
+                       *) die "usage: invite [--expires 1|7|30]   (default: 7 days)" ;; esac ;;
+            *) die "usage: invite [--expires 1|7|30]   (default: 7 days)" ;;
+        esac; done
+        authentik_invite "$days"; return 0
+    fi
     local expires="" host domain base key
     while [[ $# -gt 0 ]]; do case "$1" in
         --expires) case "${2:-}" in 1|7|30) expires="$2"; shift 2 ;;
                    *) die "usage: invite [--expires 1|7|30]   (no flag = never expires)" ;; esac ;;
         *) die "usage: invite [--expires 1|7|30]   (no flag = never expires)" ;;
     esac; done
-    svc_enabled wizarr || die "wizarr is not enabled. Enable it first: ./mediastack.sh enable wizarr"
+    svc_enabled wizarr || die "Neither account model is enabled — invitations come from authentik or Wizarr: ./mediastack.sh enable authentik   (or: enable wizarr)"
     [[ "$(c_state "$(svc_cname wizarr)")" == running ]] || die "wizarr is not running: ./mediastack.sh up"
     key=$(env_get WIZARR_API_KEY)
     [[ -n "$key" ]] || die "No wizarr API key stored yet — run: ./mediastack.sh wire wizarr"
