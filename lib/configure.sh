@@ -170,8 +170,9 @@ ENCOURAGED — backups on the same disk as the configs aren't backups.
 
 _configure_selfheal() {
     # -- self-heal FIRST: adopt any *_UID / *_UPDATE vars new fragments
-    # reference, so the render below never sees unset variables
-    info "Checking for newly added services..."
+    # reference, so the render below never sees unset variables. Also run by
+    # provision (up, enable): a service an `upgrade` added must get its own
+    # UID before anything starts it, not only at the next `configure`.
     local ref base
     base=$(env_get UID_BASE 13000)
     while read -r ref; do
