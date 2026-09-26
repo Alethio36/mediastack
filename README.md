@@ -131,6 +131,7 @@ Connect
 | `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr] [--dry-run\|--verify]` | connect the apps to each other (the arrs also get their recycle bin — see below); idempotent — GUI-configured apps are never overwritten, with one exception: an address mediastack itself wrote (how one app reaches another) is re-pointed when a VPN toggle moves its target — an address you set by hand is left alone. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
 | `invite [--expires 1\|7\|30]` | mint a Wizarr invitation, print the ready-to-share URL (default: never expires) |
 | `set-credentials <arr\|qbit\|jellyfin\|pihole\|traefik\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `all` sets one password across the stack (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
+| `notify [status\|test [stream]\|set <stream>\|clear <stream>\|send <stream> <title> <message> [--type T]]` | the notification streams (`ops`, `users`): what each is set to (URLs hidden) and whether it delivered, a test, replace or clear a stream's URLs, or send your own message — see "Notifications" |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
 | `trash-sync [--dry-run]` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update. `--dry-run` previews the drift (`recyclarr --preview`) and changes nothing |
 | `traefik-setup` | HTTPS wizard: domain, Cloudflare token, cert environment, dashboard login |
@@ -335,8 +336,31 @@ streams, routed by audience: **ops** (you — errors, the update
 pipeline, backups, doctor, incoming requests) and **users** (the
 household — new media, invites, and service notices like restarts and
 updates). `wire apprise` asks for your endpoints once, stores them
-under one key, and connects every arr to the hub. Endpoints already
-stored are never touched.
+under one key, and connects every arr to the hub; after that, manage them
+with `notify`:
+
+```
+./mediastack.sh notify                   # each stream: its services (URLs hidden), last delivered, last failure
+./mediastack.sh notify test [ops|users]  # a test to each stream, plus Seerr's own test through the hub
+./mediastack.sh notify set users         # replace a stream's URLs (hidden input), then test it
+./mediastack.sh notify clear ops         # remove a stream's URLs
+./mediastack.sh notify send users "Maintenance tonight" "Jellyfin is down 8-9pm" [--type warning]
+```
+
+`set` and `clear` change only that stream's lines in the hub's
+configuration — anything you added in Apprise's UI (your own tags) is
+kept. A notification that fails is recorded: `notify` and `doctor` show
+the last failure and why.
+
+**Seerr's events** (requests, approvals, availability, failures, issues)
+reach the hub tagged with the event's own name, and each stream's URLs
+carry the events that stream receives, so the hub routes them: *media
+available* goes to **users** ("X is ready to watch"), everything else to
+**ops**. The wording is Seerr's. The table is `NOTIFY_EVENTS` in
+`lib/notify.sh`; `wire apprise` keeps the tags on mediastack's lines
+current. Seerr only announces media that was *requested* through it — a
+title an arr adds on its own (an import list, a manual add) is not
+announced.
 
 When an update bounces a **user-facing** service, the **users** stream
 gets a heads-up before the restore-point backup and a follow-up once it
@@ -384,12 +408,10 @@ Apprise's own UI lives at `https://notify.<your-domain>` (or
 `http://<host>:8000` on the LAN) — that's where stored endpoints are
 edited after the first wire.
 
-Seerr's request/approval/availability events flow to the hub too. wire
-installs Jellyfin's Webhook plugin (WatchState's webhook mode and hub
-notifications both want it); its destinations stay yours to configure in
-Jellyfin's Dashboard -> Plugins -> Webhook — WatchState's UI hands you
-the exact URL to paste per backend, and a generic destination pointed at
-`http://gluetun:8000/notify/mediastack` feeds the hub.
+wire installs Jellyfin's Webhook plugin for WatchState's webhook mode;
+its destinations stay yours to configure in Jellyfin's Dashboard ->
+Plugins -> Webhook (WatchState's UI hands you the exact URL to paste per
+backend).
 
 Apprise lives inside the VPN namespace like the arrs, so notifications
 egress through the tunnel. Known property: if the tunnel is hard down,

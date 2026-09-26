@@ -301,3 +301,9 @@ CALL cmd_audit_extract [0]
 ## audit-extract x
 ERROR 'audit-extract' takes no arguments (got: x)
 rc=1
+## notify
+CALL cmd_notify [0]
+## notify test users
+CALL cmd_notify [2] test users
+## notify send users "title" "message"
+CALL cmd_notify [4] send users "title" "message"

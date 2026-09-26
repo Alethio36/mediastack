@@ -858,7 +858,7 @@ wire_bazarr() {
     fi
 }
 
-jf_plugin_webhook() { # install-if-missing; two consumers: WatchState + the hub
+jf_plugin_webhook() { # install-if-missing; its consumer is WatchState (the hub hears Seerr, not Jellyfin)
     local tok="$1" plugins
     local plist; plist=$(jf_api GET /Plugins "$tok") \
         || { wfail "could not list jellyfin plugins [HTTP $(jf_code)] — nothing installed, jellyfin not restarted"; return 1; }
@@ -867,7 +867,7 @@ jf_plugin_webhook() { # install-if-missing; two consumers: WatchState + the hub
         ok "Webhook plugin installed"
         return 0
     fi
-    w_would "install Jellyfin's Webhook plugin (WatchState webhooks + hub notifications need it) and restart jellyfin once" \
+    w_would "install Jellyfin's Webhook plugin (WatchState's webhooks need it) and restart jellyfin once" \
         || return 0
     jf_api POST "/Packages/Installed/Webhook?assemblyGuid=71552A5A-5C5C-4350-A2AE-EBE451A30173" "$tok" >/dev/null \
         || { wfail "plugin install rejected [HTTP $(jf_code)] — install in Dashboard -> Plugins -> Catalog"; return 1; }
@@ -913,32 +913,7 @@ jf_transcode_path() { # transcodes belong on the cache volume, not in /config
         || wfail "Jellyfin rejected the transcode path [HTTP $(jf_code)] — set Dashboard -> Playback -> Transcoding -> Transcode path to $JF_TRANSCODE_PATH"
 }
 
-# ---- apprise (wave 5): one notification hub for the whole stack ----
-# apprise-api in gluetun's namespace. Two tags route by audience: ops (you —
-# pipeline, updates, backups, doctor, requests), users (household — new media,
-# restarts, updates, invites).
-apprise_url() { local p; p=$(svc_hostport apprise) || return 1; echo "http://127.0.0.1:$p"; }
-
-NOTIFY_WARNED=0
-notify() { # notify TAG TITLE BODY [TYPE] — never blocks, never fails the caller
-    local tag="$1" title="$2" body="$3" type="${4:-info}"
-    svc_enabled apprise 2>/dev/null || return 0
-    [[ "$(c_state "$(svc_cname apprise)" 2>/dev/null)" == running ]] || return 0
-    curl -sS -m 5 -o /dev/null -X POST -H "Content-Type: application/json" \
-        -d "$(jq -cn --arg t "$title" --arg b "$body" --arg g "$tag" --arg y "$type" \
-             '{title:$t,body:$b,tag:$g,type:$y,format:"markdown"}')" \
-        "$(apprise_url)/notify/mediastack" 2>/dev/null && return 0
-    if (( ! NOTIFY_WARNED )); then
-        warn "apprise unreachable — notification dropped (stack keeps going; check: ./mediastack.sh logs apprise)"
-        NOTIFY_WARNED=1
-    fi
-    return 0
-}
-
-notify_interruption() { # notify_interruption TITLE BODY [TYPE] — household service-disruption notice
-    notify users "$1" "$2" "${3:-warning}"
-}
-
+# ---- apprise: the notification hub (sending, routing, `notify`: lib/notify.sh) ----
 wire_apprise() {
     hr "wire: apprise"
     svc_enabled apprise || { info "apprise not enabled — skipped"; return 0; }
@@ -950,7 +925,16 @@ wire_apprise() {
     # an existing config is never touched (edit in apprise's UI or re-add)
     code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)
     if [[ "$code" == 200 ]]; then
-        ok "notification endpoints configured — untouched (yours to manage; UI: $(svc_url apprise))"
+        # the URLs are yours (notify set / Apprise's UI); only the event tags on
+        # the lines mediastack wrote are kept current, so Seerr's events route
+        local cur want
+        cur=$(notify_cfg_get); want=$(notify_cfg_edit retag <<<"$cur")
+        if [[ "$cur" == "$want" ]]; then
+            ok "notification endpoints configured, routing current (manage: ./mediastack.sh notify)"
+        elif w_would "tag the streams' URLs with the Seerr events each receives (${NOTIFY_EVENTS[users]// /, } -> users, the rest -> ops)"; then
+            notify_cfg_put "$want"
+            ok "notification routing updated"
+        fi
     elif (( WIRE_DRY )); then
         w_would "store notification endpoints (URLs asked per tag on the real run)" || true
     elif [[ ! -t 0 ]]; then
@@ -970,8 +954,8 @@ Getting a URL:
         local ops_u usr_u cfg="" u
         ask AP_OPS "URLs for ops" ""; ops_u="$REPLY_VAL"
         ask AP_USR "URLs for users" ""; usr_u="$REPLY_VAL"
-        for u in ${ops_u//,/ }; do cfg+="ops=$u"$'\n'; done
-        for u in ${usr_u//,/ }; do cfg+="users=$u"$'\n'; done
+        for u in ${ops_u//,/ }; do cfg+="$(notify_tagline ops)=$u"$'\n'; done
+        for u in ${usr_u//,/ }; do cfg+="$(notify_tagline users)=$u"$'\n'; done
         if [[ -z "$cfg" ]]; then
             info "no URLs given — notifications stay off until 'wire apprise' stores some"
         elif w_would "store the notification endpoints under key 'mediastack'"; then
@@ -1545,27 +1529,40 @@ wire_seerr() {
             || wfail "$s: seerr rejected the server entry [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
     done
 
-    # request/media events -> the hub (tag: ops), when the hub is wired.
-    # An enabled webhook agent is never overwritten — except its address, when
-    # it is one mediastack made and a VPN toggle moved apprise (addr_stale).
+    # request/media/issue events -> the hub, each tagged with its own event
+    # name so the hub routes it to its stream (lib/notify.sh: NOTIFY_EVENTS).
+    # An agent mediastack made is kept current (the one from before per-event
+    # routing is upgraded); one edited in Seerr's UI is left alone — except
+    # its address, when mediastack made it and a VPN toggle moved apprise.
     if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
-        local wh
+        local wh have_p have_t want_t hub
+        want_t=$(seerr_hub_types); hub="http://$(svc_addr apprise)/notify/mediastack"
         if ! wh=$(seerr_api GET /settings/notifications/webhook "$jar"); then
             wfail "seerr: could not read its webhook settings — left as they are [HTTP $(seerr_code)]"
         elif [[ "$(jq -r '.enabled' <<<"$wh" 2>/dev/null)" == true ]]; then
-            ok "webhook notifications already enabled — untouched (yours to manage in the GUI)"
+            have_p=$(jq -r '.options.jsonPayload // ""' <<<"$wh"); have_t=$(jq -r '.types // 0' <<<"$wh")
+            if [[ "$have_p" == "$SEERR_HUB_PAYLOAD" && "$have_t" == "$want_t" ]]; then
+                ok "seerr sends its events to the hub, routed per stream"
+            elif [[ "$have_p" == "$SEERR_HUB_PAYLOAD_V1" && "$have_t" == "$SEERR_HUB_TYPES_V1" ]]; then
+                if w_would "seerr: route its events per stream (${NOTIFY_EVENTS[users]// /, } -> users, the rest -> ops) and add the issue events"; then
+                    out=$(seerr_api POST /settings/notifications/webhook "$jar" \
+                          "$(jq -c --arg p "$SEERR_HUB_PAYLOAD" --argjson t "$want_t" '.types = $t | .options.jsonPayload = $p' <<<"$wh")") \
+                        && ok "seerr's events now route per stream" \
+                        || wfail "seerr rejected the updated webhook agent [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
+                fi
+            else
+                ok "seerr's webhook agent was set in its UI — untouched (per-stream routing needs the tag {{notification_type}})"
+            fi
             local wst; wst=$(addr_of "$(jq -r '.options.webhookUrl // ""' <<<"$wh")")
             if addr_stale "seerr -> apprise" apprise "$wst"; then
                 addr_repoint "seerr -> apprise" "$wst" "$(svc_addr apprise)" -- \
                     seerr_api POST /settings/notifications/webhook "$jar" \
-                    "$(jq -c --arg u "http://$(svc_addr apprise)/notify/mediastack" '.options.webhookUrl = $u' <<<"$wh")"
+                    "$(jq -c --arg u "$hub" '.options.webhookUrl = $u' <<<"$wh")"
             fi
-        elif w_would "notify the hub on requests/approvals/availability (tag: ops)"; then
-            out=$(seerr_api POST /settings/notifications/webhook "$jar" "$(jq -cn --arg u "http://$(svc_addr apprise)/notify/mediastack" '
-                {enabled:true, embedPoster:false, types:222,
-                 options:{webhookUrl:$u,
-                          authHeader:"",
-                          jsonPayload:"{\"title\":\"Seerr\",\"body\":\"{{event}}\\n{{subject}}\\n{{message}}\",\"tag\":\"ops\",\"type\":\"info\"}"}}')") \
+        elif w_would "notify the hub on requests, availability and issues, routed per stream"; then
+            out=$(seerr_api POST /settings/notifications/webhook "$jar" "$(jq -cn --arg u "$hub" --arg p "$SEERR_HUB_PAYLOAD" --argjson t "$want_t" '
+                {enabled:true, embedPoster:false, types:$t,
+                 options:{webhookUrl:$u, authHeader:"", jsonPayload:$p}}')") \
                 && ok "seerr now notifies the hub" \
                 || wfail "seerr rejected the webhook agent [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"
         fi

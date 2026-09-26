@@ -51,6 +51,8 @@ jobs:
         run: scripts/test-upgrade.sh
       - name: deletion attribution's host contract (scripts/test-audit.sh)
         run: scripts/test-audit.sh
+      - name: notification routing and the notify verb (scripts/test-notify.sh)
+        run: scripts/test-notify.sh
       - name: .env against its schema, and the schema against the code (scripts/test-env.sh)
         run: scripts/test-env.sh
       - name: everything outside the repo is in the footprint registry (scripts/test-footprint.sh)

@@ -132,10 +132,11 @@ filesystem for DATA_ROOT (hardlinks, and now the recycle bin, need it):
 - Extend `--dry-run` / what-if to `enable`/`disable`/`vpn-apply`. (`update`,
   `wire` and `trash-sync` have it; `wire --verify` adds a non-zero exit on
   drift for scripts and cron.)
-- **Notification follow-ups.** A `notify` management verb
-  (`test` a stream, re-runnable `set`, redacted `status`, `clear`) and a curated
-  "new media available → `users`" event (the raw arr import firehose is too
-  noisy to point at the household directly).
+- **Richer notification layout** *(explore)*. Apprise can colour a message by
+  its type, turn markdown headings into embed fields and attach an image, so
+  Seerr's events could look closer to Seerr's own Discord embeds (poster,
+  fields, colour per event) while still routing through the hub — check
+  Apprise's Discord options against its docs first.
 
 ### Media monitoring
 Answering "what happened to X?" after the fact: the nightly media manifest
