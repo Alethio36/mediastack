@@ -1662,9 +1662,13 @@ wire_authentik() {
         else wfail "authentik rejected the base URL $want"; fi
     fi
     local st; st=$(authentik_blueprint_status)
+    if [[ "$st" == outdated ]] && w_would "authentik: apply mediastack's current portal setup now (an earlier version is in place)"; then
+        st=$(authentik_blueprint_apply)
+    fi
     case "$st" in
         successful) ok "authentik: mediastack's portal setup applied (media-users, admins, sign-up by invitation)" ;;
-        "") info "authentik: mediastack's portal setup not applied yet — it is, within minutes of starting; re-run to check"; return 0 ;;
+        "") info "authentik: mediastack's portal setup not discovered yet — authentik finds it within minutes of starting; re-run to check"; return 0 ;;
+        outdated) wfail "authentik: an earlier version of mediastack's portal setup is still in place — ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; return 0 ;;
         *) wfail "authentik: mediastack's portal setup is '$st' — ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; return 0 ;;
     esac
     wire_authentik_gate
