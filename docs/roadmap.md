@@ -245,8 +245,15 @@ all built; what each still leaves open is noted below.
      (`ExtAuth`, trusting only Traefik, which now has a fixed address on a fixed
      network range), with `/rest/` (music apps: a password each user sets once
      in Navidrome) and `/share/` past the gate — and every route past any gate
-     strips the portal's headers, so no client can name itself a user. *Next:*
-     Jellyfin through LDAP (the outpost; the stack's own Jellyfin admin stays a
+     strips the portal's headers, so no client can name itself a user. *Done
+     (LDAP, part 1):* the LDAP outpost joins the shard (the server's release,
+     moved in lockstep by `update --to`); the blueprint adds an LDAP provider
+     (`dc=ldap,dc=mediastack`) whose binds run a flow with no MFA step,
+     throttled by a reputation policy, open to `media-users`, `admins` and one
+     search account (the only one with search rights); Traefik serves it as
+     LDAPS on `ldap.<domain>` with the wildcard certificate, to the stack network
+     only; `wire authentik` fetches the outpost's token. *Next:*
+     Jellyfin through LDAP (the plugin; the stack's own Jellyfin admin stays a
      local account — the script's and the emergency login — and `wire` keeps
      `admins` members Jellyfin administrators), Seerr following Jellyfin;
      Audiobookshelf and Kavita through OIDC, their first run automated the same
@@ -268,6 +275,10 @@ all built; what each still leaves open is noted below.
   (every admin tool) and the household front end (`media-users`). Finer rules
   (one person gets Sonarr but not qBittorrent) would be one application and
   binding per tool instead of the one domain-wide rule.
+- **LDAP app passwords** *(option, later)*: authentik lets a user bind with a
+  per-device app password (a TV gets its own, revocable without changing the
+  main password). Breaks "one password for everything", so an option, not a
+  default.
 - **Email server for authentik** *(later)* — the standard for what email is
   used for: (1) a user resets their own forgotten password, (2) `invite` can
   e-mail the link, (3) authentik's own update notices reach its admins. Nothing

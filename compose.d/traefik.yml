@@ -34,6 +34,8 @@ services:
       mediastack:
         # fixed: the one address trusted to say who a user is (MEDIASTACK_GATE_TRUST)
         ipv4_address: ${TRAEFIK_ADDRESS:-172.31.250.2}
+        # inside the stack, the LDAP name leads to Traefik (LDAPS with the wildcard certificate)
+        aliases: ["${AUTHENTIK_LDAP_HOST:-ldap}.${TRAEFIK_DOMAIN:-unset.invalid}"]
     security_opt:
       - no-new-privileges:true
     healthcheck:

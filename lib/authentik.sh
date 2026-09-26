@@ -37,6 +37,11 @@ authentik_secrets() { # generate what is missing — never over a database that 
   a new value cannot open the existing database."
         env_set "$k" "$(authentik_secret "$n")"; made=1
     done
+    # the LDAP search account's password: the blueprint sets it on every apply,
+    # so a new one is simply adopted — no database guard needed
+    if [[ -z "$(env_get AUTHENTIK_LDAP_BIND_PASSWORD)" ]]; then
+        env_set AUTHENTIK_LDAP_BIND_PASSWORD "$(authentik_secret 32)"; made=1
+    fi
     (( made )) && ok "authentik: secrets generated (the admin login: ./mediastack.sh credentials)"
     return 0
 }
@@ -255,6 +260,9 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                 *) d_fail "authentik: mediastack's portal setup is '$st'" "groups and sign-up may be missing or incomplete" \
                        "./mediastack.sh logs authentik --no-follow | grep -i blueprint" ;;
             esac
+            if [[ -z "$(env_get AUTHENTIK_LDAP_TOKEN)" ]]; then
+                warn "authentik's LDAP outpost has no token yet (it keeps restarting until it does): ./mediastack.sh wire authentik"
+            fi
             local g open=""
             for g in $(authentik_gated); do svc_bound_local "$g" || open+="$g "; done
             [[ -z "$open" ]] || d_fail "gated tools reachable by IP, around the portal: $open" \

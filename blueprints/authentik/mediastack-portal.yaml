@@ -221,3 +221,119 @@ entries:
       target: !KeyOf app-gate
       group: !KeyOf group-admins
       order: 0
+
+  # -- LDAP: how Jellyfin checks a password -------------------------------
+  # authentik's own LDAP front door (the mediastack-ldap outpost, a member of
+  # the shard). Binds run a flow with no MFA step — TV and phone apps send a
+  # username and password and cannot answer a prompt — throttled by a
+  # reputation policy (authentik's brute-force protection). Only the search
+  # account may list the directory; only media-users and admins may bind.
+  - model: authentik_policies_reputation.reputationpolicy
+    id: policy-ldap-reputation
+    identifiers:
+      name: mediastack-ldap-reputation
+    attrs:
+      check_ip: true
+      check_username: true
+      threshold: -5
+  - model: authentik_stages_password.passwordstage
+    id: stage-ldap-password
+    identifiers:
+      name: mediastack-ldap-password
+    attrs:
+      backends:
+        - authentik.core.auth.InbuiltBackend
+        - authentik.core.auth.TokenBackend
+  - model: authentik_stages_identification.identificationstage
+    id: stage-ldap-identification
+    identifiers:
+      name: mediastack-ldap-identification
+    attrs:
+      user_fields: [username]
+      password_stage: !KeyOf stage-ldap-password
+  - model: authentik_stages_user_login.userloginstage
+    id: stage-ldap-login
+    identifiers:
+      name: mediastack-ldap-login
+  - model: authentik_flows.flow
+    id: flow-ldap
+    identifiers:
+      slug: mediastack-ldap-bind
+    attrs:
+      name: mediastack - LDAP bind (no MFA)
+      title: LDAP
+      designation: authentication
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-ldap
+      stage: !KeyOf stage-ldap-identification
+      order: 10
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-ldap
+      stage: !KeyOf stage-ldap-login
+      order: 30
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf flow-ldap
+      policy: !KeyOf policy-ldap-reputation
+      order: 0
+
+  - model: authentik_core.user
+    id: user-ldap-search
+    identifiers:
+      username: mediastack-ldap-search
+    attrs:
+      name: mediastack LDAP search (Jellyfin)
+      path: services
+      type: internal
+      password: !Env [MEDIASTACK_LDAP_BIND_PASSWORD, ""]
+
+  - model: authentik_providers_ldap.ldapprovider
+    id: provider-ldap
+    identifiers:
+      name: mediastack-ldap
+    attrs:
+      base_dn: dc=ldap,dc=mediastack
+      authentication_flow: !KeyOf flow-ldap
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      search_mode: cached
+      bind_mode: cached
+      mfa_support: false
+    permissions:
+      - permission: search_full_directory
+        user: !KeyOf user-ldap-search
+  - model: authentik_core.application
+    id: app-ldap
+    identifiers:
+      slug: mediastack-ldap
+    attrs:
+      name: LDAP (Jellyfin)
+      provider: !KeyOf provider-ldap
+      meta_launch_url: blank://blank
+      policy_engine_mode: any
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf app-ldap
+      group: !KeyOf group-media-users
+      order: 0
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf app-ldap
+      group: !KeyOf group-admins
+      order: 1
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf app-ldap
+      user: !KeyOf user-ldap-search
+      order: 2
+
+  - model: authentik_outposts.outpost
+    id: outpost-ldap
+    identifiers:
+      name: mediastack-ldap
+    attrs:
+      type: ldap
+      providers:
+        - !KeyOf provider-ldap

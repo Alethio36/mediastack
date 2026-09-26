@@ -156,6 +156,12 @@ http:
         users:
           - "$duser:$hash"
 $(traefik_gate_middleware)
+tcp:
+  middlewares:
+    # the LDAP route answers the stack network only — never the LAN
+    mediastack-ldap-allow:
+      ipAllowList:
+        sourceRange: ["$(env_get MEDIASTACK_SUBNET 172.31.250.0/24)"]
 DYNAMIC
     sudo install -d -m 700 "$croot/traefik/dynamic"
     sudo rm -f "$croot/traefik/dynamic.yml"   # pre-dir layout leftover
