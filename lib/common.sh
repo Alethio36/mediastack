@@ -33,6 +33,8 @@ ts_age_hours() { # ts_age_hours YYYYMMDD-HHMMSS[...] -> whole hours since then; 
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "'$1' is required but not installed. Run: ./mediastack.sh install"; }
 
+SYSTEMD_DIR=/etc/systemd/system   # every mediastack unit is SYSTEMD_DIR/mediastack-* (lib/footprint.sh)
+
 # ------------------------------------------------------------- env layer --
 # Every root a deployment has, in .env: where each kind of state lives.
 # shellcheck disable=SC2034  # read by the entrypoint and lib/doctor.sh

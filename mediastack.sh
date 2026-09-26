@@ -61,6 +61,8 @@ source "$SCRIPT_DIR/lib/doctor.sh"
 source "$SCRIPT_DIR/lib/audit.sh"
 # shellcheck source=lib/recycle.sh
 source "$SCRIPT_DIR/lib/recycle.sh"
+# shellcheck source=lib/footprint.sh
+source "$SCRIPT_DIR/lib/footprint.sh"
 # shellcheck source=lib/configure.sh
 source "$SCRIPT_DIR/lib/configure.sh"
 # shellcheck source=lib/lifecycle.sh

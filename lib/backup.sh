@@ -509,7 +509,8 @@ apply_timer() {
 
 timer_write() { # timer_write UNIT DESCRIPTION VERB ONCALENDAR — write, enable and start one oneshot service + timer
     local unit="$1" desc="$2" verb="$3" sched="$4"
-    sudo tee "/etc/systemd/system/$unit.service" >/dev/null <<EOF
+    [[ "$unit" == mediastack-* ]] || die "timer_write: unit '$unit' must be named mediastack-* (the host-footprint registry owns that prefix)"
+    sudo tee "$SYSTEMD_DIR/$unit.service" >/dev/null <<EOF
 [Unit]
 Description=$desc
 [Service]
@@ -517,7 +518,7 @@ Type=oneshot
 WorkingDirectory=$SCRIPT_DIR
 ExecStart=$SCRIPT_DIR/mediastack.sh $verb
 EOF
-    sudo tee "/etc/systemd/system/$unit.timer" >/dev/null <<EOF
+    sudo tee "$SYSTEMD_DIR/$unit.timer" >/dev/null <<EOF
 [Unit]
 Description=$desc (scheduled)
 [Timer]

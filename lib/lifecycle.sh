@@ -154,6 +154,7 @@ cmd_nuke() {
     frontdoor_teardown
     ok "systemd units removed"
     audit_teardown yes
+    footprint_mounts_list
     sudo docker ps -aq --filter "label=com.docker.compose.project=mediastack" \
         | xargs -r sudo docker rm -f -v >/dev/null
     # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
@@ -186,18 +187,10 @@ cmd_nuke() {
     else
         ok "Nuked. Media and backups untouched. Safe to delete this folder now."
     fi
+    footprint_leftovers
 }
 
-systemd_units_teardown() { # every mediastack unit except the front door's (frontdoor_teardown)
-    local u
-    for u in mediastack-update.timer mediastack-manifest.timer mediastack-vpnguard.service; do
-        sudo systemctl disable --now "$u" 2>/dev/null || true
-    done
-    sudo rm -f /etc/systemd/system/mediastack-update.{service,timer} \
-               /etc/systemd/system/mediastack-manifest.{service,timer} \
-               /etc/systemd/system/mediastack-vpnguard.service
-    sudo systemctl daemon-reload
-}
+systemd_units_teardown() { footprint_remove timers; }   # every mediastack timer/unit but the panel's and audit's
 
 cmd_uninstall() {
     if [[ "${1:-}" == --nuke ]]; then cmd_nuke; return; fi
@@ -209,6 +202,8 @@ cmd_uninstall() {
     systemd_units_teardown
     frontdoor_teardown
     audit_off
+    echo; echo "Mounts added by add-mount (each kept unless you say otherwise):"
+    footprint_mounts_offer
     echo; echo "Tier 2: remove the service system users + group"
     if confirm "Also remove users/group?"; then
         local s; for s in $(svc_managed); do sudo userdel "$s" 2>/dev/null || true; done
@@ -219,6 +214,7 @@ cmd_uninstall() {
     if [[ "$really" == "delete my configs" ]]; then
         sudo rm -rf "$(env_get CONFIG_ROOT)"; ok "configs deleted"
     else info "Configs kept."; fi
+    footprint_leftovers
     ok "Uninstall finished. Media in DATA_ROOT and backups in BACKUP_ROOT were never touched."
 }
 
@@ -284,8 +280,9 @@ server-side setup is out of scope here."
         opts="_netdev,x-systemd.automount,hard,nofail,credentials=$credfile,uid=0,gid=$gid,file_mode=0664,dir_mode=2775,iocharset=utf8"
         fsline="$remote $mpoint cifs $opts 0 0"
     fi
-    echo "$fsline" | sudo tee -a /etc/fstab >/dev/null
-    ok "fstab entry written"
+    # the marker line lets uninstall and doctor tell this entry from your own
+    printf '%s %s\n%s\n' "$FSTAB_MARK" "$mpoint" "$fsline" | sudo tee -a "$FSTAB" >/dev/null
+    ok "fstab entry written (marked as mediastack's)"
     sudo systemctl daemon-reload
     if sudo mount "$mpoint" 2>/dev/null && findmnt -rn "$mpoint" >/dev/null; then
         ok "$mpoint mounted from $remote"
