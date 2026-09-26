@@ -460,6 +460,8 @@ w=$(abs_oidc_want)
 [[ "$(jq -r '[.authOpenIDClientSecret, .authOpenIDTokenSigningAlgorithm, (.authOpenIDAutoRegister|tostring), .authOpenIDMatchExistingBy, .authOpenIDButtonText] | join(",")' <<<"$w")" == "ABSSEC,RS256,true,username,Log in with Home" ]] \
     || fail_ "secret, RS256, created on first sign-in, matched by username, the portal's name on the button"; pass
 [[ "$(jq -c '.authActiveAuthMethods' <<<"$w")" == '["local","openid"]' ]] || fail_ "its own login stays (the stack's root account)"; pass
+[[ "$(jq -r '.authOpenIDSubfolderForRedirectURLs | type + ":" + .' <<<"$w")" == "string:" ]] \
+    || fail_ "no subfolder, set explicitly — unset, its callback reads undefined/auth/openid/callback (found live)"; pass
 # first run: a fresh Audiobookshelf gets the stack's root; a hand-made one is not taken over
 rm -f "$T/calls"; printf 'TRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"
 svc_enabled() { [[ "$1" == audiobookshelf ]]; }; wire_gate() { :; }; http_ready() { :; }; abs_url() { echo http://abs; }
