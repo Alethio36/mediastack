@@ -109,6 +109,24 @@ element instead of a transient toast.
 **Reopen only if:** jellyfin-web renders `DisplayMessage` as a persistent
 element. Apprise stays the notification path.
 
+### Deletion attribution in a container
+
+**Verdict:** rejected (Sept 2026) — `audit on` runs auditd on the host.
+
+The kernel keeps one audit rule set and one audit daemon per host; audit is not
+namespaced per container. An auditd container would need host networking, the
+host PID namespace and the audit capabilities — a host daemon in a costume, no
+isolation gained — and would fight any auditd the host already runs. Its rules
+live in the kernel, so stopping the container leaves them loaded with nothing
+collecting the events. Also weighed: Falco and Tetragon (eBPF; they name the
+container directly, but run privileged, are heavy, and depend on the kernel's
+eBPF support), Elastic's Auditbeat (brings the Elastic stack), fanotify (cannot
+attribute deletes on NFS).
+
+**Reopen only if:** services stop running as their own host UIDs — rootless
+Docker or userns-remap would shift them and break attribution by UID. An eBPF
+tool that names the container is the answer then.
+
 ## Parked
 
 ### qBittorrent API keys

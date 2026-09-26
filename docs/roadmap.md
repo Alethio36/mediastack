@@ -132,18 +132,29 @@ in place (docs/disaster-recovery.md); still to build:
   filesystem — an arr recycle is a move, cross-filesystem it becomes a full
   copy), retention days (default 7; upgrades keep the old file for the whole
   window, so 4K remux chains cost disk). Covers arr-initiated deletes only.
-- *Deletion attribution via auditd (opt-in) — ready to build.* Log only
-  unlink/rename/rmdir under the media root; each service's own UID names the
-  culprit; a report verb maps UIDs to services. Sees this host's syscalls
-  only (not NAS-side or other-host deletes — the manifest covers those).
-  The open question is settled (tested on anzac2's NFS mount, Sept 2026): a
-  directory-scoped rule (`-F dir=`) fires on an NFS client mount, for host
-  processes and for containers — which log their own UID (the test container
-  as `uid=1234`), so a UID → service map attributes directly. Build notes:
-  failed attempts are logged too (a host `mv` tried `renameat2`, which NFS
-  refuses, then `renameat`), so the report counts successes only; loading a
-  rule logs its own `sendto`, dropped by keeping only rename/unlink calls.
-  The opt-in step installs and configures auditd itself.
+- *Deletion attribution via auditd (opt-in) — phase 1 of 3 landed.* The
+  `audit` verb: `on` installs auditd (or joins one the host already runs,
+  touching nothing of it) and loads two watch rules for the media root;
+  `off` removes them (and auditd, if mediastack installed it); `status` and
+  doctor check it, with a live test delete. Settled facts behind it (tested on
+  anzac2's NFS mount, Sept 2026): a directory-scoped rule (`-F dir=`) fires on
+  an NFS client mount, for host processes and for containers, which log their
+  own UID; NFS refuses `renameat2` and callers retry with `renameat`, so the
+  rules keep successes only (`-F success=1`). Sees this host's syscalls only —
+  NAS-side and other-host deletes are the manifest's to catch. Still to build:
+  - *Phase 2 — `audit report` + a durable log.* The raw audit log rotates
+    (Debian: 5 × 8 MB, about 30k deletes), so a mass delete can rotate out
+    its own start. An hourly timer extracts new events (ausearch checkpoint)
+    into `BACKUP_ROOT/audit/`, one line per event (time, who, operation,
+    path), pruned by `AUDIT_KEEP_DAYS` (default 365, user-set). Who: login
+    UID set → that person; else the process UID → the service holding that
+    `*_UID`; else `uid N (unmapped)`. The live-check canary files are left out.
+  - *Phase 3 — the manifest's "media removed" alert names who removed each
+    folder,* from the phase-2 log.
+  - *Unproven:* a watch loaded at boot onto an NFS automount that is not yet
+    mounted — does it follow the mount? Test by rebooting a host with an NFS
+    media root; doctor's live check catches it either way. SMB is untested
+    (doctor warns). x86_64 only (other architectures lack `unlink`/`rename`).
 
 ### Extensibility
 - An easier path to add services *beyond* the built-in framework.
@@ -159,6 +170,11 @@ in place (docs/disaster-recovery.md); still to build:
 - Revisit the folder structure for config files (the compose-shard model is now settled — see Architecture rules above).
 - Formalize the `.env` config schema and validate it (it is the whole config
   surface; `doctor`-style checks for it).
+- One host-footprint registry. Four features put files outside the repo —
+  the web panel (sudoers, wrapper, user, units), the timers (units),
+  `add-mount` (fstab, credentials) and `audit` (`AUDIT_FOOTPRINT`) — and
+  each removes its own. Each should declare its paths in one list that
+  `uninstall` and doctor's leftover check both loop over.
 
 ### Security & access
 - **SSO in front of the panel** *(explore)* — Authelia or Keycloak. An optional
