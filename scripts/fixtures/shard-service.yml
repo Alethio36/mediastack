@@ -1,0 +1,23 @@
+# test-render fixture: a two-container shard (a service and its private
+# database) as a drop-in — the shape authentik's shard takes.
+services:
+  shardapp:
+    image: traefik/whoami:v1.10
+    profiles: ["shardapp"]
+    user: "${SHARDAPP_UID:-13090}:${MEDIA_GROUP_GID}"
+    depends_on:
+      shardapp-db:
+        condition: service_started
+    networks: [mediastack]
+    labels:
+      mediastack.managed: "true"
+      mediastack.desc: "test shard primary"
+      mediastack.vpn: "false"
+      mediastack.config: "true"
+  shardapp-db:
+    image: traefik/whoami:v1.10
+    profiles: ["shardapp"]
+    user: "${SHARDAPP_UID:-13090}:${MEDIA_GROUP_GID}"
+    networks: [mediastack]
+    labels:
+      mediastack.shard: "shardapp"
