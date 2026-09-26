@@ -41,7 +41,7 @@ The stack is organised into **shards**: one `compose.d/` fragment per shard.
   exists *exclusively* to serve it — its own database, cache, or worker. These
   **private dependencies live inside the service's shard**, never in a shard of
   their own. One fragment holds the whole stack (e.g. an `authentik.yml` holding
-  server + worker + Postgres + Redis).
+  server + worker + Postgres + its LDAP outpost).
 - **Anything shared across services gets its own shard.** Cross-cutting
   infrastructure — the edge proxy (Traefik), the VPN gateway (gluetun), the web
   front door — is shared by design, so it is neither folded into a consumer's
@@ -181,14 +181,36 @@ all built; what each still leaves open is noted below.
 - Rootless operation *(explore)* — folds together with the phase-2 sudo
   narrowing below into one "shrink the root surface" goal.
 
-### Structure
-
 ### Security & access
-- **SSO in front of the panel** *(explore)* — Authelia or Keycloak. An optional
-  but interesting area: it would let the panel move off LAN-open and gate the
-  `credentials` verb, and it is a natural candidate for the whole stack's app
-  logins, not just the panel. The identity options are evaluated in
-  [watchlist.md](watchlist.md#identity--sso).
+- **Protect the unauthenticated UIs — before migrate, without SSO.** Apprise's
+  UI and API have no login by design and hold the notification tokens; the panel
+  runs stack commands. Until the gate exists (and for installs that choose
+  Wizarr, which has none): Apprise not published over HTTPS and its port on
+  127.0.0.1 only; the panel behind OliveTin's local-user login.
+- **SSO: authentik** *(decided Sept 2026; build after migrate)* — reasoning and
+  per-app evidence in [watchlist.md](watchlist.md#identity--sso). Build order:
+  1. The DB-backed service pattern (PostgreSQL-aware `backup`, migration-aware
+     `update`) — authentik is its first user.
+  2. The account model is either/or: `enable authentik` refuses while Wizarr is
+     on and the reverse, `configure` asks which one, doctor fails both enabled.
+  3. `authentik.yml`, one shard (server, worker, PostgreSQL, LDAP outpost), set
+     up from shipped blueprints: invitation signup into `media-users`, household
+     users external with a default application, dashboard cards with setup text,
+     `admins` for the gated tools.
+  4. The `mediastack.auth` label on every web interface (`native` / `gate` /
+     `open`, exception paths), CI-enforced; gated tools on 127.0.0.1 ports with
+     their own login set to trust the gate; the gate's Traefik rules generated
+     from the labels.
+  5. Per app: Jellyfin LDAP, Audiobookshelf/Kavita/ErsatzTV OIDC, Seerr through
+     Jellyfin, Navidrome header + its own password for music apps, the panel via
+     OAuth2 with group permissions, Apprise and the arrs behind the gate.
+  6. Converting an existing install's users (Jellyfin local users to directory
+     users, keeping watch history; Audiobookshelf/Kavita match by username) —
+     test the Jellyfin LDAP takeover of an existing user first.
+  First milestone: the gate in front of the panel and Apprise.
+- **Email server for authentik** *(later)* — self-service password reset and
+  invitation e-mails. Until then invite links are copied by hand and passwords
+  reset by the admin.
 - Post-migration hardening: move the panel off LAN-open once SSO lands; phase-2
   sudo narrowing (read-only verbs drop root); staging→production certs once a box
   stops being a test box.
