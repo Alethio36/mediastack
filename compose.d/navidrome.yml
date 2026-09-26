@@ -28,6 +28,12 @@ services:
       # served behind traefik under its own hostname
       - ND_BASEURL=
       - TZ=${TZ}
+      # behind the portal: Traefik (only its fixed address — MEDIASTACK_GATE_TRUST,
+      # empty without authentik) tells Navidrome who the user is; it creates
+      # them on their first visit. Music apps use /rest/ with a password each
+      # user sets once in Navidrome, so password editing stays on.
+      - ND_EXTAUTH_TRUSTEDSOURCES=${MEDIASTACK_GATE_TRUST:-}
+      - ND_EXTAUTH_USERHEADER=X-authentik-username
     volumes:
       - ${CONFIG_ROOT}/navidrome:/data
       # lidarr's music root, read-only — Navidrome serves, never writes
@@ -40,13 +46,23 @@ services:
       traefik.http.routers.navidrome.rule: "Host(`${NAVIDROME_HOST:-music}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.navidrome.entrypoints: "websecure"
       traefik.http.routers.navidrome.tls: "true"
+      traefik.http.routers.navidrome.middlewares: "mediastack-gate@file"
+      # music apps and public shares skip the gate — and never carry a
+      # username header a client made up (mediastack-strip)
+      traefik.http.routers.navidrome-api.rule: "Host(`${NAVIDROME_HOST:-music}.${TRAEFIK_DOMAIN:-unset.invalid}`) && (PathPrefix(`/rest/`) || PathPrefix(`/share/`))"
+      traefik.http.routers.navidrome-api.entrypoints: "websecure"
+      traefik.http.routers.navidrome-api.tls: "true"
+      traefik.http.routers.navidrome-api.service: "navidrome"
+      traefik.http.routers.navidrome-api.middlewares: "mediastack-strip@file"
       traefik.http.services.navidrome.loadbalancer.server.port: "4533"
       mediastack.desc: "music server (Subsonic API) over lidarr's library"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.user_facing: "true"
       mediastack.subdomain: "music"
-      mediastack.auth: "native"   # handles its own login
+      mediastack.auth: "gate"   # the household gate: media-users (and admins) get through
+      mediastack.auth.group: "media-users"
+      mediastack.auth.bypass: "/rest/ /share/"   # music apps, public shares
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:4533/ping || exit 1"]
       interval: 30s

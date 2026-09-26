@@ -248,6 +248,32 @@ conflicts_in() { # conflicts_in SERVICE... -> "a b" for every pair in the set th
     return 0
 }
 
+ip_int() { local a b c d; IFS=. read -r a b c d <<<"$1"; echo $(( (a<<24) + (b<<16) + (c<<8) + d )); }
+cidr_has() { # cidr_has CIDR IP -> 0 when IP is inside CIDR
+    local net=${1%/*} bits=${1#*/} mask
+    mask=$(( bits == 0 ? 0 : (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+    (( ($(ip_int "$2") & mask) == ($(ip_int "$net") & mask) ))
+}
+network_problems() { # the stack network's addressing, as .env sets it — one line per problem
+    local sub rng tr
+    sub=$(env_get MEDIASTACK_SUBNET 172.31.250.0/24); rng=$(env_get MEDIASTACK_IP_RANGE 172.31.250.128/25); tr=$(env_get TRAEFIK_ADDRESS 172.31.250.2)
+    cidr_has "$sub" "${rng%/*}" || echo "MEDIASTACK_IP_RANGE ($rng) is not inside MEDIASTACK_SUBNET ($sub)"
+    cidr_has "$sub" "$tr" || echo "TRAEFIK_ADDRESS ($tr) is not inside MEDIASTACK_SUBNET ($sub)"
+    ! cidr_has "$rng" "$tr" || echo "TRAEFIK_ADDRESS ($tr) is inside MEDIASTACK_IP_RANGE ($rng) — a container could take it first"
+    return 0
+}
+network_ensure() { # an older stack network (no fixed range) is recreated once, before anything starts on it
+    local want cur bad
+    bad=$(network_problems); [[ -z "$bad" ]] || die "the stack network's settings in .env disagree:
+$bad"
+    want=$(env_get MEDIASTACK_SUBNET 172.31.250.0/24)
+    cur=$(sudo docker network inspect mediastack --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | awk '{print $1}' || true)   # soft read: no network yet — up creates it
+    [[ -z "$cur" || "$cur" == "$want" ]] && return 0
+    warn "the stack network moves to its fixed range ($cur -> $want) so Traefik keeps one address — a one-time restart of every container"
+    DC down --remove-orphans >/dev/null
+    ok "old network removed; 'up' recreates it with the fixed range"
+}
+
 shard_problems() { # every shard rule the rendered config breaks, one line each (CI: test-render)
     render
     jq -r '.services as $all | $all | to_entries[] | select(.value.labels["mediastack.shard"] != null)
@@ -594,6 +620,7 @@ cmd_up()   {
     uid_handover
     traefik_ensure
     authentik_prepare
+    network_ensure
     if ! DC up -d --remove-orphans; then
         warn "First start attempt failed — usually gluetun's health race after a recreate."
         info "Waiting for the tunnel (up to ${START_WAIT}s)..."
@@ -645,6 +672,7 @@ cmd_enable() {
     uid_handover
     traefik_ensure   # wizard + config gen if traefik just came into the set
     authentik_prepare
+    network_ensure
     DC up -d --remove-orphans; ok "'$svc' enabled and started."
 }
 cmd_disable() {

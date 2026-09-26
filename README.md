@@ -520,8 +520,16 @@ The **gate**: every web interface declares who logs it in —
 A gated interface's domain address asks the portal first: not logged in → the
 portal's login, then straight back; logged in but not in `admins` → refused.
 Gated: the panel, Apprise, every admin tool (the arrs, Prowlarr, Bazarr, the
-download clients, LazyLibrarian, Cleanuparr, WatchState, Pi-hole) and Traefik's
-dashboard. While the portal runs, their host ports listen on 127.0.0.1 only —
+download clients, LazyLibrarian, Cleanuparr, WatchState, Pi-hole, ErsatzTV) and
+Traefik's dashboard. Navidrome sits behind a *household* gate: anyone in
+`media-users` gets in, and the portal tells Navidrome who they are (it creates
+them on their first visit); music apps use `/rest/` with a password each user
+sets once in Navidrome's settings. Every route past a gate strips the portal's
+identity headers, and Navidrome trusts only Traefik's address — Traefik keeps
+one fixed address on the stack network's fixed range (`MEDIASTACK_SUBNET`,
+`MEDIASTACK_IP_RANGE`, `TRAEFIK_ADDRESS`; change them only if they clash with
+your LAN — the first `up` after the change recreates the network once). Your
+household apps appear on everyone's dashboard under Media. While the portal runs, their host ports listen on 127.0.0.1 only —
 the domain address is the way in — and the arrs trust the portal (one login;
 `wire arr` switches them, never before their ports are closed). Companion apps
 (nzb360, LunaSea, Home Assistant…) use the domain address: the arrs' and

@@ -30,7 +30,10 @@ services:
       - ${CONFIG_ROOT}/traefik/acme:/letsencrypt
       # generated dir; custom/proxy.d/*.yml are copied in by traefik-setup/up
       - ${CONFIG_ROOT}/traefik/dynamic:/dynamic:ro
-    networks: [mediastack]
+    networks:
+      mediastack:
+        # fixed: the one address trusted to say who a user is (MEDIASTACK_GATE_TRUST)
+        ipv4_address: ${TRAEFIK_ADDRESS:-172.31.250.2}
     security_opt:
       - no-new-privileges:true
     healthcheck:

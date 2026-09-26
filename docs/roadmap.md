@@ -237,9 +237,20 @@ all built; what each still leaves open is noted below.
      arr's own login before the ports reopen. Still their own login behind the
      gate (two logins): qBittorrent (its only bypass also opens its API),
      Pi-hole (one password for UI and API), and the rest until each is checked.
-  5. Per app: Jellyfin LDAP, Audiobookshelf/Kavita/ErsatzTV OIDC, Seerr through
-     Jellyfin, Navidrome header + its own password for music apps, the panel via
-     OAuth2 with group permissions, Apprise and the arrs behind the gate.
+  5. Per app. *Done:* household cards (Media, for `media-users` and `admins`)
+     for every `mediastack.user_facing` app; ErsatzTV behind the admin gate (its
+     UI is for building channels; households watch through Jellyfin); Navidrome
+     behind a *household* gate (`mediastack.auth.group: media-users` — its own
+     forward-auth rule for its one address), told who the user is by the portal
+     (`ExtAuth`, trusting only Traefik, which now has a fixed address on a fixed
+     network range), with `/rest/` (music apps: a password each user sets once
+     in Navidrome) and `/share/` past the gate — and every route past any gate
+     strips the portal's headers, so no client can name itself a user. *Next:*
+     Jellyfin through LDAP (the outpost; the stack's own Jellyfin admin stays a
+     local account — the script's and the emergency login — and `wire` keeps
+     `admins` members Jellyfin administrators), Seerr following Jellyfin;
+     Audiobookshelf and Kavita through OIDC, their first run automated the same
+     way (the stack's own admin in each), roles from authentik groups.
   6. Converting an existing install's users (Jellyfin local users to directory
      users, keeping watch history; Audiobookshelf/Kavita match by username) —
      test the Jellyfin LDAP takeover of an existing user first.
