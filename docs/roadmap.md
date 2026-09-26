@@ -252,10 +252,13 @@ all built; what each still leaves open is noted below.
      throttled by a reputation policy, open to `media-users`, `admins` and one
      search account (the only one with search rights); Traefik serves it as
      LDAPS on `ldap.<domain>` with the wildcard certificate, to the stack network
-     only; `wire authentik` fetches the outpost's token. *Next:*
-     Jellyfin through LDAP (the plugin; the stack's own Jellyfin admin stays a
-     local account — the script's and the emergency login — and `wire` keeps
-     `admins` members Jellyfin administrators), Seerr following Jellyfin;
+     only; `wire authentik` fetches the outpost's token. *Done (LDAP, part 2):*
+     `wire jellyfin` installs the LDAP plugin and points it at
+     `ldap.<domain>:443` (certificate checking on with production certificates),
+     `media-users` or `admins` may sign in, created on first sign-in with every
+     library; administrator rights follow `admins` for directory users; the
+     stack's own Jellyfin admin stays a local account (the script's and the
+     emergency login). *Next:* Seerr following Jellyfin;
      Audiobookshelf and Kavita through OIDC, their first run automated the same
      way (the stack's own admin in each), roles from authentik groups.
   6. Converting an existing install's users (Jellyfin local users to directory

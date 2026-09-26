@@ -14,6 +14,10 @@
 #   * the portal's blueprint: sign-up needs an invitation, makes internal users
 #     in media-users, requires an email; the worker gets its values and mount
 #   * invitations: single use, bound to the sign-up flow, 7 days by default
+#   * Jellyfin through LDAP: LDAPS to ldap.<domain> through Traefik, checking
+#     on with production certificates, media-users or admins, every library;
+#     only mediastack's plugin settings change; admin rights follow `admins`
+#     for directory users and never touch local accounts
 #   * the base URL is set when unset or still mediastack's, never over one
 #     set in authentik's UI
 #   * the gate: Traefik's middleware asks authentik only when it runs; wire
@@ -401,5 +405,44 @@ why=$(authentik_blueprint_why)
 [[ "$why" == *"Entry invalid: Serializer errors {'config'"*"This field is required"* && "$why" != *"'entry':"* && "$why" != *Imported* ]] \
     || fail_ "the validator's reason, without the entry dump or import noise: $why"; pass
 unset -f sudo
+
+# ---- Jellyfin through LDAP ----
+printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_LDAP_BIND_PASSWORD=BINDPW\nACME_ENV=staging\n' > "$ENV_FILE"
+w=$(jf_ldap_want)
+[[ "$(jq -r '.LdapServer + ":" + (.LdapPort|tostring) + " ssl=" + (.UseSsl|tostring)' <<<"$w")" == "ldap.media.example.com:443 ssl=true" ]] \
+    || fail_ "LDAPS to ldap.<domain>:443 through Traefik: $w"; pass
+[[ "$(jq -r '.SkipSslVerify' <<<"$w")" == true ]] || fail_ "staging certificates: checking off"; pass
+printf 'TRAEFIK_DOMAIN=media.example.com\nACME_ENV=production\n' > "$ENV_FILE"
+[[ "$(jf_ldap_want | jq -r '.SkipSslVerify')" == false ]] || fail_ "production certificates: checking on"; pass
+[[ "$(jq -r '.LdapSearchFilter' <<<"$w")" == "(|(memberOf=cn=media-users,ou=groups,dc=ldap,dc=mediastack)(memberOf=cn=admins,ou=groups,dc=ldap,dc=mediastack))" ]] \
+    || fail_ "media-users or admins may sign in"; pass
+[[ "$(jq -r '.CreateUsersFromLdap and .EnableAllFolders' <<<"$w")" == true ]] || fail_ "created on first sign-in, every library"; pass
+# configure: managed settings merged over the rest; unchanged: no write
+rm -f "$T/calls"
+JF_CFG='{"LdapServer":"old","Other":"keep"}'
+jf_api() { echo "$1 $2 ${4:-}" >> "$T/calls"; case "$1 $2" in "GET /Plugins/$JF_LDAP_GUID/Configuration") echo "$JF_CFG" ;; *) echo '{}' ;; esac; }
+jf_code() { echo 200; }
+jf_ldap_configure tok >/dev/null
+body=$(grep "^POST /Plugins/$JF_LDAP_GUID/Configuration" "$T/calls" | cut -d' ' -f3-)
+[[ "$(jq -r '.Other + " " + .LdapServer' <<<"$body")" == "keep ldap.media.example.com" ]] || fail_ "only mediastack's settings change: $body"; pass
+JF_CFG=$(jq -c --argjson w "$(jf_ldap_want)" '. + $w' <<<'{"Other":"keep"}'); rm -f "$T/calls"
+jf_ldap_configure tok >/dev/null; ! grep -q '^POST' "$T/calls" || fail_ "already right: no write"; pass
+# admin sync: directory users follow `admins`; local accounts are never touched
+rm -f "$T/calls"
+ak_api() { echo '{"results":[{"username":"akadmin"},{"username":"nick"}]}'; }
+jf_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /Users") jq -cn --arg p "$JF_LDAP_PROVIDER" '[
+            {Name:"akadmin", Id:"1", Policy:{IsAdministrator:false, AuthenticationProviderId:$p}},
+            {Name:"test-thio", Id:"2", Policy:{IsAdministrator:true, AuthenticationProviderId:$p}},
+            {Name:"nick", Id:"3", Policy:{IsAdministrator:true, AuthenticationProviderId:$p}},
+            {Name:"mediastack", Id:"4", Policy:{IsAdministrator:true, AuthenticationProviderId:"Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider"}}]' ;;
+        *) echo '{}' ;;
+    esac; }
+jf_admin_sync tok >/dev/null
+grep -q '^POST /Users/1/Policy .*"IsAdministrator":true' "$T/calls" || fail_ "an admin in the directory becomes a Jellyfin administrator"; pass
+grep -q '^POST /Users/2/Policy .*"IsAdministrator":false' "$T/calls" || fail_ "a directory user not in admins loses administrator"; pass
+! grep -q '^POST /Users/3/' "$T/calls" || fail_ "already right: no write"; pass
+! grep -q '^POST /Users/4/' "$T/calls" || fail_ "the stack's own local admin is never touched"; pass
 
 echo "OK authentik: $checks checks"

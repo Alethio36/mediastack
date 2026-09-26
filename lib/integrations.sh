@@ -878,26 +878,98 @@ wire_bazarr() {
     fi
 }
 
-jf_plugin_webhook() { # install-if-missing; its consumer is WatchState (the hub hears Seerr, not Jellyfin)
-    local tok="$1" plugins
-    local plist; plist=$(jf_api GET /Plugins "$tok") \
+JF_LDAP_GUID=958aad66-3784-4d2a-b89a-a7b6fab6e25c           # "LDAP Authentication" (jellyfin/jellyfin-plugin-ldapauth)
+JF_LDAP_PROVIDER=Jellyfin.Plugin.LDAP_Auth.LdapAuthenticationProviderPlugin   # AuthenticationProviderId of users it created
+
+jf_plugins_ensure() { # jf_plugins_ensure TOKEN "Name|GUID|why"... — install what is missing, then ONE jellyfin restart
+    local tok="$1"; shift
+    local plist plugins spec name guid why missing=()
+    plist=$(jf_api GET /Plugins "$tok") \
         || { wfail "could not list jellyfin plugins [HTTP $(jf_code)] — nothing installed, jellyfin not restarted"; return 1; }
-    plugins=$(jq -r '[.[].Name] | join(" ")' <<<"$plist" 2>/dev/null)
-    if [[ " $plugins " == *" Webhook "* ]]; then
-        ok "Webhook plugin installed"
-        return 0
-    fi
-    w_would "install Jellyfin's Webhook plugin (WatchState's webhooks need it) and restart jellyfin once" \
-        || return 0
-    jf_api POST "/Packages/Installed/Webhook?assemblyGuid=71552A5A-5C5C-4350-A2AE-EBE451A30173" "$tok" >/dev/null \
-        || { wfail "plugin install rejected [HTTP $(jf_code)] — install in Dashboard -> Plugins -> Catalog"; return 1; }
-    info "plugin downloaded — restarting jellyfin to load it..."
+    plugins=$(jq -r '[.[].Name] | join("|")' <<<"$plist" 2>/dev/null)
+    for spec in "$@"; do
+        IFS='|' read -r name guid why <<<"$spec"
+        if [[ "|$plugins|" == *"|$name|"* ]]; then ok "$name plugin installed"; continue; fi
+        w_would "install Jellyfin's $name plugin ($why)" || continue
+        jf_api POST "/Packages/Installed/$(jq -rn --arg n "$name" '$n|@uri')?assemblyGuid=$guid" "$tok" >/dev/null \
+            || { wfail "$name plugin install rejected [HTTP $(jf_code)] — install it in Dashboard -> Plugins -> Catalog"; return 1; }
+        missing+=("$name")
+    done
+    (( ${#missing[@]} )) || return 0
+    info "plugin(s) downloaded (${missing[*]}) — restarting jellyfin once to load them..."
+    is_user_facing jellyfin && notify_interruption "Jellyfin maintenance" "Jellyfin is restarting briefly for maintenance — back in a moment."
     DC restart jellyfin >/dev/null 2>&1 || { wfail "jellyfin restart failed — restart it, then re-run wire jellyfin"; return 1; }
     jf_ready || return 1
-    plugins=$(jf_api GET /Plugins "$tok" | jq -r '[.[].Name] | join(" ")' 2>/dev/null || true)   # soft read: re-check after the install: empty FAILs below
-    [[ " $plugins " == *" Webhook "* ]] \
-        && ok "Webhook plugin installed and loaded" \
-        || wfail "plugin not visible after restart — check Dashboard -> Plugins (a repository fetch may have failed)"
+    plugins=$(jf_api GET /Plugins "$tok" | jq -r '[.[].Name] | join("|")' 2>/dev/null || true)   # soft read: re-check after the install: empty FAILs below
+    for name in "${missing[@]}"; do
+        [[ "|$plugins|" == *"|$name|"* ]] && ok "$name plugin installed and loaded" \
+            || wfail "$name plugin not visible after restart — check Dashboard -> Plugins (a repository fetch may have failed)"
+    done
+}
+
+jf_plugin_webhook() { # its consumer is WatchState (the hub hears Seerr, not Jellyfin)
+    jf_plugins_ensure "$1" "Webhook|71552A5A-5C5C-4350-A2AE-EBE451A30173|WatchState's webhooks need it"
+}
+
+jf_ldap_want() { # the LDAP plugin's settings mediastack manages, as JSON (the rest stay yours)
+    local dn=dc=ldap,dc=mediastack host skip=false
+    host="$(env_get AUTHENTIK_LDAP_HOST ldap).$(env_get TRAEFIK_DOMAIN)"
+    # a staging certificate is not trusted inside Jellyfin: checking waits for production ones
+    [[ "$(env_get ACME_ENV production)" == production ]] || skip=true
+    jq -cn --arg host "$host" --arg dn "$dn" --arg pw "$(env_get AUTHENTIK_LDAP_BIND_PASSWORD)" --argjson skip "$skip" '{
+        LdapServer: $host, LdapPort: 443, UseSsl: true, UseStartTls: false, SkipSslVerify: $skip,
+        LdapBindUser: ("cn=mediastack-ldap-search,ou=users," + $dn), LdapBindPassword: $pw,
+        LdapBaseDn: $dn, LdapAdminBaseDn: $dn,
+        LdapSearchFilter: ("(|(memberOf=cn=media-users,ou=groups," + $dn + ")(memberOf=cn=admins,ou=groups," + $dn + "))"),
+        LdapAdminFilter: ("(memberOf=cn=admins,ou=groups," + $dn + ")"),
+        LdapSearchAttributes: "uid, cn, mail, displayName", LdapUidAttribute: "uid", LdapUsernameAttribute: "cn",
+        CreateUsersFromLdap: true, EnableAllFolders: true, AllowPassChange: false }'
+}
+
+jf_ldap_configure() { # point the LDAP plugin at authentik's outpost — only the settings mediastack manages
+    local tok="$1" cur want merged
+    cur=$(jf_api GET "/Plugins/$JF_LDAP_GUID/Configuration" "$tok") \
+        || { wfail "could not read the LDAP plugin's settings [HTTP $(jf_code)]"; return 1; }
+    want=$(jf_ldap_want)
+    if jq -e --argjson w "$want" '. as $c | $w | to_entries | all(.value == $c[.key])' <<<"$cur" >/dev/null 2>&1; then
+        ok "LDAP plugin points at the portal ($(jq -r '.LdapServer' <<<"$want"), certificate checking $( [[ "$(jq -r '.SkipSslVerify' <<<"$want")" == true ]] && echo "off until production certificates" || echo on))"
+        return 0
+    fi
+    w_would "point Jellyfin's LDAP plugin at the portal: $(jq -r '.LdapServer' <<<"$want"):443 (LDAPS), media-users and admins may sign in, new users get every library" || return 0
+    merged=$(jq -c --argjson w "$want" '. + $w' <<<"$cur")
+    jf_api POST "/Plugins/$JF_LDAP_GUID/Configuration" "$tok" "$merged" >/dev/null \
+        && ok "LDAP plugin configured — portal accounts sign in to Jellyfin (created on their first sign-in)" \
+        || wfail "Jellyfin rejected the LDAP plugin's settings [HTTP $(jf_code)]"
+}
+
+jf_admin_sync() { # directory users in authentik's `admins` are Jellyfin administrators; other directory users are not
+    # (the plugin sets this only when it creates a user). Local accounts — the
+    # stack's own admin above all — are never touched.
+    local tok="$1" out admins users u name id pol want
+    out=$(ak_api GET "/core/users/?groups_by_name=admins&page_size=500") || { wfail "authentik: admins unreadable — Jellyfin admin rights not synced"; return 1; }
+    admins=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
+    users=$(jf_api GET /Users "$tok") || { wfail "could not list jellyfin users [HTTP $(jf_code)]"; return 1; }
+    while IFS= read -r u; do
+        [[ -n "$u" ]] || continue
+        name=$(jq -r '.Name' <<<"$u"); id=$(jq -r '.Id' <<<"$u")
+        want=false; [[ "$admins" == *" $name "* ]] && want=true
+        [[ "$(jq -r '.Policy.IsAdministrator' <<<"$u")" == "$want" ]] && continue
+        w_would "Jellyfin: $name $( [[ $want == true ]] && echo "becomes an administrator (in admins)" || echo "is no longer an administrator (not in admins)")" || continue
+        pol=$(jq -c --argjson w "$want" '.Policy | .IsAdministrator = $w' <<<"$u")
+        jf_api POST "/Users/$id/Policy" "$tok" "$pol" >/dev/null && ok "Jellyfin: $name administrator = $want" \
+            || wfail "Jellyfin rejected $name's admin change [HTTP $(jf_code)]"
+    done < <(jq -c --arg p "$JF_LDAP_PROVIDER" '.[] | select(.Policy.AuthenticationProviderId == $p)' <<<"$users")
+    return 0
+}
+
+jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admin rights follow `admins`
+    local tok="$1"
+    svc_enabled authentik || return 0
+    [[ -n "$(env_get AUTHENTIK_LDAP_TOKEN)" ]] || { info "the portal's LDAP outpost has no token yet — run 'wire authentik' first, then 'wire jellyfin'"; return 0; }
+    jf_plugins_ensure "$tok" "LDAP Authentication|$JF_LDAP_GUID|portal accounts sign in to Jellyfin" || return 1
+    (( WIRE_DRY )) && ! jf_api GET "/Plugins/$JF_LDAP_GUID/Configuration" "$tok" >/dev/null && return 0   # not installed yet: nothing to compare
+    jf_ldap_configure "$tok" || return 1
+    jf_admin_sync "$tok"
 }
 
 jf_server_name() { # the name apps/casting show; container default is the ID hash
@@ -1336,6 +1408,7 @@ credentials)."
     jf_server_name "$tok"
     jf_transcode_path "$tok"
     jf_plugin_webhook "$tok"
+    jf_ldap "$tok"
 
     # --- libraries: create-if-path-missing, derived from the arrs' own
     # rootfolder labels. Match by the HOST directory a library's location
