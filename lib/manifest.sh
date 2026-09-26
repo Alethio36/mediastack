@@ -104,27 +104,52 @@ manifest_titles() { # LOSS lines on stdin -> unique <category>/<title> folders
     cut -f2 | awk -F/ '{ print (NF > 1 ? $1 "/" $2 : $1) }' | LC_ALL=C sort -u
 }
 
-manifest_report() { # manifest_report COMPARE-OUTPUT [MAX-FOLDERS] — human-readable, to stdout
-    local s max="${2:-0}" n; s=$(head -1 <<<"$1")
+manifest_ts_epoch() { # YYYYMMDD-HHMMSS[.tsv.gz] -> epoch seconds
+    [[ "$1" =~ ^([0-9]{8})-([0-9]{2})([0-9]{2})([0-9]{2}) ]] || die "'$1' is not a manifest timestamp"
+    date -d "${BASH_REMATCH[1]} ${BASH_REMATCH[2]}:${BASH_REMATCH[3]}:${BASH_REMATCH[4]}" +%s
+}
+
+manifest_who() { # manifest_who COMPARE-OUTPUT FROM TO [titles] -> file of folder <TAB> who-sentence ('' when none)
+    # who removed each losing folder (or title), from the deletion log
+    # (lib/audit.sh) — empty when deletion attribution never ran on this host
+    local out; out=$(mktemp)
+    if [[ "${4:-}" == titles ]]; then grep '^LOSS' <<<"$1" | manifest_titles; else grep '^LOSS' <<<"$1" | cut -f2; fi \
+        | audit_whodunit "$2" "$3" | while IFS=$'\t' read -r f w; do
+            printf '%s\t%s\n' "$f" "$(audit_whodunit_text "$w")"
+        done > "$out"
+    echo "$out"
+}
+
+manifest_report() { # manifest_report COMPARE-OUTPUT [MAX-FOLDERS [FROM TO]] — human-readable, to stdout
+    local s max="${2:-0}" n who=/dev/null; s=$(head -1 <<<"$1")
+    [[ -n "${3:-}" ]] && who=$(manifest_who "$1" "$3" "$4")
     local -a f; IFS=$'\t' read -r -a f <<<"$s"
     echo "media files: ${f[1]} -> ${f[2]}   (removed ${f[3]}, added ${f[4]}, renamed/moved ${f[5]})"
     if grep -q '^LOSS' <<<"$1"; then
         n=$(grep -c '^LOSS' <<<"$1")
         echo "Folders with a net loss of media files ($n):"
         # shellcheck disable=SC2016  # awk program, not shell
-        grep '^LOSS' <<<"$1" | awk -F '\t' -v max="$max" '
-            max == 0 || NR <= max { printf "  -%d  %s\n        %s\n", $3, $2, $4 }'
+        grep '^LOSS' <<<"$1" | awk -F '\t' -v max="$max" -v whof="$who" '
+            BEGIN { while ((getline l < whof) > 0) { split(l, a, "\t"); w[a[1]] = a[2] } }
+            max == 0 || NR <= max { printf "  -%d  %s\n        %s\n", $3, $2, $4
+                                    if ($2 in w) printf "        %s\n", w[$2] }'
         if (( max > 0 && n > max )); then echo "  …and $((n - max)) more"; fi
     else
         echo "No folder lost media files (upgrades and renames are not losses)."
     fi
+    [[ "$who" == /dev/null ]] || rm -f "$who"
 }
 
-manifest_notify_loss() { # manifest_notify_loss COMPARE-OUTPUT PREV-TS
-    local titles n list more="" nl=$'\n'
+manifest_notify_loss() { # manifest_notify_loss COMPARE-OUTPUT PREV-TS [FROM TO]
+    local titles n list more="" nl=$'\n' who=/dev/null
     titles=$(grep '^LOSS' <<<"$1" | manifest_titles)
     n=$(wc -l <<<"$titles")
-    list=$(head -20 <<<"$titles" | sed 's/^/• /')
+    [[ -n "${3:-}" ]] && who=$(manifest_who "$1" "$3" "$4" titles)
+    # shellcheck disable=SC2016  # awk program, not shell
+    list=$(head -20 <<<"$titles" | awk -F '\t' -v whof="$who" '
+        BEGIN { while ((getline l < whof) > 0) { split(l, a, "\t"); w[a[1]] = a[2] } }
+        { print "• " $0 (($0 in w) ? " — " w[$0] : "") }')
+    [[ "$who" == /dev/null ]] || rm -f "$who"
     (( n > 20 )) && more="$nl…and $((n - 20)) more"
     notify ops "Mediastack: media removed" "$n title folder(s) lost media files since the manifest of $2:$nl$list$more${nl}Detail: \`./mediastack.sh manifest diff\`" warning
 }
@@ -140,6 +165,11 @@ manifest_take() { # manifest_take [--accept]
     if [[ -z "$latest" ]]; then
         info "First manifest — this is the baseline; nothing to compare yet."
     else
+        # the deletion log first, so the report can say who removed what
+        if [[ "$(env_get AUDIT_ENABLED false)" == true ]]; then
+            ( audit_extract ) || warn "the deletion log could not be brought up to date (above) — who removed what may be incomplete"
+        fi
+        local from now; from=$(manifest_ts_epoch "$latest"); now=$(date +%s)
         cmp=$(manifest_compare "$dir/$latest" "$new")
         local -a f; IFS=$'\t' read -r -a f <<<"$(head -1 <<<"$cmp")"
         local limit; limit=$(env_get MANIFEST_ALERT_PCT 5)
@@ -152,15 +182,15 @@ manifest_take() { # manifest_take [--accept]
         if [[ "${1:-}" != --accept ]] && (( f[1] > 0 )) \
            && (( f[2] == 0 || (drop >= MANIFEST_GUARD_MIN && drop * 100 > limit * f[1]) )); then
             local pct=$(( drop * 100 / f[1] ))
-            manifest_report "$cmp" 10
+            manifest_report "$cmp" 10 "$from" "$now"
             rm -f "$new"
             notify ops "Mediastack manifest: large drop NOT recorded" "Media file count fell ${pct}% (${f[1]} -> ${f[2]}), above MANIFEST_ALERT_PCT=${limit}. The snapshot was NOT kept as the new baseline."$'\n'"Share down? Fix it. Deletion intended? \`./mediastack.sh manifest --accept\`" failure
             die "Media file count fell ${pct}% (${f[1]} -> ${f[2]}) — above MANIFEST_ALERT_PCT=$limit. Snapshot NOT recorded.
   Share unmounted or half-visible? Fix it and retry: ./mediastack.sh manifest
   Deletion intended? Record it: ./mediastack.sh manifest --accept"
         fi
-        manifest_report "$cmp" 50
-        grep -q '^LOSS' <<<"$cmp" && manifest_notify_loss "$cmp" "${latest%.tsv.gz}"
+        manifest_report "$cmp" 50 "$from" "$now"
+        grep -q '^LOSS' <<<"$cmp" && manifest_notify_loss "$cmp" "${latest%.tsv.gz}" "$from" "$now"
     fi
     ts=$(ts_now); out="$dir/$ts.tsv.gz"
     sudo install -m 600 "$new" "$out"; rm -f "$new"
@@ -200,7 +230,7 @@ manifest_diff() { # manifest_diff [A [B]] — B defaults to the newest, A to the
     if [[ -n "${2:-}" ]]; then b=$(manifest_resolve "$2"); else b=${all[-1]}; fi
     [[ "$a" != "$b" ]] || die "Both sides are $a — nothing to compare."
     hr "manifest diff ${a%.tsv.gz} -> ${b%.tsv.gz}"
-    manifest_report "$(manifest_compare "$dir/$a" "$dir/$b")"
+    manifest_report "$(manifest_compare "$dir/$a" "$dir/$b")" 0 "$(manifest_ts_epoch "$a")" "$(manifest_ts_epoch "$b")"
 }
 
 manifest_find() { # manifest_find TEXT — first/last snapshot each matching path appears in

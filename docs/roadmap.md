@@ -132,7 +132,7 @@ in place (docs/disaster-recovery.md); still to build:
   filesystem — an arr recycle is a move, cross-filesystem it becomes a full
   copy), retention days (default 7; upgrades keep the old file for the whole
   window, so 4K remux chains cost disk). Covers arr-initiated deletes only.
-- *Deletion attribution via auditd (opt-in) — phases 1–2 of 3 landed.* The
+- *Deletion attribution via auditd (opt-in) — built (phases 1–3).* The
   `audit` verb: `on` installs auditd (or joins one the host already runs,
   touching nothing of it) and loads the watch for the media root; `off`
   removes it (and auditd, if mediastack installed it); `status` and doctor
@@ -145,9 +145,9 @@ in place (docs/disaster-recovery.md); still to build:
   (anzac2's NFS mount): a `-F dir=` rule fires on an NFS client mount, and NFS
   refuses `renameat2` so callers retry with `renameat` — the rules keep
   successes only. Sees this host's syscalls only: NAS-side and other-host
-  deletes are the manifest's to catch. Still open:
-  - *Phase 3 — the manifest's "media removed" alert names who removed each
-    folder,* from the durable log.
+  deletes are the manifest's to catch. The manifest's loss report, `manifest
+  diff` and its ops alert name who removed each folder from the durable log
+  (phase 3). Still open:
   - *Unproven live:* a watch loaded at boot onto an NFS automount that is not
     yet mounted (reboot a host with an NFS media root; doctor's live check
     catches it either way); SMB (doctor warns); ARM and the other 64-bit

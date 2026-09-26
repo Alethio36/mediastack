@@ -519,6 +519,49 @@ audit_prune() { # drop day files older than AUDIT_KEEP_DAYS
     return 0
 }
 
+audit_whodunit() { # stdin: media-root-relative folders; $1 $2: window (epochs)
+    # -> folder <TAB> "who ×n, who ×n" | "-" (none recorded) | "-gap" (none, and the
+    #    log has a gap in the window); nothing at all when attribution never ran here
+    local dir root files f folders
+    dir=$(audit_dir)
+    sudo test -d "$dir" || return 0
+    root=$(audit_root || manifest_root)
+    local a b; printf -v a '%(%F)T' "$1"; printf -v b '%(%F)T' "$2"
+    files=$(sudo find "$dir" -maxdepth 1 -name '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].tsv' -printf '%f\n' \
+            | sort | awk -v a="$a.tsv" -v b="$b.tsv" '$0 >= a && $0 <= b')
+    folders=$(mktemp); cat > "$folders"
+    # shellcheck disable=SC2086  # day-file names: no spaces by construction
+    { for f in $files; do sudo cat "$dir/$f"; done; } | LC_ALL=C awk -F'\t' -v root="$root" -v from="$1" -v to="$2" -v flist="$folders" '
+        BEGIN { while ((getline l < flist) > 0) fo[++nf] = l }
+        $1 < from || $1 > to { next }
+        $3 == "gap" { gap = 1; next }
+        {
+            for (i = 1; i <= nf; i++) {
+                d = root "/" fo[i]
+                if ($4 == d || index($4, d "/") == 1) {
+                    if (!((i, $2) in c)) w[i, ++nw[i]] = $2
+                    c[i, $2]++
+                }
+            }
+        }
+        END {
+            for (i = 1; i <= nf; i++) {
+                out = ""
+                for (j = 1; j <= nw[i]; j++) out = out (out == "" ? "" : ", ") w[i, j] " ×" c[i, w[i, j]]
+                print fo[i] "\t" (out != "" ? out : (gap ? "-gap" : "-"))
+            }
+        }'
+    rm -f "$folders"
+}
+
+audit_whodunit_text() { # audit_whodunit_text SUMMARY -> the sentence a report shows for it
+    case "$1" in
+        -)    echo "no deletion recorded here — made on the NAS, from another machine, or while attribution was off" ;;
+        -gap) echo "no deletion recorded here — the deletion log has a gap in this window (audit report shows it)" ;;
+        *)    echo "removed by: $1" ;;
+    esac
+}
+
 audit_report_args() { # audit_report_args ARGS... -> REPORT_SINCE (YYYY-MM-DD), REPORT_PATH
     REPORT_SINCE=$(date -d '-7 days' +%F); REPORT_PATH=""
     while (( $# )); do

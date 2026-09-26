@@ -94,6 +94,14 @@ when they share a filesystem. A snapshot lists your whole library, so the
 script refuses to write one inside this repo unless the folder is gitignored
 (the default `./backups` is).
 
-**Limits.** The manifest says *what* went and *when* (to within a day), not
-*who* removed it. Attribution needs host auditing (planned). Existing installs
-get the schedule on `upgrade`; install its timer with `./mediastack.sh apply-timer`.
+**Who removed it.** With deletion attribution on (`./mediastack.sh audit on`),
+the loss report, `manifest diff` and the ops alert name who removed each
+folder — a service, or a person by their login — from the deletion log for
+that window. "No deletion recorded here" means it did not happen through this
+host (the NAS itself, another machine) or happened while attribution was off.
+`./mediastack.sh audit report` lists every delete and rename with its time.
+Without attribution, the manifest says *what* went and *when* (to within a
+day), not *who*.
+
+Existing installs get the schedule on `upgrade`; install its timer with
+`./mediastack.sh apply-timer`.
