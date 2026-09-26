@@ -167,7 +167,11 @@ authentik_blueprint_status() { # -> successful | warning | error | … | outdate
     inst=$(authentik_blueprint_instance 2>&1) || { echo "$inst"; return 0; }
     [[ -n "$inst" ]] || { echo ""; return 0; }
     mine=$(sha512sum "$SCRIPT_DIR/blueprints/authentik/mediastack-portal.yaml" | cut -d' ' -f1)
-    if [[ "$(jq -r '.last_applied_hash // ""' <<<"$inst")" != "$mine" ]]; then echo outdated; return 0; fi
+    if [[ "$(jq -r '.last_applied_hash // ""' <<<"$inst")" != "$mine" ]]; then
+        # a failed apply keeps the previous version's hash: its status says it failed
+        [[ "$(jq -r '.status' <<<"$inst")" == error ]] && { echo error; return 0; }
+        echo outdated; return 0
+    fi
     jq -r '.status' <<<"$inst"
 }
 
@@ -176,9 +180,13 @@ authentik_blueprint_apply() { # apply the current file now instead of waiting fo
     inst=$(authentik_blueprint_instance 2>&1) || { echo "$inst"; return 0; }
     pk=$(jq -r '.pk // empty' <<<"$inst"); [[ -n "$pk" ]] || { echo ""; return 0; }
     ak_api POST "/managed/blueprints/$pk/apply/" >/dev/null || { echo "unreadable (apply refused)"; return 0; }
+    local was; was=$(jq -r '.last_applied // ""' <<<"$inst")
     for t in $(seq 1 30); do   # the apply may be queued: up to a minute
         st=$(authentik_blueprint_status)
-        [[ "$st" != outdated ]] && { echo "$st"; return 0; }
+        # "error" counts only once authentik has tried again since we asked
+        if [[ "$st" == error ]]; then
+            [[ "$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied // ""')" != "$was" ]] && { echo error; return 0; }
+        elif [[ "$st" != outdated ]]; then echo "$st"; return 0; fi
         sleep 2
     done
     echo outdated

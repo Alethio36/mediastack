@@ -223,11 +223,13 @@ ak_api() { echo "$1 $2" >> "$T/calls"
     case "$1 $2" in
         "GET /managed/blueprints/?page_size=200")
             h=$BP_CUR; [[ "$BP_APPLIED" == old ]] && h=deadbeef
-            jq -cn --arg h "$h" '{results:[{name:"Mediastack - Portal", status:"successful", last_applied_hash:$h, pk:"bp-1"}]}' ;;
+            jq -cn --arg h "$h" --arg st "${BP_STATUS:-successful}" '{results:[{name:"Mediastack - Portal", status:$st, last_applied_hash:$h, pk:"bp-1"}]}' ;;
         "POST /managed/blueprints/bp-1/apply/") BP_APPLIED=new; echo '{}' ;;
         *) echo '{}' ;;
     esac; }
 [[ "$(authentik_blueprint_status)" == outdated ]] || fail_ "an earlier file's success is 'outdated', not 'successful'"; pass
+BP_STATUS=error; [[ "$(authentik_blueprint_status)" == error ]] || fail_ "a failed apply of a newer file says 'error', not 'outdated'"; pass
+BP_STATUS=successful
 BP_APPLIED=old; sleep() { :; }
 [[ "$(authentik_blueprint_apply)" == successful ]] || fail_ "applying on demand brings the current file in"; pass
 grep -q '^POST /managed/blueprints/bp-1/apply/' "$T/calls" || fail_ "the apply goes through authentik's API"; pass
@@ -367,7 +369,8 @@ grep -q 'mediastack-ldap-allow:' lib/edge.sh && grep -q 'sourceRange: \["$(env_g
 grep -q 'traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"' compose.d/authentik.yml || fail_ "the LDAP route carries the allow-list"; pass
 bp=blueprints/authentik/mediastack-portal.yaml
 sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'mfa_support: false' || fail_ "LDAP binds: no MFA prompt (TV apps cannot answer one)"; pass
-grep -A3 'permissions:' "$bp" | grep -q 'permission: search_full_directory' || fail_ "only the search account may list the directory"; pass
+grep -A3 'permissions:' "$bp" | grep -q 'permission: authentik_providers_ldap.search_full_directory' \
+    || fail_ "only the search account may list the directory — by the full permission name (the dry run rejects the short form)"; pass
 grep -B2 -A3 'target: !KeyOf flow-ldap' "$bp" | grep -q 'policy: !KeyOf policy-ldap-reputation' || fail_ "LDAP binds are throttled by reputation"; pass
 [[ "$(grep -c 'target: !KeyOf app-ldap' "$bp")" == 3 ]] || fail_ "binds: media-users, admins, the search account — nobody else"; pass
 
