@@ -262,6 +262,26 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
 A deployment is `.env` + `custom/` + the roots: that is what to keep, copy
 or back up.
 
+**`.env` is checked.** Every setting is described in `lib/env.schema.tsv`
+(its type, whether it may be empty, who writes it, what it means — including
+the advanced ones read with a default, like `<SERVICE>_PORT` or
+`WIZARR_HOST`). Before any command runs, every value is checked against it: a
+malformed one stops the command, naming the key and what is expected (a
+secret's value is never shown). Write values plain — no quotes, no comment
+after the value: compose would strip them but the script would not, so the
+two would read different settings; a comment goes on its own line. `doctor`
+lists keys nothing reads (a typo, a leftover); one that is yours on purpose
+— say, for a script of your own — is marked with a line directly above it:
+
+```
+# mediastack: ignore
+MY_OWN_VAR=value
+```
+
+Variables your `custom/` files use (`${MYAPP_API_KEY}`) count as used and need
+no mark. The script's own pending work (a re-point after a VPN toggle, an
+ownership handover) lives in `local/state/`, not in `.env`.
+
 **Outside this folder**, mediastack places only what its features need, and
 one registry (`lib/footprint.sh`) lists all of it — `doctor` shows what is on
 this host under "on this host, outside this folder", and `uninstall` removes

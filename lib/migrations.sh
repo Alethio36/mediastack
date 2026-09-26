@@ -234,3 +234,16 @@ layout_move() { # layout_move OLD NEW — move once; both present is a conflict 
     mv "$1" "$2"; repo_owned "$2"
     info "moved ${1#"$SCRIPT_DIR"/} -> ${2#"$SCRIPT_DIR"/}"
 }
+migrate_env_28_to_29() {
+    # .env holds settings only: the script's pending-work markers move to
+    # local/state/ (state_get/state_set)
+    local k v
+    for k in WIRE_REPOINT UID_HANDOVER; do
+        v=$(env_get "$k")
+        [[ -n "$v" ]] && state_set "$k" "$v"
+        env_del "$k"
+    done
+    # an inline comment was shipped in .env.example; the script read it as part
+    # of the value (so 'skip' could never match) — keep just the value
+    sed -i -E 's/^(UPDATE_DEFER_ACTION=[a-z]+)[[:space:]]+#.*$/\1/' "$ENV_FILE"
+}

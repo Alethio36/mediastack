@@ -57,6 +57,16 @@ env_get() { # env_get VAR [default]
 
 env_del() { sed -i "/^$1=/d" "$ENV_FILE"; } # remove a variable entirely
 
+# Pending work the script tracks for itself (a re-point after a VPN toggle, an
+# ownership handover) — not settings, so not in .env: one file per marker in
+# local/state/, holding its value. Absent = nothing pending.
+state_get() { cat "$STATE_DIR/$1" 2>/dev/null || true; }   # nothing pending reads as empty
+state_set() {
+    mkdir -p "$STATE_DIR"; repo_owned "$LOCAL_DIR" "$STATE_DIR"
+    printf '%s\n' "$2" > "$STATE_DIR/$1"; repo_owned "$STATE_DIR/$1"
+}
+state_del() { rm -f "$STATE_DIR/$1"; }
+
 env_set() { # env_set VAR value  (idempotent upsert, preserves file order)
     local var="$1" val="$2"
     [[ -e "$ENV_FILE" ]] || { touch "$ENV_FILE"; repo_owned "$ENV_FILE"; }

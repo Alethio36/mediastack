@@ -281,8 +281,8 @@ _doctor_vpn_backups() {
         (( age > 48 )) && warn "latest restore point is ${age}h old — run: ./mediastack.sh backup" || ok "latest restore point ${age}h old"
     fi
     _doctor_manifest
-    [[ -z "$(env_get WIRE_REPOINT)" ]] \
-        || warn "re-pointing pending for $(env_get WIRE_REPOINT) (a VPN toggle moved it) — apply: ./mediastack.sh up"
+    [[ -z "$(state_get WIRE_REPOINT)" ]] \
+        || warn "re-pointing pending for $(state_get WIRE_REPOINT) (a VPN toggle moved it) — apply: ./mediastack.sh up"
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
         if [[ -s cache/trash-last-sync ]]; then
             local tage=$(( ( $(date +%s) - $(cat cache/trash-last-sync) ) / 3600 ))
@@ -408,7 +408,7 @@ _doctor_runtime_audit() {
         [[ "$(c_state "$cn")" == running ]] || continue
         expect=$(env_get "$(uvar "$s")_UID")
         [[ -n "$expect" ]] || continue
-        if [[ " $(env_get UID_HANDOVER) " == *" $s "* ]]; then
+        if [[ " $(state_get UID_HANDOVER) " == *" $s "* ]]; then
             warn "$s: switching to its own user (UID $expect) is pending — apply it: ./mediastack.sh up"
             drift=$((drift+1)); continue
         fi
@@ -439,7 +439,7 @@ _doctor_runtime_audit() {
 
 # doctor runs these in order; adding a section = append here + define
 # _doctor_<name>. Mirrors WIRE_ROLES: one registry, no second list to sync.
-DOCTOR_SECTIONS=(environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit audit recycle footprint)
+DOCTOR_SECTIONS=(env environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit audit recycle footprint)
 
 cmd_doctor() {
     load_env; need_cmd jq; render
