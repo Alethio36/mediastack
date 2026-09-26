@@ -130,20 +130,28 @@ _doctor_permissions() {
         # the container, at its REAL mount path. This decides pass/fail; runs
         # regardless of ownership tier above (a config FAIL already fired if
         # warranted, but writability is the definitive check).
-        local cn dest out rc
-        cn=$(svc_cname "$s")
-        if [[ $(c_state "$cn") == running ]]; then
-            dest=$(c_get "$cn" "(.Mounts[]? | select(.Source==\"$croot/$s\") | .Destination)" | head -1)
-            if [[ -n "$dest" ]]; then
+        # every writable mount inside the service's config folder, in each of
+        # its shard's containers (authentik mounts subfolders: data/, db/, ...)
+        local cn dest out rc m probed=0
+        for m in $(svc_shard "$s"); do
+            cn=$(svc_cname "$m")
+            [[ $(c_state "$cn") == running ]] || continue
+            while IFS= read -r dest; do
+                [[ -n "$dest" ]] || continue
+                probed=1
                 out=$(sudo docker exec "$cn" test -w "$dest" 2>&1) && rc=0 || rc=$?
-                if (( rc == 0 )); then ok "$s config writable from inside the container"
+                if (( rc == 0 )); then ok "$m config writable from inside the container ($dest)"
                 elif grep -q "executable file not found" <<<"$out"; then
-                    info "$s: image has no probe tooling — writability unverified"
+                    info "$m: image has no probe tooling — writability unverified"
                 else
-                    d_fail "$s cannot write $dest from inside its container" "the app cannot persist settings" "./mediastack.sh fix-perms $s && ./mediastack.sh logs $s"
+                    d_fail "$m cannot write $dest from inside its container" "the app cannot persist settings" "./mediastack.sh fix-perms $s && ./mediastack.sh logs $s"
                 fi
-            else info "$s: config not bind-mounted in running container — skipped"; fi
-        elif [[ -z "$cfgbad" ]]; then ok "$s config ownership OK (write probe skipped: not running)"; fi
+            done < <(c_get "$cn" "(.Mounts[]? | select(.RW != false and (.Source == \"$croot/$s\" or (.Source | startswith(\"$croot/$s/\")))) | .Destination)")
+        done
+        if (( ! probed )); then
+            if [[ $(c_state "$(svc_cname "$s")") == running ]]; then info "$s: config not bind-mounted in a running container — skipped"
+            elif [[ -z "$cfgbad" ]]; then ok "$s config ownership OK (write probe skipped: not running)"; fi
+        fi
     done
     # jellysearch must READ jellyfin's config
     if svc_enabled jellysearch; then

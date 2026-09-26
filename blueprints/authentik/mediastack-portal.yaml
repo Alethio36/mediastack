@@ -1,0 +1,197 @@
+# The portal's setup, applied by authentik's worker on every start
+# (compose.d/authentik.yml mounts a copy; lib/authentik.sh keeps it current).
+# Values that differ per install come from the worker's environment (!Env).
+#
+# Household members are INTERNAL users without admin rights: authentik shows
+# its app dashboard to internal users only (external users are sent to one
+# default app). They join by invitation and land in `media-users`; `admins`
+# is the group the gate lets into the admin tools.
+version: 1
+metadata:
+  name: Mediastack - Portal
+  labels:
+    blueprints.goauthentik.io/description: "mediastack: groups, sign-up by invitation, the portal's name"
+entries:
+  # -- groups -------------------------------------------------------------
+  - model: authentik_core.group
+    id: group-media-users
+    identifiers:
+      name: media-users
+    attrs:
+      is_superuser: false
+  - model: authentik_core.group
+    id: group-admins
+    identifiers:
+      name: admins
+    attrs:
+      is_superuser: false
+
+  # -- the portal's name --------------------------------------------------
+  - model: authentik_brands.brand
+    identifiers:
+      domain: authentik-default
+    attrs:
+      branding_title: !Env [MEDIASTACK_PORTAL_TITLE, Mediastack]
+
+  # -- sign-up by invitation ----------------------------------------------
+  - model: authentik_flows.flow
+    id: flow-join
+    identifiers:
+      slug: mediastack-join
+    attrs:
+      name: mediastack - join by invitation
+      title: !Format ["Join %s", !Env [MEDIASTACK_PORTAL_TITLE, Mediastack]]
+      designation: enrollment
+      authentication: require_unauthenticated
+
+  - model: authentik_stages_invitation.invitationstage
+    id: stage-invitation
+    identifiers:
+      name: mediastack-join-invitation
+    attrs:
+      continue_flow_without_invitation: false
+
+  - model: authentik_stages_prompt.prompt
+    id: field-welcome
+    identifiers:
+      name: mediastack-join-welcome
+    attrs:
+      field_key: welcome
+      label: Welcome
+      type: static
+      required: false
+      initial_value: !Format
+        - "You've been invited to %s. Choose a username and password: they are your login for every app here — the same ones in the Jellyfin app on your TV or phone. Your email is how you'll reset a forgotten password."
+        - !Env [MEDIASTACK_PORTAL_TITLE, Mediastack]
+      order: 0
+  - model: authentik_stages_prompt.prompt
+    id: field-username
+    identifiers:
+      name: mediastack-join-username
+    attrs:
+      field_key: username
+      label: Username
+      type: username
+      required: true
+      placeholder: Username
+      order: 1
+  - model: authentik_stages_prompt.prompt
+    id: field-password
+    identifiers:
+      name: mediastack-join-password
+    attrs:
+      field_key: password
+      label: Password
+      type: password
+      required: true
+      placeholder: Password
+      order: 2
+  - model: authentik_stages_prompt.prompt
+    id: field-password-repeat
+    identifiers:
+      name: mediastack-join-password-repeat
+    attrs:
+      field_key: password_repeat
+      label: Password (again)
+      type: password
+      required: true
+      placeholder: Password (again)
+      order: 3
+  - model: authentik_stages_prompt.prompt
+    id: field-name
+    identifiers:
+      name: mediastack-join-name
+    attrs:
+      field_key: name
+      label: Your name
+      type: text
+      required: true
+      placeholder: How you'd like to be shown
+      order: 0
+  - model: authentik_stages_prompt.prompt
+    id: field-email
+    identifiers:
+      name: mediastack-join-email
+    attrs:
+      field_key: email
+      label: Email
+      type: email
+      required: true
+      placeholder: For password resets
+      order: 1
+
+  - model: authentik_stages_prompt.promptstage
+    id: stage-credentials
+    identifiers:
+      name: mediastack-join-credentials
+    attrs:
+      fields:
+        - !KeyOf field-welcome
+        - !KeyOf field-username
+        - !KeyOf field-password
+        - !KeyOf field-password-repeat
+  - model: authentik_stages_prompt.promptstage
+    id: stage-details
+    identifiers:
+      name: mediastack-join-details
+    attrs:
+      fields:
+        - !KeyOf field-name
+        - !KeyOf field-email
+
+  - model: authentik_stages_user_write.userwritestage
+    id: stage-write
+    identifiers:
+      name: mediastack-join-write
+    attrs:
+      user_creation_mode: always_create
+      user_type: internal
+      user_path_template: users/household
+      create_users_group: !KeyOf group-media-users
+  - model: authentik_stages_user_login.userloginstage
+    id: stage-login
+    identifiers:
+      name: mediastack-join-login
+
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-join
+      stage: !KeyOf stage-invitation
+      order: 5
+    attrs:
+      evaluate_on_plan: true
+      re_evaluate_policies: true
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-join
+      stage: !KeyOf stage-credentials
+      order: 10
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-join
+      stage: !KeyOf stage-details
+      order: 15
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-join
+      stage: !KeyOf stage-write
+      order: 20
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-join
+      stage: !KeyOf stage-login
+      order: 100
+
+  # -- the first card on the dashboard ------------------------------------
+  # No login behind it (an application needs no provider): it carries the
+  # setup text until the apps' own cards arrive with them.
+  - model: authentik_core.application
+    identifiers:
+      slug: mediastack-getting-started
+    attrs:
+      name: Getting started
+      group: Start here
+      meta_launch_url: !Format ["%s/if/user/", !Env [MEDIASTACK_PORTAL_URL, ""]]
+      meta_publisher: !Env [MEDIASTACK_PORTAL_TITLE, Mediastack]
+      meta_description: "Your username and password here work in every app. Watch: install the Jellyfin app and sign in with them. Request something new: use the Requests card and sign in with Jellyfin."
+      open_in_new_tab: false
