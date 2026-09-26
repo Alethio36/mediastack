@@ -227,8 +227,16 @@ all built; what each still leaves open is noted below.
      domain-wide forward-auth provider ("Admin tools") lets `admins` through;
      `wire authentik` attaches it to the outpost (added, never replacing), puts
      akadmin in `admins` once, and keeps an admins-only dashboard card per gated
-     tool. Gated so far: the panel and Apprise. *Milestone 2:* the arrs and the
-     other admin tools (each tool's trust setting verified against its docs).
+     tool. *Milestone 2 done:* every admin tool gated (the arrs, Prowlarr, Bazarr,
+     the download clients, LazyLibrarian, Cleanuparr, WatchState, Pi-hole,
+     Traefik's dashboard). With the portal on, their host ports listen on
+     127.0.0.1 only (`MEDIASTACK_GATE_BIND`); an arr then trusts the portal
+     (`External`) — only once it is gated and unreachable by IP — and its `/api`
+     skips the gate for companion apps (the API still demands its key;
+     `mediastack.auth.bypass`). Disabling authentik restores and *verifies* each
+     arr's own login before the ports reopen. Still their own login behind the
+     gate (two logins): qBittorrent (its only bypass also opens its API),
+     Pi-hole (one password for UI and API), and the rest until each is checked.
   5. Per app: Jellyfin LDAP, Audiobookshelf/Kavita/ErsatzTV OIDC, Seerr through
      Jellyfin, Navidrome header + its own password for music apps, the panel via
      OAuth2 with group permissions, Apprise and the arrs behind the gate.
@@ -236,12 +244,12 @@ all built; what each still leaves open is noted below.
      users, keeping watch history; Audiobookshelf/Kavita match by username) —
      test the Jellyfin LDAP takeover of an existing user first.
   First milestone: the gate in front of the panel and Apprise.
-- **Harden the gate** *(later — accepted risk for now)*: gated tools keep their
-  host ports open to the LAN, so the gate protects their domain address only —
-  anyone on the LAN can still reach them by IP and port. Binding those ports to
-  127.0.0.1 closes that; it is also what lets a gated tool's own login be
-  switched to "trust the gate" (until then a gated tool that has its own login
-  asks twice through the domain: the portal, then its own).
+- **One login for the remaining tools** *(later)*: qBittorrent, Pi-hole, Deluge,
+  Transmission, LazyLibrarian, Cleanuparr, WatchState and Bazarr are gated and
+  closed to the LAN, but still ask for their own login too. Each can drop it
+  only where its API stays protected (Bazarr: auth None + its API key;
+  Pi-hole: an empty password is safe now its port is local, but its phone apps
+  would lose the API) — checked tool by tool.
 - **Wizarr mode: Apprise and the panel** *(review later — accepted risk for
   now)*: without authentik there is no gate, and both have no login of their
   own; they stay LAN-open as before.

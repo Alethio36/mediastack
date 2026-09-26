@@ -413,6 +413,7 @@ provision() {
     hr "Provisioning users, group, folders"
     load_env
     _configure_selfheal   # a service new since the last configure gets its UID before anything starts it
+    gate_bind_sync        # gated tools listen on 127.0.0.1 while the portal guards them
     RENDERED_JSON=""; render
     local gid; gid=$(env_get MEDIA_GROUP_GID 13000)
     getent group mediacenter >/dev/null || { sudo groupadd -g "$gid" mediacenter; ok "group mediacenter ($gid)"; }
@@ -657,8 +658,25 @@ cmd_disable() {
     done
     [[ -n "$blockers" ]] && die "'$svc' is required by enabled service(s): $blockers
   Disable those first, or leave '$svc' running."
+    if [[ "$svc" == authentik ]]; then
+        # the tools that trusted the gate get their own login back FIRST — only
+        # then may their ports reopen to the LAN (never open without a login)
+        local a m
+        for a in $(arr_instances); do
+            arr_forms_login "$a" || true
+            # verify, don't assume: an arr still trusting the portal would be open to the LAN
+            m=$(api GET "$(arr_url "$a")/api/$(arr_apiver "$a")/config/host" "$(arr_key "$a")" | jq -r '.authenticationMethod // ""') \
+                || die "$a: its login setting is unreadable — authentik stays enabled (ports stay closed). Retry once it answers."
+            [[ "$m" != external ]] || die "$a still trusts the portal and has no login of its own (the shared arr login: ./mediastack.sh set-credentials arr)
+  authentik stays enabled, ports stay closed. Then retry: ./mediastack.sh disable authentik"
+        done
+    fi
     env_set COMPOSE_PROFILES "$(env_get COMPOSE_PROFILES | tr ',' '\n' | grep -vx "$svc" | paste -sd, -)"
     reconcile_disabled
+    if [[ "$svc" == authentik ]]; then
+        gate_bind_sync; vpn_gen; RENDERED_JSON=""
+        DC up -d --remove-orphans >/dev/null && ok "gated tools recreated with their LAN ports and their own logins"
+    fi
     ok "'$svc' disabled; its container was removed (config kept, still backed up)."
 }
 

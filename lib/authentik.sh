@@ -110,6 +110,28 @@ authentik_blueprints_sync() { # the worker applies what is in CONFIG_ROOT/authen
     return 0
 }
 
+gate_bind_sync() { # MEDIASTACK_GATE_BIND: where a gated tool's host port listens — 127.0.0.1 while the portal guards it
+    local want=""
+    svc_enabled authentik && want="127.0.0.1:"
+    [[ "$(env_get MEDIASTACK_GATE_BIND)" == "$want" ]] && return 0
+    env_set MEDIASTACK_GATE_BIND "$want"
+    if [[ -n "$want" ]]; then info "gated tools' host ports now listen on 127.0.0.1 only — reach them through the portal"
+    else info "gated tools' host ports reopen to the LAN (no portal to guard them)"; fi
+}
+
+svc_bound_local() { # svc_bound_local <svc> -> 0 when nothing publishes its port beyond 127.0.0.1 (checked on the live container)
+    local pub cport lines
+    pub=$(svc_host "$1"); cport=$(svc_cport "$1")
+    [[ -n "$cport" ]] || return 0
+    lines=$(sudo docker port "$(svc_cname "$pub")" "$cport/tcp" 2>/dev/null || true)   # soft read: nothing published is local
+    [[ -z "$lines" ]] && return 0
+    ! grep -qv '^127\.0\.0\.1:' <<<"$lines"
+}
+
+gate_trusted() { # gate_trusted <svc> -> 0 when <svc> may drop its own login: the portal runs, it is gated, and it is unreachable by IP
+    svc_enabled authentik && [[ "$(svc_label "$1" mediastack.auth)" == gate ]] && svc_bound_local "$1"
+}
+
 authentik_prepare() { # before `up`/`enable` start it: the edge, secrets, the release step, its setup files
     svc_enabled authentik || return 0
     # the API is published on 127.0.0.1 only: people reach the portal through Traefik
@@ -218,6 +240,10 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                 *) d_fail "authentik: mediastack's portal setup is '$st'" "groups and sign-up may be missing or incomplete" \
                        "./mediastack.sh logs authentik --no-follow | grep -i blueprint" ;;
             esac
+            local g open=""
+            for g in $(authentik_gated); do svc_bound_local "$g" || open+="$g "; done
+            [[ -z "$open" ]] || d_fail "gated tools reachable by IP, around the portal: $open" \
+                "their host ports are not bound to 127.0.0.1 yet" "./mediastack.sh up"
             if [[ -n "$(authentik_gated)" ]]; then
                 if authentik_gate_attached; then ok "authentik: the gate is up — $(authentik_gated | tr '\n' ' ')ask the portal first (admins only)"
                 else d_fail "authentik: the gate is not on its built-in outpost" "routes marked gate ($(authentik_gated | tr '\n' ' '| sed 's/ $//')) refuse everyone" "./mediastack.sh wire authentik"; fi

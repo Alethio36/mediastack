@@ -29,7 +29,8 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "prowlarr"
-      mediastack.auth: "native"   # handles its own login
+      mediastack.auth: "gate"   # an admin tool: behind the portal (mediastack-gate)
+      mediastack.auth.bypass: "/api"   # companion apps: its API still demands its own API key
       mediastack.port: "9696"
     healthcheck:
       test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:9696/ping"]

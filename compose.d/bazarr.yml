@@ -30,7 +30,8 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "bazarr"
-      mediastack.auth: "native"   # handles its own login
+      mediastack.auth: "gate"   # an admin tool: behind the portal (mediastack-gate)
+      mediastack.auth.bypass: "/api"   # companion apps: its API still demands its own API key
       mediastack.port: "6767"
     healthcheck:
       # Bazarr has no unauthenticated /ping; a 200 on / (login page) proves up.

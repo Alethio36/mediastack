@@ -35,7 +35,7 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "transmission"
-      mediastack.auth: "native"   # handles its own login
+      mediastack.auth: "gate"   # an admin tool: behind the portal (mediastack-gate)
     healthcheck:
       # / returns 401 unauthenticated; curl without -f still exits 0 = server up.
       test: ["CMD-SHELL", "curl -s --max-time 5 http://127.0.0.1:9091 >/dev/null || exit 1"]
