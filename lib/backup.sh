@@ -271,6 +271,18 @@ cmd_restore() {
 cmd_rollback() { cmd_restore --service "${1:?usage: rollback <service>}"; }
 
 # ------------------------------------------------------------------ update --
+pin_shard_to() { # pin_shard_to <primary> <tag> — the primary, and every member released in lockstep with it
+    # lockstep = the same tag today: authentik's worker, and its LDAP outpost (a
+    # different image, but authentik requires the same release); its database
+    # (postgres:16) keeps its own version
+    local one="$1" to="$2" base tag m
+    base=$(svc_image "$one" | cut -d: -f1); tag=$(svc_image "$one" | cut -s -d: -f2)
+    for m in $(svc_members "$one"); do
+        [[ -n "$tag" && "$(svc_image "$m" | cut -s -d: -f2)" == "$tag" ]] \
+            && pin_service "$m" "$(svc_image "$m" | cut -d: -f1):$to"
+    done
+    pin_service "$one" "$base:$to"
+}
 jellyfin_sessions_active() {
     local key host; key=$(env_get JELLYFIN_API_KEY); host=$(jf_url)
     [[ -n "$key" ]] || return 1
@@ -396,12 +408,7 @@ cmd_update() {
     fi
 
     if [[ -n "$to_tag" ]]; then
-        local base m; base=$(svc_image "$one" | cut -d: -f1)
-        pin_service "$one" "$base:$to_tag"
-        # a member built from the same image (authentik's worker) moves with it
-        for m in $(svc_members "$one"); do
-            [[ "$(svc_image "$m" | cut -d: -f1)" == "$base" ]] && pin_service "$m" "$base:$to_tag"
-        done
+        pin_shard_to "$one" "$to_tag"
         RENDERED_JSON=""
     fi
 
