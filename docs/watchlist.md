@@ -535,72 +535,113 @@ sync is the point.
 
 ### Identity & SSO
 
-The stack has no single sign-on today — each app has its own login. SSO is a
-roadmap item (Security & access); this is the candidate landscape. Short
-version: real pooled logins across the whole stack is achievable but **not
-uniform** — apps split into three tiers (native OIDC / forward-auth gate /
-LDAP), and Jellyfin's native clients are the constraint that shapes everything.
+**Verdict:** decided (Sept 2026) — **authentik**, as one of two mutually
+exclusive account models; build after migrate. The plan lives in the roadmap
+(Security & access); this entry keeps the reasoning and the evidence (every
+claim below checked against each project's current documentation, Sept 2026).
 
-#### authentik — full identity provider
+**Two account models — the user picks one, never both.** Wizarr creates
+*local* accounts (Jellyfin, Audiobookshelf, Kavita — not Navidrome); in
+authentik mode the same apps take their users from authentik. Both at once
+would mean two populations and duplicate names, so the tooling refuses the
+second while the first is enabled.
 
-**What it is:** a complete self-hosted IdP — OIDC, SAML, SCIM, an LDAP outpost,
-and a forward-auth proxy, plus native user enrollment, groups/RBAC, and a
-polished admin UI. The "does everything" option.
+| | Simple — **Wizarr** | Full — **authentik** |
+|---|---|---|
+| Invite | Wizarr link, guided setup pages | authentik invitation link, signup form |
+| Passwords | one per app | one for all, except Navidrome's music apps |
+| Admin switch | per app | authentik groups (where the app honours them) |
+| Weight | one container | one shard, four containers |
 
-**Why it's a candidate:** the only option that delivers *both* halves of the
-SSO goal at once — pooled logins **and** self-service enrollment (invite links,
-self-registration, MFA enrolment, password recovery). Groups become the access
-switches: enrol a user into a default `jellyfin-users` group, then grant more
-services later by adding groups from the dashboard — no per-app provisioning.
+**authentik is one shard** (`authentik.yml`): server (primary) + worker +
+its own PostgreSQL + the LDAP outpost — every extra container serves only
+authentik (Architecture rules: Shards; No shared data tiers). Redis is gone
+since authentik 2025.10. The LDAP outpost is its own container
+(`ghcr.io/goauthentik/ldap`); forward-auth uses the outpost embedded in the
+server. Needs the DB-backed service pattern first (a PostgreSQL-aware backup
+and a migration-aware update).
 
-**How the stack would attach (three tiers):**
+**The design rule: the gate is for browser-only tools.** An app whose clients
+log in themselves (TV, phone, Subsonic, readers) keeps its own login page and
+checks authentik behind it — no second screen, no redirect for an app to
+mishandle. Only browser-only tools sit behind the forward-auth gate, with their
+own login switched to "trust the gate" and their ports published on 127.0.0.1
+only (the script still reaches them; nobody walks around the gate). Declared per
+service by label — `mediastack.auth: native | gate | open`, plus exception paths
+— and CI fails a web interface without one.
 
-- **OIDC apps** (Kavita, Audiobookshelf, Navidrome web) → native OIDC, gated by
-  an authentik group policy. Real per-user SSO.
-- **Forward-auth apps** (the *arrs, qBittorrent, Pi-hole) → a Traefik
-  middleware gate. It's a *gate*, not per-user SSO — the arrs don't read
-  identity headers. Each needs an explicit per-app `/api` bypass or the
-  inter-service automation hangs (the fiddly, error-prone part).
-- **Jellyfin** → the LDAP plugin against authentik's LDAP outpost. Works on
-  *all* clients (native apps included) because Jellyfin mints its own session —
-  but it's username/password, so authentik's MFA doesn't reach it (the
-  JellyfinSecurity plugin can add 2FA / device-pairing back on top).
-- **Jellyseerr** → stays on Sign-in-with-Jellyfin and rides the chain
-  (Jellyseerr → Jellyfin → authentik). Its own OIDC is **preview-only**
-  (`preview-new-oidc`, no auto account-linking), so not a stable path.
+**Per app (verified):**
+- **Jellyfin** — the official LDAP plugin against authentik's LDAP outpost
+  (authentik's own integration guide). Works on every client. The plugin's admin
+  filter applies only when a user is *created* (open issue), so Jellyfin admins
+  are set in Jellyfin, not by group. The OIDC "SSO" plugin is out (upstream
+  archived; continuations beta). **Unverified:** how an existing local user with
+  the same name is taken over — decides the account conversion; test live.
+- **Seerr** — "Sign in with Jellyfin", so it inherits the same users. Its own
+  OIDC is still an experimental preview image (`preview-new-oidc`).
+- **Audiobookshelf** — native OIDC: auto-register, match existing users by
+  username, mobile app via a second redirect URI, and a group claim
+  (admin/user/guest) that authentik groups can drive. Test before disabling local
+  login (locked out otherwise: database edit).
+- **Kavita** — native OIDC with account linking, auto-provisioning and role sync
+  (authentik: `offline_access` scope, roles claim `groups`). Reader apps use
+  Kavita's API-key OPDS links, no login.
+- **Navidrome** — no LDAP (see its own entry below). Web: the gate passes the
+  username (`ExtAuth.TrustedSources`, header `Remote-User`); `/rest/` (Subsonic
+  apps) and `/share/` bypass the gate and each user sets a Navidrome password for
+  their music apps once (`EnableUserEditing=false` would forbid that).
+- **ErsatzTV** — native OIDC for its management UI (a separate streaming port
+  blocks management; JWT for streams).
+- **The panel (OliveTin)** — trusted header or OAuth2 with authentik, including
+  group mapping into its permission lists (admins run the destructive verbs).
+- **The arrs** — the gate, with `AuthenticationMethod` `External` (authentik's
+  Sonarr guide; it warns the backend must not be reachable directly — hence the
+  localhost ports).
+- **Apprise** — no authentication by design; `APPRISE_CONFIG_LOCK` makes it
+  read-only (would break `notify set`). The gate.
+- **To verify at build time:** qBittorrent, Deluge, Transmission, Bazarr,
+  LazyLibrarian, Cleanuparr, WatchState, Pi-hole, NPM (gate specifics);
+  Pinchflat, CWA. None changes the design.
 
-**Why deferred:** the biggest scope expansion discussed. It's a **4-container
-DB-backed stack** (server + worker + PostgreSQL + Redis) — under the shard
-rules, its own shard with its own DB, ~2 GB RAM floor, a migration-aware
-`update`, and `pg_dump`-based `backup` (the same DB-backed pattern as ROMM
-option (b)). And the integration is `wire`'s job: SSO wiring isn't one
-action, it's per-service descriptors (OIDC vs forward-auth vs LDAP) — exactly
-what the role-registry `wire` (`WIRE_ROLES`, landed) is shaped for. Payoff worth naming: if `wire`
-*generates* the per-app forward-auth bypass rules, it turns the single most
-error-prone piece into regenerable config.
+**A household member's first day (authentik 2026.8).** You create an invite with
+the invitation wizard (single-use, expires in 48 h by default) and send the link
+any way you like — **no email server needed** to invite. They choose a username
+and password, land on authentik's app dashboard, and are put in `media-users` by
+the signup flow. Then: Jellyfin on the TV with the same username and password;
+Audiobookshelf's "Log in with authentik"; Seerr's "Sign in with Jellyfin";
+Navidrome's music apps after setting a Navidrome password. Household members are
+"external" users — authentik needs a default application for them or they hit
+"permission denied". Weak spots and their answers: no guided app setup (text in
+the signup flow and in each app's dashboard description — server address, which
+app to install, "same password"; a small getting-started page if that is not
+enough); forgotten passwords are reset by you until an email server is set up
+(roadmap). authentik's admin screens are the real newcomer risk, so mediastack
+ships the whole setup as authentik **blueprints** (declarative YAML): signup
+flow, groups, default application, dashboard apps, LDAP, gate — you only ever
+press "New Invitation" and "add to group".
 
-**Revisit when:** self-service enrollment for a real, changing user base is a
-firm requirement *and* a DB-backed-service pattern is in place (the `wire`
-rework it also needed has landed). Post-migration. If enrolment isn't firm, a lighter option below wins.
+**The dashboard.** Each application appears as a card to the users its policy
+bindings allow (a user sees exactly what their groups open); the card has a name,
+icon, launch URL, publisher and description, and a group field that sorts cards
+under headings (Media, Requests, Admin). An app can stay usable but hidden from
+the dashboard (launch URL `blank://blank`), and `…/application/launch/<slug>/`
+logs a user in and forwards them in one step.
 
-#### Lighter alternatives (same pooled-logins goal, less weight)
+#### Rejected alternatives
+- **Authelia + users file** — leanest, but no self-service signup (users are
+  lines in YAML); signup was a firm requirement.
+- **LLDAP + Authelia** — a small directory with a web UI, still no signup.
+- **Kanidm** — no built-in forward-auth; a second proxy for the gate.
+- **Samba4 AD** — couples the media stack to the platform's DC; too heavy here.
 
-- **Authelia + file backend** — the leanest: one container, a YAML users file
-  (< 50 MB), no DB, no directory. Forward-auth for admin UIs + its own OIDC
-  provider for the good-citizen apps, and Jellyfin via `jellyfin-plugin-authelia`
-  (native form → all clients, no MFA). No enrolment UI — add users by editing
-  YAML. **The default if self-service isn't required.**
-- **Kanidm** — the middle: one Rust container, native OIDC + LDAP-for-Jellyfin +
-  some self-service, fully FOSS (MPL). Best philosophical fit for the project's
-  lean / FOSS / safe / CLI-driven goals — *but* no built-in forward-auth, so
-  admin-UI gating needs a small separate proxy (traefik-oidc-auth / oauth2-proxy).
-- **LLDAP** — a tiny SQLite-backed LDAP directory with a web UI, if you want a
-  real directory (groups, a management UI) behind Authelia without a full DC.
-- **Samba4 AD** — already on the management plane; could be the shared user
-  store (Authelia via LDAP + Jellyfin LDAP plugin), but it's the sledgehammer
-  and couples the media stack's identity to the DC. Too heavy *for this
-  project*; relevant only if identity is unified across the wider platform.
+**Revisit when:** a lighter IdP gains invitation signup *and* forward-auth.
 
-**Revisit when:** SSO is taken up (roadmap: Security & access) and
-self-service enrolment is not a firm requirement — then Authelia + file
-backend is the default.
+### Navidrome LDAP
+
+**Verdict:** watching. Navidrome has no directory login: the request has been
+open since 2020 (#141); PR #5764 adds LDAP for the web UI *and* Subsonic clients
+but is unmerged; a community fork (`navidrome-ldap`) has it. Until then, in
+authentik mode each user sets a Navidrome password once for their music apps.
+
+**Revisit when:** LDAP (or OIDC) lands in a Navidrome release — then Navidrome
+joins Jellyfin on authentik's LDAP outpost and the extra password goes.
