@@ -49,9 +49,9 @@ AUDIT_CONF=/etc/audit/auditd.conf
 AUDIT_LOCK=/run/lock/mediastack-audit.lock   # runtime only: the timer and a report never copy at once
 AUDIT_MARK="# mediastack-installed-auditd:"
 AUDIT_CANARY_RE='/[.]mediastack-audit-canary-[0-9]+$'
-# every path this feature puts outside the repo (the shared host-footprint
-# registry planned in docs/roadmap.md → Structure will collect these lists)
-AUDIT_FOOTPRINT=("$AUDIT_RULES" "/etc/systemd/system/$AUDIT_UNIT.service" "/etc/systemd/system/$AUDIT_UNIT.timer")
+# every path this feature puts outside the repo (lib/footprint.sh lists them
+# with the rest; this feature removes them itself, in audit_teardown)
+AUDIT_FOOTPRINT=("$AUDIT_RULES" "$SYSTEMD_DIR/$AUDIT_UNIT.service" "$SYSTEMD_DIR/$AUDIT_UNIT.timer")
 
 audit_root() { # the watched tree, canonical; rc 1 when it does not exist
     realpath -e "$(manifest_root)" 2>/dev/null

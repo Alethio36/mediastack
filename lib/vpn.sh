@@ -57,7 +57,7 @@ vpn_reattach_guard() {
 # system is already running — only script paths and daemon/boot events. Install
 # is unconditional (pure safety, no reason to gate) and idempotent, refreshed on
 # every cmd_up so a removed unit reappears.
-VPNGUARD_UNIT=/etc/systemd/system/mediastack-vpnguard.service
+VPNGUARD_UNIT=$SYSTEMD_DIR/mediastack-vpnguard.service
 
 vpnguard_ensure() {
     # Write/refresh the boot-guard unit. Cheap and idempotent; only reloads

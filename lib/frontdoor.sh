@@ -20,16 +20,7 @@ FRONTDOOR_USER=olivetin
 FRONTDOOR_WRAPPER=/usr/local/bin/olivetin-frontdoor
 FRONTDOOR_SUDOERS=/etc/sudoers.d/mediastack-frontdoor
 
-frontdoor_teardown() {
-    # Remove everything frontdoor-install created (idempotent). The olivetin user
-    # and its units are control-plane infra, removed alongside the other units.
-    sudo systemctl disable --now mediastack-frontdoor-refresh.timer 2>/dev/null || true
-    sudo rm -f /etc/systemd/system/mediastack-frontdoor-refresh.service \
-               /etc/systemd/system/mediastack-frontdoor-refresh.timer
-    sudo rm -f "$FRONTDOOR_SUDOERS" "$FRONTDOOR_WRAPPER"
-    sudo userdel -r "$FRONTDOOR_USER" 2>/dev/null || true
-    sudo systemctl daemon-reload 2>/dev/null || true
-}
+frontdoor_teardown() { footprint_remove panel; }   # everything frontdoor-install placed (lib/footprint.sh: fp_panel)
 
 # frontdoor_status_json: JSONL for the panel's live up/down tiles — one
 # {name,state,health,glyph} record per enabled service. The glyph is computed
@@ -514,7 +505,7 @@ cmd_frontdoor_install() {
 
     # Host-side entity-refresh timer: fills the dropdowns from the host, every
     # 5 min and on boot. No userless OliveTin action, no container write needed.
-    sudo tee /etc/systemd/system/mediastack-frontdoor-refresh.service >/dev/null <<EOF
+    sudo tee "$SYSTEMD_DIR/mediastack-frontdoor-refresh.service" >/dev/null <<EOF
 [Unit]
 Description=Mediastack OliveTin entity-list refresh
 After=docker.service
@@ -523,7 +514,7 @@ Type=oneshot
 WorkingDirectory=$SCRIPT_DIR
 ExecStart=$SCRIPT_DIR/mediastack.sh frontdoor-refresh
 EOF
-    sudo tee /etc/systemd/system/mediastack-frontdoor-refresh.timer >/dev/null <<EOF
+    sudo tee "$SYSTEMD_DIR/mediastack-frontdoor-refresh.timer" >/dev/null <<EOF
 [Unit]
 Description=Refresh OliveTin entity lists
 [Timer]

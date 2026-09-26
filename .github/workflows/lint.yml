@@ -51,6 +51,8 @@ jobs:
         run: scripts/test-upgrade.sh
       - name: deletion attribution's host contract (scripts/test-audit.sh)
         run: scripts/test-audit.sh
+      - name: everything outside the repo is in the footprint registry (scripts/test-footprint.sh)
+        run: scripts/test-footprint.sh
       - name: where things live — the layout move and your compose files (scripts/test-layout.sh)
         run: scripts/test-layout.sh
       - name: the arr recycle bin's contract (scripts/test-recycle.sh)
