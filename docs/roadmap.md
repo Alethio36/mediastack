@@ -230,7 +230,7 @@ all built; what each still leaves open is noted below.
      tool. *Milestone 2 done:* every admin tool gated (the arrs, Prowlarr, Bazarr,
      the download clients, LazyLibrarian, Cleanuparr, WatchState, Pi-hole,
      Traefik's dashboard). With the portal on, their host ports listen on
-     127.0.0.1 only (`MEDIASTACK_GATE_BIND`); an arr then trusts the portal
+     127.0.0.1 only (`MEDIASTACK_GATE_BIND`); an arr (and Prowlarr) then trusts the portal
      (`External`) — only once it is gated and unreachable by IP — and its `/api`
      skips the gate for companion apps (the API still demands its key;
      `mediastack.auth.bypass`). Disabling authentik restores and *verifies* each
