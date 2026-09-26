@@ -109,7 +109,8 @@ sc_rotate_arr() { # USER PASS — every arr-family app + cleanuparr follows
         env_set ARR_USER "$user"; env_set ARR_PASSWORD "$pass"
         for s in $(arr_instances) prowlarr; do
             svc_enabled "$s" || continue
-            arr_forms_login "$s" force
+            arr_forms_login "$s" force   # the new password is stored either way (the login it falls back to)
+            arr_login "$s"               # and, behind the portal, it goes back to trusting it
         done
         if svc_enabled cleanuparr && [[ "$(c_state "$(svc_cname cleanuparr)")" == running ]]; then
             local lout ltok

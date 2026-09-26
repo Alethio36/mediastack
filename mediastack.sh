@@ -662,7 +662,7 @@ cmd_disable() {
         # the tools that trusted the gate get their own login back FIRST — only
         # then may their ports reopen to the LAN (never open without a login)
         local a m
-        for a in $(arr_instances); do
+        for a in $(arr_instances) $(svc_enabled prowlarr && echo prowlarr); do
             arr_forms_login "$a" || true
             # verify, don't assume: an arr still trusting the portal would be open to the LAN
             m=$(api GET "$(arr_url "$a")/api/$(arr_apiver "$a")/config/host" "$(arr_key "$a")" | jq -r '.authenticationMethod // ""') \
