@@ -19,7 +19,7 @@ services:
     environment:
       - TZ=${TZ}
     ports:
-      - "${ERSATZTV_PORT:-8409}:8409"
+      - "${MEDIASTACK_GATE_BIND:-}${ERSATZTV_PORT:-8409}:8409"   # 127.0.0.1 while the portal guards it
     volumes:
       - ${CONFIG_ROOT}/ersatztv:/config
       - ${DATA_ROOT}/media:/media:ro
@@ -31,12 +31,13 @@ services:
       traefik.http.routers.ersatztv.rule: "Host(`${ERSATZTV_HOST:-tv}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.ersatztv.entrypoints: "websecure"
       traefik.http.routers.ersatztv.tls: "true"
+      traefik.http.routers.ersatztv.middlewares: "mediastack-gate@file"
       traefik.http.services.ersatztv.loadbalancer.server.port: "8409"
       mediastack.desc: "virtual live-TV channels from your library"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "tv"
-      mediastack.auth: "native"   # handles its own login
+      mediastack.auth: "gate"   # an admin tool (channels are built here; households watch through Jellyfin)
     networks: [mediastack]
     logging: *logging
     restart: unless-stopped

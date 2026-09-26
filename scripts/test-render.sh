@@ -111,11 +111,14 @@ done
 # an API that skips the gate: only on a gated tool, as its own router without the gate
 for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.auth.bypass"] != null) | .key' <<<"$RENDERED_JSON"); do
     [[ "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"]' <<<"$RENDERED_JSON")" == gate ]] || t_fail "$s: a gate bypass on a service that is not gated"
-    r=$(vpn_rname "$s"); p=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth.bypass"]' <<<"$RENDERED_JSON")
+    r=$(vpn_rname "$s")
     rule=$(jq -r --arg k "traefik.http.routers.$r-api.rule" '[.services[].labels[$k] // empty][0] // ""' <<<"$RENDERED_JSON")
-    [[ "$rule" == *"PathPrefix(\`$p\`)"* ]] || t_fail "$s: no $r-api router for $p (got: $rule)"
-    [[ -z "$(jq -r --arg k "traefik.http.routers.$r-api.middlewares" '[.services[].labels[$k] // empty] | join(",")' <<<"$RENDERED_JSON")" ]] \
-        || t_fail "$s: its API router must not carry the gate"
+    for p in $(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth.bypass"]' <<<"$RENDERED_JSON"); do
+        [[ "$rule" == *"PathPrefix(\`$p\`)"* ]] || t_fail "$s: its $r-api router does not cover $p (got: $rule)"
+    done
+    # past the gate: no gate — and never a username header a client made up
+    [[ "$(jq -r --arg k "traefik.http.routers.$r-api.middlewares" '[.services[].labels[$k] // empty] | join(",")' <<<"$RENDERED_JSON")" == "mediastack-strip@file" ]] \
+        || t_fail "$s: its API router must carry mediastack-strip (and not the gate)"
 done
 # while the portal guards them (MEDIASTACK_GATE_BIND=127.0.0.1:), a gated
 # tool's host port listens on 127.0.0.1 only — and nothing else's changes
@@ -137,4 +140,11 @@ while read -r s auth ip; do
     else [[ "$ip" == "$before" ]] || t_fail "$s is $auth but closing the gate moved its host port ($before -> $ip)"; fi
 done < <(web_ips)
 env_set MEDIASTACK_GATE_BIND ""; RENDERED_JSON=""
+# the stack network's fixed range, Traefik's fixed address in it
+render
+net=$(jq -c '.networks.mediastack.ipam.config[0]' <<<"$RENDERED_JSON")
+[[ "$(jq -r '.subnet' <<<"$net")" == 172.31.250.0/24 && "$(jq -r '.ip_range' <<<"$net")" == 172.31.250.128/25 ]] \
+    || t_fail "the stack network has no fixed range: $net"
+[[ "$(jq -r '.services.traefik.networks.mediastack.ipv4_address' <<<"$RENDERED_JSON")" == 172.31.250.2 ]] \
+    || t_fail "Traefik has no fixed address"
 echo "OK every web interface declares mediastack.auth; the gate is on exactly the gated routes"

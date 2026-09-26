@@ -22,6 +22,11 @@
 #     applications it did not make
 #   * gated ports listen on 127.0.0.1 while the portal runs; an arr trusts the
 #     portal only when it is gated AND unreachable by IP, its own login otherwise
+#   * the stack network keeps Traefik on a fixed address outside the pool;
+#     only that address may name a user (Navidrome), and every route past a
+#     gate strips the portal's headers
+#   * household apps get Media cards for media-users; Navidrome's carries its
+#     own household gate (forward auth for its one address)
 #
 #   scripts/test-authentik.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -181,6 +186,7 @@ AK_ON=; mw=$(traefik_gate_middleware)
 # akadmin joins admins once; cards: one per gated tool, admins only, stale ones go
 svc_enabled() { [[ "$1" == authentik ]]; }
 authentik_gated() { printf '%s\n' apprise olivetin; }
+authentik_household() { :; }
 svc_url() { echo "https://$1.media.example.com"; }
 svc_label() { echo "desc of $1"; }
 rm -f "$T/state" "$T/calls"
@@ -189,6 +195,7 @@ ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
         "GET /providers/proxy/?name__iexact=mediastack-gate") echo '{"results":[{"pk":7}]}' ;;
         "GET /outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") echo '{"results":[{"pk":"op-1","providers":[3]}]}' ;;
         "GET /core/groups/?search=admins") echo '{"results":[{"pk":"g-adm","name":"admins"},{"pk":"g-x","name":"superadmins"}]}' ;;
+        "GET /core/groups/?search=media-users") echo '{"results":[{"pk":"g-mu","name":"media-users"}]}' ;;
         "GET /core/users/?username=akadmin") echo '{"results":[{"pk":1}]}' ;;
         "GET /core/applications/?superuser_full_list=true&page_size=500")
             echo '{"results":[{"slug":"mediastack-tool-apprise","pk":"a-1","meta_launch_url":"https://apprise.media.example.com"},{"slug":"mediastack-tool-oldsvc","pk":"a-9"},{"slug":"my-own-app","pk":"a-5"}]}' ;;
@@ -282,5 +289,62 @@ grep -qE '^bazarr +https://bazarr.media.example.com +BAZKEY$' <<<"$out" || fail_
 grep -qE '^prowlarr .*not created yet' <<<"$out" || fail_ "a key not minted yet says so"; pass
 ! grep -q '^radarr' <<<"$out" || fail_ "a service that is not enabled is not listed"; pass
 grep -q 'the /api path skips its login' <<<"$out" || fail_ "behind the portal: how the app gets through"; pass
+
+# ---- the stack network: Traefik's fixed address outside the pool ----
+cidr_has 172.31.250.0/24 172.31.250.2 && ! cidr_has 172.31.250.128/25 172.31.250.2 && cidr_has 10.0.0.0/8 10.200.3.4 \
+    || fail_ "cidr_has"; pass
+printf '' > "$ENV_FILE"; [[ -z "$(network_problems)" ]] || fail_ "the defaults agree: $(network_problems)"; pass
+printf 'TRAEFIK_ADDRESS=172.31.250.200\n' > "$ENV_FILE"
+[[ "$(network_problems)" == *"inside MEDIASTACK_IP_RANGE"* ]] || fail_ "Traefik inside the pool is a problem"; pass
+printf 'TRAEFIK_ADDRESS=10.9.9.9\n' > "$ENV_FILE"
+[[ "$(network_problems)" == *"not inside MEDIASTACK_SUBNET"* ]] || fail_ "Traefik outside the network is a problem"; pass
+
+# ---- who may name the user: Traefik's address while the portal runs, nobody otherwise ----
+printf 'TRAEFIK_ADDRESS=172.31.250.2\n' > "$ENV_FILE"
+svc_enabled() { [[ "$1" == authentik && -n "${AK_ON:-}" ]]; }
+AK_ON=1; gate_bind_sync >/dev/null; [[ "$(env_get MEDIASTACK_GATE_TRUST)" == 172.31.250.2/32 ]] || fail_ "trust: Traefik only"; pass
+AK_ON='';  gate_bind_sync >/dev/null; [[ "$(env_get MEDIASTACK_GATE_TRUST)" == "" ]] || fail_ "no portal: trust nobody"; pass
+grep -q 'ND_EXTAUTH_TRUSTEDSOURCES=${MEDIASTACK_GATE_TRUST:-}' compose.d/navidrome.yml || fail_ "Navidrome trusts exactly MEDIASTACK_GATE_TRUST"; pass
+for AK_ON in 1 ''; do
+    mw=$(traefik_gate_middleware)
+    [[ "$mw" == *"mediastack-strip:"*'X-authentik-username: ""'* ]] || fail_ "the strip middleware exists in both account models"; pass
+done
+
+# ---- household apps: their own cards; Navidrome's carries its household gate ----
+svc_enabled_managed() { printf '%s\n' sonarr navidrome jellyfin; }
+svc_label() { case "$1:$2" in
+    sonarr:mediastack.auth) echo gate ;; navidrome:mediastack.auth) echo gate ;;
+    navidrome:mediastack.auth.group) echo media-users ;;
+    navidrome:mediastack.user_facing|jellyfin:mediastack.user_facing) echo true ;;
+    *:mediastack.desc) echo "desc of ${1%%:*}" ;; esac; }
+unset -f authentik_gated authentik_household
+# shellcheck disable=SC1090  # the two real functions, back from their stubs
+source <(sed -n '/^authentik_gated() {/,/^}/p; /^authentik_household() {/,/^}/p' lib/authentik.sh)
+[[ "$(authentik_gated | tr '\n' ' ')" == "sonarr " ]] || fail_ "the household-gated app is not an admin tool: $(authentik_gated)"; pass
+[[ "$(authentik_household | tr '\n' ' ')" == "navidrome jellyfin " ]] || fail_ "household apps by mediastack.user_facing"; pass
+rm -f "$T/calls"
+ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /core/applications/?superuser_full_list=true&page_size=500") echo '{"results":[{"slug":"mediastack-app-kavita","pk":"a-k"}]}' ;;
+        "GET /core/groups/?search=admins") echo '{"results":[{"pk":"g-adm","name":"admins"}]}' ;;
+        "GET /core/groups/?search=media-users") echo '{"results":[{"pk":"g-mu","name":"media-users"}]}' ;;
+        "GET /providers/proxy/?name__iexact=mediastack-house-navidrome") echo '{"results":[]}' ;;
+        "GET /flows/instances/?slug="*) echo '{"results":[{"pk":"flow-x"}]}' ;;
+        "POST /providers/proxy/") echo '{"pk":42}' ;;
+        "GET /outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") echo '{"results":[{"pk":"op-1","providers":[6]}]}' ;;
+        "POST /core/applications/") echo '{"pk":"a-new"}' ;;
+        "GET /policies/bindings/?target=a-new") echo '{"results":[]}' ;;
+        *) echo '{}' ;;
+    esac; }
+wire_authentik_cards >/dev/null
+grep -q '^POST /providers/proxy/ .*"name":"mediastack-house-navidrome".*"mode":"forward_single".*"external_host":"https://navidrome.media.example.com"' "$T/calls" \
+    || fail_ "Navidrome's household gate: forward auth for its one address"; pass
+grep -qF 'PATCH /outposts/instances/op-1/ {"providers":[6,42]}' "$T/calls" || fail_ "the household gate joins the outpost beside the admin gate"; pass
+grep -q '^POST /core/applications/ .*"slug":"mediastack-app-navidrome".*"provider":42' "$T/calls" || fail_ "Navidrome's card carries its gate"; pass
+grep -q '^POST /core/applications/ .*"slug":"mediastack-app-jellyfin".*"group":"Media"' "$T/calls" \
+    && ! grep -q '"slug":"mediastack-app-jellyfin".*"provider"' "$T/calls" || fail_ "Jellyfin: a plain Media card (its own login)"; pass
+[[ "$(grep -c '^POST /policies/bindings/ .*"group":"g-mu"' "$T/calls")" == 2 && "$(grep -c '^POST /policies/bindings/ .*"group":"g-adm"' "$T/calls")" == 3 ]] \
+    || fail_ "household cards: media-users and admins; admin tools: admins"; pass
+grep -q '^DELETE /core/applications/mediastack-app-kavita/' "$T/calls" || fail_ "a household card for an app no longer enabled leaves"; pass
 
 echo "OK authentik: $checks checks"

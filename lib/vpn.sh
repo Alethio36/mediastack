@@ -253,10 +253,14 @@ vpn_traefik_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass>
     # tool whose API demands its own key, so companion apps keep working. The
     # longer rule wins in Traefik, so this router takes that path.
     if [[ "$auth" == gate && -n "$bypass" ]]; then
-        echo "${i}traefik.http.routers.${r}-api.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${TRAEFIK_DOMAIN:-unset.invalid}\`) && PathPrefix(\`${bypass}\`)\""
+        local p paths=""
+        for p in $bypass; do paths+="${paths:+ || }PathPrefix(\`$p\`)"; done
+        echo "${i}traefik.http.routers.${r}-api.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${TRAEFIK_DOMAIN:-unset.invalid}\`) && ($paths)\""
         echo "${i}traefik.http.routers.${r}-api.entrypoints: \"websecure\""
         echo "${i}traefik.http.routers.${r}-api.tls: \"true\""
         echo "${i}traefik.http.routers.${r}-api.service: \"${r}\""
+        # a route past the gate never carries a username header a client made up
+        echo "${i}traefik.http.routers.${r}-api.middlewares: \"mediastack-strip@file\""
     fi
 }
 vpn_port_line() {   # <stem> <cport> <auth> -> one published port (a gated tool binds where MEDIASTACK_GATE_BIND says)
