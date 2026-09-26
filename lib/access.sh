@@ -19,6 +19,10 @@ cmd_credentials() {
     printf '%-22s %s\n' "Jellyfin admin password" "$(env_get JELLYFIN_ADMIN_PASSWORD '(not set — run wire)')"
     svc_enabled authentik && info "With the portal, that Jellyfin admin is the stack's own local account (and the emergency login) — people sign in with their portal accounts; admins get Jellyfin administrator rights from the portal's 'admins' group."
     printf '%-22s %s\n' "Jellyfin API key"      "$(env_get JELLYFIN_API_KEY '(not set — run wire jellyfin)')"
+    if svc_enabled audiobookshelf; then
+        printf '%-22s %s\n' "Audiobookshelf root"   "$(env_get ABS_ADMIN_USER '(not set — run wire audiobookshelf)')"
+        printf '%-22s %s\n' "Audiobookshelf root pw" "$(env_get ABS_ADMIN_PASSWORD '(not set — run wire audiobookshelf)')"
+    fi
     if svc_enabled authentik; then
         printf '%-22s %s\n' "Portal admin user"     "akadmin"
         printf '%-22s %s\n' "Portal admin password" "$(env_get AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"

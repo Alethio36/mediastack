@@ -263,8 +263,9 @@ vpn_traefik_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass>
         echo "${i}traefik.http.routers.${r}-api.middlewares: \"mediastack-strip@file\""
     fi
 }
-vpn_port_line() {   # <stem> <cport> <auth> -> one published port (a gated tool binds where MEDIASTACK_GATE_BIND says)
+vpn_port_line() {   # <stem> <cport> <auth> [local] -> one published port (a gated tool binds where MEDIASTACK_GATE_BIND says)
     local bind=""; [[ "$3" == gate ]] && bind='${MEDIASTACK_GATE_BIND:-}'
+    [[ "${4:-}" == local ]] && bind='127.0.0.1:'   # mediastack.hostport: local — the script only
     echo "      - \"${bind}\${${1}_PORT:-${2}}:${2}\""
 }
 
@@ -293,7 +294,7 @@ vpn_gen() {
         [[ -n "$sub"   ]] || die "vpn: $s carries no mediastack.subdomain label"
         eff=$(vpn_effective "$s" "$defv")
         if [[ "$eff" == true ]]; then
-            [[ "$hp" != false ]] && gports+="$(vpn_port_line "$stem" "$cport" "$auth")"$'\n'
+            [[ "$hp" != false ]] && gports+="$(vpn_port_line "$stem" "$cport" "$auth" "$hp")"$'\n'
             glabels+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'
             stanzas+="  ${s}:"$'\n'"    network_mode: \"service:gluetun\""$'\n'
             stanzas+="    depends_on:"$'\n'"      gluetun:"$'\n'"        condition: service_healthy"$'\n'
@@ -302,7 +303,7 @@ vpn_gen() {
             [[ "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.torrent"] // ""' <<<"$bj")" == true ]] \
                 && warn "vpn: $s (torrent client) is OUTSIDE the VPN — its traffic exits on the host IP"
             stanzas+="  ${s}:"$'\n'"    networks: [mediastack]"$'\n'
-            [[ "$hp" != false ]] && stanzas+="    ports:"$'\n'"$(vpn_port_line "$stem" "$cport" "$auth")"$'\n'
+            [[ "$hp" != false ]] && stanzas+="    ports:"$'\n'"$(vpn_port_line "$stem" "$cport" "$auth" "$hp")"$'\n'
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"false\""$'\n'"      traefik.enable: \"true\""$'\n'
             stanzas+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'
         fi
