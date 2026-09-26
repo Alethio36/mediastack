@@ -173,9 +173,6 @@ all built; what each still leaves open is noted below.
     names, a rename over an existing file and `rm -r` naming files only
     relative to their open folder are proven live (`audit2.raw`).
 
-### Extensibility
-- An easier path to add services *beyond* the built-in framework.
-
 ### Portability
 - De-hardcode Debian; open up the OS assumptions.
 - Podman support as an opt-in path (not the default — see the watchlist).
@@ -184,14 +181,8 @@ all built; what each still leaves open is noted below.
   narrowing below into one "shrink the root surface" goal.
 
 ### Structure
-- Revisit the folder structure for config files (the compose-shard model is now settled — see Architecture rules above).
 - Formalize the `.env` config schema and validate it (it is the whole config
   surface; `doctor`-style checks for it).
-- One host-footprint registry. Four features put files outside the repo —
-  the web panel (sudoers, wrapper, user, units), the timers (units),
-  `add-mount` (fstab, credentials) and `audit` (`AUDIT_FOOTPRINT`) — and
-  each removes its own. Each should declare its paths in one list that
-  `uninstall` and doctor's leftover check both loop over.
 
 ### Security & access
 - **SSO in front of the panel** *(explore)* — Authelia or Keycloak. An optional

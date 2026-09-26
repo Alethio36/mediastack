@@ -151,7 +151,7 @@ Other
 | command | what it does |
 |---|---|
 | `new-service <name>` | interactive: define, enable and start your own service in `custom/compose.d/<name>.yml` (untracked, upgrade-safe) |
-| `uninstall [--nuke]` | tiered removal; `--nuke` = everything, one confirmation. Media and backups are never touched |
+| `uninstall [--nuke]` | tiered removal; `--nuke` = everything, one confirmation. Media and backups are never touched. Everything placed outside this folder is removed through one registry (see "Where things live"); each `add-mount` mount is offered separately, default No (`--nuke` only lists them), and whatever should have gone but did not is named at the end |
 | `menu` | interactive menu wrapping all of the above |
 | `help` | the command list (also: no arguments) |
 
@@ -260,7 +260,40 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
 | `config/` `cache/` `transcodes/` `data/` `backups/` | the default roots | the apps — move them with `configure` |
 
 A deployment is `.env` + `custom/` + the roots: that is what to keep, copy
-or back up. Installs from before schema 28 are moved into this layout once,
+or back up.
+
+**Outside this folder**, mediastack places only what its features need, and
+one registry (`lib/footprint.sh`) lists all of it — `doctor` shows what is on
+this host under "on this host, outside this folder", and `uninstall` removes
+through the same list:
+
+| Feature | What | Uninstall |
+|---|---|---|
+| timers | `/etc/systemd/system/mediastack-*` (updates, manifest, VPN guard) | removed |
+| web panel | its refresh units, `/etc/sudoers.d/mediastack-frontdoor`, `/usr/local/bin/olivetin-frontdoor`, the `olivetin` user | removed |
+| deletion attribution | `/etc/audit/rules.d/99-mediastack.rules`, its units; auditd itself if mediastack installed it | removed (auditd: asked) |
+| service users | one system user per service, the `mediacenter` group | asked (tier 2) |
+| `add-mount` | an `/etc/fstab` entry (marked `# mediastack add-mount`), `/etc/mediastack-cifs-*` for SMB, the mountpoint | offered one at a time, default No |
+| `install` | Docker's apt source and key, the packages it installed | kept — your host may use them |
+
+CI fails a change that writes anywhere else outside the repo.
+
+### Removing a mount
+
+`uninstall` offers each mount `add-mount` made; to remove one yourself
+(stop the stack first, or anything using the share):
+
+```
+sudo systemctl stop "$(systemd-escape -p --suffix=automount /mnt/media)"
+sudo umount /mnt/media                        # "target is busy": something still uses it
+sudo sed -i '\|^# mediastack add-mount /mnt/media$|,+1d' /etc/fstab
+sudo systemctl daemon-reload
+sudo rm -f /etc/mediastack-cifs-media         # SMB only: the stored credentials
+sudo chattr -i /mnt/media && sudo rmdir /mnt/media
+```
+
+The share itself (and everything on it) is not touched. Entries added before
+the marker existed — or by hand — are yours: mediastack never claims them. Installs from before schema 28 are moved into this layout once,
 on `upgrade`; a `docker-compose.override.yml` that later reappears at the
 root is refused with where it belongs.
 
