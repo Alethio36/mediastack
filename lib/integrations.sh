@@ -1958,7 +1958,10 @@ abs_oidc_want() { # the sign-in settings mediastack manages in Audiobookshelf (J
         authOpenIDButtonText: ("Log in with " + $t),
         authOpenIDAutoRegister: true,
         authOpenIDMatchExistingBy: "username",
-        authOpenIDMobileRedirectURIs: ["audiobookshelf://oauth"] }'
+        authOpenIDMobileRedirectURIs: ["audiobookshelf://oauth"],
+        # its own subdomain: no subfolder. Unset, Audiobookshelf builds its
+        # callback as "undefined/auth/openid/callback" (found live)
+        authOpenIDSubfolderForRedirectURLs: "" }'
 }
 
 abs_oidc() { # Audiobookshelf signs people in through the portal (its own login stays for the stack's root account)
