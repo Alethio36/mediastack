@@ -3,6 +3,7 @@
 # test-recycle.sh — the arr recycle bin's contract.
 #   * placement: inside DATA_ROOT, outside the media library, no whitespace;
 #     the arr's view of the path comes from its own DATA_ROOT mount
+#   * a library on another drive than the bin gets no bin (a copy, not a move)
 #   * wire only changes a bin it set: unset -> set (with the on-by-default
 #     warning, once), ours -> kept or its days corrected, one set in the arr's
 #     UI -> left alone, off -> ours cleared and a hand-set one kept; --dry-run
@@ -64,7 +65,7 @@ api() { # a fake arr: GET returns $CUR, PUT is logged
 arr_apiver() { echo v3; }
 WIRE_DRY=0; WIRE_CHANGES=0; WIRE_FAILS=0
 run() { # run CUR -> PUT (last body, or "none") in $PUT, output in $OUT
-    CUR=$1; rm -f "$T/put" "$T/out"
+    CUR=$1; rm -f "$T/put" "$T/out"; RECYCLE_WARNED=0
     arr_recycle radarr http://x key
     PUT=$( [[ -e "$T/put" ]] && tail -1 "$T/put" || echo none ); OUT=$(cat "$T/out" 2>/dev/null || true)
 }
@@ -73,8 +74,8 @@ run '{"id":1,"recycleBin":"","recycleBinCleanupDays":7,"other":"kept"}'
     || fail_ "unset: must set path + days (a number), keep the rest: $PUT"; pass
 [[ "$OUT" == *"EXPLAIN Arr recycle bin (on by default)"* ]] || fail_ "the first set must warn: $OUT"; pass
 [[ -d "$T/data/recycle/radarr" ]] || fail_ "the arr's folder must be created"; pass
-run '{"id":1,"recycleBin":"","recycleBinCleanupDays":7}'
-[[ "$OUT" != *EXPLAIN* ]] || fail_ "the warning must show once per run"; pass
+RECYCLE_WARNED=1; CUR='{"id":1,"recycleBin":"","recycleBinCleanupDays":7}'; rm -f "$T/out"; arr_recycle radarr http://x key
+[[ "$(cat "$T/out")" != *EXPLAIN* ]] || fail_ "the warning must show once per run"; pass
 run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":7}'
 [[ "$PUT" == none ]] || fail_ "already right: nothing to write"; pass
 run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":30}'
@@ -89,6 +90,18 @@ run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":7}'
 run '{"id":1,"recycleBin":"/data/my-bin","recycleBinCleanupDays":3}'
 [[ "$PUT" == none ]] || fail_ "off: a hand-set bin is kept"; pass
 envf true
+
+# ---- a library on another drive than the bin: refused per arr ----
+svc_label() { [[ "$2" == mediastack.rootfolder ]] && echo /data/media/movies; }
+mkdir -p "$T/data/media/movies"
+[[ "$(recycle_arr_library radarr)" == "$T/data/media/movies" ]] || fail_ "radarr's library on the host: $(recycle_arr_library radarr)"; pass
+fsdev_of() { case "$1" in *media/movies*) echo 2 ;; *) echo 1 ;; esac; }   # movies is a second disk
+run '{"id":1,"recycleBin":"","recycleBinCleanupDays":7}'
+[[ "$PUT" == none && "$OUT" != *EXPLAIN* ]] || fail_ "a library on another drive must not get a bin: $PUT"; pass
+fsdev_of() { echo 1; }
+run '{"id":1,"recycleBin":"","recycleBinCleanupDays":7}'
+[[ "$PUT" != none ]] || fail_ "the same drive must get its bin"; pass
+unset -f svc_label fsdev_of
 
 # ---- space ----
 GB=$((1024**3))

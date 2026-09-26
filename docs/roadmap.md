@@ -106,6 +106,19 @@ Where the project goes next — decisions to make and work not yet built.
   a Calibre `metadata.db`. Evaluation:
   [watchlist.md](watchlist.md#calibre-web-automated-cwa--book-management--e-reader-delivery).
 
+### Storage layout — before migrate
+To be discussed, not decided (tabled Sept 2026). Most users arrive with media
+already spread over several drives or shares, while the stack assumes one
+filesystem for DATA_ROOT (hardlinks, and now the recycle bin, need it):
+- mergerfs pooling *in place* (a union over existing folders: nothing copied,
+  per-drive top folders renamed to fit the layout, the apps' stored paths
+  re-pointed — overlaps migrate's re-pathing), and a guided `add-pool` verb in
+  the spirit of `add-mount`, including the create-policy setting hardlinks
+  need.
+- More than one library folder per media type (movies on two drives or two
+  shares), and what that means for hardlinks, the recycle bin (today: one
+  bin, refused per arr when its library is on another drive) and the manifest.
+
 ### End-user experience
 - Web panel polishing.
 - Script polishing for the end user (clearer prompts, output, ergonomics).
