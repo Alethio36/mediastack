@@ -34,11 +34,11 @@ manifest_list() { # snapshot file names, oldest first
     return 0
 }
 
-manifest_guard_gitignore() { # a snapshot lists the whole library — never let git track one
+guard_gitignored() { # guard_gitignored DIR WHAT WHY — a folder of private listings git must never track
     local dir="$1"
     [[ "$dir/" == "$SCRIPT_DIR/"* && -d "$SCRIPT_DIR/.git" ]] || return 0
-    git -C "$SCRIPT_DIR" -c safe.directory="$SCRIPT_DIR" check-ignore -q "$dir/probe.tsv.gz" \
-        || die "Manifest folder $dir is inside this repo but NOT gitignored — a snapshot lists your whole library.
+    git -C "$SCRIPT_DIR" -c safe.directory="$SCRIPT_DIR" check-ignore -q "$dir/probe" \
+        || die "$2 $dir is inside this repo but NOT gitignored — $3.
   Fix: point BACKUP_ROOT outside the repo or at a gitignored folder (default ./backups), via ./mediastack.sh configure"
 }
 
@@ -132,7 +132,7 @@ manifest_notify_loss() { # manifest_notify_loss COMPARE-OUTPUT PREV-TS
 manifest_take() { # manifest_take [--accept]
     load_env; require_mounts
     local dir latest new ts out cmp
-    dir=$(manifest_dir); manifest_guard_gitignore "$dir"
+    dir=$(manifest_dir); guard_gitignored "$dir" "Manifest folder" "a snapshot lists your whole library"
     sudo mkdir -p "$dir"
     info "Scanning $(manifest_root) ..."
     new=$(mktemp); manifest_scan "$new"
