@@ -16,6 +16,10 @@
 #   * invitations: single use, bound to the sign-up flow, 7 days by default
 #   * the base URL is set when unset or still mediastack's, never over one
 #     set in authentik's UI
+#   * the gate: Traefik's middleware asks authentik only when it runs; wire
+#     adds the gate beside the outpost's providers, puts akadmin in admins
+#     once, keeps one admins-only card per gated tool and never touches
+#     applications it did not make
 #
 #   scripts/test-authentik.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -161,5 +165,44 @@ base() { # base CURRENT OURS -> the PATCH body sent, or "none"
 [[ "$(base "https://old.media.example.com" "https://old.media.example.com")" == *portal.media.example.com* ]] || fail_ "still ours (a renamed host): re-point it"; pass
 [[ "$(base "https://sso.mine.net" "")" == none ]] || fail_ "set in authentik's UI: never touched"; pass
 [[ "$(base "https://portal.media.example.com" "")" == none ]] || fail_ "already right: no write"; pass
+
+# ---- the gate ----
+svc_enabled() { [[ "$1" == authentik && -n "${AK_ON:-}" ]]; }
+AK_ON=1; mw=$(traefik_gate_middleware)
+[[ "$mw" == *"mediastack-gate:"*"forwardAuth:"*"http://authentik:9000/outpost.goauthentik.io/auth/traefik"* ]] \
+    || fail_ "with authentik: the gate asks its outpost"; pass
+AK_ON=; mw=$(traefik_gate_middleware)
+[[ "$mw" == *"mediastack-gate:"* && "$mw" != *forwardAuth* ]] || fail_ "without authentik: the gate is a no-op (Wizarr mode keeps today's access)"; pass
+
+# the provider is ADDED to the built-in outpost, never replacing what is there;
+# akadmin joins admins once; cards: one per gated tool, admins only, stale ones go
+svc_enabled() { [[ "$1" == authentik ]]; }
+authentik_gated() { printf '%s\n' apprise olivetin; }
+svc_url() { echo "https://$1.media.example.com"; }
+svc_label() { echo "desc of $1"; }
+rm -f "$T/state" "$T/calls"
+ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /providers/proxy/?name__iexact=mediastack-gate") echo '{"results":[{"pk":7}]}' ;;
+        "GET /outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") echo '{"results":[{"pk":"op-1","providers":[3]}]}' ;;
+        "GET /core/groups/?search=admins") echo '{"results":[{"pk":"g-adm","name":"admins"},{"pk":"g-x","name":"superadmins"}]}' ;;
+        "GET /core/users/?username=akadmin") echo '{"results":[{"pk":1}]}' ;;
+        "GET /core/applications/?superuser_full_list=true&page_size=500")
+            echo '{"results":[{"slug":"mediastack-tool-apprise","pk":"a-1","meta_launch_url":"https://apprise.media.example.com"},{"slug":"mediastack-tool-oldsvc","pk":"a-9"},{"slug":"my-own-app","pk":"a-5"}]}' ;;
+        "POST /core/applications/") echo '{"pk":"a-new"}' ;;
+        "GET /policies/bindings/?target=a-1") echo '{"results":[{"group":"g-adm"}]}' ;;
+        "GET /policies/bindings/?target=a-new") echo '{"results":[]}' ;;
+        *) echo '{}' ;;
+    esac; }
+wire_authentik_gate >/dev/null
+grep -qF 'PATCH /outposts/instances/op-1/ {"providers":[3,7]}' "$T/calls" || fail_ "the gate is added beside the outpost's providers: $(grep PATCH "$T/calls")"; pass
+grep -qF 'POST /core/groups/g-adm/add_user/ {"pk":1}' "$T/calls" || fail_ "akadmin joins 'admins' (not a lookalike group)"; pass
+rm -f "$T/calls"; wire_authentik_gate >/dev/null
+! grep -q 'add_user' "$T/calls" || fail_ "akadmin is added once — after that, 'admins' is yours"; pass
+[[ "$(grep -c '^POST /core/applications/' "$T/calls")" == 1 ]] && grep -q '"slug":"mediastack-tool-olivetin"' "$T/calls" \
+    || fail_ "a card for the gated tool that has none (olivetin), none for one that has (apprise)"; pass
+grep -qF 'POST /policies/bindings/ {"target":"a-new","group":"g-adm","order":0}' "$T/calls" || fail_ "the new card is admins-only"; pass
+grep -q '^DELETE /core/applications/mediastack-tool-oldsvc/' "$T/calls" || fail_ "a card for a tool no longer gated leaves"; pass
+! grep -q 'my-own-app' <(grep -E '^(DELETE|PATCH)' "$T/calls") || fail_ "an application you made is never touched"; pass
 
 echo "OK authentik: $checks checks"

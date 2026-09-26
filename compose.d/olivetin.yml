@@ -57,10 +57,12 @@ services:
       mediastack.managed: "true"
       mediastack.port: "1337"
       mediastack.subdomain: "panel"
+      mediastack.auth: "gate"   # no login of its own: behind the portal (mediastack-gate)
       traefik.enable: "true"
       traefik.http.routers.olivetin.rule: "Host(`${OLIVETIN_HOST:-panel}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.olivetin.entrypoints: "websecure"
       traefik.http.routers.olivetin.tls: "true"
+      traefik.http.routers.olivetin.middlewares: "mediastack-gate@file"
       traefik.http.services.olivetin.loadbalancer.server.port: "1337"
     logging: *logging
     restart: unless-stopped

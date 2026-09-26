@@ -44,6 +44,7 @@ services:
       mediastack.config: "true"
       mediastack.user_facing: "true"
       mediastack.subdomain: "books"
+      mediastack.auth: "native"   # handles its own login
     healthcheck:
       # this image ships curl but not wget/nc; /api/health returns Ok
       test: ["CMD-SHELL", "curl -fsS --max-time 5 http://127.0.0.1:5000/api/health || exit 1"]

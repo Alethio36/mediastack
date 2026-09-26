@@ -239,13 +239,16 @@ vpn_effective() {   # vpn_effective <svc> <default> -> true|false
     echo "$2"
 }
 
-vpn_traefik_labels() {   # <indent> <rname> <sub> <cport> <stem>  (router/service only)
-    local i="$1" r="$2" sub="$3" cp="$4" stem="$5"
+vpn_traefik_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth>  (router/service only)
+    local i="$1" r="$2" sub="$3" cp="$4" stem="$5" auth="${6:-}"
     echo "${i}traefik.http.routers.${r}.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${TRAEFIK_DOMAIN:-unset.invalid}\`)\""
     echo "${i}traefik.http.routers.${r}.entrypoints: \"websecure\""
     echo "${i}traefik.http.routers.${r}.tls: \"true\""
     echo "${i}traefik.http.routers.${r}.service: \"${r}\""
     echo "${i}traefik.http.services.${r}.loadbalancer.server.port: \"${cp}\""
+    # mediastack.auth: gate -> the portal decides who gets through (lib/edge.sh
+    # defines mediastack-gate: authentik's check when it runs, a no-op otherwise)
+    if [[ "$auth" == gate ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-gate@file\""; fi
 }
 
 vpn_gen() {
@@ -257,7 +260,7 @@ vpn_gen() {
     # Build the three sections up front so empty ones can be omitted (an empty
     # `ports:`/`labels:` mapping is invalid YAML) and traefik.enable is emitted
     # exactly once per container (never duplicated as a mapping key).
-    local gports="" glabels="" stanzas="" s stem cport sub rname defv eff hp
+    local gports="" glabels="" stanzas="" s stem cport sub rname defv eff hp auth
     for s in $svcs; do
         stem=$(uvar "$s"); rname=$(vpn_rname "$s")
         cport=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.port"] // ""' <<<"$bj")
@@ -267,12 +270,13 @@ vpn_gen() {
         # whose container port would collide on the host, e.g. :80 vs Traefik).
         # Default true preserves direct host access for the acquisition apps.
         hp=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.hostport"] // "true"' <<<"$bj")
+        auth=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"] // ""' <<<"$bj")
         [[ -n "$cport" ]] || die "vpn: $s carries no mediastack.port label"
         [[ -n "$sub"   ]] || die "vpn: $s carries no mediastack.subdomain label"
         eff=$(vpn_effective "$s" "$defv")
         if [[ "$eff" == true ]]; then
             [[ "$hp" != false ]] && gports+="      - \"\${${stem}_PORT:-${cport}}:${cport}\""$'\n'
-            glabels+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem")"$'\n'
+            glabels+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth")"$'\n'
             stanzas+="  ${s}:"$'\n'"    network_mode: \"service:gluetun\""$'\n'
             stanzas+="    depends_on:"$'\n'"      gluetun:"$'\n'"        condition: service_healthy"$'\n'
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"true\""$'\n'
@@ -282,7 +286,7 @@ vpn_gen() {
             stanzas+="  ${s}:"$'\n'"    networks: [mediastack]"$'\n'
             [[ "$hp" != false ]] && stanzas+="    ports:"$'\n'"      - \"\${${stem}_PORT:-${cport}}:${cport}\""$'\n'
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"false\""$'\n'"      traefik.enable: \"true\""$'\n'
-            stanzas+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem")"$'\n'
+            stanzas+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth")"$'\n'
         fi
     done
     local tmp; tmp=$(mktemp)

@@ -30,6 +30,7 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "sonarr"
+      mediastack.auth: "native"   # handles its own login
       mediastack.port: "8989"
       mediastack.arrtype: "sonarr"
       mediastack.category: "tv"

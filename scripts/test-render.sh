@@ -13,6 +13,8 @@
 #   4. vpn_gen (the `up` order) -> overlay drops the stanza, config renders
 #   5. the shard rules hold for every shipped fragment, and a two-container
 #      drop-in shard renders with its member found and not managed
+#   6. every web interface declares mediastack.auth, and exactly the gated
+#      ones' routes carry the mediastack-gate middleware
 #
 # Runs on a throwaway copy of the repo; the working tree is never touched.
 # Needs `docker compose` (the standalone plugin renders without a daemon).
@@ -94,3 +96,16 @@ bad=$(shard_problems); [[ -z "$bad" ]] || t_fail "a well-formed drop-in shard re
 svc_managed | grep -qx shardapp-db && t_fail "a member must not be listed as a managed service"
 rm custom/compose.d/shardapp.yml; vpn_gen
 echo "OK shard rules hold for the shipped fragments and a rendered drop-in shard"
+
+echo ":: 6. every web interface declares who logs it in; gated routes carry the gate"
+RENDERED_JSON=""; render
+bad=$(jq -r '.services | to_entries[] | select(.value.labels["mediastack.subdomain"] != null)
+    | select((.value.labels["mediastack.auth"] // "") | IN("gate","native","open") | not) | .key' <<<"$RENDERED_JSON")
+[[ -z "$bad" ]] || t_fail "web interfaces without mediastack.auth (gate|native|open): $bad"
+for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.subdomain"] != null) | .key' <<<"$RENDERED_JSON"); do
+    r=$(vpn_rname "$s"); auth=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"]' <<<"$RENDERED_JSON")
+    mw=$(jq -r --arg k "traefik.http.routers.$r.middlewares" '[.services[].labels[$k] // empty] | join(",")' <<<"$RENDERED_JSON")
+    if [[ "$auth" == gate ]]; then [[ "$mw" == *mediastack-gate@file* ]] || t_fail "$s is gated but its route ($r) has no mediastack-gate middleware"
+    else [[ "$mw" != *mediastack-gate@file* ]] || t_fail "$s is $auth but its route carries the gate"; fi
+done
+echo "OK every web interface declares mediastack.auth; the gate is on exactly the gated routes"

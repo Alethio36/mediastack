@@ -1664,9 +1664,75 @@ wire_authentik() {
     local st; st=$(authentik_blueprint_status)
     case "$st" in
         successful) ok "authentik: mediastack's portal setup applied (media-users, admins, sign-up by invitation)" ;;
-        "") info "authentik: mediastack's portal setup not applied yet — it is, within minutes of starting; re-run to check" ;;
-        *) wfail "authentik: mediastack's portal setup is '$st' — ./mediastack.sh logs authentik --no-follow | grep -i blueprint" ;;
+        "") info "authentik: mediastack's portal setup not applied yet — it is, within minutes of starting; re-run to check"; return 0 ;;
+        *) wfail "authentik: mediastack's portal setup is '$st' — ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; return 0 ;;
     esac
+    wire_authentik_gate
+}
+
+wire_authentik_gate() { # the gate on the built-in outpost, the first admin in `admins`, a card per gated tool
+    local out prov outpost provs
+    # 1. the gate's provider on the built-in outpost — added to what is there, never replacing it
+    out=$(ak_api GET "/providers/proxy/?name__iexact=mediastack-gate") || { wfail "authentik: gate provider unreadable"; return 0; }
+    prov=$(jq -r '.results[0].pk // empty' <<<"$out")
+    [[ -n "$prov" ]] || { wfail "authentik: the gate provider (mediastack-gate) is missing — the blueprint creates it: ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; return 0; }
+    out=$(ak_api GET "/outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") || { wfail "authentik: built-in outpost unreadable"; return 0; }
+    outpost=$(jq -r '.results[0].pk // empty' <<<"$out"); provs=$(jq -c '.results[0].providers // []' <<<"$out")
+    [[ -n "$outpost" ]] || { wfail "authentik: its built-in outpost is missing"; return 0; }
+    if jq -e --argjson p "$prov" 'index($p) != null' <<<"$provs" >/dev/null; then
+        ok "authentik: the gate is on its built-in outpost"
+    elif w_would "authentik: put the gate on its built-in outpost (routes marked gate then ask the portal)"; then
+        ak_api PATCH "/outposts/instances/$outpost/" "$(jq -cn --argjson ps "$provs" --argjson p "$prov" '{providers: ($ps + [$p])}')" >/dev/null \
+            && ok "authentik: gate attached" || wfail "authentik refused to attach the gate to its outpost"
+    fi
+    # 2. the first admin joins `admins` once — after that, membership is yours to manage
+    if [[ -z "$(state_get AUTHENTIK_ADMINS_SEEDED)" ]] && w_would "authentik: put akadmin in 'admins' (the gate lets admins through)"; then
+        local g u
+        g=$(ak_api GET "/core/groups/?search=admins") && g=$(jq -r '[.results[] | select(.name == "admins") | .pk][0] // empty' <<<"$g")
+        u=$(ak_api GET "/core/users/?username=akadmin") && u=$(jq -r '.results[0].pk // empty' <<<"$u")
+        if [[ -n "$g" && -n "$u" ]] && ak_api POST "/core/groups/$g/add_user/" "$(jq -cn --argjson u "$u" '{pk:$u}')" >/dev/null; then
+            state_set AUTHENTIK_ADMINS_SEEDED 1; ok "authentik: akadmin is in 'admins'"
+        else wfail "authentik: could not add akadmin to 'admins'"; fi
+    fi
+    # 3. a dashboard card per gated tool, seen by admins only (slugs mediastack-tool-*: ours)
+    wire_authentik_cards
+}
+
+wire_authentik_cards() {
+    local all g want s slug have body app bind
+    all=$(ak_api GET "/core/applications/?superuser_full_list=true&page_size=500") || { wfail "authentik: applications unreadable"; return 0; }
+    g=$(ak_api GET "/core/groups/?search=admins") && g=$(jq -r '[.results[] | select(.name == "admins") | .pk][0] // empty' <<<"$g")
+    [[ -n "$g" ]] || { wfail "authentik: group 'admins' missing (the blueprint creates it)"; return 0; }
+    want=$(authentik_gated)
+    for s in $want; do
+        slug="mediastack-tool-$s"
+        body=$(jq -cn --arg n "$s" --arg sl "$slug" --arg u "$(svc_url "$s")" --arg d "$(svc_label "$s" mediastack.desc)" \
+            '{name:$n, slug:$sl, meta_launch_url:$u, meta_description:$d, meta_publisher:"mediastack", group:"Admin tools", open_in_new_tab:true, policy_engine_mode:"any"}')
+        have=$(jq -c --arg sl "$slug" '[.results[] | select(.slug == $sl)][0] // empty' <<<"$all")
+        if [[ -z "$have" ]]; then
+            w_would "authentik: add an admins-only dashboard card for $s" || continue
+            app=$(ak_api POST /core/applications/ "$body") || { wfail "authentik refused the card for $s: $(head -c160 <<<"$app")"; continue; }
+        elif [[ "$(jq -r '.meta_launch_url' <<<"$have")" != "$(svc_url "$s")" ]]; then
+            w_would "authentik: update $s's card (its address changed)" || continue
+            app=$(ak_api PATCH "/core/applications/$slug/" "$body") || { wfail "authentik refused to update $s's card"; continue; }
+        else
+            app=$have
+        fi
+        bind=$(ak_api GET "/policies/bindings/?target=$(jq -r '.pk' <<<"$app")") || { wfail "authentik: bindings unreadable"; continue; }
+        if ! jq -e --arg g "$g" '.results[] | select(.group == $g)' <<<"$bind" >/dev/null; then
+            ak_api POST /policies/bindings/ "$(jq -cn --arg t "$(jq -r '.pk' <<<"$app")" --arg g "$g" '{target:$t, group:$g, order:0}')" >/dev/null \
+                || { wfail "authentik: could not limit $s's card to admins"; continue; }
+        fi
+        ok "authentik: $s card (admins only)"
+    done
+    # a card for a tool no longer gated or enabled leaves with it
+    for slug in $(jq -r '.results[].slug | select(startswith("mediastack-tool-"))' <<<"$all"); do
+        [[ " $(tr '\n' ' ' <<<"$want") " == *" ${slug#mediastack-tool-} "* ]] && continue
+        w_would "authentik: remove the card for ${slug#mediastack-tool-} (no longer behind the gate)" || continue
+        ak_api DELETE "/core/applications/$slug/" >/dev/null && ok "authentik: ${slug#mediastack-tool-} card removed" \
+            || wfail "authentik refused to remove ${slug#mediastack-tool-}'s card"
+    done
+    return 0
 }
 
 wire_usage() { local IFS='|'; die "usage: wire [${WIRE_ROLES[*]}] [--dry-run|--verify]"; }
