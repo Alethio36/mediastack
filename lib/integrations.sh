@@ -708,8 +708,9 @@ wire_prowlarr() {
     wire_arrs_ready || true
     local pkey purl; pkey=$(arr_key prowlarr); purl=$(arr_url prowlarr)
     [[ -n "$pkey" ]] || { wfail "prowlarr: no ApiKey yet — re-run wire shortly"; return 0; }
-    # prowlarr has no arrtype label so wire_arr's loop never sees it: gate here
-    arr_forms_login prowlarr
+    # prowlarr has no arrtype label so wire_arr's loop never sees it: its login
+    # here — its own, or trusting the portal (gate_trusted), like the arrs
+    arr_login prowlarr
     local s key t impl cur aexists abody
     cur=$(api GET "$purl/api/v1/applications" "$pkey") \
         || { wfail "prowlarr: could not read its apps — nothing created [$(oneline "$cur")]"; return 1; }
