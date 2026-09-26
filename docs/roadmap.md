@@ -16,8 +16,8 @@ condition that would reopen it.
   through it, never raw `docker compose` mid-session (that is the VPN safety
   boundary).
 - **Modular by service.** One `compose.d/` fragment per service, explicitly
-  included; user additions live in `docker-compose.override.yml` and survive
-  upgrades.
+  included; user services live in `custom/compose.d/` (one file each) and
+  changes to shipped ones in `custom/override.yml` — both survive upgrades.
 - **Safe by construction.** VPN-gated, leak-tested torrent path; a front door
   that runs only allowlisted verbs; fail-loud over silent fallbacks; changes are
   health-gated and reversible (backup/restore, pinned images, rollback).

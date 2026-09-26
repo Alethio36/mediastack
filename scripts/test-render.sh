@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # test-render.sh — the compose config must render from a fresh .env.example
-# through vpn_gen, and keep rendering across the override lifecycle that
+# through vpn_gen, and keep rendering across the your-service lifecycle that
 # `new-service` and its documented removal go through:
 #
 #   1. .env.example -> vpn_gen -> config renders; vpn_gen is byte-stable
-#   2. + a toggle service in docker-compose.override.yml -> vpn_gen sees it,
-#      the overlay carries its stanza, config renders
-#   3. the override is removed and vpn_gen is NOT re-run -> the stale overlay
+#   2. + a toggle service as a drop-in (custom/compose.d/, what new-service
+#      writes) -> vpn_gen sees it, the overlay carries its stanza, it renders
+#   3. the drop-in is removed and vpn_gen is NOT re-run -> the stale overlay
 #      must break the render (this is the bug `up` regenerates first for —
 #      if it stops failing, the test no longer proves what it claims)
 #   4. vpn_gen (the `up` order) -> overlay drops the stanza, config renders
@@ -27,7 +27,7 @@ cp .env.example .env
 renders() { # renders <label> -> 0 if the full profile set renders
     local err; err=$(mktemp)
     if sudo docker compose --project-directory "$work" \
-            -f docker-compose.yml ${1:+-f "$1"} -f local/vpn-overlay.yml \
+            -f docker-compose.yml ${1:+-f "$1"} -f "$OVERLAY_FILE" \
             --profile "*" config -q 2>"$err"; then
         rm -f "$err"; return 0
     fi
@@ -44,27 +44,28 @@ t_fail() { echo "ERROR $*" >&2; exit 1; }
 
 echo ":: 1. fresh .env.example"
 vpn_gen
-[[ -s local/vpn-overlay.yml ]] || t_fail "vpn_gen wrote no overlay"
+[[ -s "$OVERLAY_FILE" ]] || t_fail "vpn_gen wrote no overlay"
 renders "" || t_fail "base config does not render"
 # every variable a fragment reads is declared in .env.example (a value may be
 # empty — a secret written later — but an UNDECLARED one is a stale example)
-unset_vars=$(sudo docker compose --project-directory "$work" -f docker-compose.yml -f local/vpn-overlay.yml \
+unset_vars=$(sudo docker compose --project-directory "$work" -f docker-compose.yml -f "$OVERLAY_FILE" \
     --profile "*" config -q 2>&1 | grep -oE 'The \\?"[A-Z0-9_]+\\?" variable is not set' || true)
 [[ -z "$unset_vars" ]] || t_fail "variables read by a fragment but absent from .env.example:"$'\n'"$unset_vars"
-cp local/vpn-overlay.yml "$work/overlay.first"
+cp "$OVERLAY_FILE" "$work/overlay.first"
 vpn_gen
-cmp -s local/vpn-overlay.yml "$work/overlay.first" || t_fail "vpn_gen is not byte-stable for identical inputs"
-echo "OK base renders; overlay byte-stable ($(grep -c '^  [a-z0-9-]*:$' local/vpn-overlay.yml) stanzas)"
+cmp -s "$OVERLAY_FILE" "$work/overlay.first" || t_fail "vpn_gen is not byte-stable for identical inputs"
+echo "OK base renders; overlay byte-stable ($(grep -c '^  [a-z0-9-]*:$' "$OVERLAY_FILE") stanzas)"
 
-echo ":: 2. toggle service added in docker-compose.override.yml"
-cp "$repo/scripts/fixtures/toggle-service.override.yml" docker-compose.override.yml
+echo ":: 2. toggle service added as a drop-in (custom/compose.d/)"
+mkdir -p custom/compose.d
+cp "$repo/scripts/fixtures/toggle-service.override.yml" custom/compose.d/hello.yml
 vpn_gen
-grep -q '^  hello:$' local/vpn-overlay.yml || t_fail "overlay has no stanza for the override service"
-renders docker-compose.override.yml || t_fail "config with the override service does not render"
-echo "OK override service seen by vpn_gen and renders"
+grep -q '^  hello:$' "$OVERLAY_FILE" || t_fail "overlay has no stanza for the drop-in service"
+renders custom/compose.d/hello.yml || t_fail "config with the drop-in service does not render"
+echo "OK drop-in service seen by vpn_gen and renders"
 
-echo ":: 3. override removed, overlay stale"
-rm docker-compose.override.yml
+echo ":: 3. drop-in removed, overlay stale"
+rm custom/compose.d/hello.yml
 if renders "" 2>/dev/null; then
     t_fail "a stale overlay stanza rendered — this test no longer proves the up-order regen matters"
 fi
@@ -72,7 +73,7 @@ echo "OK stale overlay breaks the render (as expected)"
 
 echo ":: 4. vpn_gen before render (the up order)"
 vpn_gen
-grep -q '^  hello:$' local/vpn-overlay.yml && t_fail "overlay still carries the removed service"
+grep -q '^  hello:$' "$OVERLAY_FILE" && t_fail "overlay still carries the removed service"
 renders "" || t_fail "config does not render after vpn_gen"
-cmp -s local/vpn-overlay.yml "$work/overlay.first" || t_fail "overlay differs from the original after add+remove"
+cmp -s "$OVERLAY_FILE" "$work/overlay.first" || t_fail "overlay differs from the original after add+remove"
 echo "OK render: overlay regenerated, config renders, identical to step 1"

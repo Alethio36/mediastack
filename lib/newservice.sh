@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # lib/newservice.sh — `new-service`: the interactive scaffold that writes a
-# user's own service into docker-compose.override.yml on the toggle model,
+# user's own service into custom/compose.d/<name>.yml on the toggle model,
 # then enables and starts it. Sourced by the entrypoint; relies on
 # lib/common.sh, lib/configure.sh (_configure_selfheal) and the entrypoint's
 # helpers at call time.
 
 cmd_new_service() {
-    # User services live in docker-compose.override.yml: compose merges it
-    # automatically, it is untracked, and upgrades never conflict with it.
+    # User services live in custom/compose.d/, one file each: untracked,
+    # passed to compose on every run, and upgrades never conflict with them.
     # compose.d/ and docker-compose.yml are the repo's territory — a scaffold
     # there would trip the clean-tree gate on the next upgrade.
     #
@@ -27,7 +27,7 @@ cmd_new_service() {
     local image cport host desc vpn cfg data ident
     explain "New service: $name" \
 "A few questions produce a complete, working service definition in
-docker-compose.override.yml — image, port, HTTPS hostname, VPN membership,
+custom/compose.d/$name.yml — image, port, HTTPS hostname, VPN membership,
 folders and permissions — then it is enabled and started. Nothing to edit."
     while true; do
         _ns_ask "Docker image (repository:tag)" ""; image="$REPLY_VAL"
@@ -90,20 +90,20 @@ service's UID, it fails and tells you to switch to 2)."
     fi
 
     # ---- scaffold ----
-    local f="docker-compose.override.yml" had_file=0 snap=""
-    if [[ -e "$f" ]]; then
-        had_file=1; snap=$(cat "$f")
-        grep -qE "^  ${name}:" "$f" && die "$f already defines '$name'."
-        grep -qE '^services:' "$f" || die "$f exists but has no 'services:' key — add the service there yourself."
-    else
-        printf '# Your services live here — untracked, merged automatically, upgrade-safe.\nservices:\n' > "$f"
-    fi
-    _new_service_fragment "$name" "$stem" "$image" "$cport" "$host" "$desc" "$vpn" "$cfg" "$data" "$ident" >> "$f"
-    # anything failing from here until the stack is touched reverts the file
-    # AND the overlay: a stanza for a service that no longer exists would make
-    # every later render fail ("neither an image nor a build context")
+    local f="$DROPIN_DIR/$name.yml"
+    [[ -e "$f" ]] && die "$f already exists — pick another name, or remove that file first."
+    mkdir -p "$DROPIN_DIR"; repo_owned "$CUSTOM_DIR" "$DROPIN_DIR"
+    { printf '# Your service — untracked, passed to compose on every run, upgrade-safe.\n'
+      printf '# Remove it: ./mediastack.sh disable %s, then delete this file.\nservices:\n' "$name"
+      _new_service_fragment "$name" "$stem" "$image" "$cport" "$host" "$desc" "$vpn" "$cfg" "$data" "$ident"
+    } > "$f"
+    repo_owned "$f"
+    # anything failing from here until the stack is touched removes the file
+    # AND regenerates the overlay: a stanza for a service that no longer
+    # exists would make every later render fail ("neither an image nor a
+    # build context")
     _new_service_rollback() {
-        if (( had_file )); then printf '%s' "$snap" > "$f"; else rm -f "$f"; fi
+        rm -f "$f"
         (( overlay_made )) && vpn_gen
         return 0
     }
@@ -158,10 +158,10 @@ service's UID, it fails and tells you to switch to 2)."
 _new_service_footer() { # where to go for anything the questions did not cover
     cat <<EOT
 
-Its definition is the '$1:' block in docker-compose.override.yml — plain
-compose YAML, yours to edit: extra environment variables (API keys, a base
-URL), devices (/dev/dri for hardware transcoding), more volumes, a
-healthcheck. Edit, then: ./mediastack.sh up
+Its definition is custom/compose.d/$1.yml — plain compose YAML, yours to
+edit: extra environment variables (API keys, a base URL), devices (/dev/dri
+for hardware transcoding), more volumes, a healthcheck, or more containers it
+needs (a database). Edit, then: ./mediastack.sh up
 Host port:  $(uvar "$1")_PORT=<port> in .env   HTTPS name: $(uvar "$1")_HOST=<sub> in .env
 Removing it later: docs/adding-a-service.md, "Removing your service".
 EOT

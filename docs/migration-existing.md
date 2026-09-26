@@ -49,7 +49,7 @@ sudo mv /your/config/jellyfin-lsio/data /your/config/jellyfin
 ```
 Then `./mediastack.sh fix-perms jellyfin`. To keep the linuxserver image
 instead, override the jellyfin image and the jellysearch mount in
-`docker-compose.override.yml`.
+`custom/override.yml`.
 
 ## First backup sizing
 Your first `backup` archives the whole config tree — Jellyfin metadata can

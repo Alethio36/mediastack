@@ -224,11 +224,11 @@ vpn_rname() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik rou
 vpn_onoff() { [[ "$1" == true ]] && echo "on" || echo "off"; }   # membership -> on/off
 
 vpn_base_json() {   # base compose ONLY — never include the overlay (no self-reference)
-    # The user's override IS base: a toggle-enabled service scaffolded there
-    # must be seen, or vpn_gen never generates its network/port/route. An
-    # explicit -f disables compose's automatic override merge, so pass it.
-    local files=(-f docker-compose.yml)
-    [[ -e docker-compose.override.yml ]] && files+=(-f docker-compose.override.yml)
+    # Your files ARE base: a toggle-enabled service of yours (custom/) must be
+    # seen, or vpn_gen never generates its network/port/route. (Run inside
+    # $( ): a misplaced file prints its reason here and the caller dies.)
+    user_compose_files
+    local files=(-f docker-compose.yml "${USER_FILES[@]}")
     sudo docker compose --project-directory "$SCRIPT_DIR" "${files[@]}" \
         --profile "*" config --format json 2>/dev/null
 }
@@ -249,7 +249,7 @@ vpn_traefik_labels() {   # <indent> <rname> <sub> <cport> <stem>  (router/servic
 }
 
 vpn_gen() {
-    install -d -m 755 local; repo_owned local
+    install -d -m 755 "$LOCAL_DIR"; repo_owned "$LOCAL_DIR"
     local bj; bj=$(vpn_base_json) || die "vpn: could not read base compose config"
     local svcs
     svcs=$(jq -r '.services | to_entries[]
@@ -300,12 +300,12 @@ vpn_gen() {
         fi
         printf '%s' "$stanzas"
     } > "$tmp"
-    if ! cmp -s "$tmp" local/vpn-overlay.yml 2>/dev/null; then
+    if ! cmp -s "$tmp" "$OVERLAY_FILE" 2>/dev/null; then
         # -f: the panel runs this as root, the CLI as the operator — a file the
         # other one wrote must be replaced, never questioned (mv prompts on an
         # unwritable target when stdin is a terminal). 0644: no secrets in it,
         # only labels and ${VAR} references, so no mktemp 0600 carried over.
-        chmod 644 "$tmp"; mv -f "$tmp" local/vpn-overlay.yml; repo_owned local/vpn-overlay.yml
+        chmod 644 "$tmp"; mv -f "$tmp" "$OVERLAY_FILE"; repo_owned "$OVERLAY_FILE"
     else
         rm -f "$tmp"
     fi

@@ -21,7 +21,9 @@ Everything the sync manages is marked two ways:
   when multiple profiles share a trash_id, at most one may be renamed per
   sync — relevant only if you add profile variants by hand.
 * A custom format named `[!] Synced by mediastack — tune via
-  local/trash-overrides.yml` exists on every managed instance. It matches
+  custom/trash-overrides.yml` exists on every managed instance (installs from
+  before schema 28 had it named for `local/`; the next sync renames it in
+  place). It matches
   nothing (regex `\b\B`) and exists purely as a banner: it sorts to the top
   of every profile-edit dialog. Deleting it does nothing — the next sync
   recreates it. That is by design.
@@ -32,7 +34,7 @@ own. Profiles you create yourself in the GUI are never touched.
 
 ## Score overrides that survive sync
 
-Put them in `local/trash-overrides.yml`, sectioned by service name, as
+Put them in `custom/trash-overrides.yml`, sectioned by service name, as
 native recyclarr `custom_formats` lists (indented for instance level):
 
 ```yaml

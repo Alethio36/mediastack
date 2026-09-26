@@ -44,7 +44,7 @@ _doctor_environment() {
     # refuses the operator's CLI; any root run of the owning verb repairs it
     local owner stray; owner=$(stat -c '%u' "$SCRIPT_DIR")
     # (find exits non-zero for paths that do not exist yet — expected, absorbed)
-    stray=$({ find "$SCRIPT_DIR/local" "$SCRIPT_DIR/.pins.yml" "$SCRIPT_DIR"/.env.bak.* "$SCRIPT_DIR/.wired" \
+    stray=$({ find "$LOCAL_DIR" "$CUSTOM_DIR" \
                    ! -uid "$owner" 2>/dev/null || true; } | sed "s|^$SCRIPT_DIR/||" | head -5 | tr '\n' ' ')
     [[ -z "$stray" ]] && ok "repo state files belong to the repo owner" \
         || d_fail "not owned by the repo owner: $stray" "the CLI (running as you) cannot update them" \

@@ -63,11 +63,11 @@ versioned in git, nothing to re-click after a reinstall.
 
 ## Proxying something that isn't in the stack
 
-Drop a file in `local/proxy.d/` (user-owned); it is applied by the next
+Drop a file in `custom/proxy.d/` (yours); it is applied by the next
 `up` or `traefik-setup`:
 
 ```yaml
-# local/proxy.d/nas.yml
+# custom/proxy.d/nas.yml
 http:
   routers:
     nas:

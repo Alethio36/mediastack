@@ -23,6 +23,10 @@ sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
 
+# shellcheck disable=SC2034  # read by the sourced migrate_env
+LOCAL_DIR=$T/local
+# shellcheck disable=SC2034
+ENV_BACKUP_DIR=$T/local/env-backups
 ENV_FILE=$T/.env
 printf 'ENV_SCHEMA=22\nMEDIA_GROUP_GID=%s\nCONFIG_ROOT=%s/config\nCACHE_ROOT=%s/cache\nDATA_ROOT=%s/data\nAUDIOBOOKSHELF_UID=%s\nKAVITA_UID=%s\n' \
     "$(id -g)" "$T" "$T" "$T" "$(id -u)" "$(id -u)" > "$ENV_FILE"
