@@ -17,7 +17,7 @@ WIRE_FAILS=0
 # jellyfin's admin and wizarr's first-run UI wants jellyfin claimed first, so
 # jellyfin precedes both. To add an integration: append its role here and define
 # a matching wire_<role> function below.
-WIRE_ROLES=(qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr authentik)
+WIRE_ROLES=(qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr authentik audiobookshelf)
 # roles that write without observing (one big settings blob / blind writeCFG):
 # their dry-run always says "would", so --verify cannot read drift from them
 WIRE_BLIND=(bazarr lazylibrarian seerr)
@@ -1916,7 +1916,12 @@ wire_authentik_cards() { # admin tools for admins; household apps for media-user
     for s in $(authentik_household); do
         prov=""
         # a household app behind the household gate: its card carries the gate's rule
-        if [[ -n "$(svc_label "$s" mediastack.auth.group)" ]]; then authentik_house_provider "$s" || continue; prov=$HOUSE_PK; fi
+        if [[ -n "$(svc_label "$s" mediastack.auth.group)" ]]; then authentik_house_provider "$s" || continue; prov=$HOUSE_PK
+        else
+            # an app that logs in through OIDC: its card is the provider's application
+            local op; op=$(ak_api GET "/providers/oauth2/?client_id=mediastack-$s") || { wfail "authentik: providers unreadable"; continue; }
+            prov=$(jq -r '.results[0].pk // empty' <<<"$op")
+        fi
         ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Media" "$prov" "$mu" "$adm"
     done
     # shellcheck disable=SC2046  # service names, one word each
@@ -1924,6 +1929,96 @@ wire_authentik_cards() { # admin tools for admins; household apps for media-user
     # shellcheck disable=SC2046
     ak_card_prune "$all" mediastack-app- $(authentik_household)
     return 0
+}
+
+# ---- Audiobookshelf: the stack's own root account, then sign-in through the portal ----
+abs_url() { local p; p=$(svc_hostport audiobookshelf) || return 1; echo "http://127.0.0.1:$p"; }
+abs_api() { # abs_api METHOD PATH TOKEN [json] -> body; rc from HTTP
+    local out code
+    out=$(curl -sS -m 20 -X "$1" -H "Content-Type: application/json" ${3:+-H "Authorization: Bearer $3"} \
+          ${4:+-d "$4"} -w '\n%{http_code}' "$(abs_url)$2" 2>&1) || { echo "$out"; return 1; }
+    code=${out##*$'\n'}; echo "${out%$'\n'*}"
+    [[ "$code" =~ ^2 ]]
+}
+
+abs_oidc_want() { # the sign-in settings mediastack manages in Audiobookshelf (JSON)
+    local base issuer
+    base=$(authentik_portal); issuer=$(authentik_oidc_issuer audiobookshelf)
+    jq -cn --arg b "$base" --arg i "$issuer" --arg s "$(env_get AUTHENTIK_ABS_CLIENT_SECRET)" --arg t "$(env_get PORTAL_TITLE Mediastack)" '{
+        authActiveAuthMethods: ["local", "openid"],
+        authOpenIDIssuerURL: $i,
+        authOpenIDAuthorizationURL: ($b + "/application/o/authorize/"),
+        authOpenIDTokenURL: ($b + "/application/o/token/"),
+        authOpenIDUserInfoURL: ($b + "/application/o/userinfo/"),
+        authOpenIDJwksURL: ($i + "jwks/"),
+        authOpenIDLogoutURL: ($i + "end-session/"),
+        authOpenIDClientID: "mediastack-audiobookshelf",
+        authOpenIDClientSecret: $s,
+        authOpenIDTokenSigningAlgorithm: "RS256",
+        authOpenIDButtonText: ("Log in with " + $t),
+        authOpenIDAutoRegister: true,
+        authOpenIDMatchExistingBy: "username",
+        authOpenIDMobileRedirectURIs: ["audiobookshelf://oauth"] }'
+}
+
+abs_oidc() { # Audiobookshelf signs people in through the portal (its own login stays for the stack's root account)
+    local tok="$1" cur want
+    cur=$(abs_api GET /api/auth-settings "$tok") || { wfail "audiobookshelf: its sign-in settings are unreadable"; return 1; }
+    want=$(abs_oidc_want)
+    if jq -e --argjson w "$want" '. as $c | $w | to_entries | all(.value == $c[.key])' <<<"$cur" >/dev/null 2>&1; then
+        ok "audiobookshelf: sign-in through the portal"; return 0
+    fi
+    w_would "audiobookshelf: sign in through the portal (new accounts made on first sign-in, existing ones matched by username)" || return 0
+    abs_api PATCH /api/auth-settings "$tok" "$want" >/dev/null \
+        && ok "audiobookshelf: sign-in through the portal set up" || wfail "audiobookshelf rejected its sign-in settings"
+}
+
+abs_admin_sync() { # portal-linked accounts follow `admins`; the root account (the stack's) is never touched
+    local tok="$1" out admins u want
+    out=$(ak_api GET "/core/users/?groups_by_name=admins&page_size=500") || { wfail "authentik: admins unreadable — Audiobookshelf rights not synced"; return 1; }
+    admins=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
+    out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 1; }
+    while IFS= read -r u; do
+        [[ -n "$u" ]] || continue
+        want="user"; [[ "$admins" == *" $(jq -r '.username' <<<"$u") "* ]] && want="admin"
+        [[ "$(jq -r '.type' <<<"$u")" == "$want" ]] && continue
+        w_would "audiobookshelf: $(jq -r '.username' <<<"$u") becomes $want" || continue
+        abs_api PATCH "/api/users/$(jq -r '.id' <<<"$u")" "$tok" "$(jq -cn --arg t "$want" '{type:$t}')" >/dev/null \
+            && ok "audiobookshelf: $(jq -r '.username' <<<"$u") is $want" || wfail "audiobookshelf rejected the change for $(jq -r '.username' <<<"$u")"
+    done < <(jq -c '.users[] | select(.hasOpenIDLink == true and .type != "root")' <<<"$out")
+    return 0
+}
+
+wire_audiobookshelf() {
+    hr "wire: audiobookshelf"
+    svc_enabled audiobookshelf || { info "audiobookshelf not enabled — skipped"; return 0; }
+    wire_gate audiobookshelf
+    http_ready audiobookshelf "$(abs_url)/healthcheck" '^2' || return 1
+    local st user pass out tok
+    st=$(abs_api GET /status "") || { wfail "audiobookshelf: status unreadable"; return 1; }
+    user=$(env_get ABS_ADMIN_USER); pass=$(env_get ABS_ADMIN_PASSWORD)
+    if [[ "$(jq -r '.isInit' <<<"$st")" != true ]]; then
+        w_would "create Audiobookshelf's root account — the stack's own (see: credentials)" || return 0
+        [[ -n "$user" ]] || user=mediastack
+        [[ -n "$pass" ]] || pass=$(authentik_secret 24)
+        abs_api POST /init "" "$(jq -cn --arg u "$user" --arg p "$pass" '{newRoot:{username:$u, password:$p}}')" >/dev/null \
+            || { wfail "audiobookshelf refused its first-run setup"; return 1; }
+        env_set ABS_ADMIN_USER "$user"; env_set ABS_ADMIN_PASSWORD "$pass"
+        ok "audiobookshelf: root account '$user' created (the stack's own — people sign in with their own accounts)"
+    elif [[ -z "$user" || -z "$pass" ]]; then
+        wfail "audiobookshelf was set up by hand and its root login is not in .env. Either put it there (ABS_ADMIN_USER / ABS_ADMIN_PASSWORD), or start it fresh — this deletes its users, libraries and progress:
+       ./mediastack.sh disable audiobookshelf && sudo mv \"$(env_get CONFIG_ROOT)/audiobookshelf\" \"$(env_get CONFIG_ROOT)/audiobookshelf.old\" && ./mediastack.sh enable audiobookshelf && ./mediastack.sh wire audiobookshelf"
+        return 1
+    fi
+    (( WIRE_DRY )) && [[ -z "$(env_get ABS_ADMIN_PASSWORD)" ]] && return 0
+    out=$(abs_api POST /login "" "$(jq -cn --arg u "$(env_get ABS_ADMIN_USER)" --arg p "$(env_get ABS_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
+        || { wfail "audiobookshelf rejected the root login from .env"; return 1; }
+    tok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
+    [[ -n "$tok" ]] || { wfail "audiobookshelf login returned no token"; return 1; }
+    ok "audiobookshelf: root login works"
+    svc_enabled authentik || return 0
+    abs_oidc "$tok"
+    abs_admin_sync "$tok"
 }
 
 wire_usage() { local IFS='|'; die "usage: wire [${WIRE_ROLES[*]}] [--dry-run|--verify]"; }

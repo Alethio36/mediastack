@@ -97,6 +97,8 @@ services:
       MEDIASTACK_PORTAL_URL: https://${AUTHENTIK_HOST:-portal}.${TRAEFIK_DOMAIN:-unset.invalid}
       MEDIASTACK_DOMAIN: ${TRAEFIK_DOMAIN:-unset.invalid}
       MEDIASTACK_LDAP_BIND_PASSWORD: ${AUTHENTIK_LDAP_BIND_PASSWORD}
+      MEDIASTACK_ABS_URL: https://${AUDIOBOOKSHELF_HOST:-audiobooks}.${TRAEFIK_DOMAIN:-unset.invalid}
+      MEDIASTACK_ABS_CLIENT_SECRET: ${AUTHENTIK_ABS_CLIENT_SECRET}
     volumes:
       - ${CONFIG_ROOT}/authentik/data:/data
       - ${CONFIG_ROOT}/authentik/templates:/templates

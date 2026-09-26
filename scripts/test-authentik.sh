@@ -450,4 +450,54 @@ grep -q '^POST /Users/2/Policy .*"IsAdministrator":false' "$T/calls" || fail_ "a
 ! grep -q '^POST /Users/3/' "$T/calls" || fail_ "already right: no write"; pass
 ! grep -q '^POST /Users/4/' "$T/calls" || fail_ "the stack's own local admin is never touched"; pass
 
+# ---- Audiobookshelf: the stack's root, sign-in through the portal, admin sync ----
+printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_ABS_CLIENT_SECRET=ABSSEC\nPORTAL_TITLE=Home\n' > "$ENV_FILE"
+w=$(abs_oidc_want)
+[[ "$(jq -r '.authOpenIDIssuerURL' <<<"$w")" == "https://portal.media.example.com/application/o/mediastack-app-audiobookshelf/" \
+   && "$(jq -r '.authOpenIDTokenURL' <<<"$w")" == "https://portal.media.example.com/application/o/token/" \
+   && "$(jq -r '.authOpenIDJwksURL' <<<"$w")" == "https://portal.media.example.com/application/o/mediastack-app-audiobookshelf/jwks/" ]] \
+    || fail_ "Audiobookshelf's portal addresses: $w"; pass
+[[ "$(jq -r '[.authOpenIDClientSecret, .authOpenIDTokenSigningAlgorithm, (.authOpenIDAutoRegister|tostring), .authOpenIDMatchExistingBy, .authOpenIDButtonText] | join(",")' <<<"$w")" == "ABSSEC,RS256,true,username,Log in with Home" ]] \
+    || fail_ "secret, RS256, created on first sign-in, matched by username, the portal's name on the button"; pass
+[[ "$(jq -c '.authActiveAuthMethods' <<<"$w")" == '["local","openid"]' ]] || fail_ "its own login stays (the stack's root account)"; pass
+# first run: a fresh Audiobookshelf gets the stack's root; a hand-made one is not taken over
+rm -f "$T/calls"; printf 'TRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"
+svc_enabled() { [[ "$1" == audiobookshelf ]]; }; wire_gate() { :; }; http_ready() { :; }; abs_url() { echo http://abs; }
+ABS_INIT=false
+abs_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /status") echo "{\"isInit\":$ABS_INIT}" ;;
+        "POST /init") echo 'OK' ;;
+        "POST /login") echo '{"user":{"accessToken":"ABSTOK"}}' ;;
+        *) echo '{}' ;;
+    esac; }
+wire_audiobookshelf >/dev/null
+grep -q '^POST /init {"newRoot":{"username":"mediastack","password":"' "$T/calls" && [[ "$(env_get ABS_ADMIN_USER)" == mediastack && -n "$(env_get ABS_ADMIN_PASSWORD)" ]] \
+    || fail_ "a fresh Audiobookshelf: the stack's root account, stored"; pass
+grep -q '^POST /login' "$T/calls" || fail_ "then it logs in with it"; pass
+rm -f "$T/calls"; printf '' > "$ENV_FILE"; ABS_INIT=true; WIRE_FAILS=0
+out=$(wire_audiobookshelf 2>&1) || true
+! grep -q '^POST /init' "$T/calls" && [[ "$out" == *"set up by hand"*"ABS_ADMIN_USER"* ]] || fail_ "one set up by hand is never taken over — it says what to do"; pass
+# admin sync: portal-linked accounts follow admins; root and local ones are untouched
+rm -f "$T/calls"
+ak_api() { echo '{"results":[{"username":"akadmin"}]}'; }
+abs_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /api/users") echo '{"users":[
+            {"id":"r","username":"mediastack","type":"root","hasOpenIDLink":false},
+            {"id":"a","username":"akadmin","type":"user","hasOpenIDLink":true},
+            {"id":"t","username":"test-thio","type":"admin","hasOpenIDLink":true},
+            {"id":"l","username":"local-bob","type":"admin","hasOpenIDLink":false}]}' ;;
+        *) echo '{}' ;;
+    esac; }
+abs_admin_sync tok >/dev/null
+grep -q '^PATCH /api/users/a {"type":"admin"}' "$T/calls" && grep -q '^PATCH /api/users/t {"type":"user"}' "$T/calls" \
+    || fail_ "portal accounts: admins are admin, the rest user"; pass
+! grep -qE '^PATCH /api/users/(r|l) ' "$T/calls" || fail_ "the root account and local accounts are never touched"; pass
+# the blueprint's OIDC provider for it
+sed -n '/name: mediastack-oidc-audiobookshelf/,/^  - model/p' blueprints/authentik/mediastack-portal.yaml > "$T/abs"
+grep -q 'client_id: mediastack-audiobookshelf' "$T/abs" && grep -q 'signing_key: !Find' "$T/abs" \
+   && grep -q '/auth/openid/callback' "$T/abs" && grep -q '/auth/openid/mobile-redirect' "$T/abs" \
+    || fail_ "the OIDC provider: its client ID, a signing key (RS256), web and app redirects"; pass
+
 echo "OK authentik: $checks checks"
