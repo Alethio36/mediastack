@@ -315,8 +315,10 @@ entries:
       name: mediastack-ldap
     attrs:
       base_dn: dc=ldap,dc=mediastack
+      # the outpost runs authorization_flow as its BIND flow (the API calls it
+      # bind_flow_slug) — found live: a consent flow there refused every bind
+      authorization_flow: !KeyOf flow-ldap
       authentication_flow: !KeyOf flow-ldap
-      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
       search_mode: cached
       bind_mode: cached

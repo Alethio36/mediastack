@@ -1682,8 +1682,14 @@ wire_authentik() {
         else wfail "authentik rejected the base URL $want"; fi
     fi
     local st; st=$(authentik_blueprint_status)
+    local applied=0
     if [[ "$st" == outdated || "$st" == error ]] && w_would "authentik: apply mediastack's current portal setup now (an earlier version is in place)"; then
-        st=$(authentik_blueprint_apply)
+        st=$(authentik_blueprint_apply); applied=1
+    fi
+    # the LDAP outpost caches bind results: a changed setup starts it afresh,
+    # so an answer from before the change cannot outlive it (found live)
+    if (( applied )) && [[ "$st" == successful && "$(c_state "$(svc_cname authentik-ldap)")" == running ]]; then
+        sudo docker restart "$(svc_cname authentik-ldap)" >/dev/null && ok "authentik: LDAP outpost restarted on the new setup (its bind cache cleared)"
     fi
     case "$st" in
         successful) ok "authentik: mediastack's portal setup applied (media-users, admins, sign-up by invitation)" ;;
