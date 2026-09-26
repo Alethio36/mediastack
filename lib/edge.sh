@@ -291,6 +291,8 @@ restarts traefik, and the new environment reissues automatically."
     ask AV "Certificate environment [production/staging]" "$cur"
     case "$REPLY_VAL" in production|staging) env_set ACME_ENV "$REPLY_VAL" ;; *) die "Expected 'production' or 'staging'." ;; esac
     traefik_gen
+    # Jellyfin's LDAP checks the certificate only with production ones: follow the switch
+    if svc_enabled authentik && svc_enabled jellyfin; then cmd_wire jellyfin; fi
 }
 
 cmd_traefik_setup() {

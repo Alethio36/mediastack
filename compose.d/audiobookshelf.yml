@@ -41,7 +41,7 @@ services:
       mediastack.desc: "audiobook + podcast server with progress sync"
       mediastack.vpn: "false"
       mediastack.vpntoggle: "true"
-      mediastack.hostport: "false"
+      mediastack.hostport: "local"   # 127.0.0.1 only: the script's way in (wire audiobookshelf)
       mediastack.config: "true"
       mediastack.user_facing: "true"
       mediastack.cache: "true"

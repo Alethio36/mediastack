@@ -147,4 +147,9 @@ net=$(jq -c '.networks.mediastack.ipam.config[0]' <<<"$RENDERED_JSON")
     || t_fail "the stack network has no fixed range: $net"
 [[ "$(jq -r '.services.traefik.networks.mediastack.ipv4_address' <<<"$RENDERED_JSON")" == 172.31.250.2 ]] \
     || t_fail "Traefik has no fixed address"
+jq -e '.services.traefik.networks.mediastack.aliases | any(startswith("portal.")) and any(startswith("ldap."))' <<<"$RENDERED_JSON" >/dev/null \
+    || t_fail "inside the stack, the portal's and LDAP's names must lead to Traefik"
+# the script reaches Audiobookshelf on 127.0.0.1 only (mediastack.hostport: local)
+[[ "$(jq -r '[.services.audiobookshelf.ports[]? | select(.target == 13378) | .host_ip][0] // "none"' <<<"$RENDERED_JSON")" == 127.0.0.1 ]] \
+    || t_fail "Audiobookshelf's port must be 127.0.0.1 only"
 echo "OK every web interface declares mediastack.auth; the gate is on exactly the gated routes"

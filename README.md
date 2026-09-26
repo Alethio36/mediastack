@@ -538,7 +538,17 @@ portal username and password, and gets a Jellyfin account with every library on
 their first sign-in. `wire jellyfin` sets this up (one Jellyfin restart) and
 keeps Jellyfin administrator rights in step with the portal's `admins` group.
 The stack's own Jellyfin admin (in `credentials`) stays a local account: it is
-what the script uses, and your way in if the portal is ever down. While the portal runs, their host ports listen on 127.0.0.1 only —
+what the script uses, and your way in if the portal is ever down.
+
+Audiobookshelf signs people in through the portal (OIDC): its login page gets a
+"Log in with <portal name>" button; the account is made on the first sign-in
+(an existing one with the same username is matched instead), and the
+Audiobookshelf app signs in the same way. `wire audiobookshelf` does its first
+run itself — the root account it creates is the stack's own (in `credentials`,
+also the way in if the portal is down) — sets up the sign-in, and keeps admin
+rights in step with the portal's `admins` group. An Audiobookshelf set up by
+hand is never taken over: put its root login in `.env`, or start it fresh
+(wire prints how). Its libraries are yours to add in its UI. While the portal runs, their host ports listen on 127.0.0.1 only —
 the domain address is the way in — and the arrs trust the portal (one login;
 `wire arr` switches them, never before their ports are closed). Companion apps
 (nzb360, LunaSea, Home Assistant…) use the domain address: the arrs' and

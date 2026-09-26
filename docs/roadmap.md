@@ -258,9 +258,16 @@ all built; what each still leaves open is noted below.
      `media-users` or `admins` may sign in, created on first sign-in with every
      library; administrator rights follow `admins` for directory users; the
      stack's own Jellyfin admin stays a local account (the script's and the
-     emergency login). *Next:* Seerr following Jellyfin;
-     Audiobookshelf and Kavita through OIDC, their first run automated the same
-     way (the stack's own admin in each), roles from authentik groups.
+     emergency login). Seerr follows Jellyfin (proven). *Done:*
+     Audiobookshelf through OIDC — `wire audiobookshelf` does its first run
+     (the stack's root account), sets up sign-in through the portal (created on
+     first sign-in, matched by username), keeps admin rights in step with
+     `admins`; the portal's address leads to Traefik inside the stack (an app's
+     server talks to authentik there — production certificates required).
+     *Next:*
+     Kavita through OIDC, its first run automated the same way (the stack's own
+     admin), all libraries for new users, admin rights synced by wire; its
+     verified-email check off until the email server exists.
   6. Converting an existing install's users (Jellyfin local users to directory
      users, keeping watch history; Audiobookshelf/Kavita match by username) —
      test the Jellyfin LDAP takeover of an existing user first.

@@ -39,9 +39,10 @@ authentik_secrets() { # generate what is missing — never over a database that 
     done
     # the LDAP search account's password: the blueprint sets it on every apply,
     # so a new one is simply adopted — no database guard needed
-    if [[ -z "$(env_get AUTHENTIK_LDAP_BIND_PASSWORD)" ]]; then
-        env_set AUTHENTIK_LDAP_BIND_PASSWORD "$(authentik_secret 32)"; made=1
-    fi
+    local k2
+    for k2 in AUTHENTIK_LDAP_BIND_PASSWORD AUTHENTIK_ABS_CLIENT_SECRET; do
+        [[ -n "$(env_get "$k2")" ]] || { env_set "$k2" "$(authentik_secret 48)"; made=1; }
+    done
     (( made )) && ok "authentik: secrets generated (the admin login: ./mediastack.sh credentials)"
     return 0
 }
@@ -223,6 +224,10 @@ authentik_household() { # the enabled household apps (mediastack.user_facing) �
     return 0
 }
 
+authentik_oidc_issuer() { # authentik_oidc_issuer SVC -> the issuer of its household card's OIDC provider
+    echo "$(authentik_portal)/application/o/mediastack-app-$1/"
+}
+
 authentik_invite() { # authentik_invite DAYS -> a single-use sign-up link, printed
     local days="$1" flow name exp out pk
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
@@ -283,6 +288,8 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
             [[ -z "$open" ]] || d_fail "gated tools reachable by IP, around the portal: $open" \
                 "their host ports are not bound to 127.0.0.1 yet" "./mediastack.sh up"
             if [[ -n "$(authentik_gated)" ]]; then
+                local hg=""; for g in $(authentik_household); do [[ -n "$(svc_label "$g" mediastack.auth.group)" ]] && hg+="$g "; done
+                [[ -n "$hg" ]] && ok "authentik: household gate — ${hg}ask the portal first (media-users and admins)"
                 if authentik_gate_attached; then ok "authentik: the gate is up — $(authentik_gated | tr '\n' ' ')ask the portal first (admins only)"
                 else d_fail "authentik: the gate is not on its built-in outpost" "routes marked gate ($(authentik_gated | tr '\n' ' '| sed 's/ $//')) refuse everyone" "./mediastack.sh wire authentik"; fi
             fi
