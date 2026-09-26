@@ -1416,7 +1416,10 @@ wire_seerr() {
     svc_enabled seerr || { info "seerr not enabled — skipped"; return 0; }
     svc_enabled jellyfin || { wfail "seerr is enabled but jellyfin is not — seerr cannot function without it"; return 1; }
     wire_gate seerr jellyfin
-    http_ready seerr "$(seerr_url)/api/v1/status" '^200$' || return 1
+    # /settings/public, not /status: /status asks GitHub for the latest release
+    # on every call, so without outbound DNS it outlasts the probe (seen live:
+    # EAI_AGAIN on api.github.com, HTTP 000 for 90s on a healthy seerr)
+    http_ready seerr "$(seerr_url)/api/v1/settings/public" '^200$' || return 1
     local jar pub
     jar=$(mktemp)
     pub=$(seerr_api GET /settings/public "$jar" || true)   # soft read: unread = uninitialised: the hostname re-send below is handled as already configured

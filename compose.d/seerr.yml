@@ -42,7 +42,8 @@ services:
       mediastack.cache: "true"
       mediastack.subdomain: "requests"
     healthcheck:
-      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5055/api/v1/status || exit 1"]
+      # settings/public, not status: status asks GitHub for the latest release on every call
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:5055/api/v1/settings/public || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
