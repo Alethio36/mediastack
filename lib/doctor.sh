@@ -442,7 +442,7 @@ _doctor_runtime_audit() {
 
 # doctor runs these in order; adding a section = append here + define
 # _doctor_<name>. Mirrors WIRE_ROLES: one registry, no second list to sync.
-DOCTOR_SECTIONS=(env environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit notify audit recycle footprint)
+DOCTOR_SECTIONS=(env environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit accounts notify audit recycle footprint)
 
 cmd_doctor() {
     load_env; need_cmd jq; render

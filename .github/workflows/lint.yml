@@ -51,6 +51,8 @@ jobs:
         run: scripts/test-upgrade.sh
       - name: deletion attribution's host contract (scripts/test-audit.sh)
         run: scripts/test-audit.sh
+      - name: the authentik shard's rules — upgrade path, secrets, account model (scripts/test-authentik.sh)
+        run: scripts/test-authentik.sh
       - name: a service and its private containers are one shard (scripts/test-shard.sh)
         run: scripts/test-shard.sh
       - name: notification routing and the notify verb (scripts/test-notify.sh)

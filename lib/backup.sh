@@ -405,6 +405,11 @@ cmd_update() {
         RENDERED_JSON=""
     fi
 
+    # authentik takes its releases in order and never goes back: check the
+    # step to what this run would start (a --to pin included) before pulling
+    if printf '%s\n' "${targets[@]}" | grep -qx authentik; then
+        RENDERED_JSON=""; authentik_release_check
+    fi
     hr "Pulling images"
     info "pulling from registries — the slowest step on a full update; a minute or two is normal"
     local after changed=()
@@ -475,6 +480,7 @@ cmd_update() {
         exit 1
     fi
     ok "All updated services healthy."
+    printf '%s\n' "${targets[@]}" | grep -qx authentik && authentik_release_record
     (( notify_users )) && notify_interruption "$ntitle complete" "$ndone" success
     (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '`%s`\n' "${changed[@]}")" success
 

@@ -68,6 +68,8 @@ source "$SCRIPT_DIR/lib/recycle.sh"
 source "$SCRIPT_DIR/lib/footprint.sh"
 # shellcheck source=lib/notify.sh
 source "$SCRIPT_DIR/lib/notify.sh"
+# shellcheck source=lib/authentik.sh
+source "$SCRIPT_DIR/lib/authentik.sh"
 # shellcheck source=lib/configure.sh
 source "$SCRIPT_DIR/lib/configure.sh"
 # shellcheck source=lib/lifecycle.sh
@@ -229,6 +231,23 @@ shard_health() { # shard_health <primary> -> the primary's health, or "degraded"
     done
     c_health "$(svc_cname "$1")"
 }
+svc_conflicts() { # svc_conflicts <svc> -> the services it may never run beside (mediastack.conflicts, either side declares)
+    render
+    jq -r --arg s "$1" '.services as $all
+        | ([($all[$s].labels["mediastack.conflicts"] // "") | split(" ")[] | select(. != "")]
+           + [$all | to_entries[] | select((.value.labels["mediastack.conflicts"] // "") | split(" ") | index($s)) | .key])
+        | unique[]' <<<"$RENDERED_JSON"
+}
+conflicts_in() { # conflicts_in SERVICE... -> "a b" for every pair in the set that may not run together
+    local s c set=" $* "
+    for s in "$@"; do
+        for c in $(svc_conflicts "$s"); do
+            [[ "$set" == *" $c "* && "$s" < "$c" ]] && echo "$s $c"
+        done
+    done
+    return 0
+}
+
 shard_problems() { # every shard rule the rendered config breaks, one line each (CI: test-render)
     render
     jq -r '.services as $all | $all | to_entries[] | select(.value.labels["mediastack.shard"] != null)
@@ -281,8 +300,10 @@ svc_url() { # where a browser reaches the service, best effort
 }
 svc_deps()     { # direct dependencies: depends_on + shared network namespace
     render
-    jq -r --arg s "$1" '.services[$s]
-        | ((.depends_on // {}) | keys[]?),
+    # a shard member is never a dependency of its own: it comes with its
+    # primary's profile, so it is not a service to enable
+    jq -r --arg s "$1" '.services as $all | $all[$s]
+        | (((.depends_on // {}) | keys[]?) | select(($all[.].labels["mediastack.shard"] // "") == "")),
           (if ((.network_mode // "") | startswith("service:"))
            then (.network_mode | ltrimstr("service:")) else empty end)' \
         <<<"$RENDERED_JSON" | sort -u
@@ -407,6 +428,18 @@ provision() {
         if [[ $(svc_label "$s" mediastack.config) == "true" ]]; then
             sudo mkdir -p "$croot/$s"
             [[ -n "$uid" ]] && sudo chown "$uid:mediacenter" "$croot/$s"
+            # a shard keeps each container's data in its own subfolder of the
+            # primary's (authentik: data/, db/, ...): create any missing one
+            # owned right, or docker makes it root's and the container cannot write
+            local sub m
+            while read -r sub; do
+                [[ -n "$sub" ]] || continue
+                sudo sh -c 'test -e "$1" && exit 0; mkdir -p "$1" && { [ -z "$2" ] || chown "$2:mediacenter" "$1"; }' \
+                    _ "$sub" "$uid" </dev/null
+            done < <(for m in $(svc_shard "$s"); do
+                         jq -r --arg m "$m" --arg p "$croot/$s/" '(.services[$m].volumes // [])[]
+                             | select(.type == "bind" and (.source | startswith($p))) | .source' <<<"$RENDERED_JSON"
+                     done | sort -u)
         fi
         if [[ $(svc_label "$s" mediastack.cache) == "true" ]]; then
             sudo mkdir -p "$cache/$s"
@@ -557,6 +590,7 @@ cmd_up()   {
     provision >/dev/null
     uid_handover
     traefik_ensure
+    authentik_prepare
     if ! DC up -d --remove-orphans; then
         warn "First start attempt failed — usually gluetun's health race after a recreate."
         info "Waiting for the tunnel (up to ${START_WAIT}s)..."
@@ -568,6 +602,7 @@ cmd_up()   {
     fi
     vpn_reattach_guard   # fail-closed: no service may run pinned to a dead gluetun
     vpnguard_ensure      # (re)install the boot/daemon guard unit
+    svc_enabled authentik && authentik_release_record
     ok "Stack started."
     wire_repoint_pending # a VPN toggle moved a service: re-point what calls it
     cat <<'EOT'
@@ -590,6 +625,13 @@ cmd_enable() {
     local svc="${1:?usage: enable <service>}"; load_env
     svc_exists "$svc" || die "No service '$svc'. Known: $(svc_managed | tr '\n' ' ')"
     svc_enabled "$svc" && { ok "'$svc' already enabled."; return; }
+    local c
+    for c in $(svc_conflicts "$svc"); do
+        svc_enabled "$c" && die "'$svc' and '$c' do the same job two ways and cannot both run:
+    $svc — $(svc_label "$svc" mediastack.desc)
+    $c — $(svc_label "$c" mediastack.desc)
+  Disable '$c' first (./mediastack.sh disable $c), then enable '$svc'."
+    done
     local sel cur; cur=$(env_get COMPOSE_PROFILES | tr ',' ' ')
     # shellcheck disable=SC2086  # word splitting intended: service list
     sel=$(resolve_deps "$svc" $cur)
@@ -599,6 +641,7 @@ cmd_enable() {
     require_mounts; provision >/dev/null   # users/dirs for the new services
     uid_handover
     traefik_ensure   # wizard + config gen if traefik just came into the set
+    authentik_prepare
     DC up -d --remove-orphans; ok "'$svc' enabled and started."
 }
 cmd_disable() {
