@@ -184,15 +184,17 @@ footprint_unmarked_note() { # entries for the stack's roots that add-mount did n
 # ------------------------------------------------------------------ doctor --
 _doctor_footprint() {
     hr "doctor: on this host, outside this folder"
-    local feat kind path act n=0
+    local feat kind path act n=0 users=0
     while IFS=$'\t' read -r feat kind path act; do
         n=$((n + 1))
+        [[ "$feat" == users && "$kind" == user ]] && { users=$((users + 1)); continue; }   # one line for all of them, below
         case "$act" in
             keep) info "$feat: $path (kept by uninstall)" ;;
             ask)  info "$feat: $path (uninstall asks before removing it)" ;;
             *)    info "$feat: $path" ;;
         esac
     done < <(footprint_present)
+    (( users )) && info "users: $users service users in the mediacenter group (uninstall asks, tier 2)"
     (( n )) || info "nothing"
     local r m
     while IFS=$'\t' read -r m _; do   # a marked mount that no longer holds any root

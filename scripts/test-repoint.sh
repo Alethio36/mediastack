@@ -26,6 +26,10 @@ SCRIPT_DIR=$T
 # shellcheck disable=SC2034
 WIRED_FILE=$T/wired                             # the "wire has run" marker
 # shellcheck disable=SC2034
+STATE_DIR=$T/state
+# shellcheck disable=SC2034
+LOCAL_DIR=$T
+# shellcheck disable=SC2034
 RENDERED_JSON='{"services":{
   "radarr":{"labels":{"mediastack.arrtype":"radarr","mediastack.vpn":"true","mediastack.vpntoggle":"true"}},
   "apprise":{"labels":{"mediastack.vpn":"true","mediastack.vpntoggle":"true"}},
@@ -56,11 +60,11 @@ done < <(grep -hoE 'svc_(addr|host|cport) [a-z][a-z0-9-]*' lib/integrations.sh l
 vpn_base_json() { echo "$RENDERED_JSON"; }
 vpn_gen() { :; }
 cmd_vpn apprise on >/dev/null                  # already on (label default): no move
-eq "no change, no mark" "$(env_get WIRE_REPOINT)" ""; pass
+eq "no change, no mark" "$(state_get WIRE_REPOINT)" ""; pass
 cmd_vpn apprise off >/dev/null
 cmd_vpn radarr off >/dev/null
 cmd_vpn apprise on >/dev/null                  # moves back: already marked, not twice
-eq "marked once each" "$(env_get WIRE_REPOINT)" "apprise radarr"; pass
+eq "marked once each" "$(state_get WIRE_REPOINT)" "apprise radarr"; pass
 
 # the re-point step
 CALLS=$T/calls
@@ -68,24 +72,24 @@ cmd_wire() { echo "$1" >> "$CALLS"; [[ " ${FAIL_ROLES:-} " != *" $1 "* ]]; }
 : > "$CALLS"
 wire_repoint_pending > "$T/out"
 eq "never wired: no roles run" "$(cat "$CALLS")" ""; pass
-eq "never wired: marker cleared" "$(env_get WIRE_REPOINT)" ""; pass
+eq "never wired: marker cleared" "$(state_get WIRE_REPOINT)" ""; pass
 
 touch "$WIRED_FILE"
 repoint_mark apprise; repoint_mark radarr
 : > "$CALLS"
 wire_repoint_pending > "$T/out"
 eq "roles in wire order, once each" "$(tr '\n' ' ' < "$CALLS")" "prowlarr bazarr apprise cleanuparr seerr "; pass
-eq "success clears the marker" "$(env_get WIRE_REPOINT)" ""; pass
+eq "success clears the marker" "$(state_get WIRE_REPOINT)" ""; pass
 
 repoint_mark apprise
 : > "$CALLS"
 set +e; FAIL_ROLES=cleanuparr wire_repoint_pending > "$T/out"; rc=$?; set -e
 [[ $rc == 1 ]] || fail_ "a failed role must fail the step (rc=$rc)"; pass
 eq "every role still attempted" "$(tr '\n' ' ' < "$CALLS")" "apprise cleanuparr seerr "; pass
-eq "failure keeps the marker for the next up" "$(env_get WIRE_REPOINT)" "apprise"; pass
+eq "failure keeps the marker for the next up" "$(state_get WIRE_REPOINT)" "apprise"; pass
 grep -q 'wire cleanuparr reported failures' "$T/out" || fail_ "the failure must name the role: $(cat "$T/out")"; pass
 
 wire_repoint_pending > /dev/null
-eq "nothing pending: no-op" "$(env_get WIRE_REPOINT)" ""; pass
+eq "nothing pending: no-op" "$(state_get WIRE_REPOINT)" ""; pass
 
 echo "OK repoint: $checks checks"

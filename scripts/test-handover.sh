@@ -27,6 +27,8 @@ source "$lib"
 LOCAL_DIR=$T/local
 # shellcheck disable=SC2034
 ENV_BACKUP_DIR=$T/local/env-backups
+# shellcheck disable=SC2034
+STATE_DIR=$T/local/state
 ENV_FILE=$T/.env
 printf 'ENV_SCHEMA=22\nMEDIA_GROUP_GID=%s\nCONFIG_ROOT=%s/config\nCACHE_ROOT=%s/cache\nDATA_ROOT=%s/data\nAUDIOBOOKSHELF_UID=%s\nKAVITA_UID=%s\n' \
     "$(id -g)" "$T" "$T" "$T" "$(id -u)" "$(id -u)" > "$ENV_FILE"
@@ -52,7 +54,7 @@ touch "$T/running.mediastack-kavita" "$T/running.mediastack-audiobookshelf"
 
 # 1. migration marks only — no stop, no chown
 migrate_env >/dev/null
-[[ "$(env_get UID_HANDOVER)" == "audiobookshelf kavita" ]] || fail_ "migration must set UID_HANDOVER"; pass
+[[ "$(state_get UID_HANDOVER)" == "audiobookshelf kavita" ]] || fail_ "migration must set UID_HANDOVER"; pass
 [[ ! -s "$T/log" ]] || fail_ "migration must not stop or chown anything: $(cat "$T/log")"; pass
 [[ -f "$T/running.mediastack-kavita" ]] || fail_ "migration stopped kavita"; pass
 
@@ -61,7 +63,7 @@ touch "$T/chown-fails"
 set +e; out=$( ( set -e; uid_handover ) 2>&1 ); rc=$?; set -e
 [[ $rc != 0 ]] || fail_ "a failed chown must stop the handover"; pass
 grep -q 'UID_HANDOVER is kept' <<<"$out" || fail_ "failure must say the marker is kept: $out"; pass
-[[ -n "$(env_get UID_HANDOVER)" ]] || fail_ "failure must keep UID_HANDOVER"; pass
+[[ -n "$(state_get UID_HANDOVER)" ]] || fail_ "failure must keep UID_HANDOVER"; pass
 rm -f "$T/chown-fails"
 
 # 2. stop comes before any chown, for each service
@@ -74,7 +76,7 @@ for s in audiobookshelf kavita; do
 done
 grep -q "chown -R .* $T/cache/audiobookshelf" "$T/log" || fail_ "audiobookshelf cache must be handed over"; pass
 grep -q "find $T/data/media/podcasts -mindepth 1 -user 0" "$T/log" || fail_ "only root-owned media entries may be handed over"; pass
-[[ -z "$(env_get UID_HANDOVER)" ]] || fail_ "success must clear UID_HANDOVER"; pass
+[[ -z "$(state_get UID_HANDOVER)" ]] || fail_ "success must clear UID_HANDOVER"; pass
 
 # 4. second up is a no-op
 : > "$T/log"
