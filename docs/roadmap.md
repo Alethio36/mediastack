@@ -152,9 +152,11 @@ in place (docs/disaster-recovery.md); still to build:
     yet mounted (reboot a host with an NFS media root; doctor's live check
     catches it either way); SMB (doctor warns); ARM and the other 64-bit
     architectures (the calls come from `ausyscall`, never proven on a real
-    one); and the parser's hand-built cases — hex-encoded names (any path with
-    a space), a rename over an existing file, `log_format=RAW` — until a real
-    capture of each replaces its line in `scripts/fixtures/audit-synthetic.raw`.
+    one); and the parser's hand-built cases — `log_format=RAW`, a nested
+    `rm -r` (a folder inside the folder being removed) — until a real capture
+    of each replaces its lines in `scripts/fixtures/audit-synthetic.raw`. Hex
+    names, a rename over an existing file and `rm -r` naming files only
+    relative to their open folder are proven live (`audit2.raw`).
 
 ### Extensibility
 - An easier path to add services *beyond* the built-in framework.

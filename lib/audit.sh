@@ -31,7 +31,9 @@
 #   path : host path. A container logs its own view (/data/media/x); it is
 #          translated through that service's bind mounts. When the UID maps
 #          to no service, or its mounts do not cover the path, it stays as
-#          "container:<path>" — never guessed.
+#          "container:<path>" — never guessed. A name logged relative to an
+#          open directory (rm -r, find -delete) is placed through its folder's
+#          inode when this batch saw that folder, else "(unknown folder)/name".
 # Paths escape \ tab newline as \\ \t \n. Only the kernel's numeric fields are
 # read: the readable names auditd may append (log_format=ENRICHED) come from
 # the host's user database and are not relied on.
@@ -306,10 +308,15 @@ audit_parse() { # stdin: `ausearch --raw` output; $1 $2: the last event already 
         if (rest ~ /^"/) { match(rest, /^"[^"]*"/); return substr(rest, 1, RLENGTH) }
         match(rest, /^[^ ]*/); return substr(rest, 1, RLENGTH)
     }
-    function absolute(p, c) {   # a relative name is relative to the caller'"'"'s working directory
-        if (p == "" || p ~ /^\//) return p
-        if (c == "") c = "/"
-        return (c ~ /\/$/ ? c : c "/") p
+    function trim(p) { return (p != "/" && p ~ /\/$/) ? substr(p, 1, length(p) - 1) : p }
+    function resolve(nm, pk, dirfd, c) {   # a name as logged -> an absolute path, or one marked unknown
+        if (nm == "" || nm ~ /^\//) return nm
+        if (pk in dirpath) return dirpath[pk] "/" nm   # its folder, known by inode from this batch
+        # a real directory handle is a small number (seen live: a0=4); AT_FDCWD
+        # (ffffff9c) or a pointer (the plain unlink/rename/rmdir calls) means
+        # the name is relative to the working directory
+        if (length(dirfd) > 4) return trim(c == "" ? "/" : c) "/" nm
+        return "(unknown folder)/" nm   # relative to an open directory the log does not name
     }
     function esc(v,   i, c, o) {
         o = ""
@@ -328,15 +335,34 @@ audit_parse() { # stdin: `ausearch --raw` output; $1 $2: the last event already 
         type = substr(line, 6); sub(/ .*/, "", type)
         if (type == "SYSCALL") {
             k[id] = decode(field(line, "key")); au[id] = field(line, "auid"); u[id] = field(line, "uid")
+            a0[id] = field(line, "a0"); a2[id] = field(line, "a2")   # the dirfds of unlinkat / renameat*
         } else if (type == "CWD") {
             cwd[id] = decode(field(line, "cwd"))
         } else if (type == "PATH") {
-            nt = field(line, "nametype"); nm = decode(field(line, "name"))
-            if (nt == "DELETE") { nd[id]++; dn[id, nd[id]] = nm; dm[id, nd[id]] = field(line, "mode") }
+            nt = field(line, "nametype"); nm = decode(field(line, "name")); key_ = field(line, "dev") ":" field(line, "inode")
+            if (nt == "PARENT") { np[id]++; pn[id, np[id]] = nm; pk[id, np[id]] = key_ }
+            else if (nt == "DELETE") { nd[id]++; dn[id, nd[id]] = nm; dm[id, nd[id]] = field(line, "mode"); dk[id, nd[id]] = key_ }
             else if (nt == "CREATE") cr[id] = nm
         }
     }
     END {
+        # folders by inode, for names logged relative to an open directory:
+        # learnt from absolute names only (the PARENT of a relative name can be
+        # a bogus "/"), then newest-first so rm -r, which empties a folder
+        # before removing it, resolves each level from the one above
+        for (i = 1; i <= n; i++) {
+            id = order[i]; if (k[id] != key) continue
+            for (j = 1; j <= nd[id]; j++) if (dn[id, j] ~ /^\// && dm[id, j] ~ /^04/) dirpath[dk[id, j]] = trim(dn[id, j])
+            if (dn[id, 1] ~ /^\// || cr[id] ~ /^\//) for (j = 1; j <= np[id]; j++) if (pn[id, j] ~ /^\//) dirpath[pk[id, j]] = trim(pn[id, j])
+        }
+        for (i = n; i >= 1; i--) {
+            id = order[i]; if (k[id] != key) continue
+            for (j = 1; j <= nd[id]; j++) {
+                rn[id, j] = resolve(dn[id, j], pk[id, 1], a0[id], cwd[id])
+                if (dm[id, j] ~ /^04/ && rn[id, j] ~ /^\//) dirpath[dk[id, j]] = rn[id, j]
+            }
+            rc[id] = resolve(cr[id], pk[id, np[id] > 1 ? 2 : 1], a2[id], cwd[id])
+        }
         for (i = 1; i <= n; i++) {
             id = order[i]
             if (k[id] != key) continue   # rule loads: their CONFIG_CHANGE has the key, their SYSCALL does not
@@ -345,16 +371,15 @@ audit_parse() { # stdin: `ausearch --raw` output; $1 $2: the last event already 
             if (lastt == "" || ts[1] + 0 > lastt + 0 || (ts[1] + 0 == lastt + 0 && ts[2] + 0 > lasts + 0)) { lastt = ts[1]; lasts = ts[2] }
             old = ""; op = ""
             if (!nd[id]) {   # ours, but no DELETE record: a shape this parser does not know — shown, never dropped
-                op = "unparsed"; new = absolute(cr[id], cwd[id])
+                op = "unparsed"; new = rc[id]
             } else if (cr[id] != "") {   # a rename: the DELETE that is not the new name is the old one
                 op = "rename"
-                for (j = 1; j <= nd[id]; j++) { if (dn[id, j] == cr[id]) op = "rename-over"; else if (old == "") old = dn[id, j] }
-                new = absolute(cr[id], cwd[id])
+                for (j = 1; j <= nd[id]; j++) { if (dn[id, j] == cr[id]) op = "rename-over"; else if (old == "") old = rn[id, j] }
+                new = rc[id]
             } else {
-                old = dn[id, 1]; new = ""
+                old = rn[id, 1]; new = ""
                 op = (dm[id, 1] ~ /^04/) ? "rmdir" : "delete"
             }
-            old = absolute(old, cwd[id])
             if (old ~ canary || new ~ canary) continue
             print "E\t" ts[1] "\t" ts[2] "\t" au[id] "\t" u[id] "\t" op "\t" esc(old) "\t" esc(new)
         }
@@ -380,7 +405,7 @@ audit_attribute() { # stdin: audit_parse's E lines; $1 ROOT, $2 uid map, $3 moun
         return best
     }
     function host(p, id,   n, c, j, h, out) {
-        if (p == "" || p == root || index(p, root "/") == 1) return p   # already a host path under the watched root
+        if (p == "" || p == root || index(p, root "/") == 1 || p ~ /^\(/) return p   # a host path under the root, or marked unknown
         if (!(id in svc)) return "container:" p
         n = split(svc[id], c, "|"); out = ""
         for (j = 1; j <= n; j++) {   # a shared UID: every candidate must agree
@@ -405,7 +430,8 @@ audit_uidmap() { # uid <TAB> service for every managed service with a *_UID; a s
     for s in $(svc_managed); do
         id=$(env_get "$(uvar "$s")_UID")
         [[ -n "$id" ]] && printf '%s\t%s\n' "$id" "$s"
-    done | awk -F'\t' '{ m[$1] = ($1 in m) ? m[$1] "|" $2 : $2 } END { for (u in m) print u "\t" m[u] }' | sort
+    done | awk -F'\t' '{ if ($1 in m) m[$1] = m[$1] "|" $2; else m[$1] = $2 }   # not a ?: — mawk creates m[$1] before testing it
+                       END { for (u in m) print u "\t" m[u] }' | sort
 }
 
 audit_mounts() { # service <TAB> container path <TAB> host path, for every bind mount
