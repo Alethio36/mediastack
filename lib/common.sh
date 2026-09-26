@@ -41,7 +41,7 @@ repo_owned() { # repo_owned <path>... — what the script makes in the repo belo
     # The panel and every timer run this script as root; the operator's CLI runs
     # it as themselves. A file or folder a root run created would otherwise lock
     # the operator out of it (a root-owned local/ refuses their overlay, a
-    # root-owned .pins.yml refuses their pin). Root hands it over; a normal
+    # root-owned local/pins.yml refuses their pin). Root hands it over; a normal
     # user already owns what they create, so this is a no-op for them.
     (( $(id -u) == 0 )) || return 0
     chown "$(stat -c '%u:%g' "$SCRIPT_DIR")" "$@"

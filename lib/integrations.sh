@@ -144,7 +144,7 @@ wire_repoint_pending() { # after `up`: re-point the callers of every service a V
     local pending s role want="" roles="" failed=""
     pending=$(env_get WIRE_REPOINT); [[ -n "$pending" ]] || return 0
     # never wired: no app holds an address yet, so nothing can be stale
-    [[ -f "$SCRIPT_DIR/.wired" ]] || { env_del WIRE_REPOINT; return 0; }
+    [[ -f "$WIRED_FILE" ]] || { env_del WIRE_REPOINT; return 0; }
     for s in $pending; do want+=" $(wire_callers "$s" | tr '\n' ' ')"; done
     for role in "${WIRE_ROLES[@]}"; do [[ " $want " == *" $role "* ]] && roles+="$role "; done   # wire's own order
     [[ -n "$roles" ]] || { env_del WIRE_REPOINT; return 0; }
@@ -1663,7 +1663,7 @@ cmd_wire() {
     elif (( WIRE_DRY )); then
         hr "wire --dry-run: showing changes, touching nothing"
     fi
-    if (( ! WIRE_DRY )) && [[ ! -f "$SCRIPT_DIR/.wired" ]]; then
+    if (( ! WIRE_DRY )) && [[ ! -f "$WIRED_FILE" ]]; then
         if confirm "First wire on this deployment — take a restore point first? (recommended)"; then
             cmd_backup
             # the backup bounced every container — let the apps come back
@@ -1699,7 +1699,7 @@ cmd_wire() {
         info "dry-run complete: $WIRE_CHANGES change(s) would be applied. Run without --dry-run to apply."
         info "note: items marked as pending on credentials resolve mid-run — the real run creates them in order."
     else
-        touch "$SCRIPT_DIR/.wired"; repo_owned "$SCRIPT_DIR/.wired"
+        mkdir -p "$LOCAL_DIR"; touch "$WIRED_FILE"; repo_owned "$LOCAL_DIR" "$WIRED_FILE"
         if (( WIRE_FAILS )); then
             fail "wire finished with $WIRE_FAILS failure(s) — see the FAIL lines above. Re-run after fixing; completed items just skip."
             exit 1

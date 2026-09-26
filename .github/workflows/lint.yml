@@ -51,6 +51,8 @@ jobs:
         run: scripts/test-upgrade.sh
       - name: deletion attribution's host contract (scripts/test-audit.sh)
         run: scripts/test-audit.sh
+      - name: where things live — the layout move and your compose files (scripts/test-layout.sh)
+        run: scripts/test-layout.sh
       - name: the arr recycle bin's contract (scripts/test-recycle.sh)
         run: scripts/test-recycle.sh
       - name: no literal backslash-n in notification bodies

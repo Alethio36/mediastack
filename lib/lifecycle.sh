@@ -63,12 +63,12 @@ cmd_upgrade() {
     need_cmd git
     # second half, run by the freshly pulled script (see the hand-over below)
     if [[ -n "${MS_UPGRADE_FROM:-}" ]]; then upgrade_finish "$MS_UPGRADE_FROM"; return; fi
-    # -uno: untracked files (like the .wired marker) are deployment state,
+    # -uno: untracked files (.env, custom/, local/) are deployment state,
     # not a pull hazard — only tracked modifications block an upgrade.
     [[ -z "$(git status --porcelain -uno 2>/dev/null)" ]] || die "Working tree has local changes to tracked files.
-  Mediastack keeps user state in .env / override files, so tracked files
+  Mediastack keeps your state in .env and custom/, so tracked files
   should be clean. Review 'git status', stash or move changes into
-  docker-compose.override.yml, then retry."
+  custom/ (docs/adding-a-service.md), then retry."
     local before; before=$(git rev-parse HEAD)
     git pull --ff-only || die "git pull failed (diverged history?). Resolve manually."
     [[ "$before" == "$(git rev-parse HEAD)" ]] && { ok "Already up to date."; return; }

@@ -1,8 +1,9 @@
 # Mediastack — root compose file.
 # This file defines the project identity and pulls in service fragments.
 # Do not add services here: add a file under compose.d/ instead
-# (see docs/adding-a-service.md). User customisations belong in
-# docker-compose.override.yml (gitignored, auto-loaded by compose).
+# (see docs/adding-a-service.md). Your own services belong in
+# custom/compose.d/, changes to shipped ones in custom/override.yml —
+# gitignored, passed to compose by mediastack.sh on every run.
 
 name: mediastack
 

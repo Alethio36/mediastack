@@ -58,6 +58,7 @@ cmd_backup() {
     done
     sudo cp "$ENV_FILE" "$dest/env"; sudo chmod 600 "$dest/env"
     [[ -s "$PINS_FILE" ]] && sudo cp "$PINS_FILE" "$dest/pins.yml"
+    [[ -d "$CUSTOM_DIR" ]] && { sudo tar -C "$SCRIPT_DIR" -czf "$dest/custom.tar.gz" custom || { fail "tar failed for custom/"; rc=1; }; }
     ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' )
     info "Restarting stack... (waiting on gluetun health; can take up to ~1min)"
     DC up -d >/dev/null
@@ -189,7 +190,8 @@ cmd_backup_verify() {
 
 # ------------------------------------------------- restore / rollback / pin --
 pin_service() { # pin_service svc image_ref
-    touch "$PINS_FILE"
+    mkdir -p "$LOCAL_DIR"; repo_owned "$LOCAL_DIR"
+    touch "$PINS_FILE"; repo_owned "$PINS_FILE"
     grep -q '^services:' "$PINS_FILE" || echo "services:" > "$PINS_FILE"
     if grep -q "^  $1:" "$PINS_FILE"; then
         # replace the image line following the service key

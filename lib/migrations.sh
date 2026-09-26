@@ -16,7 +16,8 @@ migrate_env() {
         # the schema is part of the name: several steps run within one second,
         # and a timestamp alone made each overwrite the last (only the newest
         # pre-migration state survived — never the file the user started with)
-        local bak; bak="$ENV_FILE.bak.$(date +%Y%m%d%H%M%S).schema$have"
+        local bak; bak="$ENV_BACKUP_DIR/.env.bak.$(date +%Y%m%d%H%M%S).schema$have"
+        install -d -m 700 "$ENV_BACKUP_DIR"; repo_owned "$LOCAL_DIR" "$ENV_BACKUP_DIR"
         cp "$ENV_FILE" "$bak"; repo_owned "$bak"
         local next=$((have + 1))
         info "Migrating .env schema $have -> $next (backup written)"
@@ -24,7 +25,14 @@ migrate_env() {
         env_set ENV_SCHEMA "$next"
         have=$next
     done
-    :
+    env_backups_prune
+}
+
+env_backups_prune() { # keep the oldest .env backup (the file you started with) and the newest ENV_BACKUP_KEEP-1
+    local -a all=() f
+    for f in "$ENV_BACKUP_DIR"/.env.bak.*; do [[ -e "$f" ]] && all+=("$f"); done   # a glob sorts by name = by date
+    (( ${#all[@]} > ENV_BACKUP_KEEP )) || return 0
+    for f in "${all[@]:1:${#all[@]}-ENV_BACKUP_KEEP}"; do rm -f "$f"; done
 }
 migrate_env_0_to_1() { :; } # base schema: nothing to do
 migrate_env_1_to_2() {
@@ -200,4 +208,29 @@ migrate_env_26_to_27() {
     warn "New: the arr recycle bin is ON. Files an arr deletes or replaces on an upgrade are moved to DATA_ROOT/recycle and kept $(env_get RECYCLE_DAYS 7) days."
     warn "  It uses space on the media drive (a 4K remux can be 50+ GB); doctor and the nightly manifest warn when it grows."
     warn "  Applied at the next: ./mediastack.sh wire arr   —   turn it off first with RECYCLE_ENABLED=false in .env"
+}
+migrate_env_27_to_28() {
+    # the repo root's layout: what you write moves to custom/, what the
+    # script generates to local/ (README: "Where things live"). Idempotent —
+    # an interrupted run finishes on the next; both copies present stops it.
+    layout_move "$SCRIPT_DIR/docker-compose.override.yml" "$OVERRIDE_FILE"
+    layout_move "$LOCAL_DIR/proxy.d" "$PROXY_DIR"
+    layout_move "$LOCAL_DIR/trash-overrides.yml" "$TRASH_OVERRIDES"
+    layout_move "$SCRIPT_DIR/.pins.yml" "$PINS_FILE"
+    layout_move "$SCRIPT_DIR/.wired" "$WIRED_FILE"
+    local b
+    for b in "$SCRIPT_DIR"/.env.bak.*; do
+        [[ -e "$b" ]] && layout_move "$b" "$ENV_BACKUP_DIR/${b##*/}"
+    done
+    env_del TRAEFIK_LOCAL_PROXY   # was written, never read: traefik-setup copies custom/proxy.d in
+    info "Layout: your files are now in custom/ (override.yml, compose.d/, proxy.d/, trash-overrides.yml),"
+    info "  the script's in local/ (pins, VPN overlay, .env backups). README: \"Where things live\"."
+}
+layout_move() { # layout_move OLD NEW — move once; both present is a conflict for you to settle
+    [[ -e "$1" ]] || return 0
+    [[ -e "$2" ]] && die "Both $1 and $2 exist — compare them, keep the one you want at
+  $2, delete the other, then re-run. Nothing else was changed."
+    mkdir -p "$(dirname "$2")"; repo_owned "$(dirname "$2")"   # mkdir, not install -d: never loosen an existing folder's mode
+    mv "$1" "$2"; repo_owned "$2"
+    info "moved ${1#"$SCRIPT_DIR"/} -> ${2#"$SCRIPT_DIR"/}"
 }

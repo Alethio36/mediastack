@@ -150,7 +150,7 @@ Check
 Other
 | command | what it does |
 |---|---|
-| `new-service <name>` | interactive: define, enable and start your own service in `docker-compose.override.yml` (untracked, upgrade-safe) |
+| `new-service <name>` | interactive: define, enable and start your own service in `custom/compose.d/<name>.yml` (untracked, upgrade-safe) |
 | `uninstall [--nuke]` | tiered removal; `--nuke` = everything, one confirmation. Media and backups are never touched |
 | `menu` | interactive menu wrapping all of the above |
 | `help` | the command list (also: no arguments) |
@@ -244,18 +244,33 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
 * **Machine-managed settings are marked.** Synced quality profiles carry a
   `[synced]` prefix and a banner custom format; hand edits to them are
   reverted nightly by design — durable tuning goes in
-  `local/trash-overrides.yml` ([docs/trash-sync.md](docs/trash-sync.md)).
+  `custom/trash-overrides.yml` ([docs/trash-sync.md](docs/trash-sync.md)).
 * **`git pull` is always safe.** Your state lives in `.env` and gitignored
   dirs; tracked files are never written at runtime. `upgrade` wraps pull +
   config migration.
+
+## Where things live
+
+| Where | What | Who writes it |
+|---|---|---|
+| repo root | the code (`mediastack.sh`, `lib/`, `compose.d/`, `docs/`) | the project — `upgrade` replaces it |
+| `.env` | every setting | you (and `configure`) |
+| `custom/` | `override.yml` (changes to shipped services), `compose.d/` (your own services, one file each), `proxy.d/` (your own Traefik routes), `trash-overrides.yml` | you — never touched by the script's upgrades, saved in every restore point |
+| `local/` | the VPN overlay, pinned images, `.env` backups (the first and the newest 9) | the script — delete it and it is rebuilt (pins and backups excepted) |
+| `config/` `cache/` `transcodes/` `data/` `backups/` | the default roots | the apps — move them with `configure` |
+
+A deployment is `.env` + `custom/` + the roots: that is what to keep, copy
+or back up. Installs from before schema 28 are moved into this layout once,
+on `upgrade`; a `docker-compose.override.yml` that later reappears at the
+root is refused with where it belongs.
 
 ## Adding your own services
 
 `./mediastack.sh new-service <name>` asks for the image, container port,
 hostname, VPN membership, folders and permissions, writes a complete
-service into `docker-compose.override.yml` — untracked, merged automatically
-into every stack operation, upgrade-safe — then enables and starts it and
-prints its URL. Its HTTPS route and VPN membership are generated like a
+service into `custom/compose.d/<name>.yml` — untracked, upgrade-safe, yours
+to extend (a file can hold the database an app needs too) — then enables
+and starts it and prints its URL. Its HTTPS route and VPN membership are generated like a
 shipped service's (`vpn <name> on|off` works immediately). Never add
 services to `compose.d/` or edit `docker-compose.yml`: those are the repo's
 territory and local changes there block `upgrade` by design.
@@ -437,8 +452,8 @@ invite management (Wizarr) · notification hub (Apprise) · download
 cleanup (cleanuparr) · credential rotation, including one-password mode
 (`set-credentials all`) · tunnel interface binding · runtime audits in
 `doctor` · drift checks (`wire --verify`, `trash-sync --dry-run`) ·
-manual grabs from Prowlarr · user services via
-`docker-compose.override.yml` · service URLs in `status` · watch-state
+manual grabs from Prowlarr · user services as drop-in files
+(`custom/compose.d/`) · service URLs in `status` · watch-state
 sync and backup (WatchState) · a dedicated music server (Navidrome) ·
 audiobook/podcast and ebook/comic serving (Audiobookshelf, Kavita) ·
 a web control panel over the safe verbs (OliveTin front door).

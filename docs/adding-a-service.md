@@ -1,9 +1,10 @@
 # Adding a service
 
-Your services live in `docker-compose.override.yml` — untracked, merged
-into every stack operation automatically, and upgrade-safe. Never add
-services to `compose.d/` or edit `docker-compose.yml`: those are the
-repo's territory, and local changes there block `upgrade` by design.
+Your services live in `custom/compose.d/`, one file each — untracked, passed
+to compose on every stack operation, and upgrade-safe. Never add services to
+`compose.d/` or edit `docker-compose.yml`: those are the repo's territory,
+and local changes there block `upgrade` by design. (What you change about a
+*shipped* service goes in `custom/override.yml` — see below.)
 
 `./mediastack.sh new-service myapp` does the whole thing at a terminal:
 
@@ -17,7 +18,7 @@ repo's territory, and local changes there block `upgrade` by design.
    (PUID/PGID, `user:`, or neither for root-by-design images — see
    *Identity* below; `doctor` fails a service whose processes don't run as
    its UID);
-2. writes a complete service into `docker-compose.override.yml` on the
+2. writes a complete service into `custom/compose.d/<name>.yml` on the
    toggle model (metadata labels only — `vpn_gen` generates its network,
    host port and Traefik route), verifies it renders and rolls back if not;
 3. refuses a host port that something enabled already publishes and asks
@@ -26,11 +27,24 @@ repo's territory, and local changes there block `upgrade` by design.
    user, folders, start), waits for it to report healthy and prints its URL.
    "n" prints the `enable` command for later.
 
-The result is an ordinary override service: edit the YAML any time,
-compose merges it, and `upgrade` never touches it.
+The result is an ordinary compose file: edit it any time — add environment
+variables, devices, volumes, or the other containers an app needs (a
+database, a cache: one file can hold several services) — and `upgrade` never
+touches it. You can also write a file there by hand or drop in one someone
+shared; the label contract below is what makes the stack manage it.
+
+Rules for a file in `custom/compose.d/`:
+
+* it has a top-level `services:` block (block YAML, as `new-service` writes);
+* it adds services — a name already used by a shipped service or another of
+  your files is refused, naming both. To change a shipped service, use
+  `custom/override.yml`;
+* relative paths resolve from the repo folder, as in every compose file here;
+* a container without `mediastack.managed: "true"` runs, but gets no status
+  row, backups, doctor checks or updates.
 
 The script discovers services from compose labels — it contains no
-service lists, so override services get status rows, doctor checks,
+service lists, so your services get status rows, doctor checks,
 backups and the update pipeline like any shipped service.
 
 ## The label contract
@@ -77,7 +91,7 @@ service's port counts against gluetun, which publishes it), naming both;
 
 ```
 ./mediastack.sh disable myapp          # stops and removes its container
-# delete its block from docker-compose.override.yml (remove the file if it was the only one)
+rm custom/compose.d/myapp.yml          # its definition
 sed -i '/^MYAPP_/d' .env               # its UID/UPDATE/PORT/VPN/HOST variables
 sudo rm -rf config/myapp               # its settings, if you're sure
 ./mediastack.sh up                     # regenerates local/vpn-overlay.yml without it
@@ -89,9 +103,9 @@ cannot render with it (they say so and point here).
 
 ## Changing a shipped service
 
-Same file: put overrides for shipped services in
-`docker-compose.override.yml` too — compose merges your keys over the
-fragment's. See docs/vpn-membership.md for a worked example.
+Put the keys you want to change in `custom/override.yml` — compose merges
+them over the shipped fragment's (and over your own services' files: it is
+applied after them). See docs/vpn-membership.md for a worked example.
 
 ## For contributors: shipped fragments
 
