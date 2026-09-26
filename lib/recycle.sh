@@ -67,6 +67,26 @@ recycle_same_fs() { # 0 when the bin and the media share a filesystem (a recycle
     [[ "$(fsdev_of "$(recycle_root)")" == "$(fsdev_of "$(manifest_root)")" ]]
 }
 
+recycle_arr_library() { # recycle_arr_library <svc> -> the host folder of that arr's library (its root folder)
+    local d t rf
+    d=$(realpath -m "$(abspath "$(env_get DATA_ROOT)")")
+    render
+    t=$(jq -r --arg s "$1" --arg d "$d" '[.services[$s].volumes // [] | .[]
+            | select(.type == "bind" and ((.source | rtrimstr("/")) == $d)) | .target | rtrimstr("/")] | first // empty' <<<"$RENDERED_JSON")
+    rf=$(svc_label "$1" mediastack.rootfolder)
+    [[ -n "$t" && "$rf" == "$t/"* ]] || return 1
+    echo "$d${rf#"$t"}"
+}
+
+recycle_arr_split() { # recycle_arr_split <svc> -> the reason when that arr's library is on another drive than the bin (empty = same)
+    # the media root can be one drive while a library folder under it is
+    # another (a second disk mounted at media/movies-4k): checked per arr
+    local lib; lib=$(recycle_arr_library "$1") || return 0   # no library folder known: nothing to compare
+    sudo test -d "$lib" || return 0
+    [[ "$(fsdev_of "$lib")" == "$(fsdev_of "$(recycle_root)")" ]] && return 0
+    echo "its library $lib is on another drive than the recycle bin $(recycle_root) — every recycle would be a full copy across drives"
+}
+
 recycle_advice() { # what to do about a full bin — the operator decides, mediastack never deletes from it
     echo "Files older than RECYCLE_DAYS=$(env_get RECYCLE_DAYS 7) are removed by the arrs on their own. To free space now,
   look through $(recycle_root) and delete what you no longer need yourself (mediastack never empties it),
@@ -79,8 +99,9 @@ recycle_warn_once() {
     RECYCLE_WARNED=1
     explain "Arr recycle bin (on by default)" \
 "Files an arr deletes — including the old copy it replaces on an upgrade —
-are MOVED to $(recycle_root)/<arr> instead of deleted, and the arrs remove
-them after RECYCLE_DAYS=$(env_get RECYCLE_DAYS 7) days.
+are MOVED instead of deleted, one folder per arr, to:
+    $(recycle_root)/<arr>
+and the arrs remove them after RECYCLE_DAYS=$(env_get RECYCLE_DAYS 7) days.
 
 It lives on the media drive and needs room for that many days of deletes
 and upgrades: a 4K remux can be 50+ GB, and a quality-profile change can
@@ -120,6 +141,11 @@ arr_recycle() { # arr_recycle <svc> <url> <key> — that arr's recycle bin, per 
     fi
     if [[ -n "$have" && "$have" != "$want" ]]; then
         warn "$s: recycle bin is '$have' — set in its UI (or under an earlier RECYCLE_ROOT), so left alone. For mediastack to manage it, clear it in $s (Settings → Media Management) and run: ./mediastack.sh wire arr"
+        return 0
+    fi
+    local split; split=$(recycle_arr_split "$s")
+    if [[ -n "$split" ]]; then
+        wfail "$s: recycle bin not set: $split. Keep a library on the same filesystem as DATA_ROOT (drives pooled into one, e.g. mergerfs — see README)"
         return 0
     fi
     days=$(recycle_days)
@@ -215,7 +241,7 @@ _doctor_recycle() {
 }
 
 _doctor_recycle_arrs() { # each running arr's setting matches what wire sets
-    local s key url cur have hdays want days
+    local s key url cur have hdays want days split
     days=$(recycle_days)
     for s in $(arr_instances); do
         [[ "$(c_state "$(svc_cname "$s")")" == running ]] || { info "$s: not running — its recycle bin not checked"; continue; }
@@ -225,6 +251,8 @@ _doctor_recycle_arrs() { # each running arr's setting matches what wire sets
         fi
         have=$(jq -r '.recycleBin // ""' <<<"$cur"); hdays=$(jq -r '.recycleBinCleanupDays // 0' <<<"$cur")
         want=$(recycle_cpath "$s") || { d_fail "$s does not mount DATA_ROOT" "its recycle bin cannot be placed" "check its volumes in docker-compose.override.yml"; continue; }
+        split=$(recycle_arr_split "$s")
+        [[ -z "$split" ]] || { d_fail "$s: its recycle bin would copy, not move" "$split" "pool the drives into one filesystem as DATA_ROOT (README: DATA_ROOT should be one filesystem), or turn the bin off: RECYCLE_ENABLED=false"; continue; }
         if [[ "$have" == "$want" && "$hdays" == "$days" ]]; then ok "$s: recycle bin set"
         elif [[ -z "$have" || "$have" == "$want" ]]; then d_fail "$s: recycle bin not set as .env says" "files it deletes are gone at once (or kept the wrong time)" "./mediastack.sh wire arr"
         else info "$s: recycle bin '$have' set in its UI — mediastack leaves it alone"
