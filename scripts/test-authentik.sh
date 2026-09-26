@@ -109,6 +109,10 @@ grep -A4 'model: authentik_stages_user_write.userwritestage' "$bp" | grep -q 'na
 sed -n '/name: mediastack-join-invitation/,/^  - /p' "$bp" | grep -q 'continue_flow_without_invitation: false' \
     || fail_ "sign-up must need an invitation"; pass
 sed -n '/name: mediastack-join-email/,/^  - /p' "$bp" | grep -q 'required: true' || fail_ "email is required at sign-up"; pass
+# one page: every field on the credentials stage, and only one prompt stage bound
+sed -n '/name: mediastack-join-credentials/,/^  - /p' "$bp" | grep -c '!KeyOf field-' | grep -qx 6 \
+    || fail_ "sign-up is one page: all six fields on one stage"; pass
+[[ "$(grep -c 'stage: !KeyOf stage-' "$bp")" == 4 ]] || fail_ "four stages bound: invitation, the page, write, login"; pass
 sed -n '/^  authentik-worker:/,/^  authentik-db:/p' compose.d/authentik.yml > "$T/worker"
 grep -q 'MEDIASTACK_PORTAL_TITLE: ${PORTAL_TITLE:-Mediastack}' "$T/worker" && grep -q 'MEDIASTACK_PORTAL_URL:' "$T/worker" \
     || fail_ "the worker passes the portal's name and address to the blueprint"; pass
