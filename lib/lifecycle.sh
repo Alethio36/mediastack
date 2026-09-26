@@ -139,7 +139,8 @@ cmd_nuke() {
     # project label; users by the mediacenter group in /etc/passwd.
     hr "NUKE: remove everything the installer created"
     echo "Removes: containers, docker network, systemd units,"
-    echo "         service users + group, CONFIG_ROOT, CACHE_ROOT, TRANSCODE_ROOT."
+    echo "         service users + group, CONFIG_ROOT, CACHE_ROOT, TRANSCODE_ROOT,"
+    echo "         the deletion-attribution watch (and auditd, if mediastack installed it)."
     echo "Keeps  : DATA_ROOT (your media), BACKUP_ROOT (restore points),"
     echo "         .env, this repo folder, and pulled docker images (shared"
     echo "         cache — 'docker image prune -a' reclaims them)."
@@ -152,6 +153,7 @@ cmd_nuke() {
     systemd_units_teardown
     frontdoor_teardown
     ok "systemd units removed"
+    audit_teardown yes
     sudo docker ps -aq --filter "label=com.docker.compose.project=mediastack" \
         | xargs -r sudo docker rm -f -v >/dev/null
     # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
@@ -201,11 +203,12 @@ cmd_uninstall() {
     if [[ "${1:-}" == --nuke ]]; then cmd_nuke; return; fi
     load_env
     hr "Uninstall (tiered)"
-    echo "Tier 1: remove containers + docker network (configs, data, users kept)"
+    echo "Tier 1: remove containers + docker network + the deletion-attribution watch (configs, data, users kept)"
     confirm "Proceed with tier 1?" || return 0
     DC down --remove-orphans --volumes; ok "containers removed (anonymous volumes included)"
     systemd_units_teardown
     frontdoor_teardown
+    audit_off
     echo; echo "Tier 2: remove the service system users + group"
     if confirm "Also remove users/group?"; then
         local s; for s in $(svc_managed); do sudo userdel "$s" 2>/dev/null || true; done
