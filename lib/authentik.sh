@@ -111,6 +111,11 @@ authentik_blueprints_sync() { # the worker applies what is in CONFIG_ROOT/authen
 }
 
 gate_bind_sync() { # MEDIASTACK_GATE_BIND: where a gated tool's host port listens — 127.0.0.1 while the portal guards it
+    # MEDIASTACK_GATE_TRUST: who may name the user to an app that trusts a
+    # header (Navidrome) — Traefik's fixed address while the portal runs, nobody otherwise
+    local trust=""
+    svc_enabled authentik && trust="$(env_get TRAEFIK_ADDRESS 172.31.250.2)/32"
+    [[ "$(env_get MEDIASTACK_GATE_TRUST)" == "$trust" ]] || env_set MEDIASTACK_GATE_TRUST "$trust"
     local want=""
     svc_enabled authentik && want="127.0.0.1:"
     [[ "$(env_get MEDIASTACK_GATE_BIND)" == "$want" ]] && return 0
@@ -182,10 +187,18 @@ authentik_gate_attached() { # -> 0 when the gate's provider sits on the built-in
     jq -e --argjson p "$prov" '.results[0].providers | index($p) != null' <<<"$out" >/dev/null
 }
 
-authentik_gated() { # the enabled services behind the gate (mediastack.auth: gate)
+authentik_gated() { # the enabled admin tools behind the gate (mediastack.auth: gate, no household group)
     local s
     for s in $(svc_enabled_managed); do
-        [[ "$(svc_label "$s" mediastack.auth)" == gate ]] && echo "$s"
+        [[ "$(svc_label "$s" mediastack.auth)" == gate && -z "$(svc_label "$s" mediastack.auth.group)" ]] && echo "$s"
+    done
+    return 0
+}
+
+authentik_household() { # the enabled household apps (mediastack.user_facing) — each gets a card for media-users
+    local s
+    for s in $(svc_enabled_managed); do
+        [[ "$(svc_label "$s" mediastack.user_facing)" == true ]] && echo "$s"
     done
     return 0
 }
@@ -210,6 +223,8 @@ authentik_invite() { # authentik_invite DAYS -> a single-use sign-up link, print
 # ------------------------------------------------------------------ doctor --
 _doctor_accounts() { # the account model: one of the services that conflict, and authentik's release mark
     hr "doctor: accounts"
+    local np; np=$(network_problems)
+    [[ -z "$np" ]] || d_fail "the stack network's addressing: $np" "Traefik's fixed address would clash or fall outside the network" "fix MEDIASTACK_SUBNET / MEDIASTACK_IP_RANGE / TRAEFIK_ADDRESS in .env, then: ./mediastack.sh up"
     local s c seen=""
     for s in $(svc_enabled_managed); do
         for c in $(svc_conflicts "$s"); do

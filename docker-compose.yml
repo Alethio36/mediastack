@@ -44,3 +44,10 @@ include:
 networks:
   mediastack:
     name: mediastack
+    # a fixed range so Traefik keeps one address: services that trust the
+    # portal's username header (Navidrome) trust exactly that address.
+    # Containers draw from ip_range; Traefik's address sits outside it.
+    ipam:
+      config:
+        - subnet: ${MEDIASTACK_SUBNET:-172.31.250.0/24}
+          ip_range: ${MEDIASTACK_IP_RANGE:-172.31.250.128/25}

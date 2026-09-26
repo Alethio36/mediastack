@@ -184,6 +184,20 @@ DYNAMIC
 }
 
 traefik_gate_middleware() { # mediastack-gate: what a router with mediastack.auth=gate passes through
+    # mediastack-strip: on every route that skips the gate — a client may never
+    # set the headers the portal speaks with (an app that trusts them, like
+    # Navidrome, would take any username it was sent)
+    cat <<'STRIP'
+    mediastack-strip:
+      headers:
+        customRequestHeaders:
+          X-authentik-username: ""
+          X-authentik-groups: ""
+          X-authentik-email: ""
+          X-authentik-name: ""
+          X-authentik-uid: ""
+          X-authentik-jwt: ""
+STRIP
     if svc_enabled authentik; then
         # authentik's built-in outpost decides (lib/authentik.sh attaches the gate to it)
         cat <<'GATE'
