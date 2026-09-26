@@ -60,10 +60,25 @@ printf 'SONARR_UID=13001\nRADARR_UID=13002\nDELUGE_UID=13007\nTRANSMISSION_UID=1
 printf 'OTHER=1\n' > "$ENV_FILE"
 [[ -z "$(audit_uid_dupes)" ]] || fail_ "no UIDs must mean no duplicates"; pass
 
+# ---- auditctl lives in /usr/sbin: off the operator's PATH, on sudo's ----
+# (found live: a check made as the operator saw no auditd, so 'audit on'
+# reported none of its loaded rules — and would have claimed a host's own
+# auditd as mediastack's install)
+mkdir -p "$T/sbin"
+printf '#!/bin/sh\n[ "$1" = -l ] && printf -- "-a always,exit -F dir=/srv/media -F key=mediastack-media\\n%%.0s" 1 2\n' > "$T/sbin/auditctl"
+chmod +x "$T/sbin/auditctl"
+sudo() { PATH="$T/sbin:$PATH" "$@"; }
+if command -v auditctl >/dev/null 2>&1; then fail_ "auditctl on the test's own PATH — the check below would prove nothing"; fi
+audit_have || fail_ "auditd present on root's PATH was not seen"; pass
+[[ "$(audit_loaded_count)" == 2 ]] || fail_ "loaded rules not seen through sudo: $(audit_loaded_count)"; pass
+sudo() { "$@"; }
+
 # ---- teardown ----
-# a fake kernel: auditctl -l lists $T/loaded, -D -k empties it; apt-get logs
+# a fake kernel, on root's PATH only: auditctl -l lists $T/loaded, -D -k
+# empties it; apt-get logs
 loaded=$T/loaded
-auditctl() { case "$1" in -l) cat "$loaded" ;; -D) : > "$loaded" ;; esac; }
+printf '#!/bin/sh\ncase "$1" in -l) cat "%s" ;; -D) : > "%s" ;; esac\n' "$loaded" "$loaded" > "$T/sbin/auditctl"
+sudo() { PATH="$T/sbin:$PATH" "$@"; }
 apt-get() { echo "$*" >> "$T/apt"; }
 confirm() { return 0; }
 ok() { :; }; info() { :; }; warn() { :; }
