@@ -45,6 +45,10 @@ audit_rules_render() { # audit_rules_render ROOT yes|no -> the rules file; same 
     done
 }
 
+# auditctl lives in /usr/sbin: on root's PATH (sudo's secure_path), not on
+# the operator's — every presence check asks root, like every call does
+audit_have() { sudo sh -c 'command -v auditctl' >/dev/null 2>&1; }
+
 audit_rules_present() { sudo test -e "$AUDIT_RULES"; }
 
 audit_marker() { # yes|no from the rules file header; empty when there is no file
@@ -58,7 +62,7 @@ audit_stat_field() { # audit_stat_field FIELD < `auditctl -s` output -> its valu
 audit_stat() { sudo auditctl -s | audit_stat_field "$1"; }
 
 audit_loaded() { # the loaded rules carrying our key, one per line
-    command -v auditctl >/dev/null 2>&1 || return 0
+    audit_have || return 0
     sudo auditctl -l | grep -F -- "key=$AUDIT_KEY" || true   # none loaded is a valid answer
 }
 audit_loaded_count() { audit_loaded | grep -c . || true; }   # grep -c exits 1 on zero
@@ -110,7 +114,7 @@ audit_on() {
     [[ "$root" =~ [[:space:]] ]] && die "the media root '$root' contains whitespace, which an audit rule cannot express.
   Move DATA_ROOT (./mediastack.sh configure), then retry."
     mark=$(audit_marker)
-    if ! command -v auditctl >/dev/null 2>&1; then
+    if ! audit_have; then
         command -v apt-get >/dev/null 2>&1 || die "'audit on' installs auditd with apt, and this host has no apt.
   Install auditd with your package manager, then re-run — it is then treated as yours."
         info "Installing auditd..."
@@ -204,7 +208,7 @@ _doctor_audit() {
         fi
         return 0
     fi
-    if ! command -v auditctl >/dev/null 2>&1; then
+    if ! audit_have; then
         d_fail "AUDIT_ENABLED=true but auditd is not installed" "no deletion is recorded" "./mediastack.sh audit on"
         return 0
     fi
