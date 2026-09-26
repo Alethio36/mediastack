@@ -138,7 +138,7 @@ Connect
 | `traefik-setup` | HTTPS wizard: domain, Cloudflare token, cert environment, dashboard login |
 | `traefik-setup --hosts` | guided rename of every service's subdomain |
 | `traefik-setup --certs` | switch staging/production certificates (applied end to end) |
-| `credentials` | every login the stack created or stores |
+| `credentials` | every login the stack created or stores, and the API keys companion apps ask for (the arrs, Prowlarr, Bazarr, Seerr) with the address to give them |
 
 Check
 | command | what it does |
