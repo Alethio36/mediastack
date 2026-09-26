@@ -190,3 +190,14 @@ migrate_env_22_to_23() {
 migrate_env_23_to_24() { :; } # BACKUP_KEEP_MONTHLY added to .env.example (it was read, default 6, but never listed); existing values stand
 migrate_env_24_to_25() { :; } # AUDIT_ENABLED added to .env.example; env_get default (false) stands
 migrate_env_25_to_26() { :; } # AUDIT_KEEP_DAYS added to .env.example; env_get default (365) stands
+migrate_env_26_to_27() {
+    # the arrs' recycle bin, on by default — existing installs too, with the
+    # warning: it keeps what an arr deletes, on the media drive
+    local kv
+    for kv in RECYCLE_ENABLED=true RECYCLE_ROOT= RECYCLE_DAYS=7; do
+        grep -qE "^${kv%%=*}=" "$ENV_FILE" || env_set "${kv%%=*}" "${kv#*=}"
+    done
+    warn "New: the arr recycle bin is ON. Files an arr deletes or replaces on an upgrade are moved to DATA_ROOT/recycle and kept $(env_get RECYCLE_DAYS 7) days."
+    warn "  It uses space on the media drive (a 4K remux can be 50+ GB); doctor and the nightly manifest warn when it grows."
+    warn "  Applied at the next: ./mediastack.sh wire arr   —   turn it off first with RECYCLE_ENABLED=false in .env"
+}

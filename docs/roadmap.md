@@ -125,13 +125,15 @@ Where the project goes next — decisions to make and work not yet built.
   noisy to point at the household directly).
 
 ### Media monitoring
-Answering "what happened to X?" after the fact. The nightly media manifest is
-in place (docs/disaster-recovery.md); still to build:
-- *Arr recycle bin via `wire`.* User-configurable: on/off,
-  location (default `${DATA_ROOT}/recycle/<svc>/`, must share the media
-  filesystem — an arr recycle is a move, cross-filesystem it becomes a full
-  copy), retention days (default 7; upgrades keep the old file for the whole
-  window, so 4K remux chains cost disk). Covers arr-initiated deletes only.
+Answering "what happened to X?" after the fact: the nightly media manifest
+(docs/disaster-recovery.md), the arr recycle bin and deletion attribution are
+all built; what each still leaves open is noted below.
+- *Arr recycle bin — built (Sept 2026).* On by default (existing installs too,
+  with the warning), `RECYCLE_ENABLED` / `RECYCLE_ROOT` / `RECYCLE_DAYS`; set by
+  `wire arr`, checked by doctor, its space watched nightly with the manifest
+  (ops notified); mediastack never empties it. Follow-up, not built: the
+  manifest's loss report could say a lost file is still in the recycle bin,
+  and where.
 - *Deletion attribution via auditd (opt-in) — built (phases 1–3).* The
   `audit` verb: `on` installs auditd (or joins one the host already runs,
   touching nothing of it) and loads the watch for the media root; `off`

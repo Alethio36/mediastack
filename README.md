@@ -128,7 +128,7 @@ Maintain
 Connect
 | command | what it does |
 |---|---|
-| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr] [--dry-run\|--verify]` | connect the apps to each other; idempotent — GUI-configured apps are never overwritten, with one exception: an address mediastack itself wrote (how one app reaches another) is re-pointed when a VPN toggle moves its target — an address you set by hand is left alone. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
+| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr] [--dry-run\|--verify]` | connect the apps to each other (the arrs also get their recycle bin — see below); idempotent — GUI-configured apps are never overwritten, with one exception: an address mediastack itself wrote (how one app reaches another) is re-pointed when a VPN toggle moves its target — an address you set by hand is left alone. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
 | `invite [--expires 1\|7\|30]` | mint a Wizarr invitation, print the ready-to-share URL (default: never expires) |
 | `set-credentials <arr\|qbit\|jellyfin\|pihole\|traefik\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `all` sets one password across the stack (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
@@ -173,6 +173,31 @@ Every verb rejects arguments it does not accept — a typo or an unsupported
 flag fails with the verb's contract instead of silently running the default
 form. The user-facing rows above mirror `./mediastack.sh help`; the script's
 own help is always authoritative.
+
+## Arr recycle bin
+
+**On by default.** Files an arr (Radarr, Sonarr, Lidarr, every instance)
+deletes — including the old copy it replaces on an upgrade — are *moved* to
+`RECYCLE_ROOT/<arr>` (default `DATA_ROOT/recycle`) instead of deleted, and the
+arrs remove them after `RECYCLE_DAYS` (default 7; 0 = never). `wire arr` sets
+it up; a recycle bin you set in an arr's own UI is left alone.
+
+**It costs disk.** The bin lives on the media drive and needs room for
+`RECYCLE_DAYS` of deletes and upgrades — a 4K remux can be 50+ GB, and a
+quality-profile change can replace a whole library at once. `doctor` and the
+nightly manifest warn (and notify the ops stream) when the bin holds more than
+10% of the media drive or the drive is under 10% free. mediastack never
+deletes from the bin: free space early by deleting what you no longer need
+from it yourself, or lower `RECYCLE_DAYS` and run `wire arr`.
+
+**Where it may live:** inside `DATA_ROOT` (the arrs already see it), outside
+`DATA_ROOT/media` (the library must not see recycled files), on the same drive
+as the media (a recycle is a move; across drives it would be a full copy).
+Anything else is refused with the reason. Turn it off: `RECYCLE_ENABLED=false`
+in `.env`, then `./mediastack.sh wire arr` (it clears only what it set).
+
+It covers arr deletes only — a delete by Jellyfin, a person or another tool is
+gone at once (deletion attribution, `audit`, still says who made it).
 
 ## Web front door
 
