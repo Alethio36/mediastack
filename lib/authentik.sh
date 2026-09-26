@@ -121,10 +121,35 @@ authentik_prepare() { # before `up`/`enable` start it: the edge, secrets, the re
     authentik_blueprints_sync
 }
 
-authentik_blueprint_status() { # -> successful | warning | error | ... | "" (not discovered yet) | "unreadable (…)"
+authentik_blueprint_instance() { # -> the blueprint's instance JSON ("" when authentik has not discovered it yet)
     local out
-    out=$(ak_api GET "/managed/blueprints/?page_size=200") || { echo "unreadable ($(head -c120 <<<"$out"))"; return 0; }
-    jq -r --arg n "$AUTHENTIK_BLUEPRINT" '[.results[] | select(.name == $n) | .status][0] // ""' <<<"$out"
+    out=$(ak_api GET "/managed/blueprints/?page_size=200") || { echo "unreadable ($(head -c120 <<<"$out"))" >&2; return 1; }
+    jq -c --arg n "$AUTHENTIK_BLUEPRINT" '[.results[] | select(.name == $n)][0] // empty' <<<"$out"
+}
+
+authentik_blueprint_status() { # -> successful | warning | error | … | outdated | "" (not discovered) | "unreadable (…)"
+    # "successful" describes the file authentik last applied — the current one
+    # only when its hash (sha512 of the file) matches ours. Found live: right
+    # after an update the status still spoke for the previous version.
+    local inst mine
+    inst=$(authentik_blueprint_instance 2>&1) || { echo "$inst"; return 0; }
+    [[ -n "$inst" ]] || { echo ""; return 0; }
+    mine=$(sha512sum "$SCRIPT_DIR/blueprints/authentik/mediastack-portal.yaml" | cut -d' ' -f1)
+    if [[ "$(jq -r '.last_applied_hash // ""' <<<"$inst")" != "$mine" ]]; then echo outdated; return 0; fi
+    jq -r '.status' <<<"$inst"
+}
+
+authentik_blueprint_apply() { # apply the current file now instead of waiting for the worker; -> its status
+    local inst pk st t
+    inst=$(authentik_blueprint_instance 2>&1) || { echo "$inst"; return 0; }
+    pk=$(jq -r '.pk // empty' <<<"$inst"); [[ -n "$pk" ]] || { echo ""; return 0; }
+    ak_api POST "/managed/blueprints/$pk/apply/" >/dev/null || { echo "unreadable (apply refused)"; return 0; }
+    for t in $(seq 1 30); do   # the apply may be queued: up to a minute
+        st=$(authentik_blueprint_status)
+        [[ "$st" != outdated ]] && { echo "$st"; return 0; }
+        sleep 2
+    done
+    echo outdated
 }
 
 authentik_gate_attached() { # -> 0 when the gate's provider sits on the built-in outpost
@@ -189,6 +214,7 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
             case "$st" in
                 successful) ok "authentik: mediastack's portal setup applied (groups, sign-up by invitation)" ;;
                 "") warn "authentik has not applied mediastack's portal setup yet (it does within minutes of starting): ./mediastack.sh wire authentik" ;;
+                outdated) warn "authentik runs an earlier version of mediastack's portal setup — apply the current one: ./mediastack.sh wire authentik" ;;
                 *) d_fail "authentik: mediastack's portal setup is '$st'" "groups and sign-up may be missing or incomplete" \
                        "./mediastack.sh logs authentik --no-follow | grep -i blueprint" ;;
             esac
