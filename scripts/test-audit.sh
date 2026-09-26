@@ -5,12 +5,16 @@
 #     has, calls taken from ausyscall (ARM lacks unlink/rename/rmdir)
 #   * the "who installed auditd" marker round-trips; auditctl is looked for
 #     as root (it lives in /usr/sbin, off the operator's PATH)
-#   * the parser, against scripts/fixtures/audit.raw (a real capture: operator,
-#     container, rename, relative path, rule loads, canaries; scrubbed of
-#     personal data) and audit-synthetic.raw (hand-built for what that lacks:
-#     hex-encoded names, rename over an existing file, log_format=RAW, a person
-#     through sudo, a shared UID whose services disagree on the host path, an
-#     unknown UID, an event of an unknown shape) -> audit.expected
+#   * the parser, against scripts/fixtures/audit.raw and audit2.raw (real
+#     captures, scrubbed of personal data: operator and container deletes, a
+#     rename, a rename over an existing file, a relative path, hex-encoded
+#     names, rm -r naming files only relative to an open folder, rule loads,
+#     canaries) and audit-synthetic.raw (hand-built for what they lack:
+#     log_format=RAW, a person through sudo, a shared UID whose services
+#     disagree on the host path, an unknown UID, an event of an unknown shape,
+#     a folder the batch never saw, a nested rm -r) -> audit.expected
+#   * every awk the stack may meet (mawk is Debian's default, gawk elsewhere)
+#     gives the same answers — found live: mawk labelled every service "|name"
 #   * the hourly copy: new events once (never twice), a gap when auditd
 #     rotated first, pruning to AUDIT_KEEP_DAYS
 #   * teardown removes exactly the footprint — the package only when
@@ -100,25 +104,34 @@ sudo() { "$@"; }
 printf '13002\tradarr\n13001\tsonarr\n13007\tdeluge|transmission\n' > "$T/umap"
 printf 'radarr\t/data\t/srv/mediastack/data\nradarr\t/config\t/srv/mediastack/config/radarr\nsonarr\t/data\t/srv/mediastack/data\ndeluge\t/data/torrent\t/srv/mediastack/data/torrent\ntransmission\t/data\t/mnt/elsewhere\n' > "$T/mounts"
 printf '1000\toperator\n' > "$T/users"
-got=$({ audit_parse 0 0 < scripts/fixtures/audit.raw; audit_parse 0 0 < scripts/fixtures/audit-synthetic.raw; } \
-      | grep '^E' | audit_attribute /srv/mediastack/data/media "$T/umap" "$T/mounts" "$T/users")
-[[ "$got" == "$(cat scripts/fixtures/audit.expected)" ]] || fail_ "parsed log differs from scripts/fixtures/audit.expected:
+FIXTURES=(scripts/fixtures/audit.raw scripts/fixtures/audit2.raw scripts/fixtures/audit-synthetic.raw)
+parse_all() { local f; for f in "${FIXTURES[@]}"; do audit_parse 0 0 < "$f"; done \
+                | grep '^E' | audit_attribute /srv/mediastack/data/media "$T/umap" "$T/mounts" "$T/users"; }
+uidmap_of() { # the real audit_uidmap over a fixed service set (two services share 13007)
+    render() { :; }; svc_managed() { printf '%s\n' radarr deluge transmission; }
+    env_get() { case "$1" in RADARR_UID) echo 13002 ;; DELUGE_UID|TRANSMISSION_UID) echo 13007 ;; esac; }
+    audit_uidmap
+}
+awks=(); for a in mawk gawk; do command -v "$a" >/dev/null && awks+=("$a"); done
+(( ${#awks[@]} )) || fail_ "neither mawk nor gawk is installed"
+for a in "${awks[@]}"; do
+    got=$(awk() { "$a" "$@"; }; parse_all)
+    [[ "$got" == "$(cat scripts/fixtures/audit.expected)" ]] || fail_ "$a: parsed log differs from scripts/fixtures/audit.expected:
 $(diff scripts/fixtures/audit.expected <(echo "$got") || true)"; pass
+    got=$(awk() { "$a" "$@"; }; uidmap_of)
+    [[ "$got" == $'13002\tradarr\n13007\tdeluge|transmission' ]] || fail_ "$a: uid map: $(cat -A <<<"$got")"; pass
+done
 [[ "$(audit_parse 0 0 < scripts/fixtures/audit.raw | grep '^L')" == $'L\t1790390565.868\t999' ]] \
     || fail_ "the newest event (serials restart at boot: newest by time, not by serial) was not reported"; pass
 [[ "$(audit_parse 1790390565.696 977 < scripts/fixtures/audit.raw | grep -c '^E')" == 2 ]] \
     || fail_ "events up to the last copied one must not be copied again"; pass
-if command -v gawk >/dev/null && command -v mawk >/dev/null; then   # Debian ships mawk; others gawk
-    [[ "$(audit_parse 0 0 < scripts/fixtures/audit-synthetic.raw)" == "$(awk() { gawk "$@"; }; audit_parse 0 0 < scripts/fixtures/audit-synthetic.raw)" ]] \
-        || fail_ "mawk and gawk parse differently"; pass
-fi
 
 # ---- the hourly copy ----
 env_file_audit() { printf 'AUDIT_ENABLED=true\nAUDIT_KEEP_DAYS=%s\nBACKUP_ROOT=%s\n' "$1" "$T/backups" > "$ENV_FILE"; }
 env_file_audit 365
 # shellcheck disable=SC2034  # read by the sourced audit_extract
 AUDIT_LOCK=$T/lock
-ausearch() { cat scripts/fixtures/audit.raw scripts/fixtures/audit-synthetic.raw; }
+ausearch() { cat "${FIXTURES[@]}"; }
 audit_uidmap() { cat "$T/umap"; }; audit_mounts() { cat "$T/mounts"; }
 audit_root() { echo /srv/mediastack/data/media; }
 getent() { [[ "$2" == 1000 ]] && echo "operator:x:1000:1000::/home/operator:/bin/bash"; }
@@ -127,10 +140,10 @@ notify() { echo "$2" >> "$T/notified"; }
 audit_extract
 [[ "$(cat "$T/backups/audit/"*.tsv)" == "$(cat scripts/fixtures/audit.expected)" ]] || fail_ "first copy differs from audit.expected"; pass
 [[ "$(ls "$T/backups/audit")" == $'2026-09-25.tsv\n2026-09-26.tsv' ]] || fail_ "events must land in their local day's file: $(ls "$T/backups/audit")"; pass
-[[ "$(cat "$T/backups/audit/.last")" == "1790400000.600 2006" ]] || fail_ ".last: $(cat "$T/backups/audit/.last")"; pass
+[[ "$(cat "$T/backups/audit/.last")" == "1790400000.802 2010" ]] || fail_ ".last: $(cat "$T/backups/audit/.last")"; pass
 [[ "$(stat -c %a "$T/backups/audit/2026-09-25.tsv")" == 600 ]] || fail_ "day files must be private (600)"; pass
 audit_extract
-[[ "$(cat "$T/backups/audit/"*.tsv | wc -l)" == 10 ]] || fail_ "a second copy duplicated events"; pass
+[[ "$(cat "$T/backups/audit/"*.tsv | wc -l)" == 16 ]] || fail_ "a second copy duplicated events"; pass
 echo 100 > "$T/backups/audit/.ran"; OLDEST=200; audit_extract
 grep -q $'\tgap\t' "$T/backups/audit/"*.tsv || fail_ "auditd rotating past the last copy was not logged as a gap"; pass
 grep -q 'gap' "$T/notified" || fail_ "a gap was not notified"; pass
@@ -150,8 +163,8 @@ audit_report_args --since 2026-09-01 --path Film
 [[ "$REPORT_SINCE" == 2026-09-01 && "$REPORT_PATH" == Film ]] || fail_ "report args"; pass
 if (audit_report_args --since 2026-02-30) 2>/dev/null; then fail_ "an impossible date must be refused"; fi; pass
 if (audit_report_args --bogus) 2>/dev/null; then fail_ "an unknown report argument must be refused"; fi; pass
-out=$(audit_report_format film < scripts/fixtures/audit.expected)
-[[ "$out" == *"Some Film (2020).mkv"* && "$out" != *".t"* ]] || fail_ "report --path must match case-insensitively and only the match:
+out=$(audit_report_format "A B.MKV" < scripts/fixtures/audit.expected)
+[[ "$out" == *".x y/a b.mkv"* && "$out" != *"/.t"* ]] || fail_ "report --path must match case-insensitively and only the match:
 $out"; pass
 if (cmd_audit on extra) 2>/dev/null; then fail_ "'audit on extra' must be refused"; fi; pass
 if (cmd_audit bogus) 2>/dev/null; then fail_ "an unknown audit action must be refused"; fi; pass

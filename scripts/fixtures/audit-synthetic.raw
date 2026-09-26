@@ -1,17 +1,6 @@
-# SYNTHETIC — built by hand from the shapes in audit.raw (a real capture), for cases it lacks.
+# SYNTHETIC — built by hand from the shapes in audit.raw and audit2.raw (real captures), for cases they lack.
 # Verify each against a real capture when one exists. Lines without msg=audit( are ignored by the parser.
-type=SYSCALL msg=audit(1790400000.100:2001): arch=c000003e syscall=263 success=yes exit=0 a0=ffffffffffffff9c a1=0 a2=0 a3=0 items=2 ppid=1 pid=2 auid=4294967295 uid=13002 gid=13000 euid=13002 suid=13002 fsuid=13002 egid=13000 sgid=13000 fsgid=13000 tty=(none) ses=4294967295 comm="Radarr" exe="/app/radarr/bin/Radarr" subj=docker-default key="mediastack-media"ARCH=x86_64 SYSCALL=unlinkat AUID="unset" UID="radarr"
-type=CWD msg=audit(1790400000.100:2001): cwd="/"
-type=PATH msg=audit(1790400000.100:2001): item=0 name=2F646174612F6D656469612F6D6F766965732F536F6D652046696C6D202832303230292F inode=10 dev=08:01 mode=042775 ouid=13002 ogid=13000 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID="radarr"
-type=PATH msg=audit(1790400000.100:2001): item=1 name=2F646174612F6D656469612F6D6F766965732F536F6D652046696C6D202832303230292F536F6D652046696C6D202832303230292E6D6B76 inode=11 dev=08:01 mode=0100644 ouid=13002 ogid=13000 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID="radarr"
-type=SYSCALL msg=audit(1790400000.200:2002): arch=c000003e syscall=316 success=yes exit=0 a0=ffffffffffffff9c a1=0 a2=ffffffffffffff9c a3=0 items=5 ppid=1 pid=3 auid=4294967295 uid=13001 gid=13000 euid=13001 suid=13001 fsuid=13001 egid=13000 sgid=13000 fsgid=13000 tty=(none) ses=4294967295 comm="Sonarr" exe="/app/sonarr/bin/Sonarr" subj=docker-default key="mediastack-media"ARCH=x86_64 SYSCALL=renameat2
-type=CWD msg=audit(1790400000.200:2002): cwd="/"
-type=PATH msg=audit(1790400000.200:2002): item=0 name="/data/media/tv/Show/" inode=20 dev=08:01 mode=042775 ouid=13001 ogid=13000 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID="sonarr"
-type=PATH msg=audit(1790400000.200:2002): item=1 name="/data/media/tv/Show/" inode=21 dev=08:01 mode=042775 ouid=13001 ogid=13000 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID="sonarr"
-type=PATH msg=audit(1790400000.200:2002): item=2 name="/data/media/tv/Show/ep.tmp" inode=22 dev=08:01 mode=0100644 ouid=13001 ogid=13000 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID="sonarr"
-type=PATH msg=audit(1790400000.200:2002): item=3 name="/data/media/tv/Show/ep.mkv" inode=23 dev=08:01 mode=0100644 ouid=13001 ogid=13000 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID="sonarr"
-type=PATH msg=audit(1790400000.200:2002): item=4 name="/data/media/tv/Show/ep.mkv" inode=24 dev=08:01 mode=0100644 ouid=13001 ogid=13000 rdev=00:00 nametype=CREATE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0OUID="sonarr"
-type=SYSCALL msg=audit(1790400000.300:2003): arch=c000003e syscall=84 success=yes exit=0 a0=0 a1=0 a2=0 a3=0 items=2 ppid=1 pid=4 auid=1000 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=pts0 ses=3 comm="rmdir" exe="/usr/bin/rmdir" subj=unconfined key="mediastack-media"
+type=SYSCALL msg=audit(1790400000.300:2003): arch=c000003e syscall=84 success=yes exit=0 a0=7ffd1c2e3f10 a1=0 a2=0 a3=0 items=2 ppid=1 pid=4 auid=1000 uid=0 gid=0 euid=0 suid=0 fsuid=0 egid=0 sgid=0 fsgid=0 tty=pts0 ses=3 comm="rmdir" exe="/usr/bin/rmdir" subj=unconfined key="mediastack-media"
 type=CWD msg=audit(1790400000.300:2003): cwd="/srv/mediastack/data/media/music"
 type=PATH msg=audit(1790400000.300:2003): item=0 name="/srv/mediastack/data/media/music/" inode=30 dev=08:01 mode=042775 ouid=0 ogid=13000 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
 type=PATH msg=audit(1790400000.300:2003): item=1 name="Old Album" inode=31 dev=08:01 mode=040775 ouid=0 ogid=13000 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
@@ -24,3 +13,20 @@ type=PATH msg=audit(1790400000.500:2005): item=1 name="/media/movies/b.mkv" inod
 type=SYSCALL msg=audit(1790400000.600:2006): arch=c000003e syscall=263 success=yes exit=0 a0=0 a1=0 a2=0 a3=0 items=1 ppid=1 pid=7 auid=4294967295 uid=13002 gid=13000 euid=13002 suid=13002 fsuid=13002 egid=13000 sgid=13000 fsgid=13000 tty=(none) ses=4294967295 comm="x" exe="/x" subj=docker-default key="mediastack-media"
 type=CWD msg=audit(1790400000.600:2006): cwd="/"
 type=PATH msg=audit(1790400000.600:2006): item=0 name="/data/media/odd/" inode=60 dev=08:01 mode=042775 ouid=0 ogid=13000 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
+type=SYSCALL msg=audit(1790400000.700:2007): arch=c000003e syscall=263 success=yes exit=0 a0=5 a1=0 a2=0 a3=0 items=2 ppid=1 pid=8 auid=1000 uid=1000 gid=13000 euid=1000 suid=1000 fsuid=1000 egid=13000 sgid=13000 fsgid=13000 tty=pts0 ses=3 comm="find" exe="/usr/bin/find" subj=unconfined key="mediastack-media"
+type=CWD msg=audit(1790400000.700:2007): cwd="/srv/mediastack"
+type=PATH msg=audit(1790400000.700:2007): item=0 name="/" inode=70 dev=08:01 mode=042775 ouid=0 ogid=13000 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
+type=PATH msg=audit(1790400000.700:2007): item=1 name="orphan.mkv" inode=71 dev=08:01 mode=0100644 ouid=1000 ogid=13000 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
+# nested rm -r: a file and a folder named only relative to their open parent, then the top folder
+type=SYSCALL msg=audit(1790400000.800:2008): arch=c000003e syscall=263 success=yes exit=0 a0=5 a1=0 a2=0 a3=0 items=2 ppid=1 pid=9 auid=1000 uid=1000 gid=13000 euid=1000 suid=1000 fsuid=1000 egid=13000 sgid=13000 fsgid=13000 tty=pts0 ses=3 comm="rm" exe="/usr/bin/rm" subj=unconfined key="mediastack-media"
+type=CWD msg=audit(1790400000.800:2008): cwd="/srv/mediastack"
+type=PATH msg=audit(1790400000.800:2008): item=0 name="/" inode=82 dev=08:01 mode=042775 ouid=0 ogid=13000 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
+type=PATH msg=audit(1790400000.800:2008): item=1 name="Subs.srt" inode=83 dev=08:01 mode=0100644 ouid=1000 ogid=13000 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
+type=SYSCALL msg=audit(1790400000.801:2009): arch=c000003e syscall=263 success=yes exit=0 a0=4 a1=0 a2=0 a3=0 items=2 ppid=1 pid=9 auid=1000 uid=1000 gid=13000 euid=1000 suid=1000 fsuid=1000 egid=13000 sgid=13000 fsgid=13000 tty=pts0 ses=3 comm="rm" exe="/usr/bin/rm" subj=unconfined key="mediastack-media"
+type=CWD msg=audit(1790400000.801:2009): cwd="/srv/mediastack"
+type=PATH msg=audit(1790400000.801:2009): item=0 name="/" inode=80 dev=08:01 mode=042775 ouid=0 ogid=13000 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
+type=PATH msg=audit(1790400000.801:2009): item=1 name="Subs" inode=82 dev=08:01 mode=040775 ouid=1000 ogid=13000 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
+type=SYSCALL msg=audit(1790400000.802:2010): arch=c000003e syscall=263 success=yes exit=0 a0=ffffffffffffff9c a1=0 a2=200 a3=0 items=2 ppid=1 pid=9 auid=1000 uid=1000 gid=13000 euid=1000 suid=1000 fsuid=1000 egid=13000 sgid=13000 fsgid=13000 tty=pts0 ses=3 comm="rm" exe="/usr/bin/rm" subj=unconfined key="mediastack-media"
+type=CWD msg=audit(1790400000.802:2010): cwd="/srv/mediastack"
+type=PATH msg=audit(1790400000.802:2010): item=0 name="/srv/mediastack/data/media/movies/" inode=79 dev=08:01 mode=042775 ouid=0 ogid=13000 rdev=00:00 nametype=PARENT cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
+type=PATH msg=audit(1790400000.802:2010): item=1 name="/srv/mediastack/data/media/movies/Film" inode=80 dev=08:01 mode=040775 ouid=1000 ogid=13000 rdev=00:00 nametype=DELETE cap_fp=0 cap_fi=0 cap_fe=0 cap_fver=0 cap_frootid=0
