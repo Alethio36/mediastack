@@ -188,7 +188,7 @@ authentik_blueprint_apply() { # apply the current file now instead of waiting fo
     pk=$(jq -r '.pk // empty' <<<"$inst"); [[ -n "$pk" ]] || { echo ""; return 0; }
     ak_api POST "/managed/blueprints/$pk/apply/" >/dev/null || { echo "unreadable (apply refused)"; return 0; }
     local was; was=$(jq -r '.last_applied // ""' <<<"$inst")
-    for t in $(seq 1 30); do   # the apply may be queued: up to a minute
+    for t in $(seq 1 90); do   # the apply may be queued behind other tasks: up to three minutes (found live: one was not enough)
         st=$(authentik_blueprint_status)
         # "error" counts only once authentik has tried again since we asked
         if [[ "$st" == error ]]; then

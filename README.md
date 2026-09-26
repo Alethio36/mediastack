@@ -529,7 +529,16 @@ identity headers, and Navidrome trusts only Traefik's address — Traefik keeps
 one fixed address on the stack network's fixed range (`MEDIASTACK_SUBNET`,
 `MEDIASTACK_IP_RANGE`, `TRAEFIK_ADDRESS`; change them only if they clash with
 your LAN — the first `up` after the change recreates the network once). Your
-household apps appear on everyone's dashboard under Media. While the portal runs, their host ports listen on 127.0.0.1 only —
+household apps appear on everyone's dashboard under Media.
+
+Jellyfin checks passwords against the portal (LDAP, through Traefik on
+`ldap.<domain>`, reachable from the stack only): anyone in `media-users` or
+`admins` signs in to Jellyfin — the web, the TV and phone apps — with their
+portal username and password, and gets a Jellyfin account with every library on
+their first sign-in. `wire jellyfin` sets this up (one Jellyfin restart) and
+keeps Jellyfin administrator rights in step with the portal's `admins` group.
+The stack's own Jellyfin admin (in `credentials`) stays a local account: it is
+what the script uses, and your way in if the portal is ever down. While the portal runs, their host ports listen on 127.0.0.1 only —
 the domain address is the way in — and the arrs trust the portal (one login;
 `wire arr` switches them, never before their ports are closed). Companion apps
 (nzb360, LunaSea, Home Assistant…) use the domain address: the arrs' and
