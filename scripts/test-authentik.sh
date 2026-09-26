@@ -501,5 +501,6 @@ sed -n '/name: mediastack-oidc-audiobookshelf/,/^  - model/p' blueprints/authent
 grep -q 'client_id: mediastack-audiobookshelf' "$T/abs" && grep -q 'signing_key: !Find' "$T/abs" \
    && grep -q '/auth/openid/callback' "$T/abs" && grep -q '/auth/openid/mobile-redirect' "$T/abs" \
     || fail_ "the OIDC provider: its client ID, a signing key (RS256), web and app redirects"; pass
+grep -q 'grant_types: \[authorization_code, refresh_token\]' "$T/abs" || fail_ "the provider allows the code grant (empty by default: every login refused, found live)"; pass
 
 echo "OK authentik: $checks checks"
