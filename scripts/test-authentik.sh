@@ -407,6 +407,11 @@ why=$(authentik_blueprint_why)
 unset -f sudo
 
 # ---- Jellyfin through LDAP ----
+# a plugin is found by its ID, whatever name it loads under (found live: the
+# catalog's "LDAP Authentication" loads as "LDAP-Auth")
+ids=$(jf_plugin_ids '[{"Name":"LDAP-Auth","Id":"958aad6637844d2ab89aa7b6fab6e25c"},{"Name":"Webhook","Id":"71552A5A-5C5C-4350-A2AE-EBE451A30173"}]')
+[[ "$ids" == *"|$(jf_guid "$JF_LDAP_GUID")|"* && "$ids" == *"|$(jf_guid 71552A5A-5C5C-4350-A2AE-EBE451A30173)|"* ]] \
+    || fail_ "plugins matched by ID, with or without dashes, any case: $ids"; pass
 printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_LDAP_BIND_PASSWORD=BINDPW\nACME_ENV=staging\n' > "$ENV_FILE"
 w=$(jf_ldap_want)
 [[ "$(jq -r '.LdapServer + ":" + (.LdapPort|tostring) + " ssl=" + (.UseSsl|tostring)' <<<"$w")" == "ldap.media.example.com:443 ssl=true" ]] \
