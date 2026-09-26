@@ -250,7 +250,7 @@ _doctor_recycle_arrs() { # each running arr's setting matches what wire sets
             warn "$s: media management settings unreadable — recycle bin UNCONFIRMED [$(oneline "$cur")]"; continue
         fi
         have=$(jq -r '.recycleBin // ""' <<<"$cur"); hdays=$(jq -r '.recycleBinCleanupDays // 0' <<<"$cur")
-        want=$(recycle_cpath "$s") || { d_fail "$s does not mount DATA_ROOT" "its recycle bin cannot be placed" "check its volumes in docker-compose.override.yml"; continue; }
+        want=$(recycle_cpath "$s") || { d_fail "$s does not mount DATA_ROOT" "its recycle bin cannot be placed" "check its volumes in custom/override.yml"; continue; }
         split=$(recycle_arr_split "$s")
         [[ -z "$split" ]] || { d_fail "$s: its recycle bin would copy, not move" "$split" "pool the drives into one filesystem as DATA_ROOT (README: DATA_ROOT should be one filesystem), or turn the bin off: RECYCLE_ENABLED=false"; continue; }
         if [[ "$have" == "$want" && "$hdays" == "$days" ]]; then ok "$s: recycle bin set"

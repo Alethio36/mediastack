@@ -185,7 +185,7 @@ _configure_selfheal() {
                 env_set "$ref" true
             fi
         fi
-    done < <(grep -rhoE '\$\{[A-Z0-9_]+_(UID|UPDATE)[^}]*\}' docker-compose.yml compose.d/ docker-compose.override.yml 2>/dev/null \
+    done < <(grep -rhoE '\$\{[A-Z0-9_]+_(UID|UPDATE)[^}]*\}' docker-compose.yml compose.d/ "$CUSTOM_DIR" 2>/dev/null \
              | sed -E 's/\$\{([A-Z0-9_]+).*/\1/' | sort -u)
 
 }

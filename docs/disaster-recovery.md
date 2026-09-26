@@ -1,8 +1,9 @@
 # Disaster recovery — full rebuild from a restore point
 
 A restore point contains everything except media: service configs, the stack
-definition (`env`), and the exact image digests (`images.lock`). A dead host
-rebuilds like this:
+definition (`env`), your own files (`custom.tar.gz`: your services, overrides,
+proxy routes, TRaSH overrides) and the exact image digests (`images.lock`). A
+dead host rebuilds like this:
 
 1. Fresh Debian/Ubuntu host. Mount/attach the disk or share holding your
    old `BACKUP_ROOT` (and your media).
@@ -10,6 +11,7 @@ rebuilds like this:
    git clone <your-mediastack-repo> && cd mediastack
    ./mediastack.sh install
    cp /path/to/backups/<TIMESTAMP>/env .env && chmod 600 .env
+   tar -xzf /path/to/backups/<TIMESTAMP>/custom.tar.gz   # if the point has one
    ```
    Edit `.env` if paths differ on the new host.
 3. `./mediastack.sh configure` — existing answers become the defaults;

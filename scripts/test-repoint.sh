@@ -22,7 +22,9 @@ source "$lib"
 # shellcheck disable=SC2034
 ENV_FILE=$T/.env
 # shellcheck disable=SC2034
-SCRIPT_DIR=$T                                   # where .wired lives
+SCRIPT_DIR=$T
+# shellcheck disable=SC2034
+WIRED_FILE=$T/wired                             # the "wire has run" marker
 # shellcheck disable=SC2034
 RENDERED_JSON='{"services":{
   "radarr":{"labels":{"mediastack.arrtype":"radarr","mediastack.vpn":"true","mediastack.vpntoggle":"true"}},
@@ -68,7 +70,7 @@ wire_repoint_pending > "$T/out"
 eq "never wired: no roles run" "$(cat "$CALLS")" ""; pass
 eq "never wired: marker cleared" "$(env_get WIRE_REPOINT)" ""; pass
 
-touch "$T/.wired"
+touch "$WIRED_FILE"
 repoint_mark apprise; repoint_mark radarr
 : > "$CALLS"
 wire_repoint_pending > "$T/out"

@@ -2,7 +2,7 @@
 # (Let's Encrypt DNS-01 through Cloudflare; no ports exposed to the world).
 # Static config + dynamic file are GENERATED into ${CONFIG_ROOT}/traefik by
 # 'traefik-setup' (auto-run by 'up'); user-added proxy hosts go in
-# local/proxy.d/*.yml (mounted into the watched dynamic dir).
+# custom/proxy.d/*.yml (copied into the watched dynamic dir).
 
 x-logging: &logging
   driver: json-file
@@ -28,7 +28,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${CONFIG_ROOT}/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ${CONFIG_ROOT}/traefik/acme:/letsencrypt
-      # generated dir; local/proxy.d/*.yml are copied in by traefik-setup/up
+      # generated dir; custom/proxy.d/*.yml are copied in by traefik-setup/up
       - ${CONFIG_ROOT}/traefik/dynamic:/dynamic:ro
     networks: [mediastack]
     security_opt:

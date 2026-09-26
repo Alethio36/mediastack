@@ -35,9 +35,10 @@ repo_owned "$T/x"
 [[ ! -e "$T/chown" ]] || fail_ "as a normal user, repo_owned must do nothing"; pass
 
 # static guard: a repo-local folder or file the script creates without sudo is
-# handed over on the same line (install -d, the migration backup, .wired, pins)
-if grep -nE '(^|[;&|] *|^\s+)(install -d|cp "\$ENV_FILE"|touch "\$SCRIPT_DIR)' lib/*.sh mediastack.sh \
-        | grep -v 'sudo ' | grep -v 'repo_owned'; then
+# handed over on the same line (folders, the migration backup, the wired
+# marker, pins — in local/ and custom/ since schema 28)
+if grep -nE '(^|[;&|] *|^\s+)(install -d|mkdir -p|cp "\$ENV_FILE"|touch "\$(SCRIPT_DIR|LOCAL_DIR|CUSTOM_DIR|WIRED_FILE|PINS_FILE))' lib/*.sh mediastack.sh \
+        | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v 'sudo ' | grep -v 'repo_owned'; then
     fail_ "a repo-local creation outside sudo (above) does not call repo_owned — a root run would lock the operator out"
 fi; pass
 

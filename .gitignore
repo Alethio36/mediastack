@@ -1,16 +1,19 @@
 # Deployment state — never tracked. `git status` stays clean on a healthy
 # deployment so `git pull` always fast-forwards.
 .env
-.env.bak.*
-.pins.yml
-.wired
-docker-compose.override.yml
+custom/
 config/
 cache/
 data/
 transcodes/
 backups/
 local/
+# where an install before schema 28 kept them — moved on upgrade; ignored
+# until then, so the upgrade that moves them never sees them as untracked
+.env.bak.*
+.pins.yml
+.wired
+docker-compose.override.yml
 
 # Per-session working notes (handoffs) — local state, kept out of the public repo
 session.txt

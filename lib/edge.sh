@@ -80,8 +80,7 @@ traefik_gen() {
     done
     sudo test -d /run-traefik-setup-first && sudo rm -rf /run-traefik-setup-first
     sudo install -d -m 700 "$croot/traefik" "$croot/traefik/acme"
-    install -d -m 755 local/proxy.d; repo_owned local local/proxy.d
-    env_set TRAEFIK_LOCAL_PROXY "$PWD/local/proxy.d"
+    install -d -m 755 "$CUSTOM_DIR" "$PROXY_DIR"; repo_owned "$CUSTOM_DIR" "$PROXY_DIR"
     # env switch detection: staging certs must not survive into production
     # (and vice versa) — traefik would keep serving the cached ones forever
     local acme="$croot/traefik/acme/acme.json" stored=""
@@ -163,11 +162,11 @@ DYNAMIC
     # user proxy hosts: copied in (applied on every up / traefik-setup)
     sudo rm -f "$croot/traefik/dynamic/"user-*.yml
     local uf n=0
-    for uf in local/proxy.d/*.yml; do
+    for uf in "$PROXY_DIR"/*.yml; do
         [[ -e "$uf" ]] || break
         sudo install -m 600 "$uf" "$croot/traefik/dynamic/user-$(basename "$uf")"; n=$((n+1))
     done
-    (( n )) && info "$n user proxy file(s) from local/proxy.d applied"
+    (( n )) && info "$n user proxy file(s) from custom/proxy.d applied"
     ok "traefik config generated ($acmeenv certificates, domain $domain)"
     # static config only loads at container start; a content change on a
     # running traefik needs an explicit restart or it silently stays stale
