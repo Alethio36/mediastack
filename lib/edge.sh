@@ -144,7 +144,7 @@ http:
       rule: "Host(\`$(env_get TRAEFIK_DASH_HOST dash).$domain\`)"
       entryPoints: [websecure]
       service: api@internal
-      middlewares: [dash-auth]
+      middlewares: [$(svc_enabled authentik && echo mediastack-gate || echo dash-auth)]
       tls:
         certResolver: le
         domains:

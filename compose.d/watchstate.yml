@@ -24,7 +24,7 @@ services:
     environment:
       - WS_TZ=${TZ}
     ports:
-      - "${WATCHSTATE_PORT:-8080}:8080"
+      - "${MEDIASTACK_GATE_BIND:-}${WATCHSTATE_PORT:-8080}:8080"   # 127.0.0.1 while the portal guards it
     volumes:
       - ${CONFIG_ROOT}/watchstate:/config
     labels:
@@ -35,12 +35,13 @@ services:
       traefik.http.routers.watchstate.rule: "Host(`${WATCHSTATE_HOST:-watch}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.watchstate.entrypoints: "websecure"
       traefik.http.routers.watchstate.tls: "true"
+      traefik.http.routers.watchstate.middlewares: "mediastack-gate@file"
       traefik.http.services.watchstate.loadbalancer.server.port: "8080"
       mediastack.desc: "syncs + backs up per-user watch state across media servers"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "watch"
-      mediastack.auth: "native"   # handles its own login
+      mediastack.auth: "gate"   # an admin tool: behind the portal (mediastack-gate)
     healthcheck:
       test: ["CMD-SHELL", "curl -fs --max-time 5 http://127.0.0.1:8080/ || exit 1"]
       interval: 30s

@@ -108,4 +108,33 @@ for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.su
     if [[ "$auth" == gate ]]; then [[ "$mw" == *mediastack-gate@file* ]] || t_fail "$s is gated but its route ($r) has no mediastack-gate middleware"
     else [[ "$mw" != *mediastack-gate@file* ]] || t_fail "$s is $auth but its route carries the gate"; fi
 done
+# an API that skips the gate: only on a gated tool, as its own router without the gate
+for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.auth.bypass"] != null) | .key' <<<"$RENDERED_JSON"); do
+    [[ "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"]' <<<"$RENDERED_JSON")" == gate ]] || t_fail "$s: a gate bypass on a service that is not gated"
+    r=$(vpn_rname "$s"); p=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth.bypass"]' <<<"$RENDERED_JSON")
+    rule=$(jq -r --arg k "traefik.http.routers.$r-api.rule" '[.services[].labels[$k] // empty][0] // ""' <<<"$RENDERED_JSON")
+    [[ "$rule" == *"PathPrefix(\`$p\`)"* ]] || t_fail "$s: no $r-api router for $p (got: $rule)"
+    [[ -z "$(jq -r --arg k "traefik.http.routers.$r-api.middlewares" '[.services[].labels[$k] // empty] | join(",")' <<<"$RENDERED_JSON")" ]] \
+        || t_fail "$s: its API router must not carry the gate"
+done
+# while the portal guards them (MEDIASTACK_GATE_BIND=127.0.0.1:), a gated
+# tool's host port listens on 127.0.0.1 only — and nothing else's changes
+web_ips() { # -> "<svc> <auth> <host_ip|none>" per web interface, from the current render
+    local s pub nm cp
+    for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.subdomain"] != null) | .key' <<<"$RENDERED_JSON"); do
+        pub=$s; nm=$(jq -r --arg s "$s" '.services[$s].network_mode // ""' <<<"$RENDERED_JSON"); [[ "$nm" == service:* ]] && pub=${nm#service:}
+        cp=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.port"]' <<<"$RENDERED_JSON")
+        echo "$s $(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"]' <<<"$RENDERED_JSON") $(jq -r --arg p "$pub" --argjson t "$cp" \
+            '[.services[$p].ports[]? | select(.target == $t) | (.host_ip // "any")][0] // "none"' <<<"$RENDERED_JSON")"
+    done
+}
+open_ips=$(web_ips)
+env_set MEDIASTACK_GATE_BIND "127.0.0.1:"; RENDERED_JSON=""; render
+while read -r s auth ip; do
+    before=$(awk -v s="$s" '$1==s{print $3}' <<<"$open_ips")
+    [[ "$ip" == none ]] && continue   # not published on the host at all
+    if [[ "$auth" == gate ]]; then [[ "$ip" == 127.0.0.1 ]] || t_fail "$s is gated but its host port listens on '$ip'"
+    else [[ "$ip" == "$before" ]] || t_fail "$s is $auth but closing the gate moved its host port ($before -> $ip)"; fi
+done < <(web_ips)
+env_set MEDIASTACK_GATE_BIND ""; RENDERED_JSON=""
 echo "OK every web interface declares mediastack.auth; the gate is on exactly the gated routes"

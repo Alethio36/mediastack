@@ -519,11 +519,17 @@ The **gate**: every web interface declares who logs it in —
 `mediastack.auth: gate` (behind the portal), `native` (its own login) or `open`.
 A gated interface's domain address asks the portal first: not logged in → the
 portal's login, then straight back; logged in but not in `admins` → refused.
-Gated so far: the panel and Apprise (the two with no login of their own); the
-other admin tools follow. Their host ports stay reachable on the LAN for now —
-hardening is on the roadmap. After enabling authentik, run
-`./mediastack.sh wire authentik` once: it attaches the gate and adds the admin
-cards to your dashboard (doctor fails until it has).
+Gated: the panel, Apprise, every admin tool (the arrs, Prowlarr, Bazarr, the
+download clients, LazyLibrarian, Cleanuparr, WatchState, Pi-hole) and Traefik's
+dashboard. While the portal runs, their host ports listen on 127.0.0.1 only —
+the domain address is the way in — and the arrs trust the portal (one login;
+`wire arr` switches them, never before their ports are closed). Companion apps
+(nzb360, LunaSea, Home Assistant…) use the domain address: the arrs' and
+Bazarr's `/api` skips the gate and still demands their API key. The others
+still ask for their own login behind the portal for now. Disabling authentik
+gives every arr its own login back — verified — before the ports reopen. After
+enabling authentik, run `./mediastack.sh wire authentik` once: it attaches the
+gate and adds the admin cards to your dashboard (doctor fails until it has).
 
 ## Invites (Wizarr)
 

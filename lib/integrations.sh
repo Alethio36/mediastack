@@ -237,6 +237,21 @@ arr_instance_name() { # brand the instance so notifications are tellable apart;
     ensure_field "$s" "$ep" "$key" "$cur" instanceName "$want" "instance name"
 }
 
+arr_login() { # the arr's own login: "external" (trust the gate) when gate_trusted, the shared forms login otherwise
+    local s="$1" key url cur
+    gate_trusted "$s" || { arr_forms_login "$s"; return; }
+    key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
+    url=$(arr_url "$s")
+    cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
+    local match=no
+    jq -e '.authenticationMethod == "external"' <<<"$cur" >/dev/null 2>&1 && match=yes
+    # external: the arr trusts what is in front of it — the portal; its API
+    # still demands the API key (companion apps reach /api past the gate)
+    ensure_resource "$match" "$s: trust the portal (one login) — reachable only through it" \
+        "$s: trusts the portal" "$s: could not switch to trusting the portal — check: logs $s" \
+        -- api PUT "$url/api/$(arr_apiver "$s")/config/host" "$key" "$(jq -c '.authenticationMethod="external"' <<<"$cur")"
+}
+
 arr_forms_login() { # shared operator login on an arr-family UI; idempotent
     local s="$1" auser apass key url cur body verb=enable match=no
     [[ "${2:-}" == force ]] && verb=rotate
@@ -517,8 +532,8 @@ operator). Stored in .env (view: credentials)."
         key=$(arr_key "$s")
         [[ -n "$key" ]] || { wfail "$s: no ApiKey in config.xml yet (still initialising?) — re-run wire in a minute"; continue; }
         url=$(arr_url "$s"); root=$(svc_label "$s" mediastack.rootfolder)
-        # authentication (forms login) — idempotent on method+username match
-        arr_forms_login "$s"
+        # authentication — its own forms login, or trusting the portal (gate_trusted)
+        arr_login "$s"
         arr_instance_name "$s"
         (( recycle_ok )) && arr_recycle "$s" "$url" "$key"
         # root folder

@@ -30,7 +30,8 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "lidarr"
-      mediastack.auth: "native"   # handles its own login
+      mediastack.auth: "gate"   # an admin tool: behind the portal (mediastack-gate)
+      mediastack.auth.bypass: "/api"   # companion apps: its API still demands its own API key
       mediastack.port: "8686"
       mediastack.arrtype: "lidarr"
       mediastack.category: "music"

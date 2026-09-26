@@ -19,7 +19,7 @@ services:
     ports:
       - "53:53/tcp"
       - "53:53/udp"
-      - "${PIHOLE_WEB_PORT:-83}:80/tcp"
+      - "${MEDIASTACK_GATE_BIND:-}${PIHOLE_WEB_PORT:-83}:80/tcp"   # 127.0.0.1 while the portal guards it (DNS stays on the LAN)
     environment:
       - TZ=${TZ}
       # Pi-hole v6 variable (v5's WEBPASSWORD is ignored by v6 images).
@@ -37,12 +37,13 @@ services:
       traefik.http.routers.pihole.rule: "Host(`${PIHOLE_HOST:-pihole}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.pihole.entrypoints: "websecure"
       traefik.http.routers.pihole.tls: "true"
+      traefik.http.routers.pihole.middlewares: "mediastack-gate@file"
       traefik.http.services.pihole.loadbalancer.server.port: "80"
       mediastack.desc: "network-wide ad-blocking DNS"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "pihole"
-      mediastack.auth: "native"   # handles its own login
+      mediastack.auth: "gate"   # an admin tool: behind the portal (mediastack-gate)
     # Pi-hole ships its own image HEALTHCHECK; keep it.
     networks: [mediastack]
     logging: *logging
