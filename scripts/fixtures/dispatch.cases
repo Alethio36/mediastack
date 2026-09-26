@@ -212,3 +212,8 @@ manifest --accept extra
 # audit-extract  (none)
 audit-extract
 audit-extract x
+
+# notify  (free)
+notify
+notify test users
+notify send users "title" "message"
