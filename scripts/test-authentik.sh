@@ -156,11 +156,12 @@ base() { # base CURRENT OURS -> the PATCH body sent, or "none"
         case "$1 $2" in
             "GET /admin/settings/") jq -cn --arg u "$CUR" '{base_url:$u}' ;;
             "PATCH /admin/settings/") : ;;
-            "GET /managed/blueprints/?page_size=200") echo '{"results":[{"name":"Mediastack - Portal","status":"successful"}]}' ;;
+            "GET /managed/blueprints/?page_size=200") jq -cn --arg h "$BP_CUR" '{results:[{name:"Mediastack - Portal", status:"successful", last_applied_hash:$h, pk:"bp-1"}]}' ;;
         esac; }
     wire_authentik >/dev/null
     if grep -q '^PATCH' "$T/calls"; then grep '^PATCH' "$T/calls" | cut -d' ' -f3-; else echo none; fi
 }
+BP_CUR=$(sha512sum blueprints/authentik/mediastack-portal.yaml | cut -d' ' -f1)
 [[ "$(base "" "")" == '{"base_url":"https://portal.media.example.com"}' ]] || fail_ "unset: set it"; pass
 [[ "$(base "https://old.media.example.com" "https://old.media.example.com")" == *portal.media.example.com* ]] || fail_ "still ours (a renamed host): re-point it"; pass
 [[ "$(base "https://sso.mine.net" "")" == none ]] || fail_ "set in authentik's UI: never touched"; pass
@@ -204,5 +205,21 @@ rm -f "$T/calls"; wire_authentik_gate >/dev/null
 grep -qF 'POST /policies/bindings/ {"target":"a-new","group":"g-adm","order":0}' "$T/calls" || fail_ "the new card is admins-only"; pass
 grep -q '^DELETE /core/applications/mediastack-tool-oldsvc/' "$T/calls" || fail_ "a card for a tool no longer gated leaves"; pass
 ! grep -q 'my-own-app' <(grep -E '^(DELETE|PATCH)' "$T/calls") || fail_ "an application you made is never touched"; pass
+
+# ---- "successful" counts only for the current file (found live: right after
+#      an update, the status still described the previous version) ----
+BP_APPLIED=old; rm -f "$T/calls"
+ak_api() { echo "$1 $2" >> "$T/calls"
+    case "$1 $2" in
+        "GET /managed/blueprints/?page_size=200")
+            h=$BP_CUR; [[ "$BP_APPLIED" == old ]] && h=deadbeef
+            jq -cn --arg h "$h" '{results:[{name:"Mediastack - Portal", status:"successful", last_applied_hash:$h, pk:"bp-1"}]}' ;;
+        "POST /managed/blueprints/bp-1/apply/") BP_APPLIED=new; echo '{}' ;;
+        *) echo '{}' ;;
+    esac; }
+[[ "$(authentik_blueprint_status)" == outdated ]] || fail_ "an earlier file's success is 'outdated', not 'successful'"; pass
+BP_APPLIED=old; sleep() { :; }
+[[ "$(authentik_blueprint_apply)" == successful ]] || fail_ "applying on demand brings the current file in"; pass
+grep -q '^POST /managed/blueprints/bp-1/apply/' "$T/calls" || fail_ "the apply goes through authentik's API"; pass
 
 echo "OK authentik: $checks checks"
