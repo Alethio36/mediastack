@@ -46,6 +46,7 @@ services:
       mediastack.user_facing: "true"
       mediastack.cache: "true"
       mediastack.subdomain: "audiobooks"
+      mediastack.auth: "native"   # handles its own login
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:13378/healthcheck || exit 1"]
       interval: 30s

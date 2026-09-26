@@ -220,10 +220,15 @@ all built; what each still leaves open is noted below.
      dashboard card. `wire authentik` sets the base URL; `invite` mints a
      single-use link (7 days; `--expires 1|7|30`). The LDAP outpost comes with
      Jellyfin (5).
-  4. The `mediastack.auth` label on every web interface (`native` / `gate` /
-     `open`, exception paths), CI-enforced; gated tools on 127.0.0.1 ports with
-     their own login set to trust the gate; the gate's Traefik rules generated
-     from the labels.
+  4. The gate. *Milestone 1 done:* `mediastack.auth: gate | native | open` on
+     every web interface (CI: declared, and the gate middleware on exactly the
+     gated routes); Traefik's `mediastack-gate` middleware asks authentik's
+     built-in outpost when authentik runs and is a no-op without it; one
+     domain-wide forward-auth provider ("Admin tools") lets `admins` through;
+     `wire authentik` attaches it to the outpost (added, never replacing), puts
+     akadmin in `admins` once, and keeps an admins-only dashboard card per gated
+     tool. Gated so far: the panel and Apprise. *Milestone 2:* the arrs and the
+     other admin tools (each tool's trust setting verified against its docs).
   5. Per app: Jellyfin LDAP, Audiobookshelf/Kavita/ErsatzTV OIDC, Seerr through
      Jellyfin, Navidrome header + its own password for music apps, the panel via
      OAuth2 with group permissions, Apprise and the arrs behind the gate.
@@ -231,6 +236,19 @@ all built; what each still leaves open is noted below.
      users, keeping watch history; Audiobookshelf/Kavita match by username) —
      test the Jellyfin LDAP takeover of an existing user first.
   First milestone: the gate in front of the panel and Apprise.
+- **Harden the gate** *(later — accepted risk for now)*: gated tools keep their
+  host ports open to the LAN, so the gate protects their domain address only —
+  anyone on the LAN can still reach them by IP and port. Binding those ports to
+  127.0.0.1 closes that; it is also what lets a gated tool's own login be
+  switched to "trust the gate" (until then a gated tool that has its own login
+  asks twice through the domain: the portal, then its own).
+- **Wizarr mode: Apprise and the panel** *(review later — accepted risk for
+  now)*: without authentik there is no gate, and both have no login of their
+  own; they stay LAN-open as before.
+- **Access per tool** *(look into later)*: today there are two levels — `admins`
+  (every admin tool) and the household front end (`media-users`). Finer rules
+  (one person gets Sonarr but not qBittorrent) would be one application and
+  binding per tool instead of the one domain-wide rule.
 - **Email server for authentik** *(later)* — the standard for what email is
   used for: (1) a user resets their own forgotten password, (2) `invite` can
   e-mail the link, (3) authentik's own update notices reach its admins. Nothing

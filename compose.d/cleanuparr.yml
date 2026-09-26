@@ -39,6 +39,7 @@ services:
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "cleanup"
+      mediastack.auth: "native"   # handles its own login
     healthcheck:
       test: ["CMD-SHELL", "curl -fs --max-time 5 http://127.0.0.1:11011/health || exit 1"]
       interval: 30s

@@ -155,6 +155,7 @@ http:
       basicAuth:
         users:
           - "$duser:$hash"
+$(traefik_gate_middleware)
 DYNAMIC
     sudo install -d -m 700 "$croot/traefik/dynamic"
     sudo rm -f "$croot/traefik/dynamic.yml"   # pre-dir layout leftover
@@ -179,6 +180,33 @@ DYNAMIC
         sudo docker restart "$(svc_cname traefik)" >/dev/null \
             && ok "traefik restarted" \
             || wfail "traefik restart failed — restart it manually: sudo docker restart $(svc_cname traefik)"
+    fi
+}
+
+traefik_gate_middleware() { # mediastack-gate: what a router with mediastack.auth=gate passes through
+    if svc_enabled authentik; then
+        # authentik's built-in outpost decides (lib/authentik.sh attaches the gate to it)
+        cat <<'GATE'
+    mediastack-gate:
+      forwardAuth:
+        address: "http://authentik:9000/outpost.goauthentik.io/auth/traefik"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-authentik-username
+          - X-authentik-groups
+          - X-authentik-email
+          - X-authentik-name
+          - X-authentik-uid
+GATE
+    else
+        # no portal (Wizarr mode): the route stays as it was — an accepted risk,
+        # docs/roadmap.md (Security & access)
+        cat <<'GATE'
+    mediastack-gate:
+      headers:
+        customResponseHeaders:
+          X-Mediastack-Gate: "off"
+GATE
     fi
 }
 

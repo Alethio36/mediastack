@@ -127,6 +127,22 @@ authentik_blueprint_status() { # -> successful | warning | error | ... | "" (not
     jq -r --arg n "$AUTHENTIK_BLUEPRINT" '[.results[] | select(.name == $n) | .status][0] // ""' <<<"$out"
 }
 
+authentik_gate_attached() { # -> 0 when the gate's provider sits on the built-in outpost
+    local prov out
+    prov=$(ak_api GET "/providers/proxy/?name__iexact=mediastack-gate") || return 1
+    prov=$(jq -r '.results[0].pk // empty' <<<"$prov"); [[ -n "$prov" ]] || return 1
+    out=$(ak_api GET "/outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") || return 1
+    jq -e --argjson p "$prov" '.results[0].providers | index($p) != null' <<<"$out" >/dev/null
+}
+
+authentik_gated() { # the enabled services behind the gate (mediastack.auth: gate)
+    local s
+    for s in $(svc_enabled_managed); do
+        [[ "$(svc_label "$s" mediastack.auth)" == gate ]] && echo "$s"
+    done
+    return 0
+}
+
 authentik_invite() { # authentik_invite DAYS -> a single-use sign-up link, printed
     local days="$1" flow name exp out pk
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
@@ -176,6 +192,10 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                 *) d_fail "authentik: mediastack's portal setup is '$st'" "groups and sign-up may be missing or incomplete" \
                        "./mediastack.sh logs authentik --no-follow | grep -i blueprint" ;;
             esac
+            if [[ -n "$(authentik_gated)" ]]; then
+                if authentik_gate_attached; then ok "authentik: the gate is up — $(authentik_gated | tr '\n' ' ')ask the portal first (admins only)"
+                else d_fail "authentik: the gate is not on its built-in outpost" "routes marked gate ($(authentik_gated | tr '\n' ' '| sed 's/ $//')) refuse everyone" "./mediastack.sh wire authentik"; fi
+            fi
         fi
     elif svc_enabled wizarr; then
         info "accounts: Wizarr (each app keeps its own accounts)"

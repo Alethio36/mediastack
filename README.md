@@ -79,7 +79,7 @@ explanation.
 | seerr | request/discovery site for your users |
 | bazarr | subtitle automation |
 | wizarr | invitation links — "set up my account" becomes a URL (the simple account model; each app keeps its own accounts) |
-| authentik | the portal (`portal.<domain>`): one login for every app, sign-up by invitation, groups as permissions (the full account model — authentik *or* Wizarr, never both). Its own PostgreSQL and worker run in the same shard; the admin login is in `credentials` |
+| authentik | the portal (`portal.<domain>`): one login for every app, sign-up by invitation, groups as permissions (the full account model — authentik *or* Wizarr, never both). Its own PostgreSQL and worker run in the same shard; the admin login is in `credentials`. It is also the **gate**: a web interface marked `mediastack.auth: gate` (so far the panel and Apprise) asks the portal first, and only the `admins` group gets through — see "The gate" below |
 | apprise | one notification hub for the whole stack (ops/users) |
 | cleanuparr | strikes stalled downloads, cleans the queue |
 | watchstate | syncs + backs up per-user watch state across media servers |
@@ -506,6 +506,24 @@ Backends are configured once in its UI (`https://watch.<your-domain>`):
 add each server with an API key, choose Import/Export per backend, and
 enable the scheduled tasks. Run exactly ONE instance per household —
 state lives here, and two instances means two divergent truths.
+
+## The portal and the gate (authentik)
+
+With authentik enabled, `portal.<domain>` is where your users join (by
+invitation: `./mediastack.sh invite`) and log in; its dashboard shows each person
+the apps they may use. Two groups decide access: `media-users` (everyone who
+joins) and `admins` (you — `wire authentik` puts the first admin there; add
+others in authentik's Directory → Groups).
+
+The **gate**: every web interface declares who logs it in —
+`mediastack.auth: gate` (behind the portal), `native` (its own login) or `open`.
+A gated interface's domain address asks the portal first: not logged in → the
+portal's login, then straight back; logged in but not in `admins` → refused.
+Gated so far: the panel and Apprise (the two with no login of their own); the
+other admin tools follow. Their host ports stay reachable on the LAN for now —
+hardening is on the roadmap. After enabling authentik, run
+`./mediastack.sh wire authentik` once: it attaches the gate and adds the admin
+cards to your dashboard (doctor fails until it has).
 
 ## Invites (Wizarr)
 

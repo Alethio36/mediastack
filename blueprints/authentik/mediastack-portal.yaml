@@ -190,3 +190,34 @@ entries:
       meta_publisher: !Env [MEDIASTACK_PORTAL_TITLE, Mediastack]
       meta_description: "Your username and password here work in every app. Watch: install the Jellyfin app and sign in with them. Request something new: use the Requests card and sign in with Jellyfin."
       open_in_new_tab: false
+
+  # -- the gate: one rule for every admin tool ----------------------------
+  # Traefik asks authentik (the forward-auth provider, attached to the
+  # built-in outpost by `wire authentik`) about every request to a route
+  # marked mediastack.auth: gate. Domain-wide: one login covers them all; the
+  # application's binding lets `admins` through and nobody else.
+  - model: authentik_providers_proxy.proxyprovider
+    id: provider-gate
+    identifiers:
+      name: mediastack-gate
+    attrs:
+      mode: forward_domain
+      external_host: !Env [MEDIASTACK_PORTAL_URL, ""]
+      cookie_domain: !Env [MEDIASTACK_DOMAIN, ""]
+      authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+      invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+  - model: authentik_core.application
+    id: app-gate
+    identifiers:
+      slug: mediastack-admin-tools
+    attrs:
+      name: Admin tools
+      provider: !KeyOf provider-gate
+      # not a card itself: each gated tool gets its own card (wire authentik)
+      meta_launch_url: blank://blank
+      policy_engine_mode: any
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf app-gate
+      group: !KeyOf group-admins
+      order: 0

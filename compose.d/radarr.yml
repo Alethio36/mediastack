@@ -30,6 +30,7 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "radarr"
+      mediastack.auth: "native"   # handles its own login
       mediastack.port: "7878"
       mediastack.arrtype: "radarr"
       mediastack.category: "movies"

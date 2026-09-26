@@ -38,6 +38,7 @@ services:
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "invites"
+      mediastack.auth: "native"   # handles its own login
       mediastack.conflicts: "authentik"   # two account models: one of them, never both
     healthcheck:
       test: ["CMD-SHELL", "curl -fs --max-time 5 http://127.0.0.1:5690/health || exit 1"]

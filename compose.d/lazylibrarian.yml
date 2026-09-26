@@ -34,6 +34,7 @@ services:
       mediastack.vpntoggle: "true"
       mediastack.config: "true"
       mediastack.subdomain: "books-dl"
+      mediastack.auth: "native"   # handles its own login
     healthcheck:
       # LazyLibrarian redirects / -> /home (303); -f would fail on that, so
       # accept any response by checking the connection succeeds
