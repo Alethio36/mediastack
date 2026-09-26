@@ -411,7 +411,9 @@ uid_handover() {
 
 provision() {
     hr "Provisioning users, group, folders"
-    load_env; render
+    load_env
+    _configure_selfheal   # a service new since the last configure gets its UID before anything starts it
+    RENDERED_JSON=""; render
     local gid; gid=$(env_get MEDIA_GROUP_GID 13000)
     getent group mediacenter >/dev/null || { sudo groupadd -g "$gid" mediacenter; ok "group mediacenter ($gid)"; }
     local s v uid croot droot cache tcode

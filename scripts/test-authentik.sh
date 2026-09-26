@@ -10,6 +10,7 @@
 #     and a conflict pair in a selection is found
 #   * a shard member is never a dependency to enable (it comes with its
 #     primary's profile)
+#   * a service an upgrade adds gets its UID before it first starts
 #
 #   scripts/test-authentik.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -74,5 +75,21 @@ RENDERED_JSON='{"services":{
 [[ -z "$(conflicts_in jellyfin authentik)" ]] || fail_ "no pair, no conflict"; pass
 [[ -z "$(svc_deps authentik)" ]] || fail_ "a shard member is not a dependency to enable: $(svc_deps authentik)"; pass
 [[ "$(svc_deps wizarr)" == jellyfin ]] || fail_ "ordinary dependencies are unchanged"; pass
+
+# ---- a service an upgrade adds gets its UID before it first starts ----
+# (found live: an install upgraded to authentik ran it as the images' default
+# users — the UID was only allocated by `configure`)
+info() { echo "INFO $*" >> "$T/info"; }
+CUSTOM_DIR=$T/custom
+printf 'UID_BASE=13000\nSONARR_UID=13001\nRADARR_UID=13028\n' > "$ENV_FILE"
+_configure_selfheal
+u=$(env_get AUTHENTIK_UID)
+[[ "$u" =~ ^[0-9]+$ ]] && (( u > 13028 )) \
+    || fail_ "a new service gets a UID above every existing one: '$u'"; pass
+[[ -z "$(grep -E '_UID=[0-9]+$' "$ENV_FILE" | cut -d= -f2 | sort | uniq -d)" ]] || fail_ "allocated UIDs must be unique"; pass
+before=$(cat "$ENV_FILE"); rm -f "$T/info"; _configure_selfheal
+[[ "$(cat "$ENV_FILE")" == "$before" && ! -e "$T/info" ]] || fail_ "a second run changes nothing and says nothing"; pass
+grep -q '^    _configure_selfheal' <(sed -n '/^provision() {/,/^}/p' mediastack.sh) \
+    || fail_ "provision (up, enable) must allocate new services' UIDs"; pass
 
 echo "OK authentik: $checks checks"
