@@ -6,7 +6,8 @@
 #   * the shard rules hold: the primary exists and is managed, a member is not
 #     managed itself, shares the primary's profiles and user, and the primary
 #     depends_on it — each broken rule is named
-#   * status shows a shard "degraded" when any member is not up
+#   * status shows a shard "degraded" when any member is not up, and the
+#     container cache that status and doctor read includes the members
 #
 #   scripts/test-shard.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -56,5 +57,13 @@ c_health() { case "$1" in c-idp-db) echo "$HEALTH_DB" ;; *) echo healthy ;; esac
 HEALTH_DB=unhealthy; [[ "$(shard_health idp)" == degraded ]] || fail_ "an unhealthy member: degraded"; pass
 STATE_DB=exited; HEALTH_DB=-; [[ "$(shard_health idp)" == degraded ]] || fail_ "a stopped member: degraded"; pass
 [[ "$(shard_health radarr)" == healthy ]] || fail_ "no members: the service's own health"; pass
+
+# ---- the container cache includes members ----
+# (found live: members were never inspected, so a healthy shard read "degraded")
+RENDERED_JSON=$good
+c_inspect() { printf '%s\n' "$@" > "$T_NAMES"; echo '[]'; }
+T_NAMES=$(mktemp); c_inspect_all
+[[ "$(sort "$T_NAMES" | tr '\n' ' ')" == "idp idp-db idp-worker radarr " ]] || fail_ "inspected: $(tr '\n' ' ' < "$T_NAMES")"; pass
+rm -f "$T_NAMES"
 
 echo "OK shard: $checks checks"

@@ -703,11 +703,13 @@ c_inspect() { # c_inspect <cname>... -> JSON array of the containers that exist
     fi
     rm -f "$err"; echo "${out:-[]}"
 }
-c_inspect_all() { # fill the cache for every managed container (see CACHE RULE)
+c_inspect_all() { # fill the cache for every managed container and its shard's members (see CACHE RULE)
     render
     local names
+    # members too: status and doctor judge a shard by them (found live — left
+    # out, a healthy shard read as "degraded", its members as absent)
     names=$(jq -r '.services | to_entries[]
-        | select(.value.labels["mediastack.managed"] == "true")
+        | select(.value.labels["mediastack.managed"] == "true" or .value.labels["mediastack.shard"] != null)
         | .value.container_name // .key' <<<"$RENDERED_JSON")
     [[ -n "$names" ]] || { INSPECT_JSON="[]"; return 0; }
     # projected to the fields c_get reads: a full inspect of 30 containers is
