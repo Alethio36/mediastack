@@ -20,7 +20,7 @@ source "$lib"
 
 sudo() { "$@"; }                        # everything here is ours already
 require_mounts() { :; }
-notify() { printf '%s|%s|%s\n' "$1" "$4" "$2" >> "$T/notes"; }
+notify() { printf '%s|%s|%s\n' "$1" "$4" "$2" >> "$T/notes"; printf '%s\n' "$3" >> "$T/bodies"; }
 ENV_FILE=$T/.env
 printf 'DATA_ROOT=%s/data\nBACKUP_ROOT=%s/bk\nMANIFEST_ALERT_PCT=5\nMANIFEST_SCHEDULE=*-*-* 03:30\n' "$T" "$T" > "$ENV_FILE"
 load_env() { :; }                       # no schema migration against the stub .env
@@ -73,6 +73,18 @@ grep -q -- '-1  movies/Movie 20 (2000)' <<<"$OUT" && grep -q -- '-2  tv/Show (20
 rm "$M/tv/Weird"$'\t'"Show/Season 01/"*
 snap
 grep -qF -- '-1  tv/Weird\tShow/Season 01' <<<"$OUT" || fail_ "tab-named folder: $OUT"; pass
+
+# ---- who removed it: the deletion log (lib/audit.sh) names who, per folder
+# and per title in the alert; a folder the log never saw says so
+mkdir -p "$T/bk/audit"
+printf '%s\tradarr\tdelete\t%s\t\n' "$(date +%s)" "$(realpath "$M")/movies/Movie 19 (2000)/Movie 19 (2000) Bluray-1080p.mkv" \
+    > "$T/bk/audit/$(date +%F).tsv"
+rm -r "$M/movies/Movie 19 (2000)" "$M/movies/Movie 18 (2000)"; : > "$T/bodies"
+snap
+grep -A2 -- '-1  movies/Movie 19 (2000)' <<<"$OUT" | grep -q 'removed by: radarr ×1' || fail_ "report must name who removed Movie 19: $OUT"; pass
+grep -A2 -- '-1  movies/Movie 18 (2000)' <<<"$OUT" | grep -q 'no deletion recorded here' || fail_ "report must say nothing was recorded for Movie 18: $OUT"; pass
+grep -q '• movies/Movie 19 (2000) — removed by: radarr ×1' "$T/bodies" || fail_ "alert must name who: $(cat "$T/bodies")"; pass
+rm -r "$T/bk/audit"
 
 # ---- unmounted share: empty media root -> refused, nothing recorded
 n=$(count); mv "$M" "$T/offline"; mkdir -p "$M"
