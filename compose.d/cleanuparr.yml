@@ -23,7 +23,7 @@ services:
       - TZ=${TZ}
       - PORT=11011
     ports:
-      - "${CLEANUPARR_PORT:-11011}:11011"
+      - "${MEDIASTACK_GATE_BIND:-}${CLEANUPARR_PORT:-11011}:11011"   # 127.0.0.1 while the portal guards it
     volumes:
       - ${CONFIG_ROOT}/cleanuparr:/config
     labels:
@@ -34,12 +34,13 @@ services:
       traefik.http.routers.cleanuparr.rule: "Host(`${CLEANUPARR_HOST:-cleanup}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.cleanuparr.entrypoints: "websecure"
       traefik.http.routers.cleanuparr.tls: "true"
+      traefik.http.routers.cleanuparr.middlewares: "mediastack-gate@file"
       traefik.http.services.cleanuparr.loadbalancer.server.port: "11011"
       mediastack.desc: "strikes stalled downloads, cleans up the queue"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "cleanup"
-      mediastack.auth: "native"   # handles its own login
+      mediastack.auth: "gate"   # an admin tool: behind the portal (mediastack-gate)
     healthcheck:
       test: ["CMD-SHELL", "curl -fs --max-time 5 http://127.0.0.1:11011/health || exit 1"]
       interval: 30s

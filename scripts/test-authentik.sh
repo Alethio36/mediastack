@@ -20,6 +20,8 @@
 #     adds the gate beside the outpost's providers, puts akadmin in admins
 #     once, keeps one admins-only card per gated tool and never touches
 #     applications it did not make
+#   * gated ports listen on 127.0.0.1 while the portal runs; an arr trusts the
+#     portal only when it is gated AND unreachable by IP, its own login otherwise
 #
 #   scripts/test-authentik.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -221,5 +223,43 @@ ak_api() { echo "$1 $2" >> "$T/calls"
 BP_APPLIED=old; sleep() { :; }
 [[ "$(authentik_blueprint_apply)" == successful ]] || fail_ "applying on demand brings the current file in"; pass
 grep -q '^POST /managed/blueprints/bp-1/apply/' "$T/calls" || fail_ "the apply goes through authentik's API"; pass
+
+# ---- ports close with the portal; logins trust it only once they have ----
+printf 'COMPOSE_PROFILES=x\n' > "$ENV_FILE"
+AK_ON=1; svc_enabled() { [[ "$1" == authentik && -n "${AK_ON:-}" ]]; }
+gate_bind_sync >/dev/null; [[ "$(env_get MEDIASTACK_GATE_BIND)" == "127.0.0.1:" ]] || fail_ "with the portal: gated ports listen on 127.0.0.1"; pass
+AK_ON=;  gate_bind_sync >/dev/null; [[ "$(env_get MEDIASTACK_GATE_BIND)" == "" ]] || fail_ "without it: gated ports reopen"; pass
+svc_host() { echo "$1"; }; svc_cport() { echo 8989; }; svc_cname() { echo "c-$1"; }
+sudo() { [[ "$1 $2" == "docker port" ]] && printf '%s' "$PORTS"; }
+PORTS=$'127.0.0.1:8989\n';                svc_bound_local sonarr || fail_ "127.0.0.1 only: local"; pass
+PORTS=$'0.0.0.0:8989\n[::]:8989\n';       ! svc_bound_local sonarr || fail_ "every address: not local"; pass
+PORTS=$'127.0.0.1:8989\n0.0.0.0:8989\n';  ! svc_bound_local sonarr || fail_ "one open binding is enough to be reachable"; pass
+PORTS="";                                 svc_bound_local sonarr || fail_ "nothing published: local"; pass
+svc_label() { [[ "$2" == mediastack.auth ]] && echo "${AUTH:-gate}"; }
+AK_ON=1 AUTH=gate PORTS=$'127.0.0.1:8989\n'; gate_trusted sonarr || fail_ "portal + gated + closed: trust it"; pass
+AK_ON=1 AUTH=gate PORTS=$'0.0.0.0:8989\n';   ! gate_trusted sonarr || fail_ "still reachable by IP: keep its own login"; pass
+AK_ON='' AUTH=gate PORTS=$'127.0.0.1:8989\n'; ! gate_trusted sonarr || fail_ "no portal: keep its own login"; pass
+AK_ON=1 AUTH=native PORTS=$'127.0.0.1:8989\n'; ! gate_trusted sonarr || fail_ "not gated: keep its own login"; pass
+unset -f sudo
+# the arr's own login follows gate_trusted
+arr_key() { echo k; }; arr_url() { echo http://x; }; arr_apiver() { echo v3; }
+arr_forms_login() { echo "FORMS $1"; }
+ensure_resource() { local m=$1; shift 4; shift; echo "ENSURE match=$m $*"; }
+api() { echo '{"authenticationMethod":"forms","username":"u"}'; }
+gate_trusted() { [[ -n "${TRUSTED:-}" ]]; }
+TRUSTED=1; out=$(arr_login sonarr)
+[[ "$out" == *'match=no'*'"authenticationMethod":"external"'* ]] || fail_ "trusted: switch to external: $out"; pass
+TRUSTED=;  [[ "$(arr_login sonarr)" == "FORMS sonarr" ]] || fail_ "not trusted: its own forms login"; pass
+# Traefik's dashboard: behind the gate with the portal, its own password without
+AK_ON=1; grep -q 'middlewares: \[$(svc_enabled authentik && echo mediastack-gate || echo dash-auth)\]' lib/edge.sh \
+    || fail_ "the dashboard router chooses the gate or its password by account model"; pass
+
+# disabling the portal: every arr's own login is verified BEFORE the profile
+# changes and the ports reopen (never open to the LAN without a login)
+body=$(sed -n '/^cmd_disable() {/,/^}/p' mediastack.sh)
+v=$(grep -n 'still trusts the portal' <<<"$body" | head -1 | cut -d: -f1)
+e=$(grep -n 'env_set COMPOSE_PROFILES' <<<"$body" | head -1 | cut -d: -f1)
+g=$(grep -n 'gate_bind_sync' <<<"$body" | head -1 | cut -d: -f1)
+[[ -n "$v" && -n "$e" && -n "$g" ]] && (( v < e && e < g )) || fail_ "disable authentik: logins verified, then the profile, then the ports"; pass
 
 echo "OK authentik: $checks checks"
