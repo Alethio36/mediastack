@@ -1,4 +1,5 @@
 # Wizarr: invite links that onboard your users onto Jellyfin.
+# Either this or authentik, never both (mediastack.conflicts).
 # First run is a one-time UI step (create admin, connect Jellyfin, mint an
 # API key) — see README "Invites". After that: ./mediastack.sh invite
 
@@ -37,6 +38,7 @@ services:
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.subdomain: "invites"
+      mediastack.conflicts: "authentik"   # two account models: one of them, never both
     healthcheck:
       test: ["CMD-SHELL", "curl -fs --max-time 5 http://127.0.0.1:5690/health || exit 1"]
       interval: 30s

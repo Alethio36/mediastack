@@ -18,6 +18,10 @@ cmd_credentials() {
     printf '%-22s %s\n' "Jellyfin admin user"   "$(env_get JELLYFIN_ADMIN_USER '(not set — run wire)')"
     printf '%-22s %s\n' "Jellyfin admin password" "$(env_get JELLYFIN_ADMIN_PASSWORD '(not set — run wire)')"
     printf '%-22s %s\n' "Jellyfin API key"      "$(env_get JELLYFIN_API_KEY '(not set — run wire jellyfin)')"
+    if svc_enabled authentik; then
+        printf '%-22s %s\n' "Portal admin user"     "akadmin"
+        printf '%-22s %s\n' "Portal admin password" "$(env_get AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"
+    fi
     printf '%-22s %s\n' "Wizarr API key"        "$(env_get WIZARR_API_KEY '(not set — run wire wizarr)')"
     info "Seerr owner = the Jellyfin admin above; all Seerr sign-ins use Jellyfin accounts (no separate Seerr passwords exist)."
     info "The Jellyfin API key is what Wizarr's Add Server form asks for."

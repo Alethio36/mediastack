@@ -39,6 +39,7 @@ include:
   - compose.d/transmission.yml
   - compose.d/wizarr.yml
   - compose.d/olivetin.yml
+  - compose.d/authentik.yml
 
 networks:
   mediastack:
