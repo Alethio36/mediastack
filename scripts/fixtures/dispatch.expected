@@ -176,6 +176,20 @@ CALL cmd_doctor [0]
 ## doctor x
 ERROR 'doctor' takes no arguments (got: x)
 rc=1
+## audit
+CALL cmd_audit [0]
+## audit status
+CALL cmd_audit [1] status
+## audit on
+CALL cmd_audit [1] on
+## audit off
+CALL cmd_audit [1] off
+## audit bogus
+ERROR unknown argument 'bogus' for 'audit' (accepts: status on off)
+rc=1
+## audit on off
+ERROR 'audit' takes at most 1 argument(s) (got: on off)
+rc=1
 ## leak-test
 CALL cmd_leak_test [0]
 ## leak-test --killswitch

@@ -143,6 +143,7 @@ Check
 |---|---|
 | `doctor` | full health/permission/cert/backup/host-port audit — every failure states its fix |
 | `leak-test [--killswitch]` | prove no VPN'd service can leak (`--killswitch` = destructive proof) |
+| `audit [status\|on\|off]` | deletion attribution, opt-in: the kernel logs every delete and rename under `DATA_ROOT/media` with the UID that made it — each service runs as its own UID, so the UID names the service (the manifest says *what* went missing, this says *who*). `on` installs auditd if the host has none (a host that already runs auditd keeps its own setup: one rules file is added, nothing else is touched) and proves the watch with a test delete; `off` removes it again (and auditd, if mediastack installed it). `status` (default) is doctor's check, including the live test delete |
 | `vpn [svc on/off]` | show or change which services run behind the VPN (torrent clients need `--i-know` to leave). A move changes how other apps reach the service, so the next `up` re-points everything wired to call it (`WIRE_CALLERS`); if that fails, the next `up` retries and `doctor` says it is pending |
 | `fix-perms [svc]` | repair ownership of a service's config, cache and transcode folders from the UID map |
 
