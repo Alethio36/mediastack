@@ -199,16 +199,22 @@ all built; what each still leaves open is noted below.
   runs stack commands. Until the gate exists (and for installs that choose
   Wizarr, which has none): Apprise not published over HTTPS and its port on
   127.0.0.1 only; the panel behind OliveTin's local-user login.
-- **SSO: authentik** *(decided Sept 2026; build after migrate)* — reasoning and
+- **SSO: authentik** *(decided Sept 2026; part of the MVP — before migrate)* — reasoning and
   per-app evidence in [watchlist.md](watchlist.md#identity--sso). Build order:
-  1. The DB-backed service pattern (PostgreSQL-aware `backup`, migration-aware
-     `update`) — authentik is its first user.
-  2. The account model is either/or: `enable authentik` refuses while Wizarr is
-     on and the reverse, `configure` asks which one, doctor fails both enabled.
-  3. `authentik.yml`, one shard (server, worker, PostgreSQL, LDAP outpost), set
-     up from shipped blueprints: invitation signup into `media-users`, household
-     users external with a default application, dashboard cards with setup text,
-     `admins` for the gated tools.
+  1. *Done:* shard support in the tooling (members, whole-shard verbs, CI rules).
+  2. *Done:* `authentik.yml` — server, worker and its own PostgreSQL (pinned),
+     secrets generated at the first `up` and refused if a database exists
+     without them, the first admin created at first start (`credentials`),
+     `portal.<domain>`, the API on 127.0.0.1 only. Upgrades walk its releases
+     one at a time and never go back (`AUTHENTIK_RELEASES`; the release is
+     recorded beside the database, so a restore point brings the right mark
+     back). Backups are the existing cold restore points (the stack stops; a
+     stopped PostgreSQL copies consistently). The account model is either/or,
+     declared by `mediastack.conflicts`: `enable` refuses the second,
+     `configure` asks which one, doctor fails both enabled.
+  3. Blueprints: invitation signup into `media-users`, household users external
+     with a default application, dashboard cards with setup text, `admins` for
+     the gated tools. The LDAP outpost comes with Jellyfin (5).
   4. The `mediastack.auth` label on every web interface (`native` / `gate` /
      `open`, exception paths), CI-enforced; gated tools on 127.0.0.1 ports with
      their own login set to trust the gate; the gate's Traefik rules generated

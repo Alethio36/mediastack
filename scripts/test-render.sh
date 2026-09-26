@@ -46,6 +46,9 @@ source "$lib"; rm -f "$lib"
 t_fail() { echo "ERROR $*" >&2; exit 1; }
 
 echo ":: 1. fresh .env.example"
+# every fragment is included — one left out renders fine and is silently absent
+missing=$(for f in compose.d/*.yml; do grep -qxF "  - $f" docker-compose.yml || echo "$f"; done)
+[[ -z "$missing" ]] || t_fail "fragments docker-compose.yml does not include: $missing"
 vpn_gen
 [[ -s "$OVERLAY_FILE" ]] || t_fail "vpn_gen wrote no overlay"
 renders "" || t_fail "base config does not render"

@@ -1,0 +1,130 @@
+# authentik: the identity provider — one login for every app, invitation
+# signup, groups as the permission switch (docs/watchlist.md: Identity & SSO).
+# Either this or Wizarr, never both (mediastack.conflicts).
+#
+# One shard (docs/roadmap.md: Shards): the server is the primary; its worker
+# and its own PostgreSQL are members — same profile, same UID, their data under
+# CONFIG_ROOT/authentik/. Pinned on purpose: authentik must not skip a release
+# and cannot go back one (lib/authentik.sh checks each step); PostgreSQL stays
+# on its major version (a major upgrade is a dump and reload, done deliberately).
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+x-authentik-env: &authentik-env
+  TZ: ${TZ}
+  AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
+  AUTHENTIK_POSTGRESQL__HOST: authentik-db
+  AUTHENTIK_POSTGRESQL__NAME: authentik
+  AUTHENTIK_POSTGRESQL__USER: authentik
+  AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+  AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+
+x-authentik-health: &authentik-health
+  test: ["CMD", "ak", "healthcheck"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 90s
+
+services:
+  authentik:
+    image: ghcr.io/goauthentik/server:2026.8
+    container_name: ${AUTHENTIK_NAME:-mediastack-authentik}
+    profiles: ["authentik"]
+    command: server
+    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID}"
+    environment:
+      <<: *authentik-env
+    volumes:
+      - ${CONFIG_ROOT}/authentik/data:/data
+      - ${CONFIG_ROOT}/authentik/templates:/templates
+    # the script reaches the API here; browsers go through Traefik
+    ports:
+      - "127.0.0.1:${AUTHENTIK_PORT:-9000}:9000"
+    shm_size: 512mb
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+      authentik-worker:
+        condition: service_started
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.desc: "one login for every app — sign-up by invitation, groups as permissions"
+      mediastack.port: "9000"
+      mediastack.vpn: "false"
+      mediastack.config: "true"
+      mediastack.subdomain: "portal"
+      mediastack.conflicts: "wizarr"
+      traefik.enable: "true"
+      traefik.http.routers.authentik.rule: "Host(`${AUTHENTIK_HOST:-portal}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.authentik.entrypoints: "websecure"
+      traefik.http.routers.authentik.tls: "true"
+      traefik.http.services.authentik.loadbalancer.server.port: "9000"
+    healthcheck: *authentik-health
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped
+
+  authentik-worker:
+    image: ghcr.io/goauthentik/server:2026.8
+    container_name: ${AUTHENTIK_WORKER_NAME:-mediastack-authentik-worker}
+    profiles: ["authentik"]
+    command: worker
+    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID}"
+    environment:
+      <<: *authentik-env
+      # read once, on the very first start: the first admin (akadmin) and an
+      # API token for the script (lib/authentik.sh writes both)
+      AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_ADMIN_PASSWORD}
+      AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_API_TOKEN}
+    volumes:
+      - ${CONFIG_ROOT}/authentik/data:/data
+      - ${CONFIG_ROOT}/authentik/templates:/templates
+      - ${CONFIG_ROOT}/authentik/certs:/certs
+    shm_size: 512mb
+    depends_on:
+      authentik-db:
+        condition: service_healthy
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.shard: "authentik"
+    healthcheck: *authentik-health
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped
+
+  authentik-db:
+    # the Debian image, not alpine: it can run as an arbitrary UID (the shard's)
+    image: postgres:16
+    container_name: ${AUTHENTIK_DB_NAME:-mediastack-authentik-db}
+    profiles: ["authentik"]
+    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID}"
+    environment:
+      TZ: ${TZ}
+      POSTGRES_DB: authentik
+      POSTGRES_USER: authentik
+      POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ${CONFIG_ROOT}/authentik/db:/var/lib/postgresql/data
+    shm_size: 256mb
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.shard: "authentik"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [mediastack]
+    logging: *logging
+    restart: unless-stopped

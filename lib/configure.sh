@@ -238,6 +238,21 @@ search engine). Change any of this later with enable/disable." \
     [[ -n "$sel" ]] || die "No services selected — nothing to run."
     info "Resolving dependencies..."
     sel=$(resolve_deps $sel)
+    # services that do the same job two ways (mediastack.conflicts): keep one
+    local pair a b keep
+    while read -r pair; do
+        [[ -n "$pair" ]] || continue
+        a=${pair% *}; b=${pair#* }
+        explain "Choose one: $a or $b" \
+"These two do the same job in different ways and cannot both run:" \
+"  1) $a — $(svc_label "$a" mediastack.desc)" \
+"  2) $b — $(svc_label "$b" mediastack.desc)" \
+"Switching later is possible (disable one, enable the other)."
+        ask "PICK_$a" "Keep" 1
+        case "$REPLY_VAL" in 1) keep=$a ;; 2) keep=$b ;; *) die "Unknown choice '$REPLY_VAL' — expected 1 or 2." ;; esac
+        sel=$(printf '%s\n' $sel | grep -vx "$([[ "$keep" == "$a" ]] && echo "$b" || echo "$a")")
+        ok "Keeping $keep"
+    done < <(conflicts_in $sel)
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     ok "Enabled: $(env_get COMPOSE_PROFILES)"
 

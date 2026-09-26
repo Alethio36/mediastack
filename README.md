@@ -78,7 +78,8 @@ explanation.
 | npm | Nginx Proxy Manager — GUI reverse proxy, the alternative edge (shipped, not wired: add hosts in its UI) |
 | seerr | request/discovery site for your users |
 | bazarr | subtitle automation |
-| wizarr | invitation links — "set up my account" becomes a URL |
+| wizarr | invitation links — "set up my account" becomes a URL (the simple account model; each app keeps its own accounts) |
+| authentik | the portal (`portal.<domain>`): one login for every app, sign-up by invitation, groups as permissions (the full account model — authentik *or* Wizarr, never both). Its own PostgreSQL and worker run in the same shard; the admin login is in `credentials` |
 | apprise | one notification hub for the whole stack (ops/users) |
 | cleanuparr | strikes stalled downloads, cleans the queue |
 | watchstate | syncs + backs up per-user watch state across media servers |
