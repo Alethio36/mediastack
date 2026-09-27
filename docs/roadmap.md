@@ -120,18 +120,21 @@ Where the project goes next — decisions to make and work not yet built.
   churn and temporary space, and the arrs noticing replaced files (re-import,
   upgrade loops). Decide in the watchlist before shipping.
 
-### Storage layout — before migrate
-To be discussed, not decided (tabled Sept 2026). Most users arrive with media
-already spread over several drives or shares, while the stack assumes one
-filesystem for DATA_ROOT (hardlinks, and now the recycle bin, need it):
-- mergerfs pooling *in place* (a union over existing folders: nothing copied,
-  per-drive top folders renamed to fit the layout, the apps' stored paths
-  re-pointed — overlaps migrate's re-pathing), and a guided `add-pool` verb in
-  the spirit of `add-mount`, including the create-policy setting hardlinks
-  need.
-- More than one library folder per media type (movies on two drives or two
-  shares), and what that means for hardlinks, the recycle bin (today: one
-  bin, refused per arr when its library is on another drive) and the manifest.
+### Storage layout — decided (Sept 2026), after the MVP
+- **No mergerfs in the tooling** — pooling drives is a host storage decision,
+  beyond this project. The stack already works on top of a pool the user sets
+  up themselves (`DATA_ROOT` pointed at it); the README may later say which
+  two settings matter (a non-path-preserving create policy for hardlinks,
+  `cache.files=partial` for qBittorrent).
+- **More than one library folder per media type, across the board** — the
+  arrs' root folders, Jellyfin's libraries, Kavita, Audiobookshelf and
+  Navidrome each take several folders (e.g. movies on two drives). An import
+  onto a different drive than the download is a copy, not a hardlink: accepted.
+  To work out with it: the recycle bin (today one bin, refused per arr when its
+  library is on another drive), the manifest and deletion auditing (every
+  folder, not just `DATA_ROOT/media`), and doctor's space checks per drive.
+  Not needed for the first migration (that household matches anzac2's single
+  data root), so it comes after the MVP.
 
 ### End-user experience
 - Web panel polishing.
