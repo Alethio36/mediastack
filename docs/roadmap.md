@@ -324,6 +324,15 @@ all built; what each still leaves open is noted below.
   targets; (3) Wizarr mode's `reset-password` through Jellyfin's API (today it
   points at Jellyfin's dashboard); (4) Wizarr's admin (no API found yet — UI
   only); (5) Navidrome's per-user Subsonic password, reset by the admin.
+- **LDAP bind cache after a password change** *(later — needs a live test)*:
+  the outpost runs `bind_mode: cached` and remembers each (user, password) that
+  bound successfully until that bind's authentik session expires, so an old
+  password used in Jellyfin shortly before a change keeps working there until
+  then (a new or long-unused old password is checked properly — proven live).
+  The window is unmeasured. Test: sign in to Jellyfin, change the password in
+  the portal, sign in again at once with the old one — the outpost logs
+  "authenticated from session" if it is served from the cache. Bounded fix: a
+  short `session_duration` (e.g. 10 minutes) on the LDAP login stage.
 - Post-migration hardening: move the panel off LAN-open once SSO lands; phase-2
   sudo narrowing (read-only verbs drop root); staging→production certs once a box
   stops being a test box.
