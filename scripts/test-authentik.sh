@@ -470,6 +470,7 @@ w=$(abs_oidc_want)
 [[ "$(jq -c 'has("authOpenIDMatchExistingBy") and .authOpenIDMatchExistingBy == null' <<<"$w")" == true ]] \
     || fail_ "never matched to an existing account (by username the stack's root was claimable), set explicitly to null"; pass
 [[ "$(jq -c '.authActiveAuthMethods' <<<"$w")" == '["local","openid"]' ]] || fail_ "its own login stays (the stack's root account)"; pass
+[[ "$(jq -r '.authOpenIDAutoLaunch' <<<"$w")" == true ]] || fail_ "its login page goes straight to the portal (the form stays behind ?autoLaunch=0)"; pass
 [[ "$(jq -r '.authOpenIDSubfolderForRedirectURLs | type + ":" + .' <<<"$w")" == "string:" ]] \
     || fail_ "no subfolder, set explicitly — unset, its callback reads undefined/auth/openid/callback (found live)"; pass
 # first run: a fresh Audiobookshelf gets the stack's root; a hand-made one is not taken over

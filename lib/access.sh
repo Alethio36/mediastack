@@ -22,6 +22,7 @@ cmd_credentials() {
     if svc_enabled audiobookshelf; then
         printf '%-22s %s\n' "Audiobookshelf root"   "$(env_get ABS_ADMIN_USER '(not set — run wire audiobookshelf)')"
         printf '%-22s %s\n' "Audiobookshelf root pw" "$(env_get ABS_ADMIN_PASSWORD '(not set — run wire audiobookshelf)')"
+        svc_enabled authentik && printf '%-22s %s\n' "Audiobookshelf root at" "$(svc_url audiobookshelf)/audiobookshelf/login?autoLaunch=0   (its login page otherwise goes straight to the portal)"
     fi
     if svc_enabled authentik; then
         printf '%-22s %s\n' "Portal admin user"     "akadmin"
