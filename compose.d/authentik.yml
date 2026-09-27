@@ -99,6 +99,8 @@ services:
       MEDIASTACK_LDAP_BIND_PASSWORD: ${AUTHENTIK_LDAP_BIND_PASSWORD}
       MEDIASTACK_ABS_URL: https://${AUDIOBOOKSHELF_HOST:-audiobooks}.${TRAEFIK_DOMAIN:-unset.invalid}
       MEDIASTACK_ABS_CLIENT_SECRET: ${AUTHENTIK_ABS_CLIENT_SECRET}
+      # the stack's own accounts in the apps: nobody may sign up with these names
+      MEDIASTACK_RESERVED_USERNAMES: ${ABS_ADMIN_USER:-},${JELLYFIN_ADMIN_USER:-}
     volumes:
       - ${CONFIG_ROOT}/authentik/data:/data
       - ${CONFIG_ROOT}/authentik/templates:/templates

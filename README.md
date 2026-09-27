@@ -514,7 +514,10 @@ With authentik enabled, `portal.<domain>` is where your users join (by
 invitation: `./mediastack.sh invite`) and log in; its dashboard shows each person
 the apps they may use. Two groups decide access: `media-users` (everyone who
 joins) and `admins` (you — `wire authentik` puts the first admin there; add
-others in authentik's Directory → Groups). Someone locked out — a forgotten
+others in authentik's Directory → Groups). Sign-up refuses a username the
+apps would confuse: the stack's own accounts there (Audiobookshelf's root,
+Jellyfin's local admin) and an existing person's name in a different case.
+Someone locked out — a forgotten
 password, or too many wrong ones from the Jellyfin app —
 `./mediastack.sh reset-password <username>` clears their login throttle and
 prints a single-use sign-in link to send them; they set a new password in the
