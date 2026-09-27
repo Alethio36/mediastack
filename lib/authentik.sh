@@ -40,7 +40,7 @@ authentik_secrets() { # generate what is missing — never over a database that 
     # the LDAP search account's password: the blueprint sets it on every apply,
     # so a new one is simply adopted — no database guard needed
     local k2
-    for k2 in AUTHENTIK_LDAP_BIND_PASSWORD AUTHENTIK_ABS_CLIENT_SECRET; do
+    for k2 in AUTHENTIK_LDAP_BIND_PASSWORD AUTHENTIK_ABS_CLIENT_SECRET AUTHENTIK_KAVITA_CLIENT_SECRET; do
         [[ -n "$(env_get "$k2")" ]] || { env_set "$k2" "$(authentik_secret 48)"; made=1; }
     done
     (( made )) && ok "authentik: secrets generated (the admin login: ./mediastack.sh credentials)"
