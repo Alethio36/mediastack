@@ -132,6 +132,7 @@ Connect
 | `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr\|authentik\|audiobookshelf\|kavita] [--dry-run\|--verify]` | connect the apps to each other (the arrs also get their recycle bin — see below); idempotent — GUI-configured apps are never overwritten, with one exception: an address mediastack itself wrote (how one app reaches another) is re-pointed when a VPN toggle moves its target — an address you set by hand is left alone. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
 | `invite [--expires 1\|7\|30]` | mint an invitation and print the ready-to-share URL — with authentik: a single-use sign-up link to the portal (default: 7 days); with Wizarr: a Wizarr invitation (default: never expires) |
 | `set-credentials <arr\|qbit\|jellyfin\|pihole\|traefik\|audiobookshelf\|kavita\|portal\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `audiobookshelf` rotates its root password and ends every root session; `kavita` its admin's; `portal` sets akadmin's password through authentik's API; `all` sets one password across the stack except `portal`, which guards the rest (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
+| `link-account <portal-user>` | an existing household's people keep their history: after someone joins the portal, their local Jellyfin, Kavita and Audiobookshelf accounts become their portal account — you confirm which account is whose, see the plan, then it links (Audiobookshelf needs them to sign in once, within 10 minutes) |
 | `reset-password <user>` | someone locked out of the portal: clears their login throttle and prints a single-use sign-in link (24 hours) to send them — they then set a new password in the portal's Settings. Not for akadmin (`set-credentials portal`); with Wizarr, reset it in Jellyfin's dashboard |
 | `notify [status\|test [stream]\|set <stream>\|clear <stream>\|send <stream> <title> <message> [--type T]]` | the notification streams (`ops`, `users`): what each is set to (URLs hidden) and whether it delivered, a test, replace or clear a stream's URLs, or send your own message — see "Notifications" |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
@@ -525,6 +526,18 @@ password, or too many wrong ones from the Jellyfin app —
 `./mediastack.sh reset-password <username>` clears their login throttle and
 prints a single-use sign-in link to send them; they set a new password in the
 portal's Settings, and it works in every app.
+
+Moving an existing household onto the portal: invite each person, and once
+they have joined, `./mediastack.sh link-account <username>` ties their local
+accounts to the portal one — same accounts, so watch history, reading and
+listening progress and Seerr requests stay. You pick which local account is
+theirs in each app (never guessed from a name or an email) and confirm a plan
+that says what changes, including admin rights: those follow the portal's
+`admins` group from then on, so put them there first to keep them. Jellyfin
+and Kavita are done at once; Audiobookshelf's own API cannot link an account,
+so for one sign-in it matches by username — only after checking no other
+account could be claimed that way, and closed again as soon as they sign in
+(or after 10 minutes). Their old passwords stop working in these apps.
 
 The **gate**: every web interface declares who logs it in —
 `mediastack.auth: gate` (behind the portal), `native` (its own login) or `open`.

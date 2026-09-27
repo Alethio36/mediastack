@@ -280,11 +280,15 @@ all built; what each still leaves open is noted below.
      people (refreshed each run; existing people's access never changed —
      `doctor` lists gaps), admin rights synced by wire; its verified-email
      check off (authentik sends `email_verified: false`).
-  6. Converting an existing install's users (Jellyfin local users to directory
-     users, keeping watch history; Audiobookshelf/Kavita by an explicit
-     operator-confirmed mapping, never by name or email matching — that lets a
-     sign-up claim any account) — test the Jellyfin LDAP takeover of an
-     existing user first.
+  6. *Built (E — live test pending):* `link-account <portal-user>` — the
+     operator picks each app's local account (never guessed), a plan shows the
+     change and its admin effect, then: Jellyfin's login method becomes the LDAP
+     plugin (it adopts an account by name only then — checked in its source);
+     Kavita's email becomes the portal's (it links by email), its own password
+     replaced; Audiobookshelf (no API to link) gets a fenced 10-minute
+     username-matching window for the person's one sign-in, refused when any
+     other unlinked account could be claimed. Navidrome (links by username at
+     the household gate) needs only a rename — later.
   First milestone: the gate in front of the panel and Apprise.
 - **One login for the remaining tools** *(later)*: qBittorrent, Pi-hole, Deluge,
   Transmission, LazyLibrarian, Cleanuparr, WatchState and Bazarr are gated and
