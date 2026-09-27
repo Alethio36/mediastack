@@ -382,6 +382,9 @@ _doctor_apps() {
             *)     warn "seerr public settings unreadable — API may still be warming up" ;;
         esac
     fi
+    if svc_enabled kavita && [[ "$(c_state "$(svc_cname kavita)")" == running ]]; then
+        _doctor_kavita
+    fi
     if svc_enabled wizarr && [[ "$(c_state "$(svc_cname wizarr)")" == running ]]; then
         local wkey wcode
         wkey=$(env_get WIZARR_API_KEY)
@@ -395,6 +398,28 @@ _doctor_apps() {
         fi
     fi
 
+}
+
+_doctor_kavita() { # claimed; with the portal, who among its people lacks a library (maybe on purpose)
+    local ex out tok libs users gaps
+    ex=$(kav_api GET /api/admin/exists "" 2>/dev/null) || { warn "kavita first-run state unreadable — API may still be warming up"; return 0; }
+    [[ "$ex" == true ]] || { d_fail "kavita has no admin yet" "an unclaimed Kavita lets any visitor create the admin account" "./mediastack.sh wire kavita"; return 0; }
+    ok "kavita has its admin"
+    svc_enabled authentik && [[ -n "$(env_get KAVITA_ADMIN_PASSWORD)" ]] || return 0
+    out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
+        || { d_fail "kavita rejects the stored admin login" "wire and doctor cannot manage it" "./mediastack.sh credentials  # then check the admin in Kavita"; return 0; }
+    tok=$(jq -r '.token // empty' <<<"$out")
+    libs=$(kav_api GET /api/library/libraries "$tok") && users=$(kav_api GET "/api/users?includePending=true" "$tok") \
+        || { warn "kavita: libraries or users unreadable"; return 0; }
+    # a library added after someone joined reaches only admins until granted —
+    # reported, never changed: a missing library may be a restriction you set
+    gaps=$(jq -r --argjson l "$libs" '.[] | select(.identityProvider == 1 and ([.roles[]?] | index("Admin") == null))
+        | . as $u | [$l[] | select(.id as $i | [$u.libraries[]?.id] | index($i) == null) | .name]
+        | select(length > 0) | "\($u.username): \(join(", "))"' <<<"$users")
+    if [[ -z "$gaps" ]]; then ok "kavita: every portal user has every library"
+    else
+        while IFS= read -r g; do warn "kavita: $g — not granted (fine if on purpose; otherwise Kavita → Settings → Users → edit → libraries)"; done <<<"$gaps"
+    fi
 }
 
 _doctor_runtime_audit() {

@@ -272,13 +272,14 @@ all built; what each still leaves open is noted below.
      account was claimable at sign-up; a root already linked is unlinked
      loudly), keeps admin rights in step with `admins` (a guest stays a guest); the portal's address leads to Traefik inside the stack (an app's
      server talks to authentik there — production certificates required).
-     *Next:*
-     Kavita through OIDC, its first run automated the same way (the stack's own
-     admin), all libraries for new users, admin rights synced by wire; its
-     verified-email check off until the email server exists. Kavita always
-     matches an existing account by email (no setting) and authentik sends
-     `email_verified: false`, so the stack's admin gets an email no one can
-     sign up with.
+     *Built (Kavita, D4 part 2 — live test pending):* `wire kavita` does its
+     first run (the stack's own admin, with an email nobody can sign up with:
+     Kavita always matches an existing account by email), sets up OIDC (one
+     restart: it is set up at start-up), its login page straight to the portal
+     (`?skipAutoLogin=true` for the admin), every current library for new
+     people (refreshed each run; existing people's access never changed —
+     `doctor` lists gaps), admin rights synced by wire; its verified-email
+     check off (authentik sends `email_verified: false`).
   6. Converting an existing install's users (Jellyfin local users to directory
      users, keeping watch history; Audiobookshelf/Kavita by an explicit
      operator-confirmed mapping, never by name or email matching — that lets a
@@ -307,23 +308,22 @@ all built; what each still leaves open is noted below.
   e-mail the link, (3) authentik's own update notices reach its admins. Nothing
   else (no marketing, no digests). Email is already required at sign-up, so
   every account is ready for it. Until then invite links are copied by hand and
-  passwords are reset by the admin (`reset-password <user>`). **Follow-up when it lands:** turn Kavita's
-  verified-email check back on (Kavita → Settings → OpenID Connect → "Require
-  verified email") — it is off because authentik cannot vouch for an address
-  until it can send mail.
+  passwords are reset by the admin (`reset-password <user>`). **Follow-up when it lands:** Kavita's
+  verified-email check (wire keeps it off) can come on only once authentik
+  reports verified addresses — its default email mapping always sends
+  `email_verified: false`, so that needs a mapping of mediastack's own.
 - **Credential coverage** *(audit Sept 2026 — the rest later)*: every login the
   stack stores rotates with `set-credentials` (arr, qBittorrent, Jellyfin admin,
-  Pi-hole, Traefik dashboard, Audiobookshelf root, the portal's akadmin), and a
-  locked-out portal user comes back with `reset-password`. Still to do:
-  (1) Kavita's admin — joins `set-credentials` with its wire role (D4 part 2);
-  (2) service secrets, each with its own mechanism: the LDAP search account's
-  password and Audiobookshelf's OIDC client secret (regenerate → blueprint →
+  Pi-hole, Traefik dashboard, Audiobookshelf root, Kavita's admin, the portal's
+  akadmin), and a locked-out portal user comes back with `reset-password`. Still
+  to do: (1) service secrets, each with its own mechanism: the LDAP search account's
+  password and the OIDC client secrets, Audiobookshelf's and Kavita's (regenerate → blueprint →
   wire), the LDAP outpost token, authentik's API token and database password,
   the Meilisearch key, the arr/Seerr/Wizarr/cleanuparr API keys (each app, then
   everything that stores it) — a `rotate-secret <name>` verb or `set-credentials`
-  targets; (3) Wizarr mode's `reset-password` through Jellyfin's API (today it
-  points at Jellyfin's dashboard); (4) Wizarr's admin (no API found yet — UI
-  only); (5) Navidrome's per-user Subsonic password, reset by the admin.
+  targets; (2) Wizarr mode's `reset-password` through Jellyfin's API (today it
+  points at Jellyfin's dashboard); (3) Wizarr's admin (no API found yet — UI
+  only); (4) Navidrome's per-user Subsonic password, reset by the admin.
 - **LDAP bind cache after a password change** *(later — needs a live test)*:
   the outpost runs `bind_mode: cached` and remembers each (user, password) that
   bound successfully until that bind's authentik session expires, so an old

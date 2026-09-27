@@ -37,6 +37,12 @@
 #     `admins`, a guest outside it stays a guest
 #   * sign-up refuses a username the apps would confuse: the stack's own app
 #     accounts (any case) and an existing person's name in another case
+#   * Kavita: published on 127.0.0.1; its OIDC provider; the stack's admin with
+#     an unclaimable email (a hand-made one never taken over, a claimable email
+#     warned); sign-in merged into its settings, read back, one restart only
+#     when its start-up part changes (the secret by digest); every current
+#     library for new people; admin sync on portal accounts only, the whole
+#     record back with only the roles changed; doctor reports library gaps
 #   * credentials: Audiobookshelf's root and akadmin rotate through their APIs
 #     into .env; reset-password clears a person's login throttle and mints a
 #     single-use link, never for akadmin, the search account, a service
@@ -563,7 +569,7 @@ ABS_PW_REFUSE=false; ABS_ROOT_LINK=false; rm -f "$T/calls"
 abs_root_unlink tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "an unlinked root: nothing to do"; pass
 
 # ---- sign-up: a username the apps would confuse is refused ----
-grep -q 'MEDIASTACK_RESERVED_USERNAMES: ${ABS_ADMIN_USER:-},${JELLYFIN_ADMIN_USER:-}$' compose.d/authentik.yml \
+grep -q 'MEDIASTACK_RESERVED_USERNAMES: ${ABS_ADMIN_USER:-},${JELLYFIN_ADMIN_USER:-},${KAVITA_ADMIN_USER:-}$' compose.d/authentik.yml \
     || fail_ "the worker gets the stack's own app accounts to reserve"; pass
 sed -n '/name: mediastack-join-credentials/,/fields:/p' blueprints/authentik/mediastack-portal.yaml | grep -q '!KeyOf policy-join-username' \
     || fail_ "the sign-up page validates the username with the policy"; pass
@@ -597,6 +603,135 @@ for name, want in [("mediastack", False), ("MediaStack", False), (" jfadmin ", F
     assert verdict(name) is want, (name, want)
 PY
 pass
+
+# ---- Kavita: the stack's admin, sign-in through the portal, admin sync ----
+grep -q '"127.0.0.1:${KAVITA_PORT:-5000}:5000"' compose.d/kavita.yml || fail_ "Kavita is published on 127.0.0.1 only (the script's way in)"; pass
+grep -q 'MEDIASTACK_KAVITA_CLIENT_SECRET: ${AUTHENTIK_KAVITA_CLIENT_SECRET}$' compose.d/authentik.yml \
+    && grep -q 'MEDIASTACK_KAVITA_URL: https://${KAVITA_HOST:-books}.' compose.d/authentik.yml \
+    && grep -q 'AUTHENTIK_KAVITA_CLIENT_SECRET; do' lib/authentik.sh \
+    || fail_ "Kavita's client secret: generated, and handed to the blueprint with its address"; pass
+sed -n '/name: mediastack-oidc-kavita/,/^  - model/p' blueprints/authentik/mediastack-portal.yaml > "$T/kav"
+grep -q 'client_id: mediastack-kavita' "$T/kav" && grep -q 'signing_key: !Find' "$T/kav" \
+   && grep -q '"%s/signin-oidc"' "$T/kav" && grep -q '"%s/signout-callback-oidc"' "$T/kav" \
+   && grep -q 'grant_types: \[authorization_code, refresh_token\]' "$T/kav" \
+   && grep -q 'scope-offline_access' "$T/kav" \
+    || fail_ "Kavita's OIDC provider: client ID, RS256 key, its callbacks, the code grant, offline_access"; pass
+printf 'TRAEFIK_DOMAIN=media.example.com\nPORTAL_TITLE=Home\nAUTHENTIK_KAVITA_CLIENT_SECRET=KSEC\n' > "$ENV_FILE"
+w=$(kav_oidc_want '[3,1]')
+[[ "$(jq -r '.authority' <<<"$w")" == "https://portal.media.example.com/application/o/mediastack-app-kavita/" ]] || fail_ "Kavita's authority is its card's issuer: $w"; pass
+[[ "$(jq -c '[.clientId, .provisionAccounts, .requireVerifiedEmail, .syncUserSettings, .autoLogin, .disablePasswordAuthentication, .providerName]' <<<"$w")" \
+   == '["mediastack-kavita",true,false,false,true,false,"Home"]' ]] \
+    || fail_ "created on first sign-in, no verified-email demand (authentik sends false), rights Kavita-side, straight to the portal, password form kept"; pass
+[[ "$(jq -c '[.defaultLibraries, .defaultRoles, .defaultAgeRestriction, .defaultIncludeUnknowns]' <<<"$w")" == '[[1,3],["Login","Download","Bookmark"],-1,true]' ]] \
+    || fail_ "new people: every current library, login/download/bookmark, no age limit"; pass
+# first run: a fresh Kavita gets the stack's admin with an email nobody can sign up with
+state_get() { cat "$T/state-$1" 2>/dev/null || true; }; state_set() { printf '%s\n' "$2" > "$T/state-$1"; }
+svc_enabled() { [[ " kavita authentik " == *" $1 "* ]]; }; wire_gate() { :; }; http_ready() { :; }; kav_url() { echo http://kav; }
+KAV_EXISTS=false
+kav_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /api/admin/exists") echo "$KAV_EXISTS" ;;
+        "POST /api/account/register") echo '{}' ;;
+        "POST /api/account/login") echo '{"token":"KTOK"}' ;;
+        *) echo '{}' ;;
+    esac; }
+kav_stubbed() { ( kav_admin_email_check() { :; }; kav_oidc() { echo "KAV_OIDC" >> "$T/calls"; }; kav_admin_sync() { :; }; wire_kavita ); }
+rm -f "$T/calls"; printf 'TRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"
+kav_stubbed >/dev/null
+grep -q '^POST /api/account/register {"username":"mediastack","password":"[A-Za-z0-9]*","email":"mediastack@[a-z0-9]*\.invalid"}' "$T/calls" \
+    && [[ "$(env_get KAVITA_ADMIN_USER)" == mediastack && -n "$(env_get KAVITA_ADMIN_PASSWORD)" && "$(env_get KAVITA_ADMIN_EMAIL)" == mediastack@*.invalid ]] \
+    || fail_ "a fresh Kavita: the stack's admin, stored, with an unclaimable email (Kavita's default is the username)"; pass
+grep -q '^KAV_OIDC' "$T/calls" || fail_ "then sign-in through the portal"; pass
+rm -f "$T/calls"; printf '' > "$ENV_FILE"; KAV_EXISTS=true; WIRE_FAILS=0
+out=$(kav_stubbed 2>&1) || true
+! grep -q '^POST /api/account/register' "$T/calls" && [[ "$out" == *"set up by hand"*"KAVITA_ADMIN_USER"* ]] || fail_ "one set up by hand is never taken over — it says what to do"; pass
+# its sign-in settings: merged into its settings with the secret, read back, one restart when its start-up part changes
+printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_KAVITA_CLIENT_SECRET=KSEC\n' > "$ENV_FILE"; rm -f "$T"/state-*
+echo '{"oidcConfig":{"authority":"","clientId":"","secret":"","defaultLibraries":[]},"other":1}' > "$T/kav-settings"
+KAV_KEEP=true; KAV_LIVE=false
+kav_api() { echo "$1 $2" >> "$T/calls"
+    case "$1 $2" in
+        "GET /api/settings") cat "$T/kav-settings" ;;
+        "POST /api/settings") echo "$4" > "$T/kav-posted"; $KAV_KEEP && jq -c '.oidcConfig.secret = ("*" * (.oidcConfig.secret|length))' <<<"$4" > "$T/kav-settings"; echo '{}' ;;
+        "GET /api/library/libraries") echo '[{"id":2,"name":"Comics"},{"id":1,"name":"Books"}]' ;;
+        "GET /api/settings/oidc") echo "{\"enabled\":$KAV_LIVE}" ;;
+        *) echo '{}' ;;
+    esac; }
+notify_interruption() { echo "NOTIFY $1" >> "$T/calls"; }
+DC() { echo "DC $*" >> "$T/calls"; KAV_LIVE=true; }
+rm -f "$T/calls"; WIRE_FAILS=0
+kav_oidc tok >/dev/null || fail_ "kav_oidc failed"
+[[ "$(jq -c '[.other, .oidcConfig.secret, .oidcConfig.clientId, .oidcConfig.defaultLibraries]' "$T/kav-posted")" == '[1,"KSEC","mediastack-kavita",[1,2]]' ]] \
+    || fail_ "the whole settings go back with the sign-in merged in, the secret included, every library"; pass
+grep -q '^NOTIFY ' "$T/calls" && grep -q '^DC restart kavita$' "$T/calls" \
+    && [[ "$(grep -n '^NOTIFY' "$T/calls" | cut -d: -f1)" -lt "$(grep -n '^DC restart' "$T/calls" | cut -d: -f1)" ]] \
+    || fail_ "a new authority: the household warned, then one restart (its OIDC is set up at start-up)"; pass
+rm -f "$T/calls"
+kav_oidc tok >/dev/null && ! grep -qE '^(POST /api/settings|DC )' "$T/calls" || fail_ "already right and live: no write, no restart"; pass
+printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_KAVITA_CLIENT_SECRET=ROTATED\n' > "$ENV_FILE"; rm -f "$T/calls"
+kav_oidc tok >/dev/null && grep -q '^POST /api/settings' "$T/calls" && grep -q '^DC restart kavita$' "$T/calls" \
+    || fail_ "a new client secret (read back masked) is noticed by its digest: written, and one restart"; pass
+KAV_LIVE=false; rm -f "$T/calls"
+kav_oidc tok >/dev/null && ! grep -q '^POST /api/settings' "$T/calls" && grep -q '^DC restart kavita$' "$T/calls" \
+    || fail_ "settings right but not live: a restart only"; pass
+echo '{"oidcConfig":{"authority":"","clientId":"","secret":"","defaultLibraries":[]}}' > "$T/kav-settings"; KAV_KEEP=false; rm -f "$T/calls"; WIRE_FAILS=0
+out=$(kav_oidc tok 2>&1) && fail_ "a setting it answered 200 to but did not keep must fail"
+[[ "$out" == *"did not keep"*"authority"*".well-known/openid-configuration"* ]] && ! grep -q '^DC ' "$T/calls" \
+    || fail_ "it names the setting and why the authority can be refused, and does not restart: $out"; pass
+KAV_KEEP=true
+# admin sync: portal accounts only, the whole record back with only the roles changed; includePending
+ak_api() { echo '{"results":[{"username":"akadmin"}]}'; }
+KAV_USERS='[
+ {"id":1,"username":"mediastack","email":"mediastack@x.invalid","identityProvider":0,"roles":["Admin","Login"],"libraries":[],"ageRestriction":{"ageRating":-1,"includeUnknowns":true}},
+ {"id":2,"username":"akadmin","email":"a@b.c","identityProvider":1,"roles":["Login"],"libraries":[{"id":1},{"id":2}],"ageRestriction":{"ageRating":5,"includeUnknowns":false}},
+ {"id":3,"username":"test-thio","email":"t@b.c","identityProvider":1,"roles":["Admin","Login","Download"],"libraries":[{"id":1}],"ageRestriction":{"ageRating":-1,"includeUnknowns":true}},
+ {"id":4,"username":"local-bob","email":"l@b.c","identityProvider":0,"roles":["Login"],"libraries":[],"ageRestriction":null}]'
+echo "$KAV_USERS" > "$T/kav-users"
+kav_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /api/users?includePending=true") cat "$T/kav-users" ;;
+        "POST /api/account/update") jq -c --argjson b "$4" 'map(if .id == $b.userId then .roles = $b.roles else . end)' "$T/kav-users" > "$T/kav-users.n" && mv "$T/kav-users.n" "$T/kav-users"; echo '{}' ;;
+        *) echo '[]' ;;
+    esac; }
+rm -f "$T/calls"; WIRE_FAILS=0
+kav_admin_sync tok >/dev/null
+grep -q '^POST /api/account/update {"userId":2,"username":"akadmin","email":"a@b.c","identityProvider":1,"roles":\["Admin","Login"\],"libraries":\[1,2\],"ageRestriction":{"ageRating":5,"includeUnknowns":false}}$' "$T/calls" \
+    || fail_ "an admin in the portal becomes Kavita admin; everything else goes back as it was: $(grep update "$T/calls")"; pass
+grep -q '^POST /api/account/update {"userId":3,.*"roles":\["Login","Download"\]' "$T/calls" || fail_ "a portal account not in admins loses Admin"; pass
+! grep -qE '"userId":(1|4),' "$T/calls" || fail_ "the stack's admin and local accounts are never touched"; pass
+! grep -q '^GET /api/users ' "$T/calls" && grep -q '^GET /api/users?includePending=true' "$T/calls" \
+    || fail_ "people made through the portal are unconfirmed: listed only with includePending"; pass
+# the stack's admin with a claimable email: a warning that says why and how
+printf 'KAVITA_ADMIN_USER=mediastack\n' > "$ENV_FILE"
+jq -c '.[0].email = "me@home.lan"' <<<"$KAV_USERS" > "$T/kav-users"
+[[ "$(kav_admin_email_check tok 2>&1)" == *"me@home.lan"*"anyone who signs up with it becomes this admin"*".invalid"* ]] || fail_ "a claimable admin email is warned about"; pass
+echo "$KAV_USERS" > "$T/kav-users"
+[[ -z "$(kav_admin_email_check tok 2>&1)" ]] || fail_ "an .invalid admin email: nothing to say"; pass
+# doctor: who among the portal's people lacks a library — reported, never changed
+kav_api() { case "$1 $2" in
+        "GET /api/admin/exists") echo true ;;
+        "POST /api/account/login") echo '{"token":"K"}' ;;
+        "GET /api/library/libraries") echo '[{"id":1,"name":"Books"},{"id":2,"name":"Comics"}]' ;;
+        "GET /api/users?includePending=true") echo "$KAV_USERS" ;;
+    esac; }
+printf 'KAVITA_ADMIN_USER=mediastack\nKAVITA_ADMIN_PASSWORD=p\n' > "$ENV_FILE"
+out=$(_doctor_kavita 2>&1)
+[[ "$out" != *WARN* && "$out" != *FAIL* ]] \
+    || fail_ "doctor: akadmin has every library and test-thio is an admin (sees all) — no gap: $out"; pass
+KAV_USERS=$(jq -c '.[2].roles = ["Login"]' <<<"$KAV_USERS")
+[[ "$(_doctor_kavita 2>&1)" == *"test-thio: Comics — not granted (fine if on purpose"* ]] || fail_ "doctor names the person and the missing library, and how to grant it"; pass
+# set-credentials kavita: changed with the old password, stored, proven
+printf 'KAVITA_ADMIN_USER=mediastack\nKAVITA_ADMIN_PASSWORD=OLDK\n' > "$ENV_FILE"; echo OLDK > "$T/kav-pw"
+kav_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
+    case "$1 $2" in
+        "POST /api/account/login") [[ "$(jq -r .password <<<"$4")" == "$(cat "$T/kav-pw")" ]] || return 1; echo '{"token":"K"}' ;;
+        "POST /api/account/reset-password") jq -r .password <<<"$4" > "$T/kav-pw"; echo '{}' ;;
+    esac; }
+rm -f "$T/calls"
+( sc_rotate_kavita NEWK >/dev/null ) || fail_ "set-credentials kavita failed"
+grep -q '^POST /api/account/reset-password {"userName":"mediastack","oldPassword":"OLDK","password":"NEWK"}' "$T/calls" \
+    && [[ "$(env_get KAVITA_ADMIN_PASSWORD)" == NEWK && "$(grep -c '^POST /api/account/login' "$T/calls")" == 2 ]] \
+    || fail_ "Kavita's admin password: changed with the old one, stored, verified by signing in"; pass
 
 # ---- the portal's admin, and a locked-out person's way back ----
 printf 'AUTHENTIK_ADMIN_PASSWORD=OLDAK\nTRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"
