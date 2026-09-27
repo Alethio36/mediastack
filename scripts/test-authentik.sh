@@ -43,6 +43,12 @@
 #     when its start-up part changes (the secret by digest); every current
 #     library for new people; admin sync on portal accounts only, the whole
 #     record back with only the roles changed; doctor reports library gaps
+#   * link-account: only local accounts offered (never the stack's own); the
+#     same name is the default choice; Jellyfin renamed and moved to the LDAP
+#     plugin's login, the rest of the account as it was; Kavita renamed, given
+#     the portal email and portal flag, everything else exact, its own password
+#     replaced; Audiobookshelf's window refused while another unlinked account
+#     (root included) could be claimed, and closed once linked or timed out
 #   * credentials: Audiobookshelf's root and akadmin rotate through their APIs
 #     into .env; reset-password clears a person's login throttle and mints a
 #     single-use link, never for akadmin, the search account, a service
@@ -732,6 +738,88 @@ rm -f "$T/calls"
 grep -q '^POST /api/account/reset-password {"userName":"mediastack","oldPassword":"OLDK","password":"NEWK"}' "$T/calls" \
     && [[ "$(env_get KAVITA_ADMIN_PASSWORD)" == NEWK && "$(grep -c '^POST /api/account/login' "$T/calls")" == 2 ]] \
     || fail_ "Kavita's admin password: changed with the old one, stored, verified by signing in"; pass
+
+# ---- link-account: existing local accounts become portal accounts ----
+printf 'JELLYFIN_ADMIN_USER=mediastack\nKAVITA_ADMIN_USER=mediastack\n' > "$ENV_FILE"
+JU='[{"Name":"mediastack","Id":"s","Policy":{"AuthenticationProviderId":"Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider","IsAdministrator":true}},
+     {"Name":"Bob","Id":"b","Policy":{"AuthenticationProviderId":"Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider","IsAdministrator":true}},
+     {"Name":"test-thio","Id":"t","Policy":{"AuthenticationProviderId":"'"$JF_LDAP_PROVIDER"'","IsAdministrator":false}}]'
+[[ "$(link_jf_candidates "$JU" | jq -c '[.[].name]')" == '["Bob"]' ]] || fail_ "jellyfin: only local accounts are offered, never the stack's admin or a portal account"; pass
+[[ "$(link_jf_conflict "$JU" '{"id":"b"}' TEST-THIO)" == test-thio && -z "$(link_jf_conflict "$JU" '{"id":"b"}' bob)" ]] \
+    || fail_ "jellyfin: another account already named like the portal user is a conflict (names are case-insensitive); the chosen one is not"; pass
+# the picker: the account named like the person is the default, 0 leaves the app alone
+link_pick jellyfin "$(link_jf_candidates "$JU")" bob <<<"" >/dev/null; [[ "$(jq -r .id <<<"$LINK_PICK")" == b ]] || fail_ "the same name (any case) is the default choice"; pass
+link_pick jellyfin "$(link_jf_candidates "$JU")" robert <<<"" >/dev/null; [[ -z "$LINK_PICK" ]] || fail_ "no same-named account: the default is none"; pass
+# jellyfin: renamed, then its login method becomes the plugin's — the same user
+echo '{"Name":"Bob","Id":"b","Configuration":{"x":1},"Policy":{"AuthenticationProviderId":"D","PasswordResetProviderId":"DR","IsAdministrator":true}}' > "$T/jf-b"
+jf_code() { echo 204; }
+jf_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /Users/b") cat "$T/jf-b" ;;
+        "POST /Users?userId=b") jq -c --argjson b "$4" '.Name = $b.Name' "$T/jf-b" > "$T/jf-b.n" && mv "$T/jf-b.n" "$T/jf-b" ;;
+        "POST /Users/b/Policy") jq -c --argjson p "$4" '.Policy = $p' "$T/jf-b" > "$T/jf-b.n" && mv "$T/jf-b.n" "$T/jf-b" ;;
+    esac; }
+rm -f "$T/calls"
+link_jf_do tok '{"id":"b","name":"Bob"}' robert >/dev/null || fail_ "jellyfin link failed"
+grep -q '^POST /Users?userId=b {"Name":"robert","Id":"b","Configuration":{"x":1}' "$T/calls" || fail_ "jellyfin: renamed, the rest of the account sent back as it was"; pass
+[[ "$(jq -c '.Policy | [.AuthenticationProviderId, .PasswordResetProviderId, .IsAdministrator]' "$T/jf-b")" == "[\"$JF_LDAP_PROVIDER\",\"$JF_LDAP_PROVIDER\",true]" ]] \
+    || fail_ "jellyfin: its login method and password reset become the LDAP plugin's (then the plugin adopts it by name); nothing else in the policy changes"; pass
+# kavita: local accounts only; a name or email collision is refused
+KU='[{"id":1,"username":"mediastack","email":"m@x.invalid","identityProvider":0,"roles":["Admin"],"libraries":[],"ageRestriction":null},
+     {"id":5,"username":"bob","email":"bob@home.lan","identityProvider":0,"roles":["Login","Bookmark"],"libraries":[{"id":1},{"id":3}],"ageRestriction":{"ageRating":4,"includeUnknowns":false}},
+     {"id":6,"username":"test-thio","email":"t@b.c","identityProvider":1,"roles":["Login"],"libraries":[],"ageRestriction":null}]'
+[[ "$(link_kav_candidates "$KU" | jq -c '[.[].name]')" == '["bob"]' ]] || fail_ "kavita: only local accounts, never the stack's admin"; pass
+[[ "$(link_kav_conflict "$KU" '{"id":5}' robert T@B.C)" == *"test-thio already has t@b.c"* && -z "$(link_kav_conflict "$KU" '{"id":5}' robert r@b.c)" ]] \
+    || fail_ "kavita: the portal email on another account is refused (it would link that one)"; pass
+echo "$KU" > "$T/kav-users"
+kav_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /api/users?includePending=true") cat "$T/kav-users" ;;
+        "POST /api/account/update") jq -c --argjson b "$4" 'map(if .id == $b.userId then .username = $b.username | .email = $b.email | .identityProvider = $b.identityProvider else . end)' "$T/kav-users" > "$T/kav-users.n" && mv "$T/kav-users.n" "$T/kav-users" ;;
+        *) echo '{}' ;;
+    esac; }
+rm -f "$T/calls"
+link_kav_do tok '{"id":5,"name":"bob"}' robert Robert@Home.lan >/dev/null || fail_ "kavita link failed"
+grep -q '^POST /api/account/update {"userId":5,"username":"robert","email":"Robert@Home.lan","identityProvider":1,"roles":\["Login","Bookmark"\],"libraries":\[1,3\],"ageRestriction":{"ageRating":4,"includeUnknowns":false}}$' "$T/calls" \
+    || fail_ "kavita: renamed, the portal email, marked a portal account — roles, libraries and age rating exactly as they were"; pass
+grep -q '^POST /api/account/reset-password {"userName":"robert","password":"[A-Za-z0-9]\{24\}"}$' "$T/calls" || fail_ "kavita: its own password replaced with a random one"; pass
+# audiobookshelf: the window is refused while any other unlinked account could be claimed
+AU='{"users":[{"id":"r","username":"mediastack","type":"root","hasOpenIDLink":false},
+             {"id":"b","username":"bob","type":"user","hasOpenIDLink":false},
+             {"id":"c","username":"Carol","type":"user","hasOpenIDLink":false},
+             {"id":"t","username":"test-thio","type":"user","hasOpenIDLink":true}]}'
+[[ "$(link_abs_candidates "$AU" | jq -c '[.[].name]')" == '["bob","Carol"]' ]] || fail_ "audiobookshelf: unlinked accounts, never root"; pass
+[[ -z "$(link_abs_conflict "$AU" '{"id":"b"}' robert '["robert","test-thio","akadmin"]')" ]] || fail_ "no other account claimable: the window may open"; pass
+[[ "$(link_abs_conflict "$AU" '{"id":"b"}' robert '["robert","carol"]')" == *"Carol is unlinked and a portal account has that name"* ]] \
+    || fail_ "another unlinked account a portal name matches (any case) refuses the window"; pass
+[[ "$(link_abs_conflict "$AU" '{"id":"b"}' robert '["robert","MediaStack"]')" == *"mediastack is unlinked"* ]] || fail_ "root is covered too"; pass
+# audiobookshelf: renamed, own password replaced, matching on, linked at their sign-in, matching off
+echo "$AU" > "$T/abs-users"; echo '{"authOpenIDMatchExistingBy":null}' > "$T/abs-auth"; echo 0 > "$T/abs-polls"
+abs_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /api/users") echo $(( $(cat "$T/abs-polls") + 1 )) > "$T/abs-polls"   # a file: each call runs in a subshell
+                          [[ "$(cat "$T/abs-polls")" -ge 2 && "$(jq -r .authOpenIDMatchExistingBy "$T/abs-auth")" == username ]] \
+                             && jq -c '.users |= map(if .id == "b" then .hasOpenIDLink = true else . end)' "$T/abs-users" > "$T/abs-users.n" && mv "$T/abs-users.n" "$T/abs-users"
+                          cat "$T/abs-users" ;;
+        "PATCH /api/auth-settings") jq -c --argjson b "$4" '. + $b' "$T/abs-auth" > "$T/abs-auth.n" && mv "$T/abs-auth.n" "$T/abs-auth" ;;
+        "GET /api/auth-settings") cat "$T/abs-auth" ;;
+        *) echo '{}' ;;
+    esac; }
+sleep() { :; }
+rm -f "$T/calls"
+link_abs_do tok '{"id":"b","name":"bob"}' robert >/dev/null || fail_ "audiobookshelf link failed"
+grep -q '^PATCH /api/users/b {"username":"robert"}' "$T/calls" && grep -q '^PATCH /api/users/b {"password":"[A-Za-z0-9]\{24\}"}' "$T/calls" \
+    || fail_ "audiobookshelf: renamed, its own password replaced"; pass
+[[ "$(grep '^PATCH /api/auth-settings' "$T/calls" | sed 's/.* //' | tr '\n' ' ')" == '{"authOpenIDMatchExistingBy":"username"} {"authOpenIDMatchExistingBy":null} ' \
+   && "$(jq -r .authOpenIDMatchExistingBy "$T/abs-auth")" == null ]] \
+    || fail_ "audiobookshelf: matching opens for the sign-in and is off again once linked"; pass
+# nobody signs in: the window still closes, and it says what to do
+echo "$AU" > "$T/abs-users"; echo -1000 > "$T/abs-polls"; LINK_ABS_WAIT=10; rm -f "$T/calls"
+out=$(link_abs_do tok '{"id":"b","name":"bob"}' robert 2>&1) && fail_ "no sign-in must fail"
+[[ "$out" == *"did not sign in within"*"run link-account again"* && "$(jq -r .authOpenIDMatchExistingBy "$T/abs-auth")" == null ]] \
+    || fail_ "audiobookshelf: on a timeout the window closes too: $out"; pass
+LINK_ABS_WAIT=600; unset -f sleep
+[[ "$(trap -p EXIT)" == *'rm -rf'* ]] || fail_ "the window's safety net gives back the traps that were set before (here: this test's clean-up)"; pass
 
 # ---- the portal's admin, and a locked-out person's way back ----
 printf 'AUTHENTIK_ADMIN_PASSWORD=OLDAK\nTRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"
