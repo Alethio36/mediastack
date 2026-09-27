@@ -264,6 +264,11 @@ sc_rotate_portal() { # PASS — akadmin, through authentik's API
         [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
         authentik_admin_rotate "$1" || die "the portal's admin password was not rotated (see above)"
         ok "portal admin (akadmin) password rotated — view: ./mediastack.sh credentials"
+        # the worker carries it as its first-start value (never applied again):
+        # recreated now, so no pending change is left for the next `up`
+        DC up -d --no-deps authentik-worker >/dev/null \
+            && ok "authentik's worker recreated with it (nothing else changes)" \
+            || die "authentik's worker was not recreated — apply with: ./mediastack.sh up"
 }
 
 sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
