@@ -32,8 +32,8 @@
 #   * household apps get Media cards for media-users; Navidrome's carries its
 #     own household gate (forward auth for its one address)
 #   * Audiobookshelf through OIDC: never matched to an existing account, the
-#     settings read back after a write, a root linked to the portal unlinked;
-#     admin rights follow
+#     settings read back after a write, a root linked to the portal unlinked
+#     and its password rotated (ends its sessions); admin rights follow
 #     `admins`, a guest outside it stays a guest
 #   * credentials: Audiobookshelf's root and akadmin rotate through their APIs
 #     into .env
@@ -543,12 +543,18 @@ ABS_PW_REFUSE=true; rm -f "$T/calls"
 if abs_root_rotate OTHER >/dev/null; then fail_ "a refused change must fail"; fi
 [[ "$(env_get ABS_ADMIN_PASSWORD)" == NEWPW ]] || fail_ "a refused change leaves .env as it was"; pass
 ABS_PW_REFUSE=false
-# the root account linked to a portal identity (the old username match) is unlinked, loudly
+# the root account linked to a portal identity (the old username match) is unlinked
+# AND its password rotated — that is what signs the intruder out — loudly
 rm -f "$T/calls"; WIRE_FAILS=0
 out=$(abs_root_unlink tok 2>&1) || true
-grep -q '^PATCH /api/users/r/openid-unlink' "$T/calls" && ! grep -q '/api/users/t/' "$T/calls" && [[ "$out" == *"root account had been linked"* ]] \
+grep -q '^PATCH /api/users/r/openid-unlink' "$T/calls" && ! grep -q '/api/users/t/' "$T/calls" && [[ "$out" == *"root account had been linked"*"password rotated"* ]] \
     || fail_ "a linked root is unlinked and reported as a failure; portal accounts keep their link"; pass
-ABS_ROOT_LINK=false; rm -f "$T/calls"
+[[ "$(env_get ABS_ADMIN_PASSWORD)" != NEWPW && "$(env_get ABS_ADMIN_PASSWORD)" == "$(cat "$T/abs-pw")" ]] \
+    || fail_ "the unlink rotates root's password (ends its sessions) and stores the new one"; pass
+ABS_PW_REFUSE=true; rm -f "$T/calls"
+out=$(abs_root_unlink tok 2>&1) || true
+[[ "$out" == *"NOT rotated"*"set-credentials audiobookshelf"* ]] || fail_ "an unlink whose rotation fails says sessions stay open, and the fix"; pass
+ABS_PW_REFUSE=false; ABS_ROOT_LINK=false; rm -f "$T/calls"
 abs_root_unlink tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "an unlinked root: nothing to do"; pass
 
 # ---- the portal's admin ----
