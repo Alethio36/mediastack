@@ -57,14 +57,16 @@ credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assist
 cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, atomically
     load_env; render
     local target="${1:-}"
-    case "$target" in arr|qbit|jellyfin|pihole|traefik|all) ;; *)
-        die "usage: set-credentials <arr|qbit|jellyfin|pihole|traefik|all>
-  arr       the shared login of every arr app (+ cleanuparr's account password)
-  qbit      qBittorrent's WebUI login (+ every place that stores it)
-  jellyfin  the Jellyfin admin password (Seerr/Wizarr need no change)
-  pihole    the Pi-hole admin password
-  traefik   the Traefik dashboard password
-  all       ONE password across all of the above (usernames stay put)" ;; esac
+    case "$target" in arr|qbit|jellyfin|pihole|traefik|audiobookshelf|portal|all) ;; *)
+        die "usage: set-credentials <arr|qbit|jellyfin|pihole|traefik|audiobookshelf|portal|all>
+  arr             the shared login of every arr app (+ cleanuparr's account password)
+  qbit            qBittorrent's WebUI login (+ every place that stores it)
+  jellyfin        the Jellyfin admin password (Seerr/Wizarr need no change)
+  pihole          the Pi-hole admin password
+  traefik         the Traefik dashboard password
+  audiobookshelf  its root password (every session signed in as root ends)
+  portal          the portal's admin (akadmin) password
+  all             ONE password across all of the above except portal (usernames stay put)" ;; esac
     [[ -t 0 ]] || die "set-credentials is interactive — run it at a terminal."
 
     case "$target" in
@@ -106,24 +108,47 @@ by API key (unchanged). Only this password and .env move."
         ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; npass="$REPLY_VAL"
         sc_rotate_jellyfin "$npass"
         ;;
+    audiobookshelf)
+        local pass
+        explain "Rotate Audiobookshelf's root password" \
+"The root account is the stack's own (people sign in with their own
+accounts). A password change ends every session signed in as root: other
+browsers and apps must sign in again (a page already open keeps working up
+to an hour)."
+        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        sc_rotate_audiobookshelf "$pass"
+        ;;
+    portal)
+        local pass
+        explain "Rotate the portal's admin password" \
+"akadmin guards every admin tool behind the portal. Set here, through
+authentik's API, and stored in .env (AUTHENTIK_ADMIN_PASSWORD is otherwise
+read only at authentik's first start). Kept out of 'all' on purpose: the
+shared password also sits in the arrs' and qBittorrent's settings."
+        ask_secret "New password" "$(head -c16 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        sc_rotate_portal "$pass"
+        ;;
     all)
         local pass
         explain "One password across the stack" \
 "Sets a single password on the arr login (6 apps + cleanuparr follows),
 qBittorrent (and everything storing its login), the Jellyfin admin,
-Pi-hole, and the Traefik dashboard.
+Pi-hole, the Traefik dashboard and Audiobookshelf's root.
 Usernames stay as they are. Deliberate trade-off: one reused password
 means one leak opens everything — use a strong, stack-unique one.
-NOT covered: Wizarr's admin account is its own — rotate it in Wizarr's
-UI (Settings -> Account) yourself."
+NOT covered: the portal's admin (set-credentials portal — it guards the
+rest), and Wizarr's admin account — rotate that in Wizarr's UI
+(Settings -> Account) yourself."
         ask_secret "New stack password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
         sc_rotate_arr "$(env_get ARR_USER admin)" "$pass"
         sc_rotate_qbit "$(env_get QBITTORRENT_USER admin)" "$pass"
         sc_rotate_jellyfin "$pass"
         sc_rotate_pihole "$pass"
         sc_rotate_traefik "$pass"
+        sc_rotate_audiobookshelf "$pass"
         warn "Wizarr's admin password is NOT rotated by this — change it in Wizarr's UI."
-        ok "one password now covers arr + qbit + jellyfin + pihole + traefik — view: ./mediastack.sh credentials"
+        svc_enabled authentik && info "the portal's admin keeps its own password: ./mediastack.sh set-credentials portal"
+        ok "one password now covers arr + qbit + jellyfin + pihole + traefik + audiobookshelf — view: ./mediastack.sh credentials"
         ;;
     esac
 }
@@ -225,6 +250,19 @@ sc_rotate_traefik() { # PASS — regenerated into the watched dynamic config
         traefik_gen \
             && ok "Traefik dashboard password rotated (config regenerated; traefik watches it live)" \
             || wfail "traefik config regeneration failed — inspect: ./mediastack.sh traefik-setup"
+}
+
+sc_rotate_audiobookshelf() { # PASS — its root account; every root session ends
+        svc_enabled audiobookshelf || { info "audiobookshelf not enabled — skipped"; return 0; }
+        abs_root_rotate "$1" || die "Audiobookshelf's root password was not rotated (see above)"
+        ok "Audiobookshelf root password rotated and verified — every root session has ended"
+}
+
+sc_rotate_portal() { # PASS — akadmin, through authentik's API
+        svc_enabled authentik || die "authentik is not enabled — there is no portal admin"
+        [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
+        authentik_admin_rotate "$1" || die "the portal's admin password was not rotated (see above)"
+        ok "portal admin (akadmin) password rotated — view: ./mediastack.sh credentials"
 }
 
 sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
