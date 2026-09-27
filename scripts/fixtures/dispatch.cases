@@ -114,6 +114,10 @@ set-credentials a b c d
 reset-password
 reset-password someone
 reset-password a b
+# link-account  (max=1)
+link-account
+link-account someone
+link-account a b
 
 # traefik-setup  (allow=--hosts,--certs max=1)
 traefik-setup
