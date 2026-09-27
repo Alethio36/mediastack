@@ -1,7 +1,8 @@
 # Audiobookshelf: audiobook + podcast server. Serves and streams the
 # audiobooks lidarr-adjacent tooling (or you) place under the library,
-# with progress sync and official mobile apps. Serving only — no wire
-# role; create your account on first visit at its URL.
+# with progress sync and official mobile apps. `wire audiobookshelf` does
+# its first run (the stack's root account, in `credentials`) and, with the
+# portal, sign-in through authentik (OIDC).
 
 x-logging: &logging
   driver: json-file
