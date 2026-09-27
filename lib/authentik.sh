@@ -245,6 +245,18 @@ authentik_invite() { # authentik_invite DAYS -> a single-use sign-up link, print
     echo "$(authentik_portal)/if/flow/$AUTHENTIK_JOIN_FLOW/?itoken=$pk"
 }
 
+authentik_admin_rotate() { # authentik_admin_rotate NEW-PASSWORD — akadmin's password, then .env; rc 1 after printing why
+    # AUTHENTIK_ADMIN_PASSWORD is read by authentik only at its first start:
+    # after that the password lives in its database, set here through its API.
+    local new="$1" out pk
+    out=$(ak_api GET "/core/users/?username=akadmin") || { fail "authentik refused the akadmin lookup: $(oneline "$out")"; return 1; }
+    pk=$(jq -r '.results[0].pk // empty' <<<"$out")
+    [[ -n "$pk" ]] || { fail "authentik has no akadmin account"; return 1; }
+    out=$(ak_api POST "/core/users/$pk/set_password/" "$(jq -cn --arg p "$new" '{password:$p}')") \
+        || { fail "authentik refused the new password: $(oneline "$out")"; return 1; }
+    env_set AUTHENTIK_ADMIN_PASSWORD "$new"
+}
+
 # ------------------------------------------------------------------ doctor --
 _doctor_accounts() { # the account model: one of the services that conflict, and authentik's release mark
     hr "doctor: accounts"
