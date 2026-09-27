@@ -579,8 +579,9 @@ service by label — `mediastack.auth: native | gate | open`, plus exception pat
   the same name is taken over — decides the account conversion; test live.
 - **Seerr** — "Sign in with Jellyfin", so it inherits the same users. Its own
   OIDC is still an experimental preview image (`preview-new-oidc`).
-- **Audiobookshelf** — native OIDC: auto-register, match existing users by
-  username, mobile app via a second redirect URI, and a group claim
+- **Audiobookshelf** — native OIDC: auto-register, optional matching of
+  existing users by username or email (mediastack leaves it off: a match links
+  any unlinked account, root included), mobile app via a second redirect URI, and a group claim
   (admin/user/guest) that authentik groups can drive. Test before disabling local
   login (locked out otherwise: database edit).
 - **Kavita** — native OIDC with account linking, auto-provisioning and role sync

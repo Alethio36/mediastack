@@ -542,7 +542,8 @@ what the script uses, and your way in if the portal is ever down.
 
 Audiobookshelf signs people in through the portal (OIDC): its login page gets a
 "Log in with <portal name>" button; the account is made on the first sign-in
-(an existing one with the same username is matched instead), and the
+(never matched to an existing account — a username match would let anyone who
+signs up as the root account's name sign in as root), and the
 Audiobookshelf app signs in the same way. `wire audiobookshelf` does its first
 run itself — the root account it creates is the stack's own (in `credentials`,
 also the way in if the portal is down) — sets up the sign-in, and keeps admin
