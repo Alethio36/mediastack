@@ -2009,10 +2009,14 @@ abs_root_unlink() { # the root account is the stack's, never a portal identity �
     local tok="$1" out id
     out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 1; }
     for id in $(jq -r '.users[] | select(.type == "root" and .hasOpenIDLink == true) | .id' <<<"$out"); do
-        w_would "audiobookshelf: unlink the root account from the portal identity it was matched to" || continue
+        w_would "audiobookshelf: unlink the root account from the portal identity it was matched to, and rotate its password (ends every root session)" || continue
         abs_api PATCH "/api/users/$id/openid-unlink" "$tok" >/dev/null \
             || { wfail "audiobookshelf refused to unlink its root account from the portal — unlink it in its UI (Users → root)"; return 1; }
-        wfail "audiobookshelf: its root account had been linked to a portal sign-in (a username match) — unlinked. Someone may have signed in as root: check authentik's events for logins to Audiobookshelf"
+        if abs_root_rotate "$(authentik_secret 24)"; then
+            wfail "audiobookshelf: its root account had been linked to a portal sign-in (a username match) — unlinked, and its password rotated: every root session has ended (a page already open keeps working up to an hour). Someone may have signed in as root: check authentik's events for logins to Audiobookshelf"
+        else
+            wfail "audiobookshelf: its root account had been linked to a portal sign-in — unlinked, but its password was NOT rotated, so anyone signed in as root stays signed in: ./mediastack.sh set-credentials audiobookshelf"
+        fi
     done
     return 0
 }
