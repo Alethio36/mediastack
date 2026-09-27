@@ -25,6 +25,16 @@ dead host rebuilds like this:
 Practice this once on a scratch VM before you need it. The restore drill is
 the only real proof your backups work.
 
+**With the portal (authentik).** Every sign-in goes through it, so it is the
+part to get right. Its database lives in its config folder and is restored
+with everything else; the secrets that open it (`AUTHENTIK_SECRET_KEY`,
+`AUTHENTIK_DB_PASSWORD`, `AUTHENTIK_API_TOKEN`) are in the restore point's
+`env` — restore the two together, never a new `.env` over an old database
+(with those secrets missing from `.env`, the tooling refuses to start it). The stack's own app
+accounts (Jellyfin's local admin, Audiobookshelf's root, Kavita's admin) stay
+the way in while the portal is down: their logins are in `credentials`, and
+the password forms are behind the addresses `credentials` prints.
+
 ## Restore-point retention
 
 Tiered (grandfather-father-son), pruned after every backup, knobs in `.env`:

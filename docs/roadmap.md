@@ -105,6 +105,33 @@ Terraform/OpenTofu, Podman as the default — are in
 
 Where the project goes next — decisions to make and work not yet built.
 
+### Next: the pre-alpha rollout
+The MVP queue is built (auditd, the arr recycle bin, structure, `.env`
+validation, notifications, SSO). Before `migrate` moves the first household:
+1. `wire` finishes a fresh install in one run: `authentik` ahead of `jellyfin`
+   in the role order (Jellyfin's portal sign-in needs the LDAP token), and
+   `wire authentik` waiting for the blueprint to be discovered after
+   authentik's first start instead of skipping the gate and the cards.
+2. The account model stays the user's choice — none, Wizarr or authentik —
+   and the install flow offers all three cleanly.
+3. testhost rebuilt from zero: install, configure, snapshot, then a close look
+   at installing and everyday use. Watch there whether the household's files
+   direct-play; frequent transcodes would pull the transcoding evaluation
+   forward.
+4. A restore drill — a disaster test: `backup`, `restore --service
+   authentik`, `restore --all`, the portal's database, Kavita and
+   Audiobookshelf included.
+5. The README as a chapter-style tutorial for every technical level, and a
+   small built-in page with local how-tos and a household quick-start.
+6. Then `migrate` (below, under Project health).
+Lower priority: RAM and system requirements, measured on the rebuilt box.
+
+### Release channels — decided (Sept 2026)
+`stable` is the default branch (what a clone gets and end users run),
+`unstable` gets every change first (the test box runs it), `legacy` is the old
+project, frozen. Promotion is a fast-forward once a change is proven:
+`git push origin unstable:stable`. `upgrade` follows the checked-out branch.
+
 ### Decisions pending
 - **Ship Pinchflat?** YouTube archiving, rated ship-worthy; brings two
   house-rule exceptions (no VPN; a self-updating yt-dlp).
@@ -118,7 +145,8 @@ Where the project goes next — decisions to make and work not yet built.
   (library-wide rules, automated, can spread work over machines), Unmanic
   (simpler automation). Hidden costs to weigh: sustained CPU/GPU load, disk
   churn and temporary space, and the arrs noticing replaced files (re-import,
-  upgrade loops). Decide in the watchlist before shipping.
+  upgrade loops). Decide in the watchlist before shipping. After the MVP,
+  unless the rollout shows the household's files seldom direct-play.
 
 ### Storage layout — decided (Sept 2026), after the MVP
 - **No mergerfs in the tooling** — pooling drives is a host storage decision,
@@ -209,7 +237,7 @@ all built; what each still leaves open is noted below.
   runs stack commands. Until the gate exists (and for installs that choose
   Wizarr, which has none): Apprise not published over HTTPS and its port on
   127.0.0.1 only; the panel behind OliveTin's local-user login.
-- **SSO: authentik** *(decided Sept 2026; part of the MVP — before migrate)* — reasoning and
+- **SSO: authentik** *(decided Sept 2026; built and proven live Sept 2026)* — reasoning and
   per-app evidence in [watchlist.md](watchlist.md#identity--sso). Build order:
   1. *Done:* shard support in the tooling (members, whole-shard verbs, CI rules).
   2. *Done:* `authentik.yml` — server, worker and its own PostgreSQL (pinned),
@@ -275,7 +303,7 @@ all built; what each still leaves open is noted below.
      account was claimable at sign-up; a root already linked is unlinked
      loudly), keeps admin rights in step with `admins` (a guest stays a guest); the portal's address leads to Traefik inside the stack (an app's
      server talks to authentik there — production certificates required).
-     *Built (Kavita, D4 part 2 — live test pending):* `wire kavita` does its
+     *Done (Kavita, D4 part 2 — proven live):* `wire kavita` does its
      first run (the stack's own admin, with an email nobody can sign up with:
      Kavita always matches an existing account by email), sets up OIDC (one
      restart: it is set up at start-up), its login page straight to the portal
@@ -283,7 +311,8 @@ all built; what each still leaves open is noted below.
      people (refreshed each run; existing people's access never changed —
      `doctor` lists gaps), admin rights synced by wire; its verified-email
      check off (authentik sends `email_verified: false`).
-  6. *Built (E — live test pending):* `link-account <portal-user>` — the
+  6. *Done (E — proven live: history, reading and listening progress kept):*
+     `link-account <portal-user>` — the
      operator picks each app's local account (never guessed), a plan shows the
      change and its admin effect, then: Jellyfin's login method becomes the LDAP
      plugin (it adopts an account by name only then — checked in its source);
