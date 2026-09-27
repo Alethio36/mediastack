@@ -66,7 +66,8 @@ cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, ato
   traefik         the Traefik dashboard password
   audiobookshelf  its root password (every session signed in as root ends)
   portal          the portal's admin (akadmin) password
-  all             ONE password across all of the above except portal (usernames stay put)" ;; esac
+  all             ONE password across all of the above except portal (usernames stay put)
+Someone else locked out of the portal: ./mediastack.sh reset-password <username>" ;; esac
     [[ -t 0 ]] || die "set-credentials is interactive — run it at a terminal."
 
     case "$target" in
@@ -278,6 +279,18 @@ sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
             || die "verification sign-in with the NEW password failed — check Jellyfin's users in its dashboard"
         env_set JELLYFIN_ADMIN_PASSWORD "$npass"
         ok "Jellyfin admin password rotated and verified"
+}
+
+cmd_reset_password() { # someone locked out: their login throttle cleared, a single-use sign-in link to set a new password
+    load_env; render
+    local user="${1:-}"
+    [[ -n "$user" ]] || die "usage: reset-password <username>"
+    if ! svc_enabled authentik; then
+        svc_enabled wizarr && die "With Wizarr, accounts are Jellyfin's own: reset it in Jellyfin's dashboard (Administration → Users → $user → Password)."
+        die "Neither account model is enabled — there are no accounts to reset."
+    fi
+    [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
+    authentik_recover "$user"
 }
 
 cmd_invite() { # mint an invitation (authentik's or Wizarr's, whichever runs) and print the ready-to-share URL

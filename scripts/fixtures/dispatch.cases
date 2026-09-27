@@ -110,6 +110,10 @@ credentials x
 set-credentials
 set-credentials a
 set-credentials a b c d
+# reset-password  (max=1)
+reset-password
+reset-password someone
+reset-password a b
 
 # traefik-setup  (allow=--hosts,--certs max=1)
 traefik-setup

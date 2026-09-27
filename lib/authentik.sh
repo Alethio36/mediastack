@@ -257,6 +257,35 @@ authentik_admin_rotate() { # authentik_admin_rotate NEW-PASSWORD — akadmin's p
     env_set AUTHENTIK_ADMIN_PASSWORD "$new"
 }
 
+authentik_recover() { # authentik_recover USER — clear their login throttle, print a single-use sign-in link
+    local user="$1" enc out u pk n=0 path
+    case "$user" in
+        akadmin) die "akadmin's password is the stack's own — set a new one with: ./mediastack.sh set-credentials portal" ;;
+        mediastack-ldap-search) die "mediastack-ldap-search is the stack's LDAP search account, not a person's — its password comes from .env through the blueprint" ;;
+    esac
+    enc=$(jq -rn --arg u "$user" '$u|@uri')
+    out=$(ak_api GET "/core/users/?username=$enc") || die "authentik refused the user lookup: $(oneline "$out")"
+    u=$(jq -c '.results[0] // empty' <<<"$out")
+    [[ -n "$u" ]] || die "no portal account named '$user' (exact, case-sensitive) — the list: $(authentik_portal)/if/admin/#/identity/users"
+    [[ "$(jq -r '.type' <<<"$u")" == internal ]] || die "'$user' is a $(jq -r '.type' <<<"$u") account, not a person's — nothing to reset"
+    [[ "$(jq -r '.is_active' <<<"$u")" == true ]] || die "'$user' is deactivated — that is deliberate, not a lockout. To let them back in, activate it first: $(authentik_portal)/if/admin/#/identity/users"
+    # failed sign-ins lower a reputation score that locks the LDAP path (Jellyfin) out
+    out=$(ak_api GET "/policies/reputation/scores/?identifier=$enc&page_size=100") || die "authentik refused the login-throttle lookup: $(oneline "$out")"
+    for pk in $(jq -r '.results[].pk' <<<"$out"); do
+        ak_api DELETE "/policies/reputation/scores/$pk/" >/dev/null || die "authentik refused to clear a login-throttle entry for '$user'"
+        n=$((n+1))
+    done
+    (( n )) && ok "cleared $n login-throttle entr$( ((n==1)) && echo y || echo ies) for '$user'" || info "'$user' had no login throttle to clear"
+    out=$(sudo docker exec "$(svc_cname authentik-worker)" ak create_recovery_key 1440 "$user" 2>&1) \
+        || die "authentik could not make a sign-in link: $(oneline "$out")"
+    path=$(grep -o '/recovery/use-token/[^[:space:]]*' <<<"$out" | tail -1)
+    [[ -n "$path" ]] || die "authentik answered without a sign-in link: $(oneline "$out")"
+    hr "Sign-in link for $user"
+    echo "  $(authentik_portal)$path"
+    echo "  Works once, for 24 hours — send it to $user only: whoever opens it is signed in as them."
+    echo "  Then, in the portal: Settings → Change password. The new password works in every app."
+}
+
 # ------------------------------------------------------------------ doctor --
 _doctor_accounts() { # the account model: one of the services that conflict, and authentik's release mark
     hr "doctor: accounts"
