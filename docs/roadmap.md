@@ -307,10 +307,23 @@ all built; what each still leaves open is noted below.
   e-mail the link, (3) authentik's own update notices reach its admins. Nothing
   else (no marketing, no digests). Email is already required at sign-up, so
   every account is ready for it. Until then invite links are copied by hand and
-  passwords are reset by the admin. **Follow-up when it lands:** turn Kavita's
+  passwords are reset by the admin (`reset-password <user>`). **Follow-up when it lands:** turn Kavita's
   verified-email check back on (Kavita → Settings → OpenID Connect → "Require
   verified email") — it is off because authentik cannot vouch for an address
   until it can send mail.
+- **Credential coverage** *(audit Sept 2026 — the rest later)*: every login the
+  stack stores rotates with `set-credentials` (arr, qBittorrent, Jellyfin admin,
+  Pi-hole, Traefik dashboard, Audiobookshelf root, the portal's akadmin), and a
+  locked-out portal user comes back with `reset-password`. Still to do:
+  (1) Kavita's admin — joins `set-credentials` with its wire role (D4 part 2);
+  (2) service secrets, each with its own mechanism: the LDAP search account's
+  password and Audiobookshelf's OIDC client secret (regenerate → blueprint →
+  wire), the LDAP outpost token, authentik's API token and database password,
+  the Meilisearch key, the arr/Seerr/Wizarr/cleanuparr API keys (each app, then
+  everything that stores it) — a `rotate-secret <name>` verb or `set-credentials`
+  targets; (3) Wizarr mode's `reset-password` through Jellyfin's API (today it
+  points at Jellyfin's dashboard); (4) Wizarr's admin (no API found yet — UI
+  only); (5) Navidrome's per-user Subsonic password, reset by the admin.
 - Post-migration hardening: move the panel off LAN-open once SSO lands; phase-2
   sudo narrowing (read-only verbs drop root); staging→production certs once a box
   stops being a test box.
