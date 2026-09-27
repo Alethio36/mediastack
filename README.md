@@ -54,8 +54,16 @@ git clone <this-repo> && cd mediastack
 interactive menu. Passwords the stack created: `credentials`; every
 service's address: `status`.
 
-The only remaining hands-on step is Wizarr's one-time first run — `wire`
-walks you through it with the exact values to paste.
+How your household signs in is your choice, and one at most: each app's own
+accounts, Wizarr invitations, or the portal (authentik — one login for every
+app; see "The portal and the gate"). With Wizarr, its one-time first run is
+the only hands-on step — `wire` walks you through it with the exact values to
+paste.
+
+**Release channels.** A clone follows `stable`, the default branch, and
+`upgrade` pulls whatever branch is checked out. `unstable` gets every change
+first (for testing it: `git checkout -b unstable origin/unstable`, then
+`upgrade`); `legacy` is the old project, kept frozen.
 
 ## What runs (à la carte)
 
@@ -496,7 +504,9 @@ Subsonic API — any Subsonic client (phone, desktop, car stereo) plays
 your collection, a real music experience where Jellyfin's is an
 afterthought. It reads `${DATA_ROOT}/media/music` **read-only**: it
 serves, lidarr owns the files. No wiring — create your account on first
-visit at `https://music.<your-domain>`.
+visit at `https://music.<your-domain>`. With the portal, nobody creates one:
+the portal signs people in and Navidrome makes their account on the first
+visit (see "The portal and the gate").
 
 ## Watch state (WatchState)
 
@@ -601,7 +611,9 @@ gate and adds the admin cards to your dashboard (doctor fails until it has).
 
 ## Invites (Wizarr)
 
-Wizarr turns "set up my account" into a link. Its first run is a one-time
+For installs that chose Wizarr as the account model (with the portal,
+`invite` makes a portal sign-up link instead — see above). Wizarr turns "set
+up my account" into a link. Its first run is a one-time
 UI step: create the admin account, add Jellyfin as a server (URL
 `http://jellyfin:8096`, using the stack's Jellyfin API key — shown by
 `credentials`), and mint a Wizarr API key. `wire wizarr` walks you through
@@ -626,10 +638,16 @@ manual grabs from Prowlarr · user services as drop-in files
 (`custom/compose.d/`) · service URLs in `status` · watch-state
 sync and backup (WatchState) · a dedicated music server (Navidrome) ·
 audiobook/podcast and ebook/comic serving (Audiobookshelf, Kavita) ·
-a web control panel over the safe verbs (OliveTin front door).
+a web control panel over the safe verbs (OliveTin front door) · the portal
+(authentik): one login for Jellyfin (LDAP), Audiobookshelf and Kavita (OIDC,
+their apps included) and Navidrome, invitation-only sign-up, every admin tool
+behind it · moving an existing household's accounts onto it with their
+history (`link-account`) · password reset for someone locked out
+(`reset-password`) · deletion attribution and the media manifest · the arr
+recycle bin.
 
-The stack is feature-complete for its scope; changes from here are
-maintenance, fixes, and polish. Project goals and forward direction live
+**Pre-alpha.** The first household rollout comes next (see the roadmap);
+changes from here are fixes, polish and the rollout itself. Project goals and forward direction live
 in [docs/roadmap.md](docs/roadmap.md); what was evaluated and set aside, and
 what would reopen it, in [docs/watchlist.md](docs/watchlist.md).
 
