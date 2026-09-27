@@ -1051,6 +1051,7 @@ VERBS=(
     "invite~invite [--expires 1|7|30]~free~Connect~Mint a Wizarr invitation and print the ready-to-share URL."
     "credentials~credentials~none~Connect~Show the app logins wire created/stored."
     "set-credentials~set-credentials <target|all>~max=1~Connect~Rotate a stored login everywhere it lives, atomically."
+    "reset-password~reset-password <user>~max=1~Connect~Someone locked out of the portal: clear their login throttle, mint a single-use sign-in link."
     "notify~notify [status|test [stream]|set <stream>|clear <stream>|send <stream> <title> <message> [--type T]]~free~Connect~Notification streams (ops, users): status, test, change or clear a stream's URLs, send your own message."
     "set-user-facing~set-user-facing [<svc> true|false]~max=2~Connect~Show or change which services notify the household on update (the 'users' stream)."
     "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login)."

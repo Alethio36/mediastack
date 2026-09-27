@@ -36,7 +36,9 @@
 #     and its password rotated (ends its sessions); admin rights follow
 #     `admins`, a guest outside it stays a guest
 #   * credentials: Audiobookshelf's root and akadmin rotate through their APIs
-#     into .env
+#     into .env; reset-password clears a person's login throttle and mints a
+#     single-use link, never for akadmin, the search account, a service
+#     account or a deactivated one
 #
 #   scripts/test-authentik.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -557,17 +559,43 @@ out=$(abs_root_unlink tok 2>&1) || true
 ABS_PW_REFUSE=false; ABS_ROOT_LINK=false; rm -f "$T/calls"
 abs_root_unlink tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "an unlinked root: nothing to do"; pass
 
-# ---- the portal's admin ----
-printf 'AUTHENTIK_ADMIN_PASSWORD=OLDAK\n' > "$ENV_FILE"
+# ---- the portal's admin, and a locked-out person's way back ----
+printf 'AUTHENTIK_ADMIN_PASSWORD=OLDAK\nTRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"
+AK_TYPE=internal; AK_ACTIVE=true
 ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
     case "$1 $2" in
         "GET /core/users/?username=akadmin") echo '{"results":[{"pk":7,"username":"akadmin"}]}' ;;
+        "GET /core/users/?username=jo%20ann") echo "{\"results\":[{\"pk\":9,\"username\":\"jo ann\",\"type\":\"$AK_TYPE\",\"is_active\":$AK_ACTIVE}]}" ;;
+        "GET /core/users/?username=nobody") echo '{"results":[]}' ;;
+        "GET /policies/reputation/scores/?identifier=jo%20ann&page_size=100") echo '{"results":[{"pk":"a1"},{"pk":"b2"}]}' ;;
         *) echo '{}' ;;
     esac; }
+sudo() { echo "SUDO $*" >> "$T/calls"
+    echo "Store this link safely, as it will allow anyone to access authentik as jo ann."
+    echo "This recovery token is valid for 1 day."
+    echo "/recovery/use-token/KEY123/"; }
+svc_cname() { echo "ms-$1"; }
 rm -f "$T/calls"
 authentik_admin_rotate NEWAK >/dev/null && grep -q '^POST /core/users/7/set_password/ {"password":"NEWAK"}' "$T/calls" \
     && [[ "$(env_get AUTHENTIK_ADMIN_PASSWORD)" == NEWAK ]] \
     || fail_ "akadmin's password is set through authentik's API, then stored (the bootstrap value is read only once)"; pass
+rm -f "$T/calls"
+out=$(authentik_recover "jo ann" 2>&1)
+grep -q '^DELETE /policies/reputation/scores/a1/' "$T/calls" && grep -q '^DELETE /policies/reputation/scores/b2/' "$T/calls" \
+    || fail_ "every login-throttle entry for the user is cleared"; pass
+grep -q '^SUDO docker exec ms-authentik-worker ak create_recovery_key 1440 jo ann$' "$T/calls" \
+    && [[ "$out" == *"https://portal.media.example.com/recovery/use-token/KEY123/"*"Works once, for 24 hours"*"Change password"* ]] \
+    || fail_ "a single-use, 24-hour sign-in link on the portal's address, with what to do next: $out"; pass
+for who in akadmin mediastack-ldap-search nobody; do
+    rm -f "$T/calls"
+    out=$( (authentik_recover "$who") 2>&1) && fail_ "$who: must be refused"
+    ! grep -q 'create_recovery_key' "$T/calls" 2>/dev/null || fail_ "$who: no link minted"
+done
+[[ "$( (authentik_recover akadmin) 2>&1)" == *"set-credentials portal"* ]] || fail_ "akadmin is pointed at set-credentials portal"; pass
+AK_TYPE=service_account; out=$( (authentik_recover "jo ann") 2>&1) && fail_ "a service account is refused"
+[[ "$out" == *"not a person's"* ]] || fail_ "a service account: says why"; pass
+AK_TYPE=internal; AK_ACTIVE=false; rm -f "$T/calls"; out=$( (authentik_recover "jo ann") 2>&1) && fail_ "a deactivated account is refused"
+[[ "$out" == *"deactivated"* ]] && ! grep -q '^DELETE' "$T/calls" || fail_ "a deactivated account: deliberate, not a lockout — nothing cleared, no link"; pass
 
 # the blueprint's OIDC provider for it
 sed -n '/name: mediastack-oidc-audiobookshelf/,/^  - model/p' blueprints/authentik/mediastack-portal.yaml > "$T/abs"
