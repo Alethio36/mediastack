@@ -268,16 +268,22 @@ all built; what each still leaves open is noted below.
      emergency login). Seerr follows Jellyfin (proven). *Done:*
      Audiobookshelf through OIDC — `wire audiobookshelf` does its first run
      (the stack's root account), sets up sign-in through the portal (created on
-     first sign-in, matched by username), keeps admin rights in step with
-     `admins`; the portal's address leads to Traefik inside the stack (an app's
+     first sign-in, never matched to an existing account: by username the root
+     account was claimable at sign-up; a root already linked is unlinked
+     loudly), keeps admin rights in step with `admins`; the portal's address leads to Traefik inside the stack (an app's
      server talks to authentik there — production certificates required).
      *Next:*
      Kavita through OIDC, its first run automated the same way (the stack's own
      admin), all libraries for new users, admin rights synced by wire; its
-     verified-email check off until the email server exists.
+     verified-email check off until the email server exists. Kavita always
+     matches an existing account by email (no setting) and authentik sends
+     `email_verified: false`, so the stack's admin gets an email no one can
+     sign up with.
   6. Converting an existing install's users (Jellyfin local users to directory
-     users, keeping watch history; Audiobookshelf/Kavita match by username) —
-     test the Jellyfin LDAP takeover of an existing user first.
+     users, keeping watch history; Audiobookshelf/Kavita by an explicit
+     operator-confirmed mapping, never by name or email matching — that lets a
+     sign-up claim any account) — test the Jellyfin LDAP takeover of an
+     existing user first.
   First milestone: the gate in front of the panel and Apprise.
 - **One login for the remaining tools** *(later)*: qBittorrent, Pi-hole, Deluge,
   Transmission, LazyLibrarian, Cleanuparr, WatchState and Bazarr are gated and
