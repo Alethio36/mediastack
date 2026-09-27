@@ -545,8 +545,11 @@ keeps Jellyfin administrator rights in step with the portal's `admins` group.
 The stack's own Jellyfin admin (in `credentials`) stays a local account: it is
 what the script uses, and your way in if the portal is ever down.
 
-Audiobookshelf signs people in through the portal (OIDC): its login page gets a
-"Log in with <portal name>" button; the account is made on the first sign-in
+Audiobookshelf signs people in through the portal (OIDC): its login page goes
+straight to the portal (the app shows a "Log in with <portal name>" button);
+the root account's password form is behind
+`https://audiobooks.<domain>/audiobookshelf/login?autoLaunch=0` (in
+`credentials`). The account is made on the first sign-in
 (never matched to an existing account — a username match would let anyone who
 signs up as the root account's name sign in as root), and the
 Audiobookshelf app signs in the same way. `wire audiobookshelf` does its first

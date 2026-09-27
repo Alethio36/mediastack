@@ -1957,6 +1957,11 @@ abs_oidc_want() { # the sign-in settings mediastack manages in Audiobookshelf (J
         authOpenIDTokenSigningAlgorithm: "RS256",
         authOpenIDButtonText: ("Log in with " + $t),
         authOpenIDAutoRegister: true,
+        # its login page goes straight to the portal; the password form (the
+        # root account: the script and the way in with the portal down) stays
+        # behind /audiobookshelf/login?autoLaunch=0 — removing "local" instead
+        # would switch off POST /login, which wire signs in with
+        authOpenIDAutoLaunch: true,
         # no matching: by username it links a portal sign-in to any unlinked
         # account of that name, the root account included (sign up as its name
         # and you are root). Accounts are made on first sign-in, linked by sub.
