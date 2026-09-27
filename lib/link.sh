@@ -9,7 +9,8 @@
 #   Kavita          its email becomes the portal account's (Kavita links a
 #                   portal sign-in by email): reading progress kept
 #   Audiobookshelf  its API cannot set the link, so username matching opens
-#                   for one sign-in, fenced: no other account could match
+#                   for one sign-in, fenced: no other account could match,
+#                   closed by a subshell's EXIT trap (the caller's traps untouched)
 # The stack's own accounts are never offered.
 
 LINK_ABS_WAIT=600   # seconds the Audiobookshelf window stays open for the person's sign-in
@@ -123,7 +124,7 @@ link_abs_close() { # TOKEN — the window shuts, whatever happened
         || fail "audiobookshelf: username matching could NOT be turned off — do it now: ./mediastack.sh wire audiobookshelf"
 }
 link_abs_do() { # TOKEN CANDIDATE PORTAL-USER
-    local tok="$1" id who="$3" out waited=0 prev
+    local tok="$1" id who="$3" out
     id=$(jq -r '.id' <<<"$2")
     if [[ "$(jq -r '.name' <<<"$2")" != "$who" ]]; then
         out=$(abs_api PATCH "/api/users/$id" "$tok" "$(jq -cn --arg n "$who" '{username:$n}')") \
@@ -131,24 +132,24 @@ link_abs_do() { # TOKEN CANDIDATE PORTAL-USER
     fi
     out=$(abs_api PATCH "/api/users/$id" "$tok" "$(jq -cn --arg p "$(link_secret)" '{password:$p}')") \
         || { fail "audiobookshelf refused to replace the account's own password: $(oneline "$out")"; return 1; }
-    link_abs_match "$tok" '"username"' || { link_abs_close "$tok"; fail "audiobookshelf did not accept username matching"; return 1; }
-    # the window closes even on Ctrl-C or an exit; whatever traps were set before
-    # come back after — only in the shell that set them (a subshell lists its
-    # parent's traps without running them: restoring there would arm them)
-    prev=""; [[ "$BASHPID" == "$$" ]] && prev=$(trap -p EXIT INT TERM)
-    trap 'link_abs_close "$tok"' EXIT INT TERM
-    info "audiobookshelf: ask $who to sign in to Audiobookshelf now (web or app, with the portal button) — waiting up to $((LINK_ABS_WAIT / 60)) minutes (Ctrl-C closes the window)"
-    while :; do
-        out=$(abs_api GET /api/users "$tok") || out='{"users":[]}'
-        jq -e --arg i "$id" '.users[] | select(.id == $i) | .hasOpenIDLink == true' <<<"$out" >/dev/null && break
-        if (( waited >= LINK_ABS_WAIT )); then
-            trap - EXIT INT TERM; eval "$prev"; link_abs_close "$tok"
-            fail "audiobookshelf: $who did not sign in within $((LINK_ABS_WAIT / 60)) minutes — the account is renamed and ready; run link-account again when they can sign in"
-            return 1
-        fi
-        sleep 5; waited=$((waited + 5))
-    done
-    trap - EXIT INT TERM; eval "$prev"; link_abs_close "$tok"
+    # the window lives in a subshell whose EXIT trap closes it — on a link, a
+    # timeout, Ctrl-C or any exit — and leaves the caller's traps alone
+    (
+        trap 'link_abs_close "$tok"' EXIT
+        trap 'exit 130' INT TERM
+        link_abs_match "$tok" '"username"' || { fail "audiobookshelf did not accept username matching"; exit 1; }
+        info "audiobookshelf: ask $who to sign in to Audiobookshelf now (web or app, with the portal button) — waiting up to $((LINK_ABS_WAIT / 60)) minutes (Ctrl-C closes the window)"
+        waited=0
+        while :; do
+            out=$(abs_api GET /api/users "$tok") || out='{"users":[]}'
+            jq -e --arg i "$id" '.users[] | select(.id == $i) | .hasOpenIDLink == true' <<<"$out" >/dev/null && exit 0
+            if (( waited >= LINK_ABS_WAIT )); then
+                fail "audiobookshelf: $who did not sign in within $((LINK_ABS_WAIT / 60)) minutes — the account is renamed and ready; run link-account again when they can sign in"
+                exit 1
+            fi
+            sleep 5; waited=$((waited + 5))
+        done
+    ) || return 1
     ok "audiobookshelf: '$who' is linked (same account: listening progress kept)"
 }
 

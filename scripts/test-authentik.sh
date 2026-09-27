@@ -819,7 +819,7 @@ out=$(link_abs_do tok '{"id":"b","name":"bob"}' robert 2>&1) && fail_ "no sign-i
 [[ "$out" == *"did not sign in within"*"run link-account again"* && "$(jq -r .authOpenIDMatchExistingBy "$T/abs-auth")" == null ]] \
     || fail_ "audiobookshelf: on a timeout the window closes too: $out"; pass
 LINK_ABS_WAIT=600; unset -f sleep
-[[ "$(trap -p EXIT)" == *'rm -rf'* ]] || fail_ "the window's safety net gives back the traps that were set before (here: this test's clean-up)"; pass
+[[ "$(trap -p EXIT)" == *'rm -rf'* ]] || fail_ "the window's safety net never touches the caller's traps (here: this test's clean-up)"; pass
 
 # ---- the portal's admin, and a locked-out person's way back ----
 printf 'AUTHENTIK_ADMIN_PASSWORD=OLDAK\nTRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"
