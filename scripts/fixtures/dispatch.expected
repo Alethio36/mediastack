@@ -150,6 +150,13 @@ CALL cmd_set_credentials [1] a
 ## set-credentials a b c d
 ERROR 'set-credentials' takes at most 1 argument(s) (got: a b c d)
 rc=1
+## reset-password
+CALL cmd_reset_password [0]
+## reset-password someone
+CALL cmd_reset_password [1] someone
+## reset-password a b
+ERROR 'reset-password' takes at most 1 argument(s) (got: a b)
+rc=1
 ## traefik-setup
 CALL cmd_traefik_setup [0]
 ## traefik-setup --hosts
