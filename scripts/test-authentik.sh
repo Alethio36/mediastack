@@ -583,9 +583,16 @@ rm -f "$T/calls"
 out=$(authentik_recover "jo ann" 2>&1)
 grep -q '^DELETE /policies/reputation/scores/a1/' "$T/calls" && grep -q '^DELETE /policies/reputation/scores/b2/' "$T/calls" \
     || fail_ "every login-throttle entry for the user is cleared"; pass
-grep -q '^SUDO docker exec ms-authentik-worker ak create_recovery_key 1440 jo ann$' "$T/calls" \
+grep -q '^SUDO docker exec -e USER=mediastack ms-authentik-worker ak create_recovery_key 1440 jo ann$' "$T/calls" \
     && [[ "$out" == *"https://portal.media.example.com/recovery/use-token/KEY123/"*"Works once, for 24 hours"*"Change password"* ]] \
     || fail_ "a single-use, 24-hour sign-in link on the portal's address, with what to do next: $out"; pass
+# a failed command: the error line, not authentik's config logging ahead of it
+sudo() { echo '{"event": "Loaded config", "level": "debug", "logger": "authentik.lib.config"}'
+    echo '  File "/usr/local/lib/python3.14/getpass.py", line 239, in getuser'
+    echo "OSError: No username set in the environment"; return 1; }
+out=$( (authentik_recover "jo ann") 2>&1) && fail_ "a failed command must fail"
+[[ "$out" == *"could not make a sign-in link: OSError: No username set in the environment"* && "$out" != *"Loaded config"* ]] \
+    || fail_ "a failed command reports its error line, not its logging: $out"; pass
 for who in akadmin mediastack-ldap-search nobody; do
     rm -f "$T/calls"
     out=$( (authentik_recover "$who") 2>&1) && fail_ "$who: must be refused"
