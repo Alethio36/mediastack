@@ -33,7 +33,10 @@
 #     own household gate (forward auth for its one address)
 #   * Audiobookshelf through OIDC: never matched to an existing account, the
 #     settings read back after a write, a root linked to the portal unlinked;
-#     admin rights follow `admins`, a guest outside it stays a guest
+#     admin rights follow
+#     `admins`, a guest outside it stays a guest
+#   * credentials: Audiobookshelf's root and akadmin rotate through their APIs
+#     into .env
 #
 #   scripts/test-authentik.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -516,20 +519,50 @@ out=$(abs_oidc tok 2>&1) && rc=0 || rc=$?
     || fail_ "a setting it answered 200 to but did not keep fails, naming the setting"; pass
 ABS_KEPT='{}'; rm -f "$T/calls"; WIRE_FAILS=0
 abs_oidc tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "already right: no write"; pass
-# the root account linked to a portal identity (the old username match) is unlinked, loudly
-ABS_ROOT_LINK=true
-abs_api() { echo "$1 $2" >> "$T/calls"
+# root's password: changed through its own account, stored, then proven by a sign-in
+# (a password change is what ends Audiobookshelf sessions — an unlink does not)
+printf 'ABS_ADMIN_USER=mediastack\nABS_ADMIN_PASSWORD=OLDPW\n' > "$ENV_FILE"
+echo OLDPW > "$T/abs-pw"; ABS_PW_REFUSE=false; ABS_ROOT_LINK=true
+abs_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
     case "$1 $2" in
+        "POST /login") [[ "$(jq -r .password <<<"$4")" == "$(cat "$T/abs-pw")" ]] || return 1
+                       echo '{"user":{"accessToken":"ABSTOK"}}' ;;
+        "PATCH /api/me/password") $ABS_PW_REFUSE && { echo 'Invalid password'; return 1; }
+                       [[ "$(jq -r .password <<<"$4")" == "$(cat "$T/abs-pw")" ]] || return 1
+                       jq -r .newPassword <<<"$4" > "$T/abs-pw"; echo '{"success":true}' ;;
         "GET /api/users") echo "{\"users\":[{\"id\":\"r\",\"username\":\"mediastack\",\"type\":\"root\",\"hasOpenIDLink\":$ABS_ROOT_LINK},
                           {\"id\":\"t\",\"username\":\"test-thio\",\"type\":\"user\",\"hasOpenIDLink\":true}]}" ;;
         *) echo '{}' ;;
     esac; }
+rm -f "$T/calls"
+abs_root_rotate NEWPW >/dev/null && [[ "$(env_get ABS_ADMIN_PASSWORD)" == NEWPW && "$(cat "$T/abs-pw")" == NEWPW ]] \
+    && grep -q '^PATCH /api/me/password {"password":"OLDPW","newPassword":"NEWPW"}' "$T/calls" \
+    && [[ "$(grep -c '^POST /login' "$T/calls")" == 2 ]] \
+    || fail_ "root's password: changed with the old one, stored, verified by signing in with the new one"; pass
+ABS_PW_REFUSE=true; rm -f "$T/calls"
+if abs_root_rotate OTHER >/dev/null; then fail_ "a refused change must fail"; fi
+[[ "$(env_get ABS_ADMIN_PASSWORD)" == NEWPW ]] || fail_ "a refused change leaves .env as it was"; pass
+ABS_PW_REFUSE=false
+# the root account linked to a portal identity (the old username match) is unlinked, loudly
 rm -f "$T/calls"; WIRE_FAILS=0
 out=$(abs_root_unlink tok 2>&1) || true
 grep -q '^PATCH /api/users/r/openid-unlink' "$T/calls" && ! grep -q '/api/users/t/' "$T/calls" && [[ "$out" == *"root account had been linked"* ]] \
     || fail_ "a linked root is unlinked and reported as a failure; portal accounts keep their link"; pass
 ABS_ROOT_LINK=false; rm -f "$T/calls"
 abs_root_unlink tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "an unlinked root: nothing to do"; pass
+
+# ---- the portal's admin ----
+printf 'AUTHENTIK_ADMIN_PASSWORD=OLDAK\n' > "$ENV_FILE"
+ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /core/users/?username=akadmin") echo '{"results":[{"pk":7,"username":"akadmin"}]}' ;;
+        *) echo '{}' ;;
+    esac; }
+rm -f "$T/calls"
+authentik_admin_rotate NEWAK >/dev/null && grep -q '^POST /core/users/7/set_password/ {"password":"NEWAK"}' "$T/calls" \
+    && [[ "$(env_get AUTHENTIK_ADMIN_PASSWORD)" == NEWAK ]] \
+    || fail_ "akadmin's password is set through authentik's API, then stored (the bootstrap value is read only once)"; pass
+
 # the blueprint's OIDC provider for it
 sed -n '/name: mediastack-oidc-audiobookshelf/,/^  - model/p' blueprints/authentik/mediastack-portal.yaml > "$T/abs"
 grep -q 'client_id: mediastack-audiobookshelf' "$T/abs" && grep -q 'signing_key: !Find' "$T/abs" \

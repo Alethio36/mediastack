@@ -1986,6 +1986,25 @@ abs_oidc() { # Audiobookshelf signs people in through the portal (its own login 
     ok "audiobookshelf: sign-in through the portal set up"
 }
 
+abs_root_rotate() { # abs_root_rotate NEW-PASSWORD — root's password, and with it every root session ends
+    # Audiobookshelf ends a user's sessions only on a password change (not on
+    # an unlink): refresh sessions go at once, an issued access token lasts
+    # its hour. rc 1 after printing why.
+    local new="$1" user old out tok
+    user=$(env_get ABS_ADMIN_USER); old=$(env_get ABS_ADMIN_PASSWORD)
+    [[ -n "$user" && -n "$old" ]] || { fail "no Audiobookshelf root login in .env — run: ./mediastack.sh wire audiobookshelf"; return 1; }
+    out=$(abs_api POST /login "" "$(jq -cn --arg u "$user" --arg p "$old" '{username:$u, password:$p}')") \
+        || { fail "audiobookshelf rejected the root login from .env: $(oneline "$out")"; return 1; }
+    tok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
+    [[ -n "$tok" ]] || { fail "audiobookshelf login returned no token"; return 1; }
+    out=$(abs_api PATCH /api/me/password "$tok" "$(jq -cn --arg c "$old" --arg n "$new" '{password:$c, newPassword:$n}')") \
+        || { fail "audiobookshelf refused the password change: $(oneline "$out")"; return 1; }
+    env_set ABS_ADMIN_PASSWORD "$new"   # changed: the new one is the truth from here, verified or not
+    out=$(abs_api POST /login "" "$(jq -cn --arg u "$user" --arg p "$new" '{username:$u, password:$p}')") \
+        || { fail "audiobookshelf's root password changed (stored in .env), but signing in with it failed: $(oneline "$out")"; return 1; }
+    return 0
+}
+
 abs_root_unlink() { # the root account is the stack's, never a portal identity — undo a link a username match made
     local tok="$1" out id
     out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 1; }
