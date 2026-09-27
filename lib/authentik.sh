@@ -257,6 +257,10 @@ authentik_admin_rotate() { # authentik_admin_rotate NEW-PASSWORD — akadmin's p
     env_set AUTHENTIK_ADMIN_PASSWORD "$new"
 }
 
+ak_cmd_why() { # ak_cmd_why OUTPUT -> the last line of an `ak` command that isn't its own log (where the error is)
+    grep -v '^{"event"' <<<"$1" | grep -v '^[[:space:]]*$' | tail -1
+}
+
 authentik_recover() { # authentik_recover USER — clear their login throttle, print a single-use sign-in link
     local user="$1" enc out u pk n=0 path
     case "$user" in
@@ -276,10 +280,12 @@ authentik_recover() { # authentik_recover USER — clear their login throttle, p
         n=$((n+1))
     done
     (( n )) && ok "cleared $n login-throttle entr$( ((n==1)) && echo y || echo ies) for '$user'" || info "'$user' had no login throttle to clear"
-    out=$(sudo docker exec "$(svc_cname authentik-worker)" ak create_recovery_key 1440 "$user" 2>&1) \
-        || die "authentik could not make a sign-in link: $(oneline "$out")"
+    # USER: the worker runs as mediastack's UID, which has no passwd entry, and
+    # the command names who made the link (getpass: "No username set", found live)
+    out=$(sudo docker exec -e USER=mediastack "$(svc_cname authentik-worker)" ak create_recovery_key 1440 "$user" 2>&1) \
+        || die "authentik could not make a sign-in link: $(ak_cmd_why "$out")"
     path=$(grep -o '/recovery/use-token/[^[:space:]]*' <<<"$out" | tail -1)
-    [[ -n "$path" ]] || die "authentik answered without a sign-in link: $(oneline "$out")"
+    [[ -n "$path" ]] || die "authentik answered without a sign-in link: $(ak_cmd_why "$out")"
     hr "Sign-in link for $user"
     echo "  $(authentik_portal)$path"
     echo "  Works once, for 24 hours — send it to $user only: whoever opens it is signed in as them."
