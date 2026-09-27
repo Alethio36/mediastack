@@ -51,6 +51,14 @@ Then `./mediastack.sh fix-perms jellyfin`. To keep the linuxserver image
 instead, override the jellyfin image and the jellysearch mount in
 `custom/override.yml`.
 
+## Your household's accounts
+Moving onto the portal (authentik) does not start everyone over. Invite each
+person; once they have joined, `./mediastack.sh link-account <username>` ties
+their existing Jellyfin, Kavita and Audiobookshelf accounts to the portal one,
+keeping watch history, reading and listening progress and Seerr requests. You
+choose which local account is theirs in each app and confirm a plan first —
+see "The portal and the gate" in the README.
+
 ## First backup sizing
 Your first `backup` archives the whole config tree — Jellyfin metadata can
 be many GB. The command checks free space first and refuses rather than
