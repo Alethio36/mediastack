@@ -31,6 +31,9 @@
 #     gate strips the portal's headers
 #   * household apps get Media cards for media-users; Navidrome's carries its
 #     own household gate (forward auth for its one address)
+#   * Audiobookshelf through OIDC: never matched to an existing account, the
+#     settings read back after a write, a root linked to the portal unlinked;
+#     admin rights follow `admins`
 #
 #   scripts/test-authentik.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -457,8 +460,10 @@ w=$(abs_oidc_want)
    && "$(jq -r '.authOpenIDTokenURL' <<<"$w")" == "https://portal.media.example.com/application/o/token/" \
    && "$(jq -r '.authOpenIDJwksURL' <<<"$w")" == "https://portal.media.example.com/application/o/mediastack-app-audiobookshelf/jwks/" ]] \
     || fail_ "Audiobookshelf's portal addresses: $w"; pass
-[[ "$(jq -r '[.authOpenIDClientSecret, .authOpenIDTokenSigningAlgorithm, (.authOpenIDAutoRegister|tostring), .authOpenIDMatchExistingBy, .authOpenIDButtonText] | join(",")' <<<"$w")" == "ABSSEC,RS256,true,username,Log in with Home" ]] \
-    || fail_ "secret, RS256, created on first sign-in, matched by username, the portal's name on the button"; pass
+[[ "$(jq -r '[.authOpenIDClientSecret, .authOpenIDTokenSigningAlgorithm, (.authOpenIDAutoRegister|tostring), .authOpenIDButtonText] | join(",")' <<<"$w")" == "ABSSEC,RS256,true,Log in with Home" ]] \
+    || fail_ "secret, RS256, created on first sign-in, the portal's name on the button"; pass
+[[ "$(jq -c 'has("authOpenIDMatchExistingBy") and .authOpenIDMatchExistingBy == null' <<<"$w")" == true ]] \
+    || fail_ "never matched to an existing account (by username the stack's root was claimable), set explicitly to null"; pass
 [[ "$(jq -c '.authActiveAuthMethods' <<<"$w")" == '["local","openid"]' ]] || fail_ "its own login stays (the stack's root account)"; pass
 [[ "$(jq -r '.authOpenIDSubfolderForRedirectURLs | type + ":" + .' <<<"$w")" == "string:" ]] \
     || fail_ "no subfolder, set explicitly — unset, its callback reads undefined/auth/openid/callback (found live)"; pass
@@ -496,6 +501,34 @@ abs_admin_sync tok >/dev/null
 grep -q '^PATCH /api/users/a {"type":"admin"}' "$T/calls" && grep -q '^PATCH /api/users/t {"type":"user"}' "$T/calls" \
     || fail_ "portal accounts: admins are admin, the rest user"; pass
 ! grep -qE '^PATCH /api/users/(r|l) ' "$T/calls" || fail_ "the root account and local accounts are never touched"; pass
+# sign-in settings: read back after the write — a value it skips is a failure, not success
+printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_ABS_CLIENT_SECRET=ABSSEC\n' > "$ENV_FILE"
+ABS_KEPT='{"authOpenIDMatchExistingBy":"username"}'
+abs_api() { echo "$1 $2" >> "$T/calls"
+    case "$1 $2" in
+        "GET /api/auth-settings") abs_oidc_want | jq -c --argjson k "$ABS_KEPT" '. + $k' ;;
+        *) echo '{}' ;;
+    esac; }
+rm -f "$T/calls"; WIRE_FAILS=0
+out=$(abs_oidc tok 2>&1) && rc=0 || rc=$?
+(( rc != 0 )) && [[ "$out" == *"did not keep"*"authOpenIDMatchExistingBy"* ]] && grep -q '^PATCH /api/auth-settings' "$T/calls" \
+    || fail_ "a setting it answered 200 to but did not keep fails, naming the setting"; pass
+ABS_KEPT='{}'; rm -f "$T/calls"; WIRE_FAILS=0
+abs_oidc tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "already right: no write"; pass
+# the root account linked to a portal identity (the old username match) is unlinked, loudly
+ABS_ROOT_LINK=true
+abs_api() { echo "$1 $2" >> "$T/calls"
+    case "$1 $2" in
+        "GET /api/users") echo "{\"users\":[{\"id\":\"r\",\"username\":\"mediastack\",\"type\":\"root\",\"hasOpenIDLink\":$ABS_ROOT_LINK},
+                          {\"id\":\"t\",\"username\":\"test-thio\",\"type\":\"user\",\"hasOpenIDLink\":true}]}" ;;
+        *) echo '{}' ;;
+    esac; }
+rm -f "$T/calls"; WIRE_FAILS=0
+out=$(abs_root_unlink tok 2>&1) || true
+grep -q '^PATCH /api/users/r/openid-unlink' "$T/calls" && ! grep -q '/api/users/t/' "$T/calls" && [[ "$out" == *"root account had been linked"* ]] \
+    || fail_ "a linked root is unlinked and reported as a failure; portal accounts keep their link"; pass
+ABS_ROOT_LINK=false; rm -f "$T/calls"
+abs_root_unlink tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "an unlinked root: nothing to do"; pass
 # the blueprint's OIDC provider for it
 sed -n '/name: mediastack-oidc-audiobookshelf/,/^  - model/p' blueprints/authentik/mediastack-portal.yaml > "$T/abs"
 grep -q 'client_id: mediastack-audiobookshelf' "$T/abs" && grep -q 'signing_key: !Find' "$T/abs" \

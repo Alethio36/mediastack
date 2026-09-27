@@ -1957,23 +1957,45 @@ abs_oidc_want() { # the sign-in settings mediastack manages in Audiobookshelf (J
         authOpenIDTokenSigningAlgorithm: "RS256",
         authOpenIDButtonText: ("Log in with " + $t),
         authOpenIDAutoRegister: true,
-        authOpenIDMatchExistingBy: "username",
+        # no matching: by username it links a portal sign-in to any unlinked
+        # account of that name, the root account included (sign up as its name
+        # and you are root). Accounts are made on first sign-in, linked by sub.
+        authOpenIDMatchExistingBy: null,
         authOpenIDMobileRedirectURIs: ["audiobookshelf://oauth"],
         # its own subdomain: no subfolder. Unset, Audiobookshelf builds its
         # callback as "undefined/auth/openid/callback" (found live)
         authOpenIDSubfolderForRedirectURLs: "" }'
 }
 
+abs_oidc_holds() { # abs_oidc_holds CURRENT-JSON WANT-JSON -> 0 when every managed setting is as wanted
+    jq -e --argjson w "$2" '. as $c | $w | to_entries | all(.value == $c[.key])' <<<"$1" >/dev/null 2>&1
+}
+
 abs_oidc() { # Audiobookshelf signs people in through the portal (its own login stays for the stack's root account)
     local tok="$1" cur want
     cur=$(abs_api GET /api/auth-settings "$tok") || { wfail "audiobookshelf: its sign-in settings are unreadable"; return 1; }
     want=$(abs_oidc_want)
-    if jq -e --argjson w "$want" '. as $c | $w | to_entries | all(.value == $c[.key])' <<<"$cur" >/dev/null 2>&1; then
+    if abs_oidc_holds "$cur" "$want"; then
         ok "audiobookshelf: sign-in through the portal"; return 0
     fi
-    w_would "audiobookshelf: sign in through the portal (new accounts made on first sign-in, existing ones matched by username)" || return 0
-    abs_api PATCH /api/auth-settings "$tok" "$want" >/dev/null \
-        && ok "audiobookshelf: sign-in through the portal set up" || wfail "audiobookshelf rejected its sign-in settings"
+    w_would "audiobookshelf: sign in through the portal (accounts made on first sign-in, never matched to an existing one)" || return 0
+    abs_api PATCH /api/auth-settings "$tok" "$want" >/dev/null || { wfail "audiobookshelf rejected its sign-in settings"; return 1; }
+    # it answers 200 while skipping a value it doesn't accept: read back
+    cur=$(abs_api GET /api/auth-settings "$tok") || { wfail "audiobookshelf: its sign-in settings are unreadable after the change"; return 1; }
+    abs_oidc_holds "$cur" "$want" || { wfail "audiobookshelf did not keep these sign-in settings: $(jq -r --argjson w "$want" '. as $c | $w | to_entries | map(select(.value != $c[.key]) | .key) | join(", ")' <<<"$cur")"; return 1; }
+    ok "audiobookshelf: sign-in through the portal set up"
+}
+
+abs_root_unlink() { # the root account is the stack's, never a portal identity — undo a link a username match made
+    local tok="$1" out id
+    out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 1; }
+    for id in $(jq -r '.users[] | select(.type == "root" and .hasOpenIDLink == true) | .id' <<<"$out"); do
+        w_would "audiobookshelf: unlink the root account from the portal identity it was matched to" || continue
+        abs_api PATCH "/api/users/$id/openid-unlink" "$tok" >/dev/null \
+            || { wfail "audiobookshelf refused to unlink its root account from the portal — unlink it in its UI (Users → root)"; return 1; }
+        wfail "audiobookshelf: its root account had been linked to a portal sign-in (a username match) — unlinked. Someone may have signed in as root: check authentik's events for logins to Audiobookshelf"
+    done
+    return 0
 }
 
 abs_admin_sync() { # portal-linked accounts follow `admins`; the root account (the stack's) is never touched
@@ -2020,7 +2042,8 @@ wire_audiobookshelf() {
     [[ -n "$tok" ]] || { wfail "audiobookshelf login returned no token"; return 1; }
     ok "audiobookshelf: root login works"
     svc_enabled authentik || return 0
-    abs_oidc "$tok"
+    abs_oidc "$tok" || return 1
+    abs_root_unlink "$tok"
     abs_admin_sync "$tok"
 }
 
