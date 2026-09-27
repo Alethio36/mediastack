@@ -579,6 +579,11 @@ rm -f "$T/calls"
 authentik_admin_rotate NEWAK >/dev/null && grep -q '^POST /core/users/7/set_password/ {"password":"NEWAK"}' "$T/calls" \
     && [[ "$(env_get AUTHENTIK_ADMIN_PASSWORD)" == NEWAK ]] \
     || fail_ "akadmin's password is set through authentik's API, then stored (the bootstrap value is read only once)"; pass
+# set-credentials portal leaves no pending change: the worker (which carries the value) is recreated
+rm -f "$T/calls"
+( svc_enabled() { [[ "$1" == authentik ]]; }; c_health() { echo healthy; }; DC() { echo "DC $*" >> "$T/calls"; }
+  sc_rotate_portal NEWER >/dev/null ) || fail_ "set-credentials portal failed"
+grep -q '^DC up -d --no-deps authentik-worker$' "$T/calls" || fail_ "set-credentials portal recreates the worker (found live: 'up' reported it pending)"; pass
 rm -f "$T/calls"
 out=$(authentik_recover "jo ann" 2>&1)
 grep -q '^DELETE /policies/reputation/scores/a1/' "$T/calls" && grep -q '^DELETE /policies/reputation/scores/b2/' "$T/calls" \
