@@ -129,9 +129,9 @@ Maintain
 Connect
 | command | what it does |
 |---|---|
-| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr\|authentik] [--dry-run\|--verify]` | connect the apps to each other (the arrs also get their recycle bin — see below); idempotent — GUI-configured apps are never overwritten, with one exception: an address mediastack itself wrote (how one app reaches another) is re-pointed when a VPN toggle moves its target — an address you set by hand is left alone. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
+| `wire [qbit\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr\|authentik\|audiobookshelf\|kavita] [--dry-run\|--verify]` | connect the apps to each other (the arrs also get their recycle bin — see below); idempotent — GUI-configured apps are never overwritten, with one exception: an address mediastack itself wrote (how one app reaches another) is re-pointed when a VPN toggle moves its target — an address you set by hand is left alone. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
 | `invite [--expires 1\|7\|30]` | mint an invitation and print the ready-to-share URL — with authentik: a single-use sign-up link to the portal (default: 7 days); with Wizarr: a Wizarr invitation (default: never expires) |
-| `set-credentials <arr\|qbit\|jellyfin\|pihole\|traefik\|audiobookshelf\|portal\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `audiobookshelf` rotates its root password and ends every root session; `portal` sets akadmin's password through authentik's API; `all` sets one password across the stack except `portal`, which guards the rest (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
+| `set-credentials <arr\|qbit\|jellyfin\|pihole\|traefik\|audiobookshelf\|kavita\|portal\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `audiobookshelf` rotates its root password and ends every root session; `kavita` its admin's; `portal` sets akadmin's password through authentik's API; `all` sets one password across the stack except `portal`, which guards the rest (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
 | `reset-password <user>` | someone locked out of the portal: clears their login throttle and prints a single-use sign-in link (24 hours) to send them — they then set a new password in the portal's Settings. Not for akadmin (`set-credentials portal`); with Wizarr, reset it in Jellyfin's dashboard |
 | `notify [status\|test [stream]\|set <stream>\|clear <stream>\|send <stream> <title> <message> [--type T]]` | the notification streams (`ops`, `users`): what each is set to (URLs hidden) and whether it delivered, a test, replace or clear a stream's URLs, or send your own message — see "Notifications" |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
@@ -462,8 +462,11 @@ profile); an initialised Seerr is never touched.
 
 ## Books & audiobooks (Audiobookshelf, Kavita)
 
-Two serving apps cover the reading/listening side, both wire-free —
-create their accounts on first visit:
+Two serving apps cover the reading/listening side. `wire audiobookshelf` and
+`wire kavita` do each one's first run (the stack's own admin, in
+`credentials`); with the portal, people sign in to both with their portal
+accounts (see "The portal and the gate"). Without it, create accounts in each
+app's UI.
 
 * **Audiobookshelf** (`https://audiobooks.<your-domain>`) — audiobooks
   and podcasts, progress sync, official mobile apps. Reads
@@ -560,7 +563,20 @@ run itself — the root account it creates is the stack's own (in `credentials`,
 also the way in if the portal is down) — sets up the sign-in, and keeps admin
 rights in step with the portal's `admins` group. An Audiobookshelf set up by
 hand is never taken over: put its root login in `.env`, or start it fresh
-(wire prints how). Its libraries are yours to add in its UI. While the portal runs, their host ports listen on 127.0.0.1 only —
+(wire prints how). Its libraries are yours to add in its UI.
+
+Kavita works the same way: its login page goes straight to the portal, the
+account is made on the first sign-in, and `wire kavita` does its first run
+(the stack's own admin, whose password form is behind
+`https://books.<domain>/login?skipAutoLogin=true`, in `credentials`), sets up
+the sign-in (one Kavita restart, the household warned) and keeps admin rights
+in step with `admins`. New people get every library that exists when they
+first sign in; a library added later reaches existing people only when you
+grant it in Kavita (Settings → Users) — `doctor` lists who lacks one, and wire
+never changes anyone's access, so restrictions you set there stay. Kavita
+matches a portal sign-in to an existing account by email, so the stack's admin
+gets an address nobody can sign up with; a hand-made admin with a real address
+gets a warning from wire (change it in Kavita). While the portal runs, their host ports listen on 127.0.0.1 only —
 the domain address is the way in — and the arrs trust the portal (one login;
 `wire arr` switches them, never before their ports are closed). Companion apps
 (nzb360, LunaSea, Home Assistant…) use the domain address: the arrs' and

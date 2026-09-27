@@ -24,6 +24,11 @@ cmd_credentials() {
         printf '%-22s %s\n' "Audiobookshelf root pw" "$(env_get ABS_ADMIN_PASSWORD '(not set — run wire audiobookshelf)')"
         svc_enabled authentik && printf '%-22s %s\n' "Audiobookshelf root at" "$(svc_url audiobookshelf)/audiobookshelf/login?autoLaunch=0   (its login page otherwise goes straight to the portal)"
     fi
+    if svc_enabled kavita; then
+        printf '%-22s %s\n' "Kavita admin"          "$(env_get KAVITA_ADMIN_USER '(not set — run wire kavita)')"
+        printf '%-22s %s\n' "Kavita admin pw"       "$(env_get KAVITA_ADMIN_PASSWORD '(not set — run wire kavita)')"
+        svc_enabled authentik && printf '%-22s %s\n' "Kavita admin at" "$(svc_url kavita)/login?skipAutoLogin=true   (its login page otherwise goes straight to the portal)"
+    fi
     if svc_enabled authentik; then
         printf '%-22s %s\n' "Portal admin user"     "akadmin"
         printf '%-22s %s\n' "Portal admin password" "$(env_get AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"
@@ -58,14 +63,15 @@ credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assist
 cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, atomically
     load_env; render
     local target="${1:-}"
-    case "$target" in arr|qbit|jellyfin|pihole|traefik|audiobookshelf|portal|all) ;; *)
-        die "usage: set-credentials <arr|qbit|jellyfin|pihole|traefik|audiobookshelf|portal|all>
+    case "$target" in arr|qbit|jellyfin|pihole|traefik|audiobookshelf|kavita|portal|all) ;; *)
+        die "usage: set-credentials <arr|qbit|jellyfin|pihole|traefik|audiobookshelf|kavita|portal|all>
   arr             the shared login of every arr app (+ cleanuparr's account password)
   qbit            qBittorrent's WebUI login (+ every place that stores it)
   jellyfin        the Jellyfin admin password (Seerr/Wizarr need no change)
   pihole          the Pi-hole admin password
   traefik         the Traefik dashboard password
   audiobookshelf  its root password (every session signed in as root ends)
+  kavita          its admin password (the stack's own account)
   portal          the portal's admin (akadmin) password
   all             ONE password across all of the above except portal (usernames stay put)
 Someone else locked out of the portal: ./mediastack.sh reset-password <username>" ;; esac
@@ -120,6 +126,14 @@ to an hour)."
         ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
         sc_rotate_audiobookshelf "$pass"
         ;;
+    kavita)
+        local pass
+        explain "Rotate Kavita's admin password" \
+"The admin is the stack's own account (people sign in with their own).
+Only this password and .env move."
+        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        sc_rotate_kavita "$pass"
+        ;;
     portal)
         local pass
         explain "Rotate the portal's admin password" \
@@ -135,7 +149,7 @@ shared password also sits in the arrs' and qBittorrent's settings."
         explain "One password across the stack" \
 "Sets a single password on the arr login (6 apps + cleanuparr follows),
 qBittorrent (and everything storing its login), the Jellyfin admin,
-Pi-hole, the Traefik dashboard and Audiobookshelf's root.
+Pi-hole, the Traefik dashboard, Audiobookshelf's root and Kavita's admin.
 Usernames stay as they are. Deliberate trade-off: one reused password
 means one leak opens everything — use a strong, stack-unique one.
 NOT covered: the portal's admin (set-credentials portal — it guards the
@@ -148,9 +162,10 @@ rest), and Wizarr's admin account — rotate that in Wizarr's UI
         sc_rotate_pihole "$pass"
         sc_rotate_traefik "$pass"
         sc_rotate_audiobookshelf "$pass"
+        sc_rotate_kavita "$pass"
         warn "Wizarr's admin password is NOT rotated by this — change it in Wizarr's UI."
         svc_enabled authentik && info "the portal's admin keeps its own password: ./mediastack.sh set-credentials portal"
-        ok "one password now covers arr + qbit + jellyfin + pihole + traefik + audiobookshelf — view: ./mediastack.sh credentials"
+        ok "one password now covers arr + qbit + jellyfin + pihole + traefik + audiobookshelf + kavita — view: ./mediastack.sh credentials"
         ;;
     esac
 }
@@ -258,6 +273,22 @@ sc_rotate_audiobookshelf() { # PASS — its root account; every root session end
         svc_enabled audiobookshelf || { info "audiobookshelf not enabled — skipped"; return 0; }
         abs_root_rotate "$1" || die "Audiobookshelf's root password was not rotated (see above)"
         ok "Audiobookshelf root password rotated and verified — every root session has ended"
+}
+
+sc_rotate_kavita() { # PASS — its admin (the stack's own), changed with the old one, then proven
+        svc_enabled kavita || { info "kavita not enabled — skipped"; return 0; }
+        local new="$1" user old out tok
+        user=$(env_get KAVITA_ADMIN_USER); old=$(env_get KAVITA_ADMIN_PASSWORD)
+        [[ -n "$user" && -n "$old" ]] || die "no Kavita admin stored — run 'wire kavita' first"
+        out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$user" --arg p "$old" '{username:$u, password:$p}')") \
+            || die "Kavita rejected the stored admin login: $(oneline "$out") — is .env stale?"
+        tok=$(jq -r '.token // empty' <<<"$out"); [[ -n "$tok" ]] || die "Kavita's login returned no token"
+        out=$(kav_api POST /api/account/reset-password "$tok" "$(jq -cn --arg u "$user" --arg c "$old" --arg n "$new" '{userName:$u, oldPassword:$c, password:$n}')") \
+            || die "Kavita refused the password change: $(oneline "$out")"
+        env_set KAVITA_ADMIN_PASSWORD "$new"   # changed: the new one is the truth from here, verified or not
+        kav_api POST /api/account/login "" "$(jq -cn --arg u "$user" --arg p "$new" '{username:$u, password:$p}')" >/dev/null \
+            || die "Kavita's admin password changed (stored in .env), but signing in with it failed"
+        ok "Kavita admin password rotated and verified"
 }
 
 sc_rotate_portal() { # PASS — akadmin, through authentik's API

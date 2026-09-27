@@ -1,7 +1,7 @@
 # Kavita: fast reading server for ebooks, comics, manga and light novels.
-# Modern web reader, progress sync, OPDS, Kobo/KOReader sync. Serves the
-# books/comics libraries — serving only, no wire role; create the admin
-# account on first visit at its URL.
+# Modern web reader, progress sync, OPDS, Kobo/KOReader sync. `wire kavita`
+# does its first run (the stack's own admin, in `credentials`) and, with the
+# portal, sign-in through authentik (OIDC).
 
 x-logging: &logging
   driver: json-file
@@ -25,6 +25,9 @@ services:
     user: "${KAVITA_UID}:${MEDIA_GROUP_GID}"
     environment:
       - TZ=${TZ}
+    # 127.0.0.1 only: the script's way in (wire kavita); people use the domain
+    ports:
+      - "127.0.0.1:${KAVITA_PORT:-5000}:5000"
     volumes:
       - ${CONFIG_ROOT}/kavita:/kavita/config
       - ${DATA_ROOT}/media/books:/books

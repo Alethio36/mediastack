@@ -586,7 +586,12 @@ service by label — `mediastack.auth: native | gate | open`, plus exception pat
   login (locked out otherwise: database edit).
 - **Kavita** — native OIDC with account linking, auto-provisioning and role sync
   (authentik: `offline_access` scope, roles claim `groups`). Reader apps use
-  Kavita's API-key OPDS links, no login.
+  Kavita's API-key OPDS links, no login. Checked in its source (Sept 2026): it
+  links an existing account by email, always (no setting); its OIDC is set up at
+  start-up (a change needs a restart); `DefaultLibraries` is a fixed list, not
+  "all"; people made through OIDC without a verified email are listed only with
+  `includePending`; its password sign-in can be switched off for everyone but
+  API keys (mediastack keeps it on for the stack's admin).
 - **Navidrome** — no LDAP (see its own entry below). Web: the gate passes the
   username (`ExtAuth.TrustedSources`, header `Remote-User`); `/rest/` (Subsonic
   apps) and `/share/` bypass the gate and each user sets a Navidrome password for
