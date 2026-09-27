@@ -33,7 +33,7 @@
 #     own household gate (forward auth for its one address)
 #   * Audiobookshelf through OIDC: never matched to an existing account, the
 #     settings read back after a write, a root linked to the portal unlinked;
-#     admin rights follow `admins`
+#     admin rights follow `admins`, a guest outside it stays a guest
 #
 #   scripts/test-authentik.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -494,13 +494,14 @@ abs_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
             {"id":"r","username":"mediastack","type":"root","hasOpenIDLink":false},
             {"id":"a","username":"akadmin","type":"user","hasOpenIDLink":true},
             {"id":"t","username":"test-thio","type":"admin","hasOpenIDLink":true},
-            {"id":"l","username":"local-bob","type":"admin","hasOpenIDLink":false}]}' ;;
+            {"id":"l","username":"local-bob","type":"admin","hasOpenIDLink":false},
+            {"id":"g","username":"kid","type":"guest","hasOpenIDLink":true}]}' ;;
         *) echo '{}' ;;
     esac; }
 abs_admin_sync tok >/dev/null
 grep -q '^PATCH /api/users/a {"type":"admin"}' "$T/calls" && grep -q '^PATCH /api/users/t {"type":"user"}' "$T/calls" \
     || fail_ "portal accounts: admins are admin, the rest user"; pass
-! grep -qE '^PATCH /api/users/(r|l) ' "$T/calls" || fail_ "the root account and local accounts are never touched"; pass
+! grep -qE '^PATCH /api/users/(r|l|g) ' "$T/calls" || fail_ "the root account, local accounts and a guest outside admins are never touched"; pass
 # sign-in settings: read back after the write — a value it skips is a failure, not success
 printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_ABS_CLIENT_SECRET=ABSSEC\n' > "$ENV_FILE"
 ABS_KEPT='{"authOpenIDMatchExistingBy":"username"}'

@@ -2005,7 +2005,9 @@ abs_admin_sync() { # portal-linked accounts follow `admins`; the root account (t
     out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 1; }
     while IFS= read -r u; do
         [[ -n "$u" ]] || continue
-        want="user"; [[ "$admins" == *" $(jq -r '.username' <<<"$u") "* ]] && want="admin"
+        if [[ "$admins" == *" $(jq -r '.username' <<<"$u") "* ]]; then want="admin"
+        elif [[ "$(jq -r '.type' <<<"$u")" == guest ]]; then continue   # below user by the operator's choice: kept
+        else want="user"; fi
         [[ "$(jq -r '.type' <<<"$u")" == "$want" ]] && continue
         w_would "audiobookshelf: $(jq -r '.username' <<<"$u") becomes $want" || continue
         abs_api PATCH "/api/users/$(jq -r '.id' <<<"$u")" "$tok" "$(jq -cn --arg t "$want" '{type:$t}')" >/dev/null \

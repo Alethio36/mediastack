@@ -270,7 +270,7 @@ all built; what each still leaves open is noted below.
      (the stack's root account), sets up sign-in through the portal (created on
      first sign-in, never matched to an existing account: by username the root
      account was claimable at sign-up; a root already linked is unlinked
-     loudly), keeps admin rights in step with `admins`; the portal's address leads to Traefik inside the stack (an app's
+     loudly), keeps admin rights in step with `admins` (a guest stays a guest); the portal's address leads to Traefik inside the stack (an app's
      server talks to authentik there — production certificates required).
      *Next:*
      Kavita through OIDC, its first run automated the same way (the stack's own
