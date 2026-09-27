@@ -35,6 +35,8 @@
 #     settings read back after a write, a root linked to the portal unlinked
 #     and its password rotated (ends its sessions); admin rights follow
 #     `admins`, a guest outside it stays a guest
+#   * sign-up refuses a username the apps would confuse: the stack's own app
+#     accounts (any case) and an existing person's name in another case
 #   * credentials: Audiobookshelf's root and akadmin rotate through their APIs
 #     into .env; reset-password clears a person's login throttle and mints a
 #     single-use link, never for akadmin, the search account, a service
@@ -559,6 +561,42 @@ out=$(abs_root_unlink tok 2>&1) || true
 [[ "$out" == *"NOT rotated"*"set-credentials audiobookshelf"* ]] || fail_ "an unlink whose rotation fails says sessions stay open, and the fix"; pass
 ABS_PW_REFUSE=false; ABS_ROOT_LINK=false; rm -f "$T/calls"
 abs_root_unlink tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "an unlinked root: nothing to do"; pass
+
+# ---- sign-up: a username the apps would confuse is refused ----
+grep -q 'MEDIASTACK_RESERVED_USERNAMES: ${ABS_ADMIN_USER:-},${JELLYFIN_ADMIN_USER:-}$' compose.d/authentik.yml \
+    || fail_ "the worker gets the stack's own app accounts to reserve"; pass
+sed -n '/name: mediastack-join-credentials/,/fields:/p' blueprints/authentik/mediastack-portal.yaml | grep -q '!KeyOf policy-join-username' \
+    || fail_ "the sign-up page validates the username with the policy"; pass
+# the policy's own expression, run with authentik's context stubbed: reserved names
+# (any case, padded), and another person's name in another case
+awk '/name: mediastack-join-username-free/{f=1} f&&/^        - \|/{e=1; next} e&&/^        - !Env/{exit} e{sub(/^          /,""); print}' \
+    blueprints/authentik/mediastack-portal.yaml > "$T/expr.py"
+[[ -s "$T/expr.py" ]] || fail_ "the policy's expression was not found"
+python3 - "$T/expr.py" <<'PY' || fail_ "the sign-up username policy's verdicts"
+import sys, types
+src = open(sys.argv[1]).read() % "mediastack, jfadmin,"
+existing = ["test-thio"]
+class Q:
+    def __init__(s, n): s.n = n
+    def exists(s): return any(e.lower() == s.n.lower() for e in existing)
+class Objects:
+    @staticmethod
+    def filter(username__iexact): return Q(username__iexact)
+models = types.ModuleType("authentik.core.models"); models.User = type("User", (), {"objects": Objects})
+for m in ("authentik", "authentik.core"): sys.modules[m] = types.ModuleType(m)
+sys.modules["authentik.core.models"] = models
+def verdict(name):
+    msgs = []
+    ns = {"request": types.SimpleNamespace(context={"prompt_data": {"username": name}}), "ak_message": msgs.append}
+    exec("def policy():\n" + "".join("    " + l + "\n" for l in src.splitlines()), ns)
+    ok = ns["policy"]()
+    assert ok or msgs == ["That username is taken. Please choose another."], msgs
+    return ok
+for name, want in [("mediastack", False), ("MediaStack", False), (" jfadmin ", False), ("Test-Thio", False),
+                   ("nick", True), ("mediastack2", True)]:
+    assert verdict(name) is want, (name, want)
+PY
+pass
 
 # ---- the portal's admin, and a locked-out person's way back ----
 printf 'AUTHENTIK_ADMIN_PASSWORD=OLDAK\nTRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"

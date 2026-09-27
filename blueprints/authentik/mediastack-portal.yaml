@@ -120,12 +120,34 @@ entries:
       placeholder: For password resets
       order: 5
 
+  # a username that would collide in the apps: the stack's own accounts there
+  # (Audiobookshelf's root, Jellyfin's local admin), and another person's name
+  # in a different case — authentik's own check is case-sensitive, Jellyfin's
+  # and Audiobookshelf's are not
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-join-username
+    identifiers:
+      name: mediastack-join-username-free
+    attrs:
+      expression: !Format
+        - |
+          from authentik.core.models import User
+          reserved = [n.strip().lower() for n in "%s".split(",") if n.strip()]
+          username = str(request.context.get("prompt_data", {}).get("username", "")).strip()
+          if username.lower() in reserved or User.objects.filter(username__iexact=username).exists():
+              ak_message("That username is taken. Please choose another.")
+              return False
+          return True
+        - !Env [MEDIASTACK_RESERVED_USERNAMES, ""]
+
   # one page: the welcome text describes every field it sits above
   - model: authentik_stages_prompt.promptstage
     id: stage-credentials
     identifiers:
       name: mediastack-join-credentials
     attrs:
+      validation_policies:
+        - !KeyOf policy-join-username
       fields:
         - !KeyOf field-welcome
         - !KeyOf field-username
