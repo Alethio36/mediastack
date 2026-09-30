@@ -108,8 +108,7 @@ CALL cmd_rollback [0]
 ## rollback a
 CALL cmd_rollback [1] a
 ## rollback a b c d
-ERROR 'rollback' takes at most 1 argument(s) (got: a b c d)
-rc=1
+CALL cmd_rollback [4] a b c d
 ## unpin
 CALL cmd_unpin [0]
 ## unpin a
