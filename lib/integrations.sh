@@ -2261,7 +2261,7 @@ cmd_wire() {
     fi
     if (( ! WIRE_DRY )) && [[ ! -f "$WIRED_FILE" ]]; then
         if confirm "First wire on this deployment — take a restore point first? (recommended)"; then
-            cmd_backup
+            backup_take manual "before the first wire"
             # the backup bounced every container — let the apps come back
             # before wiring their APIs
             info "waiting for Docker's verdict on the wired apps after the restore point (up to ${START_WAIT}s)..."
