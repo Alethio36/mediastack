@@ -56,7 +56,8 @@ vpn_reattach_guard() {
 # out-of-band window. It does NOT cover a raw `docker compose up` while the
 # system is already running — only script paths and daemon/boot events. Install
 # is unconditional (pure safety, no reason to gate) and idempotent, refreshed on
-# every cmd_up so a removed unit reappears.
+# every cmd_up so a removed unit reappears. At boot it first starts what a
+# cut-off backup left stopped (stopped_recover: a power cut, kill -9).
 VPNGUARD_UNIT=$SYSTEMD_DIR/mediastack-vpnguard.service
 
 vpnguard_ensure() {
@@ -66,7 +67,7 @@ vpnguard_ensure() {
     local tmp; tmp=$(mktemp)
     cat >"$tmp" <<EOF
 [Unit]
-Description=Mediastack VPN attachment guard (boot/daemon)
+Description=Mediastack boot guard (services a cut-off backup stopped; VPN attachment)
 After=docker.service
 Requires=docker.service
 [Service]
@@ -88,6 +89,7 @@ EOF
 cmd_vpn_guard() {
     load_env
     local boot=0; [[ "${1:-}" == --boot ]] && boot=1
+    (( boot )) && stopped_recover
     # On boot, docker starts containers asynchronously — gluetun may not be
     # healthy yet. Wait (bounded) before judging attachment, or we would race
     # the very startup we are guarding and falsely repair/​fail. Mirrors cmd_up's

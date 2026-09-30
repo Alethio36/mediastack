@@ -269,7 +269,7 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
 | repo root | the code (`mediastack.sh`, `lib/`, `compose.d/`, `docs/`) | the project — `upgrade` replaces it |
 | `.env` | every setting | you (and `configure`) |
 | `custom/` | `override.yml` (changes to shipped services), `compose.d/` (your own services, one file each), `proxy.d/` (your own Traefik routes), `trash-overrides.yml` | you — never touched by the script's upgrades, saved in every restore point |
-| `local/` | the VPN overlay, pinned images, `.env` backups (the first and the newest 9) | the script — delete it and it is rebuilt (pins and backups excepted) |
+| `local/` | the VPN overlay, pinned images, `.env` backups (the first and the newest 9), a marker while a backup has services stopped | the script — delete it and it is rebuilt (pins and backups excepted) |
 | `config/` `cache/` `transcodes/` `data/` `backups/` | the default roots | the apps — move them with `configure` |
 
 A deployment is `.env` + `custom/` + the roots: that is what to keep, copy

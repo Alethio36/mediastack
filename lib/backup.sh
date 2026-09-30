@@ -31,8 +31,10 @@ cmd_backup() {
     have=$(df -k --output=avail "$broot" | tail -1 | tr -d ' ')
     (( have > need + 524288 )) || die "Not enough space at $broot: need ~$((need/1024))MB (+512MB headroom), have $((have/1024))MB.
   Free space or point BACKUP_ROOT somewhere larger, then retry."
-    dest="$broot/$(ts_now)"; sudo mkdir -p "$dest"
-    info "Restore point: $dest"
+    # built under <ts>.partial and renamed once complete: an interrupted or
+    # failed point never looks like one (restore, doctor and verify skip it)
+    local final; final="$broot/$(ts_now)"; dest="$final.partial"; sudo mkdir -p "$dest"
+    info "Restore point: $final"
 
     # images.lock BEFORE stopping (inspect needs the containers)
     local s cn img ref
@@ -48,26 +50,106 @@ cmd_backup() {
     [[ -s "$dest/images.lock" ]] || warn "images.lock is empty — image-exact rollback unavailable for this point"
 
     info "Stopping stack for a consistent snapshot... (all services briefly stop; ~20-40s)"
-    DC stop >/dev/null
     local rc=0
+    stopped_run backup "" backup_snapshot "$croot" "$dest" || rc=$?
+    case $rc in
+        0) sudo mv "$dest" "$final"; ok "Restore point complete: $final" ;;
+        "$BACKUP_PARTIAL")
+            notify ops "Mediastack backup FAILED" "Restore point \`$dest\` finished with errors — **do not trust it**. Inspect on the host; the next backup removes it." failure
+            die "Backup finished WITH ERRORS — $dest is kept for inspection, never restored from, and removed by the next backup." ;;
+        *) die "Backup stopped early (exit $rc) — the services were started again; nothing was kept as a restore point." ;;
+    esac
+    prune_backups
+}
+
+backup_snapshot() { # backup_snapshot CROOT DEST — runs with the stack stopped; -> 0, or BACKUP_PARTIAL if an archive failed
+    # stopped_run's caller tests it with ||, and there bash ignores set -e:
+    # every step here checks itself
+    local croot=$1 dest=$2 s rc=0
     for s in $(svc_managed_where mediastack.config true); do
         [[ -d "$croot/$s" ]] || continue
         # jellyfin's default transcode dir is inside /config; in-flight or
         # orphaned HLS segments are not config (wire moves them to /cache)
-        sudo tar -C "$croot" --exclude="$s/data/transcodes" -czf "$dest/$s.tar.gz" "$s" || { fail "tar failed for $s"; rc=1; }
+        sudo tar -C "$croot" --exclude="$s/data/transcodes" -czf "$dest/$s.tar.gz" "$s" || { fail "tar failed for $s"; rc=$BACKUP_PARTIAL; }
     done
-    sudo cp "$ENV_FILE" "$dest/env"; sudo chmod 600 "$dest/env"
-    [[ -s "$PINS_FILE" ]] && sudo cp "$PINS_FILE" "$dest/pins.yml"
-    [[ -d "$CUSTOM_DIR" ]] && { sudo tar -C "$SCRIPT_DIR" -czf "$dest/custom.tar.gz" custom || { fail "tar failed for custom/"; rc=1; }; }
-    ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' )
-    info "Restarting stack... (waiting on gluetun health; can take up to ~1min)"
-    DC up -d >/dev/null
-    if (( rc == 0 )); then ok "Restore point complete: $dest"
-    else
-        notify ops "Mediastack backup FAILED" "Restore point \`$dest\` finished with errors — **do not trust it**. Inspect on the host." failure
-        die "Backup finished WITH ERRORS — do not trust $dest."
+    { sudo cp "$ENV_FILE" "$dest/env" && sudo chmod 600 "$dest/env"; } || { fail "could not copy .env into the restore point"; return 1; }
+    if [[ -s "$PINS_FILE" ]]; then sudo cp "$PINS_FILE" "$dest/pins.yml" || { fail "could not copy the pins into the restore point"; return 1; }; fi
+    if [[ -d "$CUSTOM_DIR" ]]; then
+        sudo tar -C "$SCRIPT_DIR" -czf "$dest/custom.tar.gz" custom || { fail "tar failed for custom/"; rc=$BACKUP_PARTIAL; }
     fi
-    prune_backups
+    ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' ) || { fail "could not write the restore point's checksums"; return 1; }
+    info "Restarting stack... (waiting on gluetun health; can take up to ~1min)"
+    return "$rc"
+}
+
+# ------------------------------------------------------ stopped services --
+# A backup and a scoped pre-update point stop containers, then start them
+# again. Docker never restarts them on its own: `compose stop` marks them as
+# deliberately stopped, and that outlives a reboot. So STOP_MARKER names what
+# is down while the work runs; stopped_run's EXIT trap starts it again on any
+# exit (an error, Ctrl-C, a dropped SSH session, a shutdown's SIGTERM), and the
+# boot guard does after what no trap survives (a power cut, kill -9);
+# STOP_MARKER itself lives with the other path globals in mediastack.sh.
+# `restore` stays out on purpose: restarting a service on a half-extracted
+# config is worse than leaving it down for the restore to be run again.
+BACKUP_PARTIAL=3   # the work finished, but an archive failed (not an interruption)
+
+stopped_run() { # stopped_run WHAT "SVC..." CMD [ARG...] — stop SVC ("" = the stack), run CMD, start them whatever happens
+    local what=$1 svcs=$2; shift 2
+    mkdir -p "$LOCAL_DIR"; repo_owned "$LOCAL_DIR"
+    printf '%s\n%s\n' "$what" "$svcs" > "$STOP_MARKER"; repo_owned "$STOP_MARKER"
+    (
+        trap stopped_restart EXIT
+        trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
+        # set -e is off in here (the caller tests us with ||): check each step
+        # shellcheck disable=SC2086  # a word list; empty means every service
+        DC stop $svcs >/dev/null || { fail "$what: could not stop ${svcs:-the stack}"; exit 1; }
+        "$@"
+    )
+}
+
+stopped_start() { # start what STOP_MARKER names; the marker goes only once they are up
+    local what svcs
+    { read -r what; read -r svcs || true; } < "$STOP_MARKER"
+    # shellcheck disable=SC2086
+    DC up -d $svcs >/dev/null 2>&1 || return 1
+    sudo rm -f "$STOP_MARKER"
+}
+
+stopped_restart() { # stopped_run's EXIT trap: the services come back first, messages after
+    local rc=$? what
+    what=$(head -1 "$STOP_MARKER")
+    if ! stopped_start; then
+        fail "$what: the services it stopped did not start again — run: ./mediastack.sh up"
+        notify ops "Mediastack is DOWN" "The $what stopped services that did not start again. Run \`./mediastack.sh up\` on the host." failure
+        exit 1
+    fi
+    if (( rc != 0 && rc != BACKUP_PARTIAL )); then
+        warn "$what stopped early (exit $rc) — the services it stopped were started again"
+        notify ops "Mediastack $what stopped early" "Exit $rc (an error, Ctrl-C, a dropped session or a shutdown): the services it stopped were started again. The restore point it was making is incomplete and is never used." failure
+    fi
+    exit "$rc"
+}
+
+stopped_recover() { # at boot: a marker left behind is a stop no trap could undo (a power cut, kill -9)
+    [[ -f "$STOP_MARKER" ]] || return 0
+    local what; what=$(head -1 "$STOP_MARKER")
+    if stopped_start; then
+        warn "$what was cut off (power loss or a killed run) — the services it stopped were started again"
+        notify ops "Mediastack $what cut off" "Found at boot: the services it stopped were started again. The restore point it was making is incomplete and is never used." failure
+    else
+        fail "$what was cut off and the services it stopped did not start — run: ./mediastack.sh up"
+        notify ops "Mediastack is DOWN" "Found at boot: a cut-off $what left services stopped, and they did not start. Run \`./mediastack.sh up\` on the host." failure
+    fi
+}
+
+prune_partial() { # prune_partial DIR — incomplete points left by a failed or interrupted run
+    local d
+    for d in "$1"/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9].partial; do
+        [[ -d "$d" ]] || continue
+        info "Removing incomplete restore point $(basename "$d")"
+        sudo rm -rf "$d"
+    done
 }
 
 # Tiered (grandfather-father-son) retention, all knobs in .env:
@@ -82,6 +164,7 @@ prune_backups() {
     keepd=$(env_get BACKUP_KEEP_DAILY 7)
     keepw=$(env_get BACKUP_KEEP_WEEKLY 4)
     keepm=$(env_get BACKUP_KEEP_MONTHLY 6)
+    prune_partial "$broot"
     local -a all
     local d
     all=()
@@ -125,8 +208,8 @@ prune_backups() {
 preupdate_backup() {
     local broot croot dest ts s cn img ref rc=0
     broot=$(env_get BACKUP_ROOT); croot=$(env_get CONFIG_ROOT)
-    ts=$(ts_now); dest="$broot/pre-update/$ts"; sudo mkdir -p "$dest"
-    info "Pre-update restore point (scoped to: $*): $dest"
+    ts=$(ts_now); dest="$broot/pre-update/$ts.partial"; sudo mkdir -p "$dest"   # renamed once complete (see cmd_backup)
+    info "Pre-update restore point (scoped to: $*): ${dest%.partial}"
 
     # images.lock for the scoped service(s), BEFORE stopping (inspect needs them)
     c_inspect_all
@@ -137,23 +220,33 @@ preupdate_backup() {
         [[ -n "$ref" ]] && echo "$s $ref"
       done; } | sudo tee "$dest/images.lock" >/dev/null
 
+    local src
     for s in "$@"; do
         info "snapshotting $s (only this service stops)..."
-        # shellcheck disable=SC2046  # its shard stops with it: a consistent database
-        DC stop $(svc_shard "$s") >/dev/null
-        # same transcode exclude as the full backup (canonical: cmd_backup)
-        [[ -d "$croot/$s" ]] && { sudo tar -C "$croot" --exclude="$s/data/transcodes" -czf "$dest/$s.tar.gz" "$s" || { fail "tar failed for $s"; rc=1; }; }
-        DC up -d "$s" >/dev/null
+        # its shard stops with it: a consistent database
+        src=0; stopped_run "pre-update restore point ($s)" "$(svc_shard "$s" | tr '\n' ' ')" preupdate_snapshot "$croot" "$dest" "$s" || src=$?
+        case $src in
+            0) ;;
+            "$BACKUP_PARTIAL") rc=1 ;;
+            *) die "Pre-update restore point stopped early (exit $src) — $s was started again; nothing was kept, nothing updated." ;;
+        esac
     done
     sudo cp "$ENV_FILE" "$dest/env"; sudo chmod 600 "$dest/env"
-    [[ -s "$PINS_FILE" ]] && sudo cp "$PINS_FILE" "$dest/pins.yml"
+    if [[ -s "$PINS_FILE" ]]; then sudo cp "$PINS_FILE" "$dest/pins.yml"; fi
     ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' )
-    if (( rc == 0 )); then ok "Pre-update restore point complete: $dest"
+    if (( rc == 0 )); then sudo mv "$dest" "${dest%.partial}"; ok "Pre-update restore point complete: ${dest%.partial}"
     else
-        notify ops "Mediastack pre-update backup FAILED" "Scoped restore point \`$dest\` finished with errors — **do not trust it**. Inspect on the host." failure
-        die "Pre-update backup finished WITH ERRORS — do not trust $dest."
+        notify ops "Mediastack pre-update backup FAILED" "Scoped restore point \`$dest\` finished with errors — **do not trust it**. Inspect on the host; the next one removes it." failure
+        die "Pre-update backup finished WITH ERRORS — $dest is kept for inspection, never restored from, and removed by the next one."
     fi
     prune_preupdate
+}
+
+preupdate_snapshot() { # preupdate_snapshot CROOT DEST SVC — runs with SVC's shard stopped; -> 0, or BACKUP_PARTIAL
+    local croot=$1 dest=$2 s=$3
+    [[ -d "$croot/$s" ]] || return 0
+    # same transcode exclude as the full backup (canonical: backup_snapshot)
+    sudo tar -C "$croot" --exclude="$s/data/transcodes" -czf "$dest/$s.tar.gz" "$s" || { fail "tar failed for $s"; return "$BACKUP_PARTIAL"; }
 }
 
 # Pre-update pool retention: keep the newest BACKUP_KEEP_PREUPDATE scoped
@@ -163,6 +256,7 @@ prune_preupdate() {
     local broot keep pud d n=0 pruned=0
     broot=$(env_get BACKUP_ROOT); keep=$(env_get BACKUP_KEEP_PREUPDATE 3)
     pud="$broot/pre-update"; [[ -d "$pud" ]] || return 0
+    prune_partial "$pud"
     local -a all=()
     for d in "$pud"/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]; do
         [[ -d "$d" ]] && all+=("$(basename "$d")")

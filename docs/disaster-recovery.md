@@ -70,6 +70,23 @@ service, preferring a pre-update point over an older nightly full. A full
 pre-update point. Full `update` (all services) and `update gluetun` still take
 the full stop-the-world restore point into the GFS pool as before.
 
+### A backup that is cut off
+
+A backup stops services, and Docker never restarts them on its own — `compose
+stop` marks them deliberately stopped, which outlives a reboot. So whatever
+ends a backup early (an error, Ctrl-C, a dropped SSH session, a shutdown), the
+services it stopped are started again and ops is told. What no script can
+catch (a power cut, `kill -9`) leaves `local/stopped-for-backup` behind: the
+next boot starts those services and tells ops, `doctor` fails until they run,
+and `up` settles it. `restore` is the exception, on purpose — a service is
+never started on a half-extracted config; run the restore again.
+
+A point is written as `<timestamp>.partial` and renamed only once complete,
+so an incomplete one is never restored from, verified or counted as the
+newest. A failed one stays for inspection until the next backup removes it.
+If the services cannot start again, the alert may not arrive: Apprise is one
+of them — `doctor` still says so.
+
 ## Media manifest — what was in the library
 
 Restore points cover configs, not media. The media manifest is the record of
