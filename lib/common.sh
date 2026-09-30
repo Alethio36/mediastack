@@ -136,3 +136,11 @@ ask_time() { # 24h HH:MM prompt with validation -> REPLY_VAL
 abspath() { case "$1" in /*) echo "$1" ;; *) echo "$SCRIPT_DIR/${1#./}" ;; esac; }
 fstype_of() { findmnt -rn -o FSTYPE --target "$1" 2>/dev/null || echo unknown; }
 fsdev_of()  { stat -c %d "$1" 2>/dev/null || echo 0; }
+fs_source_of() { # the device behind a path; a btrfs subvolume ("/dev/sda2[/@x]") counts as its filesystem
+    local src; src=$(timeout 5 findmnt -rn -o SOURCE --target "$1" 2>/dev/null | head -1) || true
+    echo "${src%%\[*}"
+}
+fs_shared() { # fs_shared PATH PATH -> the source both live on (exit 1 when they differ or either is unknown)
+    local a b; a=$(fs_source_of "$1"); b=$(fs_source_of "$2")
+    [[ -n "$a" && "$a" == "$b" ]] && echo "$a"
+}

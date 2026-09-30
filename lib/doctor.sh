@@ -291,6 +291,7 @@ _doctor_vpn_backups() {
     else
         (( age > 48 )) && warn "latest restore point is ${age}h old — run: ./mediastack.sh backup" || ok "latest restore point ${age}h old"
     fi
+    _doctor_backup_disk
     _doctor_manifest
     [[ -z "$(state_get WIRE_REPOINT)" ]] \
         || warn "re-pointing pending for $(state_get WIRE_REPOINT) (a VPN toggle moved it) — apply: ./mediastack.sh up"
@@ -343,11 +344,16 @@ _doctor_manifest() { # called from the vpn + backups section
         (( mage > 48 )) && warn "latest media manifest is ${mage}h old — check: systemctl status mediastack-manifest.service" \
                         || ok "latest media manifest ${mage}h old"
     fi
-    local msrc bsrc
-    msrc=$(timeout 5 findmnt -rn -o SOURCE --target "$(manifest_root)" 2>/dev/null || true)
-    bsrc=$(timeout 5 findmnt -rn -o SOURCE --target "$(env_get BACKUP_ROOT)" 2>/dev/null || true)
-    [[ -n "$msrc" && "$msrc" == "$bsrc" ]] \
-        && warn "BACKUP_ROOT shares a filesystem with the media ($msrc) — if that disk dies, the manifest listing what was on it dies too. Relocate with: ./mediastack.sh configure"
+    local src
+    src=$(fs_shared "$(manifest_root)" "$(env_get BACKUP_ROOT)") \
+        && warn "BACKUP_ROOT shares a filesystem with the media ($src) — if that disk dies, the manifest listing what was on it dies too. Relocate with: ./mediastack.sh configure"
+    return 0
+}
+
+_doctor_backup_disk() { # restore points on the configs' own filesystem die with it
+    local src
+    src=$(fs_shared "$(env_get CONFIG_ROOT)" "$(env_get BACKUP_ROOT)") \
+        && warn "BACKUP_ROOT shares a filesystem with the configs ($src) — one dead disk takes the stack and every restore point with it. Point it at another disk or a NAS: ./mediastack.sh configure"
     return 0
 }
 
