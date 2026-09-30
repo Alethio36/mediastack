@@ -25,12 +25,76 @@ cmd_backup() {
         verify) shift; args_max 1 "$@"; cmd_backup_verify "$@"; return ;;
         list)   shift; args_max 1 "$@"; cmd_backup_list "$@"; return ;;
     esac
-    local note=""
+    local note="" auto=0
     while (( $# )); do case "$1" in
         --note) [[ -n "${2:-}" ]] || die "usage: backup --note \"why this point\""; note=$2; shift 2 ;;
+        --auto) auto=1; shift ;;
         *) die "Unknown backup arg '$1' (usage: backup [--note TEXT] | backup verify [TS] | backup list [svc])" ;;
     esac; done
-    backup_take manual "$note"
+    if (( auto )); then
+        [[ -z "$note" ]] || die "backup --auto is the timer's run — it takes no note"
+        backup_scheduled
+    else
+        backup_take manual "$note"
+    fi
+}
+
+# The backup timer's run (BACKUP_SCHEDULE). It waits for a running update or
+# backup, then skips when a full restore point is under BACKUP_SKIP_HOURS old
+# — an update's covers every service, so update nights get one, not two (a
+# scoped update <svc> point never counts). It waits while someone streams,
+# like the update timer (UPDATE_DEFER_*).
+BACKUP_SKIP_HOURS=6
+backup_scheduled() {
+    load_env
+    maint_lock "the scheduled backup" "$MAINT_WAIT" || {
+        notify ops "Mediastack scheduled backup skipped" "Another update or backup held the stack for $((MAINT_WAIT / 3600)) hours. Check: \`systemctl status mediastack-update mediastack-backup\`" failure
+        die "Another update or backup held the stack for $((MAINT_WAIT / 3600)) hours — this scheduled backup is skipped."
+    }
+    local last age
+    last=$(latest_restore_point)
+    if [[ -n "$last" ]] && age=$(ts_age_hours "$last") && (( age < BACKUP_SKIP_HOURS )); then
+        ok "Restore point $last is ${age}h old and covers every service — this scheduled backup is skipped."
+        return 0
+    fi
+    defer_while_streaming backup || return 0
+    backup_take scheduled ""
+}
+
+# ------------------------------------------------------- maintenance lock --
+# Updates and backups stop and start the stack: two at once would fight over
+# it. One lock: a run you start refuses while another holds it; a timer's run
+# waits (MAINT_WAIT). Held until the process exits; re-entry (update's own
+# restore point) is a no-op.
+MAINT_LOCK=/run/lock/mediastack-maintenance.lock
+MAINT_WAIT=21600   # seconds a timer's run waits: an update postponed for streams (UPDATE_DEFER_MAX_MIN) plus its run
+MAINT_LOCKED=0
+maint_lock() { # maint_lock WHAT WAIT-SECONDS — 0: refuse at once when held; rc 1 when the wait ran out
+    (( MAINT_LOCKED )) && return 0
+    [[ -e "$MAINT_LOCK" ]] || : > "$MAINT_LOCK"
+    exec 8<"$MAINT_LOCK"
+    if ! flock -n 8; then
+        (( $2 > 0 )) || die "Another update or backup is running — $1 refused. Try again once it has finished."
+        info "Another update or backup is running — $1 waits for it (up to $(( $2 / 3600 )) hours)..."
+        flock -w "$2" 8 || return 1
+    fi
+    MAINT_LOCKED=1
+}
+
+defer_while_streaming() { # defer_while_streaming WHAT — postpone while someone streams (UPDATE_DEFER_*); rc 1 = skip this run
+    [[ "$(env_get UPDATE_DEFER_IF_ACTIVE false)" == true ]] || return 0
+    local waited=0 retry max
+    retry=$(( $(env_get UPDATE_DEFER_RETRY_MIN 30) * 60 )); max=$(( $(env_get UPDATE_DEFER_MAX_MIN 180) * 60 ))
+    while jellyfin_sessions_active; do
+        if (( waited >= max )); then
+            if [[ "$(env_get UPDATE_DEFER_ACTION proceed)" == skip ]]; then
+                warn "Streams still active after max deferral — SKIPPING this $1 run."; return 1
+            fi
+            warn "Streams still active after max deferral — proceeding anyway."; return 0
+        fi
+        info "Active stream detected — deferring $1 $((retry/60))min..."
+        sleep "$retry"; waited=$(( waited + retry ))
+    done
 }
 
 # Every restore point says who made it and what ran: `meta` holds its kind —
@@ -40,6 +104,7 @@ cmd_backup() {
 # Information only: retention, restore and the skip rule never read it.
 backup_take() { # backup_take KIND NOTE — a full cold restore point into the GFS pool
     load_env; require_mounts
+    maint_lock backup 0
     local broot croot dest need have
     broot=$(env_get BACKUP_ROOT); croot=$(env_get CONFIG_ROOT)
     need=$(sudo du -sk "$croot" | awk '{print $1}')
@@ -495,13 +560,17 @@ point_version() { # point_version POINT SVC -> the version it holds (its digest 
     local ver ref
     ver=$(awk -v s="$2" '$1==s {print $2}' "$1/meta" 2>/dev/null || true)
     ref=$(awk -v s="$2" '$1==s {print $2}' "$1/images.lock" 2>/dev/null || true)
-    [[ -n "$ver" && "$ver" != - ]] || ver=${ref#*@}
+    [[ -n "$ver" && "$ver" != - ]] || ver=$(digest_short "$ref")
     echo "${ver:-?}"
+}
+
+digest_short() { # digest_short REF -> sha256: and its first 12 hex digits (as docker shows it)
+    local d=${1#*@}; echo "${d:0:19}"
 }
 
 running_version() { # running_version SVC DIGEST -> its version label, else the digest
     local v; v=$(c_version "$(svc_cname "$1")" || true)
-    [[ -n "$v" ]] && echo "$v" || echo "${2#*@}"
+    [[ -n "$v" ]] && echo "$v" || digest_short "$2"
 }
 
 age_words() { # age_words HOURS -> "5 hours" / "3 days"
@@ -568,18 +637,19 @@ cmd_update() {
     [[ -n "$to_tag" && -z "$one" ]] && die "--to requires a service: update <svc> --to <tag>"
     [[ -n "$one" ]] && { svc_exists "$one" || die "No service '$one'."; }
 
-    # session deferral (auto runs only)
-    if (( auto )) && [[ "$(env_get UPDATE_DEFER_IF_ACTIVE false)" == true ]] && (( ! now )); then
-        local waited=0 retry max
-        retry=$(( $(env_get UPDATE_DEFER_RETRY_MIN 30) * 60 )); max=$(( $(env_get UPDATE_DEFER_MAX_MIN 180) * 60 ))
-        while jellyfin_sessions_active; do
-            (( waited >= max )) && { [[ "$(env_get UPDATE_DEFER_ACTION proceed)" == skip ]] \
-                && { warn "Streams still active after max deferral — SKIPPING this update run."; return 0; } \
-                || { warn "Streams still active after max deferral — proceeding anyway."; break; }; }
-            info "Active stream detected — deferring update $((retry/60))min..."
-            sleep "$retry"; waited=$(( waited + retry ))
-        done
+    # one update or backup at a time: a timer's run waits, yours refuses
+    if (( ! dry )); then
+        if (( auto )); then
+            maint_lock "the scheduled update" "$MAINT_WAIT" || {
+                notify ops "Mediastack scheduled update skipped" "Another update or backup held the stack for $((MAINT_WAIT / 3600)) hours." failure
+                die "Another update or backup held the stack for $((MAINT_WAIT / 3600)) hours — this scheduled update is skipped."
+            }
+        else
+            maint_lock update 0
+        fi
     fi
+    # session deferral (auto runs only)
+    if (( auto && ! now )); then defer_while_streaming update || return 0; fi
 
     # build target list honouring toggles + pins
     [[ -n "$one" ]] && ! svc_enabled "$one" && die "'$one' is not enabled — enable it first or skip it."
@@ -752,6 +822,7 @@ cmd_update() {
 cmd_apply_timer() {
     load_env
     apply_timer mediastack-update "Mediastack update pipeline" "update --auto" UPDATE_SCHEDULE "Automatic updates"
+    apply_timer mediastack-backup "Mediastack scheduled backup" "backup --auto" BACKUP_SCHEDULE "Automatic backups"
     apply_timer mediastack-manifest "Mediastack media manifest" "manifest" MANIFEST_SCHEDULE "Media manifest"
 }
 

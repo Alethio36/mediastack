@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # globals set here are read by the sourced libraries
 # test-restore-point.sh — latest_restore_point, the one way status, doctor,
 # `backup verify` and `restore --all` find the newest GFS restore point.
 # BACKUP_ROOT also holds pre-update/ and manifest/, which sort after any
@@ -15,6 +16,11 @@
 # (current) and rollback's target. rollback goes to the newest point holding
 # a different image (a second one undoes the first), --from to any point; it
 # shows its plan and asks, and outside a terminal needs --yes.
+# The backup timer (backup --auto) skips after a full restore point under 6h
+# old (never for a scoped one), waits for a running update or backup (one
+# lock; one you start refuses), and waits while someone streams. configure
+# asks both schedules in one section; existing installs get a daily backup an
+# hour after their update time.
 #
 #   scripts/test-restore-point.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -106,7 +112,6 @@ out=$(DC_UP_RC=1 run "" work_ok)
 # ignores set -e) must still fail — not finish as a complete point
 mkdir -p "$T/cfg/sonarr" "$T/pt"
 svc_managed_where() { echo sonarr; }
-# shellcheck disable=SC2034  # read by backup_snapshot
 PINS_FILE=$T/nopins CUSTOM_DIR=$T/nocustom
 sudo() { [[ "$1" == cp && "$*" == *"/env" ]] && return 1; "$@"; }
 out=$(run "" "backup_snapshot $T/cfg $T/pt")
@@ -207,5 +212,68 @@ printf 'BACKUP_ROOT=%s/single\n' "$T" > "$ENV_FILE"; svc_digest() { echo repo/so
 [[ "$(rb sonarr --yes)" == "rc=1 " ]] && grep -q "update sonarr --to <tag>" "$T/rbout" || fail_ "no earlier image: points at update --to, with its caveat: $(cat "$T/rbout")"; pass
 [[ "$(rb a b c d)" == "rc=1 " ]] && grep -q "usage: rollback <svc> \[--from TS\] \[--yes\]" "$T/rbout" || fail_ "extra arguments: refused by rollback itself (the registry passes them now)"; pass
 grep -q 'rollback {svc:entity=svc_rollback:Service to roll back} --yes~' lib/frontdoor.sh || fail_ "the panel's button passes --yes (it confirms in its own dialog)"; pass
+
+# ---- schedules: the wizard's words and the default backup time ----
+for c in "Tue 04:00=05:00" "*-*-* 23:30=00:30" "Tue,Fri 04:00:00=05:00" "=04:00" "*-*-01 03:00=04:00" "hourly=04:00"; do
+    [[ "$(sched_time_after "${c%=*}")" == "${c#*=}" ]] || fail_ "an hour after '${c%=*}': $(sched_time_after "${c%=*}")"; pass
+done
+[[ "$(sched_words "*-*-* 05:00")|$(sched_words "Mon..Fri 03:00")|$(sched_words "")|$(sched_words "Tue 04:00")" == "daily 05:00|weekdays 03:00|never|Tue 04:00" ]] \
+    || fail_ "schedules in the wizard's words"; pass
+digest_short repo/x@sha256:baba630419915985442f315f08b0cf46d9f4c8a0cc4bd38e94a6d35751dd5ef5 | grep -qx 'sha256:baba63041991' || fail_ "a digest is shown as docker does (12 hex)"; pass
+
+# ---- the scheduled backup: skip, lock, streams ----
+printf 'BACKUP_ROOT=%s/sk\nUPDATE_DEFER_IF_ACTIVE=false\n' "$T" > "$ENV_FILE"; mkdir -p "$T/sk"
+MAINT_LOCK=$T/maint.lock; MAINT_WAIT=1; load_env() { :; }; warn() { echo "WARN $*"; }; ok() { echo "OK $*"; }; info() { :; }
+notify() { echo "NOTIFY $2"; }
+backup_take() { echo "TAKE $1"; }
+sched() { ( MAINT_LOCKED=0; backup_scheduled ) 2>&1; }
+ago() { date -d "-$1 hours" +%Y%m%d-%H%M%S; }
+mkdir -p "$T/sk/$(ago 2)"; [[ "$(sched)" == *"covers every service — this scheduled backup is skipped"* ]] || fail_ "a full point 2h old: skipped"; pass
+rm -rf "$T/sk"/*; mkdir -p "$T/sk/$(ago 7)"; [[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "a full point 7h old: runs, kind scheduled"; pass
+rm -rf "$T/sk"/*; mkdir -p "$T/sk/$(ago 30)" "$T/sk/pre-update/$(ago 1)"
+[[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "a fresh scoped (update <svc>) point never counts: the backup runs"; pass
+rm -rf "$T/sk"/*; [[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "no point at all: runs"; pass
+( exec 8<"$MAINT_LOCK"; flock 8; sleep 4 ) & holder=$!; sleep 0.5
+out=$(sched) || true
+[[ "$out" == *"NOTIFY Mediastack scheduled backup skipped"* && "$out" != *TAKE* ]] || fail_ "the lock held past the wait: skipped, alerted: $out"; pass
+out=$( ( MAINT_LOCKED=0; maint_lock backup 0 ) 2>&1 ) && fail_ "a run you start refuses while the lock is held"
+[[ "$out" == *"Another update or backup is running — backup refused"* ]] || fail_ "says why: $out"; pass
+wait "$holder"
+MAINT_WAIT=5; ( exec 8<"$MAINT_LOCK"; flock 8; sleep 1 ) & holder=$!; sleep 0.3
+[[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "a timer's run waits for the lock, then runs"; pass
+wait "$holder"; MAINT_WAIT=1
+printf 'BACKUP_ROOT=%s/sk\nUPDATE_DEFER_IF_ACTIVE=true\nUPDATE_DEFER_MAX_MIN=0\nUPDATE_DEFER_ACTION=skip\n' "$T" > "$ENV_FILE"
+jellyfin_sessions_active() { return 0; }
+out=$(sched); [[ "$out" == *"SKIPPING this backup run"* && "$out" != *TAKE* ]] || fail_ "streaming past the longest wait, action skip: skipped: $out"; pass
+sed -i 's/UPDATE_DEFER_ACTION=skip/UPDATE_DEFER_ACTION=proceed/' "$ENV_FILE"
+[[ "$(sched)" == *"proceeding anyway"*"TAKE scheduled"* ]] || fail_ "action proceed: runs"; pass
+( cmd_backup --auto --note x ) >/dev/null 2>&1 && fail_ "--auto takes no note"; pass
+grep -q 'maint_lock "the scheduled update" "$MAINT_WAIT"' lib/backup.sh && grep -q 'maint_lock update 0' lib/backup.sh \
+    && grep -q 'defer_while_streaming update' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) || fail_ "update holds the same lock and deferral"; pass
+grep -q 'maint_lock backup 0' <(awk '/^backup_take\(\)/,/^}/' lib/backup.sh) || fail_ "every restore point takes the lock (update's is re-entry)"; pass
+grep -q 'apply_timer mediastack-backup .* "backup --auto" BACKUP_SCHEDULE' lib/backup.sh || fail_ "apply-timer installs the backup timer"; pass
+
+# ---- migration 29 -> 30 ----
+printf 'UPDATE_SCHEDULE=Tue 04:00\n' > "$ENV_FILE"; migrate_env_29_to_30 >/dev/null
+[[ "$(env_get BACKUP_SCHEDULE)" == "*-*-* 05:00" ]] || fail_ "an existing install: daily, an hour after its updates"; pass
+printf 'UPDATE_SCHEDULE=\n' > "$ENV_FILE"; migrate_env_29_to_30 >/dev/null
+[[ "$(env_get BACKUP_SCHEDULE)" == "*-*-* 04:00" ]] || fail_ "updates off: daily 04:00"; pass
+printf 'UPDATE_SCHEDULE=Tue 04:00\nBACKUP_SCHEDULE=\n' > "$ENV_FILE"; migrate_env_29_to_30 >/dev/null
+[[ "$(env_get BACKUP_SCHEDULE)" == "" ]] || fail_ "a BACKUP_SCHEDULE already there is never changed"; pass
+
+# ---- configure: both schedules, one section ----
+hr() { echo "== $*"; }; explain() { :; }; fail() { echo "FAIL $*"; }; info() { echo ":: $*"; }
+wiz() { printf '%b' "$1" | _configure_schedule 2>&1; echo "U=$(env_get UPDATE_SCHEDULE)|B=$(env_get BACKUP_SCHEDULE)"; }
+: > "$ENV_FILE"
+out=$(wiz '\n\n\n\n\n\n'); [[ "$out" == *"U=Tue 04:00|B=*-*-* 05:00" ]] || fail_ "all defaults: weekly Tue 04:00, backups daily 05:00: $out"; pass
+[[ "$out" == *"2) weekly      one day a week (recommended)"* && "$out" == *"1) daily       every day at a time you pick (recommended)"* ]] || fail_ "each menu marks its suggestion: $out"; pass
+[[ "$out" == *"the update's restore point counts; the backup skips"* ]] || fail_ "the summary says how they meet: $out"; pass
+: > "$ENV_FILE"; out=$(wiz '1\n02:30\n\n\n\n'); [[ "$out" == *"U=*-*-* 02:30|B=*-*-* 03:30" ]] || fail_ "daily updates at 02:30: the backup suggests 03:30: $out"; pass
+: > "$ENV_FILE"; out=$(wiz '1\n04:00\n1\n03:00\n\n'); [[ "$out" == *"backup runs first, so that day gets two restore points"* && "$out" == *"U=*-*-* 04:00|B=*-*-* 03:00" ]] \
+    || fail_ "a backup before the update: kept, with a note: $out"; pass
+: > "$ENV_FILE"; out=$(wiz '6\n6\n\n'); [[ "$out" == *"No automatic restore points at all"* && "$out" == *"U=|B=" ]] || fail_ "both never: a warning: $out"; pass
+out=$(wiz '6\n6\nn\n2\nWed\n03:00\n\n\n\n'); [[ "$out" == *"U=Wed 03:00|B=*-*-* 04:00" ]] || fail_ "'n' asks both again: $out"; pass
+out=$(wiz '\n\n\n'); [[ "$out" == *"0) keep current: Wed 03:00"* && "$out" == *"U=Wed 03:00|B=*-*-* 04:00" ]] || fail_ "a re-run keeps both on Enter: $out"; pass
+out=$(wiz '5\nevery day\n5\n*-*-01 03:00\n\n\n\n'); [[ "$out" == *"'every day' is not a valid schedule"* && "$out" == *"U=*-*-01 03:00|"* ]] || fail_ "a custom expression is validated: $out"; pass
 
 echo "OK restore-point: $checks checks"
