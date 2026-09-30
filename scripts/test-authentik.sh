@@ -937,6 +937,7 @@ acc() { # acc PROFILES ANSWERS -> the wizard's output, then "P=<COMPOSE_PROFILES
 has() { [[ ",$(sed -n 's/^P=//p' <<<"$1")," == *",$2,"* ]]; }
 out=$(acc "" '1\n\n'); has "$out" wizarr || has "$out" authentik && fail_ "first run, standard, Enter: none — neither runs: $out"
 [[ "$out" == *"== Accounts"*"1) none"*"2) Wizarr"*"3) authentik"*"OK Accounts: none"* && "$out" != *"0) keep current"* ]] || fail_ "the question, with none as the first run's default: $out"; pass
+[[ "$out" == *"2) everything  every service (sign-in is picked next)"* ]] || fail_ "'everything' states no count (it would count both account models): $out"; pass
 out=$(acc "" '2\n3\n\n'); has "$out" authentik && ! has "$out" wizarr && [[ "$out" == *"== The portal's name"* && "$out" != *"Choose one"* ]] \
     || fail_ "everything + authentik: no either/or prompt, the portal named: $out"; pass
 out=$(acc "" '2\n2\n'); has "$out" wizarr && ! has "$out" authentik && has "$out" jellyfin || fail_ "everything + Wizarr (Jellyfin with it): $out"; pass
