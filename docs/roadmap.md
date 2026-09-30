@@ -113,8 +113,12 @@ validation, notifications, SSO). Before `migrate` moves the first household:
    token), and `wire authentik` waits up to five minutes for the blueprint to
    be discovered after authentik's first start — a timeout is a wire failure,
    not a skip. To prove on the rebuild (3).
-2. The account model stays the user's choice — none, Wizarr or authentik —
-   and the install flow offers all three cleanly.
+2. *Done:* the account model stays the user's choice — none, Wizarr or
+   authentik: `configure` asks it on its own, whatever the preset (before,
+   "standard" chose none silently and "everything" hit a generic either/or
+   prompt with no "neither"); leaving the portal warns first. Without a
+   portal, every verb that needs one refuses with a way forward (read in
+   code; to prove on the rebuild).
 3. anzac3 rebuilt from zero: install, configure, snapshot, then a close look
    at installing and everyday use. Watch there whether the household's files
    direct-play; frequent transcodes would pull the transcoding evaluation

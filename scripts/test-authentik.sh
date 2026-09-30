@@ -7,7 +7,9 @@
 #   * secrets: generated once, letters and digits only, never replaced — and
 #     refused outright when the database already exists without them
 #   * account models: authentik and Wizarr conflict (declared on either side),
-#     and a conflict pair in a selection is found
+#     and a conflict pair in a selection is found; configure asks which one
+#     (none, Wizarr, authentik) every time, whatever the preset — a re-run
+#     keeping both services and model leaves .env untouched
 #   * a shard member is never a dependency to enable (it comes with its
 #     primary's profile)
 #   * a service an upgrade adds gets its UID before it first starts
@@ -921,5 +923,31 @@ grep -q 'client_id: mediastack-audiobookshelf' "$T/abs" && grep -q 'signing_key:
    && grep -q '/auth/openid/callback' "$T/abs" && grep -q '/auth/openid/mobile-redirect' "$T/abs" \
     || fail_ "the OIDC provider: its client ID, a signing key (RS256), web and app redirects"; pass
 grep -q 'grant_types: \[authorization_code, refresh_token\]' "$T/abs" || fail_ "the provider allows the code grant (empty by default: every login refused, found live)"; pass
+
+# ---- configure: the account model is a question of its own ----
+acc() { # acc PROFILES ANSWERS -> the wizard's output, then "P=<COMPOSE_PROFILES>" and "SAME" when .env is byte-identical
+    ( ENV_FILE=$T/acc.env; printf 'COMPOSE_PROFILES=%s\nPORTAL_TITLE=Mediastack\n' "$1" > "$ENV_FILE"; cp "$ENV_FILE" "$T/acc.before"
+      render() { :; }; svc_managed() { printf '%s\n' gluetun jellyfin sonarr wizarr authentik; }
+      svc_label() { echo "desc"; }; conflicts_in() { [[ " $* " == *" authentik "* && " $* " == *" wizarr "* ]] && echo "authentik wizarr" || true; }
+      resolve_deps() { local x; for x in "$@"; do echo "$x"; [[ "$x" == wizarr ]] && echo jellyfin; done | awk '!seen[$0]++'; }
+      hr() { echo "== $*"; }; ok() { echo "OK $*"; }; info() { echo ":: $*"; }; warn() { echo "WARN $*"; }; fail() { echo "FAIL $*"; }
+      printf '%b' "$2" | _configure_services 2>&1
+      echo "P=$(env_get COMPOSE_PROFILES)"; cmp -s "$ENV_FILE" "$T/acc.before" && echo SAME || true )
+}
+has() { [[ ",$(sed -n 's/^P=//p' <<<"$1")," == *",$2,"* ]]; }
+out=$(acc "" '1\n\n'); has "$out" wizarr || has "$out" authentik && fail_ "first run, standard, Enter: none — neither runs: $out"
+[[ "$out" == *"== Accounts"*"1) none"*"2) Wizarr"*"3) authentik"*"OK Accounts: none"* && "$out" != *"0) keep current"* ]] || fail_ "the question, with none as the first run's default: $out"; pass
+out=$(acc "" '2\n3\n\n'); has "$out" authentik && ! has "$out" wizarr && [[ "$out" == *"== The portal's name"* && "$out" != *"Choose one"* ]] \
+    || fail_ "everything + authentik: no either/or prompt, the portal named: $out"; pass
+out=$(acc "" '2\n2\n'); has "$out" wizarr && ! has "$out" authentik && has "$out" jellyfin || fail_ "everything + Wizarr (Jellyfin with it): $out"; pass
+out=$(acc "" '2\n1\n'); ! has "$out" wizarr && ! has "$out" authentik || fail_ "everything + none: neither: $out"; pass
+out=$(acc "" '3\ny\ny\ny\n3\n\n'); [[ "$out" != *"wizarr — "* && "$out" != *"authentik — "* ]] && has "$out" authentik && has "$out" sonarr \
+    || fail_ "custom: no yes/no for the two models — the Accounts question decides: $out"; pass
+out=$(acc "sonarr,authentik,jellyfin" '\n\n'); [[ "$out" == *"0) keep current: authentik"*"Keeping the current 3 service(s)"*SAME ]] \
+    || fail_ "a re-run keeping services and model: .env byte-identical: $out"; pass
+out=$(acc "sonarr,authentik,jellyfin" '0\n1\n'); ! has "$out" authentik && [[ "$out" == *"WARN Leaving the portal"* ]] || fail_ "authentik -> none: out, with the warning: $out"; pass
+out=$(acc "sonarr,jellyfin" '0\n3\n\n'); has "$out" authentik && [[ "$out" == *"0) keep current: none"*"link-account"* ]] || fail_ "none -> authentik: in, pointed at link-account: $out"; pass
+out=$(acc "sonarr,wizarr,jellyfin" '0\n3\n\n'); has "$out" authentik && ! has "$out" wizarr || fail_ "Wizarr -> authentik: one model, never both: $out"; pass
+out=$(acc "" '1\n7\n0\n1\n'); [[ "$out" == *"FAIL Pick 1-3."*"FAIL Nothing to keep."*"OK Accounts: none"* ]] || fail_ "a bad choice, and 0 with nothing to keep, are asked again: $out"; pass
 
 echo "OK authentik: $checks checks"
