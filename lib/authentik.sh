@@ -176,6 +176,17 @@ authentik_blueprint_status() { # -> successful | warning | error | … | outdate
     jq -r '.status' <<<"$inst"
 }
 
+AUTHENTIK_DISCOVER_WAIT=300   # seconds: how long a first start may take to discover the blueprint
+authentik_blueprint_discovered() { # wait for authentik to discover the blueprint; -> its status ("" if it never does)
+    local st waited=0
+    while :; do
+        st=$(authentik_blueprint_status)
+        [[ -n "$st" ]] && { echo "$st"; return 0; }
+        (( waited >= AUTHENTIK_DISCOVER_WAIT )) && { echo ""; return 0; }
+        sleep 5; waited=$((waited + 5))
+    done
+}
+
 authentik_blueprint_why() { # authentik's own reasons for rejecting mediastack's blueprint (its validator, dry run — nothing applied)
     # its logs and task records keep no reasons; this command states them
     sudo docker exec "$(svc_cname authentik-worker)" ak apply_blueprint --dry-run mediastack/mediastack-portal.yaml 2>&1 \

@@ -15,9 +15,11 @@ WIRE_FAILS=0
 # source of truth for the role list: arg validation, the usage string, and
 # dispatch all derive from it. Order is load-bearing — seerr signs in via
 # jellyfin's admin and wizarr's first-run UI wants jellyfin claimed first, so
-# jellyfin precedes both. To add an integration: append its role here and define
-# a matching wire_<role> function below.
-WIRE_ROLES=(qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian jellyfin seerr wizarr authentik audiobookshelf kavita)
+# jellyfin precedes both; authentik precedes jellyfin, whose portal sign-in
+# needs the LDAP token `wire authentik` fetches (one `wire` finishes a fresh
+# install). To add an integration: append its role here and define a matching
+# wire_<role> function below.
+WIRE_ROLES=(qbit arr prowlarr bazarr apprise cleanuparr lazylibrarian authentik jellyfin seerr wizarr audiobookshelf kavita)
 # roles that write without observing (one big settings blob / blind writeCFG):
 # their dry-run always says "would", so --verify cannot read drift from them
 WIRE_BLIND=(bazarr lazylibrarian seerr)
@@ -1765,6 +1767,12 @@ wire_authentik() {
         else wfail "authentik rejected the base URL $want"; fi
     fi
     local st; st=$(authentik_blueprint_status)
+    # a first start: authentik discovers the blueprint on its own schedule, and
+    # the gate, the cards and the LDAP token all need it — wait, don't skip
+    if [[ -z "$st" ]] && ! (( WIRE_DRY )); then
+        info "authentik: waiting for it to discover mediastack's portal setup (a first start; up to $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes)"
+        st=$(authentik_blueprint_discovered)
+    fi
     local applied=0
     if [[ "$st" == outdated || "$st" == error ]] && w_would "authentik: apply mediastack's current portal setup now (an earlier version is in place)"; then
         st=$(authentik_blueprint_apply); applied=1
@@ -1776,7 +1784,9 @@ wire_authentik() {
     fi
     case "$st" in
         successful) ok "authentik: mediastack's portal setup applied (media-users, admins, sign-up by invitation)" ;;
-        "") info "authentik: mediastack's portal setup not discovered yet — authentik finds it within minutes of starting; re-run to check"; return 0 ;;
+        "") if (( WIRE_DRY )); then info "authentik: mediastack's portal setup not discovered yet — the real run waits for it"
+            else wfail "authentik: mediastack's portal setup was not discovered within $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes — ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; fi
+            return 0 ;;
         outdated) wfail "authentik: an earlier version of mediastack's portal setup is still in place — ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; return 0 ;;
         *) wfail "authentik rejected mediastack's portal setup ($st). Its validator says:"
            authentik_blueprint_why | sed 's/^/       /'

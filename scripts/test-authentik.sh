@@ -20,6 +20,9 @@
 #     for directory users and never touch local accounts
 #   * the base URL is set when unset or still mediastack's, never over one
 #     set in authentik's UI
+#   * a first start: authentik is wired before jellyfin, and wire waits
+#     (bounded) for the blueprint to be discovered — a timeout is a failure,
+#     a dry run never waits
 #   * the gate: Traefik's middleware asks authentik only when it runs; wire
 #     adds the gate beside the outpost's providers, puts akadmin in admins
 #     once, keeps one admins-only card per gated tool and never touches
@@ -259,6 +262,37 @@ BP_STATUS=successful
 BP_APPLIED=old; sleep() { :; }
 [[ "$(authentik_blueprint_apply)" == successful ]] || fail_ "applying on demand brings the current file in"; pass
 grep -q '^POST /managed/blueprints/bp-1/apply/' "$T/calls" || fail_ "the apply goes through authentik's API"; pass
+
+# ---- a first start: one `wire` finishes it — authentik before jellyfin, and
+#      wire waits (bounded) for the blueprint to be discovered ----
+ai=; ji=; for i in "${!WIRE_ROLES[@]}"; do
+    [[ "${WIRE_ROLES[$i]}" == authentik ]] && ai=$i; [[ "${WIRE_ROLES[$i]}" == jellyfin ]] && ji=$i
+done
+(( ai < ji )) || fail_ "authentik is wired before jellyfin (Jellyfin's portal sign-in needs the LDAP token)"; pass
+ak_api() { case "$1 $2" in
+    "GET /managed/blueprints/?page_size=200")
+        n=$(( $(cat "$T/seen") + 1 )); echo "$n" > "$T/seen"
+        if (( n < BP_FOUND_AT )); then echo '{"results":[]}'
+        else jq -cn --arg h "$BP_CUR" '{results:[{name:"Mediastack - Portal", status:"successful", last_applied_hash:$h, pk:"bp-1"}]}'; fi ;;
+    *) echo '{}' ;;
+esac; }
+echo 0 > "$T/seen"; BP_FOUND_AT=3
+[[ "$(authentik_blueprint_discovered)" == successful ]] || fail_ "discovered on a later look: its status"; pass
+echo 0 > "$T/seen"; BP_FOUND_AT=999
+[[ -z "$(authentik_blueprint_discovered)" ]] || fail_ "never discovered: empty"; pass
+[[ "$(cat "$T/seen")" == $(( AUTHENTIK_DISCOVER_WAIT / 5 + 1 )) ]] || fail_ "the wait is bounded: $(cat "$T/seen") looks"; pass
+first_start() { # first_start DRY DISCOVERED -> what wire_authentik did: "gate|nogate fails=N waited|nowait"
+    ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
+      authentik_blueprint_status() { echo ""; }
+      authentik_blueprint_discovered() { echo waited > "$T/waited"; echo "$DISC"; }
+      wire_authentik_gate() { echo gate > "$T/gated"; }
+      rm -f "$T/waited" "$T/gated"; WIRE_DRY=$1 DISC=$2 WIRE_FAILS=0
+      wire_authentik >/dev/null 2>&1
+      echo "$(cat "$T/gated" 2>/dev/null || echo nogate) fails=$WIRE_FAILS $(cat "$T/waited" 2>/dev/null || echo nowait)" )
+}
+[[ "$(first_start 0 successful)" == "gate fails=0 waited" ]] || fail_ "discovered while waiting: the gate and cards follow in the same run: $(first_start 0 successful)"; pass
+[[ "$(first_start 0 "")" == "nogate fails=1 waited" ]] || fail_ "never discovered: a failure, not a quiet success: $(first_start 0 "")"; pass
+[[ "$(first_start 1 "")" == "nogate fails=0 nowait" ]] || fail_ "a dry run reports without waiting: $(first_start 1 "")"; pass
 
 # ---- ports close with the portal; logins trust it only once they have ----
 printf 'COMPOSE_PROFILES=x\n' > "$ENV_FILE"
