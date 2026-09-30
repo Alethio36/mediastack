@@ -172,6 +172,20 @@ announced so requested titles are not announced twice.
 **Revisit when:** someone wants arrivals that did not come through Seerr
 announced to the household.
 
+### Deferring for other apps' sessions
+
+Scheduled updates and backups wait while someone plays something in Jellyfin
+(`jellyfin_sessions_active`: its `/Sessions` API, a `NowPlayingItem` present).
+No other app is asked, so a 4am restore point interrupts someone listening in
+Navidrome or Audiobookshelf, or reading in Kavita. Checked Sept 2026: their
+session reporting is spotty — each would be one more check with its own
+failure modes and one more key to manage, for an interruption that is rare at
+the hours these jobs run. If adopted, each app gets its own `*_sessions_active`
+beside Jellyfin's, and `defer_while_streaming` asks them all.
+
+**Revisit when:** an app's API reports live sessions reliably and the
+household actually uses it at the hours updates and backups run.
+
 ## Deferred services
 
 Services assessed for the stack and consciously *not* shipped yet. Adding any
