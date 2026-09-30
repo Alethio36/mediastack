@@ -25,6 +25,10 @@ dead host rebuilds like this:
 Practice this once on a scratch VM before you need it. The restore drill is
 the only real proof your backups work.
 
+**Where restore points live.** All of this assumes the restore points outlived
+the host. Keep `BACKUP_ROOT` on another disk or a NAS — `doctor` warns when it
+shares a filesystem with the configs, which the default `./backups` does.
+
 **With the portal (authentik).** Every sign-in goes through it, so it is the
 part to get right. Its database lives in its config folder and is restored
 with everything else; the secrets that open it (`AUTHENTIK_SECRET_KEY`,

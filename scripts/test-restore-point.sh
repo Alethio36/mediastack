@@ -4,6 +4,8 @@
 # BACKUP_ROOT also holds pre-update/ and manifest/, which sort after any
 # timestamp: "newest entry in the folder" picked them (status showed
 # "pre-update"; backup verify failed on every install with a scoped update).
+# Doctor warns when BACKUP_ROOT shares a filesystem with the configs (or the
+# media); a btrfs subvolume counts as its filesystem.
 #
 #   scripts/test-restore-point.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -31,5 +33,25 @@ mkdir -p "$T/bk/pre-update/20260925-010101" "$T/bk/manifest"
 mkdir -p "$T/bk/20260923-040000" "$T/bk/20260924-040000"
 touch "$T/bk/20260926-040000"      # a stray FILE with a timestamp name is not a point
 [[ "$(latest_restore_point)" == 20260924-040000 ]] || fail_ "newest point: got '$(latest_restore_point)'"; pass
+
+# ---- same filesystem: findmnt answers from a table (path -> SOURCE) ----
+mkdir -p "$T/bin"
+cat > "$T/bin/findmnt" <<'SH'
+#!/bin/sh
+for a; do t=$a; done
+grep "^$t " "$FM_TABLE" | cut -d' ' -f2
+SH
+chmod +x "$T/bin/findmnt"; PATH=$T/bin:$PATH; export FM_TABLE=$T/fm
+fm() { printf '%s\n' "$@" > "$FM_TABLE"; }
+fm "/cfg /dev/sda2[/@configs]" "/bk /dev/sda2[/@backups]" "/nas nas:/backups"
+[[ "$(fs_source_of /cfg)" == /dev/sda2 ]] || fail_ "a btrfs subvolume is its filesystem: $(fs_source_of /cfg)"; pass
+[[ "$(fs_shared /cfg /bk)" == /dev/sda2 ]] || fail_ "two subvolumes of one filesystem are shared"; pass
+! fs_shared /cfg /nas >/dev/null || fail_ "a NAS is not the configs' disk"; pass
+! fs_shared /cfg /missing >/dev/null || fail_ "an unknown path is never 'shared'"; pass
+warn() { echo "WARN $*"; }
+printf 'CONFIG_ROOT=/cfg\nBACKUP_ROOT=/bk\n' > "$ENV_FILE"
+[[ "$(_doctor_backup_disk)" == *"shares a filesystem with the configs (/dev/sda2)"* ]] || fail_ "doctor warns: backups beside the configs"; pass
+printf 'CONFIG_ROOT=/cfg\nBACKUP_ROOT=/nas\n' > "$ENV_FILE"
+[[ -z "$(_doctor_backup_disk)" ]] || fail_ "doctor is quiet: backups on another disk"; pass
 
 echo "OK restore-point: $checks checks"

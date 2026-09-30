@@ -225,7 +225,8 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
 
 * **Configs on local disk only** — SQLite corrupts on NFS/SMB; the wizard
   refuses network paths for CONFIG_ROOT. Media on a NAS is fine; backups on
-  a NAS is encouraged.
+  a NAS is encouraged — `doctor` warns while BACKUP_ROOT shares a filesystem
+  with the configs (the default does).
 * **DATA_ROOT should be one filesystem.** Imports work by hardlinking
   torrent → media: instant, zero duplicate space, seeding uninterrupted —
   and hardlinks cannot cross filesystems. If your media spans multiple
