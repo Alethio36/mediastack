@@ -402,7 +402,8 @@ _configure_schedule() { # updates and backups: two timers, one section — sugge
            last 6 hours, the backup skips — its restore point already
            covers everything.
 Both stop all services briefly (~20-40s for the restore point), and both
-wait while someone is streaming. Pick quiet times for YOUR household."
+wait while someone is watching in Jellyfin (UPDATE_DEFER_IF_ACTIVE in .env,
+on by default) — other apps aren't asked. Pick quiet times for YOUR household."
     while true; do
         sched_choose UPDATE_SCHEDULE Updates 2 04:00 "manual './mediastack.sh update' only"
         echo

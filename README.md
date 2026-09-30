@@ -132,7 +132,7 @@ Maintain
 | `apply-timer` | install/refresh the systemd timers: scheduled updates (`UPDATE_SCHEDULE`), scheduled backups (`BACKUP_SCHEDULE`) and the media manifest (`MANIFEST_SCHEDULE`); an empty schedule removes its timer. `configure` asks the update and backup schedules together |
 | `manifest [--accept]` | snapshot every file under `DATA_ROOT/media` into `BACKUP_ROOT/manifest/` (nightly via timer). Alerts the ops stream when a folder loses media files — arr renames and upgrades are not losses. Refuses to record a snapshot whose file count fell more than `MANIFEST_ALERT_PCT` (usually an unmounted share); `--accept` records an intended one. With deletion attribution on (`audit`), the report and the alert name who removed each folder |
 | `manifest diff [A [B]]` / `manifest find <text>` | what was lost between two snapshots (default: the last two; timestamps may be shortened to a unique prefix) / when each path matching `<text>` was first and last seen, and whether it is still there |
-| `backup [--note TEXT]` / `backup verify [ts]` / `backup list [svc]` | restore point now (a note says why; the backup timer runs `backup --auto`, which skips after an update's restore point under 6 hours old, waits for a running update, and waits while someone streams) / verify checksums + archives / every point, newest first, with its kind (manual, scheduled, update, update-scoped, migrate) and note — given a service, its version in each and which one is running |
+| `backup [--note TEXT]` / `backup verify [ts]` / `backup list [svc]` | restore point now (a note says why; the backup timer runs `backup --auto`, which skips after an update's restore point under 6 hours old, waits for a running update, and waits while someone is watching in Jellyfin) / verify checksums + archives / every point, newest first, with its kind (manual, scheduled, update, update-scoped, migrate) and note — given a service, its version in each and which one is running |
 | `restore --service <svc>\|--all [--from TS]` | restore configs + exact image |
 | `rollback <svc> [--from TS] [--yes]` / `unpin <svc>` | return a service to the image it ran before — the newest restore point holding a different image; `--from` picks any point (`backup list <svc>` shows them, and which one rollback takes). Its config goes back with the image, so its data since then is replaced (the current folder is kept); it shows the plan and asks first. Pins it there / release the pin. Going back: `rollback`; moving to a chosen version: `update <svc> --to <tag>` |
 | `upgrade` | mediastack itself: git pull + `.env` migration, run by the freshly pulled code; then says whether `up` has anything to apply, naming the services it would change (Compose's own dry run of `up` — a comment edit never triggers it). Images stay put — that's `update` |
@@ -391,9 +391,12 @@ kavita and seerr by default) — change it per deployment with
 If someone is streaming, an update that bounces jellyfin also pauses
 `NOTIFY_GRACE` seconds (default 30; `0` = no pause) first so viewers can
 reach a stopping point — the pause is jellyfin-only, since it's the one
-service with a live-session check. Automatic (`--auto`) updates instead
-defer while a stream is active (`UPDATE_DEFER_IF_ACTIVE`, on by default;
-`UPDATE_DEFER_MAX_MIN` caps the wait before proceeding).
+service with a live-session check. Scheduled updates and backups instead
+defer while someone is watching in Jellyfin (`UPDATE_DEFER_IF_ACTIVE`, on by
+default; `UPDATE_DEFER_MAX_MIN` caps the wait, then `UPDATE_DEFER_ACTION`
+proceeds or skips the run). Jellyfin is the only app asked: listening in
+Navidrome or Audiobookshelf, or reading in Kavita, is not seen (see the
+watchlist, "Deferring for other apps' sessions").
 
 Upgrading an existing install: `wire seerr` updates the message template
 of the agent it made in any earlier version (tag `activity`, then `ops`)
