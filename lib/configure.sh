@@ -157,8 +157,9 @@ at the video's bitrate, deleted when the stream ends.
     empties itself on reboot.
   * Nothing here is kept or backed up." yes
     configure_root BACKUP_ROOT "Backup directory" \
-"Where restore points are written before every update. A NAS path is
-ENCOURAGED — backups on the same disk as the configs aren't backups.
+"Where restore points are written — by the daily backup and before every
+update. A NAS path is ENCOURAGED — backups on the same disk as the configs
+aren't backups.
 (As above: mount the share first; the wizard doesn't create mounts.)" yes
 
     # hardlink check
@@ -358,10 +359,12 @@ Both stop all services briefly (~20-40s for the restore point), and both
 wait while someone is streaming. Pick quiet times for YOUR household."
     while true; do
         sched_choose UPDATE_SCHEDULE Updates 2 04:00 "manual './mediastack.sh update' only"
+        echo
         sched_choose BACKUP_SCHEDULE Backups 1 "$(sched_time_after "$(env_get UPDATE_SCHEDULE)")" \
             "only updates and './mediastack.sh backup' take restore points"
         sched_summary
         ask SCHED_KEEP "Keep these? (y/n)" y
+        echo
         [[ "${REPLY_VAL,,}" == n* ]] || break
     done
 }
@@ -372,7 +375,7 @@ sched_choose() { # sched_choose VAR TITLE DEFAULT-CHOICE DEFAULT-TIME NEVER-TEXT
     local -a line=("" "daily       every day at a time you pick" "weekly      one day a week" \
                    "weekdays    Mon-Fri" "weekends    Sat+Sun" "custom      raw systemd OnCalendar expression" \
                    "never       $never")
-    echo; echo "$title:"
+    echo "$title:"
     for c in 1 2 3 4 5 6; do
         printf '  %s) %s%s\n' "$c" "${line[$c]}" "$( [[ "$c" == "$defc" ]] && echo " (recommended)" )"
     done

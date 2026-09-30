@@ -228,7 +228,8 @@ notify() { echo "NOTIFY $2"; }
 backup_take() { echo "TAKE $1"; }
 sched() { ( MAINT_LOCKED=0; backup_scheduled ) 2>&1; }
 ago() { date -d "-$1 hours" +%Y%m%d-%H%M%S; }
-mkdir -p "$T/sk/$(ago 2)"; [[ "$(sched)" == *"covers every service — this scheduled backup is skipped"* ]] || fail_ "a full point 2h old: skipped"; pass
+mkdir -p "$T/sk/$(ago 2)"; [[ "$(sched)" == *"is 2h old and covers every service — this scheduled backup is skipped"* ]] || fail_ "a full point 2h old: skipped"; pass
+rm -rf "$T/sk"/*; mkdir -p "$T/sk/$(ago 0)"; [[ "$(sched)" == *"is under an hour old and covers"* ]] || fail_ "minutes old: 'under an hour', not '0h'"; pass
 rm -rf "$T/sk"/*; mkdir -p "$T/sk/$(ago 7)"; [[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "a full point 7h old: runs, kind scheduled"; pass
 rm -rf "$T/sk"/*; mkdir -p "$T/sk/$(ago 30)" "$T/sk/pre-update/$(ago 1)"
 [[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "a fresh scoped (update <svc>) point never counts: the backup runs"; pass

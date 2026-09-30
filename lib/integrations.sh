@@ -1774,7 +1774,12 @@ wire_authentik() {
         st=$(authentik_blueprint_discovered)
     fi
     local applied=0
-    if [[ "$st" == outdated || "$st" == error ]] && w_would "authentik: apply mediastack's current portal setup now (an earlier version is in place)"; then
+    # why it is not current: never applied (a first start), a failed apply, or an older file
+    local why="an earlier version is in place"
+    [[ "$st" == error ]] && why="its last apply failed"
+    [[ "$st" == outdated && -z "$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied_hash // ""' 2>/dev/null)" ]] \
+        && why="authentik has not applied it yet"
+    if [[ "$st" == outdated || "$st" == error ]] && w_would "authentik: apply mediastack's current portal setup now ($why)"; then
         st=$(authentik_blueprint_apply); applied=1
     fi
     # the LDAP outpost caches bind results: a changed setup starts it afresh,

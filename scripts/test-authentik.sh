@@ -293,6 +293,16 @@ first_start() { # first_start DRY DISCOVERED -> what wire_authentik did: "gate|n
 [[ "$(first_start 0 successful)" == "gate fails=0 waited" ]] || fail_ "discovered while waiting: the gate and cards follow in the same run: $(first_start 0 successful)"; pass
 [[ "$(first_start 0 "")" == "nogate fails=1 waited" ]] || fail_ "never discovered: a failure, not a quiet success: $(first_start 0 "")"; pass
 [[ "$(first_start 1 "")" == "nogate fails=0 nowait" ]] || fail_ "a dry run reports without waiting: $(first_start 1 "")"; pass
+why_said() { # why_said STATUS APPLIED-HASH -> the reason wire gives for applying (dry run)
+    ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
+      authentik_blueprint_status() { echo "$ST"; }
+      authentik_blueprint_instance() { jq -cn --arg h "$HASH" '{last_applied_hash:$h}'; }
+      wire_authentik_gate() { :; }
+      WIRE_DRY=1 ST=$1 HASH=$2; wire_authentik 2>&1 | sed -n 's/.*portal setup now (\(.*\))$/\1/p' )
+}
+[[ "$(why_said outdated "")" == "authentik has not applied it yet" ]] || fail_ "a first start is not 'an earlier version': $(why_said outdated "")"; pass
+[[ "$(why_said outdated abc123)" == "an earlier version is in place" ]] || fail_ "an older file applied: $(why_said outdated abc123)"; pass
+[[ "$(why_said error abc123)" == "its last apply failed" ]] || fail_ "a failed apply: $(why_said error abc123)"; pass
 
 # ---- ports close with the portal; logins trust it only once they have ----
 printf 'COMPOSE_PROFILES=x\n' > "$ENV_FILE"
