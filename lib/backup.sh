@@ -89,32 +89,26 @@ point_record() { # point_record DEST KIND NOTE SVC... — images.lock and meta, 
 
 cmd_backup_list() { # backup list [svc] — every restore point, newest first; with a service, what it ran in each
     load_env
-    local svc=${1:-} broot run="" d ts rel kind note ver ref mark
-    local tsglob='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]'
+    local svc=${1:-} broot run="" tgt="" rel ts kind note ver mark
     broot=$(env_get BACKUP_ROOT)
     if [[ -n "$svc" ]]; then
         svc_exists "$svc" || die "No service '$svc'."
         c_inspect_all; run=$(svc_digest "$svc")
+        [[ -z "$run" ]] || tgt=$(rollback_target "$broot" "$svc" "$run") || tgt=""
     fi
-    local rows
-    rows=$(for d in "$broot"/$tsglob "$broot"/pre-update/$tsglob; do
-               [[ -d "$d" ]] || continue
-               [[ -z "$svc" || -f "$d/$svc.tar.gz" ]] || continue
-               printf '%s\t%s\n' "$(basename "$d")" "${d#"$broot"/}"
-           done | sort -r)
+    local rows; rows=$(points_holding "$broot" "$svc")
     [[ -n "$rows" ]] || { info "No restore points${svc:+ holding $svc} under $broot yet — take one: ./mediastack.sh backup"; return 0; }
-    if [[ -n "$svc" ]]; then printf '  %-15s  %-13s  %-26s  %-7s  %s\n' WHEN KIND "$(tr '[:lower:]' '[:upper:]' <<<"$svc")" "" NOTE
+    if [[ -n "$svc" ]]; then printf '  %-15s  %-13s  %-26s  %-8s  %s\n' WHEN KIND "$(tr '[:lower:]' '[:upper:]' <<<"$svc")" "" NOTE
     else printf '  %-15s  %-13s  %s\n' WHEN KIND NOTE; fi
-    while IFS=$'\t' read -r ts rel; do
-        kind=$(point_meta "$broot/$rel" kind); note=$(point_meta "$broot/$rel" note)
-        # a point from before meta: the scoped pool only ever held update-scoped ones
-        [[ -n "$kind" ]] || { [[ "$rel" == pre-update/* ]] && kind=update-scoped || kind=unknown; }
+    while read -r rel; do
+        ts=${rel#pre-update/}; kind=$(point_kind "$broot/$rel" "$rel"); note=$(point_meta "$broot/$rel" note)
         if [[ -n "$svc" ]]; then
-            ver=$(awk -v s="$svc" '$1==s {print $2}' "$broot/$rel/meta" 2>/dev/null || true)
-            ref=$(awk -v s="$svc" '$1==s {print $2}' "$broot/$rel/images.lock" 2>/dev/null || true)
-            [[ -n "$ver" && "$ver" != - ]] || ver=${ref#*@}; ver=${ver:0:26}
-            mark=""; [[ -n "$run" && "$ref" == "$run" ]] && mark=running
-            printf '  %-15s  %-13s  %-26s  %-7s  %s\n' "$ts" "$kind" "${ver:-?}" "$mark" "$note"
+            ver=$(point_version "$broot/$rel" "$svc")
+            # current: the image running now; rollback: where `rollback <svc>` goes
+            mark=""
+            [[ -n "$run" && "$(awk -v s="$svc" '$1==s {print $2}' "$broot/$rel/images.lock" 2>/dev/null || true)" == "$run" ]] && mark=current
+            [[ "$rel" == "$tgt" ]] && mark=rollback
+            printf '  %-15s  %-13s  %-26s  %-8s  %s\n' "$ts" "$kind" "${ver:0:26}" "$mark" "$note"
         else
             printf '  %-15s  %-13s  %s\n' "$ts" "$kind" "$note"
         fi
@@ -421,7 +415,98 @@ cmd_restore() {
     ok "Restore done. Verify with: ./mediastack.sh status"
 }
 
-cmd_rollback() { cmd_restore --service "${1:?usage: rollback <service>}"; }
+# rollback returns a service to the image that ran before its current one —
+# the newest restore point holding a different image (a second rollback
+# undoes the first); --from picks any point instead. Its config goes back
+# with the image (a newer version may have upgraded its data), so it shows
+# what it will do and asks first; --yes is for the panel and scripts.
+cmd_rollback() {
+    local usage="usage: rollback <svc> [--from TS] [--yes]" svc="" from="" yes=0
+    while (( $# )); do case "$1" in
+        --from) [[ -n "${2:-}" ]] || die "$usage"; from=$2; shift 2 ;;
+        --yes)  yes=1; shift ;;
+        -*)     die "Unknown rollback arg '$1' ($usage)" ;;
+        *)      [[ -z "$svc" ]] || die "$usage"; svc=$1; shift ;;
+    esac; done
+    [[ -n "$svc" ]] || die "$usage"
+    load_env
+    svc_exists "$svc" || die "No service '$svc'."
+    local broot run rel ts
+    broot=$(env_get BACKUP_ROOT)
+    c_inspect_all; run=$(svc_digest "$svc")
+    if [[ -n "$from" ]]; then
+        rel=$(point_resolve "$broot" "$from") || die "No restore point '$from' under $broot — see: ./mediastack.sh backup list $svc"
+        [[ -f "$broot/$rel/$svc.tar.gz" ]] || die "Restore point '$from' does not hold $svc — see: ./mediastack.sh backup list $svc"
+    else
+        [[ -n "$run" ]] || die "rollback: cannot tell which image $svc runs (is it up?) — pick a point: ./mediastack.sh backup list $svc, then: rollback $svc --from <ts>"
+        rel=$(rollback_target "$broot" "$svc" "$run") || die "No restore point holds an earlier image of $svc than the one it runs.
+  To run a specific version instead: ./mediastack.sh update $svc --to <tag>
+  That changes only the image: an older version may not read data a newer one
+  upgraded — if it fails, 'rollback $svc' returns to the point update takes first."
+    fi
+    ts=${rel#pre-update/}
+    local age; age=$(ts_age_hours "$ts") || age=""
+    hr "rollback $svc"
+    echo "  back to:     $(point_version "$broot/$rel" "$svc") (restore point $ts, $(point_kind "$broot/$rel" "$rel")${age:+, $(age_words "$age") old})"
+    echo "  running now: $(running_version "$svc" "$run")"
+    echo "  $svc's data since then — its settings, database, history — is replaced;"
+    echo "  the current folder is kept as $svc.pre-restore.<now>. It stays on that"
+    echo "  image until: ./mediastack.sh unpin $svc"
+    if (( ! yes )); then
+        [[ -t 0 ]] || die "rollback replaces $svc's data, so it asks first — run it in a terminal, or add --yes"
+        confirm "Roll $svc back?" || { info "Nothing changed."; return 0; }
+    fi
+    cmd_restore --service "$svc" --from "$rel"
+}
+
+rollback_target() { # rollback_target BROOT SVC RUNNING-DIGEST -> the newest point (broot-relative) holding a different image; rc 1 if none
+    local rel ref
+    while read -r rel; do
+        ref=$(awk -v s="$2" '$1==s {print $2}' "$1/$rel/images.lock" 2>/dev/null || true)
+        [[ -n "$ref" && "$ref" != "$3" ]] && { echo "$rel"; return 0; }
+    done < <(points_holding "$1" "$2")
+    return 1
+}
+
+points_holding() { # points_holding BROOT [SVC] -> complete points (broot-relative), newest first, both pools; with SVC only those holding it
+    local d tsglob='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]'
+    for d in "$1"/$tsglob "$1"/pre-update/$tsglob; do
+        [[ -d "$d" ]] || continue
+        [[ -z "${2:-}" || -f "$d/$2.tar.gz" ]] || continue
+        printf '%s\t%s\n' "$(basename "$d")" "${d#"$1"/}"
+    done | sort -r | cut -f2
+}
+
+point_resolve() { # point_resolve BROOT TS|pre-update/TS -> the point, broot-relative; rc 1 if none
+    local p
+    for p in "$2" "pre-update/$2"; do
+        [[ "$p" =~ ^(pre-update/)?[0-9]{8}-[0-9]{6}$ && -d "$1/$p" ]] && { echo "$p"; return 0; }
+    done
+    return 1
+}
+
+point_kind() { # point_kind POINT REL -> its kind; a point from before meta: update-scoped in the scoped pool, else unknown
+    local k; k=$(point_meta "$1" kind)
+    [[ -n "$k" ]] && { echo "$k"; return 0; }
+    [[ "$2" == pre-update/* ]] && echo update-scoped || echo unknown
+}
+
+point_version() { # point_version POINT SVC -> the version it holds (its digest when no version was recorded)
+    local ver ref
+    ver=$(awk -v s="$2" '$1==s {print $2}' "$1/meta" 2>/dev/null || true)
+    ref=$(awk -v s="$2" '$1==s {print $2}' "$1/images.lock" 2>/dev/null || true)
+    [[ -n "$ver" && "$ver" != - ]] || ver=${ref#*@}
+    echo "${ver:-?}"
+}
+
+running_version() { # running_version SVC DIGEST -> its version label, else the digest
+    local v; v=$(c_version "$(svc_cname "$1")" || true)
+    [[ -n "$v" ]] && echo "$v" || echo "${2#*@}"
+}
+
+age_words() { # age_words HOURS -> "5 hours" / "3 days"
+    if (( $1 < 48 )); then echo "$1 hours"; else echo "$(( $1 / 24 )) days"; fi
+}
 
 # ------------------------------------------------------------------ update --
 pin_shard_to() { # pin_shard_to <primary> <tag> — the primary, and every member released in lockstep with it

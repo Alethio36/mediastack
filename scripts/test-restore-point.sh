@@ -11,7 +11,10 @@
 # point is built as <ts>.partial, never picked until complete, and a leftover
 # is removed by the next prune. The boot unit is 644.
 # Every point records its kind, a note and each service's version (meta);
-# `backup list [svc]` shows them newest first, marking what is running.
+# `backup list [svc]` shows them newest first, marking the running image
+# (current) and rollback's target. rollback goes to the newest point holding
+# a different image (a second one undoes the first), --from to any point; it
+# shows its plan and asks, and outside a terminal needs --yes.
 #
 #   scripts/test-restore-point.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -166,12 +169,43 @@ grep -q '20260926-000000  manual  *before the rebuild' <<<"$all" || fail_ "kind 
 cmd_backup_list sonarr > "$T/one"; one=$(cat "$T/one")
 grep -q 'WHEN  *KIND  *SONARR  *NOTE' <<<"$one" || fail_ "the service names the version column: $one"; pass
 ! grep -q 20260926-000000 <<<"$one" || fail_ "a point without the service is not listed for it"; pass
-grep -q '20260929-040000  scheduled  *4.0.15  *running' <<<"$one" || fail_ "the point matching what runs is marked: $one"; pass
-grep -q '20260928-030000  update  *4.0.14 *$' <<<"$one" && ! grep -q '4.0.14.*running' <<<"$one" || fail_ "an older version, unmarked: $one"; pass
+grep -q '20260929-040000  scheduled  *4.0.15  *current' <<<"$one" || fail_ "the point holding the running image is 'current': $one"; pass
+grep -q '20260928-120000  update-scoped  *sha256:old14  *rollback' <<<"$one" || fail_ "rollback's target is marked: $one"; pass
+[[ "$(grep -c 'rollback' <<<"$one")" == 1 ]] || fail_ "one rollback target: $one"; pass
+grep -q '20260928-030000  update  *4.0.14 *$' <<<"$one" || fail_ "an older version, unmarked: $one"; pass
 grep -q '20260928-120000  update-scoped  *sha256:old14' <<<"$one" || fail_ "a scoped point from before meta: update-scoped, its digest: $one"; pass
 grep -q '20260927-120000  unknown  *sha256:old13' <<<"$one" || fail_ "a full point from before meta: unknown, its digest: $one"; pass
 ( cmd_backup_list radarr ) >/dev/null 2>&1 && fail_ "an unknown service is refused"; pass
 printf 'BACKUP_ROOT=%s/none\n' "$T" > "$ENV_FILE"
 [[ -z "$(cmd_backup_list 2>/dev/null)" ]] || fail_ "no points: a hint, no table"; pass
+
+# ---- rollback: the image that ran before, shown and confirmed first ----
+printf 'BACKUP_ROOT=%s/bl\n' "$T" > "$ENV_FILE"
+[[ "$(rollback_target "$B" sonarr repo/sonarr@sha256:sonarrd)" == pre-update/20260928-120000 ]] \
+    || fail_ "the newest point with a different image (either pool)"; pass
+[[ "$(rollback_target "$B" sonarr repo/sonarr@sha256:old14)" == 20260929-040000 ]] \
+    || fail_ "after a rollback, the image that ran before it (a second rollback undoes the first)"; pass
+[[ "$(rollback_target "$B" sonarr repo/sonarr@sha256:elsewhere)" == 20260929-040000 ]] \
+    || fail_ "an image no point holds (update --to): the newest point"; pass
+mkdir -p "$T/single/20260929-040000"; : > "$T/single/20260929-040000/sonarr.tar.gz"; echo "sonarr repo/sonarr@sha256:x" > "$T/single/20260929-040000/images.lock"
+! rollback_target "$T/single" sonarr repo/sonarr@sha256:x >/dev/null || fail_ "every point holds the running image: none"; pass
+[[ "$(point_resolve "$B" 20260928-120000)" == pre-update/20260928-120000 ]] || fail_ "--from finds a scoped point by its timestamp"; pass
+[[ "$(point_resolve "$B" pre-update/20260928-120000)" == pre-update/20260928-120000 ]] || fail_ "--from takes the pool-relative form"; pass
+! point_resolve "$B" 20260930-010000.partial >/dev/null && ! point_resolve "$B" ../x >/dev/null || fail_ "--from never reaches a .partial or outside the pools"; pass
+cmd_restore() { echo "RESTORE $*" >> "$T/rb"; }; confirm() { echo "ASKED" >> "$T/rb"; [[ "${ANSWER:-n}" == y ]]; }
+svc_digest() { echo repo/sonarr@sha256:sonarrd; }; c_version() { echo 4.0.15; }; hr() { :; }
+rb() { rm -f "$T/rb"; ( cmd_rollback "$@" ) > "$T/rbout" 2>&1; echo "rc=$? $(cat "$T/rb" 2>/dev/null | tr '\n' '|')"; }
+[[ "$(rb sonarr < /dev/null)" == "rc=1 " ]] && grep -q "asks first — run it in a terminal, or add --yes" "$T/rbout" \
+    || fail_ "outside a terminal without --yes: refused, nothing restored: $(cat "$T/rbout")"; pass
+grep -q 'back to:     sha256:old14 (restore point 20260928-120000, update-scoped' "$T/rbout" && grep -q 'running now: 4.0.15' "$T/rbout" \
+    && grep -q 'kept as sonarr.pre-restore' "$T/rbout" || fail_ "the plan: target and its point, what runs now, what is replaced and kept: $(cat "$T/rbout")"; pass
+[[ "$(rb sonarr --yes)" == "rc=0 RESTORE --service sonarr --from pre-update/20260928-120000|" ]] || fail_ "--yes: restored from the target, no question"; pass
+[[ "$(rb sonarr --from 20260927-120000 --yes)" == "rc=0 RESTORE --service sonarr --from 20260927-120000|" ]] || fail_ "--from: that point"; pass
+[[ "$(rb sonarr --from 20250101-000000 --yes)" == "rc=1 " ]] && grep -q "No restore point '20250101-000000'" "$T/rbout" || fail_ "--from an unknown point: refused"; pass
+[[ "$(rb sonarr --from 20260926-000000 --yes)" == "rc=1 " ]] && grep -q "does not hold sonarr" "$T/rbout" || fail_ "--from a point without the service: refused"; pass
+printf 'BACKUP_ROOT=%s/single\n' "$T" > "$ENV_FILE"; svc_digest() { echo repo/sonarr@sha256:x; }
+[[ "$(rb sonarr --yes)" == "rc=1 " ]] && grep -q "update sonarr --to <tag>" "$T/rbout" || fail_ "no earlier image: points at update --to, with its caveat: $(cat "$T/rbout")"; pass
+[[ "$(rb a b c d)" == "rc=1 " ]] && grep -q "usage: rollback <svc> \[--from TS\] \[--yes\]" "$T/rbout" || fail_ "extra arguments: refused by rollback itself (the registry passes them now)"; pass
+grep -q 'rollback {svc:entity=svc_rollback:Service to roll back} --yes~' lib/frontdoor.sh || fail_ "the panel's button passes --yes (it confirms in its own dialog)"; pass
 
 echo "OK restore-point: $checks checks"

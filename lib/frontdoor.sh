@@ -158,7 +158,7 @@ PANEL=(
     "Maintenance~Update stack~⬆️~300~update~Confirm|Takes a restore point, then pulls and applies new images for every service.~single"
     "Maintenance~Backup now~💾~300~backup~Confirm|Stops the stack briefly and writes a new restore point.~single"
     "Maintenance~Verify backup~🔍~120~backup verify~~"
-    "Maintenance~Rollback service~⏮️~300~rollback {svc:entity=svc_rollback:Service to roll back}~Confirm|Restores its config and image from the newest restore point, then pins it.~"
+    "Maintenance~Rollback service~⏮️~300~rollback {svc:entity=svc_rollback:Service to roll back} --yes~Confirm|Returns it to the image it ran before, with its config from then (its data since is replaced; the current folder is kept), then pins it.~"
     "Maintenance~Unpin service~📌~180~unpin {svc:entity=svc_unpin:Service to unpin}~Confirm|Releases the pin: the next update includes it again.~"
     "Maintenance~Apply / reconcile~🔁~300~up~Confirm|Applies pending changes; services whose settings changed restart.~single"
     "Maintenance~Fix perms~🔧~120~fix-perms {svc:entity=svc_fixperms:Service}~Confirm~"

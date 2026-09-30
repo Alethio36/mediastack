@@ -1048,7 +1048,7 @@ VERBS=(
     "backup~backup [--note TEXT] | verify [TS] | list [svc]~free~Maintain~Take a restore point now (cold); 'verify' checks checksums and archives; 'list' shows every point (kind, note, a service's version)."
     "manifest~manifest [--accept|diff [A [B]]|find <text>]~free~Maintain~Snapshot the media library now; 'diff' shows what was lost between snapshots; 'find' says when a path was last seen."
     "restore~restore --service <svc>|--all [--from TS]~free~Maintain~Restore configs + image from a restore point."
-    "rollback~rollback <svc>~max=1~Maintain~Restore one service from the newest restore point and pin it there."
+    "rollback~rollback <svc> [--from TS] [--yes]~free~Maintain~Return one service to the image it ran before (its config with it) and pin it there; --from picks a point. Asks first."
     "unpin~unpin <svc>~max=1~Maintain~Release a pinned service back to normal updates."
     "upgrade~upgrade~none~Maintain~Mediastack itself: git pull + .env migration, then says whether up has anything to apply (images stay put: update)."
     "wire~wire [app] [--dry-run|--verify]~free~Connect~Connect the apps to each other; idempotent, GUI changes never overwritten (addresses it made follow VPN toggles)."
