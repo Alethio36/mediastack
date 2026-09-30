@@ -203,26 +203,28 @@ _configure_services() {
     local cur_list cur_n=0 def=1
     cur_list=$(env_get COMPOSE_PROFILES)
     [[ -n "$cur_list" ]] && { cur_n=$(tr ',' '\n' <<<"$cur_list" | grep -c .); def=0; }
-    explain "Services" \
-"Pick exactly what runs — anything, à la carte. Dependencies are handled
+    local -a menu=("Pick exactly what runs — anything, à la carte. Dependencies are handled
 for you (picking qBittorrent brings the VPN; JellySearch brings its
-search engine). Change any of this later with enable/disable." \
-"  1) standard    the recommended setup: VPN, qBittorrent, Sonarr, Radarr," \
-"                 Prowlarr, Jellyfin + instant search, request site." \
-"                 No proxy: services answer on http://<host>:<port>; add" \
-"                 HTTPS names later with: enable traefik + traefik-setup" \
-"  2) everything  all $(svc_managed | wc -l) services" \
-"  3) custom      yes/no through each service" \
-"$( (( cur_n )) && echo "  0) keep current: $cur_n enabled ($(tr ',' ' ' <<<"$cur_list"))" )"
+search engine). Change any of this later with enable/disable. How people
+sign in (none, Wizarr or authentik) is asked next."
+"  1) standard    the recommended setup: VPN, qBittorrent, Sonarr, Radarr,"
+"                 Prowlarr, Jellyfin + instant search, request site."
+"                 No proxy: services answer on http://<host>:<port>; add"
+"                 HTTPS names later with: enable traefik + traefik-setup"
+"  2) everything  all $(svc_managed | wc -l) services"
+"  3) custom      yes/no through each service")
+    (( cur_n )) && menu+=("  0) keep current: $cur_n enabled ($(tr ',' ' ' <<<"$cur_list"))")
+    explain "Services" "${menu[@]}"
     local mode sel="" cur_en s d dp
     ask SVC_MODE "Choice" "$def"; mode="$REPLY_VAL"
     cur_en=",$cur_list,"
     case "$mode" in
         0) (( cur_n )) || die "Nothing is enabled yet — pick 1, 2 or 3."
-           ok "Keeping the current $cur_n service(s): $cur_list"; return 0 ;;
+           sel=$(tr ',' ' ' <<<"$cur_list") ;;
         1) sel="$STD" ;;
         2) sel=$(svc_managed | tr '\n' ' ') ;;
         3) for s in $(svc_managed); do
+               case "$s" in wizarr|authentik) continue ;; esac   # the Accounts question decides these
                d=$(svc_label "$s" mediastack.desc)
                # default: current state if configured before, else standard membership
                local dp def
@@ -238,6 +240,11 @@ search engine). Change any of this later with enable/disable." \
         *) die "Unknown choice '$mode' — expected 0, 1, 2 or 3." ;;
     esac
     [[ -n "$sel" ]] || die "No services selected — nothing to run."
+    # shellcheck disable=SC2086  # a word list of services
+    accounts_choose "$cur_list" $sel; sel=$ACCOUNTS_SEL
+    if [[ "$mode" == 0 ]] && (( ! ACCOUNTS_CHANGED )); then
+        ok "Keeping the current $cur_n service(s): $cur_list"; return 0   # nothing changed: .env untouched
+    fi
     info "Resolving dependencies..."
     sel=$(resolve_deps $sel)
     # services that do the same job two ways (mediastack.conflicts): keep one
@@ -264,6 +271,45 @@ on the login and sign-up pages (\"Join <name>\")."
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     ok "Enabled: $(env_get COMPOSE_PROFILES)"
 
+}
+
+# How people get into the apps: one account model at most (they conflict —
+# two populations, duplicate names). Asked every time, whatever the preset;
+# a re-run defaults to the current one.
+accounts_choose() { # accounts_choose CURRENT-PROFILES SVC... -> ACCOUNTS_SEL: the selection with the chosen model in it (the other out)
+    local cur=",$1," model="" c s; shift
+    [[ "$cur" == *",authentik,"* ]] && model=authentik
+    [[ "$cur" == *",wizarr,"* ]] && model=wizarr
+    [[ -z "$model" && "$cur" != ",," ]] && model=none
+    local -a menu=("How do people get into your media apps?"
+"  1) none       you make each person's accounts yourself, in each app"
+"                (Jellyfin's dashboard and so on). Simplest; nothing extra runs."
+"  2) Wizarr     invite links: a person opens one and gets their Jellyfin"
+"                account. Every app keeps its own login."
+"  3) authentik  one portal: people join by invitation and sign in once for"
+"                every app; admin tools sit behind it. Adds 4 containers.")
+    [[ -z "$model" ]] || menu+=("  0) keep current: $model")
+    explain "Accounts" "${menu[@]}"
+    while true; do
+        ask ACCOUNTS "Choice" "$( [[ -n "$model" ]] && echo 0 || echo 1 )"
+        case "$REPLY_VAL" in
+            0) [[ -n "$model" ]] || { fail "Nothing to keep."; continue; }; c=$model ;;
+            1) c=none ;; 2) c=wizarr ;; 3) c=authentik ;;
+            *) fail "Pick $( [[ -n "$model" ]] && echo 0-3 || echo 1-3 )."; continue ;;
+        esac
+        break
+    done
+    if [[ "$model" == authentik && "$c" != authentik ]]; then
+        warn "Leaving the portal: people's portal accounts stay in authentik's database, but nobody can sign in"
+        warn "  with them — every app goes back to its own login."
+    elif [[ -n "$model" && "$model" != authentik && "$c" == authentik ]]; then
+        info "Existing app accounts stay; tie each person's to their portal account with: ./mediastack.sh link-account <user>"
+    fi
+    ACCOUNTS_CHANGED=0; [[ "$c" == "${model:-none}" ]] || ACCOUNTS_CHANGED=1
+    ACCOUNTS_SEL=""
+    for s in "$@"; do [[ "$s" == wizarr || "$s" == authentik ]] || ACCOUNTS_SEL+="$s "; done
+    [[ "$c" == none ]] || ACCOUNTS_SEL+="$c"
+    ok "Accounts: $c"
 }
 
 _configure_vpn() {

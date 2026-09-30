@@ -54,11 +54,14 @@ git clone <this-repo> && cd mediastack
 interactive menu. Passwords the stack created: `credentials`; every
 service's address: `status`.
 
-How your household signs in is your choice, and one at most: each app's own
-accounts, Wizarr invitations, or the portal (authentik — one login for every
-app; see "The portal and the gate"). With Wizarr, its one-time first run is
-the only hands-on step — `wire` walks you through it with the exact values to
-paste.
+How your household signs in is your choice, and one at most — `configure`
+asks it on its own, whatever services you picked: **none** (you make each
+person's accounts in each app), **Wizarr** (invitation links; each app keeps
+its own login) or **authentik** (the portal — one login for every app; see
+"The portal and the gate"). Re-run `configure` to switch; leaving the portal
+warns you first (its accounts stay in its database, unusable, and every app
+goes back to its own login). With Wizarr, its one-time first run is the only
+hands-on step — `wire` walks you through it with the exact values to paste.
 
 **Release channels.** A clone follows `stable`, the default branch, and
 `upgrade` pulls whatever branch is checked out. `unstable` gets every change
@@ -111,7 +114,7 @@ Setup
 | command | what it does |
 |---|---|
 | `install` | host dependencies (Docker, jq, ...) on Debian/Ubuntu |
-| `configure` | interactive wizard; safe to re-run, answers become defaults. Changing a root's path offers to move its contents (stack stopped, copy verified before the old copy goes) or to leave them and have `doctor` remind you; `DATA_ROOT` is never moved by the script |
+| `configure` | interactive wizard: folders, services, how people sign in (none / Wizarr / authentik), VPN, update and backup schedules; safe to re-run, answers become defaults. Changing a root's path offers to move its contents (stack stopped, copy verified before the old copy goes) or to leave them and have `doctor` remind you; `DATA_ROOT` is never moved by the script |
 | `add-mount` | guided NFS/SMB mount for media (fstab automount + poison layer) |
 
 Run
@@ -607,8 +610,9 @@ the domain address is the way in — and the arrs trust the portal (one login;
 Bazarr's `/api` skips the gate and still demands their API key. The others
 still ask for their own login behind the portal for now. Disabling authentik
 gives every arr its own login back — verified — before the ports reopen. After
-enabling authentik, run `./mediastack.sh wire authentik` once: it attaches the
-gate and adds the admin cards to your dashboard (doctor fails until it has).
+enabling authentik, run `./mediastack.sh wire` once: it waits for the portal's
+first start, attaches the gate, adds the admin cards to your dashboard and
+switches Jellyfin's sign-in to the portal (doctor fails until it has).
 
 ## Invites (Wizarr)
 
