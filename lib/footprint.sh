@@ -30,7 +30,8 @@ FOOTPRINT_FEATURES=(timers panel audit mounts users deps)
 
 fp_timers() {
     local u
-    for u in mediastack-update.timer mediastack-update.service mediastack-manifest.timer \
+    for u in mediastack-update.timer mediastack-update.service mediastack-backup.timer \
+             mediastack-backup.service mediastack-manifest.timer \
              mediastack-manifest.service mediastack-vpnguard.service; do
         printf 'timers\tunit\t%s/%s\tremove\n' "$SYSTEMD_DIR" "$u"
     done

@@ -247,3 +247,12 @@ migrate_env_28_to_29() {
     # of the value (so 'skip' could never match) — keep just the value
     sed -i -E 's/^(UPDATE_DEFER_ACTION=[a-z]+)[[:space:]]+#.*$/\1/' "$ENV_FILE"
 }
+migrate_env_29_to_30() {
+    # a backup timer of its own: daily, an hour after the update time (04:00
+    # when updates are off) — restore points no longer depend on updates
+    grep -qE '^BACKUP_SCHEDULE=' "$ENV_FILE" && return 0
+    local t; t=$(sched_time_after "$(env_get UPDATE_SCHEDULE)")
+    env_set BACKUP_SCHEDULE "*-*-* $t"
+    info "New: daily automatic backups at $t (BACKUP_SCHEDULE) — skipped on nights an update already took a restore point."
+    info "  Install its timer: ./mediastack.sh apply-timer   —   change it: ./mediastack.sh configure"
+}

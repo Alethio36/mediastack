@@ -32,7 +32,7 @@ STOP_MARKER="$LOCAL_DIR/stopped-for-backup"       # marker: a backup has service
 STATE_DIR="$LOCAL_DIR/state"                      # pending work: one file per marker (state_get/state_set)
 ENV_BACKUP_DIR="$LOCAL_DIR/env-backups"           # .env before each schema migration
 ENV_BACKUP_KEEP=10                                # the oldest (your original) + the newest 9
-SCRIPT_SCHEMA=29
+SCRIPT_SCHEMA=30
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -1044,8 +1044,8 @@ VERBS=(
     "status~status [svc]~max=1~Run~Overview table of every service, or a deep view of one."
     "logs~logs <svc> [--no-follow]~free~Run~Follow one service's logs (--no-follow: bounded snapshot)."
     "update~update [svc] [--to TAG] [--dry-run|--now]~free~Maintain~Container images: backup, pull, apply (toggles + pins respected)."
-    "apply-timer~apply-timer~none~Maintain~Install/refresh the systemd timers from UPDATE_SCHEDULE and MANIFEST_SCHEDULE."
-    "backup~backup [--note TEXT] | verify [TS] | list [svc]~free~Maintain~Take a restore point now (cold); 'verify' checks checksums and archives; 'list' shows every point (kind, note, a service's version)."
+    "apply-timer~apply-timer~none~Maintain~Install/refresh the systemd timers from UPDATE_SCHEDULE, BACKUP_SCHEDULE and MANIFEST_SCHEDULE."
+    "backup~backup [--note TEXT] | verify [TS] | list [svc]~free~Maintain~Take a restore point now (cold); 'verify' checks checksums and archives; 'list' shows every point (kind, note, a service's version). The timer runs 'backup --auto'."
     "manifest~manifest [--accept|diff [A [B]]|find <text>]~free~Maintain~Snapshot the media library now; 'diff' shows what was lost between snapshots; 'find' says when a path was last seen."
     "restore~restore --service <svc>|--all [--from TS]~free~Maintain~Restore configs + image from a restore point."
     "rollback~rollback <svc> [--from TS] [--yes]~free~Maintain~Return one service to the image it ran before (its config with it) and pin it there; --from picks a point. Asks first."

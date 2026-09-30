@@ -123,14 +123,29 @@ ask_secret() { # ask_secret "prompt" "generated-default" -> REPLY_VAL
     done
 }
 
-ask_time() { # 24h HH:MM prompt with validation -> REPLY_VAL
+ask_time() { # ask_time [DEFAULT] — 24h HH:MM prompt with validation -> REPLY_VAL
     while true; do
-        ask UPD_TIME "Time (24h, HH:MM)" "04:00"
+        ask UPD_TIME "Time (24h, HH:MM)" "${1:-04:00}"
         [[ "$REPLY_VAL" =~ ^([01][0-9]|2[0-3]):[0-5][0-9]$ ]] && return 0
         fail "'$REPLY_VAL' is not a valid HH:MM time (e.g. 04:00, 23:30)."
     done
 }
 
+sched_time_after() { # sched_time_after EXPR -> HH:MM one hour after EXPR's time (04:00 when EXPR has none)
+    local h m
+    [[ "$1" =~ ([0-9]{1,2}):([0-9]{2})(:[0-9]{2})?$ ]] || { echo 04:00; return 0; }
+    h=$(( (10#${BASH_REMATCH[1]} + 1) % 24 )); m=${BASH_REMATCH[2]}
+    printf '%02d:%s\n' "$h" "$m"
+}
+sched_words() { # sched_words EXPR -> the wizard's words for it ("never" when empty)
+    case "$1" in
+        "")                  echo never ;;
+        "*-*-* "*)           echo "daily ${1#"*-*-* "}" ;;
+        "Mon..Fri "*)        echo "weekdays ${1#Mon..Fri }" ;;
+        "Sat,Sun "*)         echo "weekends ${1#Sat,Sun }" ;;
+        *)                   echo "$1" ;;
+    esac
+}
 
 # ------------------------------------------------------------ filesystem --
 abspath() { case "$1" in /*) echo "$1" ;; *) echo "$SCRIPT_DIR/${1#./}" ;; esac; }

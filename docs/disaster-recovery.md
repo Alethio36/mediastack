@@ -42,6 +42,22 @@ accounts (Jellyfin's local admin, Audiobookshelf's root, Kavita's admin) stay
 the way in while the portal is down: their logins are in `credentials`, and
 the password forms are behind the addresses `credentials` prints.
 
+## When restore points are taken
+
+Two timers, asked together by `configure` (each can be `never`):
+
+* **Updates** (`UPDATE_SCHEDULE`) take a full restore point before pulling.
+* **Backups** (`BACKUP_SCHEDULE`, suggested daily, an hour after the update)
+  take one on their own — and skip when a full point under 6 hours old
+  exists, since an update's covers every service. A scoped `update <svc>`
+  point never counts. Put the backup after the update: before it, update
+  days get two points.
+
+The two never run at once: a timer's run waits for the other (up to 6 hours;
+past that it is skipped and ops is told), and one you start by hand refuses
+while either runs. Both wait while someone streams (`UPDATE_DEFER_*`).
+`backup` by hand always runs.
+
 ## Restore-point retention
 
 Tiered (grandfather-father-son), pruned after every backup, knobs in `.env`:

@@ -344,56 +344,94 @@ shares the stack's network."
 
 }
 
-_configure_schedule() {
-    # -- update schedule
-    local sched_cur; sched_cur=$(env_get UPDATE_SCHEDULE)
-    explain "Automatic updates" \
-"Nightly-style pipeline: restore point first, then pull + apply, then a
-health check — one command rolls anything back. Updates briefly stop
-services, so pick a quiet time for YOUR users." \
-"  1) daily       every day at a time you pick" \
-"  2) weekly      one day a week (a good default for a stable stack)" \
-"  3) weekdays    Mon–Fri at a time you pick" \
-"  4) weekends    Sat+Sun at a time you pick" \
-"  5) custom      raw systemd OnCalendar expression" \
-"  6) never       manual './mediastack.sh update' only" \
-"$( [[ -n "$sched_cur" ]] && echo "  0) keep current: $sched_cur" )"
-    local expr="" day
+_configure_schedule() { # updates and backups: two timers, one section — suggested answers, your call
+    explain "Schedules" \
+"Two jobs run on their own, each on its own schedule:
+  Updates  pull new versions of your services. A restore point of every
+           service is taken first, so './mediastack.sh rollback <svc>'
+           can undo one.
+  Backups  take that same kind of restore point: every service's settings
+           and data (never your media). If an update took one within the
+           last 6 hours, the backup skips — its restore point already
+           covers everything.
+Both stop all services briefly (~20-40s for the restore point), and both
+wait while someone is streaming. Pick quiet times for YOUR household."
     while true; do
-        ask SCHED_MODE "Choice" "$( [[ -n "$sched_cur" ]] && echo 0 || echo 1 )"
+        sched_choose UPDATE_SCHEDULE Updates 2 04:00 "manual './mediastack.sh update' only"
+        sched_choose BACKUP_SCHEDULE Backups 1 "$(sched_time_after "$(env_get UPDATE_SCHEDULE)")" \
+            "only updates and './mediastack.sh backup' take restore points"
+        sched_summary
+        ask SCHED_KEEP "Keep these? (y/n)" y
+        [[ "${REPLY_VAL,,}" == n* ]] || break
+    done
+}
+
+sched_choose() { # sched_choose VAR TITLE DEFAULT-CHOICE DEFAULT-TIME NEVER-TEXT -> VAR set in .env ("" = never)
+    local var=$1 title=$2 defc=$3 deft=$4 never=$5 cur expr day c
+    cur=$(env_get "$var")
+    local -a line=("" "daily       every day at a time you pick" "weekly      one day a week" \
+                   "weekdays    Mon-Fri" "weekends    Sat+Sun" "custom      raw systemd OnCalendar expression" \
+                   "never       $never")
+    echo; echo "$title:"
+    for c in 1 2 3 4 5 6; do
+        printf '  %s) %s%s\n' "$c" "${line[$c]}" "$( [[ "$c" == "$defc" ]] && echo " (recommended)" )"
+    done
+    [[ -n "$cur" ]] && echo "  0) keep current: $(sched_words "$cur")"
+    while true; do
+        ask SCHED_MODE "Choice" "$( [[ -n "$cur" ]] && echo 0 || echo "$defc" )"
+        expr=""
         case "$REPLY_VAL" in
-            0) [[ -n "$sched_cur" ]] || { fail "Nothing to keep."; continue; }
-               expr="$sched_cur" ;;
-            1) ask_time; expr="*-*-* $REPLY_VAL" ;;
+            0) [[ -n "$cur" ]] || { fail "Nothing to keep."; continue; }
+               expr=$cur ;;
+            1) ask_time "$deft"; expr="*-*-* $REPLY_VAL" ;;
             2) while true; do
-                   ask UPD_DAY "Day (Mon/Tue/Wed/Thu/Fri/Sat/Sun)" "Tue"
+                   ask SCHED_DAY "Day (Mon/Tue/Wed/Thu/Fri/Sat/Sun)" "Tue"
                    day="${REPLY_VAL:0:1}"; day="${day^^}${REPLY_VAL:1:2}"; day="${day:0:3}"
                    [[ "$day" =~ ^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$ ]] && break
                    fail "'$REPLY_VAL' is not a weekday name."
                done
-               ask_time; expr="$day $REPLY_VAL" ;;
-            3) ask_time; expr="Mon..Fri $REPLY_VAL" ;;
-            4) ask_time; expr="Sat,Sun $REPLY_VAL" ;;
+               ask_time "$deft"; expr="$day $REPLY_VAL" ;;
+            3) ask_time "$deft"; expr="Mon..Fri $REPLY_VAL" ;;
+            4) ask_time "$deft"; expr="Sat,Sun $REPLY_VAL" ;;
             5) explain "Custom schedule" \
 "Any systemd OnCalendar expression, e.g.:" \
 "  Tue,Fri 04:00      twice a week      *-*-01 03:00   1st of the month" \
 "  Mon..Fri 03:30     weekday early     (validated before it is saved)"
-               ask UPDATE_SCHEDULE "OnCalendar expression" "*-*-* 04:00"; expr="$REPLY_VAL" ;;
-            6) env_set UPDATE_SCHEDULE ""
-               ok "Automatic updates disabled (manual 'update' only)."; expr=""; break ;;
+               ask SCHED_EXPR "OnCalendar expression" "*-*-* $deft"; expr=$REPLY_VAL ;;
+            6) env_set "$var" ""; return 0 ;;
             *) fail "Pick 0-6."; continue ;;
         esac
-        if [[ -n "$expr" ]]; then
-            systemd-analyze calendar "$expr" >/dev/null 2>&1 \
-                || { fail "'$expr' is not a valid schedule."; continue; }
-            env_set UPDATE_SCHEDULE "$expr"
-            ok "Schedule: $expr — next runs:"
-            systemd-analyze calendar --iterations=3 "$expr" | grep -E 'Next elapse|Iter' | head -3 || true
-            break
-        fi
-        break
+        systemd-analyze calendar "$expr" >/dev/null 2>&1 || { fail "'$expr' is not a valid schedule."; continue; }
+        env_set "$var" "$expr"; return 0
     done
+}
 
+sched_summary() { # both schedules, when they next run, and how they meet
+    local u b ut bt
+    u=$(env_get UPDATE_SCHEDULE); b=$(env_get BACKUP_SCHEDULE)
+    echo; hr "Your schedules"
+    printf '  %-8s  %-16s  %s\n' Updates "$(sched_words "$u")" "$(sched_next "$u")"
+    printf '  %-8s  %-16s  %s\n' Backups "$(sched_words "$b")" "$(sched_next "$b")"
+    if [[ -z "$u" && -z "$b" ]]; then
+        warn "No automatic restore points at all — only './mediastack.sh backup' makes them."
+    elif [[ -z "$b" ]]; then
+        info "Restore points come only from updates and './mediastack.sh backup'."
+    elif [[ -n "$u" ]]; then
+        [[ "$u" =~ ([0-9]{1,2}:[0-9]{2})(:[0-9]{2})?$ ]] && ut=${BASH_REMATCH[1]}
+        [[ "$b" =~ ([0-9]{1,2}:[0-9]{2})(:[0-9]{2})?$ ]] && bt=${BASH_REMATCH[1]}
+        if [[ -n "${ut:-}" && -n "${bt:-}" ]] && (( 10#${bt/:/} <= 10#${ut/:/} )); then
+            info "Note: on update days the backup runs first, so that day gets two restore points."
+            info "  Put the backup after the update ($(sched_time_after "$u") or later) to avoid it."
+        else
+            info "On update days the update's restore point counts; the backup skips."
+        fi
+    fi
+}
+
+sched_next() { # sched_next EXPR -> "next: <when>" ("" for never)
+    [[ -n "$1" ]] || return 0
+    local n; n=$(systemd-analyze calendar "$1" 2>/dev/null | sed -n 's/^ *Next elapse: //p' | head -1)
+    echo "next: ${n:-?}"
 }
 
 cmd_configure() {

@@ -284,6 +284,13 @@ _doctor_vpn_backups() {
     fi
     [[ -f "$STOP_MARKER" ]] && d_fail "services stopped by a cut-off $(head -1 "$STOP_MARKER") are still down" \
         "a backup stops them and was cut off before starting them again (the next boot starts them)" "./mediastack.sh up"
+    if [[ -z "$(env_get BACKUP_SCHEDULE)" ]]; then
+        info "automatic backups off (BACKUP_SCHEDULE empty) — restore points come from updates and 'backup'"
+    else
+        systemctl is-enabled --quiet mediastack-backup.timer 2>/dev/null \
+            && ok "backup timer enabled ($(sched_words "$(env_get BACKUP_SCHEDULE)"))" \
+            || warn "BACKUP_SCHEDULE is set but its timer is not installed — run: ./mediastack.sh apply-timer"
+    fi
     local last age broot; broot=$(env_get BACKUP_ROOT)
     last=$(latest_restore_point)
     if [[ -z "$last" ]]; then
