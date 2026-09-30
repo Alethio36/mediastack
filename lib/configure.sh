@@ -211,7 +211,7 @@ sign in (none, Wizarr or authentik) is asked next."
 "                 Prowlarr, Jellyfin + instant search, request site."
 "                 No proxy: services answer on http://<host>:<port>; add"
 "                 HTTPS names later with: enable traefik + traefik-setup"
-"  2) everything  all $(svc_managed | wc -l) services"
+"  2) everything  every service (sign-in is picked next)"
 "  3) custom      yes/no through each service")
     (( cur_n )) && menu+=("  0) keep current: $cur_n enabled ($(tr ',' ' ' <<<"$cur_list"))")
     explain "Services" "${menu[@]}"
@@ -503,8 +503,9 @@ cmd_configure() {
     cat <<EOF
 Next steps:
   1. ./mediastack.sh up          start everything
-  2. ./mediastack.sh doctor      verify the deployment
-  3. ./mediastack.sh leak-test   prove the VPN cannot leak
-Then open the apps (URLs and ports: ./mediastack.sh status) and connect them to each other.
+  2. ./mediastack.sh wire        connect the apps to each other (safe to re-run)
+  3. ./mediastack.sh doctor      verify the deployment
+  4. ./mediastack.sh leak-test   prove the VPN cannot leak
+Addresses and ports: ./mediastack.sh status — passwords the stack made: credentials
 EOF
 }
