@@ -126,7 +126,7 @@ stopped_restart() { # stopped_run's EXIT trap: the services come back first, mes
     fi
     if (( rc != 0 && rc != BACKUP_PARTIAL )); then
         warn "$what stopped early (exit $rc) — the services it stopped were started again"
-        notify ops "Mediastack $what stopped early" "Exit $rc (an error, Ctrl-C, a dropped session or a shutdown): the services it stopped were started again. The restore point it was making is incomplete and is never used." failure
+        notify ops "Mediastack $what stopped early — services running again" "Exit $rc (an error, Ctrl-C, a dropped session or a shutdown): the services it stopped were started again. The restore point it was making is incomplete and is never used." failure
     fi
     exit "$rc"
 }
@@ -136,7 +136,7 @@ stopped_recover() { # at boot: a marker left behind is a stop no trap could undo
     local what; what=$(head -1 "$STOP_MARKER")
     if stopped_start; then
         warn "$what was cut off (power loss or a killed run) — the services it stopped were started again"
-        notify ops "Mediastack $what cut off" "Found at boot: the services it stopped were started again. The restore point it was making is incomplete and is never used." failure
+        notify ops "Mediastack $what cut off — services started again at boot" "Found at boot: the services it stopped were started again. The restore point it was making is incomplete and is never used." failure
     else
         fail "$what was cut off and the services it stopped did not start — run: ./mediastack.sh up"
         notify ops "Mediastack is DOWN" "Found at boot: a cut-off $what left services stopped, and they did not start. Run \`./mediastack.sh up\` on the host." failure

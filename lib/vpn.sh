@@ -77,8 +77,10 @@ ExecStart=$SCRIPT_DIR/mediastack.sh vpn-guard --boot
 [Install]
 WantedBy=multi-user.target
 EOF
-    if ! sudo cmp -s "$tmp" "$VPNGUARD_UNIT" 2>/dev/null; then
-        sudo cp "$tmp" "$VPNGUARD_UNIT"
+    # 644 like every unit: mktemp makes 600, and a 600 unit refuses `systemctl
+    # cat` to users (found live) — an existing 600 one is repaired too
+    if ! sudo cmp -s "$tmp" "$VPNGUARD_UNIT" 2>/dev/null || [[ "$(stat -c %a "$VPNGUARD_UNIT" 2>/dev/null)" != 644 ]]; then
+        sudo install -m 644 "$tmp" "$VPNGUARD_UNIT"
         sudo systemctl daemon-reload
         sudo systemctl enable mediastack-vpnguard.service >/dev/null 2>&1 || true
         info "VPN boot-guard unit installed/updated"
