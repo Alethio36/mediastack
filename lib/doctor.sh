@@ -282,6 +282,8 @@ _doctor_vpn_backups() {
         [[ -n "$vip" ]] && ok "tunnel public IP: $vip" \
             || d_fail "cannot fetch IP through tunnel" "VPN may be down; downloads are dead (not leaking — kill-switch)" "./mediastack.sh logs gluetun"
     fi
+    [[ -f "$STOP_MARKER" ]] && d_fail "services stopped by a cut-off $(head -1 "$STOP_MARKER") are still down" \
+        "a backup stops them and was cut off before starting them again (the next boot starts them)" "./mediastack.sh up"
     local last age broot; broot=$(env_get BACKUP_ROOT)
     last=$(latest_restore_point)
     if [[ -z "$last" ]]; then
