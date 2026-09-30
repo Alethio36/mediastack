@@ -21,9 +21,24 @@ latest_restore_point() {
 
 # shellcheck disable=SC2120  # arguments arrive via main()'s registry dispatch
 cmd_backup() {
-    # 'backup verify [TS]' is a subcommand; anything else is not an argument
-    if [[ "${1:-}" == verify ]]; then shift; args_max 1 "$@"; cmd_backup_verify "$@"; return; fi
-    args_none "$@"
+    case "${1:-}" in
+        verify) shift; args_max 1 "$@"; cmd_backup_verify "$@"; return ;;
+        list)   shift; args_max 1 "$@"; cmd_backup_list "$@"; return ;;
+    esac
+    local note=""
+    while (( $# )); do case "$1" in
+        --note) [[ -n "${2:-}" ]] || die "usage: backup --note \"why this point\""; note=$2; shift 2 ;;
+        *) die "Unknown backup arg '$1' (usage: backup [--note TEXT] | backup verify [TS] | backup list [svc])" ;;
+    esac; done
+    backup_take manual "$note"
+}
+
+# Every restore point says who made it and what ran: `meta` holds its kind —
+# manual (backup by hand or the panel), scheduled (the backup timer), update
+# (a full update's point), update-scoped (update <svc>), migrate (an import) —
+# an optional note, and one "svc version digest" line per container.
+# Information only: retention, restore and the skip rule never read it.
+backup_take() { # backup_take KIND NOTE — a full cold restore point into the GFS pool
     load_env; require_mounts
     local broot croot dest need have
     broot=$(env_get BACKUP_ROOT); croot=$(env_get CONFIG_ROOT)
@@ -36,17 +51,8 @@ cmd_backup() {
     local final; final="$broot/$(ts_now)"; dest="$final.partial"; sudo mkdir -p "$dest"
     info "Restore point: $final"
 
-    # images.lock BEFORE stopping (inspect needs the containers)
-    local s cn img ref
-    c_inspect_all
-    { for s in $(svc_managed); do
-        cn=$(svc_cname "$s")
-        # RepoDigests is an IMAGE field: resolve container -> image -> digest
-        img=$(c_get "$cn" '.Image')
-        [[ -n "$img" ]] || continue
-        ref=$(sudo docker image inspect --format '{{index .RepoDigests 0}}' "$img" 2>/dev/null | tr -d '\n' || true)
-        [[ -n "$ref" ]] && echo "$s $ref"
-      done; } | sudo tee "$dest/images.lock" >/dev/null
+    # shellcheck disable=SC2046  # a word list of services
+    point_record "$dest" "$1" "$2" $(svc_managed)
     [[ -s "$dest/images.lock" ]] || warn "images.lock is empty — image-exact rollback unavailable for this point"
 
     info "Stopping stack for a consistent snapshot... (all services briefly stop; ~20-40s)"
@@ -60,6 +66,64 @@ cmd_backup() {
         *) die "Backup stopped early (exit $rc) — the services were started again; nothing was kept as a restore point." ;;
     esac
     prune_backups
+}
+
+svc_digest() { # svc_digest SVC -> the digest its container runs ("" when unknown); needs c_inspect_all
+    local img
+    # RepoDigests is an IMAGE field: resolve container -> image -> digest
+    img=$(c_get "$(svc_cname "$1")" '.Image'); [[ -n "$img" ]] || return 0
+    sudo docker image inspect --format '{{index .RepoDigests 0}}' "$img" 2>/dev/null | tr -d '\n' || true
+}
+
+point_record() { # point_record DEST KIND NOTE SVC... — images.lock and meta, BEFORE stopping (inspect needs the containers)
+    local dest=$1 kind=$2 note=${3//$'\n'/ } s ref ver lock="" rows=""; shift 3
+    c_inspect_all
+    for s in "$@"; do
+        ref=$(svc_digest "$s"); [[ -n "$ref" ]] || continue
+        ver=$(c_version "$(svc_cname "$s")" || true)
+        lock+="$s $ref"$'\n'; rows+="$s ${ver:--} $ref"$'\n'
+    done
+    printf '%s' "$lock" | sudo tee "$dest/images.lock" >/dev/null
+    { printf 'kind=%s\nnote=%s\n' "$kind" "$note"; printf '%s' "$rows"; } | sudo tee "$dest/meta" >/dev/null
+}
+
+cmd_backup_list() { # backup list [svc] — every restore point, newest first; with a service, what it ran in each
+    load_env
+    local svc=${1:-} broot run="" d ts rel kind note ver ref mark
+    local tsglob='[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]'
+    broot=$(env_get BACKUP_ROOT)
+    if [[ -n "$svc" ]]; then
+        svc_exists "$svc" || die "No service '$svc'."
+        c_inspect_all; run=$(svc_digest "$svc")
+    fi
+    local rows
+    rows=$(for d in "$broot"/$tsglob "$broot"/pre-update/$tsglob; do
+               [[ -d "$d" ]] || continue
+               [[ -z "$svc" || -f "$d/$svc.tar.gz" ]] || continue
+               printf '%s\t%s\n' "$(basename "$d")" "${d#"$broot"/}"
+           done | sort -r)
+    [[ -n "$rows" ]] || { info "No restore points${svc:+ holding $svc} under $broot yet — take one: ./mediastack.sh backup"; return 0; }
+    if [[ -n "$svc" ]]; then printf '  %-15s  %-13s  %-26s  %-7s  %s\n' WHEN KIND "$(tr '[:lower:]' '[:upper:]' <<<"$svc")" "" NOTE
+    else printf '  %-15s  %-13s  %s\n' WHEN KIND NOTE; fi
+    while IFS=$'\t' read -r ts rel; do
+        kind=$(point_meta "$broot/$rel" kind); note=$(point_meta "$broot/$rel" note)
+        # a point from before meta: the scoped pool only ever held update-scoped ones
+        [[ -n "$kind" ]] || { [[ "$rel" == pre-update/* ]] && kind=update-scoped || kind=unknown; }
+        if [[ -n "$svc" ]]; then
+            ver=$(awk -v s="$svc" '$1==s {print $2}' "$broot/$rel/meta" 2>/dev/null || true)
+            ref=$(awk -v s="$svc" '$1==s {print $2}' "$broot/$rel/images.lock" 2>/dev/null || true)
+            [[ -n "$ver" && "$ver" != - ]] || ver=${ref#*@}; ver=${ver:0:26}
+            mark=""; [[ -n "$run" && "$ref" == "$run" ]] && mark=running
+            printf '  %-15s  %-13s  %-26s  %-7s  %s\n' "$ts" "$kind" "${ver:-?}" "$mark" "$note"
+        else
+            printf '  %-15s  %-13s  %s\n' "$ts" "$kind" "$note"
+        fi
+    done <<<"$rows"
+}
+
+point_meta() { # point_meta POINT KEY -> the value ("" when the point has no meta)
+    [[ -f "$1/meta" ]] || return 0
+    sed -n "s/^$2=//p" "$1/meta" | head -1
 }
 
 backup_snapshot() { # backup_snapshot CROOT DEST — runs with the stack stopped; -> 0, or BACKUP_PARTIAL if an archive failed
@@ -206,19 +270,14 @@ prune_backups() {
 # `update <svc>`. No whole-croot space precheck (a single service tar is
 # small); a failed tar still fails loud below.
 preupdate_backup() {
-    local broot croot dest ts s cn img ref rc=0
+    local broot croot dest ts s rc=0
     broot=$(env_get BACKUP_ROOT); croot=$(env_get CONFIG_ROOT)
     ts=$(ts_now); dest="$broot/pre-update/$ts.partial"; sudo mkdir -p "$dest"   # renamed once complete (see cmd_backup)
     info "Pre-update restore point (scoped to: $*): ${dest%.partial}"
 
-    # images.lock for the scoped service(s), BEFORE stopping (inspect needs them)
-    c_inspect_all
-    { for s in $(svc_shard "$@"); do   # every container's image, members included (rollback pins them all)
-        cn=$(svc_cname "$s")
-        img=$(c_get "$cn" '.Image'); [[ -n "$img" ]] || continue
-        ref=$(sudo docker image inspect --format '{{index .RepoDigests 0}}' "$img" 2>/dev/null | tr -d '\n' || true)
-        [[ -n "$ref" ]] && echo "$s $ref"
-      done; } | sudo tee "$dest/images.lock" >/dev/null
+    # every container's image, members included (rollback pins them all)
+    # shellcheck disable=SC2046  # a word list of services
+    point_record "$dest" update-scoped "" $(svc_shard "$@")
 
     local src
     for s in "$@"; do
@@ -498,7 +557,7 @@ cmd_update() {
         preupdate_backup "$one"
     else
         hr "Update: restore point first"
-        cmd_backup
+        backup_take update ""
     fi
 
     if [[ -n "$to_tag" ]]; then

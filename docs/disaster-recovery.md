@@ -2,8 +2,11 @@
 
 A restore point contains everything except media: service configs, the stack
 definition (`env`), your own files (`custom.tar.gz`: your services, overrides,
-proxy routes, TRaSH overrides) and the exact image digests (`images.lock`). A
-dead host rebuilds like this:
+proxy routes, TRaSH overrides) and the exact image digests (`images.lock`).
+Its `meta` says what made it — manual, scheduled, update, update-scoped or
+migrate, with an optional note (`backup --note "why"`) — and each service's
+version; `backup list [svc]` shows them all, newest first. A dead host
+rebuilds like this:
 
 1. Fresh Debian/Ubuntu host. Mount/attach the disk or share holding your
    old `BACKUP_ROOT` (and your media).

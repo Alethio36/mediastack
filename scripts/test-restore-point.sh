@@ -10,6 +10,8 @@
 # an error, a signal, a failed archive) and, after a power cut, at boot; a
 # point is built as <ts>.partial, never picked until complete, and a leftover
 # is removed by the next prune. The boot unit is 644.
+# Every point records its kind, a note and each service's version (meta);
+# `backup list [svc]` shows them newest first, marking what is running.
 #
 #   scripts/test-restore-point.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -126,5 +128,50 @@ vpnguard_ensure; [[ "$(stat -c %a "$VPNGUARD_UNIT")" == 644 ]] || fail_ "a new b
 chmod 600 "$VPNGUARD_UNIT"; vpnguard_ensure
 [[ "$(stat -c %a "$VPNGUARD_UNIT")" == 644 ]] || fail_ "an existing 600 boot unit with the same content is repaired"; pass
 grep -q 'stopped_recover' <(awk '/^cmd_vpn_guard\(\)/,/^}/' lib/vpn.sh) || fail_ "the boot guard runs stopped_recover"; pass
+
+# ---- meta: what made each point, and what it ran ----
+c_inspect_all() { :; }; svc_cname() { echo "c-$1"; }
+svc_digest() { [[ "$1" == nodigest ]] || echo "repo/$1@sha256:${1}d"; }
+c_version() { [[ "$1" == c-sonarr ]] && echo 4.0.15; }
+mkdir -p "$T/pr"; point_record "$T/pr" manual $'before\nthe move' sonarr bazarr nodigest
+[[ "$(cat "$T/pr/images.lock")" == $'sonarr repo/sonarr@sha256:sonarrd\nbazarr repo/bazarr@sha256:bazarrd' ]] \
+    || fail_ "images.lock keeps its format (restore reads it): $(cat "$T/pr/images.lock")"; pass
+[[ "$(cat "$T/pr/meta")" == $'kind=manual\nnote=before the move\nsonarr 4.0.15 repo/sonarr@sha256:sonarrd\nbazarr - repo/bazarr@sha256:bazarrd' ]] \
+    || fail_ "meta: kind, a one-line note, svc version digest ('-' without a version label): $(cat "$T/pr/meta")"; pass
+backup_take() { echo "TAKE $1|$2"; }
+[[ "$(cmd_backup --note "before jellyfin 12")" == "TAKE manual|before jellyfin 12" ]] || fail_ "backup --note: a manual point with the note"; pass
+[[ "$(cmd_backup)" == "TAKE manual|" ]] || fail_ "backup: a manual point"; pass
+( cmd_backup --note ) >/dev/null 2>&1 && fail_ "--note without text is refused"; pass
+( cmd_backup --bogus ) >/dev/null 2>&1 && fail_ "an unknown argument is refused"; pass
+grep -q 'backup_take update ""' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) || fail_ "a full update's point is kind 'update'"; pass
+grep -q 'backup_take manual "before the first wire"' lib/integrations.sh || fail_ "the first wire's point is manual, with a note"; pass
+grep -q 'point_record "$dest" update-scoped' <(awk '/^preupdate_backup\(\)/,/^}/' lib/backup.sh) || fail_ "a scoped point is kind 'update-scoped'"; pass
+
+# ---- backup list ----
+load_env() { :; }; svc_exists() { [[ "$1" == sonarr ]]; }
+printf 'BACKUP_ROOT=%s/bl\n' "$T" > "$ENV_FILE"; B=$T/bl
+pt() { # pt REL KIND NOTE VERSION DIGEST — a point holding sonarr (KIND "" = no meta)
+    mkdir -p "$B/$1"; : > "$B/$1/sonarr.tar.gz"; echo "sonarr repo/sonarr@sha256:$5" > "$B/$1/images.lock"
+    [[ -z "$2" ]] || printf 'kind=%s\nnote=%s\nsonarr %s repo/sonarr@sha256:%s\n' "$2" "$3" "$4" "$5" > "$B/$1/meta"
+}
+pt 20260929-040000 scheduled "" 4.0.15 sonarrd
+pt 20260928-030000 update "" 4.0.14 old14
+pt 20260927-120000 "" "" "" old13
+pt pre-update/20260928-120000 "" "" "" old14
+mkdir -p "$B/20260926-000000" "$B/20260930-010000.partial"; printf 'kind=manual\nnote=before the rebuild\n' > "$B/20260926-000000/meta"
+cmd_backup_list > "$T/all"; all=$(cat "$T/all")   # not $(...): that drops set -e (found: it hid a crash)
+[[ "$(awk 'NR>1 {print $1}' <<<"$all" | tr '\n' ' ')" == "20260929-040000 20260928-120000 20260928-030000 20260927-120000 20260926-000000 " ]] \
+    || fail_ "every complete point, both pools, newest first, no .partial: $all"; pass
+grep -q '20260926-000000  manual  *before the rebuild' <<<"$all" || fail_ "kind and note shown: $all"; pass
+cmd_backup_list sonarr > "$T/one"; one=$(cat "$T/one")
+grep -q 'WHEN  *KIND  *SONARR  *NOTE' <<<"$one" || fail_ "the service names the version column: $one"; pass
+! grep -q 20260926-000000 <<<"$one" || fail_ "a point without the service is not listed for it"; pass
+grep -q '20260929-040000  scheduled  *4.0.15  *running' <<<"$one" || fail_ "the point matching what runs is marked: $one"; pass
+grep -q '20260928-030000  update  *4.0.14 *$' <<<"$one" && ! grep -q '4.0.14.*running' <<<"$one" || fail_ "an older version, unmarked: $one"; pass
+grep -q '20260928-120000  update-scoped  *sha256:old14' <<<"$one" || fail_ "a scoped point from before meta: update-scoped, its digest: $one"; pass
+grep -q '20260927-120000  unknown  *sha256:old13' <<<"$one" || fail_ "a full point from before meta: unknown, its digest: $one"; pass
+( cmd_backup_list radarr ) >/dev/null 2>&1 && fail_ "an unknown service is refused"; pass
+printf 'BACKUP_ROOT=%s/none\n' "$T" > "$ENV_FILE"
+[[ -z "$(cmd_backup_list 2>/dev/null)" ]] || fail_ "no points: a hint, no table"; pass
 
 echo "OK restore-point: $checks checks"
