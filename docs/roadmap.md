@@ -108,10 +108,11 @@ Where the project goes next — decisions to make and work not yet built.
 ### Next: the pre-alpha rollout
 The MVP queue is built (auditd, the arr recycle bin, structure, `.env`
 validation, notifications, SSO). Before `migrate` moves the first household:
-1. `wire` finishes a fresh install in one run: `authentik` ahead of `jellyfin`
-   in the role order (Jellyfin's portal sign-in needs the LDAP token), and
-   `wire authentik` waiting for the blueprint to be discovered after
-   authentik's first start instead of skipping the gate and the cards.
+1. *Done:* `wire` finishes a fresh install in one run: `authentik` ahead of
+   `jellyfin` in the role order (Jellyfin's portal sign-in needs the LDAP
+   token), and `wire authentik` waits up to five minutes for the blueprint to
+   be discovered after authentik's first start — a timeout is a wire failure,
+   not a skip. To prove on the rebuild (3).
 2. The account model stays the user's choice — none, Wizarr or authentik —
    and the install flow offers all three cleanly.
 3. anzac3 rebuilt from zero: install, configure, snapshot, then a close look
