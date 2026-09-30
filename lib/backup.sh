@@ -54,7 +54,7 @@ backup_scheduled() {
     local last age
     last=$(latest_restore_point)
     if [[ -n "$last" ]] && age=$(ts_age_hours "$last") && (( age < BACKUP_SKIP_HOURS )); then
-        ok "Restore point $last is ${age}h old and covers every service — this scheduled backup is skipped."
+        ok "Restore point $last is $( (( age == 0 )) && echo "under an hour" || echo "${age}h" ) old and covers every service — this scheduled backup is skipped."
         return 0
     fi
     defer_while_streaming backup || return 0
