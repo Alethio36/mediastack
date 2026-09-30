@@ -9,7 +9,7 @@
 # Stopped services come back: a backup's stop is undone on any exit (success,
 # an error, a signal, a failed archive) and, after a power cut, at boot; a
 # point is built as <ts>.partial, never picked until complete, and a leftover
-# is removed by the next prune.
+# is removed by the next prune. The boot unit is 644.
 #
 #   scripts/test-restore-point.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -86,9 +86,9 @@ out=$(run "" work_ok)
 [[ "$out" == "rc=0 | DC stop|WORK marker=backup||"*"DC up -d|"*"marker=no" && "$out" != *NOTIFY* ]] \
     || fail_ "success: stop, work (marker naming it), start, marker gone, no alert: $out"; pass
 out=$(run "" work_error)
-[[ "$out" == "rc=1 | "*"DC up -d|"*"NOTIFY Mediastack backup stopped early"*"marker=no" ]] || fail_ "an error: started again and alerted: $out"; pass
+[[ "$out" == "rc=1 | "*"DC up -d|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "an error: started again and alerted: $out"; pass
 out=$(run "" work_signal)
-[[ "$out" == "rc=143 | "*"DC up -d|"*"NOTIFY Mediastack backup stopped early"*"marker=no" ]] || fail_ "a signal: started again and alerted: $out"; pass
+[[ "$out" == "rc=143 | "*"DC up -d|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "a signal: started again and alerted: $out"; pass
 out=$(run "" work_partial)
 [[ "$out" == "rc=$BACKUP_PARTIAL | "*"DC up -d|"*"marker=no" && "$out" != *"stopped early"* ]] \
     || fail_ "a failed archive: started again, left to the caller's FAILED alert: $out"; pass
@@ -115,9 +115,16 @@ out=$(run "" work_ok)
 [[ "$out" == "rc=1 | "*"could not stop"*"DC up -d|"*"marker=no" && "$out" != *WORK* ]] || fail_ "a failed stop: no work on running services: $out"; pass
 DC() { echo "DC $*" >> "$T/log"; [[ "$1" != up ]] || return "${DC_UP_RC:-0}"; }
 printf 'backup\n\n' > "$STOP_MARKER"   # what a power cut leaves
-rm -f "$T/log"; stopped_recover; [[ "$(cat "$T/log")" == *"DC up -d"*"NOTIFY Mediastack backup cut off"* && ! -f "$STOP_MARKER" ]] \
+rm -f "$T/log"; stopped_recover; [[ "$(cat "$T/log")" == *"DC up -d"*"NOTIFY Mediastack backup cut off — services started again at boot"* && ! -f "$STOP_MARKER" ]] \
     || fail_ "at boot, a marker left behind: its services started, alerted, marker gone: $(cat "$T/log")"; pass
 rm -f "$T/log"; stopped_recover; [[ ! -s "$T/log" ]] || fail_ "at boot, no marker: nothing started"; pass
+# the boot unit is 644 like every unit (found live: mktemp's 600 made
+# `systemctl cat` refuse users), and an existing 600 one is repaired
+SYSTEMD_DIR=$T/systemd; VPNGUARD_UNIT=$SYSTEMD_DIR/mediastack-vpnguard.service; mkdir -p "$SYSTEMD_DIR"
+systemctl() { :; }
+vpnguard_ensure; [[ "$(stat -c %a "$VPNGUARD_UNIT")" == 644 ]] || fail_ "a new boot unit is 644: $(stat -c %a "$VPNGUARD_UNIT")"; pass
+chmod 600 "$VPNGUARD_UNIT"; vpnguard_ensure
+[[ "$(stat -c %a "$VPNGUARD_UNIT")" == 644 ]] || fail_ "an existing 600 boot unit with the same content is repaired"; pass
 grep -q 'stopped_recover' <(awk '/^cmd_vpn_guard\(\)/,/^}/' lib/vpn.sh) || fail_ "the boot guard runs stopped_recover"; pass
 
 echo "OK restore-point: $checks checks"
