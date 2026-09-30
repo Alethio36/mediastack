@@ -1045,7 +1045,7 @@ VERBS=(
     "logs~logs <svc> [--no-follow]~free~Run~Follow one service's logs (--no-follow: bounded snapshot)."
     "update~update [svc] [--to TAG] [--dry-run|--now]~free~Maintain~Container images: backup, pull, apply (toggles + pins respected)."
     "apply-timer~apply-timer~none~Maintain~Install/refresh the systemd timers from UPDATE_SCHEDULE and MANIFEST_SCHEDULE."
-    "backup~backup [verify [TS]]~free~Maintain~Take a restore point now (cold); 'verify' checks checksums and archives."
+    "backup~backup [--note TEXT] | verify [TS] | list [svc]~free~Maintain~Take a restore point now (cold); 'verify' checks checksums and archives; 'list' shows every point (kind, note, a service's version)."
     "manifest~manifest [--accept|diff [A [B]]|find <text>]~free~Maintain~Snapshot the media library now; 'diff' shows what was lost between snapshots; 'find' says when a path was last seen."
     "restore~restore --service <svc>|--all [--from TS]~free~Maintain~Restore configs + image from a restore point."
     "rollback~rollback <svc>~max=1~Maintain~Restore one service from the newest restore point and pin it there."
