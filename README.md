@@ -131,7 +131,7 @@ Maintain
 | `manifest diff [A [B]]` / `manifest find <text>` | what was lost between two snapshots (default: the last two; timestamps may be shortened to a unique prefix) / when each path matching `<text>` was first and last seen, and whether it is still there |
 | `backup [--note TEXT]` / `backup verify [ts]` / `backup list [svc]` | restore point now (a note says why) / verify checksums + archives / every point, newest first, with its kind (manual, scheduled, update, update-scoped, migrate) and note — given a service, its version in each and which one is running |
 | `restore --service <svc>\|--all [--from TS]` | restore configs + exact image |
-| `rollback <svc>` / `unpin <svc>` | restore from the newest point covering it (prefers the scoped pre-update point) and pin / release the pin |
+| `rollback <svc> [--from TS] [--yes]` / `unpin <svc>` | return a service to the image it ran before — the newest restore point holding a different image; `--from` picks any point (`backup list <svc>` shows them, and which one rollback takes). Its config goes back with the image, so its data since then is replaced (the current folder is kept); it shows the plan and asks first. Pins it there / release the pin. Going back: `rollback`; moving to a chosen version: `update <svc> --to <tag>` |
 | `upgrade` | mediastack itself: git pull + `.env` migration, run by the freshly pulled code; then says whether `up` has anything to apply, naming the services it would change (Compose's own dry run of `up` — a comment edit never triggers it). Images stay put — that's `update` |
 
 Connect

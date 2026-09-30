@@ -67,8 +67,20 @@ top-level timestamp dirs only), so scoped update points can't displace a
 daily/weekly/monthly slot. They have their own retention, `BACKUP_KEEP_PREUPDATE`
 (3) — the newest N "undo that update" points, pruned after each targeted update.
 
-`rollback <svc>` automatically restores from the newest point covering that
-service, preferring a pre-update point over an older nightly full. A full
+`rollback <svc>` returns a service to the image it ran before: the newest
+point, in either pool, holding a different image than the one running (so a
+second rollback undoes the first). Its config comes back with the image — a
+newer version may have upgraded its data, which an older one cannot read — so
+the service's data since that point is replaced; the current folder is kept as
+`<svc>.pre-restore.<ts>`. It shows the plan and asks first (`--yes` skips the
+question; the panel's button passes it after its own confirmation).
+`rollback <svc> --from <ts>` takes any point; `backup list <svc>` shows each
+point's version, marking the running image (`current`) and rollback's target.
+`restore --service <svc>` is for a broken config on the same image: it takes
+the newest point, losing the least. To move to a chosen version instead, use
+`update <svc> --to <tag>` — image only, so going *back* that way can meet data
+a newer version upgraded; if it fails, `rollback` returns to the point that
+update takes first. A full
 `restore --all` only ever draws from the top-level GFS pool, never a partial
 pre-update point. Full `update` (all services) and `update gluetun` still take
 the full stop-the-world restore point into the GFS pool as before.
