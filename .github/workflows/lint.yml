@@ -5,6 +5,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0   # the schema-bump step diffs a whole push, not one commit
       - name: shellcheck
         run: shellcheck -S warning -x mediastack.sh lib/*.sh scripts/*.sh
       - name: front-door safety audit
@@ -76,10 +78,18 @@ jobs:
       - name: compose renders across the override lifecycle (scripts/test-render.sh)
         run: scripts/test-render.sh
       - name: schema bump enforced
-        if: github.event_name == 'pull_request'
+        # a PR diffs against its base; a push (the usual way here — patches land on unstable
+        # directly) diffs the whole range it pushed, so a bump in one commit covers a change in another
         run: |
-          git fetch origin "${{ github.base_ref }}" --depth=1
-          if git diff --name-only "origin/${{ github.base_ref }}" -- .env.example | grep -q .; then
-            git diff "origin/${{ github.base_ref }}" -- .env.example | grep -q '^[+-]ENV_SCHEMA=' \
+          if [[ "${{ github.event_name }}" == pull_request ]]; then
+            base="origin/${{ github.base_ref }}"
+          else
+            base="${{ github.event.before }}"
+            if [[ "$base" =~ ^0+$ ]] || ! git cat-file -e "$base" 2>/dev/null; then
+              echo "no previous tip to diff against (new branch or force-push) — skipped"; exit 0
+            fi
+          fi
+          if git diff --name-only "$base" HEAD -- .env.example | grep -q .; then
+            git diff "$base" HEAD -- .env.example | grep -q '^[+-]ENV_SCHEMA=' \
               || { echo "::error::.env.example changed without bumping ENV_SCHEMA (and adding a migration)"; exit 1; }
           fi
