@@ -405,16 +405,25 @@ prune_preupdate() {
     ok "pre-update points: kept $(( ${#all[@]} - pruned )), pruned $pruned (BACKUP_KEEP_PREUPDATE=$keep)"
 }
 
+point_check() { # point_check DIR — the point's checksums and archives, or die: nothing restores from a point that fails this
+    [[ -f "$1/SHA256SUMS" ]] || die "No checksums in $1 — the point was never completed; not restoring from it."
+    local bad
+    bad=$( cd "$1" && sudo sha256sum -c --quiet SHA256SUMS 2>&1 ) \
+        || die "Checksums FAILED for $1 — the point is damaged, not restoring from it:"$'\n'"$bad"
+    ok "Checksums OK for $(basename "$1")"
+    local f; for f in "$1"/*.tar.gz; do
+        [[ -e "$f" ]] || continue
+        sudo tar -tzf "$f" >/dev/null 2>&1 || die "Corrupt archive: $f — not restoring from it."
+    done
+}
+
 cmd_backup_verify() {
     load_env
     local broot t="${1:-}"
     broot=$(env_get BACKUP_ROOT)
     [[ -n "$t" ]] || t=$(latest_restore_point)
     [[ -n "$t" && -d "$broot/$t" ]] || die "No restore point '${t:-(none yet)}' under $broot"
-    ( cd "$broot/$t" && sudo sha256sum -c SHA256SUMS ) && ok "Checksums OK for $t"
-    local f; for f in "$broot/$t"/*.tar.gz; do
-        sudo tar -tzf "$f" >/dev/null || die "Corrupt archive: $f"
-    done
+    point_check "$broot/$t"
     ok "Archives readable. (True proof is a restore drill: restore --service <svc>.)"
 }
 
@@ -473,6 +482,11 @@ cmd_restore() {
         for d in "$broot"/$tsglob; do [[ -d "$d" ]] && avail+="$(basename "$d") "; done
         die "No restore point found. Available: $avail"
     fi
+    # the whole point is proven before a single service stops: restore is not
+    # under stopped_run (a half-extracted config must not restart), so the
+    # only safe failure is one that happens before anything moves
+    point_check "$broot/$from"
+    maint_lock restore 0   # never while a timer's update or backup has the stack
     info "Restoring from $from"
     local targets; if (( all_svcs )); then targets=$(svc_managed); else targets="$svc"; fi
     local croot ts s ref
@@ -647,7 +661,10 @@ cmd_update() {
         --dry-run) dry=1; shift ;;
         --now) now=1; shift ;;
         --auto) auto=1; shift ;;
-        --to) [[ -n "${2:-}" ]] || die "--to needs a tag (usage: update <svc> --to <tag>)"; to_tag="$2"; shift 2 ;;
+        --to) [[ -n "${2:-}" ]] || die "--to needs a tag (usage: update <svc> --to <tag>)"
+              # an image tag, as Docker defines one: it lands in the pins file and a compose image: line
+              [[ "$2" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || die "--to '$2' is not an image tag (letters, digits, _ . - ; 128 max)"
+              to_tag="$2"; shift 2 ;;
         -*) die "unknown option '$1' (usage: update [svc] [--dry-run] [--now] [--auto] [--to TAG])" ;;
         *) [[ -z "$one" ]] || die "update takes one service (got '$one' and '$1')"; one="$1"; shift ;;
     esac; done
@@ -808,8 +825,17 @@ cmd_update() {
     (( ${#changed[@]} )) && printf '  %s\n' "${changed[@]}" || echo "  no version changes"
     if (( ${#bad[@]} )); then
         fail "Unhealthy after update: ${bad[*]}"
-        echo "  Roll back any of them with: ./mediastack.sh rollback <service>"
-        notify ops "Mediastack update FAILED" "Unhealthy after update: **${bad[*]}**"$'\n'"Roll back: \`./mediastack.sh rollback <service>\`" failure
+        local advice
+        if (( ${#changed[@]} )); then
+            advice="Roll back: \`./mediastack.sh rollback <service>\`"
+            echo "  Roll back any of them with: ./mediastack.sh rollback <service>"
+        else
+            # nothing was updated: a service did not come back from the restart the
+            # restore point needs — a rollback would find nothing to go back to
+            advice="No version changed — it did not come back from the restart. Look: \`./mediastack.sh logs <service> --no-follow\`"
+            echo "  No version changed — it did not come back from the restart. Look: ./mediastack.sh logs <service> --no-follow"
+        fi
+        notify ops "Mediastack update FAILED" "Unhealthy after update: **${bad[*]}**"$'\n'"$advice" failure
         exit 1
     fi
     ok "All updated services healthy."
