@@ -131,6 +131,7 @@ backup_take() { # backup_take KIND NOTE — a full cold restore point into the G
         *) die "Backup stopped early (exit $rc) — the services were started again; nothing was kept as a restore point." ;;
     esac
     prune_backups
+    points_private
 }
 
 svc_digest() { # svc_digest SVC -> the digest its container runs ("" when unknown); needs c_inspect_all
@@ -185,6 +186,20 @@ point_meta() { # point_meta POINT KEY -> the value ("" when the point has no met
     sed -n "s/^$2=//p" "$1/meta" | head -1
 }
 
+point_private() { # point_private DEST — the archives hold every app's keys and databases: root reads them, nobody else
+    # (meta, images.lock and SHA256SUMS stay readable: backup list and the skip rule read them without sudo)
+    local f
+    for f in "$1"/*.tar.gz; do
+        [[ -e "$f" ]] || continue
+        sudo chmod 600 "$f" || { fail "could not restrict $f"; return 1; }
+    done
+}
+
+points_private() { # points_private — restore points made before point_private existed were 644: tighten them, once per backup
+    local broot; broot=$(env_get BACKUP_ROOT)
+    sudo find "$broot" -maxdepth 3 -name '*.tar.gz' ! -perm 600 -exec chmod 600 {} + 2>/dev/null || true
+}
+
 backup_snapshot() { # backup_snapshot CROOT DEST — runs with the stack stopped; -> 0, or BACKUP_PARTIAL if an archive failed
     # stopped_run's caller tests it with ||, and there bash ignores set -e:
     # every step here checks itself
@@ -200,6 +215,7 @@ backup_snapshot() { # backup_snapshot CROOT DEST — runs with the stack stopped
     if [[ -d "$CUSTOM_DIR" ]]; then
         sudo tar -C "$SCRIPT_DIR" -czf "$dest/custom.tar.gz" custom || { fail "tar failed for custom/"; rc=$BACKUP_PARTIAL; }
     fi
+    point_private "$dest" || return 1
     ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' ) || { fail "could not write the restore point's checksums"; return 1; }
     info "Restarting stack... (waiting on gluetun health; can take up to ~1min)"
     return "$rc"
@@ -351,6 +367,7 @@ preupdate_backup() {
     done
     sudo cp "$ENV_FILE" "$dest/env"; sudo chmod 600 "$dest/env"
     if [[ -s "$PINS_FILE" ]]; then sudo cp "$PINS_FILE" "$dest/pins.yml"; fi
+    point_private "$dest" || die "could not make the pre-update point private — nothing updated."
     ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' )
     if (( rc == 0 )); then sudo mv "$dest" "${dest%.partial}"; ok "Pre-update restore point complete: ${dest%.partial}"
     else
