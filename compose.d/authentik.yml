@@ -37,6 +37,20 @@ x-authentik-health: &authentik-health
   retries: 3
   start_period: 300s
 
+# The LDAP outpost cannot be healthier than the server it waits for: its
+# health socket only appears once the server has answered its first API
+# call, and — the shard rule starts members before the primary — it starts
+# first. The image's own HEALTHCHECK gives it 3s, so every full restart
+# reported it unhealthy while the server was still booting (seen live:
+# the 1 Oct 2026 update --auto failed its health gate on it, healthy
+# 20 seconds later). Same window as the server, for the same reason.
+x-authentik-outpost-health: &authentik-outpost-health
+  test: ["CMD", "/ldap", "healthcheck"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 300s
+
 services:
   authentik:
     image: ghcr.io/goauthentik/server:2026.8
@@ -143,6 +157,7 @@ services:
       traefik.tcp.routers.authentik-ldap.tls: "true"
       traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"
       traefik.tcp.services.authentik-ldap.loadbalancer.server.port: "3389"
+    healthcheck: *authentik-outpost-health
     networks: [mediastack]
     logging: *logging
     restart: unless-stopped
