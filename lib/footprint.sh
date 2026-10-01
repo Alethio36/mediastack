@@ -154,8 +154,11 @@ footprint_mounts_offer() { # uninstall: each marked mount, offered one at a time
     while IFS=$'\t' read -r m _; do
         any=1
         echo "  $m — a share added by add-mount (your media may live here)."
-        confirm "  Remove this mount (and any credentials stored for it)? Media on the share is not touched" \
-            && mount_remove "$m" || info "  $m kept (remove it later: README, \"Removing a mount\")"
+        if confirm "  Remove this mount (and any credentials stored for it)? Media on the share is not touched"; then
+            mount_remove "$m"
+        else
+            info "  $m kept (remove it later: README, \"Removing a mount\")"
+        fi
     done < <(fstab_marked)
     (( any )) || info "no mounts made by add-mount"
     footprint_unmarked_note
