@@ -819,10 +819,10 @@ c_host_path() { # c_host_path <cname> <container-path> -> the host path behind i
 # take. Read-only: renders the config and prints names, changes nothing.
 
 # -------------------------------------------------------- health verdict --
-# START_WAIT must exceed every fragment's Docker verdict window,
+# START_WAIT must exceed every healthcheck's Docker verdict window — anchored ones too,
 # start_period + interval x retries (CI: scripts/check-start-wait.sh), so a
 # wait only ever cuts off a healthcheck that hangs rather than one that is slow.
-START_WAIT=300
+START_WAIT=400
 VERDICT_BAD=""
 declare -A VERDICT_WHY=()
 # wait_verdict [--recover] SVC... — block until Docker has judged every
