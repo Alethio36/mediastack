@@ -55,13 +55,24 @@ Two timers, asked together by `configure` (each can be `never`):
 
 The two never run at once: a timer's run waits for the other (up to 6 hours;
 past that it is skipped and ops is told), and one you start by hand refuses
-while either runs. Both wait while someone is watching in Jellyfin
+while either runs — so do `restore` and `rollback`, which would otherwise
+pull a service's config out from under a running point. Both wait while someone is watching in Jellyfin
 (`UPDATE_DEFER_IF_ACTIVE`, on by default: asked every `UPDATE_DEFER_RETRY_MIN`
 minutes for up to `UPDATE_DEFER_MAX_MIN`, then `UPDATE_DEFER_ACTION` proceeds
 or skips that run). Jellyfin is the only app asked — someone listening in
 Navidrome or Audiobookshelf, or reading in Kavita, is not seen (watchlist:
 "Deferring for other apps' sessions").
 `backup` by hand always runs.
+
+## What a restore trusts
+
+Nothing restores from a point that fails its own proof: `restore` (and so
+`rollback`) checks the point before the first service stops — `SHA256SUMS`
+present and every sum matching, every archive listable — and dies naming the
+damage if not. `backup verify [ts]` runs the same check by hand and fails
+loud too. The service archives in a point are readable by root only (they
+hold every app's keys and databases); `meta`, `images.lock` and `SHA256SUMS`
+stay readable so `backup list` and the skip rule work without sudo.
 
 ## Restore-point retention
 

@@ -134,8 +134,10 @@ Lower priority: RAM and system requirements, measured on the rebuilt box.
 ### Release channels — decided (Sept 2026)
 `stable` is the default branch (what a clone gets and end users run),
 `unstable` gets every change first (the test box runs it), `legacy` is the old
-project, frozen. Promotion is a fast-forward once a change is proven:
-`git push origin unstable:stable`. `upgrade` follows the checked-out branch.
+project, frozen. Promotion is a fast-forward once a change is proven and CI
+is green on it: `scripts/promote.sh` waits for the checks on `unstable`'s
+tip, refuses on any red one, then fast-forwards `stable` and pushes.
+`upgrade` follows the checked-out branch.
 
 ### Decisions pending
 - **Ship Pinchflat?** YouTube archiving, rated ship-worthy; brings two
@@ -237,6 +239,24 @@ all built; what each still leaves open is noted below.
   installs' profiles.
 
 ### Security & access
+- **Traefik's Docker socket behind a proxy** *(explore)*. Traefik reads the
+  socket for its routes (`:ro` limits the file, not the API), and it is the
+  one container the Internet reaches — a Traefik compromise is root on the
+  host. The usual answer is a socket proxy that allows only the read-only
+  endpoints the provider needs; one more container, so it must earn its
+  place against that cost. Until then the mitigation is Traefik's own
+  pinning and the update's health gate.
+- **Container DNS: no host search domain** *(decide after the MVP)*. Docker
+  copies the host's search domain into every container, so a bare sibling
+  name looked up before that sibling is on the network falls through to the
+  LAN resolver — and a wildcard record there (a `*.<domain>` front door is
+  the common case) answers with a public address the connect then hangs on.
+  Seen live, 1 Oct 2026: the LDAP outpost dialed Cloudflare for 4.5 minutes
+  after every restart. `authentik-ldap` now runs with no search list
+  (`dns_search: ["."]`); the other services still inherit the host's. Making
+  it stack-wide is a policy — a short LAN name an operator points an app at
+  (an SMTP relay for Apprise, say) would stop resolving — and the VPN group
+  takes gluetun's resolver anyway, so it is a decision, not a line.
 - **Protect the unauthenticated UIs — before migrate, without SSO.** Apprise's
   UI and API have no login by design and hold the notification tokens; the panel
   runs stack commands. Until the gate exists (and for installs that choose
