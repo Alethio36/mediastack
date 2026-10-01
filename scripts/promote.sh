@@ -20,17 +20,18 @@ git merge-base --is-ancestor origin/stable "$sha" \
     || die "stable is not behind unstable — only a fast-forward promotes; reconcile the branches first"
 
 auth=(); [[ -n "${GITHUB_TOKEN:-}" ]] && auth=(-H "Authorization: Bearer $GITHUB_TOKEN")
+count() { awk -v p="$1" '$0 ~ p { n++ } END { print n + 0 }' <<<"$json"; }   # awk: a zero count is not a failure (grep | wc is, under pipefail)
 echo "waiting for CI on ${sha:0:7} ($(git log -1 --format=%s "$sha"))"
 for (( i = 0; i < 40; i++ )); do   # up to 20 minutes, one call per 30s
     json=$(curl -sS -H 'Accept: application/vnd.github+json' "${auth[@]}" \
            "https://api.github.com/repos/$repo/commits/$sha/check-runs?per_page=100") || die "GitHub API unreachable"
     grep -q '"message": *"API rate limit' <<<"$json" && die "GitHub API rate limit hit — set GITHUB_TOKEN, or retry later"
-    total=$(grep -o '"total_count": *[0-9]*' <<<"$json" | head -1 | grep -o '[0-9]*$' || echo 0)
-    if (( total == 0 )); then echo "  no CI run registered yet"; sleep 30; continue; fi
-    bad=$(grep -oE '"conclusion": *"(failure|cancelled|timed_out|action_required|startup_failure)"' <<<"$json" | wc -l)
+    total=$(awk '/"total_count":/ { gsub(/[^0-9]/, ""); print; exit }' <<<"$json")
+    if (( ${total:-0} == 0 )); then echo "  no CI run registered yet"; sleep 30; continue; fi
+    bad=$(count '"conclusion": *"(failure|cancelled|timed_out|action_required|startup_failure)"')
     (( bad == 0 )) || die "CI is RED on ${sha:0:7} — see https://github.com/$repo/commit/$sha/checks — nothing promoted"
-    done_n=$(grep -o '"status": *"completed"' <<<"$json" | wc -l)
-    good=$(grep -o '"conclusion": *"success"' <<<"$json" | wc -l)
+    done_n=$(count '"status": *"completed"')
+    good=$(count '"conclusion": *"success"')
     if (( done_n >= total && good >= total )); then
         echo "CI green: $good/$total check(s) on ${sha:0:7}"
         git checkout -q -B stable origin/stable
