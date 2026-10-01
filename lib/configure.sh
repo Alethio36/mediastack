@@ -381,8 +381,11 @@ hostname per service, same names as your HTTPS routes) or directly at a
 service, e.g. http://jellyfin:8096. Service names resolve — cloudflared
 shares the stack's network."
         read -r -p "Tunnel token: " REPLY_VAL
-        [[ -n "$REPLY_VAL" ]] && env_set CLOUDFLARE_TUNNEL_TOKEN "$REPLY_VAL" \
-            || warn "No token — cloudflared will crash-loop until one is set in .env."
+        if [[ -n "$REPLY_VAL" ]]; then
+            env_set CLOUDFLARE_TUNNEL_TOKEN "$REPLY_VAL"
+        else
+            warn "No token — cloudflared will crash-loop until one is set in .env."
+        fi
     fi
     if svc_enabled pihole && [[ -z "$(env_get PIHOLE_PASSWORD)" ]]; then
         env_set PIHOLE_PASSWORD "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"
