@@ -27,8 +27,9 @@ services:
     volumes:
       - ${CONFIG_ROOT}/pihole/config:/etc/pihole
       - ${CONFIG_ROOT}/pihole/dns:/etc/dnsmasq.d
-    cap_add:
-      - NET_ADMIN
+    # No NET_ADMIN: Pi-hole needs it only as a DHCP server (its docker README),
+    # and the stack publishes DNS alone — no 67/udp. Serving DHCP from here is
+    # a drop-in override (custom/override.yml: cap_add NET_ADMIN, 67:67/udp).
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
