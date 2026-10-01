@@ -128,7 +128,7 @@ Run
 Maintain
 | command | what it does |
 |---|---|
-| `update [svc] [--to TAG] [--dry-run] [--now]` | container images: backup → pull → apply → health gate. A targeted `update <svc>` bounces only that service (scoped restore point; the rest stay up); a full update stops the whole stack. Warns the household first when a user-facing service is affected. Nightly via timer (`--auto`) |
+| `update [svc] [--to TAG] [--dry-run] [--now]` | container images: backup → pull → apply → health gate → `wire --verify` when a version changed (a new version that reset settings wire owns is reported to ops with the fix, never applied unattended). A targeted `update <svc>` bounces only that service (scoped restore point; the rest stay up); a full update stops the whole stack. Warns the household first when a user-facing service is affected. Nightly via timer (`--auto`) |
 | `apply-timer` | install/refresh the systemd timers: scheduled updates (`UPDATE_SCHEDULE`), scheduled backups (`BACKUP_SCHEDULE`) and the media manifest (`MANIFEST_SCHEDULE`); an empty schedule removes its timer. `configure` asks the update and backup schedules together |
 | `manifest [--accept]` | snapshot every file under `DATA_ROOT/media` into `BACKUP_ROOT/manifest/` (nightly via timer). Alerts the ops stream when a folder loses media files — arr renames and upgrades are not losses. Refuses to record a snapshot whose file count fell more than `MANIFEST_ALERT_PCT` (usually an unmounted share); `--accept` records an intended one. With deletion attribution on (`audit`), the report and the alert name who removed each folder |
 | `manifest diff [A [B]]` / `manifest find <text>` | what was lost between two snapshots (default: the last two; timestamps may be shortened to a unique prefix) / when each path matching `<text>` was first and last seen, and whether it is still there |
@@ -240,7 +240,9 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
 * **Every update is preceded by a restore point**, and restore points are
   kept on a daily/weekly/monthly schedule (7 daily, one per week for 4
   weeks, one per month for 6 months — `BACKUP_KEEP_*` in `.env`).
-  Anything broken after an update: `rollback <service>`.
+  Anything broken after an update: `rollback <service>`. A new version that
+  merely reset its settings shows up as drift (`wire --verify` runs after
+  every version change) and `wire` puts them back.
 * **Downloads cannot leak.** VPN'd services run inside gluetun's network
   namespace, start only after the tunnel is verifiably up, qBittorrent's
   transfers are additionally bound to the tunnel interface itself (tun0),

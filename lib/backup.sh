@@ -845,6 +845,26 @@ cmd_update() {
     (( notify_users )) && notify_interruption "$ntitle complete" "$ndone" success
     (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '`%s`\n' "${changed[@]}")" success
 
+    # a new version can reset what wire set (Jellyfin 12 put its transcode
+    # path back to the default): after a version change on a wired
+    # deployment, verify the wiring and report drift — the apps are healthy,
+    # so this warns and names the fix rather than failing the update, and it
+    # never applies anything unattended. A child process: wire exits on its own.
+    if (( ${#changed[@]} )) && [[ -f "$WIRED_FILE" ]]; then
+        hr "Wiring after the update"
+        local vout vrc=0 drift
+        vout=$("$SCRIPT_DIR/mediastack.sh" wire --verify 2>&1) || vrc=$?
+        if (( vrc == 0 )); then
+            ok "wire --verify: the new versions kept their settings"
+        else
+            drift=$(grep -E 'would:|FAIL' <<<"$vout" | head -12)
+            warn "wire --verify found drift after the update — a new version changed settings wire owns:"
+            printf '%s\n' "$drift" | sed 's/^/    /'
+            echo "  Apply: ./mediastack.sh wire     (see it all first: ./mediastack.sh wire --verify)"
+            notify ops "Mediastack update changed settings" "A new version reset settings wire owns:"$'\n'"$(printf '`%s`\n' "$drift")"$'\n'"Apply: \`./mediastack.sh wire\`" warning
+        fi
+    fi
+
     # nightly TRaSH sync rides the update pipeline: same schedule the
     # operator already chose, guides drift-window stays at one cycle.
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
