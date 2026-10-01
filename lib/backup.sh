@@ -104,6 +104,7 @@ defer_while_streaming() { # defer_while_streaming WHAT — postpone while someon
 # Information only: retention, restore and the skip rule never read it.
 backup_take() { # backup_take KIND NOTE — a full cold restore point into the GFS pool
     load_env; require_mounts
+    render   # once, here: point_record and backup_snapshot call service helpers in $( ) subshells
     maint_lock backup 0
     local broot croot dest need have
     broot=$(env_get BACKUP_ROOT); croot=$(env_get CONFIG_ROOT)
@@ -656,6 +657,7 @@ apply_up() {
 
 cmd_update() {
     load_env; require_mounts
+    render   # once, here: the target discovery below calls helpers in $( ) subshells, each of which would render again
     local one="" to_tag="" dry=0 now=0 auto=0
     while [[ $# -gt 0 ]]; do case "$1" in
         --dry-run) dry=1; shift ;;
