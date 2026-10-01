@@ -778,9 +778,10 @@ cmd_update() {
     # search functional probe: index must exist and be non-empty
     if svc_enabled jellysearch; then
         local docs
-        docs=$(sudo docker exec "$(svc_cname meilisearch)" sh -c \
-               "curl -fsS -H 'Authorization: Bearer $(env_get MEILI_MASTER_KEY)' http://127.0.0.1:7700/stats \
-                || wget -qO- --header='Authorization: Bearer $(env_get MEILI_MASTER_KEY)' http://127.0.0.1:7700/stats" \
+        # the key goes in on stdin: sudo logs every command line to the journal
+        docs=$(printf '%s' "$(env_get MEILI_MASTER_KEY)" | sudo docker exec -i "$(svc_cname meilisearch)" sh -c \
+               'k=$(cat); curl -fsS -H "Authorization: Bearer $k" http://127.0.0.1:7700/stats \
+                || wget -qO- --header="Authorization: Bearer $k" http://127.0.0.1:7700/stats' \
                2>/dev/null | jq '[.indexes[].numberOfDocuments] | add // 0' || echo 0)
         (( docs > 0 )) && ok "search index: $docs documents" \
             || { warn "search index EMPTY after update — try 'docker restart $(svc_cname jellysearch)';"; warn "if it stays empty: ./mediastack.sh rollback jellyfin"; bad+=("jellysearch(index)"); }
