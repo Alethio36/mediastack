@@ -1,6 +1,7 @@
 # Transmission: extra torrent client. Most deployments want exactly ONE torrent client
-# (qBittorrent). Enable only if you know why. Peer-port note: 6881 is mapped
-# once on gluetun; configure distinct listen ports per client if you run
+# (qBittorrent). Enable only if you know why. Peer-port note: no peer port is
+# published on the host (inbound peers come through the VPN provider's port
+# forwarding, if any); configure distinct listen ports per client if you run
 # several.
 
 x-logging: &logging
