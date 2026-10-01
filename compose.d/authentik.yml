@@ -148,6 +148,15 @@ services:
       AUTHENTIK_HOST: http://authentik:9000
       AUTHENTIK_INSECURE: "true"   # the stack network, never the outside
       AUTHENTIK_TOKEN: ${AUTHENTIK_LDAP_TOKEN}
+    # No search domain. The outpost starts before the server (shard rule)
+    # and looks it up by name at once; with the host's search domain copied
+    # in, a name not on the network yet falls through to the LAN resolver,
+    # and any wildcard record there (a *.<domain> front door is the common
+    # case) answers with a public address the connect then hangs on for
+    # ~4.5 min (seen live, 1 Oct 2026). With no search list the lookup fails
+    # in milliseconds and the 3s retry finds the server the moment it exists.
+    # The outpost talks to one name, `authentik`, and nothing else.
+    dns_search: ["."]
     labels:
       <<: *no-foreign-watchtower
       mediastack.shard: "authentik"
