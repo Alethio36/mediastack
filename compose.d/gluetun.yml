@@ -19,14 +19,13 @@ services:
       - NET_ADMIN
     devices:
       - /dev/net/tun:/dev/net/tun
-    ports:
-      # Every VPN'd service publishes its UI through gluetun.
-      # Unused mappings (disabled profiles) are harmless.
-      # VPN'd service ports are generated into local/vpn-overlay.yml (vpn_gen)
-      - "${FLARESOLVERR_PORT:-8191}:8191"  # FlareSolverr — STATIC on purpose: internal-only,
-      # always-VPN, never operator-toggleable (Prowlarr reaches it in-namespace)
-      - "6881:6881"
-      - "6881:6881/udp"
+    # Every VPN'd service publishes its UI through gluetun; those ports are
+    # generated into local/vpn-overlay.yml (vpn_gen) and bind where the gate
+    # says. Nothing is published here: FlareSolverr is reached in-namespace
+    # (Prowlarr, on localhost:8191) and has no login, so it never gets a host
+    # port; a torrent peer port on the host is unreachable from the tunnel's
+    # side and only invites LAN peers past it — inbound peers need the VPN
+    # provider's port forwarding, not a host mapping.
     volumes:
       - ${CONFIG_ROOT}/gluetun:/gluetun
     environment:
