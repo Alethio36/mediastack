@@ -135,10 +135,35 @@ backup_take() { # backup_take KIND NOTE — a full cold restore point into the G
     points_private
 }
 
-svc_digest() { # svc_digest SVC -> the digest its container runs ("" when unknown); needs c_inspect_all
-    local img
-    # RepoDigests is an IMAGE field: resolve container -> image -> digest
-    img=$(c_get "$(svc_cname "$1")" '.Image'); [[ -n "$img" ]] || return 0
+IMAGE_STORE=""   # containerd | classic — Docker's image store, read once (image_store_init)
+image_store_init() {
+    [[ -z "$IMAGE_STORE" ]] || return 0
+    if sudo docker info -f '{{json .DriverStatus}}' 2>/dev/null | grep -q 'io.containerd.snapshotter'; then
+        IMAGE_STORE=containerd
+    else IMAGE_STORE=classic; fi
+}
+
+image_repo() { # image_repo REF -> its repository, without tag or digest (a registry port is kept)
+    local r=${1%%@*}
+    [[ "${r##*/}" == *:* ]] && r=${r%:*}
+    echo "$r"
+}
+
+svc_digest() { # svc_digest SVC -> repo@digest of the image its container runs ("" when unknown); needs c_inspect_all
+    local cn img ref; cn=$(svc_cname "$1")
+    image_store_init
+    if [[ "$IMAGE_STORE" == containerd ]]; then
+        # compose's record: the platform manifest it created the container from
+        # (pullable as repo@digest). The container's own image is the index,
+        # and a re-pull that moves the tag to a republished index leaves the
+        # old one without a repo digest — the container kept, correctly, but
+        # unidentifiable that way (found live, 8 Oct 2026).
+        ref=$(c_get "$cn" '.Config.Labels["com.docker.compose.image"]'); [[ -n "$ref" ]] || return 0
+        echo "$(image_repo "$(svc_image "$1")")@$ref"; return 0
+    fi
+    # the classic store: the label holds an image ID, which no registry
+    # serves — RepoDigests is an IMAGE field: container -> image -> digest
+    img=$(c_get "$cn" '.Image'); [[ -n "$img" ]] || return 0
     sudo docker image inspect --format '{{index .RepoDigests 0}}' "$img" 2>/dev/null | tr -d '\n' || true
 }
 
@@ -164,15 +189,24 @@ shard_member_refuse() { # shard_member_refuse SVC VERB — a shard member is nev
 }
 
 point_record() { # point_record DEST KIND NOTE SVC... — images.lock and meta, BEFORE stopping (inspect needs the containers)
-    local dest=$1 kind=$2 note=${3//$'\n'/ } s ref ver lock="" rows=""; shift 3
-    c_inspect_all
+    local dest=$1 kind=$2 note=${3//$'\n'/ } s ref ver lock="" rows="" lost=(); shift 3
+    c_inspect_all; image_store_init
     for s in "$@"; do
-        ref=$(svc_digest "$s"); [[ -n "$ref" ]] || continue
+        ref=$(svc_digest "$s")
+        # a container not running has no image to record; one running without
+        # a known digest is a gap restore and rollback must not meet unwarned
+        if [[ -z "$ref" ]]; then
+            [[ "$(c_state "$(svc_cname "$s")")" == running ]] && lost+=("$s")
+            continue
+        fi
         ver=$(c_version "$(svc_cname "$s")" || true)
         lock+="$s $ref"$'\n'; rows+="$s ${ver:--} $ref"$'\n'
     done
     printf '%s' "$lock" | sudo tee "$dest/images.lock" >/dev/null
     { printf 'kind=%s\nnote=%s\n' "$kind" "$note"; printf '%s' "$rows"; } | sudo tee "$dest/meta" >/dev/null
+    (( ${#lost[@]} )) || return 0
+    warn "No image digest for ${lost[*]} — this point cannot put them back on their exact images (a shard among them will not restore from it)"
+    notify ops "Mediastack restore point incomplete" "Point \`$(basename "${dest%.partial}")\` has no image digest for: ${lost[*]}. Restore and rollback cannot return them to their exact images from it." warning
 }
 
 cmd_backup_list() { # backup list [svc] — every restore point, newest first; with a service, what it ran in each
@@ -811,6 +845,7 @@ cmd_update() {
     info "pulling from registries — the slowest step on a full update; a minute or two is normal"
     local changed=() line
     local -A before=() before_d=()
+    image_store_init   # here, not in svc_digest's $( ): once for every target
     for s in "${targets[@]}"; do before[$s]=$(c_version "$(svc_cname "$s")"); before_d[$s]=$(svc_digest "$s"); done
     DC pull "${targets[@]}"
     hr "Applying"
