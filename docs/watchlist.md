@@ -226,7 +226,7 @@ adding it would look like, and the trigger to revisit.
 | TubeSync | Video (YouTube) | Alternative | Pinchflat is lighter with more momentum |
 | spotDL | Music (playlist → local audio) | Deferred, radar | YouTube-sourced audio (lossy ceiling, adversarial upstream); overlaps lidarr's role |
 | SongMirror | Music (playlist sync) | Deferred, watch | Very young (single maintainer, no published image, no UI login); spotDL underneath |
-| **authentik** | Identity/SSO | Deferred (post-migration) | 4-container DB stack; needs a DB-backed-service pattern |
+| **authentik** | Identity/SSO | **Shipped** (the portal) | Its 4 containers run as one shard — the DB-backed-service pattern ROMM can reuse |
 | Authelia (+ file / + LLDAP) | Identity/SSO | Lighter alternative | Leanest; no enrolment UI |
 | Kanidm | Identity/SSO | Lighter alternative | No built-in forward-auth (needs a proxy) |
 
@@ -645,8 +645,8 @@ sync is the point.
 ### Identity & SSO
 
 **Verdict:** decided (Sept 2026) — **authentik**, as one of two mutually
-exclusive account models; build after migrate. The plan lives in the roadmap
-(Security & access); this entry keeps the reasoning and the evidence (every
+exclusive account models — and **shipped** (README: The portal and the gate).
+This entry keeps the reasoning and the evidence behind the choice (every
 claim below checked against each project's current documentation, Sept 2026).
 
 **Two account models — the user picks one, never both.** Wizarr creates

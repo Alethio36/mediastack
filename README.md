@@ -554,6 +554,15 @@ password, or too many wrong ones from the Jellyfin app —
 prints a single-use sign-in link to send them; they set a new password in the
 portal's Settings, and it works in every app.
 
+Each person's email is their own: sign-up refuses one another account already
+has, and nobody can change their own (apps such as Kavita know people by it).
+An admin changes one with `./mediastack.sh set-email <user> <address>` —
+Kavita's account follows, and an address someone else already has is warned
+about first. `./mediastack.sh users` lists everyone with their email and
+groups. The portal can also send email — optional, through any SMTP service
+(a Gmail account with an app password is the simplest):
+[docs/email.md](docs/email.md), then `./mediastack.sh email test <address>`.
+
 Moving an existing household onto the portal: invite each person, and once
 they have joined, `./mediastack.sh link-account <username>` ties their local
 accounts to the portal one — same accounts, so watch history, reading and
@@ -661,8 +670,11 @@ a web control panel over the safe verbs (OliveTin front door) · the portal
 their apps included) and Navidrome, invitation-only sign-up, every admin tool
 behind it · moving an existing household's accounts onto it with their
 history (`link-account`) · password reset for someone locked out
-(`reset-password`) · deletion attribution and the media manifest · the arr
-recycle bin.
+(`reset-password`) · each person's email their own, changed by an admin
+(`set-email`, `users`) · optional outgoing email for the portal (any SMTP
+service, `email test`) · deletion attribution and the media manifest · the
+arr recycle bin · restore points that keep a shard (authentik's four
+containers) together · containers that ignore the host's search domain.
 
 **Pre-alpha.** The first household rollout comes next (see the roadmap);
 changes from here are fixes, polish and the rollout itself. Project goals and forward direction live
