@@ -974,15 +974,22 @@ cmd_apply_timer() {
 }
 
 # apply_timer UNIT DESCRIPTION VERB SCHEDULE_VAR LABEL — install/refresh one
-# oneshot service + timer from an OnCalendar value in .env; empty disables it
+# oneshot service + timer from an OnCalendar value in .env; empty disables it.
+# The time is in .env's TZ, not the host's: systemd reads a zone named in the
+# expression (found live, 8 Oct 2026 — a host on one zone ran another zone's
+# household's 04:00 update at 21:30 its time)
 apply_timer() {
-    local unit="$1" desc="$2" verb="$3" var="$4" label="$5" sched
+    local unit="$1" desc="$2" verb="$3" var="$4" label="$5" sched tz
     sched=$(env_get "$var")
     if [[ -z "$sched" ]]; then
         sudo systemctl disable --now "$unit.timer" 2>/dev/null || true
         ok "$label disabled ($var is empty)."
         return
     fi
+    tz=$(env_get TZ)
+    [[ -f "/usr/share/zoneinfo/${sched##* }" ]] \
+        && die "$var '$sched' names a time zone — schedules follow TZ in .env ($tz); remove it from $var."
+    [[ -z "$tz" ]] || sched="$sched $tz"
     systemd-analyze calendar "$sched" >/dev/null 2>&1 || die "$var '$sched' is invalid (not a systemd OnCalendar expression)."
     timer_write "$unit" "$desc" "$verb" "$sched"
     ok "$label timer installed: $sched (next: $(systemctl show "$unit.timer" -p NextElapseUSecRealtime --value 2>/dev/null || echo '?'))"
