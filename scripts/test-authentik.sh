@@ -94,6 +94,11 @@ tag=$(awk '/image: ghcr.io\/goauthentik\/server:/ { sub(/.*:/, ""); print; exit 
 [[ " ${AUTHENTIK_RELEASES[*]} " == *" $(authentik_release_of "$tag") "* ]] || fail_ "the fragment's tag $tag is not in AUTHENTIK_RELEASES"; pass
 [[ "$(grep -c "image: ghcr.io/goauthentik/server:$tag$" compose.d/authentik.yml)" == 2 ]] || fail_ "server and worker must run the same tag"; pass
 grep -q "image: ghcr.io/goauthentik/ldap:$tag$" compose.d/authentik.yml || fail_ "the LDAP outpost must run the server's release (authentik requires it)"; pass
+# the outpost starts once the server is ready: its startup backoff is uncapped,
+# so a late first fetch outlives its start period (6 Oct 2026)
+sed -n '/^  authentik-ldap:/,/^  authentik-db:/p' compose.d/authentik.yml > "$T/ldap"
+grep -q '/-/health/ready/' "$T/ldap" && grep -q 'exec /ldap$' "$T/ldap" \
+    || fail_ "the LDAP outpost must wait for the server's readiness, then exec /ldap"; pass
 
 # ---- secrets ----
 s=$(authentik_secret 60)

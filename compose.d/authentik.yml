@@ -154,9 +154,24 @@ services:
     # and any wildcard record there (a *.<domain> front door is the common
     # case) answers with a public address the connect then hangs on for
     # ~4.5 min (seen live, 1 Oct 2026). With no search list the lookup fails
-    # in milliseconds and the 3s retry finds the server the moment it exists.
+    # in milliseconds instead of hanging.
     # The outpost talks to one name, `authentik`, and nothing else.
     dns_search: ["."]
+    # Start only once the server is ready. The outpost's first config fetch
+    # retries with an uncapped exponential backoff (upstream retry-go, 3s
+    # base, no ceiling, whatever its log says): tries at +0, 3, 10, 22, 46,
+    # 94, 190, 386s. Its health socket appears only after that first fetch
+    # succeeds, so a server still answering 503 at +190s left the outpost
+    # unhealthy past its start period (seen live 6 Oct 2026, reproduced 7 Oct).
+    # Waiting here makes the first fetch succeed. Needs the image's sh + curl:
+    # if upstream drops them this fails at start, loudly.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        echo "waiting for authentik at $${AUTHENTIK_HOST} to be ready"
+        until curl -fs -o /dev/null -m 5 "$${AUTHENTIK_HOST}/-/health/ready/"; do sleep 3; done
+        exec /ldap
     labels:
       <<: *no-foreign-watchtower
       mediastack.shard: "authentik"

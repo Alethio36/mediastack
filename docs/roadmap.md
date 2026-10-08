@@ -256,7 +256,10 @@ all built; what each still leaves open is noted below.
   (`dns_search: ["."]`); the other services still inherit the host's. Making
   it stack-wide is a policy — a short LAN name an operator points an app at
   (an SMTP relay for Apprise, say) would stop resolving — and the VPN group
-  takes gluetun's resolver anyway, so it is a decision, not a line.
+  takes gluetun's resolver anyway, so it is a decision, not a line. It bites
+  the server too: 6 Oct 2026, while an update recreated `authentik-db`, the
+  server looked its database up and got a Cloudflare IPv6 address (it failed
+  fast only because the host had no IPv6 route).
 - **Protect the unauthenticated UIs — before migrate, without SSO.** Apprise's
   UI and API have no login by design and hold the notification tokens; the panel
   runs stack commands. Until the gate exists (and for installs that choose
