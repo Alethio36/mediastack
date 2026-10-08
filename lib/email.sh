@@ -7,6 +7,7 @@
 # The portal sends through any SMTP server (docs/email.md). authentik reads
 # its settings when it starts: a change takes effect at the next `up`, and
 # `email test` refuses while the running authentik has older ones.
+EMAIL_WORKER_WAIT=300   # seconds email test waits for authentik's worker after a start (its migrations run first)
 SMTP_KEYS=(SMTP_HOST SMTP_PORT SMTP_STARTTLS SMTP_TLS SMTP_USER SMTP_PASSWORD SMTP_FROM)
 # .env key -> what authentik's containers carry (compose.d/authentik.yml)
 declare -A SMTP_AK=([SMTP_HOST]=AUTHENTIK_EMAIL__HOST [SMTP_PORT]=AUTHENTIK_EMAIL__PORT [SMTP_USER]=AUTHENTIK_EMAIL__USERNAME
@@ -72,6 +73,16 @@ cmd_email() { # email [status|test <address>]
             p=$(smtp_problems); [[ -z "$p" ]] || die "the email settings cannot work yet:
 $(sed 's/^/  /' <<<"$p")"
             [[ "$(c_state "$(svc_cname authentik-worker)")" == running ]] || die "authentik's worker is not running — ./mediastack.sh up"
+            # a send queued before the worker is up is not lost: it goes out
+            # later, after the command has given up (found live: two mails)
+            local waited=0
+            if [[ "$(c_health "$(svc_cname authentik-worker)")" != healthy ]]; then
+                info "authentik's worker is still starting (it runs its migrations first) — waiting up to $((EMAIL_WORKER_WAIT / 60)) min..."
+                while [[ "$(c_health "$(svc_cname authentik-worker)")" != healthy ]]; do
+                    (( waited >= EMAIL_WORKER_WAIT )) && die "authentik's worker did not become healthy — ./mediastack.sh status authentik; its log: ./mediastack.sh logs authentik-worker --no-follow"
+                    sleep 5; waited=$((waited + 5))
+                done
+            fi
             stale=$(smtp_live_stale)
             [[ -z "$stale" ]] || die "authentik still runs older email settings ($(tr '\n' ' ' <<<"$stale" | sed 's/ $//')) — it reads them when it starts: ./mediastack.sh up, then test again"
             info "sending a test message to $to through $(env_get SMTP_HOST):$(env_get SMTP_PORT)..."
@@ -79,8 +90,11 @@ $(sed 's/^/  /' <<<"$p")"
                 && grep -q "Test email sent" <<<"$out"; then
                 state_set SMTP_TESTED "$(smtp_fingerprint)"
                 ok "sent — check $to (and its spam folder; a message that lands there needs SPF/DKIM for $(env_get SMTP_FROM | cut -d@ -f2): docs/email.md)"
+            elif grep -q ResultTimeout <<<"$out"; then
+                # the command stopped waiting; the worker may still send it
+                die "authentik's worker did not finish the send within the command's wait. It may still go out — check $to before testing again. What it did: ./mediastack.sh logs authentik-worker --no-follow | grep -iE 'email_sent|send_mail|smtp'"
             else
-                fail "the server did not take it: $(ak_cmd_why "$out")"
+                fail "the server did not take it: $(ak_cmd_why "$out" | cut -c1-300)"
                 die "$(smtp_hint "$out")"
             fi ;;
         *) die "usage: email [status|test <address>]" ;;

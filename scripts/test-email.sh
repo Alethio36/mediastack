@@ -41,7 +41,9 @@ smtp SMTP_HOST=relay.lan SMTP_PORT=25 SMTP_FROM=box@home.lan; [[ -z "$(smtp_prob
 
 # ---- email test: never against settings authentik has not started with ----
 LIVE=""; EXEC_OUT="Test email sent to you@example.com"; EXEC_RC=0
-c_state() { echo running; }
+c_state() { echo running; }; HEALTH=healthy; c_health() { echo "$HEALTH"; }
+# shellcheck disable=SC2034  # read by the sourced lib/email.sh
+EMAIL_WORKER_WAIT=0
 sudo() {
     case "$1 $2" in
         "docker inspect") printf '%s\n' "$LIVE" ;;
@@ -72,6 +74,18 @@ smtp "${GOOD[@]}"; live_from_env; EXEC_OUT=$'{"event":"x"}\nsmtplib.SMTPAuthenti
 rm -f "$STATE_DIR/SMTP_TESTED"; out=$(et test you@example.com) && fail_ "a refusal must fail"
 [[ "$out" == *"did not take it"*"SMTPAuthenticationError"*"app password"* && ! -e "$STATE_DIR/SMTP_TESTED" ]] \
     || fail_ "the server's own words, then the likely cause; not recorded as tested: $out"; pass
+EXEC_OUT="Test email sent to you@example.com"; EXEC_RC=0
+# a worker still starting: never send into its queue (it would go out later, after a "failed" test)
+HEALTH=starting; out=$(et test you@example.com) && fail_ "a worker not healthy must refuse"
+[[ "$out" == *"still starting"*"did not become healthy"* && ! -e "$T/log" ]] || fail_ "worker starting: waited, refused, nothing sent: $out"; pass
+HEALTH=healthy
+# the command's own wait ran out: say it may still go out, never "unreachable"
+EXEC_OUT=$'dramatiq.results.errors.ResultTimeout: authentik.stages.email.tasks.send_mail({...})'; EXEC_RC=1
+out=$(et test you@example.com) && fail_ "a ResultTimeout must fail"
+[[ "$out" == *"did not finish the send"*"may still go out"*"email_sent"* && "$out" != *"could not be reached"* ]] || fail_ "ResultTimeout: $out"; pass
+# the server's words are cut short (a task dump carries the whole message)
+EXEC_OUT="smtplib.SMTPAuthenticationError: $(printf 'x%.0s' {1..2000})"
+out=$(et test you@example.com) || true; [[ ${#out} -lt 1200 ]] || fail_ "a long error is cut: ${#out} chars"; pass
 EXEC_OUT="Test email sent to you@example.com"; EXEC_RC=0
 
 # ---- the 30 -> 31 migration: the keys, empty; set ones kept ----
