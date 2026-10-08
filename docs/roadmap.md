@@ -329,13 +329,27 @@ all built; what each still leaves open is noted below.
   installs' profiles.
 
 ### Security & access
-- **Traefik's Docker socket behind a proxy** *(explore)*. Traefik reads the
-  socket for its routes (`:ro` limits the file, not the API), and it is the
-  one container the Internet reaches — a Traefik compromise is root on the
-  host. The usual answer is a socket proxy that allows only the read-only
-  endpoints the provider needs; one more container, so it must earn its
-  place against that cost. Until then the mitigation is Traefik's own
-  pinning and the update's health gate.
+- **Traefik without the Docker socket** *(recommended, Oct 2026 — after the
+  rollout, before a household relies on the Internet-facing edge)*. Traefik
+  mounts `/var/run/docker.sock:ro` to read routes from labels; `:ro` covers
+  the socket file, not the API, so Traefik holds the whole Docker API — root
+  on the host — and it is the one container the Internet reaches.
+  * *A socket proxy* (the usual answer: a filtered API allowing list,
+    inspect, events) narrows it but leaves a hole: Traefik's Docker provider
+    *inspects* containers, and an inspect returns every container's
+    environment — most of the stack's secrets. Root becomes "every secret in
+    `.env`", plus one more container to keep.
+  * *The recommendation: no socket at all.* Traefik's file provider is
+    already on (`/dynamic`); mediastack already renders every label
+    (`RENDERED_JSON`, drop-ins included) and knows every address (`svc_addr`,
+    `gluetun:<port>` for VPN'd services). A generator turns the `traefik.*`
+    labels into route files on every `up`/`enable`/`disable`/VPN toggle — as
+    the VPN overlay is regenerated today — and the Docker provider and the
+    mount go. A Traefik compromise then reaches Traefik only.
+  * Costs: the generator (~100-150 lines + tests; label semantics translated
+    exactly, the gate middleware included); a stopped service's route stays
+    and answers 502 instead of vanishing; a route only appears through
+    mediastack (no labels added by hand at runtime).
 - **Container DNS: no host search domain** — *decided (7 Oct 2026), shipped*.
   Docker copies the host's search domain into every container, so a bare
   sibling name looked up while that sibling is off the network falls through
@@ -478,15 +492,31 @@ all built; what each still leaves open is noted below.
   targets; (2) Wizarr mode's `reset-password` through Jellyfin's API (today it
   points at Jellyfin's dashboard); (3) Wizarr's admin (no API found yet — UI
   only); (4) Navidrome's per-user Subsonic password, reset by the admin.
-- **LDAP bind cache after a password change** *(later — needs a live test)*:
-  the outpost runs `bind_mode: cached` and remembers each (user, password) that
-  bound successfully until that bind's authentik session expires, so an old
-  password used in Jellyfin shortly before a change keeps working there until
-  then (a new or long-unused old password is checked properly — proven live).
-  The window is unmeasured. Test: sign in to Jellyfin, change the password in
-  the portal, sign in again at once with the old one — the outpost logs
-  "authenticated from session" if it is served from the cache. Bounded fix: a
-  short `session_duration` (e.g. 10 minutes) on the LDAP login stage.
+- **LDAP bind cache after a password change** *(test in the rebuild's
+  household pass, then decide)*. Jellyfin asks authentik's LDAP outpost to
+  bind each sign-in; the outpost runs `bind_mode: cached` and, after a
+  successful bind, answers that user + password from memory until the
+  authentik session the bind created expires. So a password changed in the
+  portal can keep working in Jellyfin (and its TV/phone apps) for a while —
+  proven live (Sept 2026); a new or long-unused password is checked
+  properly. Only LDAP sign-ins are affected (Kavita and Audiobookshelf use
+  OIDC, Navidrome the forward-auth gate — each asks authentik every time).
+  * *Unknowns:* how long the window lasts, and — the more important one —
+    whether a **deactivated** person is also served from the cache (still in
+    Jellyfin after being switched off in the portal).
+  * *Test (~15 min):* sign in to Jellyfin as a test user with password A;
+    change it to B in the portal; sign in again at once with A — the outpost
+    logs `authenticated from session` if the cache served it; repeat every
+    few minutes until A fails (the window). Then sign in with B, deactivate
+    the user, and try once more.
+  * *Fix options:* `bind_mode: direct` — every bind runs authentik's real
+    login flow, no window, deactivation included; costs a slower sign-in,
+    and Jellyfin binds only when someone signs in (its own token carries the
+    session after), so the cost is small — the likely choice if the test
+    confirms binds happen only at sign-in. Or keep the cache with a short
+    session on the LDAP login stage (e.g. 10 minutes): bounded, not closed.
+    `wire` already restarts the outpost after a portal-setup change for the
+    same reason (its bind cache cleared).
 - Post-migration hardening: move the panel off LAN-open once SSO lands; phase-2
   sudo narrowing (read-only verbs drop root); staging→production certs once a box
   stops being a test box.
