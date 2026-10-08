@@ -25,6 +25,15 @@ x-authentik-env: &authentik-env
   AUTHENTIK_POSTGRESQL__USER: authentik
   AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
   AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+  # outgoing email (docs/email.md) — authentik's defaults when unset: none sent
+  AUTHENTIK_EMAIL__HOST: ${SMTP_HOST:-localhost}
+  AUTHENTIK_EMAIL__PORT: ${SMTP_PORT:-25}
+  AUTHENTIK_EMAIL__USERNAME: ${SMTP_USER:-}
+  AUTHENTIK_EMAIL__PASSWORD: ${SMTP_PASSWORD:-}
+  AUTHENTIK_EMAIL__USE_TLS: ${SMTP_STARTTLS:-false}
+  AUTHENTIK_EMAIL__USE_SSL: ${SMTP_TLS:-false}
+  AUTHENTIK_EMAIL__FROM: ${SMTP_FROM:-authentik@localhost}
+  AUTHENTIK_EMAIL__TIMEOUT: "15"
 
 # start_period: the first start runs authentik's whole migration history
 # before the server answers — about 3.5 minutes measured on a small VM (an

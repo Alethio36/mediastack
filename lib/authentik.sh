@@ -381,6 +381,13 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                         "Kavita (and ROMM) sign people in by email: the accounts sharing one become one there" \
                         "give each their own: ./mediastack.sh set-email <user> <address>"
             else warn "authentik: its users are unreadable — emails not checked"; fi
+            if smtp_configured; then
+                local sp; sp=$(smtp_problems)
+                if [[ -n "$sp" ]]; then d_fail "email: $(tr '\n' ';' <<<"$sp" | sed 's/;$//')" "the portal cannot send email" "./mediastack.sh configure (docs/email.md)"
+                elif [[ -n "$(smtp_live_stale)" ]]; then warn "email: authentik still runs older email settings — ./mediastack.sh up"
+                elif [[ "$(state_get SMTP_TESTED)" != "$(smtp_fingerprint)" ]]; then warn "email: these settings have not passed a test — ./mediastack.sh email test <your address>"
+                else ok "email: $(env_get SMTP_HOST) — these settings passed a test"; fi
+            fi
             local sset
             if sset=$(ak_api GET /admin/settings/); then
                 jq -e '.default_user_change_email == false and .default_user_change_username == false' <<<"$sset" >/dev/null \

@@ -330,6 +330,21 @@ cmd_reset_password() { # someone locked out: their login throttle cleared, a sin
     authentik_recover "$user"
 }
 
+cmd_users() { # the portal's people, as authentik has them
+    load_env; render
+    svc_enabled authentik || die "the portal (authentik) is not enabled — with Wizarr, people are Jellyfin's own (its dashboard → Users)"
+    [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
+    local out
+    out=$(ak_api GET "/core/users/?page_size=1000") || die "authentik refused the user list: $(oneline "$out")"
+    { printf 'USERNAME\tNAME\tEMAIL\tGROUPS\tSIGN-IN\n'
+      jq -r '.results[] | select(.type == "internal" and .username != "akadmin")
+        | [.username, (.name // "-" | if . == "" then "-" else . end), (.email // "" | if . == "" then "-" else . end),
+           ([.groups_obj[]?.name] | if length == 0 then "-" else join(",") end), (if .is_active then "yes" else "off" end)] | @tsv' <<<"$out"
+    } | awk -F'\t' '{ for (i = 1; i <= NF; i++) { c[NR, i] = $i; if (length($i) > w[i]) w[i] = length($i) } n = NR; f = NF }
+        END { for (r = 1; r <= n; r++) { line = ""; for (i = 1; i <= f; i++) line = line sprintf(i < f ? "%-" w[i] + 2 "s" : "%s", c[r, i]); print line } }'
+    info "akadmin (the stack's own) is left out; change an email: ./mediastack.sh set-email <user> <address>"
+}
+
 cmd_set_email() { # an admin changes a person's portal email; Kavita follows; a shared address warns, --yes overrides
     load_env; render
     local yes=0 args=()
