@@ -278,6 +278,19 @@ grep -q 'maint_lock "the scheduled update" "$MAINT_WAIT"' lib/backup.sh && grep 
 grep -q 'maint_lock backup 0' <(awk '/^backup_take\(\)/,/^}/' lib/backup.sh) || fail_ "every restore point takes the lock (update's is re-entry)"; pass
 grep -q 'apply_timer mediastack-backup .* "backup --auto" BACKUP_SCHEDULE' lib/backup.sh || fail_ "apply-timer installs the backup timer"; pass
 
+# ---- schedules run in .env's TZ, not the host's (found live 8 Oct 2026) ----
+( systemd-analyze() { [[ "$1" == calendar ]]; }; timer_write() { echo "WRITE $4"; }
+  systemctl() { :; }; ok() { :; }
+  printf 'UPDATE_SCHEDULE=*-*-* 04:00\nTZ=Europe/Berlin\n' > "$ENV_FILE"
+  [[ "$(apply_timer mediastack-update d "update --auto" UPDATE_SCHEDULE l)" == "WRITE *-*-* 04:00 Europe/Berlin" ]] \
+      || fail_ "the schedule carries TZ: $(apply_timer mediastack-update d "update --auto" UPDATE_SCHEDULE l)"
+  printf 'UPDATE_SCHEDULE=Tue 04:00\n' > "$ENV_FILE"
+  [[ "$(apply_timer mediastack-update d "update --auto" UPDATE_SCHEDULE l)" == "WRITE Tue 04:00" ]] || fail_ "no TZ: the host's zone, as written"
+  printf 'UPDATE_SCHEDULE=*-*-* 04:00 Europe/Berlin\nTZ=Europe/Berlin\n' > "$ENV_FILE"
+  out=$( ( apply_timer mediastack-update d "update --auto" UPDATE_SCHEDULE l ) 2>&1 ) && fail_ "a zone in the schedule must refuse"
+  [[ "$out" == *"names a time zone"*"remove it from UPDATE_SCHEDULE"* ]] || fail_ "the refusal says why and what to do: $out"
+) || exit 1; pass; pass; pass
+
 # ---- migration 29 -> 30 ----
 printf 'UPDATE_SCHEDULE=Tue 04:00\n' > "$ENV_FILE"; migrate_env_29_to_30 >/dev/null
 [[ "$(env_get BACKUP_SCHEDULE)" == "*-*-* 05:00" ]] || fail_ "an existing install: daily, an hour after its updates"; pass

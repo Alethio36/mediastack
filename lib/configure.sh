@@ -109,7 +109,8 @@ _configure_timezone() {
     tz_host=$(timedatectl show -p Timezone --value 2>/dev/null || echo Etc/UTC)
     tz_cur=$(env_get TZ "$tz_host"); [[ "$tz_cur" == Etc/UTC ]] && tz_cur="$tz_host"
     explain "Timezone" \
-        "Used for logs, schedules and in-app times. IANA format, e.g." \
+        "Used for logs, in-app times and the update/backup schedules (they run" \
+        "at their times in this zone, whatever the host's own). IANA format, e.g." \
         "Europe/Berlin or America/Chicago. Your host reports: $tz_host" \
         "If unsure, accept the default."
     while true; do
