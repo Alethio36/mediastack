@@ -112,6 +112,18 @@ real='{"event": "Task failed", "level": "error", "logger": "authentik.tasks"}'
 [[ "$(log_errors authentik <<<"$boot")" == 0 ]] || fail_ "authentik's boot lines counted as errors"; pass
 [[ "$(log_errors authentik <<<"$boot"$'\n'"$real")" == 1 ]] || fail_ "an error-level line must count"; pass
 [[ "$(log_errors plain <<<"$boot")" == 3 ]] || fail_ "a service with no pattern keeps the default (any line naming an error)"; pass
+# every container in the shard counts by its own pattern; doctor reads the members too
+for m in authentik-worker authentik-ldap authentik-db; do
+    sed -n "/^  $m:/,/^  [a-z-]*:\$/p" compose.d/authentik.yml | grep -q 'mediastack.errors:' || fail_ "$m declares no mediastack.errors"; pass
+done
+grep -q 'for s in $(svc_shard $(svc_enabled_managed)); do' <(awk '/^_doctor_runtime_audit\(\)/,/^}/' lib/doctor.sh) \
+    || fail_ "doctor's log-noise check covers shard members"; pass
+re=$(sed -n "/^  authentik-db:/,/^  [a-z-]*:\$/p" compose.d/authentik.yml | sed -n "s/^ *mediastack\.errors: '\(.*\)'\$/\1/p")
+RENDERED_JSON=$(jq -n --arg re "$re" '{services:{"authentik-db":{labels:{"mediastack.errors":$re}}}}')
+pg='2026-10-08 03:09:53.702 PDT [1] LOG:  database system is ready to accept connections
+2026-10-08 03:10:01.000 PDT [9] ERROR:  relation "x" does not exist
+2026-10-08 03:10:02.000 PDT [9] FATAL:  terminating connection due to administrator command'
+[[ "$(log_errors authentik-db <<<"$pg")" == 2 ]] || fail_ "postgres: its ERROR/FATAL lines, not its LOG lines"; pass
 RENDERED_JSON=$saved
 
 # ---- secrets ----
