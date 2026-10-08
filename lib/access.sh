@@ -330,6 +330,16 @@ cmd_reset_password() { # someone locked out: their login throttle cleared, a sin
     authentik_recover "$user"
 }
 
+cmd_set_email() { # an admin changes a person's portal email; Kavita follows; a shared address warns, --yes overrides
+    load_env; render
+    local yes=0 args=()
+    while (( $# )); do case "$1" in --yes) yes=1; shift ;; -*) die "Unknown set-email arg '$1'" ;; *) args+=("$1"); shift ;; esac; done
+    (( ${#args[@]} == 2 )) || die "usage: set-email <user> <address> [--yes]"
+    svc_enabled authentik || die "set-email is for the portal (authentik); it is not enabled."
+    [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
+    authentik_set_email "${args[0]}" "${args[1]}" "$yes"
+}
+
 cmd_invite() { # mint an invitation (authentik's or Wizarr's, whichever runs) and print the ready-to-share URL
     load_env; render
     if svc_enabled authentik; then

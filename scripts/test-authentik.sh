@@ -212,7 +212,7 @@ base() { # base CURRENT OURS -> the PATCH body sent, or "none"
     CUR=$1; rm -f "$T/calls"; if [[ -n "$2" ]]; then echo "$2" > "$T/state"; else rm -f "$T/state"; fi
     ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
         case "$1 $2" in
-            "GET /admin/settings/") jq -cn --arg u "$CUR" '{base_url:$u}' ;;
+            "GET /admin/settings/") jq -cn --arg u "$CUR" '{base_url:$u, default_user_change_email:false, default_user_change_username:false}' ;;
             "PATCH /admin/settings/") : ;;
             "GET /managed/blueprints/?page_size=200") jq -cn --arg h "$BP_CUR" '{results:[{name:"Mediastack - Portal", status:"successful", last_applied_hash:$h, pk:"bp-1"}]}' ;;
         esac; }
@@ -969,5 +969,60 @@ out=$(acc "sonarr,authentik,jellyfin" '0\n1\n'); ! has "$out" authentik && [[ "$
 out=$(acc "sonarr,jellyfin" '0\n3\n\n'); has "$out" authentik && [[ "$out" == *"0) keep current: none"*"link-account"* ]] || fail_ "none -> authentik: in, pointed at link-account: $out"; pass
 out=$(acc "sonarr,wizarr,jellyfin" '0\n3\n\n'); has "$out" authentik && ! has "$out" wizarr || fail_ "Wizarr -> authentik: one model, never both: $out"; pass
 out=$(acc "" '1\n7\n0\n1\n'); [[ "$out" == *"FAIL Pick 1-3."*"FAIL Nothing to keep."*"OK Accounts: none"* ]] || fail_ "a bad choice, and 0 with nothing to keep, are asked again: $out"; pass
+
+# ---- a person's email is theirs: Kavita (and ROMM) sign people in by it (8 Oct 2026) ----
+grep -q 'User.objects.filter(email__iexact=email).exists()' blueprints/authentik/mediastack-portal.yaml \
+    || fail_ "sign-up refuses an email another account has"; pass
+# self-service: email and username stay admin-only
+idw() { SET=$1; rm -f "$T/calls"; ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"; [[ "$1" == GET ]] && echo "$SET"; return 0; }
+        WIRE_DRY=0; wire_authentik_identity >/dev/null; grep '^PATCH' "$T/calls" | cut -d' ' -f3- || echo none; }
+[[ "$(idw '{"default_user_change_email":true,"default_user_change_username":false}')" == '{"default_user_change_email":false,"default_user_change_username":false}' ]] \
+    || fail_ "self-service email change on: wire turns both off"; pass
+[[ "$(idw '{"default_user_change_email":false,"default_user_change_username":false}')" == none ]] || fail_ "already off: no write"; pass
+# duplicates among people (service accounts and empty emails are not people's)
+ak_api() { echo '{"results":[{"username":"ana","type":"internal","email":"Ana@Home.lan"},{"username":"tom","type":"internal","email":"ana@home.lan"},
+  {"username":"bo","type":"internal","email":"bo@home.lan"},{"username":"x","type":"internal","email":""},{"username":"y","type":"internal","email":""},
+  {"username":"ak-outpost","type":"internal_service_account","email":"bo@home.lan"}]}'; }
+[[ "$(authentik_email_dupes)" == "ana@home.lan: ana tom" ]] || fail_ "dupes: case-insensitive, people only, empty ignored: $(authentik_email_dupes)"; pass
+# set-email: a shared address warns and needs a decision; --yes overrides; Kavita follows
+USERS='{"results":[{"pk":1,"username":"ana","type":"internal","email":"ana@home.lan"},{"pk":2,"username":"tom","type":"internal","email":"tom@home.lan"},
+  {"pk":3,"username":"svc","type":"service_account","email":""}]}'
+ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+    case "$1 $2" in
+        "GET /core/users/?username=ana") jq -c '{results:[.results[0]]}' <<<"$USERS" ;;
+        "GET /core/users/?username=svc") jq -c '{results:[.results[2]]}' <<<"$USERS" ;;
+        "GET /core/users/?username=nobody") echo '{"results":[]}' ;;
+        "GET /core/users/?page_size=1000") echo "$USERS" ;;
+        "PATCH /core/users/1/") jq -c '{email}' <<<"$3" ;;
+    esac; }
+authentik_portal() { echo https://portal.example; }; svc_enabled() { [[ "$1" == authentik ]]; }
+se() { rm -f "$T/calls"; ( ok() { echo "OK $*"; }; warn() { echo "WARN $*"; }; info() { echo ":: $*"; }; authentik_set_email "$@" ) 2>&1 </dev/null; }
+out=$(se ana not-an-email 0) && fail_ "a malformed address must refuse"; [[ "$out" == *"not an email address"* ]] || fail_ "malformed: $out"; pass
+out=$(se nobody a@b.c 0) && fail_ "an unknown user must refuse"; pass
+out=$(se svc a@b.c 0) && fail_ "a service account is not a person's"; pass
+out=$(se ana ANA@home.lan 0); [[ "$out" == *"already has"* ]] && ! grep -q '^PATCH' "$T/calls" || fail_ "the same address (any case): no write: $out"; pass
+out=$(se ana new@home.lan 0); [[ "$out" == *"now new@home.lan (was ana@home.lan)"* && "$out" != *WARN* ]] && grep -q '^PATCH /core/users/1/ {"email":"new@home.lan"}' "$T/calls" \
+    || fail_ "a free address: changed, no warning: $out"; pass
+out=$(se ana Tom@home.lan 0) && fail_ "a shared address without a terminal or --yes must stop"
+[[ "$out" == *"already the email of: tom"*"would become one account"*"add --yes"* ]] && ! grep -q '^PATCH' "$T/calls" \
+    || fail_ "shared: warned, says why, nothing written: $out"; pass
+out=$(se ana Tom@home.lan 1); [[ "$out" == *WARN*"tom"* && "$out" == *"now Tom@home.lan"* ]] && grep -q '^PATCH' "$T/calls" \
+    || fail_ "shared with --yes: warned, then the admin's decision stands: $out"; pass
+# Kavita follows: the account holding the old email answers to the new one, nothing else changes
+echo "$KAV_USERS" > "$T/kav-users"
+kav_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
+    case "$1 $2" in
+        "POST /api/account/login") echo '{"token":"K"}' ;;
+        "GET /api/users?includePending=true") cat "$T/kav-users" ;;
+        "POST /api/account/update") jq -c --argjson b "$4" 'map(if .id == $b.userId then .email = $b.email else . end)' "$T/kav-users" > "$T/kav-users.n" && mv "$T/kav-users.n" "$T/kav-users"; echo '{}' ;;
+    esac; }
+printf 'KAVITA_ADMIN_USER=mediastack\nKAVITA_ADMIN_PASSWORD=p\n' > "$ENV_FILE"; rm -f "$T/calls"
+ok() { echo "OK $*"; }; info() { echo ":: $*"; }
+want=$(kav_account_body "$(jq -c '.[] | select(.id == 3)' "$T/kav-users")" | jq -c '.email = "new@b.c"')
+out=$(kav_email_move T@B.C new@b.c 2>&1)
+grep -qxF "POST /api/account/update $want" "$T/calls" && [[ "$out" == *"test-thio now answers to new@b.c"* ]] \
+    || fail_ "kavita: the matched account (email any case), only its email changed: $out / $(grep update "$T/calls")"; pass
+rm -f "$T/calls"; out=$(kav_email_move gone@b.c x@b.c 2>&1)
+[[ "$out" == *"nothing to move"* ]] && ! grep -q update "$T/calls" || fail_ "no account with the old email: nothing written: $out"; pass
 
 echo "OK authentik: $checks checks"

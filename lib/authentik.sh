@@ -303,6 +303,42 @@ authentik_recover() { # authentik_recover USER — clear their login throttle, p
     echo "  Then, in the portal: Settings → Change password. The new password works in every app."
 }
 
+authentik_email_dupes() { # -> one line per email two or more people's accounts share: "email: user user…"
+    local out
+    out=$(ak_api GET "/core/users/?page_size=1000") || return 1
+    jq -r '[.results[] | select(.type == "internal" and (.email // "") != "") | {e: (.email | ascii_downcase), u: .username}]
+        | group_by(.e) | map(select(length > 1)) | .[] | "\(.[0].e): \(map(.u) | join(" "))"' <<<"$out"
+}
+
+authentik_set_email() { # authentik_set_email USER ADDRESS YES — an admin changes a person's email; apps that match by it follow
+    local user=$1 email=$2 yes=$3 enc out u pk old others
+    [[ "$email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || die "'$email' is not an email address"
+    enc=$(jq -rn --arg u "$user" '$u|@uri')
+    out=$(ak_api GET "/core/users/?username=$enc") || die "authentik refused the user lookup: $(oneline "$out")"
+    u=$(jq -c '.results[0] // empty' <<<"$out")
+    [[ -n "$u" ]] || die "no portal account named '$user' (exact, case-sensitive) — the list: $(authentik_portal)/if/admin/#/identity/users"
+    [[ "$(jq -r '.type' <<<"$u")" == internal ]] || die "'$user' is a $(jq -r '.type' <<<"$u") account, not a person's"
+    pk=$(jq -r '.pk' <<<"$u"); old=$(jq -r '.email // ""' <<<"$u")
+    [[ "${old,,}" == "${email,,}" ]] && { ok "$user already has $email"; return 0; }
+    out=$(ak_api GET "/core/users/?page_size=1000") || die "authentik refused the user list: $(oneline "$out")"
+    others=$(jq -r --arg e "${email,,}" --argjson pk "$pk" '[.results[] | select(.pk != $pk and ((.email // "") | ascii_downcase) == $e) | .username] | join(" ")' <<<"$out")
+    if [[ -n "$others" ]]; then
+        warn "$email is already the email of: $others. Kavita (and ROMM) sign a portal user in as the account holding their email — $user and $others would become one account there."
+        if (( ! yes )); then
+            [[ -t 0 ]] || die "a shared email needs a decision — run it in a terminal, or add --yes"
+            confirm "Use it anyway?" || { info "Nothing changed."; return 0; }
+        fi
+    fi
+    out=$(ak_api PATCH "/core/users/$pk/" "$(jq -cn --arg e "$email" '{email:$e}')") || die "authentik rejected the new email: $(oneline "$out")"
+    [[ "$(jq -r '.email' <<<"$out")" == "$email" ]] || die "authentik answered, but $user's email did not change"
+    ok "portal: $user's email is now $email${old:+ (was $old)}"
+    # the apps that find people by email must find the same account under the new one
+    if [[ -n "$old" ]] && svc_enabled kavita; then
+        [[ -n "$(env_get KAVITA_ADMIN_PASSWORD)" ]] || { warn "kavita: no stored admin login — change $user's email there by hand (Users → $user), or their next sign-in starts a new account"; return 0; }
+        kav_email_move "$old" "$email" || warn "kavita still has $old for $user — change it there by hand (Users → $user), or their next sign-in starts a new, empty account"
+    fi
+}
+
 # ------------------------------------------------------------------ doctor --
 _doctor_accounts() { # the account model: one of the services that conflict, and authentik's release mark
     hr "doctor: accounts"
@@ -338,6 +374,20 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                 *) d_fail "authentik rejected mediastack's portal setup ($st): $(authentik_blueprint_why | tr '\n' ' ')" \
                        "groups, sign-up and LDAP may be missing or incomplete" "fix the entry named above in blueprints/authentik/, then: ./mediastack.sh up && ./mediastack.sh wire authentik" ;;
             esac
+            local dup
+            if dup=$(authentik_email_dupes); then
+                [[ -z "$dup" ]] && ok "authentik: every person's email is their own" \
+                    || d_fail "authentik: people share an email — $(tr '\n' ';' <<<"$dup" | sed 's/;$//')" \
+                        "Kavita (and ROMM) sign people in by email: the accounts sharing one become one there" \
+                        "give each their own: ./mediastack.sh set-email <user> <address>"
+            else warn "authentik: its users are unreadable — emails not checked"; fi
+            local sset
+            if sset=$(ak_api GET /admin/settings/); then
+                jq -e '.default_user_change_email == false and .default_user_change_username == false' <<<"$sset" >/dev/null \
+                    || d_fail "authentik lets people change their own email or username" \
+                        "anyone could take another person's email, and with it their account in Kavita (and ROMM)" \
+                        "./mediastack.sh wire authentik"
+            fi
             if [[ -z "$(env_get AUTHENTIK_LDAP_TOKEN)" ]]; then
                 warn "authentik's LDAP outpost has no token yet (it keeps restarting until it does): ./mediastack.sh wire authentik"
             fi

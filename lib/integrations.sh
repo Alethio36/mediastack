@@ -1797,7 +1797,21 @@ wire_authentik() {
            authentik_blueprint_why | sed 's/^/       /'
            return 0 ;;
     esac
+    wire_authentik_identity
     wire_authentik_gate
+}
+
+wire_authentik_identity() { # people cannot change their own email or username: apps find their account by them
+    local cur
+    cur=$(ak_api GET /admin/settings/) || { wfail "authentik: its settings are unreadable"; return 1; }
+    if jq -e '.default_user_change_email == false and .default_user_change_username == false' <<<"$cur" >/dev/null; then
+        ok "authentik: people cannot change their own email or username (an admin can: ./mediastack.sh set-email)"
+        return 0
+    fi
+    w_would "authentik: stop people changing their own email and username (the apps find their account by them)" || return 0
+    ak_api PATCH /admin/settings/ '{"default_user_change_email":false,"default_user_change_username":false}' >/dev/null \
+        && ok "authentik: people can no longer change their own email or username" \
+        || wfail "authentik rejected the change to its self-service settings"
 }
 
 wire_authentik_gate() { # the gate on the built-in outpost, the first admin in `admins`, the dashboard cards
@@ -2168,6 +2182,32 @@ kav_oidc() { # Kavita signs people in through the portal; one restart when its s
         || { wfail "kavita restarted but sign-in through the portal is not live (it checks the portal at start-up) — inspect: ./mediastack.sh logs kavita --no-follow | grep -i openid"; return 1; }
 }
 
+kav_account_body() { # kav_account_body USER-JSON -> its account update, everything as it is (callers change one field)
+    # Kavita's update takes the whole account: whatever is left out is reset
+    jq -c '{
+        userId: .id, username: .username, email: .email, identityProvider: .identityProvider,
+        roles: [.roles[]?], libraries: [.libraries[]?.id],
+        # no restriction recorded = none; a recorded one goes back exactly (not //: it drops false)
+        ageRestriction: (if .ageRestriction == null then {ageRating: -1, includeUnknowns: true}
+                         else {ageRating: .ageRestriction.ageRating, includeUnknowns: .ageRestriction.includeUnknowns} end) }' <<<"$1"
+}
+
+kav_email_move() { # kav_email_move OLD NEW — the Kavita account signed in by OLD now answers to NEW; rc 1 after saying why
+    local out tok u back
+    out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
+        || { fail "kavita rejected the stored admin login: $(oneline "$out")"; return 1; }
+    tok=$(jq -r '.token // empty' <<<"$out"); [[ -n "$tok" ]] || { fail "kavita login returned no token"; return 1; }
+    out=$(kav_api GET "/api/users?includePending=true" "$tok") || { fail "kavita: users unreadable: $(oneline "$out")"; return 1; }
+    u=$(jq -c --arg e "${1,,}" '[.[] | select((.email // "" | ascii_downcase) == $e)] | first // empty' <<<"$out")
+    [[ -n "$u" ]] || { info "kavita: no account answers to the old email — nothing to move"; return 0; }
+    out=$(kav_api POST /api/account/update "$tok" "$(kav_account_body "$u" | jq -c --arg e "$2" '.email = $e')") \
+        || { fail "kavita rejected the new email for $(jq -r '.username' <<<"$u"): $(oneline "$out")"; return 1; }
+    back=$(kav_api GET "/api/users?includePending=true" "$tok") \
+        && jq -e --argjson i "$(jq '.id' <<<"$u")" --arg e "$2" '.[] | select(.id == $i) | .email == $e' <<<"$back" >/dev/null \
+        || { fail "kavita answered for $(jq -r '.username' <<<"$u") but the email did not change"; return 1; }
+    ok "kavita: $(jq -r '.username' <<<"$u") now answers to $2 (same account, same reading progress)"
+}
+
 kav_admin_sync() { # portal accounts follow `admins`; the stack's admin and local accounts are never touched
     local tok="$1" out admins u body want has back
     out=$(ak_api GET "/core/users/?groups_by_name=admins&page_size=500") || { wfail "authentik: admins unreadable — Kavita rights not synced"; return 1; }
@@ -2181,14 +2221,8 @@ kav_admin_sync() { # portal accounts follow `admins`; the stack's admin and loca
         has=$(jq --arg a "$KAV_ADMIN_ROLE" '[.roles[]?] | index($a) != null' <<<"$u")
         [[ "$has" == "$want" ]] && continue
         w_would "kavita: $(jq -r '.username' <<<"$u") $( [[ $want == true ]] && echo becomes || echo 'is no longer' ) admin" || continue
-        # its update takes the whole account: everything but the roles goes back as it was
-        body=$(jq -c --arg a "$KAV_ADMIN_ROLE" --argjson w "$want" '{
-            userId: .id, username: .username, email: .email, identityProvider: .identityProvider,
-            roles: (if $w then ([.roles[]?] + [$a] | unique) else [.roles[]? | select(. != $a)] end),
-            libraries: [.libraries[]?.id],
-            # no restriction recorded = none; a recorded one goes back exactly (not //: it drops false)
-            ageRestriction: (if .ageRestriction == null then {ageRating: -1, includeUnknowns: true}
-                             else {ageRating: .ageRestriction.ageRating, includeUnknowns: .ageRestriction.includeUnknowns} end) }' <<<"$u")
+        body=$(kav_account_body "$u" | jq -c --arg a "$KAV_ADMIN_ROLE" --argjson w "$want" \
+            '.roles = (if $w then (.roles + [$a] | unique) else [.roles[] | select(. != $a)] end)')
         out=$(kav_api POST /api/account/update "$tok" "$body") \
             || { wfail "kavita rejected the change for $(jq -r '.username' <<<"$u"): $(oneline "$out")"; continue; }
         back=$(kav_api GET "/api/users?includePending=true" "$tok") \
