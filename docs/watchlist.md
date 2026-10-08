@@ -204,7 +204,7 @@ adding it would look like, and the trigger to revisit.
 | Unpackerr | Downloads | To evaluate | Only earns its place if releases arrive archived |
 | SABnzbd | Downloads (Usenet) | To evaluate | A new subsystem: paid provider + NZB indexers + this downloader |
 | Komga | Comics/manga | Deferred | Kavita chosen for breadth; Komga's edge is its API |
-| ROMM | Games | Deferred, decision pending | First DB-backed service (MariaDB + Valkey) |
+| ROMM | Games | Deferred, fits now | A shard (app + MariaDB + Valkey) with portal sign-in; needs the portal's email rule first |
 | **Pinchflat** | Video (YouTube) | **Ship-worthy [pick]** | Adversarial upstream; two house-rule exceptions |
 | TubeArchivist | Video (YouTube) | Deferred | Heavy (Elasticsearch + Redis + app) |
 | ytdl-sub | Video (YouTube) | Alternative | No UI — wrong for unknown end users |
@@ -400,37 +400,48 @@ tunnel), and the image's upkeep.
 in-browser play (EmulatorJS), save-state and asset management, 80+
 platforms, multi-user. On-brand for a gaming-adjacent deployment.
 
-**Why deferred:** it's the first candidate that doesn't fit the stack's
-single-container, cold-copy-the-config architecture. ROMM is a **three-
-container application**: the app **+ MariaDB** (its real data store —
-library, users, save associations) **+ Valkey/Redis** (sessions + scan
-task queue). That brings three problems the current stack doesn't solve:
+**Status (re-assessed Oct 2026): the original blockers are solved.** It was
+deferred as the first database-backed service. Since then authentik shipped
+as one — its own PostgreSQL in a *shard* — and the shard pattern covers what
+ROMM needs:
+1. **Backups are consistent.** A restore point stops the stack before
+   copying, so a stopped MariaDB copies whole; points record, restore and
+   unpin a shard's containers as one (Oct 2026). No dump hook needed.
+2. **Start order** is the shard's own: the app `depends_on` MariaDB
+   (`service_healthy`) and Valkey, health-gated like authentik's server on
+   its database.
+3. **IGDB key** from Twitch for metadata — setup, user-supplied (same shape
+   as ComicVine for Kapowarr).
 
-1. **Database-aware backup.** The backup model cold-copies config dirs; a
-   live MariaDB cold-copies to a torn, useless database. ROMM's restore
-   points would need a `mariadb-dump` before the copy.
-2. **Startup ordering as a data dependency.** The app crash-loops if it
-   starts before MariaDB has applied migrations — needs a DB healthcheck
-   and `depends_on: service_healthy` gating (like gluetun, but for data).
-3. **User-supplied IGDB key** from Twitch for metadata (same shape as
-   ComicVine for Kapowarr) — setup, not a blocker.
+So it would ship as a shard: `romm` (primary) + `romm-db` (MariaDB) +
+`romm-cache` (Valkey, sessions and the scan queue — nothing to keep).
 
-**What adding it would look like — three options, decision pending:**
+**Portal sign-in (OIDC) — supported.** ROMM documents authentik: an
+OAuth2/OpenID provider and an application, the same shape as Kavita's and
+Audiobookshelf's in mediastack's portal blueprint; ROMM takes environment
+variables (`OIDC_ENABLED`, `OIDC_PROVIDER=authentik`, client id/secret,
+redirect URI, and the per-application URL `/application/o/<slug>`, not the
+authentik root). Its docs also map authentik groups to ROMM roles
+(`media-users`, `admins`).
 
-* **(a) Full integration** — ship ROMM + MariaDB + Valkey and teach
-  `backup`/`doctor` to be database-aware (dump before restore points,
-  health-gate the app on the DB). Correct and durable; touches the backup
-  engine — the biggest change since the wave.
-* **(b) Contained integration** — ship the 3-container unit, but ROMM's
-  MariaDB dumps itself to `${CONFIG_ROOT}/romm/db-dump.sql` via a
-  pre-backup hook, which then rides the normal cold-copy. Backup engine
-  stays naive; the DB concern stays local to ROMM. Sets a clean pattern
-  for any future DB-backed service. **Leaning option.**
-* **(c) Keep deferred** until the appetite for a ROM manager is concrete.
+**Two requirements before it ships:**
+* **`email_verified`.** authentik 2025.10 made that claim default to false;
+  ROMM requires a verified email and fails silently without it. The fix is
+  a scope mapping that asserts it, replacing authentik's managed email
+  mapping on ROMM's provider — in the blueprint.
+* **Email must be an identity the portal controls.** ROMM (like Kavita)
+  signs a portal user in as the account with their email. Asserting
+  `email_verified` is only honest if a portal email is unique and cannot
+  be set to someone else's — see the portal's email rule (roadmap). Without
+  it, whoever claims another person's address at sign-up or in their
+  settings becomes that person in ROMM, an admin included.
 
-**Revisit when:** you want game-library management enough to accept the
-first database-backed service — then decide (a) vs (b). Kavita/Jellyfin
-don't cover this; there's no manual stopgap beyond a plain file share.
+**To verify when building it:** whether a first OIDC sign-in creates the
+ROMM account or only links an existing one; the role mapping against the
+portal's groups; the image and MariaDB versions to pin.
+
+**Revisit when:** the portal's email rule is in, and the household wants a
+game library.
 
 ---
 
