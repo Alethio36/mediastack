@@ -91,7 +91,8 @@ jobs:
               echo "no previous tip to diff against (new branch or force-push) — skipped"; exit 0
             fi
           fi
-          if git diff --name-only "$base" HEAD -- .env.example | grep -q .; then
+          # a setting's line (KEY=value) is what installs migrate; a comment is not
+          if git diff -U0 "$base" HEAD -- .env.example | grep -qE '^[+-][A-Z][A-Z0-9_]*='; then
             git diff "$base" HEAD -- .env.example | grep -q '^[+-]ENV_SCHEMA=' \
               || { echo "::error::.env.example changed without bumping ENV_SCHEMA (and adding a migration)"; exit 1; }
           fi
