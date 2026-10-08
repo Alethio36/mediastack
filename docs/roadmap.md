@@ -456,15 +456,16 @@ all built; what each still leaves open is noted below.
   per-device app password (a TV gets its own, revocable without changing the
   main password). Breaks "one password for everything", so an option, not a
   default.
-- **Email server for authentik** *(later)* — the standard for what email is
-  used for: (1) a user resets their own forgotten password, (2) `invite` can
-  e-mail the link, (3) authentik's own update notices reach its admins. Nothing
-  else (no marketing, no digests). Email is already required at sign-up, so
-  every account is ready for it. Until then invite links are copied by hand and
-  passwords are reset by the admin (`reset-password <user>`). **Follow-up when it lands:** Kavita's
-  verified-email check (wire keeps it off) can come on only once authentik
-  reports verified addresses — its default email mapping always sends
-  `email_verified: false`, so that needs a mapping of mediastack's own.
+- **Email for authentik** — *SMTP shipped (Oct 2026)*: the portal sends
+  through any SMTP server (`configure`, `email test`, docs/email.md). What
+  email is for stays the standard: (1) a user resets their own forgotten
+  password — see End-user experience; (2) `invite` can e-mail the link;
+  (3) authentik's own update notices reach its admins. Nothing else (no
+  marketing, no digests). Still to build: (1)–(3). **Follow-up:** Kavita's
+  verified-email check (wire keeps it off) can come on now that a portal
+  email is unique and only an admin changes it (Oct 2026) — it needs a scope
+  mapping of mediastack's own asserting `email_verified`, the same one ROMM
+  needs (authentik's default sends false).
 - **Credential coverage** *(audit Sept 2026 — the rest later)*: every login the
   stack stores rotates with `set-credentials` (arr, qBittorrent, Jellyfin admin,
   Pi-hole, Traefik dashboard, Audiobookshelf root, Kavita's admin, the portal's
