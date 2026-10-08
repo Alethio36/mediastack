@@ -572,7 +572,10 @@ its own PostgreSQL + the LDAP outpost — every extra container serves only
 authentik (Architecture rules: Shards; No shared data tiers). Redis is gone
 since authentik 2025.10. The LDAP outpost is its own container
 (`ghcr.io/goauthentik/ldap`); forward-auth uses the outpost embedded in the
-server. Needs the DB-backed service pattern first (a PostgreSQL-aware backup
+server. Watch: the outpost's startup config fetch backs off with no ceiling
+(`internal/outpost/ak/api.go`, retry-go with a 3s base and no `MaxDelay`), so
+mediastack's fragment holds it until the server is ready — drop that wait if
+upstream caps the backoff. Needs the DB-backed service pattern first (a PostgreSQL-aware backup
 and a migration-aware update).
 
 **The design rule: the gate is for browser-only tools.** An app whose clients
