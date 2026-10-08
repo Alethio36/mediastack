@@ -231,6 +231,11 @@ arrive on their own, as with watchtower, but validated first.
   recovery flow (identify, email a link, set a new password) bound to the
   brand only when email works, so a portal without it never shows a dead
   link. Until then `reset-password` mints the link for an admin to send.
+  Ship mediastack's own email template with it (authentik reads
+  `CONFIG_ROOT/authentik/templates`): authentik's built-in one references its
+  logo as an inline `cid:logo` image that Gmail shows as a broken image plus
+  an attachment (seen on the first test mail, Oct 2026) — a text-led
+  template with the portal's name avoids it.
 - Web panel polishing.
 - Script polishing for the end user (clearer prompts, output, ergonomics).
   - *`up`/`down` output is truncated on short terminals.*
