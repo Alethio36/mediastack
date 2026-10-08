@@ -117,13 +117,16 @@ entries:
       label: Email
       type: email
       required: true
-      placeholder: For password resets
+      placeholder: Yours only — the apps know you by it
       order: 5
 
   # a username that would collide in the apps: the stack's own accounts there
   # (Audiobookshelf's root, Jellyfin's local admin), and another person's name
   # in a different case — authentik's own check is case-sensitive, Jellyfin's
-  # and Audiobookshelf's are not
+  # and Audiobookshelf's are not. And an email another account has: Kavita
+  # (and ROMM) sign a portal user in as the account holding their email, so a
+  # shared one would make two people one there (the name stays: it identifies
+  # the existing policy)
   - model: authentik_policies_expression.expressionpolicy
     id: policy-join-username
     identifiers:
@@ -136,6 +139,10 @@ entries:
           username = str(request.context.get("prompt_data", {}).get("username", "")).strip()
           if username.lower() in reserved or User.objects.filter(username__iexact=username).exists():
               ak_message("That username is taken. Please choose another.")
+              return False
+          email = str(request.context.get("prompt_data", {}).get("email", "")).strip()
+          if email and User.objects.filter(email__iexact=email).exists():
+              ak_message("That email is already in use. Please use your own.")
               return False
           return True
         - !Env [MEDIASTACK_RESERVED_USERNAMES, ""]
