@@ -66,4 +66,39 @@ T_NAMES=$(mktemp); c_inspect_all
 [[ "$(sort "$T_NAMES" | tr '\n' ' ')" == "idp idp-db idp-worker radarr " ]] || fail_ "inspected: $(tr '\n' ' ' < "$T_NAMES")"; pass
 rm -f "$T_NAMES"
 
+# ---- a shard is recorded, restored and unpinned whole (repro 8 Oct 2026: ----
+# ---- full points held only the primary; unpin left the members pinned)  ----
+RENDERED_JSON=$good
+svc_managed() { echo idp radarr; }
+[[ "$(point_services | tr '\n' ' ')" == "idp idp-db idp-worker radarr " ]] || fail_ "a full point records every member: $(point_services)"; pass
+grep -qF 'point_record "$dest" "$1" "$2" $(point_services)' <(awk '/^backup_take\(\)/,/^}/' lib/backup.sh) \
+    || fail_ "backup_take records point_services, not only the managed services"; pass
+
+P=$(mktemp -d); trap 'rm -f "$lib"; rm -rf "$P"' EXIT
+printf 'idp a\nidp-db b\nidp-worker c\nradarr d\n' > "$P/images.lock"
+( point_shard_check "$P" idp ) || fail_ "a shard recorded whole restores"; pass
+printf 'radarr d\n' > "$P/images.lock"
+( point_shard_check "$P" idp ) || fail_ "a shard not recorded at all restores (nothing to pin)"; pass
+printf 'idp a\nradarr d\n' > "$P/images.lock"
+out=$( ( point_shard_check "$P" idp ) 2>&1 ) && fail_ "a point holding only the primary must refuse"; pass
+[[ "$out" == *"records the image of idp but not of idp-db idp-worker"* && "$out" == *"backup list idp"* ]] || fail_ "the refusal names the gap and the way out: $out"; pass
+
+( shard_member_refuse idp rollback ) || fail_ "a primary is handled"; pass
+out=$( ( shard_member_refuse idp-db rollback ) 2>&1 ) && fail_ "a member alone must refuse"; pass
+[[ "$out" == *"idp-db is part of idp"*"mediastack.sh rollback idp"* ]] || fail_ "the refusal names the primary: $out"; pass
+
+load_env() { :; }; repo_owned() { :; }; ok() { echo "OK $*"; }
+DC() { echo "DC $*" >> "$P/log"; }
+PINS_FILE=$P/pins.yml
+printf 'services:\n  idp:\n    image: x:1\n  idp-worker:\n    image: x:1\n  idp-db:\n    image: y:1\n  radarr:\n    image: r:1\n' > "$PINS_FILE"
+out=$(cmd_unpin idp-worker)
+[[ "$(cat "$PINS_FILE")" == $'services:\n  radarr:\n    image: r:1' ]] || fail_ "unpin by a member releases the whole shard, nothing else: $(cat "$PINS_FILE")"; pass
+[[ "$(cat "$P/log")" == "DC up -d idp" && "$out" == *"Unpinned idp idp-db idp-worker"* ]] || fail_ "the shard starts by its primary, every pin named: $out / $(cat "$P/log")"; pass
+
+# ---- the update summary sees an image change without a version label ----
+[[ -z "$(update_change db "" r@sha256:aaaa "" r@sha256:aaaa)" ]] || fail_ "same digest: no change"; pass
+[[ "$(update_change db "" r@sha256:aaaaaaaaaaaaaaaa "" r@sha256:bbbbbbbbbbbbbbbb)" == "db: sha256:aaaaaaaaaaaa -> sha256:bbbbbbbbbbbb" ]] \
+    || fail_ "no version label: the digest stands in: $(update_change db "" r@sha256:aaaaaaaaaaaaaaaa "" r@sha256:bbbbbbbbbbbbbbbb)"; pass
+[[ "$(update_change app 1.0 r@sha256:a 1.1 r@sha256:b)" == "app: 1.0 -> 1.1" ]] || fail_ "a version label is shown when it changed"; pass
+
 echo "OK shard: $checks checks"

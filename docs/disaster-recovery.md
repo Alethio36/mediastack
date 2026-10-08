@@ -74,6 +74,16 @@ loud too. The service archives in a point are readable by root only (they
 hold every app's keys and databases); `meta`, `images.lock` and `SHA256SUMS`
 stay readable so `backup list` and the skip rule work without sudo.
 
+A shard (authentik: server, worker, LDAP outpost, database — or a drop-in with
+`mediastack.shard` members) is one unit everywhere: every point records each
+of its containers' images, `restore` and `rollback` pin all of them back
+together, and `unpin` (by the primary or any member) releases all of them,
+authentik through its release check (never back, never a skipped release). A
+member is never restored or rolled back alone — the command names its
+primary. A point that records a shard's primary but not its members (taken
+before 8 Oct 2026) is refused for that shard rather than restored onto mixed
+versions: pick a newer one from `backup list <primary>`.
+
 ## Restore-point retention
 
 Tiered (grandfather-father-son), pruned after every backup, knobs in `.env`:
