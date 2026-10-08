@@ -246,20 +246,19 @@ all built; what each still leaves open is noted below.
   endpoints the provider needs; one more container, so it must earn its
   place against that cost. Until then the mitigation is Traefik's own
   pinning and the update's health gate.
-- **Container DNS: no host search domain** *(decide after the MVP)*. Docker
-  copies the host's search domain into every container, so a bare sibling
-  name looked up before that sibling is on the network falls through to the
-  LAN resolver — and a wildcard record there (a `*.<domain>` front door is
-  the common case) answers with a public address the connect then hangs on.
-  Seen live, 1 Oct 2026: the LDAP outpost dialed Cloudflare for 4.5 minutes
-  after every restart. `authentik-ldap` now runs with no search list
-  (`dns_search: ["."]`); the other services still inherit the host's. Making
-  it stack-wide is a policy — a short LAN name an operator points an app at
-  (an SMTP relay for Apprise, say) would stop resolving — and the VPN group
-  takes gluetun's resolver anyway, so it is a decision, not a line. It bites
-  the server too: 6 Oct 2026, while an update recreated `authentik-db`, the
-  server looked its database up and got a Cloudflare IPv6 address (it failed
-  fast only because the host had no IPv6 route).
+- **Container DNS: no host search domain** — *decided (7 Oct 2026), shipped*.
+  Docker copies the host's search domain into every container, so a bare
+  sibling name looked up while that sibling is off the network falls through
+  to the LAN resolver, and a wildcard record there (a `*.<domain>` front door
+  is the common case) answers with a public address. Seen live twice: the
+  LDAP outpost dialed Cloudflare for 4.5 minutes (1 Oct 2026), and the
+  authentik server got a Cloudflare IPv6 address for its database while an
+  update recreated it (6 Oct 2026). gluetun keeps the search line when it
+  rewrites the nameserver, so the VPN group had it too. Every shipped service
+  now runs with `dns_search: ["."]` (fragments, vpn_gen's off-VPN stanza,
+  gluetun for the VPN group); test-render enforces it. The cost, accepted: a
+  short LAN name typed into an app (an SMTP relay, a NAS) must be written in
+  full or as an address.
 - **Protect the unauthenticated UIs — before migrate, without SSO.** Apprise's
   UI and API have no login by design and hold the notification tokens; the panel
   runs stack commands. Until the gate exists (and for installs that choose

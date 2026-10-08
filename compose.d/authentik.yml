@@ -92,6 +92,7 @@ services:
     healthcheck: *authentik-health
     networks: [mediastack]
     logging: *logging
+    dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped
 
   authentik-worker:
@@ -133,6 +134,7 @@ services:
     healthcheck: *authentik-health
     networks: [mediastack]
     logging: *logging
+    dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped
 
   authentik-ldap:
@@ -148,14 +150,9 @@ services:
       AUTHENTIK_HOST: http://authentik:9000
       AUTHENTIK_INSECURE: "true"   # the stack network, never the outside
       AUTHENTIK_TOKEN: ${AUTHENTIK_LDAP_TOKEN}
-    # No search domain. The outpost starts before the server (shard rule)
-    # and looks it up by name at once; with the host's search domain copied
-    # in, a name not on the network yet falls through to the LAN resolver,
-    # and any wildcard record there (a *.<domain> front door is the common
-    # case) answers with a public address the connect then hangs on for
-    # ~4.5 min (seen live, 1 Oct 2026). With no search list the lookup fails
-    # in milliseconds instead of hanging.
-    # The outpost talks to one name, `authentik`, and nothing else.
+    # No search domain, like every service (docs/adding-a-service.md). The
+    # outpost was first: it starts before the server (shard rule) and dialed
+    # a wildcard's public address for ~4.5 min (seen live, 1 Oct 2026).
     dns_search: ["."]
     # Start only once the server is ready. The outpost's first config fetch
     # retries with an uncapped exponential backoff (upstream retry-go, 3s
@@ -212,4 +209,5 @@ services:
       start_period: 30s
     networks: [mediastack]
     logging: *logging
+    dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped

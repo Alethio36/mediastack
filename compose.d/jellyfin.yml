@@ -60,4 +60,5 @@ services:
       start_period: 120s
     networks: [mediastack]
     logging: *logging
+    dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped

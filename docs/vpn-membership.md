@@ -63,9 +63,10 @@ Toggle-enabled services carry `mediastack.vpntoggle: "true"` and are wired by
 
 * **Inside:** `network_mode: "service:gluetun"` plus a gluetun health gate on
   the service; its host port and Traefik router are published on gluetun,
-  which owns the shared namespace IP.
-* **Outside:** its own `networks: [mediastack]`, host port, and Traefik router
-  on the service itself.
+  which owns the shared namespace IP — and gluetun's resolv.conf (no host
+  search domain).
+* **Outside:** its own `networks: [mediastack]`, `dns_search: ["."]` (no host
+  search domain), host port, and Traefik router on the service itself.
 
 ### Other apps follow the move
 

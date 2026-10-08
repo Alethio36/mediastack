@@ -48,4 +48,5 @@ services:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
       mediastack.port: "443"
+    dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped

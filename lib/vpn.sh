@@ -306,7 +306,9 @@ vpn_gen() {
         else
             [[ "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.torrent"] // ""' <<<"$bj")" == true ]] \
                 && warn "vpn: $s (torrent client) is OUTSIDE the VPN — its traffic exits on the host IP"
-            stanzas+="  ${s}:"$'\n'"    networks: [mediastack]"$'\n'
+            # off the VPN it has its own resolv.conf: no host search domain
+            # (docs/adding-a-service.md); on it, gluetun's is shared instead
+            stanzas+="  ${s}:"$'\n'"    networks: [mediastack]"$'\n'"    dns_search: [\".\"]"$'\n'
             [[ "$hp" != false ]] && stanzas+="    ports:"$'\n'"$(vpn_port_line "$stem" "$cport" "$auth" "$hp")"$'\n'
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"false\""$'\n'"      traefik.enable: \"true\""$'\n'
             stanzas+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'

@@ -48,4 +48,5 @@ services:
     # Pi-hole ships its own image HEALTHCHECK; keep it.
     networks: [mediastack]
     logging: *logging
+    dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped

@@ -54,4 +54,5 @@ services:
     # index via meilisearch instead.
     networks: [mediastack]
     logging: *logging
+    dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped
