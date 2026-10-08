@@ -22,7 +22,7 @@ smtp_problems() { # -> one line per thing wrong with the email settings (none: t
     [[ "$(env_get SMTP_STARTTLS)" == true && "$(env_get SMTP_TLS)" == true ]] \
         && echo "SMTP_STARTTLS and SMTP_TLS are both true — a server speaks one: STARTTLS on 587, TLS on 465"
     [[ -n "$(env_get SMTP_USER)" && -z "$pw" ]] && echo "SMTP_USER is set but SMTP_PASSWORD is empty"
-    [[ "$pw" =~ [\$[:space:]] ]] && echo "SMTP_PASSWORD holds a \$ or a space — compose would rewrite it; use an app password or SMTP key (they never do)"
+    [[ "$pw" =~ [\$[:space:]] ]] && echo "SMTP_PASSWORD holds a \$ or a space — compose would rewrite it; use an app password or SMTP key (Gmail shows its app passwords in groups of four: type it without the spaces)"
     return 0
 }
 

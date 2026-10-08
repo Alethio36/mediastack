@@ -98,10 +98,12 @@ ak_api() { echo '{"results":[
   {"username":"akadmin","type":"internal","name":"authentik Default Admin","email":"","is_active":true,"groups_obj":[{"name":"authentik Admins"}]},
   {"username":"ana","type":"internal","name":"Ana","email":"ana@home.lan","is_active":true,"groups_obj":[{"name":"media-users"},{"name":"admins"}]},
   {"username":"tom","type":"internal","name":"","email":"","is_active":false,"groups_obj":[]},
+  {"username":"mediastack-ldap-search","type":"internal","name":"mediastack LDAP search (Jellyfin)","email":"","is_active":true,"groups_obj":[]},
   {"username":"ak-outpost-x","type":"internal_service_account","name":"","email":"","is_active":true,"groups_obj":[]}]}'; }
 out=$(cmd_users)
 [[ "$out" == *USERNAME*EMAIL*GROUPS* && "$out" == *"ana"*"ana@home.lan"*"media-users,admins"*"yes"* && "$out" == *"tom"*"-"*"off"* ]] \
     || fail_ "people listed with email and groups, blanks as -, a deactivated one 'off': $out"; pass
-[[ "$out" != *"ak-outpost-x"* && "$(grep -c '^akadmin' <<<"$out")" == 0 ]] || fail_ "akadmin and service accounts left out: $out"; pass
+[[ "$out" != *"ak-outpost-x"* && "$out" != *"mediastack-ldap-search  "* && "$(grep -c '^akadmin' <<<"$out")" == 0 ]] \
+    || fail_ "the stack's own accounts and service accounts left out: $out"; pass
 
 echo "OK email: $checks checks"
