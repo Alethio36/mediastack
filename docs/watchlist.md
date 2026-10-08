@@ -129,6 +129,21 @@ tool that names the container is the answer then.
 
 ## Parked
 
+### Email from a custom-domain address (alias) *(Oct 2026, to review)*
+
+Today the portal's mail comes from the SMTP login's own address (e.g. the
+stack's Gmail account). Sending as `portal@<your domain>` through the same
+login is possible: Gmail's **Send mail as** adds the address after a
+confirmation code mailed to it (so it must receive mail), and `configure`'s
+"Send as" then takes it. Until it is verified, Gmail rewrites the From back
+to the account address — no error. Mail from a domain whose SPF/DMARC does
+not include Google's senders (`include:_spf.google.com`) tends to land in
+spam.
+
+**Revisit when:** the household wants mail to come from the domain. Then:
+a short alias section in `docs/email.md` (Gmail and the sending services'
+equivalents), and the domain's SPF updated.
+
 ### qBittorrent API keys
 
 **Verdict:** evaluated, parked (Sept 2026, verified in source at the versions then running).
