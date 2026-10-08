@@ -234,8 +234,34 @@ arrive on their own, as with watchtower, but validated first.
   Ship mediastack's own email template with it (authentik reads
   `CONFIG_ROOT/authentik/templates`): authentik's built-in one references its
   logo as an inline `cid:logo` image that Gmail shows as a broken image plus
-  an attachment (seen on the first test mail, Oct 2026) — a text-led
-  template with the portal's name avoids it.
+  an attachment (seen on the first test mail, Oct 2026) — the template
+  comes from the household's branding below.
+- **Personalization: the household's own look, everywhere** *(direction, Oct
+  2026)*. Today one setting reaches people: `PORTAL_TITLE` (the portal's
+  name, its sign-up page, the app cards). The direction is one branding kit
+  the household fills once, which `wire` carries into every app that can
+  take it and `doctor` checks:
+  * **The kit:** the name (`PORTAL_TITLE`), a logo, a small icon (favicon),
+    a background picture, an accent colour, and a welcome line — files in a
+    `custom/branding/` folder (the household's own, never overwritten), with
+    the shipped defaults when a file is absent.
+  * **The portal (authentik):** its brand takes the name, logo, icon and the
+    sign-in background; its emails (password reset, invitations) use a
+    mediastack template carrying the name and a logo the portal itself
+    serves — a linked image, not an inline attachment (see above).
+  * **Each app, as far as it allows:** to survey per app before building —
+    what Jellyfin's branding settings take (login message, custom styling,
+    its splash screen), Seerr's title and logo, Kavita's, Audiobookshelf's,
+    Navidrome's, the web panel's (OliveTin) — and what only a custom
+    stylesheet can reach. An app that takes none is listed, not forced.
+  * **Media of the household's own:** pictures for the sign-in page, the
+    built-in quick-start page (Next, step 5) in the same look, and a
+    welcome note for new people.
+  Constraints: images are checked (type, size) before any app gets them;
+  every value `wire` set is re-applied only while it is still the one
+  mediastack wrote (a change made in an app's own settings is left alone,
+  as the base URL is today); nothing is required — an empty kit is today's
+  look.
 - Web panel polishing.
 - Script polishing for the end user (clearer prompts, output, ergonomics).
   - *`up`/`down` output is truncated on short terminals.*
