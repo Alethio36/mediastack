@@ -84,6 +84,16 @@ primary. A point that records a shard's primary but not its members (taken
 before 8 Oct 2026) is refused for that shard rather than restored onto mixed
 versions: pick a newer one from `backup list <primary>`.
 
+What `images.lock` records depends on Docker's image store. The classic store:
+the registry digest of the image a container runs. The containerd store (the
+default on new installs): the platform image compose created the container
+from (`repo@sha256:…` of the `linux/amd64` entry, say) — the container's own
+image is a multi-platform index, which loses its registry digest when a
+re-pull moves the tag to a republished one. That makes a pin CPU-specific: a
+dead-host rebuild onto another architecture fails at the pull, loudly. A
+running container whose image cannot be identified is named in the backup's
+output and to the ops stream, never dropped silently.
+
 ## Restore-point retention
 
 Tiered (grandfather-father-son), pruned after every backup, knobs in `.env`:

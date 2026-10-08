@@ -768,7 +768,8 @@ c_inspect_all() { # fill the cache for every managed container and its shard's m
     INSPECT_JSON=$(c_inspect $names | jq -c '[ .[] | {Name, Id, Image, RestartCount,
         State: {Status: .State.Status, StartedAt: .State.StartedAt, Health: .State.Health},
         HostConfig: {NetworkMode: .HostConfig.NetworkMode},
-        Config: {User: .Config.User, Labels: {"org.opencontainers.image.version": .Config.Labels["org.opencontainers.image.version"]}},
+        Config: {User: .Config.User, Labels: {"org.opencontainers.image.version": .Config.Labels["org.opencontainers.image.version"],
+                                              "com.docker.compose.image": .Config.Labels["com.docker.compose.image"]}},
         Mounts: [ .Mounts[] | {Source, Destination, RW} ] } ]')
 }
 # ADDING A FIELD TO c_get's READS = ADDING IT TO THE PROJECTION ABOVE, or the

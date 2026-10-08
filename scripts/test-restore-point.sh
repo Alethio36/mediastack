@@ -146,6 +146,30 @@ mkdir -p "$T/pr"; point_record "$T/pr" manual $'before\nthe move' sonarr bazarr 
     || fail_ "images.lock keeps its format (restore reads it): $(cat "$T/pr/images.lock")"; pass
 [[ "$(cat "$T/pr/meta")" == $'kind=manual\nnote=before the move\nsonarr 4.0.15 repo/sonarr@sha256:sonarrd\nbazarr - repo/bazarr@sha256:bazarrd' ]] \
     || fail_ "meta: kind, a one-line note, svc version digest ('-' without a version label): $(cat "$T/pr/meta")"; pass
+# ---- which image a container runs: store-aware (found live 8 Oct 2026: under ----
+# ---- the containerd store a republished index left the db with no digest)  ----
+for c in 'postgres:16|postgres' 'ghcr.io/goauthentik/server:2026.8|ghcr.io/goauthentik/server' \
+         'registry:5000/app:1|registry:5000/app' 'registry:5000/app|registry:5000/app' 'postgres@sha256:ab|postgres'; do
+    [[ "$(image_repo "${c%%|*}")" == "${c#*|}" ]] || fail_ "image_repo ${c%%|*}: $(image_repo "${c%%|*}")"; pass
+done
+( unset -f svc_digest
+  # shellcheck source=/dev/null  # the real svc_digest, past the stub above
+  source <(awk '/^svc_digest\(\)/,/^}/' lib/backup.sh)
+  svc_image() { echo postgres:16; }
+  c_get() { case "$2" in *com.docker.compose.image*) echo "$LABEL" ;; *) echo sha256:index ;; esac; }
+  IMAGE_STORE=containerd; LABEL=sha256:platform
+  [[ "$(svc_digest db)" == postgres@sha256:platform ]] || fail_ "containerd store: compose's platform digest, pullable: $(svc_digest db)"
+  LABEL=""; [[ -z "$(svc_digest db)" ]] || fail_ "containerd store, no label: unknown, not invented"
+) || exit 1; pass; pass
+c_state() { [[ "$1" == c-gone ]] && echo exited || echo running; }
+svc_digest() { [[ "$1" == nodigest || "$1" == gone ]] || echo "repo/$1@sha256:${1}d"; }
+warn() { echo "WARN $*"; }
+rm -f "$T/log"; mkdir -p "$T/pr2"
+out=$(point_record "$T/pr2" manual "" sonarr nodigest gone 2>&1)
+[[ "$(cat "$T/pr2/images.lock")" == "sonarr repo/sonarr@sha256:sonarrd" ]] || fail_ "the lock holds what is known: $(cat "$T/pr2/images.lock")"; pass
+[[ "$out" == *"No image digest for nodigest"* && "$out" != *gone* ]] || fail_ "a running container without a digest is named, a stopped one is not: $out"; pass
+[[ "$(cat "$T/log")" == *"NOTIFY Mediastack restore point incomplete"* ]] || fail_ "the gap reaches ops: $(cat "$T/log" 2>/dev/null)"; pass
+unset -f c_state
 backup_take() { echo "TAKE $1|$2"; }
 [[ "$(cmd_backup --note "before jellyfin 12")" == "TAKE manual|before jellyfin 12" ]] || fail_ "backup --note: a manual point with the note"; pass
 [[ "$(cmd_backup)" == "TAKE manual|" ]] || fail_ "backup: a manual point"; pass
