@@ -202,6 +202,7 @@ adding it would look like, and the trigger to revisit.
 | Kapowarr | Comics | Deferred | Off-model acquisition (scrapes GetComics, not Prowlarr) |
 | Mylar3 | Comics | To evaluate | On-model (Prowlarr) comic acquisition; needs a ComicVine key |
 | Unpackerr | Downloads | To evaluate | Only earns its place if releases arrive archived |
+| SABnzbd | Downloads (Usenet) | To evaluate | A new subsystem: paid provider + NZB indexers + this downloader |
 | Komga | Comics/manga | Deferred | Kavita chosen for breadth; Komga's edge is its API |
 | ROMM | Games | Deferred, decision pending | First DB-backed service (MariaDB + Valkey) |
 | **Pinchflat** | Video (YouTube) | **Ship-worthy [pick]** | Adversarial upstream; two house-rule exceptions |
@@ -342,6 +343,32 @@ storage) and can run side by side if that ever happens.
 ---
 
 ### Downloads
+
+#### SABnzbd — Usenet downloader *(to evaluate, Oct 2026)*
+
+**What it is:** the Usenet counterpart of qBittorrent. Prowlarr searches NZB
+indexers (newznab) and the arrs pick a release, as with torrents; SABnzbd
+fetches its posts over TLS from a news provider, repairs them (par2) and
+unpacks them itself, then the arr moves the result into the library.
+Picked over NZBGet: SABnzbd is very actively maintained with a LinuxServer
+image; NZBGet's original project was abandoned (2022) and lives on as a
+community fork.
+
+**Why it is a household decision first:** Usenet needs two paid or
+invite-only things the stack cannot supply — a provider subscription (the
+servers) and NZB indexers (the search). No peers and no uploading, so no
+ratio or seeding rules and no IP exposed to strangers (the VPN becomes
+optional; the provider sees the traffic).
+
+**What adding it would look like:** its own fragment; `wire` registering it
+as a second download client in every arr (API key, one category per arr,
+mirroring qBittorrent's) and in Prowlarr; newznab indexers added in
+Prowlarr by the user; its completed folder under `DATA_ROOT`, on the
+library's filesystem, so imports are instant moves. Bindery (Books) becomes
+worth a second look once this exists.
+
+**Revisit when:** the household wants Usenet and has (or will pay for) a
+provider and an indexer.
 
 #### Unpackerr — extract archived releases for the arrs *(to evaluate, Oct 2026)*
 
