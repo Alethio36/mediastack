@@ -118,7 +118,7 @@ backup_take() { # backup_take KIND NOTE — a full cold restore point into the G
     info "Restore point: $final"
 
     # shellcheck disable=SC2046  # a word list of services
-    point_record "$dest" "$1" "$2" $(svc_managed)
+    point_record "$dest" "$1" "$2" $(point_services)
     [[ -s "$dest/images.lock" ]] || warn "images.lock is empty — image-exact rollback unavailable for this point"
 
     info "Stopping stack for a consistent snapshot... (all services briefly stop; ~20-40s)"
@@ -140,6 +140,27 @@ svc_digest() { # svc_digest SVC -> the digest its container runs ("" when unknow
     # RepoDigests is an IMAGE field: resolve container -> image -> digest
     img=$(c_get "$(svc_cname "$1")" '.Image'); [[ -n "$img" ]] || return 0
     sudo docker image inspect --format '{{index .RepoDigests 0}}' "$img" 2>/dev/null | tr -d '\n' || true
+}
+
+point_services() { # what a full point records: every managed service and its shard's members
+    # a shard is restored and pinned as one, so its point names every container
+    # shellcheck disable=SC2046  # a word list of services
+    svc_shard $(svc_managed)
+}
+
+point_shard_check() { # point_shard_check POINT PRIMARY — a shard's images are in the point whole, or not at all; else die
+    local m have=() miss=()
+    for m in $(svc_shard "$2"); do
+        if awk -v s="$m" '$1==s {f=1} END {exit !f}' "$1/images.lock" 2>/dev/null; then have+=("$m"); else miss+=("$m"); fi
+    done
+    (( ${#have[@]} == 0 || ${#miss[@]} == 0 )) && return 0
+    die "Restore point $(basename "$1") records the image of ${have[*]} but not of ${miss[*]} (taken before a shard was recorded whole) — restoring it would run $2's containers on different versions. Nothing was changed.
+  Pick a newer point: ./mediastack.sh backup list $2"
+}
+
+shard_member_refuse() { # shard_member_refuse SVC VERB — a shard member is never handled alone; else die
+    local p; p=$(svc_label "$1" mediastack.shard)
+    [[ -z "$p" ]] || die "$1 is part of $p — its containers go back together: ./mediastack.sh $2 $p"
 }
 
 point_record() { # point_record DEST KIND NOTE SVC... — images.lock and meta, BEFORE stopping (inspect needs the containers)
@@ -443,13 +464,26 @@ pin_service() { # pin_service svc image_ref
     ok "$1 pinned to $2 (updates hold; release with: ./mediastack.sh unpin $1)"
 }
 
-cmd_unpin() {
-    local s="${1:?usage: unpin <service>}"; load_env
+cmd_unpin() { # a shard is unpinned whole (named by its primary or any member)
+    local s="${1:?usage: unpin <service>}" p m saved removed=(); load_env
+    svc_exists "$s" || die "No service '$s'."
+    p=$(svc_label "$s" mediastack.shard); p=${p:-$s}
     [[ -s "$PINS_FILE" ]] || { ok "Nothing pinned."; return; }
-    sed -i "/^  $s:/,+1d" "$PINS_FILE"
+    saved=$(cat "$PINS_FILE")
+    for m in $(svc_shard "$p"); do
+        grep -q "^  $m:" "$PINS_FILE" || continue
+        sed -i "/^  $m:/,+1d" "$PINS_FILE"; removed+=("$m")
+    done
+    (( ${#removed[@]} )) || { ok "$p is not pinned."; return; }
     [[ $(grep -c ':' "$PINS_FILE") -le 1 ]] && rm -f "$PINS_FILE"
-    RENDERED_JSON=""; DC up -d "$s"
-    ok "$s unpinned and returned to the floating tag. Next 'update' includes it."
+    RENDERED_JSON=""
+    # unpinned, authentik must still not go back or skip a release
+    if [[ "$p" == authentik ]] && ! ( authentik_release_check ); then
+        printf '%s\n' "$saved" > "$PINS_FILE"; repo_owned "$PINS_FILE"
+        die "authentik stays pinned — nothing changed."
+    fi
+    DC up -d "$p"
+    ok "Unpinned ${removed[*]} — back on the floating tags. Next 'update' includes them."
 }
 
 cmd_restore() {
@@ -487,9 +521,11 @@ cmd_restore() {
     # under stopped_run (a half-extracted config must not restart), so the
     # only safe failure is one that happens before anything moves
     point_check "$broot/$from"
+    [[ -z "$svc" ]] || shard_member_refuse "$svc" "restore --service"
+    local targets; if (( all_svcs )); then targets=$(svc_managed); else targets="$svc"; fi
+    local s; for s in $targets; do point_shard_check "$broot/$from" "$s"; done
     maint_lock restore 0   # never while a timer's update or backup has the stack
     info "Restoring from $from"
-    local targets; if (( all_svcs )); then targets=$(svc_managed); else targets="$svc"; fi
     local croot ts s ref
     croot=$(env_get CONFIG_ROOT); ts=$(ts_now)
     local m
@@ -528,6 +564,7 @@ cmd_rollback() {
     [[ -n "$svc" ]] || die "$usage"
     load_env
     svc_exists "$svc" || die "No service '$svc'."
+    shard_member_refuse "$svc" rollback
     local broot run rel ts
     broot=$(env_get BACKUP_ROOT)
     c_inspect_all; run=$(svc_digest "$svc")
@@ -610,6 +647,15 @@ age_words() { # age_words HOURS -> "5 hours" / "3 days"
 }
 
 # ------------------------------------------------------------------ update --
+update_change() { # update_change SVC VER-BEFORE DIGEST-BEFORE VER-AFTER DIGEST-AFTER -> "svc: a -> b", or nothing when unchanged
+    # an image without a version label (postgres, jellysearch) still changes:
+    # the digest says so, and stands in for the version it does not carry
+    local s=$1 vb=$2 db=$3 va=$4 da=$5
+    [[ "$vb" != "$va" || "$db" != "$da" ]] || return 0
+    [[ "$vb" != "$va" ]] || { vb=$(digest_short "$db"); va=$(digest_short "$da"); }
+    echo "$s: ${vb:-?} -> ${va:-?}"
+}
+
 pin_shard_to() { # pin_shard_to <primary> <tag> — the primary, and every member released in lockstep with it
     # lockstep = the same tag today: authentik's worker, and its LDAP outpost (a
     # different image, but authentik requires the same release); its database
@@ -763,9 +809,9 @@ cmd_update() {
     fi
     hr "Pulling images"
     info "pulling from registries — the slowest step on a full update; a minute or two is normal"
-    local after changed=()
-    local -A before=()
-    for s in "${targets[@]}"; do before[$s]=$(c_version "$(svc_cname "$s")"); done
+    local changed=() line
+    local -A before=() before_d=()
+    for s in "${targets[@]}"; do before[$s]=$(c_version "$(svc_cname "$s")"); before_d[$s]=$(svc_digest "$s"); done
     DC pull "${targets[@]}"
     hr "Applying"
     # Cascade: recreating gluetun gives it a new container ID, and compose does
@@ -808,8 +854,8 @@ cmd_update() {
         fail "$b ${VERDICT_WHY[$b]}"; bad+=("$b")
     done
     for s in "${targets[@]}"; do
-        after=$(c_version "$(svc_cname "$s")")
-        [[ "${before[$s]}" != "$after" ]] && changed+=("$s: ${before[$s]:-?} -> ${after:-?}")
+        line=$(update_change "$s" "${before[$s]}" "${before_d[$s]}" "$(c_version "$(svc_cname "$s")")" "$(svc_digest "$s")")
+        [[ -z "$line" ]] || changed+=("$line")
     done
     # search functional probe: index must exist and be non-empty
     if svc_enabled jellysearch; then
