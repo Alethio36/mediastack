@@ -40,4 +40,5 @@ services:
       mediastack.auth: "gate"   # an admin tool (channels are built here; households watch through Jellyfin)
     networks: [mediastack]
     logging: *logging
+    dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped

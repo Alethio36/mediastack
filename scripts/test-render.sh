@@ -15,6 +15,9 @@
 #      drop-in shard renders with its member found and not managed
 #   6. every web interface declares mediastack.auth, and exactly the gated
 #      ones' routes carry the mediastack-gate middleware
+#   7. no container inherits the host's search domain: every service with its
+#      own network declares dns_search ["."] (fragment or vpn_gen), and none
+#      sharing another's network carries one (Docker refuses it)
 #
 # Runs on a throwaway copy of the repo; the working tree is never touched.
 # Needs `docker compose` (the standalone plugin renders without a daemon).
@@ -153,3 +156,17 @@ jq -e '.services.traefik.networks.mediastack.aliases | any(startswith("portal.")
 [[ "$(jq -r '[.services.audiobookshelf.ports[]? | select(.target == 13378) | .host_ip][0] // "none"' <<<"$RENDERED_JSON")" == 127.0.0.1 ]] \
     || t_fail "Audiobookshelf's port must be 127.0.0.1 only"
 echo "OK every web interface declares mediastack.auth; the gate is on exactly the gated routes"
+
+echo ":: 7. no host search domain: own network -> dns_search [\".\"], shared network -> none"
+RENDERED_JSON=""; render
+own=$(jq -r '.services | to_entries[] | select(.value.network_mode == null) | .key' <<<"$RENDERED_JSON")
+shared=$(jq -r '.services | to_entries[] | select(.value.network_mode != null) | .key' <<<"$RENDERED_JSON")
+# both kinds must be present, or this proves only half the rule (vpn_gen writes both)
+[[ -n "$own" && -n "$shared" ]] || t_fail "the default render needs services on and off the VPN to test both"
+bad=$(jq -r '.services | to_entries[] | select(.value.network_mode == null)
+    | select((.value.dns_search // []) != ["."]) | .key' <<<"$RENDERED_JSON")
+[[ -z "$bad" ]] || t_fail "inherit the host's search domain (declare dns_search: [\".\"]): $bad"
+bad=$(jq -r '.services | to_entries[] | select(.value.network_mode != null)
+    | select(.value.dns_search != null) | .key' <<<"$RENDERED_JSON")
+[[ -z "$bad" ]] || t_fail "share another container's network but declare dns_search (Docker refuses it): $bad"
+echo "OK $(wc -w <<<"$own") services declare no search domain; $(wc -w <<<"$shared") use gluetun's"

@@ -66,4 +66,5 @@ services:
     networks: [mediastack]   # explicit: without this compose isolates gluetun
                              # on an implicit second network (mediastack_default)
     logging: *logging
+    dns_search: ["."]   # no host search domain (the VPN group shares this resolv.conf): docs/adding-a-service.md
     restart: unless-stopped

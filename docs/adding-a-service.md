@@ -42,6 +42,11 @@ Rules for a file in `custom/compose.d/`:
 * relative paths resolve from the repo folder, as in every compose file here;
 * a container without `mediastack.managed: "true"` runs, but gets no status
   row, backups, doctor checks or updates.
+* a container that is not a VPN toggle (a database, a cache — anything
+  `vpn_gen` does not network for you) should declare `dns_search: ["."]`.
+  Without it the container inherits the host's search domain, and a sibling
+  name looked up while that sibling restarts can resolve to a public address
+  through a wildcard record. Toggle services get it from `vpn_gen`.
 
 The script discovers services from compose labels — it contains no
 service lists, so your services get status rows, doctor checks,
@@ -115,6 +120,11 @@ files, no judgment calls. Every fragment carries its own `x-logging` and
 `x-armour` disables a FOREIGN watchtower on the same host, which would
 otherwise auto-update our containers behind the backup/rollback system's
 back; our own update pipeline does not use those labels.
+
+Every service with its own network namespace declares `dns_search: ["."]`
+(no host search domain — see the rule above); one sharing gluetun's
+(`network_mode: service:gluetun`) must not, Docker refuses it, and gets
+gluetun's instead. test-render fails a fragment that breaks either.
 
 ### Wiring it to other apps (`wire`)
 

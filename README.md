@@ -249,6 +249,11 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
   and `leak-test` proves the chain. Membership is operator-selectable with the
   `vpn` command and audited by the tooling — see
   [docs/vpn-membership.md](docs/vpn-membership.md).
+* **Containers ignore the host's search domain.** A bare name inside the
+  stack means a sibling container and nothing else — never
+  `<name>.<your-domain>`, which a wildcard DNS record would answer with a
+  public address. So a LAN machine you point an app at (a NAS, an SMTP
+  relay) needs its full name or its address, not a short one.
 * **Host ports are yours to move, and never collide.** Every service's
   host port is `<SVC>_PORT` in `.env` (default: its container port); the
   status table, `wire`, `doctor` and the readiness gates all follow the
