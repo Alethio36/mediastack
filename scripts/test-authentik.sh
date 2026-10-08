@@ -1004,7 +1004,7 @@ out=$(se ana ANA@home.lan 0); [[ "$out" == *"already has"* ]] && ! grep -q '^PAT
 out=$(se ana new@home.lan 0); [[ "$out" == *"now new@home.lan (was ana@home.lan)"* && "$out" != *WARN* ]] && grep -q '^PATCH /core/users/1/ {"email":"new@home.lan"}' "$T/calls" \
     || fail_ "a free address: changed, no warning: $out"; pass
 out=$(se ana Tom@home.lan 0) && fail_ "a shared address without a terminal or --yes must stop"
-[[ "$out" == *"already the email of: tom"*"would become one account"*"add --yes"* ]] && ! grep -q '^PATCH' "$T/calls" \
+[[ "$out" == *"already the email of: tom"*"should be their own"*"add --yes"* ]] && ! grep -q '^PATCH' "$T/calls" \
     || fail_ "shared: warned, says why, nothing written: $out"; pass
 out=$(se ana Tom@home.lan 1); [[ "$out" == *WARN*"tom"* && "$out" == *"now Tom@home.lan"* ]] && grep -q '^PATCH' "$T/calls" \
     || fail_ "shared with --yes: warned, then the admin's decision stands: $out"; pass

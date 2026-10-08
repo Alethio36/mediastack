@@ -323,7 +323,7 @@ authentik_set_email() { # authentik_set_email USER ADDRESS YES — an admin chan
     out=$(ak_api GET "/core/users/?page_size=1000") || die "authentik refused the user list: $(oneline "$out")"
     others=$(jq -r --arg e "${email,,}" --argjson pk "$pk" '[.results[] | select(.pk != $pk and ((.email // "") | ascii_downcase) == $e) | .username] | join(" ")' <<<"$out")
     if [[ -n "$others" ]]; then
-        warn "$email is already the email of: $others. Kavita (and ROMM) sign a portal user in as the account holding their email — $user and $others would become one account there."
+        warn "$email is already the email of: $others — each person's email should be their own."
         if (( ! yes )); then
             [[ -t 0 ]] || die "a shared email needs a decision — run it in a terminal, or add --yes"
             confirm "Use it anyway?" || { info "Nothing changed."; return 0; }
@@ -378,7 +378,7 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
             if dup=$(authentik_email_dupes); then
                 [[ -z "$dup" ]] && ok "authentik: every person's email is their own" \
                     || d_fail "authentik: people share an email — $(tr '\n' ';' <<<"$dup" | sed 's/;$//')" \
-                        "Kavita (and ROMM) sign people in by email: the accounts sharing one become one there" \
+                        "each person's email should be their own (apps that sign people in by email treat them as one)" \
                         "give each their own: ./mediastack.sh set-email <user> <address>"
             else warn "authentik: its users are unreadable — emails not checked"; fi
             if smtp_configured; then

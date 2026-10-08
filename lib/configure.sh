@@ -529,7 +529,7 @@ _configure_email() {
     if [[ -n "$REPLY_VAL" ]]; then
         while true; do
             ask_token "Password (an app password or the service's SMTP key — input hidden)" "$(env_get SMTP_PASSWORD)"
-            [[ "$REPLY_VAL" =~ [\$[:space:]] ]] && { fail "it holds a \$ or a space, which compose would rewrite — use an app password or SMTP key"; continue; }
+            [[ "$REPLY_VAL" =~ [\$[:space:]] ]] && { fail "it holds a \$ or a space, which compose would rewrite — use an app password or SMTP key (Gmail shows its app passwords in groups of four: type it without the spaces)"; continue; }
             env_set SMTP_PASSWORD "$REPLY_VAL"; break
         done
     else env_set SMTP_PASSWORD ""; fi

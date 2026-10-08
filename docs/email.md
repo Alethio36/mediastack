@@ -26,9 +26,11 @@ Mail goes out as you, through your provider. Good for a household: nothing
 to set up in DNS, and the provider's reputation gets it delivered.
 
 * **Gmail** — server `smtp.gmail.com`, STARTTLS on 587. Login: your Gmail
-  address. Password: an **app password** (Google Account → Security →
-  2-Step Verification must be on → App passwords). Send as: your Gmail
-  address (or an alias you have added in Gmail).
+  address. Password: an **app password** (2-Step Verification must be on;
+  then https://myaccount.google.com/apppasswords). Google shows it as four
+  groups of four letters — **type it without the spaces**. Send as: your
+  Gmail address (or an alias you have added in Gmail). A Google Workspace
+  account may have app passwords turned off by its admin.
 * **Fastmail** — server `smtp.fastmail.com`, TLS on 465 (or STARTTLS on
   587). Login: your Fastmail address. Password: an **app password** created
   in Fastmail's settings (Privacy & Security) with SMTP access.
