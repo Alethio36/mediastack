@@ -200,6 +200,8 @@ adding it would look like, and the trigger to revisit.
 | Calibre-Web-Automated | Books | **Ship-worthy, radar** | Forks the books tree onto a Calibre `metadata.db` |
 | Bindery | Books | Deferred | LazyLibrarian already fills the slot; Usenet-first |
 | Kapowarr | Comics | Deferred | Off-model acquisition (scrapes GetComics, not Prowlarr) |
+| Mylar3 | Comics | To evaluate | On-model (Prowlarr) comic acquisition; needs a ComicVine key |
+| Unpackerr | Downloads | To evaluate | Only earns its place if releases arrive archived |
 | Komga | Comics/manga | Deferred | Kavita chosen for breadth; Komga's edge is its API |
 | ROMM | Games | Deferred, decision pending | First DB-backed service (MariaDB + Valkey) |
 | **Pinchflat** | Video (YouTube) | **Ship-worthy [pick]** | Adversarial upstream; two house-rule exceptions |
@@ -286,6 +288,22 @@ path — at which point it may be the better book manager.
 
 ### Comics & manga
 
+#### Mylar3 — comic acquisition, on-model *(to evaluate, Oct 2026)*
+
+**What it is:** the long-running comic manager in the *arr style: watches
+series, searches indexers, sends to a download client, renames and files
+into the library.
+
+**Why it may fit where Kapowarr did not:** it searches torznab/newznab
+indexers, so it can ride the shared Prowlarr flow like LazyLibrarian, and
+Kavita already serves comics — Mylar3 would be the acquisition half only.
+
+**To verify before shipping:** Prowlarr's app sync for it (indexers pushed,
+not hand-entered), how `wire` would set its root folder
+(`${DATA_ROOT}/media/comics`) and download client category, its
+**ComicVine API key** (user-supplied, like Kapowarr's), the image to track
+and its upkeep, and whether the household wants comics automated at all.
+
 #### Kapowarr — comic acquisition
 
 **What it is:** a comic library manager in the *arr family, best-in-class
@@ -320,6 +338,30 @@ light novels in one server). Komga's edge is its API, which matters for
 **Revisit when:** a concrete need to script against a comic server's API
 appears. Komga and Kavita don't conflict (different ports, shared
 storage) and can run side by side if that ever happens.
+
+---
+
+### Downloads
+
+#### Unpackerr — extract archived releases for the arrs *(to evaluate, Oct 2026)*
+
+**What it is:** a small service that watches the arrs' download queues,
+extracts releases that arrive as archives (`.rar` sets), lets the arr import
+the extracted file, then deletes the extracted copy; the archive itself
+stays where it was (and keeps seeding).
+
+**Why it may be needed:** the arrs cannot import an archived release on
+their own — it sits in the queue as "no files found". Whether this stack
+needs it depends on where releases come from: public torrents rarely pack
+archives, some private trackers do. Usenet releases are archived too, but a
+Usenet downloader (SABnzbd, NZBGet) repairs and unpacks them itself — this
+is for torrents only.
+
+**To verify before shipping:** the rebuild's first weeks — any import stuck
+on an archive is the trigger; its API-key access to every arr (it reads
+them, a `wire` step would set it), temporary disk for the extracted copy
+next to the archive, the VPN question (it only talks to the arrs, so off the
+tunnel), and the image's upkeep.
 
 ---
 
