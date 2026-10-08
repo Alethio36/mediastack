@@ -192,6 +192,14 @@ arrive on their own, as with watchtower, but validated first.
 - **Ship Calibre-Web-Automated?** Rated ship-worthy; forks the books tree onto
   a Calibre `metadata.db`. Evaluation:
   [watchlist.md](watchlist.md#calibre-web-automated-cwa--book-management--e-reader-delivery).
+- **Ship Whisparr?** *(to evaluate)* The arr for adult content, from the
+  Sonarr/Radarr family: it fits the arr pattern (VPN toggle, Prowlarr sync, a
+  download-client category, the recycle bin, `wire`). To weigh: its own media
+  root and Jellyfin library, and above all who in the household can see it —
+  check whether people signing in through the portal get every library by
+  default, and keep it to the users it is meant for; Prowlarr indexer
+  coverage; which Whisparr line to track (it has had more than one). Decide
+  in the watchlist before shipping.
 - **A transcoding tool** *(to evaluate)*: re-encode media ahead of time
   (smaller files, formats every client plays, fewer live transcodes in
   Jellyfin). Candidates: HandBrake (manual, per file, web GUI), Tdarr
