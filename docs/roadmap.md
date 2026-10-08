@@ -139,6 +139,52 @@ is green on it: `scripts/promote.sh` waits for the checks on `unstable`'s
 tip, refuses on any red one, then fast-forwards `stable` and pushes.
 `upgrade` follows the checked-out branch.
 
+### Versions from the repo — direction agreed (Oct 2026), not scheduled
+Today the image an install runs is whatever its upstream tag points at the
+night it updates (26 of 28 images float; on 6 Oct a Jellyfin minor and a
+PostgreSQL patch landed unattended). The direction: **git is the source of
+truth for versions.** Every install on a commit runs byte-identical images,
+and only versions the repo owner promoted reach `stable` — updates still
+arrive on their own, as with watchtower, but validated first.
+- **Digest pins in the fragments** — `image: <repo>:<tag>@sha256:<digest>`,
+  every image, shard members included (a database bump becomes a visible
+  commit). Versioned tags wherever upstream publishes them; `latest`-only
+  images get digest pins. `local/pins.yml` (rollback) still layers on top.
+- **Renovate edits the lines** — the FOSS CLI in the repo's own GitHub Actions
+  (token: a GitHub App scoped to this repo), weekly. Minor/patch/digest bumps
+  as one group, auto-merged into `unstable` once CI is green (branch automerge:
+  history stays linear); majors and authentik wait for the owner; PostgreSQL
+  and Recyclarr majors frozen; lsio tags need a versioning rule. Its config
+  is read from the default branch (`stable`), so config changes take effect on
+  promotion. The Dependency Dashboard issue is the view of what upstream has.
+- **The canary validates** — testhost follows `unstable` nightly; a bump that
+  breaks it is never promoted.
+- **Every commit that changes a pin is a release** — `promote.sh` tags each
+  one in the range, not just the tip.
+- **`upgrade` walks the releases in order** (fast-forward to each tag, hand
+  over to that release's script, apply the services whose pin changed, gate,
+  next). Installs replay the channel's history, not upstream's: every version
+  the channel shipped runs, in order; a jump the channel took is taken.
+  Stepping every upstream release was rejected — it would run versions
+  upstream pulled for bugs. A stale install walks every hop (print hops and
+  download size first; doctor warns when it is ~8+ releases behind); a failed
+  hop halts on the last good one, undo is `restore --all` to the pre-walk
+  point. authentik keeps `authentik_step` as the runtime net.
+- **Installs follow their channel nightly** — the update timer runs the walk;
+  `UPDATE_CHANNEL=manual` opts out.
+- **Signed releases** *(second phase)* — auto-follow means whoever can push
+  `stable` gets root on every install (the timers run the tree as root), so
+  `promote.sh` signs and `upgrade` verifies against a key pinned in `local/` at
+  install, never one read from the repo. Costs: key management, a rotation
+  procedure.
+- **Jellyfin plugins the same way** *(third phase)* — a tracked lock (plugin,
+  version, checksum) bumped in the same commit as the server; `wire` installs
+  exactly those, doctor reports drift, plugins a user added stay theirs. A
+  third-party repo can prune a locked version: install fails loud.
+- **Costs** — the owner reviews majors and promotes; security fixes arrive at
+  that cadence (state it in the README); if promotion stops, installs freeze.
+  Estimated ~300 lines with tests for pins, Renovate, tags and the walk.
+
 ### Decisions pending
 - **Ship Pinchflat?** YouTube archiving, rated ship-worthy; brings two
   house-rule exceptions (no VPN; a self-updating yt-dlp).
