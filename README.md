@@ -146,6 +146,8 @@ Connect
 | `link-account <portal-user>` | an existing household's people keep their history: after someone joins the portal, their local Jellyfin, Kavita and Audiobookshelf accounts become their portal account — you confirm which account is whose, see the plan, then it links (Audiobookshelf needs them to sign in once, within 10 minutes) |
 | `reset-password <user>` | someone locked out of the portal: clears their login throttle and prints a single-use sign-in link (24 hours) to send them — they then set a new password in the portal's Settings. Not for akadmin (`set-credentials portal`); with Wizarr, reset it in Jellyfin's dashboard |
 | `set-email <user> <address> [--yes]` | change a person's portal email — people cannot change their own (Kavita, and later ROMM, sign people in by email, so it is who they are there). Kavita's account follows the change, so their next sign-in lands on the same account. An address another person already has is warned about and asks first; `--yes` decides for scripts. Use this rather than authentik's admin page, which changes the portal only |
+| `users` | the portal's people: username, name, email, groups, and whether they can sign in (the stack's own `akadmin` and service accounts left out) |
+| `email [status\|test <address>]` | the portal's outgoing email: `status` shows the settings and whether they passed a test; `test` sends a real message through authentik and, if the server refuses, says why it usually happens. Set up with `configure` — [docs/email.md](docs/email.md) |
 | `notify [status\|test [stream]\|set <stream>\|clear <stream>\|send <stream> <title> <message> [--type T]]` | the notification streams (`ops`, `users`): what each is set to (URLs hidden) and whether it delivered, a test, replace or clear a stream's URLs, or send your own message — see "Notifications" |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
 | `trash-sync [--dry-run]` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update. `--dry-run` previews the drift (`recyclarr --preview`) and changes nothing |
@@ -670,6 +672,7 @@ what would reopen it, in [docs/watchlist.md](docs/watchlist.md).
 ## Docs
 
 * [docs/edge.md](docs/edge.md) — HTTPS, hostnames, certificates, proxying non-stack hosts
+* [docs/email.md](docs/email.md) — adding email (SMTP): picking a sender, the settings, testing, troubleshooting
 * [docs/trash-sync.md](docs/trash-sync.md) — quality profiles, overrides, ownership
 * [docs/vpn-membership.md](docs/vpn-membership.md) — moving services in/out of the VPN
 * [docs/adding-a-service.md](docs/adding-a-service.md) — extend the stack

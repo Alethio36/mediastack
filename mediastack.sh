@@ -32,7 +32,7 @@ STOP_MARKER="$LOCAL_DIR/stopped-for-backup"       # marker: a backup has service
 STATE_DIR="$LOCAL_DIR/state"                      # pending work: one file per marker (state_get/state_set)
 ENV_BACKUP_DIR="$LOCAL_DIR/env-backups"           # .env before each schema migration
 ENV_BACKUP_KEEP=10                                # the oldest (your original) + the newest 9
-SCRIPT_SCHEMA=30
+SCRIPT_SCHEMA=31
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -79,6 +79,8 @@ source "$SCRIPT_DIR/lib/configure.sh"
 source "$SCRIPT_DIR/lib/lifecycle.sh"
 # shellcheck source=lib/access.sh
 source "$SCRIPT_DIR/lib/access.sh"
+# shellcheck source=lib/email.sh
+source "$SCRIPT_DIR/lib/email.sh"
 # shellcheck source=lib/newservice.sh
 source "$SCRIPT_DIR/lib/newservice.sh"
 # shellcheck source=lib/trash.sh
@@ -1058,6 +1060,8 @@ VERBS=(
     "set-credentials~set-credentials <target|all>~max=1~Connect~Rotate a stored login everywhere it lives, atomically."
     "reset-password~reset-password <user>~max=1~Connect~Someone locked out of the portal: clear their login throttle, mint a single-use sign-in link."
     "set-email~set-email <user> <address> [--yes]~free~Connect~An admin changes a person's portal email; Kavita follows. A shared address warns and asks (--yes overrides)."
+    "users~users~none~Connect~The portal's people: username, name, email, groups, and whether they can sign in."
+    "email~email [status|test <address>]~free~Connect~The portal's outgoing email: status, or send a real test message (docs/email.md)."
     "link-account~link-account <portal-user>~max=1~Connect~A person's existing Jellyfin/Kavita/Audiobookshelf accounts become their portal account (history kept)."
     "notify~notify [status|test [stream]|set <stream>|clear <stream>|send <stream> <title> <message> [--type T]]~free~Connect~Notification streams (ops, users): status, test, change or clear a stream's URLs, send your own message."
     "set-user-facing~set-user-facing [<svc> true|false]~max=2~Connect~Show or change which services notify the household on update (the 'users' stream)."

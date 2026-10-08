@@ -256,3 +256,11 @@ migrate_env_29_to_30() {
     info "New: daily automatic backups at $t (BACKUP_SCHEDULE) — skipped on nights an update already took a restore point."
     info "  Install its timer: ./mediastack.sh apply-timer   —   change it: ./mediastack.sh configure"
 }
+migrate_env_30_to_31() {
+    # optional outgoing email for the portal (docs/email.md): the keys, empty
+    local k
+    for k in SMTP_HOST SMTP_PORT SMTP_STARTTLS SMTP_TLS SMTP_USER SMTP_PASSWORD SMTP_FROM; do
+        grep -qE "^$k=" "$ENV_FILE" || env_set "$k" ""
+    done
+    info "New: the portal can send email — optional: ./mediastack.sh configure (docs/email.md)"
+}

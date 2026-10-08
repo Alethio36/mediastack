@@ -204,7 +204,7 @@ adding it would look like, and the trigger to revisit.
 | Unpackerr | Downloads | To evaluate | Only earns its place if releases arrive archived |
 | SABnzbd | Downloads (Usenet) | To evaluate | A new subsystem: paid provider + NZB indexers + this downloader |
 | Komga | Comics/manga | Deferred | Kavita chosen for breadth; Komga's edge is its API |
-| ROMM | Games | Deferred, fits now | A shard (app + MariaDB + Valkey) with portal sign-in; needs the portal's email rule first |
+| ROMM | Games | Deferred, fits now | A shard (app + MariaDB + Valkey) with portal sign-in |
 | **Pinchflat** | Video (YouTube) | **Ship-worthy [pick]** | Adversarial upstream; two house-rule exceptions |
 | TubeArchivist | Video (YouTube) | Deferred | Heavy (Elasticsearch + Redis + app) |
 | ytdl-sub | Video (YouTube) | Alternative | No UI — wrong for unknown end users |
@@ -432,16 +432,16 @@ authentik root). Its docs also map authentik groups to ROMM roles
 * **Email must be an identity the portal controls.** ROMM (like Kavita)
   signs a portal user in as the account with their email. Asserting
   `email_verified` is only honest if a portal email is unique and cannot
-  be set to someone else's — see the portal's email rule (roadmap). Without
-  it, whoever claims another person's address at sign-up or in their
-  settings becomes that person in ROMM, an admin included.
+  be set to someone else's. That rule is in (Oct 2026): sign-up refuses a
+  taken email, people cannot change their own, `set-email` warns an admin
+  about a shared one and doctor flags any — ROMM's account move joins
+  Kavita's in `set-email` when it ships.
 
 **To verify when building it:** whether a first OIDC sign-in creates the
 ROMM account or only links an existing one; the role mapping against the
 portal's groups; the image and MariaDB versions to pin.
 
-**Revisit when:** the portal's email rule is in, and the household wants a
-game library.
+**Revisit when:** the household wants a game library.
 
 ---
 

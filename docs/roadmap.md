@@ -226,6 +226,11 @@ arrive on their own, as with watchtower, but validated first.
   data root), so it comes after the MVP.
 
 ### End-user experience
+- **Password reset by email** *(after email, Oct 2026)*: with SMTP set
+  (docs/email.md), a "forgot password?" link on the portal's sign-in — a
+  recovery flow (identify, email a link, set a new password) bound to the
+  brand only when email works, so a portal without it never shows a dead
+  link. Until then `reset-password` mints the link for an admin to send.
 - Web panel polishing.
 - Script polishing for the end user (clearer prompts, output, ergonomics).
   - *`up`/`down` output is truncated on short terminals.*
