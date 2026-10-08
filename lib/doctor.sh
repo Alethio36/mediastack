@@ -448,9 +448,12 @@ log_errors() { # log_errors <svc> < log -> lines matching its error pattern (cas
 
 _doctor_runtime_audit() {
     hr "doctor: runtime audit"
-    # per-service error volume, last 24h — noisy logs surface real problems
+    # per-container error volume, last 24h — noisy logs surface real problems;
+    # a shard's members too (a database or worker failing behind a healthy
+    # primary), each counted by its own pattern (mediastack.errors)
     local noisy=0 cnt
-    for s in $(svc_enabled_managed); do
+    # shellcheck disable=SC2046  # a word list of services
+    for s in $(svc_shard $(svc_enabled_managed)); do
         cn=$(svc_cname "$s")
         [[ "$(c_state "$cn")" == running ]] || continue
         cnt=$(sudo docker logs --since 24h "$cn" 2>&1 | log_errors "$s")
@@ -459,7 +462,7 @@ _doctor_runtime_audit() {
             noisy=$((noisy+1))
         fi
     done
-    (( noisy == 0 )) && ok "log noise: every service under the error threshold (25/24h)"
+    (( noisy == 0 )) && ok "log noise: every container under the error threshold (25/24h), shard members included"
     # effective UID: the process must actually run as the UID .env assigns —
     # PUID images silently ignore bad values, this catches that
     local expect uids drift=0

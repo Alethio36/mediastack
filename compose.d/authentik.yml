@@ -144,6 +144,8 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.shard: "authentik"
+      # its logs carry a level: count by it (the word "error" fills its warnings)
+      mediastack.errors: '"level": ?"(error|critical|fatal|panic)"'
     healthcheck: *authentik-health
     networks: [mediastack]
     logging: *logging
@@ -185,6 +187,8 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.shard: "authentik"
+      # its logs carry a level: count by it (the word "error" fills its warnings)
+      mediastack.errors: '"level": ?"(error|critical|fatal|panic)"'
       traefik.enable: "true"
       traefik.tcp.routers.authentik-ldap.rule: "HostSNI(`${AUTHENTIK_LDAP_HOST:-ldap}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
       traefik.tcp.routers.authentik-ldap.entrypoints: "websecure"
@@ -214,6 +218,8 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.shard: "authentik"
+      # PostgreSQL's own severities: ERROR, FATAL, PANIC
+      mediastack.errors: '(ERROR|FATAL|PANIC):'
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
       interval: 30s

@@ -69,7 +69,7 @@ backups and the update pipeline like any shipped service.
 | `mediastack.subdomain: "x"` | default hostname for the status URL column (`<X>_HOST` in `.env` overrides) |
 | `mediastack.port: "1234"` | the port the app listens on INSIDE its container — `vpn_gen`'s published port, the Traefik backend port, and what other containers dial. The host-side port is derived from the rendered `ports:` (`svc_port`), so a `${MYAPP_PORT:-1234}:1234` mapping keeps the status table, `wire`'s API calls and the readiness gates on the overridden port |
 | `mediastack.desc: "…"` | one-line description shown in the `configure` service picker |
-| `mediastack.errors: '<regex>'` | what counts as an error line for `doctor`'s log-noise check (extended regex, case-insensitive). Default: any line containing the word `error` or `fatal`. Set it for an app whose logs carry a level, so a logger name or field key holding the word is not counted — authentik's is `"level": ?"(error\|critical\|fatal\|panic)"` |
+| `mediastack.errors: '<regex>'` | what counts as an error line for `doctor`'s log-noise check (extended regex, case-insensitive) — on a service or a shard member (doctor counts every container of a shard). Default: any line containing the word `error` or `fatal`. Set it for an app whose logs carry a level, so a logger name or field key holding the word is not counted — authentik's is `"level": ?"(error\|critical\|fatal\|panic)"` |
 | `traefik.http.routers.*` labels | HTTPS hostname — native Traefik labels, see docs/edge.md |
 
 Labels the arr family carries (only meaningful with `wire arr` / `trash-sync`):
