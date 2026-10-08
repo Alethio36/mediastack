@@ -78,6 +78,10 @@ services:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
       mediastack.desc: "one login for every app — sign-up by invitation, groups as permissions"
+      # its logs are structured: count by level. The word "error" appears in
+      # every boot (gunicorn's logger is named gunicorn.error, the router's
+      # startup probes carry an error field), ~26 lines a start (7 Oct 2026)
+      mediastack.errors: '"level": ?"(error|critical|fatal|panic)"'
       mediastack.port: "9000"
       mediastack.vpn: "false"
       mediastack.config: "true"

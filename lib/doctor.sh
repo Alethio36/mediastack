@@ -437,6 +437,15 @@ _doctor_kavita() { # claimed; with the portal, who among its people lacks a libr
     fi
 }
 
+# an app that declares nothing: any line naming an error. One whose logs carry
+# a level declares its own pattern (mediastack.errors), so the word in a
+# logger name or a field key is not counted as a failure.
+LOG_ERRORS_DEFAULT='\b(error|fatal)\b'
+log_errors() { # log_errors <svc> < log -> lines matching its error pattern (case-insensitive)
+    local re; re=$(svc_label "$1" mediastack.errors)
+    grep -ciE -- "${re:-$LOG_ERRORS_DEFAULT}" || true
+}
+
 _doctor_runtime_audit() {
     hr "doctor: runtime audit"
     # per-service error volume, last 24h — noisy logs surface real problems
@@ -444,7 +453,7 @@ _doctor_runtime_audit() {
     for s in $(svc_enabled_managed); do
         cn=$(svc_cname "$s")
         [[ "$(c_state "$cn")" == running ]] || continue
-        cnt=$(sudo docker logs --since 24h "$cn" 2>&1 | grep -ciE '\b(error|fatal)\b' || true)
+        cnt=$(sudo docker logs --since 24h "$cn" 2>&1 | log_errors "$s")
         if (( cnt > 25 )); then
             warn "$s: $cnt error lines in 24h — inspect: ./mediastack.sh logs $s"
             noisy=$((noisy+1))

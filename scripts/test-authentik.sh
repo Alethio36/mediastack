@@ -99,6 +99,20 @@ grep -q "image: ghcr.io/goauthentik/ldap:$tag$" compose.d/authentik.yml || fail_
 sed -n '/^  authentik-ldap:/,/^  authentik-db:/p' compose.d/authentik.yml > "$T/ldap"
 grep -q '/-/health/ready/' "$T/ldap" && grep -q 'exec /ldap$' "$T/ldap" \
     || fail_ "the LDAP outpost must wait for the server's readiness, then exec /ldap"; pass
+# doctor's log-noise count: a boot's info/warn lines are not errors, a level is
+# (one start matched the word "error" ~26 times and tripped the 25/24h warning)
+re=$(sed -n "s/^ *mediastack\.errors: '\(.*\)'\$/\1/p" compose.d/authentik.yml)
+[[ -n "$re" ]] || fail_ "the authentik server declares no mediastack.errors pattern"; pass
+saved=$RENDERED_JSON
+RENDERED_JSON=$(jq -n --arg re "$re" '{services:{authentik:{labels:{"mediastack.errors":$re}},plain:{labels:{}}}}')
+boot='{"level":"warn","target":"authentik::server","event":"failed to send health live request to server","error":"connection refused"}
+{"event": "Starting gunicorn 26.0.0", "level": "info", "logger": "gunicorn.error"}
+{"event":"installing error formatting","level":"info"}'
+real='{"event": "Task failed", "level": "error", "logger": "authentik.tasks"}'
+[[ "$(log_errors authentik <<<"$boot")" == 0 ]] || fail_ "authentik's boot lines counted as errors"; pass
+[[ "$(log_errors authentik <<<"$boot"$'\n'"$real")" == 1 ]] || fail_ "an error-level line must count"; pass
+[[ "$(log_errors plain <<<"$boot")" == 3 ]] || fail_ "a service with no pattern keeps the default (any line naming an error)"; pass
+RENDERED_JSON=$saved
 
 # ---- secrets ----
 s=$(authentik_secret 60)
