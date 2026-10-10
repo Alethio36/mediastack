@@ -276,6 +276,9 @@ sed -i 's/UPDATE_DEFER_ACTION=skip/UPDATE_DEFER_ACTION=proceed/' "$ENV_FILE"
 grep -q 'maint_lock "the scheduled update" "$MAINT_WAIT"' lib/backup.sh && grep -q 'maint_lock update 0' lib/backup.sh \
     && grep -q 'defer_while_streaming update' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) || fail_ "update holds the same lock and deferral"; pass
 grep -q 'maint_lock backup 0' <(awk '/^backup_take\(\)/,/^}/' lib/backup.sh) || fail_ "every restore point takes the lock (update's is re-entry)"; pass
+# wire talks to the apps an update or backup stops and recreates: it refuses
+# while one runs (found live: a wire --verify during the 04:00 update)
+grep -q 'maint_lock wire 0' <(awk '/^cmd_wire\(\)/,/^}/' lib/wire.sh) || fail_ "wire takes the maintenance lock"; pass
 grep -q 'apply_timer mediastack-backup .* "backup --auto" BACKUP_SCHEDULE' lib/backup.sh || fail_ "apply-timer installs the backup timer"; pass
 
 # ---- schedules run in .env's TZ, not the host's (found live 8 Oct 2026) ----
