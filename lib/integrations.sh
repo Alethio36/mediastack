@@ -1212,7 +1212,7 @@ wire_cleanuparr() {
     local KH="X-Api-Key: $akey"
 
     # download client: create-if-missing by name
-    local qu qp have
+    local qu qp
     qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
     local cdc=""
     if ! cdc=$(cup_api GET /configuration/download_client "$KH"); then
@@ -1242,11 +1242,11 @@ wire_cleanuparr() {
 
     # arrs: create-if-missing by name, per type
     wire_arrs_ready || true
-    local s ty key port cfg names
+    local s ty key cfg names
     for s in $(arr_instances); do
         ty=$(svc_label "$s" mediastack.arrtype)
         arr_known "$ty" || continue
-        key=$(arr_key "$s"); port=$(svc_label "$s" mediastack.port)
+        key=$(arr_key "$s")
         [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; continue; }
         cfg=$(cup_api GET "/configuration/$ty" "$KH") \
             || { wfail "cleanuparr: could not read its $ty connections — nothing created [HTTP $(cup_code)]"; continue; }
