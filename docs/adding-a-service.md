@@ -168,6 +168,20 @@ that consumer reaches it — `services/x/provides/<role>.<consumer>.json`:
   `lib/env.schema.tsv`.
 * `scripts/test-roles.sh` fails an unknown role, consumer or placeholder, and
   a provider missing a consumer's file. qBittorrent's are the worked example.
+* **A role only where providers are interchangeable.** A relationship becomes
+  a role when a second provider of it actually exists (download clients:
+  qBittorrent, Deluge, Transmission — a usenet client would be one more). One
+  provider wrapped in a role is indirection with nothing to gain: the arrs as
+  servers (already one family), Jellyfin as the media server and Apprise as
+  the hub stay plain code until a second one arrives.
+
+### Its settings
+
+A service's own `.env` settings are described beside it, in
+`services/x/env.tsv` (the columns of `lib/env.schema.tsv`, which keeps the
+shared ones); `lib/env.sh` reads them all as one schema. The settings
+themselves still go in `.env.example` — the one file people read to
+understand theirs — and `scripts/test-env.sh` holds the two together.
 
 ### Wiring it to other apps (`wire`)
 

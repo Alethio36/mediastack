@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # globals set here are read by the sourced libraries
-# test-env.sh — .env against its schema (lib/env.schema.tsv).
+# test-env.sh — .env against its schema (lib/env.schema.tsv + services/*/env.tsv).
 #   * the schema is well-formed, and holds every key the script or a compose
 #     file reads; .env.example holds every key you or a setup step writes,
 #     its values pass, and its ENV_SCHEMA is the script's
