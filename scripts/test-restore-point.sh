@@ -289,17 +289,30 @@ grep -q '^    prowlarr_indexers_retest' <(awk '/^cmd_up\(\)/,/^}/' mediastack.sh
     || fail_ "up, a restore point and an update each end with prowlarr_indexers_retest"; pass
 ( info() { echo ":: $*"; }; ok() { echo "OK $*"; }; warn() { echo "WARN $*"; }
   svc_enabled() { return 0; }; c_state() { echo running; }; svc_cname() { echo "$1"; }
-  arr_key() { echo k; }; arr_url() { echo http://p; }; arr_apiver() { echo v1; }
+  arr_key() { echo k; }; arr_url() { echo "http://$1"; }; arr_apiver() { [[ "$1" == prowlarr ]] && echo v1 || echo v3; }
+  arr_instances() { echo radarr sonarr; }
   http_ready() { return 0; }; wait_verdict() { return 0; }
-  api() { echo "$1 $2 timeout=${API_TIMEOUT:-20}" >> "$T/rt.calls"; case "$2" in *indexer/testall) printf '%s' "$RT_OUT" ;; *) echo '[]' ;; esac; }
-  : > "$T/rt.calls"; RT_OUT='[{"id":2,"isValid":false},{"id":5,"isValid":true}]'
+  # testall answers 400 with the results when one fails (api returns 1 with the body)
+  api() { echo "$1 $2 timeout=${API_TIMEOUT:-20}" >> "$T/rt.calls"
+          case "$2" in
+              */indexer/testall) printf '%s' "${RT_OUT[${2%%/api*}]:-[]}"; [[ "${RT_OUT[${2%%/api*}]:-[]}" != *false* ]] ;;
+              */indexer) echo '[{"id":2,"name":"1337x"},{"id":5,"name":"Other"}]' ;;
+              *) echo '[]' ;;
+          esac; }
+  declare -A RT_OUT
+  : > "$T/rt.calls"; RT_OUT=([http://prowlarr]='[{"id":2,"isValid":false,"validationFailures":[{"errorMessage":"Unexpected response status Forbidden"}]},{"id":5,"isValid":true}]')
   out=$(prowlarr_indexers_retest 2>&1)
-  [[ "$out" == *"still failing after the start (ids: 2)"* ]] || fail_ "a failing indexer is named: $out"
-  grep -q 'indexerproxy/testall' "$T/rt.calls" && grep -q '/indexer/testall' "$T/rt.calls" || fail_ "proxies, then indexers, are re-tested"
+  [[ "$out" == *"prowlarr: indexers still failing after the start: 1337x (Unexpected response status Forbidden)"* ]] || fail_ "a failing indexer is named, with why (its 400 body read as results): $out"
+  grep -q 'indexerproxy/testall' "$T/rt.calls" && grep -q 'prowlarr/api/v1/indexer/testall' "$T/rt.calls" || fail_ "proxies, then indexers, are re-tested"
+  grep -q 'radarr/api' "$T/rt.calls" && fail_ "while Prowlarr's indexer fails, the arrs are not re-tested (it would only add to their failures)"
   # a test waits on Cloudflare challenges: api's 20s default timed it out (live)
   ! grep -qE 'testall timeout=20$' "$T/rt.calls" && grep -qE 'indexer/testall timeout=[0-9]{3}$' "$T/rt.calls" || fail_ "the re-tests get a long timeout: $(cat "$T/rt.calls")"
-  RT_OUT='[{"id":2,"isValid":true}]'; [[ "$(prowlarr_indexers_retest 2>&1)" == *"every indexer answers"* ]] || fail_ "all good is said"
-  RT_OUT='[]'; [[ "$(prowlarr_indexers_retest 2>&1)" == *"no indexers yet"* ]] || fail_ "none is not 'all good'"
+  # Prowlarr passes: every arr re-tests its own (its backoff is its own — live)
+  : > "$T/rt.calls"; RT_OUT=([http://prowlarr]='[{"id":2,"isValid":true}]' [http://radarr]='[{"id":2,"isValid":true}]' [http://sonarr]='[{"id":2,"isValid":false}]')
+  out=$(prowlarr_indexers_retest 2>&1)
+  grep -q 'radarr/api/v3/indexer/testall timeout=300' "$T/rt.calls" && grep -q 'sonarr/api/v3/indexer/testall' "$T/rt.calls" || fail_ "every arr re-tests once Prowlarr passes: $(cat "$T/rt.calls")"
+  [[ "$out" == *"OK prowlarr: every indexer answers"* && "$out" == *"OK radarr: every indexer answers"* && "$out" == *"WARN sonarr: indexers still failing after the start: 1337x (failed)"* ]] || fail_ "each says its own result: $out"
+  RT_OUT=([http://prowlarr]='[]'); [[ "$(prowlarr_indexers_retest 2>&1)" == *"prowlarr: no indexers yet"* ]] || fail_ "none is not 'all good'"
   wait_verdict() { declare -gA VERDICT_WHY=([flaresolverr]="is unhealthy"); return 1; }; : > "$T/rt.calls"
   [[ "$(prowlarr_indexers_retest 2>&1)" == *"not re-tested — flaresolverr is unhealthy"* && ! -s "$T/rt.calls" ]] || fail_ "an unhealthy flaresolverr: no test, and said why"
 ) || exit 1; pass

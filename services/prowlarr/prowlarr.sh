@@ -196,7 +196,7 @@ prowlarr_indexers_retest() { # after a stack start: once FlareSolverr is up, Pro
     # indexers unavailable" until the backoff runs out. A test that passes
     # once FlareSolverr answers says what really works now.
     svc_enabled prowlarr && [[ "$(c_state "$(svc_cname prowlarr)")" == running ]] || return 0
-    local key url out bad
+    local key url out
     if svc_enabled flaresolverr; then
         wait_verdict flaresolverr \
             || { warn "prowlarr: indexers not re-tested — flaresolverr ${VERDICT_WHY[flaresolverr]} (check: ./mediastack.sh logs flaresolverr)"; return 0; }
@@ -210,10 +210,12 @@ prowlarr_indexers_retest() { # after a stack start: once FlareSolverr is up, Pro
         out=$(API_TIMEOUT=$PROWLARR_TEST_WAIT api POST "$url/indexerproxy/testall" "$key" '{}') \
             || warn "prowlarr: re-testing its proxies failed — $(oneline "$out")"
     fi
-    out=$(API_TIMEOUT=$PROWLARR_TEST_WAIT api POST "$url/indexer/testall" "$key" '{}') \
-        || { warn "prowlarr: re-testing its indexers failed — $(oneline "$out")"; return 0; }
-    bad=$(jq -r '[.[]? | select(.isValid == false) | .id] | join(" ")' <<<"$out" 2>/dev/null)
-    if [[ "$(jq 'length' <<<"$out" 2>/dev/null)" == 0 ]]; then info "prowlarr: no indexers yet — nothing to re-test"
-    elif [[ -z "$bad" ]]; then ok "prowlarr: every indexer answers after the start"
-    else warn "prowlarr: indexers still failing after the start (ids: $bad) — check them in Prowlarr; with one indexer, the arrs report all unavailable"; fi
+    out=$(API_TIMEOUT=$PROWLARR_TEST_WAIT api POST "$url/indexer/testall" "$key" '{}') || true   # soft read: a failing indexer answers 400 with the results; the report reads them
+    # each arr keeps its own failure record for what Prowlarr syncs it, and
+    # Prowlarr's passing test does not clear it (found live: radarr stayed
+    # "all indexers unavailable" after Prowlarr passed); an arr's own passing
+    # test does. Only once Prowlarr's pass: an arr testing a still-failing
+    # indexer would only add to its record.
+    indexer_test_report prowlarr "$url" "$key" "$out" || return 0
+    arr_indexers_retest
 }
