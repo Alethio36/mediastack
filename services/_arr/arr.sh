@@ -12,10 +12,14 @@ arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialisin
 
 arr_url() { local p; p=$(svc_hostport "$1") || return 1; echo "http://127.0.0.1:$p"; }
 
-arr_repoint() { # arr_repoint <api base> <key> <resource> <list JSON> <entry name> field=value...
+arr_repoint() { # arr_repoint [--force] <api base> <key> <resource> <list JSON> <entry name> field=value...
     # PUT the entry back with just those fields changed. Secrets the API masked
     # on GET ("********") go back as-is and the app keeps its stored value — the
     # same round trip its own UI does (Servarr SchemaBuilder.ReadFromSchema).
+    # --force saves without the app's own connection test (forceSave): for an
+    # entry whose test reaches past the stack (a notification), so a slow
+    # outside service cannot block a change of where mediastack points it.
+    local q=""; [[ "${1:-}" == --force ]] && { q="?forceSave=true"; shift; }
     local base="$1" key="$2" res="$3" list="$4" name="$5" kv entry; shift 5
     entry=$(jq -c --arg n "$name" '[.[]? | select(.name == $n)][0] // empty' <<<"$list")
     [[ -n "$entry" ]] || { echo "entry '$name' is gone"; return 1; }
@@ -23,7 +27,7 @@ arr_repoint() { # arr_repoint <api base> <key> <resource> <list JSON> <entry nam
         entry=$(jq -c --arg f "${kv%%=*}" --arg v "${kv#*=}" \
             '.fields |= map(if .name == $f then .value = (if (.value | type) == "number" then ($v | tonumber) else $v end) else . end)' <<<"$entry")
     done
-    api PUT "$base/$res/$(jq -r '.id' <<<"$entry")" "$key" "$entry"
+    api PUT "$base/$res/$(jq -r '.id' <<<"$entry")$q" "$key" "$entry"
 }
 arr_entry_fields() { # arr_entry_fields <list JSON> <entry name> -> "field=value" lines
     jq -r --arg n "$2" '.[]? | select(.name == $n) | .fields[]? | "\(.name)=\(.value // "" | tostring)"' <<<"$1" 2>/dev/null || true

@@ -10,6 +10,9 @@
 # reach. An entry made before the ops/users split still says "activity", which
 # no hub line carries, so the hub answers 424 and the event is lost. Checked on
 # every run like the entry's address; everything else in it stays as you set it.
+# Both are saved with forceSave: the app's own test would send a message out to
+# your endpoint, and a slow one must not block where mediastack points the
+# entry (delivery is what `notify test` checks).
 APPRISE_ENTRY_TAGS='["ops"]'
 apprise_entry_tag() { # apprise_entry_tag <svc> <api base> <key> <notification list JSON>
     local s="$1" base="$2" key="$3" notes="$4" have entry out
@@ -19,7 +22,7 @@ apprise_entry_tag() { # apprise_entry_tag <svc> <api base> <key> <notification l
     # the entry as read, only its tags changed: masked secrets go back as-is
     entry=$(jq -c --argjson t "$APPRISE_ENTRY_TAGS" \
         '[.[]? | select(.name == "mediastack-apprise")][0] | .fields |= map(if .name == "tags" then .value = $t else . end)' <<<"$notes")
-    if out=$(api PUT "$base/notification/$(jq -r '.id' <<<"$entry")" "$key" "$entry"); then
+    if out=$(api PUT "$base/notification/$(jq -r '.id' <<<"$entry")?forceSave=true" "$key" "$entry"); then
         ok "$s: hub entry re-tagged to ops"
     else
         wfail "$s: re-tagging its hub entry was rejected — $(oneline "$out")"
@@ -103,7 +106,7 @@ Getting a URL:
             local nst; nst=$(addr_of "$(arr_entry_field "$notes" mediastack-apprise serverUrl)")
             if addr_stale "$s -> apprise" apprise "$nst"; then
                 addr_repoint "$s -> apprise" "$nst" "$(svc_addr apprise)" -- \
-                    arr_repoint "$url/api/$ver" "$key" notification "$notes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
+                    arr_repoint --force "$url/api/$ver" "$key" notification "$notes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
                 # the re-point changed the entry: the tag check works from what it is now
                 if (( ! WIRE_DRY )); then
                     notes=$(api GET "$url/api/$ver/notification" "$key") \
@@ -144,7 +147,7 @@ Getting a URL:
             local pst pok=1; pst=$(addr_of "$(arr_entry_field "$pnotes" mediastack-apprise serverUrl)")
             if addr_stale "prowlarr -> apprise" apprise "$pst"; then
                 addr_repoint "prowlarr -> apprise" "$pst" "$(svc_addr apprise)" -- \
-                    arr_repoint "$url/api/$ver" "$key" notification "$pnotes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
+                    arr_repoint --force "$url/api/$ver" "$key" notification "$pnotes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
                 if (( ! WIRE_DRY )); then
                     pnotes=$(api GET "$url/api/$ver/notification" "$key") \
                         || { wfail "prowlarr: could not re-read its notifications — tag not checked [$(oneline "$pnotes")]"; pok=0; }
