@@ -6,10 +6,11 @@
 # only holds while the script cannot be turned into an arbitrary-root shell:
 # no eval, and no user input interpolated into a shell (`sh -c "…$var…"`).
 #
-# sudo runs the entrypoint as root, which `source`s lib/*.sh as root — so every
-# library is part of the same root-executed surface and must clear the same
-# tripwires. With no arguments this audits mediastack.sh plus lib/*.sh; pass an
-# explicit file list to override.
+# sudo runs the entrypoint as root, which `source`s lib/*.sh and
+# services/*/*.sh as root — so every library is part of the same
+# root-executed surface and must clear the same tripwires. With no arguments
+# this audits mediastack.sh, lib/*.sh and services/*/*.sh; pass an explicit
+# file list to override.
 #
 # This is a TRIPWIRE, not a proof. It mechanically catches the two patterns
 # that would definitely break the model, so a regression fails CI instead of
@@ -24,7 +25,7 @@ if (( $# )); then
     files=("$@")
 else
     shopt -s nullglob
-    files=(mediastack.sh lib/*.sh)
+    files=(mediastack.sh lib/*.sh services/*/*.sh)
     shopt -u nullglob
 fi
 

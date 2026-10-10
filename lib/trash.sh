@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # lib/trash.sh — `trash-sync`: TRaSH Guides quality profiles via Recyclarr —
 # instance selection, config generation, ownership banners and the sync run.
-# Sourced by the entrypoint; relies on lib/common.sh, lib/integrations.sh (arr
-# API helpers, http_ready, wfail) and the entrypoint's helpers at call time.
+# Sourced by the entrypoint; relies on lib/common.sh, services/_arr/arr.sh (arr
+# API helpers), lib/wire.sh (http_ready, wfail) and the entrypoint's helpers.
 
 # =================================================================== trash --
 # Wave 2: TRaSH Guides sync via Recyclarr (guide-backed profiles, v8 schema).

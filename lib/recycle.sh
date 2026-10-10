@@ -9,8 +9,8 @@
 # how. Covers arr-made deletes only — a delete by Jellyfin, a person or another
 # tool is gone (the deletion log, lib/audit.sh, still says who).
 # Sourced by the entrypoint; relies on lib/common.sh, lib/doctor.sh (d_fail),
-# lib/manifest.sh (manifest_root), lib/integrations.sh (api, arr_*, w_would,
-# wfail, oneline, notify) and the render/svc helpers at call time.
+# lib/manifest.sh (manifest_root), lib/wire.sh (api, w_would, wfail, oneline),
+# services/_arr/arr.sh (arr_*), notify and the render/svc helpers at call time.
 #
 # Placement rules, all checked before anything is set:
 #   * inside DATA_ROOT — every arr already sees DATA_ROOT, so no new mounts

@@ -8,7 +8,7 @@ jobs:
         with:
           fetch-depth: 0   # the schema-bump step diffs a whole push, not one commit
       - name: shellcheck
-        run: shellcheck -S warning -x mediastack.sh lib/*.sh scripts/*.sh
+        run: shellcheck -S warning -x mediastack.sh lib/*.sh services/*/*.sh scripts/*.sh
       - name: front-door safety audit
         run: bash scripts/audit-frontdoor-safety.sh
       - name: no placeholder host literals
@@ -18,6 +18,19 @@ jobs:
             echo "::error::placeholder host literal in a runtime string — use svc_url or a real host expression"
             exit 1
           fi
+      - name: every wire role has exactly one wire_<role> in services/
+        run: |
+          # WIRE_ROLES (lib/wire.sh) is the ordered role list; each role's code
+          # lives with its service, so a missing or duplicated definition fails here
+          roles=$(sed -n 's/^WIRE_ROLES=(\(.*\))$/\1/p' lib/wire.sh)
+          [[ -n "$roles" ]] || { echo "::error::WIRE_ROLES not found in lib/wire.sh"; exit 1; }
+          rc=0
+          for r in $roles; do
+            n=$(grep -lE "^wire_${r}\(\)" services/*/*.sh | wc -l)
+            [[ "$n" == 1 ]] || { echo "::error::wire role '$r': $n definitions of wire_${r}() under services/ (want 1)"; rc=1; }
+            grep -qE "^wire_${r}\(\)" lib/*.sh mediastack.sh && { echo "::error::wire_${r}() is defined outside services/"; rc=1; }
+          done
+          exit $rc
       - name: every registry verb is documented in README
         run: |
           rc=0

@@ -2,8 +2,8 @@
 # lib/access.sh — who can get in: the logins the stack created or stores
 # (`credentials`), rotating one everywhere it lives (`set-credentials`), and
 # household invitations (`invite`, via Wizarr). Sourced by the entrypoint;
-# relies on lib/common.sh, the entrypoint's helpers and lib/integrations.sh's
-# per-app API helpers at call time.
+# relies on lib/common.sh, the entrypoint's helpers and the services' own
+# API helpers (services/<name>/*.sh) at call time.
 
 cmd_credentials() {
     load_env

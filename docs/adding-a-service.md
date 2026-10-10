@@ -76,7 +76,7 @@ Labels the arr family carries (only meaningful with `wire arr` / `trash-sync`):
 
 | Label | Meaning |
 |---|---|
-| `mediastack.arrtype: "sonarr\|radarr\|lidarr"` | which arr this instance is — every per-type fact (API version, download-client category field, Prowlarr and cleanuparr registration, Jellyfin library type) comes from its row in `ARR_META` (lib/integrations.sh); a new type is one row there, and CI fails if a fragment names a type without one |
+| `mediastack.arrtype: "sonarr\|radarr\|lidarr"` | which arr this instance is — every per-type fact (API version, download-client category field, Prowlarr and cleanuparr registration, Jellyfin library type) comes from its row in `ARR_META` (services/_arr/arr.sh); a new type is one row there, and CI fails if a fragment names a type without one |
 | `mediastack.jflibrary: "Movies (4K)"` | the Jellyfin library name `wire jellyfin` offers for this instance's folder (default: its type's name, e.g. "Movies") |
 | `mediastack.trashprofile: "uhd"` | the TRaSH profile this instance exists for (`uhd`, `anime`, …) — `trash-sync` pre-answers it instead of asking. Any `sonarr`/`radarr`-type instance is managed by `trash-sync`; this only skips the question |
 | `mediastack.category: "movies-4k"` | its qBittorrent category (`wire qbit` creates it; `wire arr` sets it on the download client) |
@@ -127,6 +127,17 @@ Every service with its own network namespace declares `dns_search: ["."]`
 (`network_mode: service:gluetun`) must not, Docker refuses it, and gets
 gluetun's instead. test-render fails a fragment that breaks either.
 
+### Its code
+
+A service's code lives in its folder beside its fragment:
+`services/x/x.sh` holds the app's API client and its `wire` role
+(`wire_x`), sourced by the entrypoint. A new role is also appended to
+`WIRE_ROLES` in `lib/wire.sh` — that list sets the order `wire` runs in, and
+CI fails a role without exactly one `wire_<role>` under `services/`. The arr
+family shares one implementation in `services/_arr/arr.sh`; an arr instance
+is a fragment only. A service with nothing to wire (Navidrome, say) has no
+`.sh` at all.
+
 ### Wiring it to other apps (`wire`)
 
 If a `wire` role writes this service's address into another app's settings:
@@ -135,7 +146,7 @@ If a `wire` role writes this service's address into another app's settings:
   never a literal: it follows the service's VPN side (`gluetun:<port>` inside,
   `<svc>:<port>` outside). CI (`scripts/test-addr.sh`) rejects a hard-coded
   loopback or gluetun address.
-* **List who calls it in `WIRE_CALLERS`** (`lib/integrations.sh`), so a VPN
+* **List who calls it in `WIRE_CALLERS`** (`lib/addr.sh`), so a VPN
   toggle re-points those roles. CI (`scripts/test-repoint.sh`) fails if `wire`
   writes an address for a service the table doesn't list.
 * **A read that decides whether to create something must fail loud.** A refused

@@ -377,7 +377,7 @@ g=$(grep -n 'gate_bind_sync' <<<"$body" | head -1 | cut -d: -f1)
 
 # every arr-family login goes through arr_login — Prowlarr and a credential
 # rotation included (found live: Prowlarr kept asking twice)
-grep -q '^    arr_login prowlarr' lib/integrations.sh || fail_ "wire prowlarr: its login follows the trust rule"; pass
+grep -q '^    arr_login prowlarr' services/prowlarr/prowlarr.sh || fail_ "wire prowlarr: its login follows the trust rule"; pass
 sed -n '/^sc_rotate_arr() {/,/^}/p' lib/access.sh | grep -q 'arr_login "\$s"' || fail_ "set-credentials arr: back to trusting the portal after the rotation"; pass
 sed -n '/^cmd_disable() {/,/^}/p' mediastack.sh | grep -q 'for a in $(arr_instances) $(svc_enabled prowlarr && echo prowlarr)' \
     || fail_ "disable authentik restores Prowlarr's login too"; pass

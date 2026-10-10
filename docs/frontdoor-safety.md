@@ -34,7 +34,7 @@ does not verify (3); do not read a green audit as "safe to expose any verb."
 
 ## Host-side requirements (not checkable in CI)
 
-- `mediastack.sh` and `lib/` must **not be writable by the front-door user**
+- `mediastack.sh`, `lib/` and `services/` must **not be writable by the front-door user**
   (they are the operator's, as a clone is). If the sudo target is writable, a
   compromise rewrites what runs as root and the whole model collapses.
 - **The trust boundary, stated plainly:** the panel's sudo entry and every

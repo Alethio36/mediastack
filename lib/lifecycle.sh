@@ -90,7 +90,7 @@ upgrade_finish() { # upgrade_finish <commit before the pull> — run by the pull
     pending=$(compose_pending)
     if [[ -n "$pending" ]]; then
         ok "Upgrade complete. Apply with ./mediastack.sh up — it changes: $(paste -sd' ' <<<"$pending")"
-    elif grep -qE '^(mediastack\.sh|lib/)' <<<"$changed"; then
+    elif grep -qE '^(mediastack\.sh|lib/|services/[^/]+/[^/]+\.sh$)' <<<"$changed"; then
         ok "Upgrade complete. New tooling is live — nothing to apply."
     else
         ok "Upgrade complete. Docs/templates only — nothing to apply."

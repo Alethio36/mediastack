@@ -40,13 +40,22 @@ SCRIPT_SCHEMA=31
 # the compose/service and container-inspect helpers, the health verdict,
 # provisioning, up/down/enable/disable/logs, status, the verb registry and
 # main(). Every other verb lives in a lib named for it. Libs call entrypoint
-# helpers at call time only.
+# helpers at call time only. A service's own code lives in its folder
+# (services/<name>/*.sh) and is sourced by the loop below: those files define
+# functions and constants only, so their order does not matter.
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
 # shellcheck source=lib/frontdoor.sh
 source "$SCRIPT_DIR/lib/frontdoor.sh"
-# shellcheck source=lib/integrations.sh
-source "$SCRIPT_DIR/lib/integrations.sh"
+# shellcheck source=lib/wire.sh
+source "$SCRIPT_DIR/lib/wire.sh"
+# shellcheck source=lib/addr.sh
+source "$SCRIPT_DIR/lib/addr.sh"
+for _svc_lib in "$SCRIPT_DIR"/services/*/*.sh; do
+    # shellcheck source=/dev/null
+    source "$_svc_lib"
+done
+unset _svc_lib
 # shellcheck source=lib/migrations.sh
 source "$SCRIPT_DIR/lib/migrations.sh"
 # shellcheck source=lib/env.sh
