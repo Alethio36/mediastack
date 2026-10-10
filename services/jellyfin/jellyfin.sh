@@ -325,3 +325,18 @@ credentials)."
         ok "stack API key minted and stored (JELLYFIN_API_KEY)"
     fi
 }
+
+sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
+        local npass="$1" juser jpass auth tok
+        juser=$(env_get JELLYFIN_ADMIN_USER); jpass=$(env_get JELLYFIN_ADMIN_PASSWORD)
+        [[ -n "$juser" && -n "$jpass" ]] || die "no Jellyfin admin stored — run 'wire jellyfin' first"
+        auth=$(jf_api POST /Users/AuthenticateByName "" "$(jq -cn --arg u "$juser" --arg p "$jpass" '{Username:$u,Pw:$p}')") \
+            || die "Jellyfin rejected the stored admin login [HTTP $(jf_code)] — is .env stale?"
+        tok=$(jq -r '.AccessToken // empty' <<<"$auth")
+        jf_api POST /Users/Password "$tok" "$(jq -cn --arg c "$jpass" --arg n "$npass" '{CurrentPw:$c,NewPw:$n}')" >/dev/null \
+            || die "Jellyfin refused the password change [HTTP $(jf_code)]"
+        jf_api POST /Users/AuthenticateByName "" "$(jq -cn --arg u "$juser" --arg p "$npass" '{Username:$u,Pw:$p}')" >/dev/null \
+            || die "verification sign-in with the NEW password failed — check Jellyfin's users in its dashboard"
+        env_set JELLYFIN_ADMIN_PASSWORD "$npass"
+        ok "Jellyfin admin password rotated and verified"
+}
