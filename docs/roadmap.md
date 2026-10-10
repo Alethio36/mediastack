@@ -563,6 +563,12 @@ all built; what each still leaves open is noted below.
   straight to the hub is invisible to it — three weeks of arr events answered
   424 (a retired tag) showed only as log noise. Doctor should read the hub's
   log for failed sends since its last run and name the sender and tag.
+- **An ERR trap that names an unexpected stop (to discuss).** The scripts run
+  under `set -e`: an unguarded command that fails ends the run with no message
+  (found when a `grep` matching nothing stopped `wire` mid-way). A trap in the
+  entrypoint printing file, line and command before exiting would make every
+  such stop fail loud. Open questions: interaction with subshells and
+  `|| true` guards, `set -E` for functions, and what the panel shows.
 - **A `--dry-run` smoke test in CI.** The rest of the suite is in place: each
   `scripts/test-*.sh` / `check-*.sh` states in its header what it pins, and the
   lint workflow runs them all.

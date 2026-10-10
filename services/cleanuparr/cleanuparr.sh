@@ -175,3 +175,19 @@ wire_cleanuparr() {
         fi
     fi
 }
+
+cleanuparr_dl_login_resync() { # cleanuparr_dl_login_resync PROVIDER — after its login changed: Cleanuparr's entry for it takes the new one
+    local p="$1" KH dcs name e id ent
+    svc_enabled cleanuparr && [[ -n "$(env_get CLEANUPARR_API_KEY)" ]] || return 0
+    KH="X-Api-Key: $(env_get CLEANUPARR_API_KEY)"
+    name=$(role_entry_name "$p" download-client cleanuparr)
+    dcs=$(cup_api GET /configuration/download_client "$KH") \
+        || { wfail "cleanuparr: could not read its download clients — its $p login was NOT updated; fix in its UI [HTTP $(cup_code)]"; return 0; }
+    id=$(jq -r --arg n "$name" '.clients[]? | select(.name == $n) | .id' <<<"$dcs" 2>/dev/null | head -1)
+    [[ -n "$id" ]] || return 0
+    e=$(role_entry "$p" download-client cleanuparr)
+    ent=$(jq -c --arg i "$id" --argjson e "$e" '.clients[] | select(.id == $i) | .username = $e.username | .password = $e.password' <<<"$dcs")
+    cup_api PUT "/configuration/download_client/$id" "$KH" "$ent" >/dev/null \
+        && ok "cleanuparr: '$name' connection updated" \
+        || wfail "cleanuparr: '$name' connection not updated [HTTP $(cup_code)] — fix in its UI"
+}

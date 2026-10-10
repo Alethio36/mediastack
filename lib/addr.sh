@@ -45,6 +45,7 @@ addr_repoint() { # addr_repoint <what> <stored> <want> -- <command...> — re-po
 # CI (scripts/test-repoint.sh) fails if wire points at a service not listed.
 declare -A WIRE_CALLERS=(
     [qbittorrent]="arr prowlarr cleanuparr lazylibrarian"
+    [deluge]="arr prowlarr cleanuparr"
     [apprise]="apprise cleanuparr seerr"
     [arr]="prowlarr cleanuparr seerr bazarr"
     [prowlarr]="prowlarr"
