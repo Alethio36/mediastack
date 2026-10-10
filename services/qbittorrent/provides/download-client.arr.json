@@ -1,0 +1,17 @@
+{
+  "priority": 1,
+  "name": "qBittorrent (mediastack)",
+  "implementation": "QBittorrent",
+  "implementationName": "qBittorrent",
+  "configContract": "QBittorrentSettings",
+  "protocol": "torrent",
+  "removeCompletedDownloads": true,
+  "removeFailedDownloads": true,
+  "fields": {
+    "host": "{self.host}",
+    "port": "{self.port}",
+    "useSsl": false,
+    "username": "{env.QBITTORRENT_USER}",
+    "password": "{env.QBITTORRENT_PASSWORD}"
+  }
+}

@@ -51,6 +51,8 @@ source "$SCRIPT_DIR/lib/frontdoor.sh"
 source "$SCRIPT_DIR/lib/wire.sh"
 # shellcheck source=lib/addr.sh
 source "$SCRIPT_DIR/lib/addr.sh"
+# shellcheck source=lib/roles.sh
+source "$SCRIPT_DIR/lib/roles.sh"
 for _svc_lib in "$SCRIPT_DIR"/services/*/*.sh; do
     # shellcheck source=/dev/null
     source "$_svc_lib"

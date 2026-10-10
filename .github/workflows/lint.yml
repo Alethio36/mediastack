@@ -18,6 +18,8 @@ jobs:
             echo "::error::placeholder host literal in a runtime string — use svc_url or a real host expression"
             exit 1
           fi
+      - name: wiring by role — templates, resolution, what consumers send (scripts/test-roles.sh)
+        run: scripts/test-roles.sh
       - name: every listed service has its function in services/ (scripts/check-registries.sh)
         run: scripts/check-registries.sh
       - name: every registry verb is documented in README

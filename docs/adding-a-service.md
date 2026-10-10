@@ -150,6 +150,21 @@ needs one service's code at one spot calls it by name — `<name>_<what>`
 `scripts/check-registries.sh` fails a listed name without exactly one
 function under `services/`, and a `<service>_*` call that nothing defines.
 
+### Providing a role (wiring by role)
+
+Some connections are a *role* one service plays for others: a download client
+for the arrs, Prowlarr and Cleanuparr. The consumers' code is written once
+against the role (`lib/roles.sh`); a provider ships, per consumer type, how
+that consumer reaches it — `services/x/provides/<role>.<consumer>.json`:
+
+* **Data and placeholders only.** `{self.host}`, `{self.port}` (a number when
+  it is the whole value), `{self.addr}` and `{env.NAME}` (a `.env` setting) —
+  nothing else resolves, and anything that needs a decision is code.
+* **One file per consumer type** of the role (`download-client.arr.json`,
+  `.prowlarr.json`, `.cleanuparr.json`); `"priority"` orders the providers.
+* `scripts/test-roles.sh` fails an unknown role, consumer or placeholder, and
+  a provider missing a consumer's file. qBittorrent's are the worked example.
+
 ### Wiring it to other apps (`wire`)
 
 If a `wire` role writes this service's address into another app's settings:

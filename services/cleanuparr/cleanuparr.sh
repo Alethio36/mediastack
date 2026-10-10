@@ -60,33 +60,33 @@ wire_cleanuparr() {
     [[ "$(env_get CLEANUPARR_API_KEY)" == "$akey" ]] || env_set CLEANUPARR_API_KEY "$akey"
     local KH="X-Api-Key: $akey"
 
-    # download client: create-if-missing by name
-    local qu qp
-    qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
-    local cdc=""
+    # download clients: the role's providers (lib/roles.sh), create-if-missing by name
+    local cdc="" p e name miss cst cbody dc
     if ! cdc=$(cup_api GET /configuration/download_client "$KH"); then
         wfail "cleanuparr: could not read its download clients — nothing created [HTTP $(cup_code)]"
-    elif [[ " $(jq -r '[.clients[]?.name] | join(" ")' <<<"$cdc" 2>/dev/null) " == *" qbittorrent "* ]]; then
-        ok "qbittorrent already connected — untouched"
-        local cst cbody; cst=$(addr_of "$(jq -r '.clients[]? | select(.name=="qbittorrent") | .host' <<<"$cdc" 2>/dev/null | head -1)")
-        if addr_stale "cleanuparr -> qbittorrent" qbittorrent "$cst"; then
-            cbody=$(jq -c --arg h "http://$(svc_addr qbittorrent)" --arg u "$(env_get QBITTORRENT_USER)" --arg p "$(env_get QBITTORRENT_PASSWORD)" \
-                '[.clients[]? | select(.name=="qbittorrent")][0] | .host = $h | .username = $u | .password = $p' <<<"$cdc")
-            addr_repoint "cleanuparr -> qbittorrent" "$cst" "$(svc_addr qbittorrent)" -- \
-                cup_api PUT "/configuration/download_client/$(jq -r '.id' <<<"$cbody")" "$KH" "$cbody"
-        fi
-    elif [[ -z "$qu" || -z "$qp" ]]; then
-        wfail "no qBittorrent credentials in .env — run 'wire qbit' first"
     else
-        local dc
-        dc=$(jq -cn --arg u "$qu" --arg p "$qp" --arg h "http://$(svc_addr qbittorrent)" \
-             '{enabled:true,name:"qbittorrent",typeName:"qBittorrent",type:"Torrent",
-               host:$h,urlBase:"",username:$u,password:$p}')
-        out=$(cup_api POST /configuration/download_client/test "$KH" "$dc") \
-            || { wfail "cleanuparr could not reach qBittorrent [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 1; }
-        out=$(cup_api POST /configuration/download_client "$KH" "$dc") \
-            && ok "qbittorrent connected" \
-            || wfail "qbittorrent entry rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
+        for p in $(role_providers download-client cleanuparr); do
+            e=$(role_entry "$p" download-client cleanuparr); name=$(jq -r '.name' <<<"$e")
+            if [[ " $(jq -r '[.clients[]?.name] | join(" ")' <<<"$cdc" 2>/dev/null) " == *" $name "* ]]; then
+                ok "$name already connected — untouched"
+                cst=$(addr_of "$(jq -r --arg n "$name" '.clients[]? | select(.name == $n) | .host' <<<"$cdc" 2>/dev/null | head -1)")
+                if addr_stale "cleanuparr -> $p" "$p" "$cst"; then
+                    cbody=$(jq -c --arg n "$name" --argjson e "$e" \
+                        '[.clients[]? | select(.name == $n)][0] | .host = $e.host | .username = $e.username | .password = $e.password' <<<"$cdc")
+                    addr_repoint "cleanuparr -> $p" "$cst" "$(svc_addr "$p")" -- \
+                        cup_api PUT "/configuration/download_client/$(jq -r '.id' <<<"$cbody")" "$KH" "$cbody"
+                fi
+                continue
+            fi
+            miss=$(role_env_missing "$p" download-client cleanuparr | paste -sd' ' -)
+            [[ -z "$miss" ]] || { wfail "no $p credentials in .env ($miss) — run a full 'wire' first"; continue; }
+            dc=$(jq -c '{enabled: true} + del(.priority)' <<<"$e")
+            out=$(cup_api POST /configuration/download_client/test "$KH" "$dc") \
+                || { wfail "cleanuparr could not reach $(jq -r '.typeName' <<<"$e") [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 1; }
+            out=$(cup_api POST /configuration/download_client "$KH" "$dc") \
+                && ok "$name connected" \
+                || wfail "$name entry rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
+        done
     fi
 
     # arrs: create-if-missing by name, per type
