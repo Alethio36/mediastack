@@ -274,3 +274,8 @@ migrate_env_31_to_32() {
     repoint_mark apprise
     info "Apprise now runs outside the VPN by default — the next 'up' moves it and re-points every app that notifies it (keep it inside: ./mediastack.sh vpn apprise on)"
 }
+migrate_env_32_to_33() {
+    # the download client is a choice when several are enabled (lib/roles.sh);
+    # empty keeps today's: the first enabled, qBittorrent before the others
+    grep -qE '^DOWNLOAD_CLIENT=' "$ENV_FILE" || env_set DOWNLOAD_CLIENT ""
+}

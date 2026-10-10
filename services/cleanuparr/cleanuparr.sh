@@ -60,32 +60,47 @@ wire_cleanuparr() {
     [[ "$(env_get CLEANUPARR_API_KEY)" == "$akey" ]] || env_set CLEANUPARR_API_KEY "$akey"
     local KH="X-Api-Key: $akey"
 
-    # download clients: the role's providers (lib/roles.sh), create-if-missing by name
-    local cdc="" p e name miss cst cbody dc
+    # the download client (lib/roles.sh: DOWNLOAD_CLIENT, else the first
+    # enabled), create-if-missing by name; the others' entries switched off
+    local cdc="" dl p e name other miss cst cbody dc
+    dl=$(role_pick download-client)
     if ! cdc=$(cup_api GET /configuration/download_client "$KH"); then
         wfail "cleanuparr: could not read its download clients — nothing created [HTTP $(cup_code)]"
-    else
-        for p in $(role_providers download-client cleanuparr); do
-            e=$(role_entry "$p" download-client cleanuparr); name=$(jq -r '.name' <<<"$e")
-            if [[ " $(jq -r '[.clients[]?.name] | join(" ")' <<<"$cdc" 2>/dev/null) " == *" $name "* ]]; then
-                ok "$name already connected — untouched"
-                cst=$(addr_of "$(jq -r --arg n "$name" '.clients[]? | select(.name == $n) | .host' <<<"$cdc" 2>/dev/null | head -1)")
-                if addr_stale "cleanuparr -> $p" "$p" "$cst"; then
-                    cbody=$(jq -c --arg n "$name" --argjson e "$e" \
-                        '[.clients[]? | select(.name == $n)][0] | .host = $e.host | .username = $e.username | .password = $e.password' <<<"$cdc")
-                    addr_repoint "cleanuparr -> $p" "$cst" "$(svc_addr "$p")" -- \
-                        cup_api PUT "/configuration/download_client/$(jq -r '.id' <<<"$cbody")" "$KH" "$cbody"
-                fi
-                continue
+    elif [[ -n "$dl" ]]; then
+        e=$(role_entry "$dl" download-client cleanuparr); name=$(jq -r '.name' <<<"$e")
+        if [[ " $(jq -r '[.clients[]?.name] | join(" ")' <<<"$cdc" 2>/dev/null) " == *" $name "* ]]; then
+            ok "$name already connected — untouched"
+            cst=$(addr_of "$(jq -r --arg n "$name" '.clients[]? | select(.name == $n) | .host' <<<"$cdc" 2>/dev/null | head -1)")
+            if addr_stale "cleanuparr -> $dl" "$dl" "$cst"; then
+                cbody=$(jq -c --arg n "$name" --argjson e "$e" \
+                    '[.clients[]? | select(.name == $n)][0] | .host = $e.host | .username = $e.username | .password = $e.password' <<<"$cdc")
+                addr_repoint "cleanuparr -> $dl" "$cst" "$(svc_addr "$dl")" -- \
+                    cup_api PUT "/configuration/download_client/$(jq -r '.id' <<<"$cbody")" "$KH" "$cbody"
             fi
-            miss=$(role_env_missing "$p" download-client cleanuparr | paste -sd' ' -)
-            [[ -z "$miss" ]] || { wfail "no $p credentials in .env ($miss) — run a full 'wire' first"; continue; }
+            if [[ "$(jq -r --arg n "$name" '.clients[]? | select(.name == $n) | .enabled' <<<"$cdc")" == false ]] \
+                && w_would "cleanuparr: switch $name back on — it is the download client"; then
+                cbody=$(jq -c --arg n "$name" '[.clients[]? | select(.name == $n)][0] | .enabled = true' <<<"$cdc")
+                out=$(cup_api PUT "/configuration/download_client/$(jq -r '.id' <<<"$cbody")" "$KH" "$cbody") \
+                    && ok "cleanuparr: $name switched back on" || wfail "cleanuparr: switching $name back on was rejected [HTTP $(cup_code)]"
+            fi
+        elif miss=$(role_env_missing "$dl" download-client cleanuparr | paste -sd' ' -); [[ -n "$miss" ]]; then
+            wfail "no $dl credentials in .env ($miss) — run a full 'wire' first"
+        else
             dc=$(jq -c '{enabled: true} + del(.priority)' <<<"$e")
             out=$(cup_api POST /configuration/download_client/test "$KH" "$dc") \
                 || { wfail "cleanuparr could not reach $(jq -r '.typeName' <<<"$e") [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 1; }
             out=$(cup_api POST /configuration/download_client "$KH" "$dc") \
                 && ok "$name connected" \
                 || wfail "$name entry rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
+        fi
+        for p in $(role_all_providers download-client cleanuparr); do
+            [[ "$p" == "$dl" ]] && continue
+            other=$(role_entry_name "$p" download-client cleanuparr)
+            [[ "$(jq -r --arg n "$other" '.clients[]? | select(.name == $n) | .enabled' <<<"$cdc")" == true ]] || continue
+            w_would "cleanuparr: switch off '$other' — the download client is $dl" || continue
+            cbody=$(jq -c --arg n "$other" '[.clients[]? | select(.name == $n)][0] | .enabled = false' <<<"$cdc")
+            out=$(cup_api PUT "/configuration/download_client/$(jq -r '.id' <<<"$cbody")" "$KH" "$cbody") \
+                && ok "cleanuparr: '$other' switched off (kept, not deleted)" || wfail "cleanuparr: switching off '$other' was rejected [HTTP $(cup_code)]"
         done
     fi
 
