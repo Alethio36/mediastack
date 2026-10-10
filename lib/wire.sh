@@ -134,6 +134,10 @@ wire_usage() { local IFS='|'; die "usage: wire [${WIRE_ROLES[*]}] [--dry-run|--v
 
 cmd_wire() {
     load_env; render
+    # never while an update or backup has the stack (it stops and recreates the
+    # apps wire talks to); inside one — up's re-point during an update — it is
+    # already held, and maint_lock lets it through
+    maint_lock wire 0
     local section="all"
     while [[ $# -gt 0 ]]; do case "$1" in
         --dry-run) WIRE_DRY=1; shift ;;

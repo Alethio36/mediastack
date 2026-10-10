@@ -229,13 +229,15 @@ operator). Stored in .env (view: credentials)."
             -- api POST "$url/api/$(arr_apiver "$s")/rootfolder" "$key" "$rbody"
         # the download client, with this arr's category
         [[ -n "$dl" ]] || continue
-        cat=$(svc_label "$s" mediastack.category)
+        local e name disp dexists dbody p other out fails_before
+        e=$(role_entry "$dl" download-client arr); name=$(jq -r '.name' <<<"$e"); disp=$(jq -r '.implementationName' <<<"$e")
+        # the arr's category, as this client names it: a client with stricter
+        # rules maps it in its template ("categories"), e.g. Transmission's a-z and -
+        cat=$(jq -r --arg c "$(svc_label "$s" mediastack.category)" '.categories[$c] // $c' <<<"$e")
         catfield=$(arr_meta "$t" catfield)
         local base; base="$url/api/$(arr_apiver "$s")"
         cur=$(api GET "$base/downloadclient" "$key") \
             || { wfail "$s: could not read its download clients — nothing created [$(oneline "$cur")]"; continue; }
-        local e name disp dexists dbody p other out
-        e=$(role_entry "$dl" download-client arr); name=$(jq -r '.name' <<<"$e"); disp=$(jq -r '.implementationName' <<<"$e")
         dexists=no; [[ -n "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .id' <<<"$cur")" ]] && dexists=yes
         dbody=$(jq -c --arg cf "$catfield" --arg cat "$cat" '{enable: true, protocol, priority,
             removeCompletedDownloads, removeFailedDownloads, name, implementation, implementationName, configContract,
@@ -259,9 +261,14 @@ operator). Stored in .env (view: credentials)."
                     && ok "$s: $disp switched back on" || wfail "$s: switching $disp back on was rejected — $(oneline "$out")"
             fi
         fi
+        fails_before=$WIRE_FAILS
         ensure_resource "$dexists" "$s: register $disp (category $cat)" \
             "$s: download client $disp registered" "$s: download client $disp registration failed — check: logs $s" \
             -- api POST "$base/downloadclient" "$key" "$dbody"
+        # the others go off only once the chosen one is there: never no client at all
+        if (( WIRE_FAILS > fails_before )); then
+            warn "$s: the other download clients stay on — $disp could not be registered"; continue
+        fi
         for p in $(role_all_providers download-client arr); do
             [[ "$p" == "$dl" ]] && continue
             other=$(role_entry_name "$p" download-client arr)

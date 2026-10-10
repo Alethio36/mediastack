@@ -113,6 +113,20 @@ for f in services/_arr/arr.sh services/prowlarr/prowlarr.sh services/cleanuparr/
         || fail_ "$f must wire the picked client and switch the others off"
 done; pass
 
+# ---- categories as each client names them ----
+# Transmission takes a-z and - only (Radarr refuses movies-4k for it, found
+# live): its template maps every arr category that breaks the rule
+tr=services/transmission/provides/download-client.arr.json
+for c in $(grep -hoE 'mediastack\.category: *"[^"]+"' services/*/compose.yml | sed -E 's/.*"([^"]+)"/\1/' | sort -u); do
+    m=$(jq -r --arg c "$c" '.categories[$c] // $c' "$tr")
+    [[ "$m" =~ ^[a-z-]+$ ]] || fail_ "Transmission cannot take category '$m' (from '$c') — map it in $tr"
+done; pass
+grep -qF '.categories[$c] // $c' services/_arr/arr.sh || fail_ "wire_arr must use the client's own name for a category"; pass
+# the others go off only once the chosen one is there (found live: a failed
+# Transmission entry left radarr-4k with no client at all)
+grep -q 'WIRE_FAILS > fails_before' services/_arr/arr.sh && grep -q 'if (( dl_ok )); then for p in' services/cleanuparr/cleanuparr.sh \
+    || fail_ "a failed registration must keep the other clients on"; pass
+
 # ---- what the consumers send for qBittorrent: the same as before roles ----
 cat='movies'; catfield='movieCategory'
 before=$(jq -c . <<<'{"enable":true,"protocol":"torrent","priority":1,
