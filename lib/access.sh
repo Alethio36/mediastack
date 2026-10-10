@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # lib/access.sh — who can get in: the logins the stack created or stores
 # (`credentials`), rotating one everywhere it lives (`set-credentials`), and
-# household invitations (`invite`, via Wizarr). Sourced by the entrypoint;
+# household invitations (`invite`, via Wizarr). Each target's rotation is
+# sc_rotate_<target> in its service's folder (services/<name>/*.sh); this file
+# keeps the verbs, their order and their words. Sourced by the entrypoint;
 # relies on lib/common.sh, the entrypoint's helpers and the services' own
-# API helpers (services/<name>/*.sh) at call time.
+# API helpers at call time.
 
 cmd_credentials() {
     load_env
@@ -168,154 +170,6 @@ rest), and Wizarr's admin account — rotate that in Wizarr's UI
         ok "one password now covers arr + qbit + jellyfin + pihole + traefik + audiobookshelf + kavita — view: ./mediastack.sh credentials"
         ;;
     esac
-}
-
-sc_rotate_arr() { # USER PASS — every arr-family app + cleanuparr follows
-        local user="$1" pass="$2" olduser oldpass s
-        olduser=$(env_get ARR_USER); oldpass=$(env_get ARR_PASSWORD)
-        env_set ARR_USER "$user"; env_set ARR_PASSWORD "$pass"
-        for s in $(arr_instances) prowlarr; do
-            svc_enabled "$s" || continue
-            arr_forms_login "$s" force   # the new password is stored either way (the login it falls back to)
-            arr_login "$s"               # and, behind the portal, it goes back to trusting it
-        done
-        if svc_enabled cleanuparr && [[ "$(c_state "$(svc_cname cleanuparr)")" == running ]]; then
-            local lout ltok
-            lout=$(cup_api POST /auth/login "" "$(jq -cn --arg u "$olduser" --arg p "$oldpass" '{username:$u,password:$p}')" || true)
-            ltok=$(jq -r '.tokens.accessToken // empty' <<<"$lout" 2>/dev/null)
-            if [[ -n "$ltok" ]]; then
-                cup_api PUT /account/password "Authorization: Bearer $ltok" \
-                    "$(jq -cn --arg c "$oldpass" --arg n "$pass" '{currentPassword:$c,newPassword:$n}')" >/dev/null \
-                    && ok "cleanuparr account password rotated in step" \
-                    || warn "cleanuparr refused the password change [HTTP $(cup_code)] — change it in its UI (login: '$olduser' + the OLD password)"
-            else
-                warn "could not sign in to cleanuparr with the previous login — rotate its password in its UI"
-            fi
-            [[ "$user" != "$olduser" ]] && warn "cleanuparr's username stays '$olduser' (no API to change it)"
-        fi
-        ok "arr login rotated — view: ./mediastack.sh credentials"
-}
-
-sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
-        local user="$1" pass="$2" s
-        qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" \
-            || die "cannot sign in to qBittorrent with the stored credentials — fix that first (wire qbit)"
-        qb_api /app/setPreferences "json=$(jq -cn --arg u "$user" --arg p "$pass" '{web_ui_username:$u,web_ui_password:$p}')" >/dev/null || true  # re-login below is the verdict
-        sleep 2
-        qb_login "$user" "$pass" || die "qBittorrent did not accept the new credentials — inspect: logs qbittorrent"
-        env_set QBITTORRENT_USER "$user"; env_set QBITTORRENT_PASSWORD "$pass"
-        ok "qBittorrent login rotated and verified"
-        local key url cur id ent
-        # every arr-family app holding a qBittorrent entry — prowlarr's (manual
-        # grabs) included: missing it left a stale password there
-        for s in $(arr_instances) prowlarr; do
-            svc_enabled "$s" || continue
-            key=$(arr_key "$s"); url=$(arr_url "$s")
-            cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key") \
-                || { wfail "$s: could not read its download clients — its qBittorrent login was NOT updated; fix in its UI [$(oneline "$cur")]"; continue; }
-            id=$(jq -r '.[] | select(.implementation=="QBittorrent") | .id' <<<"$cur" 2>/dev/null | head -1)
-            [[ -n "$id" ]] || { info "$s: no qBittorrent download client entry — skipped"; continue; }
-            if [[ -n "$(jq -r --argjson i "$id" '.[] | select(.id==$i) | .fields[]? | select(.name=="apiKey") | .value // ""' <<<"$cur")" ]]; then
-                info "$s: signs in to qBittorrent with its API key — the login rotation does not apply"; continue
-            fi
-            ent=$(jq -c --argjson i "$id" --arg u "$user" --arg p "$pass" '
-                .[] | select(.id==$i)
-                | .fields = [ .fields[]
-                    | if .name=="username" then .value=$u
-                      elif .name=="password" then .value=$p
-                      else . end ]' <<<"$cur")
-            api PUT "$url/api/$(arr_apiver "$s")/downloadclient/$id" "$key" "$ent" >/dev/null \
-                && ok "$s: download-client entry updated" \
-                || wfail "$s: could not update its download-client entry — fix in its UI (Settings -> Download Clients)"
-        done
-        if svc_enabled cleanuparr && [[ -n "$(env_get CLEANUPARR_API_KEY)" ]]; then
-            local KH dcs dcid dcent
-            KH="X-Api-Key: $(env_get CLEANUPARR_API_KEY)"
-            dcs=$(cup_api GET /configuration/download_client "$KH") \
-                || { wfail "cleanuparr: could not read its download clients — its qBittorrent login was NOT updated; fix in its UI [HTTP $(cup_code)]"; dcs=""; }
-            dcid=$(jq -r '.clients[]? | select(.name=="qbittorrent") | .id' <<<"$dcs" 2>/dev/null | head -1)
-            if [[ -n "$dcid" ]]; then
-                dcent=$(jq -c --arg i "$dcid" --arg u "$user" --arg p "$pass" \
-                        '.clients[] | select(.id==$i) | .username=$u | .password=$p' <<<"$dcs")
-                cup_api PUT "/configuration/download_client/$dcid" "$KH" "$dcent" >/dev/null \
-                    && ok "cleanuparr connection updated" \
-                    || wfail "cleanuparr connection not updated [HTTP $(cup_code)] — fix in its UI"
-            fi
-        fi
-        if svc_enabled lazylibrarian && [[ -n "$(ll_key)" ]]; then
-            ll_api writeCFG "name=USER&group=QBITTORRENT&value=$user" >/dev/null \
-                && ll_api writeCFG "name=PASS&group=QBITTORRENT&value=$pass" >/dev/null \
-                && ok "lazylibrarian qBittorrent login updated" \
-                || wfail "lazylibrarian qBittorrent login not updated — fix in its UI (Settings -> Downloaders)"
-        fi
-}
-
-sc_rotate_pihole() { # PASS — env-driven; recreate applies it
-        local pass="$1"
-        svc_enabled pihole || { info "pihole not enabled — skipped"; return 0; }
-        env_set PIHOLE_PASSWORD "$pass"
-        DC up -d pihole >/dev/null 2>&1 \
-            && ok "Pi-hole password rotated (container recreated)" \
-            || wfail "Pi-hole recreate failed — apply with: ./mediastack.sh up"
-}
-
-sc_rotate_traefik() { # PASS — regenerated into the watched dynamic config
-        local pass="$1"
-        svc_enabled traefik || { info "traefik not enabled — skipped"; return 0; }
-        [[ -n "$(env_get TRAEFIK_DASH_USER)" ]] || { info "traefik dashboard never configured — skipped (run traefik-setup first)"; return 0; }
-        env_set TRAEFIK_DASH_PASSWORD "$pass"
-        traefik_gen \
-            && ok "Traefik dashboard password rotated (config regenerated; traefik watches it live)" \
-            || wfail "traefik config regeneration failed — inspect: ./mediastack.sh traefik-setup"
-}
-
-sc_rotate_audiobookshelf() { # PASS — its root account; every root session ends
-        svc_enabled audiobookshelf || { info "audiobookshelf not enabled — skipped"; return 0; }
-        abs_root_rotate "$1" || die "Audiobookshelf's root password was not rotated (see above)"
-        ok "Audiobookshelf root password rotated and verified — every root session has ended"
-}
-
-sc_rotate_kavita() { # PASS — its admin (the stack's own), changed with the old one, then proven
-        svc_enabled kavita || { info "kavita not enabled — skipped"; return 0; }
-        local new="$1" user old out tok
-        user=$(env_get KAVITA_ADMIN_USER); old=$(env_get KAVITA_ADMIN_PASSWORD)
-        [[ -n "$user" && -n "$old" ]] || die "no Kavita admin stored — run 'wire kavita' first"
-        out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$user" --arg p "$old" '{username:$u, password:$p}')") \
-            || die "Kavita rejected the stored admin login: $(oneline "$out") — is .env stale?"
-        tok=$(jq -r '.token // empty' <<<"$out"); [[ -n "$tok" ]] || die "Kavita's login returned no token"
-        out=$(kav_api POST /api/account/reset-password "$tok" "$(jq -cn --arg u "$user" --arg c "$old" --arg n "$new" '{userName:$u, oldPassword:$c, password:$n}')") \
-            || die "Kavita refused the password change: $(oneline "$out")"
-        env_set KAVITA_ADMIN_PASSWORD "$new"   # changed: the new one is the truth from here, verified or not
-        kav_api POST /api/account/login "" "$(jq -cn --arg u "$user" --arg p "$new" '{username:$u, password:$p}')" >/dev/null \
-            || die "Kavita's admin password changed (stored in .env), but signing in with it failed"
-        ok "Kavita admin password rotated and verified"
-}
-
-sc_rotate_portal() { # PASS — akadmin, through authentik's API
-        svc_enabled authentik || die "authentik is not enabled — there is no portal admin"
-        [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
-        authentik_admin_rotate "$1" || die "the portal's admin password was not rotated (see above)"
-        ok "portal admin (akadmin) password rotated — view: ./mediastack.sh credentials"
-        # the worker carries it as its first-start value (never applied again):
-        # recreated now, so no pending change is left for the next `up`
-        DC up -d --no-deps authentik-worker >/dev/null \
-            && ok "authentik's worker recreated with it (nothing else changes)" \
-            || die "authentik's worker was not recreated — apply with: ./mediastack.sh up"
-}
-
-sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
-        local npass="$1" juser jpass auth tok
-        juser=$(env_get JELLYFIN_ADMIN_USER); jpass=$(env_get JELLYFIN_ADMIN_PASSWORD)
-        [[ -n "$juser" && -n "$jpass" ]] || die "no Jellyfin admin stored — run 'wire jellyfin' first"
-        auth=$(jf_api POST /Users/AuthenticateByName "" "$(jq -cn --arg u "$juser" --arg p "$jpass" '{Username:$u,Pw:$p}')") \
-            || die "Jellyfin rejected the stored admin login [HTTP $(jf_code)] — is .env stale?"
-        tok=$(jq -r '.AccessToken // empty' <<<"$auth")
-        jf_api POST /Users/Password "$tok" "$(jq -cn --arg c "$jpass" --arg n "$npass" '{CurrentPw:$c,NewPw:$n}')" >/dev/null \
-            || die "Jellyfin refused the password change [HTTP $(jf_code)]"
-        jf_api POST /Users/AuthenticateByName "" "$(jq -cn --arg u "$juser" --arg p "$npass" '{Username:$u,Pw:$p}')" >/dev/null \
-            || die "verification sign-in with the NEW password failed — check Jellyfin's users in its dashboard"
-        env_set JELLYFIN_ADMIN_PASSWORD "$npass"
-        ok "Jellyfin admin password rotated and verified"
 }
 
 cmd_reset_password() { # someone locked out: their login throttle cleared, a single-use sign-in link to set a new password

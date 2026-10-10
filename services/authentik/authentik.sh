@@ -632,3 +632,15 @@ wire_authentik_cards() { # admin tools for admins; household apps for media-user
     ak_card_prune "$all" mediastack-app- $(authentik_household)
     return 0
 }
+
+sc_rotate_portal() { # PASS — akadmin, through authentik's API
+        svc_enabled authentik || die "authentik is not enabled — there is no portal admin"
+        [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
+        authentik_admin_rotate "$1" || die "the portal's admin password was not rotated (see above)"
+        ok "portal admin (akadmin) password rotated — view: ./mediastack.sh credentials"
+        # the worker carries it as its first-start value (never applied again):
+        # recreated now, so no pending change is left for the next `up`
+        DC up -d --no-deps authentik-worker >/dev/null \
+            && ok "authentik's worker recreated with it (nothing else changes)" \
+            || die "authentik's worker was not recreated — apply with: ./mediastack.sh up"
+}

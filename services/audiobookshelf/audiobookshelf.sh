@@ -149,3 +149,9 @@ wire_audiobookshelf() {
     abs_root_unlink "$tok"
     abs_admin_sync "$tok"
 }
+
+sc_rotate_audiobookshelf() { # PASS — its root account; every root session ends
+        svc_enabled audiobookshelf || { info "audiobookshelf not enabled — skipped"; return 0; }
+        abs_root_rotate "$1" || die "Audiobookshelf's root password was not rotated (see above)"
+        ok "Audiobookshelf root password rotated and verified — every root session has ended"
+}

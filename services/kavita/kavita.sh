@@ -174,3 +174,19 @@ wire_kavita() {
     kav_oidc "$tok" || return 1
     kav_admin_sync "$tok"
 }
+
+sc_rotate_kavita() { # PASS — its admin (the stack's own), changed with the old one, then proven
+        svc_enabled kavita || { info "kavita not enabled — skipped"; return 0; }
+        local new="$1" user old out tok
+        user=$(env_get KAVITA_ADMIN_USER); old=$(env_get KAVITA_ADMIN_PASSWORD)
+        [[ -n "$user" && -n "$old" ]] || die "no Kavita admin stored — run 'wire kavita' first"
+        out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$user" --arg p "$old" '{username:$u, password:$p}')") \
+            || die "Kavita rejected the stored admin login: $(oneline "$out") — is .env stale?"
+        tok=$(jq -r '.token // empty' <<<"$out"); [[ -n "$tok" ]] || die "Kavita's login returned no token"
+        out=$(kav_api POST /api/account/reset-password "$tok" "$(jq -cn --arg u "$user" --arg c "$old" --arg n "$new" '{userName:$u, oldPassword:$c, password:$n}')") \
+            || die "Kavita refused the password change: $(oneline "$out")"
+        env_set KAVITA_ADMIN_PASSWORD "$new"   # changed: the new one is the truth from here, verified or not
+        kav_api POST /api/account/login "" "$(jq -cn --arg u "$user" --arg p "$new" '{username:$u, password:$p}')" >/dev/null \
+            || die "Kavita's admin password changed (stored in .env), but signing in with it failed"
+        ok "Kavita admin password rotated and verified"
+}

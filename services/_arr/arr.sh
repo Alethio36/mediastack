@@ -243,3 +243,29 @@ JSON
             -- api POST "$url/api/$(arr_apiver "$s")/downloadclient" "$key" "$dbody"
     done
 }
+
+sc_rotate_arr() { # USER PASS — every arr-family app + cleanuparr follows
+        local user="$1" pass="$2" olduser oldpass s
+        olduser=$(env_get ARR_USER); oldpass=$(env_get ARR_PASSWORD)
+        env_set ARR_USER "$user"; env_set ARR_PASSWORD "$pass"
+        for s in $(arr_instances) prowlarr; do
+            svc_enabled "$s" || continue
+            arr_forms_login "$s" force   # the new password is stored either way (the login it falls back to)
+            arr_login "$s"               # and, behind the portal, it goes back to trusting it
+        done
+        if svc_enabled cleanuparr && [[ "$(c_state "$(svc_cname cleanuparr)")" == running ]]; then
+            local lout ltok
+            lout=$(cup_api POST /auth/login "" "$(jq -cn --arg u "$olduser" --arg p "$oldpass" '{username:$u,password:$p}')" || true)
+            ltok=$(jq -r '.tokens.accessToken // empty' <<<"$lout" 2>/dev/null)
+            if [[ -n "$ltok" ]]; then
+                cup_api PUT /account/password "Authorization: Bearer $ltok" \
+                    "$(jq -cn --arg c "$oldpass" --arg n "$pass" '{currentPassword:$c,newPassword:$n}')" >/dev/null \
+                    && ok "cleanuparr account password rotated in step" \
+                    || warn "cleanuparr refused the password change [HTTP $(cup_code)] — change it in its UI (login: '$olduser' + the OLD password)"
+            else
+                warn "could not sign in to cleanuparr with the previous login — rotate its password in its UI"
+            fi
+            [[ "$user" != "$olduser" ]] && warn "cleanuparr's username stays '$olduser' (no API to change it)"
+        fi
+        ok "arr login rotated — view: ./mediastack.sh credentials"
+}
