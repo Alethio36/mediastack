@@ -131,33 +131,34 @@ validation, notifications, SSO). Before `migrate` moves the first household:
 6. Then `migrate` (below, under Project health).
 Lower priority: RAM and system requirements, measured on the rebuilt box.
 
-### Organised by service — phases 1–2 under way (Oct 2026), phase 3 planned
+### Organised by service — phases 1–2 done (Oct 2026), phase 3 decided later
 One folder per service, `services/<name>/`: its fragment (`compose.yml`),
-its code (`<name>.sh`) and anything else it ships (authentik's blueprints).
-Adding a service should mean adding a folder, and removing one deleting it.
-1. *Done:* fragments, blueprints and every app's wire code moved into the
-   folders as a pure move (rendered config byte-identical; the same functions
-   and globals byte for byte). The engine stays in `lib/wire.sh`, addresses in
-   `lib/addr.sh`, the arr family in `services/_arr/`. To prove on the test
-   box: `upgrade` says nothing to apply, `wire --verify` no drift.
-2. Verbs call **hooks**, not apps: the per-app branches still in verb libs
-   (`set-credentials`, doctor's app checks, the backup's Jellyfin wait,
-   account sync, migrate's import) become `<name>_<hook>` functions in each
-   folder, one verb per change. **Wiring by role:** a provider declares how a
-   consumer reaches it — `provides/<role>.<consumer>.json`, data and
-   `{placeholders}` only — and each consumer type implements accepting a role
-   once (download client first: Deluge and Transmission get wired too). Each
-   service's `.env` keys move into its folder (`env.tsv`); `.env` stays one
-   file.
-3. Only if 2 pays off: platform features with interchangeable providers
-   (sign-in: authentik | Wizarr | none; edge: Traefik | NPM), starting with
-   sign-in.
+its code (`<name>.sh`, more files by topic where it has more to say), its
+settings' schema rows (`env.tsv`), its role templates (`provides/`) and
+anything else it ships (authentik's blueprints). Adding a service means
+adding a folder, plus its lines in `.env.example` and a word in each verb
+list it joins.
+1. *Done:* fragments, blueprints and every app's wire code moved in as a pure
+   move (rendered config byte-identical; the same functions and globals).
+2. *Done:* each verb's per-app code moved into the folders — credentials,
+   doctor's app checks, link-account, update's probes, configure's secrets —
+   with each verb keeping an explicit, ordered list of the services it covers
+   (`WIRE_ROLES`, the set-credentials targets, `DOCTOR_APPS`;
+   `scripts/check-registries.sh` holds the lists to the functions). Download
+   clients became the first role (`lib/roles.sh`): qBittorrent, Deluge and
+   Transmission, one chosen by `DOWNLOAD_CLIENT`. Each service's schema rows
+   moved to its `env.tsv`.
+   Decided against: a hook-dispatch framework (explicit lists instead), roles
+   with a single provider (arr servers, the media server, the hub — a role
+   when a second provider exists), and splitting `.env.example`.
+3. Later, if it pays: platform features with interchangeable providers
+   (sign-in: authentik | Wizarr | none; edge: Traefik | NPM; the VPN) out of
+   `lib/`.
 
-Guardrails that ship with phase 2's first role: a template holds data and
-placeholders only (a needed `if` makes it code); one dispatcher resolves every
-hook and role, and `wire --dry-run` prints the resolved pairs; CI fails an
-unknown hook, placeholder or consumer type, and a provider missing a template
-for a consumer type of its role.
+Guardrails in place: a template holds data and placeholders only;
+`scripts/test-roles.sh` fails an unknown role, consumer or placeholder, a
+provider missing a consumer's template, and a setting whose allowed values
+drift from the providers.
 
 ### Release channels — decided (Sept 2026)
 `stable` is the default branch (what a clone gets and end users run),
@@ -563,6 +564,14 @@ all built; what each still leaves open is noted below.
   straight to the hub is invisible to it — three weeks of arr events answered
   424 (a retired tag) showed only as log noise. Doctor should read the hub's
   log for failed sends since its last run and name the sender and tag.
+- **Prowlarr's indexers after a restart (next, after the re-org).** Every
+  nightly restore point restarts the stack; Prowlarr validates its FlareSolverr
+  proxy before FlareSolverr (a browser) is up, its first indexer requests fail,
+  it backs the indexer off, and the arrs report "all indexers unavailable"
+  (seen nightly in Prowlarr's log, 04:0x). FlareSolverr gets a healthcheck,
+  and once it is healthy after any stack start, Prowlarr re-tests its
+  indexers. Not covered: FlareSolverr losing Cloudflare's challenge in the
+  day — a second indexer (not behind Cloudflare) is the operator's fix.
 - **An ERR trap that names an unexpected stop (to discuss).** The scripts run
   under `set -e`: an unguarded command that fails ends the run with no message
   (found when a `grep` matching nothing stopped `wire` mid-way). A trap in the

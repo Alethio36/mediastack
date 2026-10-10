@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib/env.sh — .env against its schema (lib/env.schema.tsv). Values are
+# lib/env.sh — .env against its schema (lib/env.schema.tsv + services/*/env.tsv). Values are
 # checked on every command (load_env): a malformed one stops the command with
 # the key, what is wrong and what is expected. Keys nothing reads are only
 # reported, by doctor. No guessing at misspelt names: a key is a setting or
@@ -10,11 +10,16 @@
 # Sourced by the entrypoint; relies on lib/common.sh (env_get, die, warn) and,
 # for the unknown-key report, the render/svc helpers at call time.
 
-ENV_SCHEMA_FILE="$SCRIPT_DIR/lib/env.schema.tsv"
+ENV_SCHEMA_FILE="$SCRIPT_DIR/lib/env.schema.tsv"   # the shared rows; a service's own are services/<name>/env.tsv
 ENV_IGNORE_MARK="# mediastack: ignore"
 ENV_ROOTS_RE='(CONFIG|DATA|CACHE|TRANSCODE|BACKUP)_ROOT'
 
-env_schema_rows() { grep -vE '^(#|[[:space:]]*$)' "$ENV_SCHEMA_FILE"; }   # key type empty writer meaning
+env_schema_all() { # the whole schema: the shared rows, then every service's (services/<name>/env.tsv)
+    local f
+    for f in "$ENV_SCHEMA_FILE" "$SCRIPT_DIR"/services/*/env.tsv; do [[ -e "$f" ]] && cat "$f"; done
+    return 0
+}
+env_schema_rows() { env_schema_all | grep -vE '^(#|[[:space:]]*$)'; }   # key type empty writer meaning
 
 # one awk pass: the schema's rows, then KEY=VALUE lines; prints
 # key <TAB> type <TAB> empty <TAB> value for every key the schema knows —
@@ -53,7 +58,7 @@ env_stems() { # every service's variable stem, from the compose files themselves
 }
 
 env_schema_known() { # env_schema_known FILE -> key <TAB> type <TAB> empty <TAB> value, for every schema-known key in FILE
-    awk -F'\t' -v roots="$ENV_ROOTS_RE" -v stems=" $(env_stems)" "$ENV_LOOKUP_AWK" "$ENV_SCHEMA_FILE" "$1"
+    awk -F'\t' -v roots="$ENV_ROOTS_RE" -v stems=" $(env_stems)" "$ENV_LOOKUP_AWK" <(env_schema_all) "$1"
 }
 
 env_schema_lookup() { # env_schema_lookup KEY -> "type<TAB>empty" of its row (its own, else its family's); rc 1 when none
@@ -110,7 +115,7 @@ env_type_ok() { # env_type_ok TYPE VALUE — rc 0 when VALUE is a TYPE
         cname)    [[ "$v" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] ;;
         enum:*)   [[ "|${t#enum:}|" == *"|$v|"* ]] ;;
         retired:*) return 0 ;;
-        *) die "lib/env.schema.tsv: unknown type '$t'" ;;
+        *) die "the .env schema (lib/env.schema.tsv, services/*/env.tsv): unknown type '$t'" ;;
     esac
 }
 
@@ -140,7 +145,7 @@ env_validate() { # every value in .env that the schema knows — all problems at
     done < <(env_schema_known "$ENV_FILE")   # unknown keys are doctor's to report
     [[ -z "$problems" ]] && return 0
     die ".env has values mediastack cannot use:
-$problems  Fix them in $ENV_FILE (what each setting means: lib/env.schema.tsv), then retry."
+$problems  Fix them in $ENV_FILE (what each setting means: lib/env.schema.tsv and services/*/env.tsv), then retry."
 }
 
 # ---------------------------------------------------- unknown keys (doctor) --
