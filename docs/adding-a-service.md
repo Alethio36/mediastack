@@ -143,10 +143,11 @@ A verb that covers several services keeps its own short list of them, in the
 order it runs or prints them; a service's part lives in its folder. So far:
 `wire` (`WIRE_ROLES` in `lib/wire.sh` -> `wire_<role>`), `set-credentials`
 (the target list in `lib/access.sh` -> `sc_rotate_<target>`) and doctor's app
-checks (`DOCTOR_APPS` in `lib/doctor.sh` -> `<name>_doctor`; a check inside
-another doctor section is `<name>_doctor_<check>`, called by name there).
+checks (`DOCTOR_APPS` in `lib/doctor.sh` -> `<name>_doctor`). A verb that
+needs one service's code at one spot calls it by name — `<name>_<what>`
+(`jellyfin_sessions_active` in the update, `link_<app>_*` in link-account).
 `scripts/check-registries.sh` fails a listed name without exactly one
-function under `services/`.
+function under `services/`, and a `<service>_*` call that nothing defines.
 
 ### Wiring it to other apps (`wire`)
 

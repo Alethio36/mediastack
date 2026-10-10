@@ -379,3 +379,38 @@ jellyfin_doctor_transcodes() { # jellyfin_doctor_transcodes <CONFIG_ROOT> (docto
         fi
     fi
 }
+
+# ---- link-account: Jellyfin's part (the verb: lib/link.sh) ----
+link_jf_candidates() { # USERS-JSON -> its local accounts, the stack's admin left out
+    jq -c --arg p "$JF_LDAP_PROVIDER" --arg s "$(env_get JELLYFIN_ADMIN_USER)" '[.[]
+        | select(.Policy.AuthenticationProviderId != $p and (.Name | ascii_downcase) != ($s | ascii_downcase))
+        | {name: .Name, id: .Id, admin: .Policy.IsAdministrator}]' <<<"$1"
+}
+link_jf_conflict() { # USERS-JSON CANDIDATE PORTAL-USER -> the name of another account already called that (Jellyfin names are case-insensitive)
+    jq -r --arg id "$(jq -r '.id' <<<"$2")" --arg w "${3,,}" '[.[] | select(.Id != $id and (.Name | ascii_downcase) == $w) | .Name] | first // empty' <<<"$1"
+}
+link_jf_do() { # TOKEN CANDIDATE PORTAL-USER
+    local tok="$1" id who="$3" u
+    id=$(jq -r '.id' <<<"$2")
+    u=$(jf_api GET "/Users/$id" "$tok") || { fail "jellyfin: the account is unreadable [HTTP $(jf_code)]"; return 1; }
+    if [[ "$(jq -r '.Name' <<<"$u")" != "$who" ]]; then
+        jf_api POST "/Users?userId=$id" "$tok" "$(jq -c --arg n "$who" '.Name = $n' <<<"$u")" >/dev/null \
+            || { fail "jellyfin refused the rename to '$who' [HTTP $(jf_code)]"; return 1; }
+    fi
+    # the plugin adopts an existing account by name only when its login method is the plugin's
+    jf_api POST "/Users/$id/Policy" "$tok" "$(jq -c --arg p "$JF_LDAP_PROVIDER" '.Policy | .AuthenticationProviderId = $p | .PasswordResetProviderId = $p' <<<"$u")" >/dev/null \
+        || { fail "jellyfin refused the login-method change [HTTP $(jf_code)]"; return 1; }
+    u=$(jf_api GET "/Users/$id" "$tok") \
+        && jq -e --arg n "$who" --arg p "$JF_LDAP_PROVIDER" '.Name == $n and .Policy.AuthenticationProviderId == $p' <<<"$u" >/dev/null \
+        || { fail "jellyfin answered, but the account is not '$who' on the portal's login"; return 1; }
+    ok "jellyfin: '$who' signs in with the portal password from now on (same account: history kept)"
+}
+
+jellyfin_sessions_active() {
+    local key host; key=$(env_get JELLYFIN_API_KEY); host=$(jf_url)
+    [[ -n "$key" ]] || return 1
+    local n
+    n=$(curl -fsS --max-time 5 -H "$(jf_auth_hdr "$key")" "$host/Sessions" 2>/dev/null \
+        | jq '[.[] | select(.NowPlayingItem != null)] | length' 2>/dev/null || echo 0)
+    (( n > 0 ))
+}

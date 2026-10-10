@@ -702,15 +702,6 @@ pin_shard_to() { # pin_shard_to <primary> <tag> — the primary, and every membe
     done
     pin_service "$one" "$base:$to"
 }
-jellyfin_sessions_active() {
-    local key host; key=$(env_get JELLYFIN_API_KEY); host=$(jf_url)
-    [[ -n "$key" ]] || return 1
-    local n
-    n=$(curl -fsS --max-time 5 -H "$(jf_auth_hdr "$key")" "$host/Sessions" 2>/dev/null \
-        | jq '[.[] | select(.NowPlayingItem != null)] | length' 2>/dev/null || echo 0)
-    (( n > 0 ))
-}
-
 # `DC up` during an update, with the health verdict delegated to the script's
 # own health gate. Compose's depends_on: service_healthy gating fails `up`
 # (non-zero, fatal under set -e) the moment a service is briefly unhealthy on
@@ -894,14 +885,7 @@ cmd_update() {
     done
     # search functional probe: index must exist and be non-empty
     if svc_enabled jellysearch; then
-        local docs
-        # the key goes in on stdin: sudo logs every command line to the journal
-        docs=$(printf '%s' "$(env_get MEILI_MASTER_KEY)" | sudo docker exec -i "$(svc_cname meilisearch)" sh -c \
-               'k=$(cat); curl -fsS -H "Authorization: Bearer $k" http://127.0.0.1:7700/stats \
-                || wget -qO- --header="Authorization: Bearer $k" http://127.0.0.1:7700/stats' \
-               2>/dev/null | jq '[.indexes[].numberOfDocuments] | add // 0' || echo 0)
-        (( docs > 0 )) && ok "search index: $docs documents" \
-            || { warn "search index EMPTY after update — try 'docker restart $(svc_cname jellysearch)';"; warn "if it stays empty: ./mediastack.sh rollback jellyfin"; bad+=("jellysearch(index)"); }
+        jellysearch_update_probe || bad+=("jellysearch(index)")
     fi
 
     echo; hr "Update summary"
@@ -949,16 +933,7 @@ cmd_update() {
     # nightly TRaSH sync rides the update pipeline: same schedule the
     # operator already chose, guides drift-window stays at one cycle.
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
-        # pinned-major drift notice: the recyclarr pin (":8") is deliberate,
-        # but a released v9 should be a visible decision, not silence
-        local rc_pin rc_latest
-        rc_pin=$(grep -oE 'recyclarr/recyclarr:[0-9]+' services/recyclarr/compose.yml 2>/dev/null | cut -d: -f2)
-        rc_latest=$(curl -sf -m 10 https://github.com/recyclarr/recyclarr/releases.atom 2>/dev/null \
-                    | grep -oE '<title>v[0-9]+' | head -1 | grep -oE '[0-9]+')
-        if [[ -n "$rc_pin" && -n "$rc_latest" ]] && (( rc_latest > rc_pin )); then
-            warn "recyclarr v$rc_latest is out; the stack pins major v$rc_pin — review the breaking changes, then bump the tag in services/recyclarr/compose.yml when ready"
-            notify ops "recyclarr v$rc_latest available" "Stack pins major **v$rc_pin**. Review upstream breaking changes, then bump \`services/recyclarr/compose.yml\`." warning
-        fi
+        recyclarr_pin_notice
         echo
         cmd_trash_sync || { fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"
                             notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded."$'\n'"Inspect: \`./mediastack.sh trash-sync\`" failure

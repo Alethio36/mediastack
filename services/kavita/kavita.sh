@@ -212,3 +212,36 @@ kavita_doctor() { # claimed; with the portal, who among its people lacks a libra
         while IFS= read -r g; do warn "kavita: $g — not granted (fine if on purpose; otherwise Kavita → Settings → Users → edit → libraries)"; done <<<"$gaps"
     fi
 }
+
+# ---- link-account: Kavita's part (the verb: lib/link.sh) ----
+link_kav_candidates() { # USERS-JSON -> its local accounts, the stack's admin left out
+    jq -c --arg s "$(env_get KAVITA_ADMIN_USER)" '[.[] | select(.identityProvider == 0 and (.username | ascii_downcase) != ($s | ascii_downcase))
+        | {name: .username, id: .id, admin: ([.roles[]?] | index("Admin") != null)}]' <<<"$1"
+}
+link_kav_conflict() { # USERS-JSON CANDIDATE PORTAL-USER EMAIL -> why the link would collide ("" = none)
+    jq -r --argjson id "$(jq '.id' <<<"$2")" --arg w "${3,,}" --arg e "${4,,}" '[.[] | select(.id != $id) |
+        if (.username | ascii_downcase) == $w then "Kavita already has an account named \(.username)"
+        elif ((.email // "") | ascii_downcase) == $e then "Kavita account \(.username) already has \($e)"
+        else empty end] | first // empty' <<<"$1"
+}
+link_kav_do() { # TOKEN CANDIDATE PORTAL-USER EMAIL
+    local tok="$1" id who="$3" email="$4" users u body
+    id=$(jq '.id' <<<"$2")
+    users=$(kav_api GET "/api/users?includePending=true" "$tok") || { fail "kavita: users unreadable: $(oneline "$users")"; return 1; }
+    u=$(jq -c --argjson i "$id" '.[] | select(.id == $i)' <<<"$users")
+    # the whole record goes back: the name, the portal email and the portal flag change, nothing else
+    body=$(jq -c --arg n "$who" --arg e "$email" '{
+        userId: .id, username: $n, email: $e, identityProvider: 1,
+        roles: [.roles[]?], libraries: [.libraries[]?.id],
+        ageRestriction: (if .ageRestriction == null then {ageRating: -1, includeUnknowns: true}
+                         else {ageRating: .ageRestriction.ageRating, includeUnknowns: .ageRestriction.includeUnknowns} end) }' <<<"$u")
+    u=$(kav_api POST /api/account/update "$tok" "$body") || { fail "kavita refused the change: $(oneline "$u")"; return 1; }
+    # its own password is of no use now: replaced, so only the portal signs in
+    u=$(kav_api POST /api/account/reset-password "$tok" "$(jq -cn --arg n "$who" --arg p "$(link_secret)" '{userName:$n, password:$p}')") \
+        || { fail "kavita refused to replace the account's own password: $(oneline "$u")"; return 1; }
+    users=$(kav_api GET "/api/users?includePending=true" "$tok") \
+        && jq -e --argjson i "$id" --arg n "$who" --arg e "${email,,}" \
+            '.[] | select(.id == $i) | .username == $n and ((.email // "") | ascii_downcase) == $e and .identityProvider == 1' <<<"$users" >/dev/null \
+        || { fail "kavita answered, but the account does not read back as '$who' with the portal email"; return 1; }
+    ok "kavita: '$who' is linked at their next sign-in through the portal (same account: reading progress kept)"
+}
