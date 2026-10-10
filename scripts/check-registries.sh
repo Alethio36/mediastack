@@ -2,8 +2,8 @@
 # check-registries.sh — a verb that covers several services keeps an explicit,
 # ordered list of them; each listed name's part lives with its service. This
 # fails a listed name without exactly one matching function under services/
-# (or with one defined outside it), and a doctor check doctor.sh calls by name
-# that no service defines.
+# (or with one defined outside it), and a <service>_* function a lib calls by
+# name that nothing defines.
 #
 #   scripts/check-registries.sh     run (exit 1 on any gap, every gap listed)
 set -euo pipefail
@@ -28,9 +28,17 @@ for r in $(list lib/wire.sh 's/^WIRE_ROLES=(\(.*\))$/\1/p'); do want_one WIRE_RO
 for t in $(list lib/access.sh 's/^    case "$target" in \([a-z|]*\)) ;; \*)$/\1/p' | tr '|' ' '); do
     [[ "$t" == all ]] || want_one set-credentials "sc_rotate_$t"
 done
-# doctor: DOCTOR_APPS -> <app>_doctor, and every <name>_doctor_<check> it calls
+# doctor: DOCTOR_APPS -> <app>_doctor
 for a in $(list lib/doctor.sh 's/^DOCTOR_APPS=(\(.*\))$/\1/p'); do want_one DOCTOR_APPS "${a}_doctor"; done
-for f in $(grep -oE '^    [a-z]+_doctor_[a-z0-9_]+' lib/doctor.sh | sort -u); do want_one doctor "$f"; done
+# by name: a lib or the entrypoint calling <service>_<anything> (a service's
+# folder name, '-' as '_') needs that function to exist — a typo or a move
+# that left a caller behind would otherwise fail only when that line runs
+for n in $(ls services | sed 's/^_//; s/-/_/g'); do
+    for f in $(grep -hoE "\b${n}_[a-z0-9_]+\b" lib/*.sh mediastack.sh | sort -u); do
+        grep -qE "^$f\(\)" services/*/*.sh lib/*.sh mediastack.sh \
+            || { echo "FAIL by name: $f is called but defined nowhere"; rc=1; }
+    done
+done
 
 (( rc == 0 )) && echo "OK registries: every listed name has its function under services/"
 exit $rc

@@ -155,3 +155,57 @@ sc_rotate_audiobookshelf() { # PASS — its root account; every root session end
         abs_root_rotate "$1" || die "Audiobookshelf's root password was not rotated (see above)"
         ok "Audiobookshelf root password rotated and verified — every root session has ended"
 }
+
+# ---- link-account: Audiobookshelf's part (the verb: lib/link.sh) ----
+LINK_ABS_WAIT=600   # seconds the Audiobookshelf window stays open for the person's sign-in
+link_abs_candidates() { # USERS-JSON -> its unlinked accounts, root left out
+    jq -c '[.users[] | select(.type != "root" and .hasOpenIDLink != true) | {name: .username, id: .id, admin: (.type == "admin")}]' <<<"$1"
+}
+link_abs_conflict() { # USERS-JSON CANDIDATE PORTAL-USER PORTAL-NAMES-JSON -> why the window is unsafe ("" = none)
+    # while username matching is on, an unlinked account whose name any portal
+    # account has would be claimed by it (Audiobookshelf compares in lower case)
+    jq -r --arg id "$(jq -r '.id' <<<"$2")" --arg w "${3,,}" --argjson p "$4" '
+        ($p | map(ascii_downcase)) as $pl | [.users[] | select(.id != $id) |
+        if (.username | ascii_downcase) == $w then "Audiobookshelf already has an account named \(.username)"
+        elif .hasOpenIDLink != true and ((.username | ascii_downcase) as $u | $pl | index($u)) != null
+            then "Audiobookshelf account \(.username) is unlinked and a portal account has that name — it would be claimed while the window is open"
+        else empty end] | first // empty' <<<"$1"
+}
+link_abs_match() { # TOKEN "username"|null — set username matching, and read it back
+    local tok="$1" v="$2" cur
+    abs_api PATCH /api/auth-settings "$tok" "$(jq -cn --argjson v "$v" '{authOpenIDMatchExistingBy: $v}')" >/dev/null || return 1
+    cur=$(abs_api GET /api/auth-settings "$tok") && jq -e --argjson v "$v" '.authOpenIDMatchExistingBy == $v' <<<"$cur" >/dev/null
+}
+link_abs_close() { # TOKEN — the window shuts, whatever happened
+    link_abs_match "$1" null && info "audiobookshelf: username matching is off again" \
+        || fail "audiobookshelf: username matching could NOT be turned off — do it now: ./mediastack.sh wire audiobookshelf"
+}
+link_abs_do() { # TOKEN CANDIDATE PORTAL-USER
+    local tok="$1" id who="$3" out
+    id=$(jq -r '.id' <<<"$2")
+    if [[ "$(jq -r '.name' <<<"$2")" != "$who" ]]; then
+        out=$(abs_api PATCH "/api/users/$id" "$tok" "$(jq -cn --arg n "$who" '{username:$n}')") \
+            || { fail "audiobookshelf refused the rename to '$who': $(oneline "$out")"; return 1; }
+    fi
+    out=$(abs_api PATCH "/api/users/$id" "$tok" "$(jq -cn --arg p "$(link_secret)" '{password:$p}')") \
+        || { fail "audiobookshelf refused to replace the account's own password: $(oneline "$out")"; return 1; }
+    # the window lives in a subshell whose EXIT trap closes it — on a link, a
+    # timeout, Ctrl-C or any exit — and leaves the caller's traps alone
+    (
+        trap 'link_abs_close "$tok"' EXIT
+        trap 'exit 130' INT TERM
+        link_abs_match "$tok" '"username"' || { fail "audiobookshelf did not accept username matching"; exit 1; }
+        info "audiobookshelf: ask $who to sign in to Audiobookshelf now (web or app, with the portal button) — waiting up to $((LINK_ABS_WAIT / 60)) minutes (Ctrl-C closes the window)"
+        waited=0
+        while :; do
+            out=$(abs_api GET /api/users "$tok") || out='{"users":[]}'
+            jq -e --arg i "$id" '.users[] | select(.id == $i) | .hasOpenIDLink == true' <<<"$out" >/dev/null && exit 0
+            if (( waited >= LINK_ABS_WAIT )); then
+                fail "audiobookshelf: $who did not sign in within $((LINK_ABS_WAIT / 60)) minutes — the account is renamed and ready; run link-account again when they can sign in"
+                exit 1
+            fi
+            sleep 5; waited=$((waited + 5))
+        done
+    ) || return 1
+    ok "audiobookshelf: '$who' is linked (same account: listening progress kept)"
+}
