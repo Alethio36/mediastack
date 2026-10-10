@@ -9,6 +9,8 @@
 #   * URLs are shown without their secrets
 #   * a send's outcome is judged by the hub's answer (a 204/424 is not
 #     "delivered") and recorded per stream; `send` checks its arguments
+#   * an arr's hub entry carries mediastack's tag (ops): --verify names a stale
+#     one, wire re-tags it and changes nothing else
 #
 #   scripts/test-notify.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -116,5 +118,36 @@ for bad in "" "ops" "ops t" "family t m" "ops t m --type loud" "ops t m --bogus"
     # shellcheck disable=SC2086  # the cases are word lists
     if (notify_send_cmd $bad) 2>/dev/null; then fail_ "notify send $bad must be refused"; fi; pass
 done
+
+# ---- an arr's hub entry carries mediastack's tag (wire apprise) ----
+# An entry made before the ops/users split kept "activity", which no hub line
+# carries: every arr event was answered 424 and lost. --verify must name it,
+# a real run re-tags it and nothing else, and a right tag is left alone.
+notes='[{"id":3,"name":"yours","fields":[{"name":"tags","value":["mine"]}]},
+ {"id":7,"name":"mediastack-apprise","fields":[{"name":"serverUrl","value":"http://gluetun:8000"},
+  {"name":"configurationKey","value":"mediastack"},{"name":"authPassword","value":"********"},
+  {"name":"tags","value":["activity"]}]}]'
+api() { echo "$1 $2" >> "$T/calls"; [[ "$1" == PUT ]] && printf '%s' "$4" > "$T/put"; return "${API_RC:-0}"; }
+: > "$T/calls"; WIRE_DRY=1; WIRE_CHANGES=0
+apprise_entry_tag radarr http://h/api/v3 k "$notes" > "$T/o"
+grep -qF 'would: radarr: re-tag its hub entry ["activity"] -> ["ops"]' "$T/o" || fail_ "--verify must name the stale tag: $(cat "$T/o")"; pass
+(( WIRE_CHANGES == 1 )) && [[ ! -s "$T/calls" ]] || fail_ "--verify counts the drift and writes nothing"; pass
+: > "$T/calls"; WIRE_DRY=0; WIRE_CHANGES=0
+apprise_entry_tag radarr http://h/api/v3 k "$notes" > "$T/o"
+[[ "$(cat "$T/calls")" == "PUT http://h/api/v3/notification/7" ]] || fail_ "one PUT, to mediastack's entry: $(cat "$T/calls")"; pass
+[[ "$(jq -c '.fields | map({(.name): .value}) | add' "$T/put")" == '{"serverUrl":"http://gluetun:8000","configurationKey":"mediastack","authPassword":"********","tags":["ops"]}' ]] \
+    || fail_ "only the tags change; a masked secret goes back as-is: $(cat "$T/put")"; pass
+grep -q 'radarr: hub entry re-tagged to ops' "$T/o" || fail_ "the re-tag is reported"; pass
+: > "$T/calls"; WIRE_CHANGES=0
+apprise_entry_tag radarr http://h/api/v3 k "${notes/\[\"activity\"\]/[\"ops\"]}" > "$T/o"
+[[ ! -s "$T/calls" ]] && (( WIRE_CHANGES == 0 )) || fail_ "a right tag is left alone"; pass
+WIRE_FAILS=0; API_RC=1
+apprise_entry_tag radarr http://h/api/v3 k "$notes" > "$T/o" 2>&1
+(( WIRE_FAILS == 1 )) || fail_ "a refused re-tag is a wire failure"; pass
+unset API_RC
+# both owners of a hub entry (each arr, and Prowlarr) check it, after any re-point
+body=$(declare -f wire_apprise)
+[[ "$(grep -c 'apprise_entry_tag' <<<"$body")" == 2 ]] || fail_ "wire_apprise must check the tag for the arrs and for prowlarr"; pass
+[[ "$(grep -c 'tag not checked' <<<"$body")" == 2 ]] || fail_ "a re-point must be re-read before the tag check (else the second PUT undoes it)"; pass
 
 echo "OK notify: $checks checks"
