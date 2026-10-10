@@ -325,3 +325,27 @@ arr_dl_login_resync() { # arr_dl_login_resync PROVIDER — after its login chang
             || wfail "$s: could not update its '$name' entry — fix in its UI (Settings -> Download Clients)"
     done
 }
+
+indexer_test_report() { # indexer_test_report APP API-BASE KEY TESTALL-RESULTS — rc 1 when any indexer fails (named, with why) or the results are unreadable
+    local app="$1" names bad
+    jq -e 'type == "array"' <<<"$4" >/dev/null 2>&1 || { warn "$app: indexers not re-tested — $(oneline "$4")"; return 1; }
+    [[ "$(jq 'length' <<<"$4")" != 0 ]] || { info "$app: no indexers yet — nothing to re-test"; return 0; }
+    names=$(api GET "$2/indexer" "$3") || names='[]'   # soft read: the names only label the message
+    bad=$(jq -r --argjson n "$names" '[.[] | select(.isValid == false) | . as $r
+        | ((first($n[]? | select(.id == $r.id) | .name)) // "id \($r.id)")
+          + " (" + (first($r.validationFailures[]?.errorMessage) // "failed") + ")"] | join("; ")' <<<"$4" 2>/dev/null)
+    [[ -z "$bad" ]] || { warn "$app: indexers still failing after the start: $bad"; return 1; }
+    ok "$app: every indexer answers after the start"
+}
+
+arr_indexers_retest() { # after Prowlarr's indexers pass: each arr re-tests its own, clearing the backoff a cold start left in it
+    local s key base out
+    for s in $(arr_instances); do
+        [[ "$(c_state "$(svc_cname "$s")")" == running ]] || continue
+        key=$(arr_key "$s"); [[ -n "$key" ]] || { warn "$s: no API key readable — indexers not re-tested"; continue; }
+        base="$(arr_url "$s")/api/$(arr_apiver "$s")"
+        http_ready "$s" "$base/system/status" '^200$' -H "X-Api-Key: $key" || continue
+        out=$(API_TIMEOUT=$PROWLARR_TEST_WAIT api POST "$base/indexer/testall" "$key" '{}') || true   # soft read: a failing indexer answers 400 with the results; the report reads them
+        indexer_test_report "$s" "$base" "$key" "$out" || true   # named in the report; the next arr is still re-tested
+    done
+}
