@@ -425,7 +425,7 @@ svc_label() { case "$1:$2" in
     *:mediastack.desc) echo "desc of ${1%%:*}" ;; esac; }
 unset -f authentik_gated authentik_household
 # shellcheck disable=SC1090  # the two real functions, back from their stubs
-source <(sed -n '/^authentik_gated() {/,/^}/p; /^authentik_household() {/,/^}/p' lib/authentik.sh)
+source <(sed -n '/^authentik_gated() {/,/^}/p; /^authentik_household() {/,/^}/p' services/authentik/authentik.sh)
 [[ "$(authentik_gated | tr '\n' ' ')" == "sonarr " ]] || fail_ "the household-gated app is not an admin tool: $(authentik_gated)"; pass
 [[ "$(authentik_household | tr '\n' ' ')" == "navidrome jellyfin " ]] || fail_ "household apps by mediastack.user_facing"; pass
 rm -f "$T/calls"
@@ -691,7 +691,7 @@ pass
 grep -q '"127.0.0.1:${KAVITA_PORT:-5000}:5000"' services/kavita/compose.yml || fail_ "Kavita is published on 127.0.0.1 only (the script's way in)"; pass
 grep -q 'MEDIASTACK_KAVITA_CLIENT_SECRET: ${AUTHENTIK_KAVITA_CLIENT_SECRET}$' services/authentik/compose.yml \
     && grep -q 'MEDIASTACK_KAVITA_URL: https://${KAVITA_HOST:-books}.' services/authentik/compose.yml \
-    && grep -q 'AUTHENTIK_KAVITA_CLIENT_SECRET; do' lib/authentik.sh \
+    && grep -q 'AUTHENTIK_KAVITA_CLIENT_SECRET; do' services/authentik/authentik.sh \
     || fail_ "Kavita's client secret: generated, and handed to the blueprint with its address"; pass
 sed -n '/name: mediastack-oidc-kavita/,/^  - model/p' services/authentik/blueprints/mediastack-portal.yaml > "$T/kav"
 grep -q 'client_id: mediastack-kavita' "$T/kav" && grep -q 'signing_key: !Find' "$T/kav" \

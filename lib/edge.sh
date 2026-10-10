@@ -205,7 +205,7 @@ traefik_gate_middleware() { # mediastack-gate: what a router with mediastack.aut
           X-authentik-jwt: ""
 STRIP
     if svc_enabled authentik; then
-        # authentik's built-in outpost decides (lib/authentik.sh attaches the gate to it)
+        # authentik's built-in outpost decides (services/authentik/authentik.sh attaches the gate to it)
         cat <<'GATE'
     mediastack-gate:
       forwardAuth:

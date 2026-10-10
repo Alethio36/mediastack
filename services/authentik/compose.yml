@@ -5,7 +5,7 @@
 # One shard (docs/roadmap.md: Shards): the server is the primary; its worker
 # and its own PostgreSQL are members — same profile, same UID, their data under
 # CONFIG_ROOT/authentik/. Pinned on purpose: authentik must not skip a release
-# and cannot go back one (lib/authentik.sh checks each step); PostgreSQL stays
+# and cannot go back one (authentik.sh beside this file checks each step); PostgreSQL stays
 # on its major version (a major upgrade is a dump and reload, done deliberately).
 
 x-logging: &logging
@@ -117,7 +117,7 @@ services:
     environment:
       <<: *authentik-env
       # read once, on the very first start: the first admin (akadmin) and an
-      # API token for the script (lib/authentik.sh writes both)
+      # API token for the script (authentik.sh beside this file writes both)
       AUTHENTIK_BOOTSTRAP_PASSWORD: ${AUTHENTIK_ADMIN_PASSWORD}
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_API_TOKEN}
       # read by mediastack's blueprint (blueprints/authentik/)
@@ -135,7 +135,7 @@ services:
       - ${CONFIG_ROOT}/authentik/data:/data
       - ${CONFIG_ROOT}/authentik/templates:/templates
       - ${CONFIG_ROOT}/authentik/certs:/certs
-      # mediastack's setup (a copy lib/authentik.sh keeps current), applied on every start
+      # mediastack's setup (a copy authentik.sh keeps current), applied on every start
       - ${CONFIG_ROOT}/authentik/blueprints:/blueprints/mediastack:ro
     shm_size: 512mb
     depends_on:

@@ -136,7 +136,8 @@ A service's code lives in its folder beside its fragment:
 CI fails a role without exactly one `wire_<role>` under `services/`. The arr
 family shares one implementation in `services/_arr/arr.sh`; an arr instance
 is a fragment only. A service with nothing to wire (Navidrome, say) has no
-`.sh` at all.
+`.sh` at all; one with more to say can hold several, named by topic
+(authentik: `authentik.sh` and `email.sh`).
 
 ### Wiring it to other apps (`wire`)
 
