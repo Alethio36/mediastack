@@ -1,0 +1,10 @@
+{
+  "priority": 2,
+  "name": "deluge",
+  "implementation": "Deluge",
+  "fields": {
+    "host": "{self.host}",
+    "port": "{self.port}",
+    "password": "{env.DELUGE_PASSWORD}"
+  }
+}

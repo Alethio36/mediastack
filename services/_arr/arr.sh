@@ -298,3 +298,23 @@ sc_rotate_arr() { # USER PASS — every arr-family app + cleanuparr follows
         fi
         ok "arr login rotated — view: ./mediastack.sh credentials"
 }
+
+arr_dl_login_resync() { # arr_dl_login_resync PROVIDER — after its login changed: every arr's and Prowlarr's entry for it takes the new one
+    local p="$1" s cons key url base cur name e
+    local -a login
+    for s in $(arr_instances) prowlarr; do
+        svc_enabled "$s" || continue
+        cons=arr; [[ "$s" == prowlarr ]] && cons=prowlarr
+        name=$(role_entry_name "$p" download-client "$cons")
+        key=$(arr_key "$s"); url=$(arr_url "$s"); base="$url/api/$(arr_apiver "$s")"
+        cur=$(api GET "$base/downloadclient" "$key") \
+            || { wfail "$s: could not read its download clients — its $p login was NOT updated; fix in its UI [$(oneline "$cur")]"; continue; }
+        [[ -n "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .id' <<<"$cur")" ]] || { info "$s: no '$name' entry — nothing to update"; continue; }
+        e=$(role_entry "$p" download-client "$cons")
+        mapfile -t login < <(role_login_fields "$cur" "$name" "$e")
+        (( ${#login[@]} )) || { info "$s: '$name' signs in with an API key — the login change does not apply"; continue; }
+        arr_repoint "$base" "$key" downloadclient "$cur" "$name" "${login[@]}" >/dev/null \
+            && ok "$s: '$name' entry updated" \
+            || wfail "$s: could not update its '$name' entry — fix in its UI (Settings -> Download Clients)"
+    done
+}

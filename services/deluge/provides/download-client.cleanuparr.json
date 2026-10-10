@@ -1,0 +1,10 @@
+{
+  "priority": 2,
+  "name": "deluge",
+  "typeName": "Deluge",
+  "type": "Torrent",
+  "host": "http://{self.addr}",
+  "urlBase": "",
+  "username": "",
+  "password": "{env.DELUGE_PASSWORD}"
+}

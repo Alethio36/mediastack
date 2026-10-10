@@ -1,0 +1,17 @@
+{
+  "priority": 2,
+  "name": "Deluge (mediastack)",
+  "implementation": "Deluge",
+  "implementationName": "Deluge",
+  "configContract": "DelugeSettings",
+  "protocol": "torrent",
+  "removeCompletedDownloads": true,
+  "removeFailedDownloads": true,
+  "fields": {
+    "host": "{self.host}",
+    "port": "{self.port}",
+    "useSsl": false,
+    "urlBase": "",
+    "password": "{env.DELUGE_PASSWORD}"
+  }
+}
