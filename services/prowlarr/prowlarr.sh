@@ -22,42 +22,43 @@ prowlarr_app_repoint() { # <target> <entry name> <applications JSON> <prowlarr a
     addr_repoint "prowlarr <-> $t" "${was[*]}" "${want[*]}" -- \
         arr_repoint "$purl/api/v1" "$pkey" applications "$cur" "$name" "${fields[@]}"
 }
-prowlarr_download_client() { # manual grabs in prowlarr's UI go straight to qbit
-    local key url ver have qu qp schema tmpl body resp
+prowlarr_download_client() { # manual grabs in prowlarr's UI go to the role's download clients (category 'prowlarr')
+    local key url ver dcs p miss e name impl schema="" tmpl body resp rc=0
     key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr)
     [[ -n "$key" ]] || { wfail "prowlarr: no ApiKey readable — re-run wire in a minute"; return 1; }
-    qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
-    [[ -n "$qu" && -n "$qp" ]] || { info "prowlarr download client pends on 'wire qbit' storing credentials"; return 0; }
-    local dcs; dcs=$(api GET "$url/api/$ver/downloadclient" "$key") \
+    dcs=$(api GET "$url/api/$ver/downloadclient" "$key") \
         || { wfail "prowlarr: could not read its download clients — nothing created [$(oneline "$dcs")]"; return 1; }
-    have=$(jq -r '[.[].name] | join(" ")' <<<"$dcs" 2>/dev/null || true)
-    if [[ " $have " == *" qbittorrent "* ]]; then
-        ok "prowlarr download client registered"
-        local dst; dst="$(arr_entry_field "$dcs" qbittorrent host):$(arr_entry_field "$dcs" qbittorrent port)"
-        if addr_stale "prowlarr -> qbittorrent" qbittorrent "$dst"; then
-            local -a login; mapfile -t login < <(qbit_login_fields "$dcs" qbittorrent)
-            addr_repoint "prowlarr -> qbittorrent" "$dst" "$(svc_addr qbittorrent)" -- \
-                arr_repoint "$url/api/$ver" "$key" downloadclient "$dcs" qbittorrent \
-                "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)" "${login[@]}"
+    for p in $(role_providers download-client prowlarr); do
+        miss=$(role_env_missing "$p" download-client prowlarr | paste -sd' ' -)
+        [[ -z "$miss" ]] || { info "prowlarr download client $p pends on its credentials ($miss)"; continue; }
+        e=$(role_entry "$p" download-client prowlarr); name=$(jq -r '.name' <<<"$e"); impl=$(jq -r '.implementation' <<<"$e")
+        if [[ -n "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .id' <<<"$dcs")" ]]; then
+            ok "prowlarr download client $name registered"
+            local dst; dst="$(arr_entry_field "$dcs" "$name" host):$(arr_entry_field "$dcs" "$name" port)"
+            if addr_stale "prowlarr -> $p" "$p" "$dst"; then
+                local -a login; mapfile -t login < <(role_login_fields "$dcs" "$name" "$e")
+                addr_repoint "prowlarr -> $p" "$dst" "$(svc_addr "$p")" -- \
+                    arr_repoint "$url/api/$ver" "$key" downloadclient "$dcs" "$name" \
+                    "host=$(svc_host "$p")" "port=$(svc_cport "$p")" "${login[@]}"
+            fi
+            continue
         fi
-        return 0
-    fi
-    w_would "prowlarr: register qBittorrent as its download client (manual grabs -> category 'prowlarr')" || return 0
-    schema=$(api GET "$url/api/$ver/downloadclient/schema" "$key" || true)   # soft read: create path only: an empty schema FAILs below, nothing created
-    tmpl=$(jq -c '[.[] | select(.implementation=="QBittorrent")][0] // empty' <<<"$schema" 2>/dev/null)
-    [[ -n "$tmpl" ]] || { wfail "prowlarr: its API offers no QBittorrent client type — is the image very old?"; return 1; }
-    body=$(jq -c --arg u "$qu" --arg p "$qp" --arg host "$(svc_host qbittorrent)" --argjson port "$(svc_cport qbittorrent)" '
-        .name = "qbittorrent" | .enable = true
-        | .fields = [ .fields[]
-            | if   .name == "host"     then .value = $host
-              elif .name == "port"     then .value = $port
-              elif .name == "username" then .value = $u
-              elif .name == "password" then .value = $p
-              elif .name == "category" then .value = "prowlarr"
-              else . end ]' <<<"$tmpl")
-    resp=$(api POST "$url/api/$ver/downloadclient" "$key" "$body") \
-        && ok "prowlarr download client registered" \
-        || wfail "prowlarr: download client rejected: $(head -c200 <<<"$resp")"
+        w_would "prowlarr: register $impl as a download client (manual grabs -> category 'prowlarr')" || continue
+        [[ -n "$schema" ]] || schema=$(api GET "$url/api/$ver/downloadclient/schema" "$key" || true)   # soft read: create path only: an empty schema FAILs below, nothing created
+        tmpl=$(jq -c --arg i "$impl" '[.[] | select(.implementation == $i)][0] // empty' <<<"$schema" 2>/dev/null)
+        [[ -n "$tmpl" ]] || { wfail "prowlarr: its API offers no $impl client type — is the image very old?"; rc=1; continue; }
+        body=$(jq -c --argjson e "$e" '
+            .name = $e.name | .enable = true
+            | .fields = [ .fields[]
+                | .name as $n
+                | if ($e.fields | has($n)) then .value = $e.fields[$n]
+                  elif .name == "category" then .value = "prowlarr"
+                  else . end ]' <<<"$tmpl")
+        resp=$(api POST "$url/api/$ver/downloadclient" "$key" "$body") \
+            && ok "prowlarr download client $name registered" \
+            || wfail "prowlarr: download client $name rejected: $(head -c200 <<<"$resp")"
+    done
+    return $rc
 }
 
 wire_prowlarr() {

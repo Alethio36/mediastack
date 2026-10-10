@@ -1,0 +1,10 @@
+{
+  "priority": 1,
+  "name": "qbittorrent",
+  "typeName": "qBittorrent",
+  "type": "Torrent",
+  "host": "http://{self.addr}",
+  "urlBase": "",
+  "username": "{env.QBITTORRENT_USER}",
+  "password": "{env.QBITTORRENT_PASSWORD}"
+}

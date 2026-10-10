@@ -1,16 +1,9 @@
 #!/usr/bin/env bash
 # services/qbittorrent/qbittorrent.sh — qBittorrent's API client (login,
-# tun0 bind), its `wire qbit` role, and the login fields an arr's
-# download-client entry for it carries.
+# tun0 bind) and its `wire qbit` role. How the arrs, Prowlarr and Cleanuparr
+# reach it as a download client: provides/download-client.<consumer>.json.
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
-
-qbit_login_fields() { # qbit_login_fields <list JSON> <entry name> -> the login to (re)send, one field per line
-    # none when the entry authenticates by qBittorrent API key: Sonarr, Radarr
-    # and Prowlarr reject an entry holding a key AND a username/password
-    [[ -n "$(arr_entry_field "$1" "$2" apiKey)" ]] && return 0
-    printf '%s\n' "username=$(env_get QBITTORRENT_USER)" "password=$(env_get QBITTORRENT_PASSWORD)"
-}
 
 # ---- qbit ----
 QB_COOKIE=""

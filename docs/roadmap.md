@@ -131,7 +131,7 @@ validation, notifications, SSO). Before `migrate` moves the first household:
 6. Then `migrate` (below, under Project health).
 Lower priority: RAM and system requirements, measured on the rebuilt box.
 
-### Organised by service — phase 1 done (Oct 2026), phases 2–3 planned
+### Organised by service — phases 1–2 under way (Oct 2026), phase 3 planned
 One folder per service, `services/<name>/`: its fragment (`compose.yml`),
 its code (`<name>.sh`) and anything else it ships (authentik's blueprints).
 Adding a service should mean adding a folder, and removing one deleting it.

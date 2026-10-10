@@ -1,0 +1,11 @@
+{
+  "priority": 1,
+  "name": "qbittorrent",
+  "implementation": "QBittorrent",
+  "fields": {
+    "host": "{self.host}",
+    "port": "{self.port}",
+    "username": "{env.QBITTORRENT_USER}",
+    "password": "{env.QBITTORRENT_PASSWORD}"
+  }
+}

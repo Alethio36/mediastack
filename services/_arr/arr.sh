@@ -177,14 +177,17 @@ operator). Stored in .env (view: credentials)."
             env_set ARR_USER "$auser"; env_set ARR_PASSWORD "$apass"
         fi
     fi
-    local user pass; user=$(env_get QBITTORRENT_USER); pass=$(env_get QBITTORRENT_PASSWORD)
-    if [[ -z "$pass" ]]; then
-        if (( WIRE_DRY )); then
-            info "download-client previews pend on qBittorrent credentials — they're created earlier in the same real run"
+    # download clients: every enabled provider of the role (lib/roles.sh), by priority
+    local -a dl_ready=(); local p miss
+    for p in $(role_providers download-client arr); do
+        miss=$(role_env_missing "$p" download-client arr | paste -sd' ' -)
+        if [[ -z "$miss" ]]; then dl_ready+=("$p")
+        elif (( WIRE_DRY )); then
+            info "$p: download-client previews pend on its credentials ($miss) — they're created earlier in the same real run"
         else
-            warn "qBittorrent credentials not set (scoped run?) — download-client wiring skipped; 'wire qbit' or a full 'wire' sets them"
+            warn "$p credentials not set ($miss; scoped run?) — its download-client wiring skipped; a full 'wire' sets them"
         fi
-    fi
+    done
     local s key url root t catfield cat cur
     for s in $insts; do
         key=$(arr_key "$s")
@@ -210,37 +213,32 @@ operator). Stored in .env (view: credentials)."
         ensure_resource "$rexists" "$s: register root folder $root" \
             "$s: root folder $root registered" "$s: root folder rejected" \
             -- api POST "$url/api/$(arr_apiver "$s")/rootfolder" "$key" "$rbody"
-        # download client
-        [[ -n "$pass" ]] || continue
+        # download clients: the role's providers, each with this arr's category
+        (( ${#dl_ready[@]} )) || continue
         cat=$(svc_label "$s" mediastack.category)
         catfield=$(arr_meta "$t" catfield)
         cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key") \
             || { wfail "$s: could not read its download clients — nothing created [$(oneline "$cur")]"; continue; }
-        local dexists=no; grep -q '"qBittorrent (mediastack)"' <<<"$cur" && dexists=yes
-        local dbody; dbody=$(cat <<JSON
-{"enable":true,"protocol":"torrent","priority":1,
- "removeCompletedDownloads":true,"removeFailedDownloads":true,
- "name":"qBittorrent (mediastack)","implementation":"QBittorrent",
- "implementationName":"qBittorrent","configContract":"QBittorrentSettings",
- "fields":[{"name":"host","value":"$(svc_host qbittorrent)"},
-   {"name":"port","value":$(svc_cport qbittorrent)},
-   {"name":"useSsl","value":false},
-   {"name":"username","value":"$user"},{"name":"password","value":"$pass"},
-   {"name":"$catfield","value":"$cat"}]}
-JSON
-)
-        if [[ "$dexists" == yes ]]; then
-            local dst; dst="$(arr_entry_field "$cur" "qBittorrent (mediastack)" host):$(arr_entry_field "$cur" "qBittorrent (mediastack)" port)"
-            if addr_stale "$s -> qbittorrent" qbittorrent "$dst"; then
-                local -a login; mapfile -t login < <(qbit_login_fields "$cur" "qBittorrent (mediastack)")
-                addr_repoint "$s -> qbittorrent" "$dst" "$(svc_addr qbittorrent)" -- \
-                    arr_repoint "$url/api/$(arr_apiver "$s")" "$key" downloadclient "$cur" "qBittorrent (mediastack)" \
-                    "host=$(svc_host qbittorrent)" "port=$(svc_cport qbittorrent)" "${login[@]}"
+        local e name disp dexists dbody
+        for p in "${dl_ready[@]}"; do
+            e=$(role_entry "$p" download-client arr); name=$(jq -r '.name' <<<"$e"); disp=$(jq -r '.implementationName' <<<"$e")
+            dexists=no; [[ -n "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .id' <<<"$cur")" ]] && dexists=yes
+            dbody=$(jq -c --arg cf "$catfield" --arg cat "$cat" '{enable: true, protocol, priority,
+                removeCompletedDownloads, removeFailedDownloads, name, implementation, implementationName, configContract,
+                fields: ([.fields | to_entries[] | {name: .key, value}] + [{name: $cf, value: $cat}])}' <<<"$e")
+            if [[ "$dexists" == yes ]]; then
+                local dst; dst="$(arr_entry_field "$cur" "$name" host):$(arr_entry_field "$cur" "$name" port)"
+                if addr_stale "$s -> $p" "$p" "$dst"; then
+                    local -a login; mapfile -t login < <(role_login_fields "$cur" "$name" "$e")
+                    addr_repoint "$s -> $p" "$dst" "$(svc_addr "$p")" -- \
+                        arr_repoint "$url/api/$(arr_apiver "$s")" "$key" downloadclient "$cur" "$name" \
+                        "host=$(svc_host "$p")" "port=$(svc_cport "$p")" "${login[@]}"
+                fi
             fi
-        fi
-        ensure_resource "$dexists" "$s: register qBittorrent (category $cat)" \
-            "$s: download client registered" "$s: download client registration failed — check: logs $s" \
-            -- api POST "$url/api/$(arr_apiver "$s")/downloadclient" "$key" "$dbody"
+            ensure_resource "$dexists" "$s: register $disp (category $cat)" \
+                "$s: download client $disp registered" "$s: download client $disp registration failed — check: logs $s" \
+                -- api POST "$url/api/$(arr_apiver "$s")/downloadclient" "$key" "$dbody"
+        done
     done
 }
 
