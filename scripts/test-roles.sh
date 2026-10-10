@@ -82,6 +82,19 @@ printf 'COMPOSE_PROFILES=qbittorrent\nDOWNLOAD_CLIENT=qbittorrent\n' > "$T/env4"
 printf 'COMPOSE_PROFILES=radarr\nDOWNLOAD_CLIENT=qbittorrent\n' > "$T/env5"
 (ENV_FILE=$T/env5 role_pick download-client >/dev/null 2>&1) && fail_ "a setting naming a client that is not enabled must stop wire"; pass
 [[ -z "$(ENV_FILE=$T/env5 role_providers download-client arr)" ]] || fail_ "nothing enabled: no provider"; pass
+# the note runs inside wire under set -e: one provider (nothing to say) must not
+# stop it — a grep finding no other provider once ended wire silently
+# (a fresh shell: inside a condition bash ignores set -e, and would hide it)
+out=$(ENV_FILE=$ENV_FILE bash -c 'set -euo pipefail; source "$1"; svc_cport() { echo 8085; }; role_pick_note download-client; echo reached' _ "$lib" 2>&1 || true)
+[[ "$out" == reached ]] || fail_ "one provider: no note, and wire carries on (got: $out)"; pass
+mkdir -p "$T/n/services/a/provides" "$T/n/services/b/provides"
+printf '{"priority":1}\n' > "$T/n/services/a/provides/download-client.arr.json"
+printf '{"priority":2}\n' > "$T/n/services/b/provides/download-client.arr.json"
+printf 'COMPOSE_PROFILES=a,b\n' > "$T/env6"
+[[ "$(cd "$T/n" && ENV_FILE=$T/env6 role_pick_note download-client)" == *"download-client: a (also enabled: b)"* ]] || fail_ "two providers: the note names both"; pass
+# a template without .env settings: none is no error
+printf '{"fields":{"host":"{self.host}"}}\n' > "$T/n/services/a/provides/download-client.prowlarr.json"
+[[ -z "$(cd "$T/n" && role_env_names a download-client prowlarr)" ]] || fail_ "no settings read: none named"; pass
 # the setting's allowed values are exactly the role's providers, in priority order
 allowed=$(awk -F'\t' '$1 == "DOWNLOAD_CLIENT" {sub(/^enum:/, "", $2); print $2}' lib/env.schema.tsv)
 want=$(for p in $(role_all_providers download-client arr); do printf '%s\t%s\n' "$(jq -r '.priority // 50' "$(role_file "$p" download-client arr)")" "$p"; done | sort -n -k1,1 -k2,2 | cut -f2 | paste -sd'|' -)
