@@ -558,6 +558,11 @@ all built; what each still leaves open is noted below.
   place; tighten style and error-handling consistency; find lean-ness wins
   (fewer moving parts, faster common paths); verify docs match behavior; re-check
   the whole against the goals above. A lean-and-correct sweep, not a rewrite.
+- **Doctor sees what the apps send the hub, not only the script's sends.** The
+  notification check records `notify`'s own sends; an arr or Seerr posting
+  straight to the hub is invisible to it — three weeks of arr events answered
+  424 (a retired tag) showed only as log noise. Doctor should read the hub's
+  log for failed sends since its last run and name the sender and tag.
 - **A `--dry-run` smoke test in CI.** The rest of the suite is in place: each
   `scripts/test-*.sh` / `check-*.sh` states in its header what it pins, and the
   lint workflow runs them all.
