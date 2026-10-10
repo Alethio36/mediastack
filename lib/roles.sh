@@ -53,7 +53,8 @@ role_pick() { # role_pick ROLE -> the one provider the stack uses ("" when none 
 
 role_pick_note() { # role_pick_note ROLE -> one line naming the choice, when there is one to make
     local chosen others
-    chosen=$(role_pick "$1"); others=$(role_providers "$1" "${ROLE_CONSUMERS[0]}" | grep -vx "$chosen" | paste -sd' ' -)
+    chosen=$(role_pick "$1")
+    others=$(role_providers "$1" "${ROLE_CONSUMERS[0]}" | { grep -vx "$chosen" || true; } | paste -sd' ' -)   # none left is no error
     [[ -n "$others" ]] || return 0
     info "$1: $chosen (also enabled: $others) — change: ./mediastack.sh configure, then: ./mediastack.sh wire"
 }
@@ -63,7 +64,7 @@ role_entry_name() { # role_entry_name PROVIDER ROLE CONSUMER -> the name its ent
 }
 
 role_env_names() { # role_env_names PROVIDER ROLE CONSUMER -> the .env settings its template reads
-    grep -oE '\{env\.[A-Z0-9_]+\}' "$(role_file "$@")" | sed -E 's/\{env\.([A-Z0-9_]+)\}/\1/' | sort -u
+    { grep -oE '\{env\.[A-Z0-9_]+\}' "$(role_file "$@")" || true; } | sed -E 's/\{env\.([A-Z0-9_]+)\}/\1/' | sort -u   # none is no error
 }
 
 role_env_missing() { # role_env_missing PROVIDER ROLE CONSUMER -> the settings it needs that .env leaves empty
@@ -79,7 +80,7 @@ role_entry() { # role_entry PROVIDER ROLE CONSUMER -> the template, resolved (JS
     jq -e . "$f" >/dev/null 2>&1 || die "role: $f is not valid JSON"
     # the template's own placeholders, checked before anything is filled in (a
     # value from .env is never read as one)
-    bad=$(grep -oE '\{[^{}" ]+\}' "$f" | grep -vxE '\{self\.(host|port|addr)\}|\{env\.[A-Z0-9_]+\}' | sort -u | paste -sd' ' -)
+    bad=$({ grep -oE '\{[^{}" ]+\}' "$f" || true; } | { grep -vxE '\{self\.(host|port|addr)\}|\{env\.[A-Z0-9_]+\}' || true; } | sort -u | paste -sd' ' -)   # none is no error
     [[ -z "$bad" ]] || die "role: $f uses placeholders that do not exist: $bad"
     for v in $(role_env_names "$@"); do env=$(jq -c --arg k "$v" --arg val "$(env_get "$v")" '. + {($k): $val}' <<<"$env"); done
     jq -c --arg host "$(svc_host "$p")" --arg addr "$(svc_addr "$p")" --argjson port "$(svc_cport "$p")" --argjson env "$env" '
