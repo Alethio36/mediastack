@@ -54,7 +54,7 @@ done; pass
 # static coverage: every service wire writes an address for is in the table
 while read -r t; do
     [[ -n "${WIRE_CALLERS[$t]:-}" ]] || fail_ "wire writes an address for '$t' but WIRE_CALLERS has no entry — a toggle would not re-point its callers"
-done < <(grep -hoE 'svc_(addr|host|cport) [a-z][a-z0-9-]*' lib/wire.sh lib/addr.sh services/*/*.sh lib/trash.sh | awk '{print $2}' | sort -u); pass
+done < <(grep -hoE 'svc_(addr|host|cport) [a-z][a-z0-9-]*' lib/wire.sh lib/addr.sh services/*/*.sh | awk '{print $2}' | sort -u); pass
 
 # the marker: added once, only when the side really changes
 vpn_base_json() { echo "$RENDERED_JSON"; }

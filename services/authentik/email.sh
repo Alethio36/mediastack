@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# lib/email.sh — the portal's outgoing email (SMTP): the settings' checks,
-# `email status|test`, and what doctor reads. configure asks the settings
-# (lib/configure.sh); compose hands them to authentik (services/authentik/compose.yml).
-# Sourced by the entrypoint.
+# services/authentik/email.sh — the portal's outgoing email (SMTP): the
+# settings' checks, `email status|test`, and what doctor reads. configure asks
+# the settings (lib/configure.sh); compose hands them to authentik
+# (compose.yml beside this file). Sourced by the entrypoint.
 
 # The portal sends through any SMTP server (docs/email.md). authentik reads
 # its settings when it starts: a change takes effect at the next `up`, and
@@ -34,8 +34,8 @@ smtp_live_stale() { # -> the settings the running authentik does not have yet (n
     envs=$(sudo docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$(svc_cname authentik-worker)" 2>/dev/null) || return 0
     for k in "${SMTP_KEYS[@]}"; do
         want=$(env_get "$k")
-        case "$k" in SMTP_HOST) want=${want:-localhost} ;; SMTP_PORT) want=${want:-25} ;;
-                     SMTP_STARTTLS|SMTP_TLS) want=${want:-false} ;; SMTP_FROM) want=${want:-authentik@localhost} ;; esac
+        case "$k" in SMTP_HOST) want=${want:-localhost} ;; SMTP_PORT) want=${want:-25} ;;   # addr-ok: authentik's own defaults, not app-to-app
+                     SMTP_STARTTLS|SMTP_TLS) want=${want:-false} ;; SMTP_FROM) want=${want:-authentik@localhost} ;; esac   # addr-ok: authentik's own defaults, not app-to-app
         have=$(grep -m1 "^${SMTP_AK[$k]}=" <<<"$envs" | cut -d= -f2-)
         [[ "$have" == "$want" ]] || echo "$k"
     done

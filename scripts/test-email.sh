@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-email.sh — the portal's outgoing email (lib/email.sh) and `users`:
+# test-email.sh — the portal's outgoing email (services/authentik/email.sh) and `users`:
 # what makes SMTP settings unusable, that `email test` never runs against
 # settings authentik has not started with, what a server's refusal is said to
 # mean, the 30 -> 31 migration, configure's email step, and the people list.
@@ -42,7 +42,7 @@ smtp SMTP_HOST=relay.lan SMTP_PORT=25 SMTP_FROM=box@home.lan; [[ -z "$(smtp_prob
 # ---- email test: never against settings authentik has not started with ----
 LIVE=""; EXEC_OUT="Test email sent to you@example.com"; EXEC_RC=0
 c_state() { echo running; }; HEALTH=healthy; c_health() { echo "$HEALTH"; }
-# shellcheck disable=SC2034  # read by the sourced lib/email.sh
+# shellcheck disable=SC2034  # read by the sourced services/authentik/email.sh
 EMAIL_WORKER_WAIT=0
 sudo() {
     case "$1 $2" in

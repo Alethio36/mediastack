@@ -78,8 +78,6 @@ source "$SCRIPT_DIR/lib/recycle.sh"
 source "$SCRIPT_DIR/lib/footprint.sh"
 # shellcheck source=lib/notify.sh
 source "$SCRIPT_DIR/lib/notify.sh"
-# shellcheck source=lib/authentik.sh
-source "$SCRIPT_DIR/lib/authentik.sh"
 # shellcheck source=lib/link.sh
 source "$SCRIPT_DIR/lib/link.sh"
 # shellcheck source=lib/configure.sh
@@ -88,12 +86,8 @@ source "$SCRIPT_DIR/lib/configure.sh"
 source "$SCRIPT_DIR/lib/lifecycle.sh"
 # shellcheck source=lib/access.sh
 source "$SCRIPT_DIR/lib/access.sh"
-# shellcheck source=lib/email.sh
-source "$SCRIPT_DIR/lib/email.sh"
 # shellcheck source=lib/newservice.sh
 source "$SCRIPT_DIR/lib/newservice.sh"
-# shellcheck source=lib/trash.sh
-source "$SCRIPT_DIR/lib/trash.sh"
 
 load_env() {
     # NOTE: .env is deliberately NOT sourced — compose reads it natively, and
