@@ -2,7 +2,7 @@
 
 Your services live in `custom/compose.d/`, one file each — untracked, passed
 to compose on every stack operation, and upgrade-safe. Never add services to
-`compose.d/` or edit `docker-compose.yml`: those are the repo's territory,
+`services/` or edit `docker-compose.yml`: those are the repo's territory,
 and local changes there block `upgrade` by design. (What you change about a
 *shipped* service goes in `custom/override.yml` — see below.)
 
@@ -115,7 +115,7 @@ applied after them). See docs/vpn-membership.md for a worked example.
 
 ## For contributors: shipped fragments
 
-One service per file: service `x` lives in `compose.d/x.yml` — no bucket
+One service per folder: service `x` lives in `services/x/compose.yml` — no bucket
 files, no judgment calls. Every fragment carries its own `x-logging` and
 `x-armour` anchors (YAML anchors do not cross `include:` boundaries).
 `x-armour` disables a FOREIGN watchtower on the same host, which would

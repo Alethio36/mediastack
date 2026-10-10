@@ -18,7 +18,7 @@ _doctor_environment() {
         if [[ -z "$(env_get "$root")" ]]; then
             d_fail "$root unset" "the stack cannot locate its files" "run: ./mediastack.sh configure"
         elif [[ "$(env_get "$root")" != /* ]]; then
-            d_fail "$root is relative: $(env_get "$root")" "compose resolves it against compose.d/, not this folder — the wrong directories get created" "run: ./mediastack.sh configure (stores absolute paths)"
+            d_fail "$root is relative: $(env_get "$root")" "compose resolves it against each services/<name>/ folder, not this one — the wrong directories get created" "run: ./mediastack.sh configure (stores absolute paths)"
         else
             ok "$root=$(env_get "$root")"
         fi

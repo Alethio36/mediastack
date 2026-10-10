@@ -8,7 +8,7 @@
 cmd_new_service() {
     # User services live in custom/compose.d/, one file each: untracked,
     # passed to compose on every run, and upgrades never conflict with them.
-    # compose.d/ and docker-compose.yml are the repo's territory — a scaffold
+    # services/ and docker-compose.yml are the repo's territory — a scaffold
     # there would trip the clean-tree gate on the next upgrade.
     #
     # The scaffold is emitted on the TOGGLE MODEL: the fragment carries only

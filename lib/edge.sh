@@ -233,7 +233,7 @@ GATE
 # hostname map is discovered from the fragments' own router labels
 # (${X_HOST:-default}), so it self-maintains as services are added
 traefik_host_vars() {
-    grep -rhoE '\$\{[A-Z0-9_]+_HOST:-[a-z0-9-]+\}' compose.d/ \
+    grep -hoE '\$\{[A-Z0-9_]+_HOST:-[a-z0-9-]+\}' services/*/compose.yml \
         | sed -E 's/^\$\{([A-Z0-9_]+_HOST):-([a-z0-9-]+)\}$/\1 \2/' | sort -u
     echo "TRAEFIK_DASH_HOST dash"
 }

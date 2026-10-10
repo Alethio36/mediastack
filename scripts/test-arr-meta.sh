@@ -30,8 +30,8 @@ done; pass
 
 # every arrtype a shipped fragment declares is a row in the table
 while read -r t; do
-    arr_known "$t" || fail_ "compose.d declares mediastack.arrtype '$t' but ARR_META has no row for it"
-done < <(grep -hoE 'mediastack\.arrtype: *"[^"]+"' compose.d/*.yml | sed -E 's/.*"([^"]+)"/\1/' | sort -u); pass
+    arr_known "$t" || fail_ "a fragment declares mediastack.arrtype '$t' but ARR_META has no row for it"
+done < <(grep -hoE 'mediastack\.arrtype: *"[^"]+"' services/*/compose.yml | sed -E 's/.*"([^"]+)"/\1/' | sort -u); pass
 
 # unknown types: arr_known says no, arr_meta dies naming the gap
 arr_known readarr && fail_ "arr_known must reject an unknown type"; pass

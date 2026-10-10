@@ -7,7 +7,7 @@
 #   * .env is the single source of truth; tracked files are NEVER written at
 #     runtime. Generated state goes to gitignored places (local/, backups/).
 #   * Fail loud: no silent fallbacks. Every failure states what and how to fix.
-#   * Service discovery is label-driven (mediastack.* labels in compose.d/*):
+#   * Service discovery is label-driven (mediastack.* labels in services/*/compose.yml):
 #     this script contains no hardcoded service lists.
 # ============================================================================
 set -euo pipefail
@@ -124,7 +124,7 @@ yaml_services() { # yaml_services FILE -> the service names under its top-level 
 dropins_check() { # a drop-in adds services — it never redefines a shipped one or another drop-in's
     local f s owner
     local -A seen=()
-    for f in compose.d/*.yml; do
+    for f in services/*/compose.yml; do
         for s in $(yaml_services "$f"); do seen[$s]="shipped ($f)"; done
     done
     for f in "$DROPIN_DIR"/*.yml; do
@@ -358,9 +358,9 @@ require_mounts() {
     for root in "${ROOTS[@]}"; do
         path=$(env_get "$root"); expect=$(env_get "${root}_SOURCE")
         # a relative root means .env was copied by hand: compose resolves it
-        # against compose.d/ (the include files' directory), not this folder
+        # against each services/<name>/ folder (the include files' directories), not this one
         [[ -z "$path" || "$path" == /* ]] \
-            || die "$root is a relative path ('$path') — compose would resolve it against compose.d/, not this folder.
+            || die "$root is a relative path ('$path') — compose would resolve it against each services/<name>/ folder, not this one.
   Run: ./mediastack.sh configure   (it stores absolute paths; Enter keeps every other answer)"
         [[ -z "$path" || -z "$expect" ]] && continue
         actual=$(timeout 5 findmnt -rn -o SOURCE --target "$path" 2>/dev/null) || {

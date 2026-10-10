@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib/authentik.sh — the authentik shard's upkeep (compose.d/authentik.yml):
+# lib/authentik.sh — the authentik shard's upkeep (services/authentik/compose.yml):
 # its secrets, its first admin, and its upgrade path. Sourced by the
 # entrypoint; relies on lib/common.sh and the render/svc/c_* helpers.
 #
@@ -86,7 +86,7 @@ authentik_release_record() { # once authentik is healthy on a release, its datab
     sudo chown "$(env_get AUTHENTIK_UID):mediacenter" "$(authentik_dir)/$AUTHENTIK_MARK"
 }
 
-AUTHENTIK_BLUEPRINT="Mediastack - Portal"   # metadata.name in blueprints/authentik/mediastack-portal.yaml
+AUTHENTIK_BLUEPRINT="Mediastack - Portal"   # metadata.name in services/authentik/blueprints/mediastack-portal.yaml
 AUTHENTIK_JOIN_FLOW=mediastack-join          # its sign-up flow's slug (the invitation links)
 
 authentik_portal() { echo "https://$(env_get AUTHENTIK_HOST portal).$(env_get TRAEFIK_DOMAIN)"; }   # where people go
@@ -105,12 +105,12 @@ authentik_blueprints_sync() { # the worker applies what is in CONFIG_ROOT/authen
     local dst uid f n
     dst="$(authentik_dir)/blueprints"; uid=$(env_get AUTHENTIK_UID)
     sudo install -d -o "$uid" -g mediacenter -m 755 "$dst"
-    for f in "$SCRIPT_DIR"/blueprints/authentik/*.yaml; do
+    for f in "$SCRIPT_DIR"/services/authentik/blueprints/*.yaml; do
         sudo cmp -s "$f" "$dst/${f##*/}" || { sudo install -o "$uid" -g mediacenter -m 644 "$f" "$dst/${f##*/}"; n=1; }
     done
     # a blueprint mediastack no longer ships leaves with it (the folder is ours alone)
     for f in $(sudo find "$dst" -maxdepth 1 -name '*.yaml' -printf '%f\n'); do
-        [[ -e "$SCRIPT_DIR/blueprints/authentik/$f" ]] || { sudo rm -f "$dst/$f"; n=1; }
+        [[ -e "$SCRIPT_DIR/services/authentik/blueprints/$f" ]] || { sudo rm -f "$dst/$f"; n=1; }
     done
     [[ -n "${n:-}" ]] && info "authentik: portal setup files updated — its worker applies them on change (check: ./mediastack.sh wire authentik)"
     return 0
@@ -167,7 +167,7 @@ authentik_blueprint_status() { # -> successful | warning | error | … | outdate
     local inst mine
     inst=$(authentik_blueprint_instance 2>&1) || { echo "$inst"; return 0; }
     [[ -n "$inst" ]] || { echo ""; return 0; }
-    mine=$(sha512sum "$SCRIPT_DIR/blueprints/authentik/mediastack-portal.yaml" | cut -d' ' -f1)
+    mine=$(sha512sum "$SCRIPT_DIR/services/authentik/blueprints/mediastack-portal.yaml" | cut -d' ' -f1)
     if [[ "$(jq -r '.last_applied_hash // ""' <<<"$inst")" != "$mine" ]]; then
         # a failed apply keeps the previous version's hash: its status says it failed
         [[ "$(jq -r '.status' <<<"$inst")" == error ]] && { echo error; return 0; }
@@ -372,7 +372,7 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                 "") warn "authentik has not applied mediastack's portal setup yet (it does within minutes of starting): ./mediastack.sh wire authentik" ;;
                 outdated) warn "authentik runs an earlier version of mediastack's portal setup — apply the current one: ./mediastack.sh wire authentik" ;;
                 *) d_fail "authentik rejected mediastack's portal setup ($st): $(authentik_blueprint_why | tr '\n' ' ')" \
-                       "groups, sign-up and LDAP may be missing or incomplete" "fix the entry named above in blueprints/authentik/, then: ./mediastack.sh up && ./mediastack.sh wire authentik" ;;
+                       "groups, sign-up and LDAP may be missing or incomplete" "fix the entry named above in services/authentik/blueprints/, then: ./mediastack.sh up && ./mediastack.sh wire authentik" ;;
             esac
             local dup
             if dup=$(authentik_email_dupes); then

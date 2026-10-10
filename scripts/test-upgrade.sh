@@ -84,9 +84,9 @@ load_env() { :; }; provision() { :; }; vpn_gen() { :; }
 CHANGED=""; PENDING=""
 git() { [[ "$1" == diff ]] && printf '%s\n' "$CHANGED"; }
 compose_pending() { [[ -z "$PENDING" ]] || printf '%s\n' $PENDING; }
-CHANGED="compose.d/apprise.yml"; PENDING=""
+CHANGED="services/apprise/compose.yml"; PENDING=""
 [[ "$(upgrade_finish x)" == *"nothing to apply"* ]] || fail_ "a comment-only fragment change must not ask for up"; pass
-CHANGED="compose.d/radarr.yml"; PENDING="radarr"
+CHANGED="services/radarr/compose.yml"; PENDING="radarr"
 [[ "$(upgrade_finish x)" == *"Apply with ./mediastack.sh up — it changes: radarr"* ]] || fail_ "a real change must name what up changes"; pass
 CHANGED="docs/x.md"; PENDING=""
 [[ "$(upgrade_finish x)" == *"Docs/templates only"* ]] || fail_ "docs-only"; pass

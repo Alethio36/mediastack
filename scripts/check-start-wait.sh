@@ -3,7 +3,7 @@
 # every healthcheck's Docker verdict window, start_period + interval x retries;
 # otherwise a wait FAILs a service Docker hasn't judged yet. Every block
 # counts: an inline `healthcheck:` and a top-level `x-*:` anchor one or more
-# services point at (compose.d/authentik.yml has both). Durations are plain
+# services point at (services/authentik/compose.yml has both). Durations are plain
 # seconds ("60s") — anything else fails loud here rather than being silently
 # skipped.
 set -euo pipefail
@@ -13,7 +13,7 @@ wait=$(sed -nE 's/^START_WAIT=([0-9]+).*/\1/p' mediastack.sh)
 [[ -n "$wait" ]] || { echo "ERROR START_WAIT not found in mediastack.sh" >&2; exit 1; }
 
 max=0 worst="" rc=0
-for f in compose.d/*.yml; do
+for f in services/*/compose.yml; do
     # one line per block: "<name> <interval> <retries> <start_period>" ("-" = unset)
     while read -r name iv rt sp; do
         for d in "$iv" "$sp"; do

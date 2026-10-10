@@ -15,7 +15,7 @@ condition that would reopen it.
   entry point — a finite set of validated, idempotent verbs. Operations go
   through it, never raw `docker compose` mid-session (that is the VPN safety
   boundary).
-- **Modular by service.** One `compose.d/` fragment per service, explicitly
+- **Modular by service.** One folder per service under `services/` (its fragment, `compose.yml`), explicitly
   included; user services live in `custom/compose.d/` (one file each) and
   changes to shipped ones in `custom/override.yml` — both survive upgrades.
 - **Safe by construction.** VPN-gated, leak-tested torrent path; a front door
@@ -34,7 +34,7 @@ below, these are settled, not exploratory.
 
 ### Shards — the unit of isolation
 
-The stack is organised into **shards**: one `compose.d/` fragment per shard.
+The stack is organised into **shards**: one `services/<name>/` folder per shard (its fragment, `compose.yml`).
 
 - **A single-container service is its own shard.**
 - **A multi-container service is a single shard** when every extra container
@@ -381,7 +381,7 @@ all built; what each still leaves open is noted below.
      stopped PostgreSQL copies consistently). The account model is either/or,
      declared by `mediastack.conflicts`: `enable` refuses the second,
      `configure` asks which one, doctor fails both enabled.
-  3. *Done:* the portal's setup as a blueprint (`blueprints/authentik/`,
+  3. *Done:* the portal's setup as a blueprint (`services/authentik/blueprints/`,
      applied by the worker from a copy `up` keeps current): groups `media-users`
      and `admins`, sign-up by invitation only (username, password, name, email —
      all required) creating *internal* non-admin users in `media-users`, the

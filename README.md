@@ -279,7 +279,7 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
 
 | Where | What | Who writes it |
 |---|---|---|
-| repo root | the code (`mediastack.sh`, `lib/`, `compose.d/`, `docs/`) | the project — `upgrade` replaces it |
+| repo root | the code (`mediastack.sh`, `lib/`, `services/` — one folder per service, `docs/`) | the project — `upgrade` replaces it |
 | `.env` | every setting | you (and `configure`) |
 | `custom/` | `override.yml` (changes to shipped services), `compose.d/` (your own services, one file each), `proxy.d/` (your own Traefik routes), `trash-overrides.yml` | you — never touched by the script's upgrades, saved in every restore point |
 | `local/` | the VPN overlay, pinned images, `.env` backups (the first and the newest 9), a marker while a backup has services stopped | the script — delete it and it is rebuilt (pins and backups excepted) |
@@ -351,7 +351,7 @@ service into `custom/compose.d/<name>.yml` — untracked, upgrade-safe, yours
 to extend (a file can hold the database an app needs too) — then enables
 and starts it and prints its URL. Its HTTPS route and VPN membership are generated like a
 shipped service's (`vpn <name> on|off` works immediately). Never add
-services to `compose.d/` or edit `docker-compose.yml`: those are the repo's
+services to `services/` or edit `docker-compose.yml`: those are the repo's
 territory and local changes there block `upgrade` by design.
 
 ## Notifications (Apprise)

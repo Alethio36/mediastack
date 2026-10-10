@@ -90,18 +90,18 @@ got=$(authentik_step 2026.8 2026.5)
 [[ "$(authentik_release_of 2026.8.3)" == 2026.8 ]] || fail_ "release from a version"; pass
 if authentik_release_of ghcr.io/goauthentik/server:latest >/dev/null; then fail_ "'latest' names no release"; fi; pass
 # the fragment's tag is a release the list knows (so a fresh install can start)
-tag=$(awk '/image: ghcr.io\/goauthentik\/server:/ { sub(/.*:/, ""); print; exit }' compose.d/authentik.yml)
+tag=$(awk '/image: ghcr.io\/goauthentik\/server:/ { sub(/.*:/, ""); print; exit }' services/authentik/compose.yml)
 [[ " ${AUTHENTIK_RELEASES[*]} " == *" $(authentik_release_of "$tag") "* ]] || fail_ "the fragment's tag $tag is not in AUTHENTIK_RELEASES"; pass
-[[ "$(grep -c "image: ghcr.io/goauthentik/server:$tag$" compose.d/authentik.yml)" == 2 ]] || fail_ "server and worker must run the same tag"; pass
-grep -q "image: ghcr.io/goauthentik/ldap:$tag$" compose.d/authentik.yml || fail_ "the LDAP outpost must run the server's release (authentik requires it)"; pass
+[[ "$(grep -c "image: ghcr.io/goauthentik/server:$tag$" services/authentik/compose.yml)" == 2 ]] || fail_ "server and worker must run the same tag"; pass
+grep -q "image: ghcr.io/goauthentik/ldap:$tag$" services/authentik/compose.yml || fail_ "the LDAP outpost must run the server's release (authentik requires it)"; pass
 # the outpost starts once the server is ready: its startup backoff is uncapped,
 # so a late first fetch outlives its start period (6 Oct 2026)
-sed -n '/^  authentik-ldap:/,/^  authentik-db:/p' compose.d/authentik.yml > "$T/ldap"
+sed -n '/^  authentik-ldap:/,/^  authentik-db:/p' services/authentik/compose.yml > "$T/ldap"
 grep -q '/-/health/ready/' "$T/ldap" && grep -q 'exec /ldap$' "$T/ldap" \
     || fail_ "the LDAP outpost must wait for the server's readiness, then exec /ldap"; pass
 # doctor's log-noise count: a boot's info/warn lines are not errors, a level is
 # (one start matched the word "error" ~26 times and tripped the 25/24h warning)
-re=$(sed -n "s/^ *mediastack\.errors: '\(.*\)'\$/\1/p" compose.d/authentik.yml)
+re=$(sed -n "s/^ *mediastack\.errors: '\(.*\)'\$/\1/p" services/authentik/compose.yml)
 [[ -n "$re" ]] || fail_ "the authentik server declares no mediastack.errors pattern"; pass
 saved=$RENDERED_JSON
 RENDERED_JSON=$(jq -n --arg re "$re" '{services:{authentik:{labels:{"mediastack.errors":$re}},plain:{labels:{}}}}')
@@ -114,11 +114,11 @@ real='{"event": "Task failed", "level": "error", "logger": "authentik.tasks"}'
 [[ "$(log_errors plain <<<"$boot")" == 3 ]] || fail_ "a service with no pattern keeps the default (any line naming an error)"; pass
 # every container in the shard counts by its own pattern; doctor reads the members too
 for m in authentik-worker authentik-ldap authentik-db; do
-    sed -n "/^  $m:/,/^  [a-z-]*:\$/p" compose.d/authentik.yml | grep -q 'mediastack.errors:' || fail_ "$m declares no mediastack.errors"; pass
+    sed -n "/^  $m:/,/^  [a-z-]*:\$/p" services/authentik/compose.yml | grep -q 'mediastack.errors:' || fail_ "$m declares no mediastack.errors"; pass
 done
 grep -q 'for s in $(svc_shard $(svc_enabled_managed)); do' <(awk '/^_doctor_runtime_audit\(\)/,/^}/' lib/doctor.sh) \
     || fail_ "doctor's log-noise check covers shard members"; pass
-re=$(sed -n "/^  authentik-db:/,/^  [a-z-]*:\$/p" compose.d/authentik.yml | sed -n "s/^ *mediastack\.errors: '\(.*\)'\$/\1/p")
+re=$(sed -n "/^  authentik-db:/,/^  [a-z-]*:\$/p" services/authentik/compose.yml | sed -n "s/^ *mediastack\.errors: '\(.*\)'\$/\1/p")
 RENDERED_JSON=$(jq -n --arg re "$re" '{services:{"authentik-db":{labels:{"mediastack.errors":$re}}}}')
 pg='2026-10-08 03:09:53.702 PDT [1] LOG:  database system is ready to accept connections
 2026-10-08 03:10:01.000 PDT [9] ERROR:  relation "x" does not exist
@@ -171,8 +171,8 @@ before=$(cat "$ENV_FILE"); rm -f "$T/info"; _configure_selfheal
 grep -q '^    _configure_selfheal' <(sed -n '/^provision() {/,/^}/p' mediastack.sh) \
     || fail_ "provision (up, enable) must allocate new services' UIDs"; pass
 
-# ---- the portal's setup (blueprints/authentik/) ----
-bp=blueprints/authentik/mediastack-portal.yaml
+# ---- the portal's setup (services/authentik/blueprints/) ----
+bp=services/authentik/blueprints/mediastack-portal.yaml
 grep -q "^  name: $AUTHENTIK_BLUEPRINT\$" "$bp" || fail_ "the blueprint's name must be AUTHENTIK_BLUEPRINT ($AUTHENTIK_BLUEPRINT)"; pass
 grep -q "^      slug: $AUTHENTIK_JOIN_FLOW\$" "$bp" || fail_ "the sign-up flow's slug must be AUTHENTIK_JOIN_FLOW"; pass
 # household members are internal (external users never see the app dashboard), in media-users
@@ -187,7 +187,7 @@ sed -n '/name: mediastack-join-email/,/^  - /p' "$bp" | grep -q 'required: true'
 sed -n '/name: mediastack-join-credentials/,/^  - /p' "$bp" | grep -c '!KeyOf field-' | grep -qx 6 \
     || fail_ "sign-up is one page: all six fields on one stage"; pass
 [[ "$(grep -A1 'target: !KeyOf flow-join' "$bp" | grep -c 'stage: !KeyOf stage-')" == 4 ]] || fail_ "four stages bound to sign-up: invitation, the page, write, login"; pass
-sed -n '/^  authentik-worker:/,/^  authentik-db:/p' compose.d/authentik.yml > "$T/worker"
+sed -n '/^  authentik-worker:/,/^  authentik-db:/p' services/authentik/compose.yml > "$T/worker"
 grep -q 'MEDIASTACK_PORTAL_TITLE: ${PORTAL_TITLE:-Mediastack}' "$T/worker" && grep -q 'MEDIASTACK_PORTAL_URL:' "$T/worker" \
     || fail_ "the worker passes the portal's name and address to the blueprint"; pass
 grep -q -- '- ${CONFIG_ROOT}/authentik/blueprints:/blueprints/mediastack:ro' "$T/worker" \
@@ -231,7 +231,7 @@ base() { # base CURRENT OURS -> the PATCH body sent, or "none"
     wire_authentik >/dev/null
     if grep -q '^PATCH' "$T/calls"; then grep '^PATCH' "$T/calls" | cut -d' ' -f3-; else echo none; fi
 }
-BP_CUR=$(sha512sum blueprints/authentik/mediastack-portal.yaml | cut -d' ' -f1)
+BP_CUR=$(sha512sum services/authentik/blueprints/mediastack-portal.yaml | cut -d' ' -f1)
 [[ "$(base "" "")" == '{"base_url":"https://portal.media.example.com"}' ]] || fail_ "unset: set it"; pass
 [[ "$(base "https://old.media.example.com" "https://old.media.example.com")" == *portal.media.example.com* ]] || fail_ "still ours (a renamed host): re-point it"; pass
 [[ "$(base "https://sso.mine.net" "")" == none ]] || fail_ "set in authentik's UI: never touched"; pass
@@ -410,7 +410,7 @@ printf 'TRAEFIK_ADDRESS=172.31.250.2\n' > "$ENV_FILE"
 svc_enabled() { [[ "$1" == authentik && -n "${AK_ON:-}" ]]; }
 AK_ON=1; gate_bind_sync >/dev/null; [[ "$(env_get MEDIASTACK_GATE_TRUST)" == 172.31.250.2/32 ]] || fail_ "trust: Traefik only"; pass
 AK_ON='';  gate_bind_sync >/dev/null; [[ "$(env_get MEDIASTACK_GATE_TRUST)" == "" ]] || fail_ "no portal: trust nobody"; pass
-grep -q 'ND_EXTAUTH_TRUSTEDSOURCES=${MEDIASTACK_GATE_TRUST:-}' compose.d/navidrome.yml || fail_ "Navidrome trusts exactly MEDIASTACK_GATE_TRUST"; pass
+grep -q 'ND_EXTAUTH_TRUSTEDSOURCES=${MEDIASTACK_GATE_TRUST:-}' services/navidrome/compose.yml || fail_ "Navidrome trusts exactly MEDIASTACK_GATE_TRUST"; pass
 for AK_ON in 1 ''; do
     mw=$(traefik_gate_middleware)
     [[ "$mw" == *"mediastack-strip:"*'X-authentik-username: ""'* ]] || fail_ "the strip middleware exists in both account models"; pass
@@ -469,8 +469,8 @@ rm -f "$T/calls"; wire_authentik_ldap_token >/dev/null
 AK_ON=1; svc_enabled() { [[ "$1" == authentik && -n "${AK_ON:-}" ]]; }
 grep -q 'mediastack-ldap-allow:' lib/edge.sh && grep -q 'sourceRange: \["$(env_get MEDIASTACK_SUBNET 172.31.250.0/24)"\]' lib/edge.sh \
     || fail_ "the LDAP route answers the stack network only"; pass
-grep -q 'traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"' compose.d/authentik.yml || fail_ "the LDAP route carries the allow-list"; pass
-bp=blueprints/authentik/mediastack-portal.yaml
+grep -q 'traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"' services/authentik/compose.yml || fail_ "the LDAP route carries the allow-list"; pass
+bp=services/authentik/blueprints/mediastack-portal.yaml
 sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'mfa_support: false' || fail_ "LDAP binds: no MFA prompt (TV apps cannot answer one)"; pass
 sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'authorization_flow: !KeyOf flow-ldap' \
     || fail_ "the outpost binds through authorization_flow — it must be the LDAP bind flow (found live)"; pass
@@ -652,14 +652,14 @@ ABS_PW_REFUSE=false; ABS_ROOT_LINK=false; rm -f "$T/calls"
 abs_root_unlink tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "an unlinked root: nothing to do"; pass
 
 # ---- sign-up: a username the apps would confuse is refused ----
-grep -q 'MEDIASTACK_RESERVED_USERNAMES: ${ABS_ADMIN_USER:-},${JELLYFIN_ADMIN_USER:-},${KAVITA_ADMIN_USER:-}$' compose.d/authentik.yml \
+grep -q 'MEDIASTACK_RESERVED_USERNAMES: ${ABS_ADMIN_USER:-},${JELLYFIN_ADMIN_USER:-},${KAVITA_ADMIN_USER:-}$' services/authentik/compose.yml \
     || fail_ "the worker gets the stack's own app accounts to reserve"; pass
-sed -n '/name: mediastack-join-credentials/,/fields:/p' blueprints/authentik/mediastack-portal.yaml | grep -q '!KeyOf policy-join-username' \
+sed -n '/name: mediastack-join-credentials/,/fields:/p' services/authentik/blueprints/mediastack-portal.yaml | grep -q '!KeyOf policy-join-username' \
     || fail_ "the sign-up page validates the username with the policy"; pass
 # the policy's own expression, run with authentik's context stubbed: reserved names
 # (any case, padded), and another person's name in another case
 awk '/name: mediastack-join-username-free/{f=1} f&&/^        - \|/{e=1; next} e&&/^        - !Env/{exit} e{sub(/^          /,""); print}' \
-    blueprints/authentik/mediastack-portal.yaml > "$T/expr.py"
+    services/authentik/blueprints/mediastack-portal.yaml > "$T/expr.py"
 [[ -s "$T/expr.py" ]] || fail_ "the policy's expression was not found"
 python3 - "$T/expr.py" <<'PY' || fail_ "the sign-up username policy's verdicts"
 import sys, types
@@ -688,12 +688,12 @@ PY
 pass
 
 # ---- Kavita: the stack's admin, sign-in through the portal, admin sync ----
-grep -q '"127.0.0.1:${KAVITA_PORT:-5000}:5000"' compose.d/kavita.yml || fail_ "Kavita is published on 127.0.0.1 only (the script's way in)"; pass
-grep -q 'MEDIASTACK_KAVITA_CLIENT_SECRET: ${AUTHENTIK_KAVITA_CLIENT_SECRET}$' compose.d/authentik.yml \
-    && grep -q 'MEDIASTACK_KAVITA_URL: https://${KAVITA_HOST:-books}.' compose.d/authentik.yml \
+grep -q '"127.0.0.1:${KAVITA_PORT:-5000}:5000"' services/kavita/compose.yml || fail_ "Kavita is published on 127.0.0.1 only (the script's way in)"; pass
+grep -q 'MEDIASTACK_KAVITA_CLIENT_SECRET: ${AUTHENTIK_KAVITA_CLIENT_SECRET}$' services/authentik/compose.yml \
+    && grep -q 'MEDIASTACK_KAVITA_URL: https://${KAVITA_HOST:-books}.' services/authentik/compose.yml \
     && grep -q 'AUTHENTIK_KAVITA_CLIENT_SECRET; do' lib/authentik.sh \
     || fail_ "Kavita's client secret: generated, and handed to the blueprint with its address"; pass
-sed -n '/name: mediastack-oidc-kavita/,/^  - model/p' blueprints/authentik/mediastack-portal.yaml > "$T/kav"
+sed -n '/name: mediastack-oidc-kavita/,/^  - model/p' services/authentik/blueprints/mediastack-portal.yaml > "$T/kav"
 grep -q 'client_id: mediastack-kavita' "$T/kav" && grep -q 'signing_key: !Find' "$T/kav" \
    && grep -q '"%s/signin-oidc"' "$T/kav" && grep -q '"%s/signout-callback-oidc"' "$T/kav" \
    && grep -q 'grant_types: \[authorization_code, refresh_token\]' "$T/kav" \
@@ -949,7 +949,7 @@ AK_TYPE=internal; AK_ACTIVE=false; rm -f "$T/calls"; out=$( (authentik_recover "
 [[ "$out" == *"deactivated"* ]] && ! grep -q '^DELETE' "$T/calls" || fail_ "a deactivated account: deliberate, not a lockout — nothing cleared, no link"; pass
 
 # the blueprint's OIDC provider for it
-sed -n '/name: mediastack-oidc-audiobookshelf/,/^  - model/p' blueprints/authentik/mediastack-portal.yaml > "$T/abs"
+sed -n '/name: mediastack-oidc-audiobookshelf/,/^  - model/p' services/authentik/blueprints/mediastack-portal.yaml > "$T/abs"
 grep -q 'client_id: mediastack-audiobookshelf' "$T/abs" && grep -q 'signing_key: !Find' "$T/abs" \
    && grep -q '/auth/openid/callback' "$T/abs" && grep -q '/auth/openid/mobile-redirect' "$T/abs" \
     || fail_ "the OIDC provider: its client ID, a signing key (RS256), web and app redirects"; pass
@@ -983,7 +983,7 @@ out=$(acc "sonarr,wizarr,jellyfin" '0\n3\n\n'); has "$out" authentik && ! has "$
 out=$(acc "" '1\n7\n0\n1\n'); [[ "$out" == *"FAIL Pick 1-3."*"FAIL Nothing to keep."*"OK Accounts: none"* ]] || fail_ "a bad choice, and 0 with nothing to keep, are asked again: $out"; pass
 
 # ---- a person's email is theirs: Kavita (and ROMM) sign people in by it (8 Oct 2026) ----
-grep -q 'User.objects.filter(email__iexact=email).exists()' blueprints/authentik/mediastack-portal.yaml \
+grep -q 'User.objects.filter(email__iexact=email).exists()' services/authentik/blueprints/mediastack-portal.yaml \
     || fail_ "sign-up refuses an email another account has"; pass
 # self-service: email and username stay admin-only
 idw() { SET=$1; rm -f "$T/calls"; ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"; [[ "$1" == GET ]] && echo "$SET"; return 0; }
