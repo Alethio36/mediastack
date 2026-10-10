@@ -34,7 +34,7 @@ declare -A SEERR_EVENT_BIT=(
     [ISSUE_RESOLVED]=1024 [ISSUE_REOPENED]=2048 [MEDIA_AUTO_REQUESTED]=4096
 )
 # the payload Seerr sends: its own wording, the event name as the tag
-# shellcheck disable=SC2034  # these three are read by wire_seerr (lib/integrations.sh)
+# shellcheck disable=SC2034  # these three are read by wire_seerr (services/seerr/seerr.sh)
 SEERR_HUB_PAYLOAD='{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"{{notification_type}}","type":"info"}'
 # every template wire seerr wrote before (tag "activity", the stream before
 # ops; then "ops"): a template mediastack wrote is mediastack's to update —

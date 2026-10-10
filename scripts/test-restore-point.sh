@@ -176,7 +176,7 @@ backup_take() { echo "TAKE $1|$2"; }
 ( cmd_backup --note ) >/dev/null 2>&1 && fail_ "--note without text is refused"; pass
 ( cmd_backup --bogus ) >/dev/null 2>&1 && fail_ "an unknown argument is refused"; pass
 grep -q 'backup_take update ""' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) || fail_ "a full update's point is kind 'update'"; pass
-grep -q 'backup_take manual "before the first wire"' lib/integrations.sh || fail_ "the first wire's point is manual, with a note"; pass
+grep -q 'backup_take manual "before the first wire"' lib/wire.sh || fail_ "the first wire's point is manual, with a note"; pass
 grep -q 'point_record "$dest" update-scoped' <(awk '/^preupdate_backup\(\)/,/^}/' lib/backup.sh) || fail_ "a scoped point is kind 'update-scoped'"; pass
 
 # ---- backup list ----

@@ -78,7 +78,7 @@ the apps that call it, never the other way round.
 
 That happens by itself: `vpn` marks the service (only when its side really
 changes), and the next `up` re-runs the `wire` steps that write its address —
-`WIRE_CALLERS` in `lib/integrations.sh` lists who calls whom. For example,
+`WIRE_CALLERS` in `lib/addr.sh` lists who calls whom. For example,
 moving apprise re-points the arrs', Prowlarr's, cleanuparr's and seerr's
 notifications. Only addresses mediastack wrote are changed; one you set by hand
 is reported and left alone. If a re-point fails, the mark stays: the next `up`

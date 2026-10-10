@@ -135,7 +135,7 @@ eq "hand-set direction kept"    "$(jq -r '.fields[] | select(.name=="baseUrl") |
 # static guard: wiring writes addresses only through svc_addr/svc_host — the
 # exceptions are the script's own host-side API helpers (built on svc_hostport)
 # and addr_stale's recogniser for the old forms it re-points
-if grep -nE 'localhost|127\.0\.0\.1|gluetun:' lib/integrations.sh lib/trash.sh lib/access.sh \
+if grep -nE 'localhost|127\.0\.0\.1|gluetun:' lib/wire.sh lib/addr.sh services/*/*.sh lib/trash.sh lib/access.sh \
         | grep -v 'svc_hostport' | grep -vE '^[^:]+:[0-9]+:\s*#' \
         | grep -vF '=~ ^(localhost|127\.0\.0\.1|gluetun|'; then   # addr_stale's recogniser for old addresses
     fail_ "a hard-coded app-to-app address is back (above) — use svc_addr / svc_host"

@@ -88,6 +88,8 @@ CHANGED="services/apprise/compose.yml"; PENDING=""
 [[ "$(upgrade_finish x)" == *"nothing to apply"* ]] || fail_ "a comment-only fragment change must not ask for up"; pass
 CHANGED="services/radarr/compose.yml"; PENDING="radarr"
 [[ "$(upgrade_finish x)" == *"Apply with ./mediastack.sh up — it changes: radarr"* ]] || fail_ "a real change must name what up changes"; pass
+CHANGED="services/kavita/kavita.sh"; PENDING=""
+[[ "$(upgrade_finish x)" == *"New tooling is live"* ]] || fail_ "a service's code is tooling"; pass
 CHANGED="docs/x.md"; PENDING=""
 [[ "$(upgrade_finish x)" == *"Docs/templates only"* ]] || fail_ "docs-only"; pass
 
