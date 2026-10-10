@@ -12,6 +12,8 @@
 #   * an arr's hub entry carries mediastack's tag (ops): --verify names a stale
 #     one, wire re-tags it and changes nothing else; mediastack's own writes
 #     to it skip the app's test (forceSave), a download client's do not
+#   * Apprise defaults outside the VPN; the schema-32 migration marks its
+#     callers for re-pointing only where it actually moves
 #
 #   scripts/test-notify.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -161,5 +163,20 @@ arr_repoint --force http://h/api/v3 k notification "$notes" mediastack-apprise "
 : > "$T/calls"
 arr_repoint http://h/api/v3 k notification "$notes" mediastack-apprise "serverUrl=http://apprise:8000" >/dev/null
 [[ "$(cat "$T/calls")" == "PUT http://h/api/v3/notification/7" ]] || fail_ "without --force the app tests as before: $(cat "$T/calls")"; pass
+
+# ---- Apprise runs outside the VPN by default (schema 32) ----
+# The fragment's default moved; an install following the default moves at the
+# next `up`, so the migration marks its callers for re-pointing — as `vpn
+# apprise off` would. An explicit choice, or Apprise not enabled: no mark.
+[[ "$(sed -n 's/^ *mediastack\.vpn: *"\(.*\)"$/\1/p' services/apprise/compose.yml)" == false ]] \
+    || fail_ "Apprise's fragment must default outside the VPN"; pass
+# shellcheck disable=SC1090  # the real helpers again: svc_enabled was stubbed above
+source "$lib"; STATE_DIR=$T/state; LOCAL_DIR=$T
+mig() { : > "$ENV_FILE"; printf '%s\n' "$@" > "$ENV_FILE"; rm -rf "$STATE_DIR"; migrate_env_31_to_32 >/dev/null; state_get WIRE_REPOINT; }
+ENV_FILE=$T/env
+[[ "$(mig COMPOSE_PROFILES=gluetun,apprise,radarr)" == apprise ]] || fail_ "following the default: its callers are marked"; pass
+[[ -z "$(mig COMPOSE_PROFILES=gluetun,apprise APPRISE_VPN=true)" ]] || fail_ "an explicit 'inside' stays, nothing to re-point"; pass
+[[ -z "$(mig COMPOSE_PROFILES=gluetun,apprise APPRISE_VPN=false)" ]] || fail_ "already outside: nothing to re-point"; pass
+[[ -z "$(mig COMPOSE_PROFILES=gluetun,radarr)" ]] || fail_ "Apprise not enabled: nothing to re-point"; pass
 
 echo "OK notify: $checks checks"

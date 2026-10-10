@@ -18,10 +18,17 @@ off its recommendation with `*`). `leak-test` audits the live result.
 The acquisition chain runs inside gluetun; the serving chain does not.
 
 * **Inside (default):** qBittorrent, Deluge, Transmission, the arrs (Sonarr,
-  Sonarr-Anime, Radarr, Radarr-4K, Lidarr, Prowlarr, Bazarr), LazyLibrarian,
-  Apprise.
-* **Outside (default):** Audiobookshelf (toggleable — see below) and every
-  other serving/infra service.
+  Sonarr-Anime, Radarr, Radarr-4K, Lidarr, Prowlarr, Bazarr), LazyLibrarian.
+* **Outside (default):** Apprise and Audiobookshelf (both toggleable — see
+  below) and every other serving/infra service.
+
+Apprise sits outside on purpose (inside until schema 32). Inside, an alert
+that the tunnel is down needed the tunnel; a degraded tunnel made deliveries
+fail although they arrived (duplicates, apps switching their notifications
+off); and posting through the tunnel tied the address your downloads use to
+your notification account. The tunnel never hid what a notification says —
+the service you notify reads it either way; for that, point the `ops` stream
+at an endpoint you host yourself. `vpn apprise on` moves it back in.
 * **Pinned inside, not toggleable:** FlareSolverr and Recyclarr. Both are
   reached by their consumers *inside* the namespace (Prowlarr → FlareSolverr;
   Recyclarr → the arrs on `localhost`), so moving them out would break those

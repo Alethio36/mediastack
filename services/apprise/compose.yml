@@ -4,10 +4,11 @@
 # invites). Your real endpoints (ntfy, Discord, email, ...) are configured
 # once via `wire apprise`.
 #
-# Behind the VPN by default (outbound notifications ride the tunnel; if the
-# tunnel is hard down, push notifications are down with it — the script still
-# logs locally). Toggleable: `vpn apprise off` moves it out, and the next `up`
-# re-points every app that notifies it (docs/vpn-membership.md).
+# Outside the VPN by default: an alert that the tunnel is down must not need
+# the tunnel, and posting through it would tie the address your downloads use
+# to your notification account (docs/vpn-membership.md). Toggleable: `vpn
+# apprise on` moves it in, and the next `up` re-points every app that
+# notifies it.
 
 x-logging: &logging
   driver: json-file
@@ -34,7 +35,7 @@ services:
       mediastack.managed: "true"
       mediastack.port: "8000"
       mediastack.desc: "one notification hub for the whole stack"
-      mediastack.vpn: "true"
+      mediastack.vpn: "false"
       mediastack.vpntoggle: "true"
       mediastack.subdomain: "notify"
       mediastack.auth: "gate"   # no login of its own: behind the portal (mediastack-gate)

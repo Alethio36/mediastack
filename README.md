@@ -432,7 +432,9 @@ Getting an endpoint URL:
 
 For invite notifications, add an agent in Wizarr's UI (Settings ->
 Notifications): type *apprise*, URL
-`apprise://gluetun:8000/mediastack?tags=users`.
+`apprise://apprise:8000/mediastack?tags=users` (`gluetun:8000` if you
+moved Apprise into the VPN; an agent added before schema 32, when it ran
+inside, still says `gluetun:8000` — change it).
 
 Apprise's own UI lives at `https://notify.<your-domain>` (or
 `http://<host>:8000` on the LAN) — that's where stored endpoints are
@@ -443,9 +445,11 @@ its destinations stay yours to configure in Jellyfin's Dashboard ->
 Plugins -> Webhook (WatchState's UI hands you the exact URL to paste per
 backend).
 
-Apprise lives inside the VPN namespace like the arrs, so notifications
-egress through the tunnel. Known property: if the tunnel is hard down,
-push notifications are down with it — the script still logs locally.
+Apprise runs outside the VPN by default, so an alert that the tunnel is down
+still gets out, and your downloads' address is never tied to your
+notification account (why, and how to move it: docs/vpn-membership.md).
+What a notification says is read by the service you send it to either way —
+for the `ops` stream, an endpoint you host yourself keeps it at home.
 
 ## Jellyfin polish (GUI, once)
 
