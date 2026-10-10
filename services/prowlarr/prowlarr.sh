@@ -22,31 +22,39 @@ prowlarr_app_repoint() { # <target> <entry name> <applications JSON> <prowlarr a
     addr_repoint "prowlarr <-> $t" "${was[*]}" "${want[*]}" -- \
         arr_repoint "$purl/api/v1" "$pkey" applications "$cur" "$name" "${fields[@]}"
 }
-prowlarr_download_client() { # manual grabs in prowlarr's UI go to the role's download clients (category 'prowlarr')
-    local key url ver dcs p miss e name impl schema="" tmpl body resp rc=0
-    key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr)
+prowlarr_download_client() { # manual grabs in prowlarr's UI go to the download client (category 'prowlarr')
+    local key url ver base dcs dl miss e name impl schema tmpl body resp p other out
+    key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr); base="$url/api/$ver"
     [[ -n "$key" ]] || { wfail "prowlarr: no ApiKey readable — re-run wire in a minute"; return 1; }
-    dcs=$(api GET "$url/api/$ver/downloadclient" "$key") \
+    dl=$(role_pick download-client)
+    [[ -n "$dl" ]] || { info "prowlarr: no download client enabled"; return 0; }
+    miss=$(role_env_missing "$dl" download-client prowlarr | paste -sd' ' -)
+    [[ -z "$miss" ]] || { info "prowlarr download client $dl pends on its credentials ($miss)"; return 0; }
+    dcs=$(api GET "$base/downloadclient" "$key") \
         || { wfail "prowlarr: could not read its download clients — nothing created [$(oneline "$dcs")]"; return 1; }
-    for p in $(role_providers download-client prowlarr); do
-        miss=$(role_env_missing "$p" download-client prowlarr | paste -sd' ' -)
-        [[ -z "$miss" ]] || { info "prowlarr download client $p pends on its credentials ($miss)"; continue; }
-        e=$(role_entry "$p" download-client prowlarr); name=$(jq -r '.name' <<<"$e"); impl=$(jq -r '.implementation' <<<"$e")
-        if [[ -n "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .id' <<<"$dcs")" ]]; then
-            ok "prowlarr download client $name registered"
-            local dst; dst="$(arr_entry_field "$dcs" "$name" host):$(arr_entry_field "$dcs" "$name" port)"
-            if addr_stale "prowlarr -> $p" "$p" "$dst"; then
-                local -a login; mapfile -t login < <(role_login_fields "$dcs" "$name" "$e")
-                addr_repoint "prowlarr -> $p" "$dst" "$(svc_addr "$p")" -- \
-                    arr_repoint "$url/api/$ver" "$key" downloadclient "$dcs" "$name" \
-                    "host=$(svc_host "$p")" "port=$(svc_cport "$p")" "${login[@]}"
+    e=$(role_entry "$dl" download-client prowlarr); name=$(jq -r '.name' <<<"$e"); impl=$(jq -r '.implementation' <<<"$e")
+    if [[ -n "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .id' <<<"$dcs")" ]]; then
+        ok "prowlarr download client $name registered"
+        local dst; dst="$(arr_entry_field "$dcs" "$name" host):$(arr_entry_field "$dcs" "$name" port)"
+        if addr_stale "prowlarr -> $dl" "$dl" "$dst"; then
+            local -a login; mapfile -t login < <(role_login_fields "$dcs" "$name" "$e")
+            addr_repoint "prowlarr -> $dl" "$dst" "$(svc_addr "$dl")" -- \
+                arr_repoint "$base" "$key" downloadclient "$dcs" "$name" \
+                "host=$(svc_host "$dl")" "port=$(svc_cport "$dl")" "${login[@]}"
+            if (( ! WIRE_DRY )); then
+                dcs=$(api GET "$base/downloadclient" "$key") \
+                    || { wfail "prowlarr: could not re-read its download clients [$(oneline "$dcs")]"; return 1; }
             fi
-            continue
         fi
-        w_would "prowlarr: register $impl as a download client (manual grabs -> category 'prowlarr')" || continue
-        [[ -n "$schema" ]] || schema=$(api GET "$url/api/$ver/downloadclient/schema" "$key" || true)   # soft read: create path only: an empty schema FAILs below, nothing created
+        if [[ "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .enable' <<<"$dcs")" == false ]] \
+            && w_would "prowlarr: switch $name back on — it is the download client"; then
+            out=$(arr_entry_enable "$base" "$key" downloadclient "$dcs" "$name" true) \
+                && ok "prowlarr: $name switched back on" || wfail "prowlarr: switching $name back on was rejected — $(oneline "$out")"
+        fi
+    elif w_would "prowlarr: register $impl as its download client (manual grabs -> category 'prowlarr')"; then
+        schema=$(api GET "$base/downloadclient/schema" "$key" || true)   # soft read: create path only: an empty schema FAILs below, nothing created
         tmpl=$(jq -c --arg i "$impl" '[.[] | select(.implementation == $i)][0] // empty' <<<"$schema" 2>/dev/null)
-        [[ -n "$tmpl" ]] || { wfail "prowlarr: its API offers no $impl client type — is the image very old?"; rc=1; continue; }
+        [[ -n "$tmpl" ]] || { wfail "prowlarr: its API offers no $impl client type — is the image very old?"; return 1; }
         body=$(jq -c --argjson e "$e" '
             .name = $e.name | .enable = true
             | .fields = [ .fields[]
@@ -54,11 +62,19 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go to the role's do
                 | if ($e.fields | has($n)) then .value = $e.fields[$n]
                   elif .name == "category" then .value = "prowlarr"
                   else . end ]' <<<"$tmpl")
-        resp=$(api POST "$url/api/$ver/downloadclient" "$key" "$body") \
+        resp=$(api POST "$base/downloadclient" "$key" "$body") \
             && ok "prowlarr download client $name registered" \
-            || wfail "prowlarr: download client $name rejected: $(head -c200 <<<"$resp")"
+            || { wfail "prowlarr: download client $name rejected: $(head -c200 <<<"$resp")"; return 1; }
+    fi
+    for p in $(role_all_providers download-client prowlarr); do
+        [[ "$p" == "$dl" ]] && continue
+        other=$(role_entry_name "$p" download-client prowlarr)
+        [[ "$(jq -r --arg n "$other" '.[]? | select(.name == $n) | .enable' <<<"$dcs")" == true ]] || continue
+        w_would "prowlarr: switch off '$other' — the download client is $dl" || continue
+        out=$(arr_entry_enable "$base" "$key" downloadclient "$dcs" "$other" false) \
+            && ok "prowlarr: '$other' switched off (kept, not deleted)" || wfail "prowlarr: switching off '$other' was rejected — $(oneline "$out")"
     done
-    return $rc
+    return 0
 }
 
 wire_prowlarr() {

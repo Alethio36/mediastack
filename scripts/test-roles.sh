@@ -7,7 +7,9 @@
 #   * placeholders resolve once: .env values are never read as placeholders
 #     (braces, backslashes and & in a password survive), {self.port} is a number
 #   * providers are the enabled ones, in their priority order; missing
-#     credentials are named
+#     credentials are named; the stack uses one (DOWNLOAD_CLIENT, else the
+#     first), a setting it cannot honour stops it, and its allowed values are
+#     exactly the providers; switching an entry off changes .enable only
 #   * what the consumers send for qBittorrent is what they sent before roles
 #
 #   scripts/test-roles.sh     run (exit 1 on the first failed check)
@@ -72,6 +74,31 @@ printf 'COMPOSE_PROFILES=a,b\n' > "$T/env2"
 [[ -z "$(role_env_missing qbittorrent download-client arr)" ]] || fail_ "credentials present: nothing missing"; pass
 printf 'COMPOSE_PROFILES=qbittorrent\nQBITTORRENT_USER=admin\n' > "$T/env3"
 [[ "$(ENV_FILE=$T/env3 role_env_missing qbittorrent download-client arr)" == QBITTORRENT_PASSWORD ]] || fail_ "a missing credential is named"; pass
+
+# ---- the one the stack uses ----
+[[ "$(role_pick download-client)" == qbittorrent ]] || fail_ "empty setting: the first enabled"; pass
+printf 'COMPOSE_PROFILES=qbittorrent\nDOWNLOAD_CLIENT=qbittorrent\n' > "$T/env4"
+[[ "$(ENV_FILE=$T/env4 role_pick download-client)" == qbittorrent ]] || fail_ "the setting is honoured"; pass
+printf 'COMPOSE_PROFILES=radarr\nDOWNLOAD_CLIENT=qbittorrent\n' > "$T/env5"
+(ENV_FILE=$T/env5 role_pick download-client >/dev/null 2>&1) && fail_ "a setting naming a client that is not enabled must stop wire"; pass
+[[ -z "$(ENV_FILE=$T/env5 role_providers download-client arr)" ]] || fail_ "nothing enabled: no provider"; pass
+# the setting's allowed values are exactly the role's providers, in priority order
+allowed=$(awk -F'\t' '$1 == "DOWNLOAD_CLIENT" {sub(/^enum:/, "", $2); print $2}' lib/env.schema.tsv)
+want=$(for p in $(role_all_providers download-client arr); do printf '%s\t%s\n' "$(jq -r '.priority // 50' "$(role_file "$p" download-client arr)")" "$p"; done | sort -n -k1,1 -k2,2 | cut -f2 | paste -sd'|' -)
+[[ "$allowed" == "$want" ]] || fail_ "DOWNLOAD_CLIENT's enum ($allowed) must list the providers ($want)"; pass
+# switching an entry off or on changes .enable only; off skips the app's test
+api() { echo "$1 $2" >> "$T/calls"; [[ "$1" == PUT ]] && printf '%s' "$4" > "$T/put"; return 0; }
+lst='[{"id":4,"name":"Deluge (mediastack)","enable":true,"fields":[{"name":"password","value":"********"}]}]'
+: > "$T/calls"; arr_entry_enable http://h/api/v3 k downloadclient "$lst" "Deluge (mediastack)" false >/dev/null
+[[ "$(cat "$T/calls")" == "PUT http://h/api/v3/downloadclient/4?forceSave=true" ]] || fail_ "off: one PUT, forceSave: $(cat "$T/calls")"; pass
+[[ "$(jq -c '[.enable, .fields]' "$T/put")" == '[false,[{"name":"password","value":"********"}]]' ]] || fail_ "off changes .enable only: $(cat "$T/put")"; pass
+: > "$T/calls"; arr_entry_enable http://h/api/v3 k downloadclient "$lst" "Deluge (mediastack)" true >/dev/null
+[[ "$(cat "$T/calls")" == "PUT http://h/api/v3/downloadclient/4" ]] || fail_ "on: the app tests the client as it saves: $(cat "$T/calls")"; pass
+arr_entry_enable http://h/api/v3 k downloadclient "$lst" gone true >/dev/null && fail_ "a missing entry is an error"; pass
+for f in services/_arr/arr.sh services/prowlarr/prowlarr.sh services/cleanuparr/cleanuparr.sh; do
+    grep -q 'role_pick download-client' "$f" && grep -q 'role_all_providers download-client' "$f" \
+        || fail_ "$f must wire the picked client and switch the others off"
+done; pass
 
 # ---- what the consumers send for qBittorrent: the same as before roles ----
 cat='movies'; catfield='movieCategory'

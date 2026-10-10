@@ -162,6 +162,10 @@ that consumer reaches it — `services/x/provides/<role>.<consumer>.json`:
   nothing else resolves, and anything that needs a decision is code.
 * **One file per consumer type** of the role (`download-client.arr.json`,
   `.prowlarr.json`, `.cleanuparr.json`); `"priority"` orders the providers.
+* **The stack uses one provider per role:** the role's setting
+  (`DOWNLOAD_CLIENT`), else the first enabled; the others' entries are
+  switched off, never deleted. A new provider joins that setting's `enum:` in
+  `lib/env.schema.tsv`.
 * `scripts/test-roles.sh` fails an unknown role, consumer or placeholder, and
   a provider missing a consumer's file. qBittorrent's are the worked example.
 

@@ -14,6 +14,9 @@
 #   {env.NAME}                            a setting from .env
 ROLES=(download-client)
 ROLE_CONSUMERS=(arr prowlarr cleanuparr)
+# the .env setting naming the provider the stack uses when several are enabled
+# (empty: the first in priority order); the others' entries are switched off
+declare -A ROLE_SETTING=([download-client]=DOWNLOAD_CLIENT)
 
 role_file() { echo "services/$1/provides/$2.$3.json"; }   # role_file PROVIDER ROLE CONSUMER
 
@@ -25,6 +28,38 @@ role_providers() { # role_providers ROLE CONSUMER -> enabled providers with a te
         svc_enabled "$p" || continue
         printf '%s\t%s\n' "$(jq -r '.priority // 50' "$f")" "$p"
     done | sort -n -k1,1 -k2,2 | cut -f2
+}
+
+role_all_providers() { # role_all_providers ROLE CONSUMER -> every provider shipping a template for it, enabled or not
+    local f p
+    for f in services/*/provides/"$1.$2".json; do
+        [[ -e "$f" ]] || continue
+        p=${f#services/}; echo "${p%%/*}"
+    done
+}
+
+role_pick() { # role_pick ROLE -> the one provider the stack uses ("" when none is enabled); dies on a setting it cannot honour
+    local var="${ROLE_SETTING[$1]}" want enabled
+    want=$(env_get "$var")
+    enabled=$(role_providers "$1" "${ROLE_CONSUMERS[0]}")
+    if [[ -n "$want" ]]; then
+        grep -qx "$want" <<<"$enabled" \
+            || die "$var=$want, but $want is not an enabled $1 (enabled: ${enabled//$'\n'/ }) — enable it, or change it: ./mediastack.sh configure"
+        echo "$want"
+    else
+        head -1 <<<"$enabled"
+    fi
+}
+
+role_pick_note() { # role_pick_note ROLE -> one line naming the choice, when there is one to make
+    local chosen others
+    chosen=$(role_pick "$1"); others=$(role_providers "$1" "${ROLE_CONSUMERS[0]}" | grep -vx "$chosen" | paste -sd' ' -)
+    [[ -n "$others" ]] || return 0
+    info "$1: $chosen (also enabled: $others) — change: ./mediastack.sh configure, then: ./mediastack.sh wire"
+}
+
+role_entry_name() { # role_entry_name PROVIDER ROLE CONSUMER -> the name its entry carries in the consumer (no resolving needed)
+    jq -r '.name' "$(role_file "$@")"
 }
 
 role_env_names() { # role_env_names PROVIDER ROLE CONSUMER -> the .env settings its template reads

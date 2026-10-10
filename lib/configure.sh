@@ -362,6 +362,34 @@ key, then paste it below. Country selection works the same for all."
 
 }
 
+_configure_download_client() { # several download clients enabled: the one the arrs, Prowlarr and Cleanuparr use
+    local enabled cur n i c def=1
+    enabled=$(role_providers download-client "${ROLE_CONSUMERS[0]}")
+    n=$(grep -c . <<<"$enabled" || true)
+    cur=$(env_get DOWNLOAD_CLIENT)
+    if (( n < 2 )); then
+        # nothing to choose; a choice naming a client no longer enabled would stop wire
+        if [[ -n "$cur" ]] && ! grep -qx "$cur" <<<"$enabled"; then
+            env_set DOWNLOAD_CLIENT ""; info "DOWNLOAD_CLIENT cleared: $cur is no longer enabled"
+        fi
+        return 0
+    fi
+    explain "Download client" \
+"More than one download client is enabled. The arrs, Prowlarr and Cleanuparr
+send to one of them; the others keep running, their entries switched off
+(kept, not deleted). Change it here any time, then: ./mediastack.sh wire"
+    i=0
+    while read -r c; do
+        i=$((i + 1)); echo "  $i) $c"
+        [[ "$c" == "${cur:-$(head -1 <<<"$enabled")}" ]] && def=$i
+    done <<<"$enabled"
+    ask DL_N "Which one" "$def"
+    [[ "$REPLY_VAL" =~ ^[0-9]+$ ]] && (( REPLY_VAL >= 1 && REPLY_VAL <= n )) || die "expected a number from 1 to $n"
+    c=$(sed -n "${REPLY_VAL}p" <<<"$enabled")
+    env_set DOWNLOAD_CLIENT "$c"
+    ok "download client: $c"
+}
+
 _configure_secrets() {
     # -- secrets: each service generates or asks for its own (in its folder)
     meilisearch_configure_secret
@@ -471,6 +499,7 @@ cmd_configure() {
     _configure_roots
     _configure_selfheal
     _configure_services
+    _configure_download_client
     _configure_vpn
     _configure_secrets
     _configure_schedule

@@ -29,6 +29,14 @@ arr_repoint() { # arr_repoint [--force] <api base> <key> <resource> <list JSON> 
     done
     api PUT "$base/$res/$(jq -r '.id' <<<"$entry")$q" "$key" "$entry"
 }
+arr_entry_enable() { # arr_entry_enable <api base> <key> <resource> <list JSON> <entry name> true|false
+    # PUT the entry back with only .enable changed; switching one off skips the
+    # app's own connection test (forceSave) — the client may well be gone
+    local entry q=""; [[ "$6" == false ]] && q="?forceSave=true"
+    entry=$(jq -c --arg n "$5" --argjson on "$6" '[.[]? | select(.name == $n)][0] // empty | .enable = $on' <<<"$4")
+    [[ -n "$entry" ]] || { echo "entry '$5' is gone"; return 1; }
+    api PUT "$1/$3/$(jq -r '.id' <<<"$entry")$q" "$2" "$entry"
+}
 arr_entry_fields() { # arr_entry_fields <list JSON> <entry name> -> "field=value" lines
     jq -r --arg n "$2" '.[]? | select(.name == $n) | .fields[]? | "\(.name)=\(.value // "" | tostring)"' <<<"$1" 2>/dev/null || true
 }
@@ -177,17 +185,23 @@ operator). Stored in .env (view: credentials)."
             env_set ARR_USER "$auser"; env_set ARR_PASSWORD "$apass"
         fi
     fi
-    # download clients: every enabled provider of the role (lib/roles.sh), by priority
-    local -a dl_ready=(); local p miss
-    for p in $(role_providers download-client arr); do
-        miss=$(role_env_missing "$p" download-client arr | paste -sd' ' -)
-        if [[ -z "$miss" ]]; then dl_ready+=("$p")
-        elif (( WIRE_DRY )); then
-            info "$p: download-client previews pend on its credentials ($miss) — they're created earlier in the same real run"
-        else
-            warn "$p credentials not set ($miss; scoped run?) — its download-client wiring skipped; a full 'wire' sets them"
+    # the download client: the one the role picks (DOWNLOAD_CLIENT, else the
+    # first enabled in priority order — lib/roles.sh); the others' entries
+    # mediastack made are switched off, never deleted
+    local dl miss
+    dl=$(role_pick download-client)
+    role_pick_note download-client
+    if [[ -n "$dl" ]]; then
+        miss=$(role_env_missing "$dl" download-client arr | paste -sd' ' -)
+        if [[ -n "$miss" ]]; then
+            if (( WIRE_DRY )); then
+                info "$dl: download-client previews pend on its credentials ($miss) — they're created earlier in the same real run"
+            else
+                warn "$dl credentials not set ($miss; scoped run?) — download-client wiring skipped; a full 'wire' sets them"
+            fi
+            dl=""
         fi
-    done
+    fi
     local s key url root t catfield cat cur
     for s in $insts; do
         key=$(arr_key "$s")
@@ -213,31 +227,48 @@ operator). Stored in .env (view: credentials)."
         ensure_resource "$rexists" "$s: register root folder $root" \
             "$s: root folder $root registered" "$s: root folder rejected" \
             -- api POST "$url/api/$(arr_apiver "$s")/rootfolder" "$key" "$rbody"
-        # download clients: the role's providers, each with this arr's category
-        (( ${#dl_ready[@]} )) || continue
+        # the download client, with this arr's category
+        [[ -n "$dl" ]] || continue
         cat=$(svc_label "$s" mediastack.category)
         catfield=$(arr_meta "$t" catfield)
-        cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key") \
+        local base; base="$url/api/$(arr_apiver "$s")"
+        cur=$(api GET "$base/downloadclient" "$key") \
             || { wfail "$s: could not read its download clients — nothing created [$(oneline "$cur")]"; continue; }
-        local e name disp dexists dbody
-        for p in "${dl_ready[@]}"; do
-            e=$(role_entry "$p" download-client arr); name=$(jq -r '.name' <<<"$e"); disp=$(jq -r '.implementationName' <<<"$e")
-            dexists=no; [[ -n "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .id' <<<"$cur")" ]] && dexists=yes
-            dbody=$(jq -c --arg cf "$catfield" --arg cat "$cat" '{enable: true, protocol, priority,
-                removeCompletedDownloads, removeFailedDownloads, name, implementation, implementationName, configContract,
-                fields: ([.fields | to_entries[] | {name: .key, value}] + [{name: $cf, value: $cat}])}' <<<"$e")
-            if [[ "$dexists" == yes ]]; then
-                local dst; dst="$(arr_entry_field "$cur" "$name" host):$(arr_entry_field "$cur" "$name" port)"
-                if addr_stale "$s -> $p" "$p" "$dst"; then
-                    local -a login; mapfile -t login < <(role_login_fields "$cur" "$name" "$e")
-                    addr_repoint "$s -> $p" "$dst" "$(svc_addr "$p")" -- \
-                        arr_repoint "$url/api/$(arr_apiver "$s")" "$key" downloadclient "$cur" "$name" \
-                        "host=$(svc_host "$p")" "port=$(svc_cport "$p")" "${login[@]}"
+        local e name disp dexists dbody p other out
+        e=$(role_entry "$dl" download-client arr); name=$(jq -r '.name' <<<"$e"); disp=$(jq -r '.implementationName' <<<"$e")
+        dexists=no; [[ -n "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .id' <<<"$cur")" ]] && dexists=yes
+        dbody=$(jq -c --arg cf "$catfield" --arg cat "$cat" '{enable: true, protocol, priority,
+            removeCompletedDownloads, removeFailedDownloads, name, implementation, implementationName, configContract,
+            fields: ([.fields | to_entries[] | {name: .key, value}] + [{name: $cf, value: $cat}])}' <<<"$e")
+        if [[ "$dexists" == yes ]]; then
+            local dst; dst="$(arr_entry_field "$cur" "$name" host):$(arr_entry_field "$cur" "$name" port)"
+            if addr_stale "$s -> $dl" "$dl" "$dst"; then
+                local -a login; mapfile -t login < <(role_login_fields "$cur" "$name" "$e")
+                addr_repoint "$s -> $dl" "$dst" "$(svc_addr "$dl")" -- \
+                    arr_repoint "$base" "$key" downloadclient "$cur" "$name" \
+                    "host=$(svc_host "$dl")" "port=$(svc_cport "$dl")" "${login[@]}"
+                # the re-point changed the entry: what follows works from what it is now
+                if (( ! WIRE_DRY )); then
+                    cur=$(api GET "$base/downloadclient" "$key") \
+                        || { wfail "$s: could not re-read its download clients [$(oneline "$cur")]"; continue; }
                 fi
             fi
-            ensure_resource "$dexists" "$s: register $disp (category $cat)" \
-                "$s: download client $disp registered" "$s: download client $disp registration failed — check: logs $s" \
-                -- api POST "$url/api/$(arr_apiver "$s")/downloadclient" "$key" "$dbody"
+            if [[ "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .enable' <<<"$cur")" == false ]] \
+                && w_would "$s: switch $disp back on — it is the download client"; then
+                out=$(arr_entry_enable "$base" "$key" downloadclient "$cur" "$name" true) \
+                    && ok "$s: $disp switched back on" || wfail "$s: switching $disp back on was rejected — $(oneline "$out")"
+            fi
+        fi
+        ensure_resource "$dexists" "$s: register $disp (category $cat)" \
+            "$s: download client $disp registered" "$s: download client $disp registration failed — check: logs $s" \
+            -- api POST "$base/downloadclient" "$key" "$dbody"
+        for p in $(role_all_providers download-client arr); do
+            [[ "$p" == "$dl" ]] && continue
+            other=$(role_entry_name "$p" download-client arr)
+            [[ "$(jq -r --arg n "$other" '.[]? | select(.name == $n) | .enable' <<<"$cur")" == true ]] || continue
+            w_would "$s: switch off '$other' — the download client is $dl" || continue
+            out=$(arr_entry_enable "$base" "$key" downloadclient "$cur" "$other" false) \
+                && ok "$s: '$other' switched off (kept, not deleted)" || wfail "$s: switching off '$other' was rejected — $(oneline "$out")"
         done
     done
 }
