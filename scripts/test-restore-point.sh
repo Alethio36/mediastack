@@ -291,11 +291,13 @@ grep -q '^    prowlarr_indexers_retest' <(awk '/^cmd_up\(\)/,/^}/' mediastack.sh
   svc_enabled() { return 0; }; c_state() { echo running; }; svc_cname() { echo "$1"; }
   arr_key() { echo k; }; arr_url() { echo http://p; }; arr_apiver() { echo v1; }
   http_ready() { return 0; }; wait_verdict() { return 0; }
-  api() { echo "$1 $2" >> "$T/rt.calls"; case "$2" in *indexer/testall) printf '%s' "$RT_OUT" ;; *) echo '[]' ;; esac; }
+  api() { echo "$1 $2 timeout=${API_TIMEOUT:-20}" >> "$T/rt.calls"; case "$2" in *indexer/testall) printf '%s' "$RT_OUT" ;; *) echo '[]' ;; esac; }
   : > "$T/rt.calls"; RT_OUT='[{"id":2,"isValid":false},{"id":5,"isValid":true}]'
   out=$(prowlarr_indexers_retest 2>&1)
   [[ "$out" == *"still failing after the start (ids: 2)"* ]] || fail_ "a failing indexer is named: $out"
   grep -q 'indexerproxy/testall' "$T/rt.calls" && grep -q '/indexer/testall' "$T/rt.calls" || fail_ "proxies, then indexers, are re-tested"
+  # a test waits on Cloudflare challenges: api's 20s default timed it out (live)
+  ! grep -qE 'testall timeout=20$' "$T/rt.calls" && grep -qE 'indexer/testall timeout=[0-9]{3}$' "$T/rt.calls" || fail_ "the re-tests get a long timeout: $(cat "$T/rt.calls")"
   RT_OUT='[{"id":2,"isValid":true}]'; [[ "$(prowlarr_indexers_retest 2>&1)" == *"every indexer answers"* ]] || fail_ "all good is said"
   RT_OUT='[]'; [[ "$(prowlarr_indexers_retest 2>&1)" == *"no indexers yet"* ]] || fail_ "none is not 'all good'"
   wait_verdict() { declare -gA VERDICT_WHY=([flaresolverr]="is unhealthy"); return 1; }; : > "$T/rt.calls"

@@ -189,6 +189,7 @@ JSON
     prowlarr_download_client
 }
 
+PROWLARR_TEST_WAIT=300   # seconds a re-test may take: challenges solved one indexer at a time
 prowlarr_indexers_retest() { # after a stack start: once FlareSolverr is up, Prowlarr re-tests its proxies and indexers
     # A cold start fails Prowlarr's first requests (FlareSolverr launches a
     # browser), Prowlarr backs those indexers off, and the arrs report "all
@@ -203,11 +204,13 @@ prowlarr_indexers_retest() { # after a stack start: once FlareSolverr is up, Pro
     key=$(arr_key prowlarr); url="$(arr_url prowlarr)/api/$(arr_apiver prowlarr)"
     [[ -n "$key" ]] || { warn "prowlarr: no API key readable — indexers not re-tested"; return 0; }
     http_ready prowlarr "$url/system/status" '^200$' -H "X-Api-Key: $key" || return 0
+    # a test through FlareSolverr waits on a Cloudflare challenge (up to its
+    # 60s maxTimeout, per indexer): far past api's default 20s (found live)
     if svc_enabled flaresolverr; then
-        out=$(api POST "$url/indexerproxy/testall" "$key" '{}') \
+        out=$(API_TIMEOUT=$PROWLARR_TEST_WAIT api POST "$url/indexerproxy/testall" "$key" '{}') \
             || warn "prowlarr: re-testing its proxies failed — $(oneline "$out")"
     fi
-    out=$(api POST "$url/indexer/testall" "$key" '{}') \
+    out=$(API_TIMEOUT=$PROWLARR_TEST_WAIT api POST "$url/indexer/testall" "$key" '{}') \
         || { warn "prowlarr: re-testing its indexers failed — $(oneline "$out")"; return 0; }
     bad=$(jq -r '[.[]? | select(.isValid == false) | .id] | join(" ")' <<<"$out" 2>/dev/null)
     if [[ "$(jq 'length' <<<"$out" 2>/dev/null)" == 0 ]]; then info "prowlarr: no indexers yet — nothing to re-test"

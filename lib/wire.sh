@@ -37,8 +37,10 @@ w_would() { # w_would "description" -> 0 if execution should proceed
 }
 
 api() { # api METHOD URL APIKEY [json-body] -> body on stdout, rc from http
+    # API_TIMEOUT (seconds, default 20): a call the app answers only after
+    # slow work of its own sets it for that one call (API_TIMEOUT=180 api ...)
     local m="$1" u="$2" k="$3" b="${4:-}" out code
-    out=$(curl -sS -m 20 -X "$m" -H "X-Api-Key: $k" -H "Content-Type: application/json" \
+    out=$(curl -sS -m "${API_TIMEOUT:-20}" -X "$m" -H "X-Api-Key: $k" -H "Content-Type: application/json" \
           ${b:+-d "$b"} -w '\n%{http_code}' "$u" 2>&1) || { echo "$out"; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
