@@ -1,0 +1,10 @@
+{
+  "priority": 3,
+  "name": "transmission",
+  "typeName": "Transmission",
+  "type": "Torrent",
+  "host": "http://{self.addr}",
+  "urlBase": "/transmission",
+  "username": "{env.TRANSMISSION_USER}",
+  "password": "{env.TRANSMISSION_PASSWORD}"
+}

@@ -1,0 +1,18 @@
+{
+  "priority": 3,
+  "name": "Transmission (mediastack)",
+  "implementation": "Transmission",
+  "implementationName": "Transmission",
+  "configContract": "TransmissionSettings",
+  "protocol": "torrent",
+  "removeCompletedDownloads": true,
+  "removeFailedDownloads": true,
+  "fields": {
+    "host": "{self.host}",
+    "port": "{self.port}",
+    "useSsl": false,
+    "urlBase": "/transmission/",
+    "username": "{env.TRANSMISSION_USER}",
+    "password": "{env.TRANSMISSION_PASSWORD}"
+  }
+}

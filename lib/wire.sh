@@ -20,7 +20,7 @@ WIRE_FAILS=0
 # install). To add an integration: append its role here and define a matching
 # wire_<role> function in its service's folder (services/<name>/<name>.sh);
 # CI checks every role has exactly one.
-WIRE_ROLES=(qbit deluge arr prowlarr bazarr apprise cleanuparr lazylibrarian authentik jellyfin seerr wizarr audiobookshelf kavita)
+WIRE_ROLES=(qbit deluge transmission arr prowlarr bazarr apprise cleanuparr lazylibrarian authentik jellyfin seerr wizarr audiobookshelf kavita)
 # roles that write without observing (one big settings blob / blind writeCFG):
 # their dry-run always says "would", so --verify cannot read drift from them
 WIRE_BLIND=(bazarr lazylibrarian seerr)

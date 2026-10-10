@@ -1,0 +1,12 @@
+{
+  "priority": 3,
+  "name": "transmission",
+  "implementation": "Transmission",
+  "fields": {
+    "host": "{self.host}",
+    "port": "{self.port}",
+    "urlBase": "/transmission/",
+    "username": "{env.TRANSMISSION_USER}",
+    "password": "{env.TRANSMISSION_PASSWORD}"
+  }
+}
