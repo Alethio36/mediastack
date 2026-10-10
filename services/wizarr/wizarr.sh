@@ -60,3 +60,16 @@ Paste nothing to skip for now — re-run 'wire wizarr' any time."
         return 1
     fi
 }
+
+wizarr_doctor() { # doctor: apps — its stored API key works ('invite' needs it)
+    local wkey wcode
+    wkey=$(env_get WIZARR_API_KEY)
+    if [[ -z "$wkey" ]]; then
+        warn "wizarr has no stored API key — invites need it: ./mediastack.sh wire wizarr"
+    else
+        wcode=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-API-Key: $wkey" \
+                "$(wizarr_url)/api/invitations" 2>/dev/null || echo 000)
+        [[ "$wcode" =~ ^2 ]] && ok "wizarr API key works ('invite' is ready)" \
+            || d_fail "wizarr rejected the stored API key [HTTP $wcode]" "'invite' cannot mint links" "recreate the key in wizarr's Settings -> API Keys, then: ./mediastack.sh wire wizarr"
+    fi
+}

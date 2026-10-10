@@ -153,18 +153,7 @@ _doctor_permissions() {
             elif [[ -z "$cfgbad" ]]; then ok "$s config ownership OK (write probe skipped: not running)"; fi
         fi
     done
-    # jellysearch must READ jellyfin's config
-    if svc_enabled jellysearch; then
-        local jcn jout jrc
-        jcn=$(svc_cname jellysearch)
-        if [[ $(c_state "$jcn") == running ]]; then
-            jout=$(sudo docker exec "$jcn" test -r /config 2>&1) && jrc=0 || jrc=$?
-            if (( jrc == 0 )); then ok "jellysearch can read jellyfin's config"
-            elif grep -q "executable file not found" <<<"$jout"; then
-                info "jellysearch: image has no probe tooling — skipped"
-            else d_fail "jellysearch cannot read /config inside its container" "search cannot index" "./mediastack.sh fix-perms jellyfin"; fi
-        else info "jellysearch not running — read probe skipped"; fi
-    fi
+    jellysearch_doctor_read
     # artifact sweep
     [[ $(sudo find "$(env_get DATA_ROOT)" -maxdepth 2 -name '*{*}*' 2>/dev/null | wc -l) -gt 0 ]] \
         && warn "literal '{...}' directories under DATA_ROOT — junk from an old installer; safe to remove"
@@ -180,23 +169,11 @@ _doctor_resources() {
         local pct; pct=$(awk '{print $5}' <<<"$line" | tr -d %)
         (( pct >= 90 )) && warn "disk >90%: $line" || ok "disk: $line"
     done
-    # transcodes on the config volume: Jellyfin's default until `wire jellyfin`
-    # points it at /cache; a session that died leaves its segments behind
-    local jt="$croot/jellyfin/data/transcodes" jmb tfs
+    local tfs
     tfs=$(fstype_of "$(env_get TRANSCODE_ROOT)" 2>/dev/null || true)
     [[ "$tfs" =~ ^(nfs|nfs4|cifs|smb3)$ ]] \
         && warn "TRANSCODE_ROOT is on a network share ($tfs) — transcodes cross the wire twice per segment; playback will stutter. Move it to local disk or a tmpfs: ./mediastack.sh configure"
-    if sudo test -d "$jt"; then
-        jmb=$(sudo du -sm "$jt" 2>/dev/null | cut -f1)
-        [[ -n "$jmb" ]] || jmb=UNKNOWN
-        if [[ "$jmb" == UNKNOWN ]]; then
-            warn "jellyfin transcodes: could not size $jt"
-        elif (( jmb >= 1024 )); then
-            warn "jellyfin: ${jmb}MB of transcode segments on the CONFIG volume ($jt) — './mediastack.sh wire jellyfin' moves transcodes to TRANSCODE_ROOT; segments from a dead session clear when jellyfin restarts"
-        else
-            ok "jellyfin transcodes on the config volume: ${jmb}MB"
-        fi
-    fi
+    jellyfin_doctor_transcodes "$croot"
     local memfree l1 l5 l15 cores
     memfree=$(awk '/MemAvailable/{printf "%.1f", $2/1048576}' /proc/meminfo)
     read -r l1 l5 l15 _ < /proc/loadavg; cores=$(nproc)
@@ -366,75 +343,16 @@ _doctor_backup_disk() { # restore points on the configs' own filesystem die with
     return 0
 }
 
+# the apps doctor checks, in the order it prints them; each one's check is
+# <name>_doctor in its service's folder, run when the app is enabled and up
+DOCTOR_APPS=(jellyfin seerr kavita wizarr)
 _doctor_apps() {
     hr "doctor: apps"
-    if svc_enabled jellyfin && [[ "$(c_state "$(svc_cname jellyfin)")" == running ]]; then
-        local jpub
-        jpub=$(curl -s -m 10 "$(jf_url)/System/Info/Public" 2>/dev/null || true)
-        case "$(jq -r '.StartupWizardCompleted' <<<"$jpub" 2>/dev/null)" in
-            true)  ok "jellyfin first-run wizard completed" ;;
-            false) d_fail "jellyfin first-run wizard NOT completed" "an unclaimed jellyfin lets any visitor create the admin account" "./mediastack.sh wire jellyfin" ;;
-            *)     warn "jellyfin public info unreadable — API may still be warming up" ;;
-        esac
-        # the stack key must open an authenticated endpoint: update's session
-        # check, backup and wire all ride on it
-        local jkey; jkey=$(env_get JELLYFIN_API_KEY)
-        if [[ -n "$jkey" ]]; then
-            jf_api GET /System/Info "$jkey" >/dev/null 2>&1 || true   # soft read: judged by its HTTP status below
-            case "$(jf_code)" in
-                2*)  ok "jellyfin accepts the stack API key (JELLYFIN_API_KEY)" ;;
-                401) d_fail "jellyfin rejects the stack API key (HTTP 401)" "the key was revoked, or the server refuses the auth carrier (Jellyfin 12+ disables legacy X-Emby-Token/api_key)" "./mediastack.sh wire jellyfin  # re-mints the key; script auth is already on the MediaBrowser header" ;;
-                *)   warn "jellyfin API key check inconclusive (HTTP $(jf_code))" ;;
-            esac
-        fi
-    fi
-    if svc_enabled seerr && [[ "$(c_state "$(svc_cname seerr)")" == running ]]; then
-        local spub
-        spub=$(curl -s -m 10 "$(seerr_url)/api/v1/settings/public" 2>/dev/null || true)
-        case "$(jq -r '.initialized' <<<"$spub" 2>/dev/null)" in
-            true)  ok "seerr initialised" ;;
-            false) warn "seerr not initialised yet — run: ./mediastack.sh wire seerr" ;;
-            *)     warn "seerr public settings unreadable — API may still be warming up" ;;
-        esac
-    fi
-    if svc_enabled kavita && [[ "$(c_state "$(svc_cname kavita)")" == running ]]; then
-        _doctor_kavita
-    fi
-    if svc_enabled wizarr && [[ "$(c_state "$(svc_cname wizarr)")" == running ]]; then
-        local wkey wcode
-        wkey=$(env_get WIZARR_API_KEY)
-        if [[ -z "$wkey" ]]; then
-            warn "wizarr has no stored API key — invites need it: ./mediastack.sh wire wizarr"
-        else
-            wcode=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-API-Key: $wkey" \
-                    "$(wizarr_url)/api/invitations" 2>/dev/null || echo 000)
-            [[ "$wcode" =~ ^2 ]] && ok "wizarr API key works ('invite' is ready)" \
-                || d_fail "wizarr rejected the stored API key [HTTP $wcode]" "'invite' cannot mint links" "recreate the key in wizarr's Settings -> API Keys, then: ./mediastack.sh wire wizarr"
-        fi
-    fi
-
-}
-
-_doctor_kavita() { # claimed; with the portal, who among its people lacks a library (maybe on purpose)
-    local ex out tok libs users gaps
-    ex=$(kav_api GET /api/admin/exists "" 2>/dev/null) || { warn "kavita first-run state unreadable — API may still be warming up"; return 0; }
-    [[ "$ex" == true ]] || { d_fail "kavita has no admin yet" "an unclaimed Kavita lets any visitor create the admin account" "./mediastack.sh wire kavita"; return 0; }
-    ok "kavita has its admin"
-    svc_enabled authentik && [[ -n "$(env_get KAVITA_ADMIN_PASSWORD)" ]] || return 0
-    out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { d_fail "kavita rejects the stored admin login" "wire and doctor cannot manage it" "./mediastack.sh credentials  # then check the admin in Kavita"; return 0; }
-    tok=$(jq -r '.token // empty' <<<"$out")
-    libs=$(kav_api GET /api/library/libraries "$tok") && users=$(kav_api GET "/api/users?includePending=true" "$tok") \
-        || { warn "kavita: libraries or users unreadable"; return 0; }
-    # a library added after someone joined reaches only admins until granted —
-    # reported, never changed: a missing library may be a restriction you set
-    gaps=$(jq -r --argjson l "$libs" '.[] | select(.identityProvider == 1 and ([.roles[]?] | index("Admin") == null))
-        | . as $u | [$l[] | select(.id as $i | [$u.libraries[]?.id] | index($i) == null) | .name]
-        | select(length > 0) | "\($u.username): \(join(", "))"' <<<"$users")
-    if [[ -z "$gaps" ]]; then ok "kavita: every portal user has every library"
-    else
-        while IFS= read -r g; do warn "kavita: $g — not granted (fine if on purpose; otherwise Kavita → Settings → Users → edit → libraries)"; done <<<"$gaps"
-    fi
+    local s
+    for s in "${DOCTOR_APPS[@]}"; do
+        svc_enabled "$s" && [[ "$(c_state "$(svc_cname "$s")")" == running ]] || continue
+        "${s}_doctor"
+    done
 }
 
 # an app that declares nothing: any line naming an error. One whose logs carry
@@ -486,17 +404,7 @@ _doctor_runtime_audit() {
         fi
     done
     (( drift == 0 )) && ok "effective UIDs match the .env map"
-    # qbit must be bound to the tunnel interface (wire sets it; verify here)
-    if svc_enabled qbittorrent && [[ "$(c_state "$(svc_cname qbittorrent)")" == running ]]; then
-        if qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" 2>/dev/null; then
-            local iface
-            iface=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null || true)
-            [[ "$iface" == tun0 ]] && ok "qBittorrent transfers bound to tun0" \
-                || warn "qBittorrent is NOT bound to tun0 (currently: '${iface:-unset}') — fix: ./mediastack.sh wire qbit"
-        else
-            warn "could not sign in to qBittorrent to verify the tun0 bind"
-        fi
-    fi
+    qbittorrent_doctor_tun0
 
 }
 

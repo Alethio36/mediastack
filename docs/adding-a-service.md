@@ -141,9 +141,12 @@ is a fragment only. A service with nothing to wire (Navidrome, say) has no
 
 A verb that covers several services keeps its own short list of them, in the
 order it runs or prints them; a service's part lives in its folder. So far:
-`wire` (`WIRE_ROLES` in `lib/wire.sh` -> `wire_<role>`) and `set-credentials`
-(the target list in `lib/access.sh` -> `sc_rotate_<target>`). CI fails a
-listed name without exactly one function under `services/`.
+`wire` (`WIRE_ROLES` in `lib/wire.sh` -> `wire_<role>`), `set-credentials`
+(the target list in `lib/access.sh` -> `sc_rotate_<target>`) and doctor's app
+checks (`DOCTOR_APPS` in `lib/doctor.sh` -> `<name>_doctor`; a check inside
+another doctor section is `<name>_doctor_<check>`, called by name there).
+`scripts/check-registries.sh` fails a listed name without exactly one
+function under `services/`.
 
 ### Wiring it to other apps (`wire`)
 
