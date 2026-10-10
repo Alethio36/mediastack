@@ -145,7 +145,8 @@ order it runs or prints them; a service's part lives in its folder. So far:
 (the target list in `lib/access.sh` -> `sc_rotate_<target>`) and doctor's app
 checks (`DOCTOR_APPS` in `lib/doctor.sh` -> `<name>_doctor`). A verb that
 needs one service's code at one spot calls it by name — `<name>_<what>`
-(`jellyfin_sessions_active` in the update, `link_<app>_*` in link-account).
+(`jellyfin_sessions_active` in the update, `link_<app>_*` in link-account,
+`<name>_configure_secret` in configure).
 `scripts/check-registries.sh` fails a listed name without exactly one
 function under `services/`, and a `<service>_*` call that nothing defines.
 
