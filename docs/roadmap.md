@@ -131,6 +131,34 @@ validation, notifications, SSO). Before `migrate` moves the first household:
 6. Then `migrate` (below, under Project health).
 Lower priority: RAM and system requirements, measured on the rebuilt box.
 
+### Organised by service — phase 1 done (Oct 2026), phases 2–3 planned
+One folder per service, `services/<name>/`: its fragment (`compose.yml`),
+its code (`<name>.sh`) and anything else it ships (authentik's blueprints).
+Adding a service should mean adding a folder, and removing one deleting it.
+1. *Done:* fragments, blueprints and every app's wire code moved into the
+   folders as a pure move (rendered config byte-identical; the same functions
+   and globals byte for byte). The engine stays in `lib/wire.sh`, addresses in
+   `lib/addr.sh`, the arr family in `services/_arr/`. To prove on the test
+   box: `upgrade` says nothing to apply, `wire --verify` no drift.
+2. Verbs call **hooks**, not apps: the per-app branches still in verb libs
+   (`set-credentials`, doctor's app checks, the backup's Jellyfin wait,
+   account sync, migrate's import) become `<name>_<hook>` functions in each
+   folder, one verb per change. **Wiring by role:** a provider declares how a
+   consumer reaches it — `provides/<role>.<consumer>.json`, data and
+   `{placeholders}` only — and each consumer type implements accepting a role
+   once (download client first: Deluge and Transmission get wired too). Each
+   service's `.env` keys move into its folder (`env.tsv`); `.env` stays one
+   file.
+3. Only if 2 pays off: platform features with interchangeable providers
+   (sign-in: authentik | Wizarr | none; edge: Traefik | NPM), starting with
+   sign-in.
+
+Guardrails that ship with phase 2's first role: a template holds data and
+placeholders only (a needed `if` makes it code); one dispatcher resolves every
+hook and role, and `wire --dry-run` prints the resolved pairs; CI fails an
+unknown hook, placeholder or consumer type, and a provider missing a template
+for a consumer type of its role.
+
 ### Release channels — decided (Sept 2026)
 `stable` is the default branch (what a clone gets and end users run),
 `unstable` gets every change first (the test box runs it), `legacy` is the old
