@@ -5,6 +5,27 @@
 # entrypoint's helpers at call time.
 
 # ---- apprise: the notification hub (sending, routing, `notify`: lib/notify.sh) ----
+# The hub entry each arr (and Prowlarr) keeps is mediastack's — named
+# mediastack-apprise — and so is its tag: it decides which stream the events
+# reach. An entry made before the ops/users split still says "activity", which
+# no hub line carries, so the hub answers 424 and the event is lost. Checked on
+# every run like the entry's address; everything else in it stays as you set it.
+APPRISE_ENTRY_TAGS='["ops"]'
+apprise_entry_tag() { # apprise_entry_tag <svc> <api base> <key> <notification list JSON>
+    local s="$1" base="$2" key="$3" notes="$4" have entry out
+    have=$(arr_entry_field "$notes" mediastack-apprise tags)
+    [[ "$have" == "$APPRISE_ENTRY_TAGS" ]] && { ok "$s: its hub entry is tagged ops"; return 0; }
+    w_would "$s: re-tag its hub entry ${have:-<none>} -> $APPRISE_ENTRY_TAGS (the stream its events belong to)" || return 0
+    # the entry as read, only its tags changed: masked secrets go back as-is
+    entry=$(jq -c --argjson t "$APPRISE_ENTRY_TAGS" \
+        '[.[]? | select(.name == "mediastack-apprise")][0] | .fields |= map(if .name == "tags" then .value = $t else . end)' <<<"$notes")
+    if out=$(api PUT "$base/notification/$(jq -r '.id' <<<"$entry")" "$key" "$entry"); then
+        ok "$s: hub entry re-tagged to ops"
+    else
+        wfail "$s: re-tagging its hub entry was rejected — $(oneline "$out")"
+    fi
+}
+
 wire_apprise() {
     hr "wire: apprise"
     svc_enabled apprise || { info "apprise not enabled — skipped"; return 0; }
@@ -78,12 +99,18 @@ Getting a URL:
             || { wfail "$s: could not read its notifications — nothing created [$(oneline "$notes")]"; continue; }
         have=$(jq -r '[.[].name] | join(" ")' <<<"$notes" 2>/dev/null || true)
         if [[ " $have " == *" mediastack-apprise "* ]]; then
-            ok "$s already notifies the hub — untouched"
+            ok "$s already notifies the hub"
             local nst; nst=$(addr_of "$(arr_entry_field "$notes" mediastack-apprise serverUrl)")
             if addr_stale "$s -> apprise" apprise "$nst"; then
                 addr_repoint "$s -> apprise" "$nst" "$(svc_addr apprise)" -- \
                     arr_repoint "$url/api/$ver" "$key" notification "$notes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
+                # the re-point changed the entry: the tag check works from what it is now
+                if (( ! WIRE_DRY )); then
+                    notes=$(api GET "$url/api/$ver/notification" "$key") \
+                        || { wfail "$s: could not re-read its notifications — tag not checked [$(oneline "$notes")]"; continue; }
+                fi
             fi
+            apprise_entry_tag "$s" "$url/api/$ver" "$key" "$notes"
             continue
         fi
         if ! w_would "$s: notify the hub on grab/import/health (tag: ops)"; then continue; fi
@@ -113,12 +140,17 @@ Getting a URL:
         if ! pnotes=$(api GET "$url/api/$ver/notification" "$key"); then
             wfail "prowlarr: could not read its notifications — nothing created [$(oneline "$pnotes")]"
         elif [[ " $(jq -r '[.[].name] | join(" ")' <<<"$pnotes" 2>/dev/null) " == *" mediastack-apprise "* ]]; then
-            ok "prowlarr already notifies the hub — untouched"
-            local pst; pst=$(addr_of "$(arr_entry_field "$pnotes" mediastack-apprise serverUrl)")
+            ok "prowlarr already notifies the hub"
+            local pst pok=1; pst=$(addr_of "$(arr_entry_field "$pnotes" mediastack-apprise serverUrl)")
             if addr_stale "prowlarr -> apprise" apprise "$pst"; then
                 addr_repoint "prowlarr -> apprise" "$pst" "$(svc_addr apprise)" -- \
                     arr_repoint "$url/api/$ver" "$key" notification "$pnotes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
+                if (( ! WIRE_DRY )); then
+                    pnotes=$(api GET "$url/api/$ver/notification" "$key") \
+                        || { wfail "prowlarr: could not re-read its notifications — tag not checked [$(oneline "$pnotes")]"; pok=0; }
+                fi
             fi
+            if (( pok )); then apprise_entry_tag prowlarr "$url/api/$ver" "$key" "$pnotes"; fi
         elif w_would "prowlarr: notify the hub on indexer/health events (tag: ops)"; then
             schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)   # soft read: create path only: an empty schema FAILs below, nothing created
             tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
