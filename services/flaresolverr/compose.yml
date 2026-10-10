@@ -29,5 +29,13 @@ services:
       mediastack.vpn: "true"
       mediastack.internal: "true"
       mediastack.config: "false"
+    healthcheck:
+      # healthy once its browser is up and it answers (its /health): Prowlarr's
+      # first requests after a start must not race a cold FlareSolverr
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8191/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     logging: *logging
     restart: unless-stopped

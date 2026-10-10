@@ -646,6 +646,7 @@ cmd_up()   {
     sudo rm -f "$STOP_MARKER"   # everything is up: a cut-off backup's marker is settled
     ok "Stack started."
     wire_repoint_pending # a VPN toggle moved a service: re-point what calls it
+    prowlarr_indexers_retest
     cat <<'EOT'
 Check on it:   ./mediastack.sh status    (what's running, health, versions)
 Verify it:     ./mediastack.sh doctor    (full audit with fixes)
