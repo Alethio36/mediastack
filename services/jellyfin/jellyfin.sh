@@ -340,3 +340,42 @@ sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
         env_set JELLYFIN_ADMIN_PASSWORD "$npass"
         ok "Jellyfin admin password rotated and verified"
 }
+
+jellyfin_doctor() { # doctor: apps — claimed, and the stack key works
+    local jpub
+    jpub=$(curl -s -m 10 "$(jf_url)/System/Info/Public" 2>/dev/null || true)
+    case "$(jq -r '.StartupWizardCompleted' <<<"$jpub" 2>/dev/null)" in
+        true)  ok "jellyfin first-run wizard completed" ;;
+        false) d_fail "jellyfin first-run wizard NOT completed" "an unclaimed jellyfin lets any visitor create the admin account" "./mediastack.sh wire jellyfin" ;;
+        *)     warn "jellyfin public info unreadable — API may still be warming up" ;;
+    esac
+    # the stack key must open an authenticated endpoint: update's session
+    # check, backup and wire all ride on it
+    local jkey; jkey=$(env_get JELLYFIN_API_KEY)
+    if [[ -n "$jkey" ]]; then
+        jf_api GET /System/Info "$jkey" >/dev/null 2>&1 || true   # soft read: judged by its HTTP status below
+        case "$(jf_code)" in
+            2*)  ok "jellyfin accepts the stack API key (JELLYFIN_API_KEY)" ;;
+            401) d_fail "jellyfin rejects the stack API key (HTTP 401)" "the key was revoked, or the server refuses the auth carrier (Jellyfin 12+ disables legacy X-Emby-Token/api_key)" "./mediastack.sh wire jellyfin  # re-mints the key; script auth is already on the MediaBrowser header" ;;
+            *)   warn "jellyfin API key check inconclusive (HTTP $(jf_code))" ;;
+        esac
+    fi
+}
+
+jellyfin_doctor_transcodes() { # jellyfin_doctor_transcodes <CONFIG_ROOT> (doctor: host resources)
+    # transcodes on the config volume: Jellyfin's default until `wire jellyfin`
+    # points it at /cache; a session that died leaves its segments behind
+    local croot="$1" jt jmb
+    jt="$croot/jellyfin/data/transcodes"
+    if sudo test -d "$jt"; then
+        jmb=$(sudo du -sm "$jt" 2>/dev/null | cut -f1)
+        [[ -n "$jmb" ]] || jmb=UNKNOWN
+        if [[ "$jmb" == UNKNOWN ]]; then
+            warn "jellyfin transcodes: could not size $jt"
+        elif (( jmb >= 1024 )); then
+            warn "jellyfin: ${jmb}MB of transcode segments on the CONFIG volume ($jt) — './mediastack.sh wire jellyfin' moves transcodes to TRANSCODE_ROOT; segments from a dead session clear when jellyfin restarts"
+        else
+            ok "jellyfin transcodes on the config volume: ${jmb}MB"
+        fi
+    fi
+}

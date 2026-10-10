@@ -18,33 +18,8 @@ jobs:
             echo "::error::placeholder host literal in a runtime string — use svc_url or a real host expression"
             exit 1
           fi
-      - name: every wire role has exactly one wire_<role> in services/
-        run: |
-          # WIRE_ROLES (lib/wire.sh) is the ordered role list; each role's code
-          # lives with its service, so a missing or duplicated definition fails here
-          roles=$(sed -n 's/^WIRE_ROLES=(\(.*\))$/\1/p' lib/wire.sh)
-          [[ -n "$roles" ]] || { echo "::error::WIRE_ROLES not found in lib/wire.sh"; exit 1; }
-          rc=0
-          for r in $roles; do
-            n=$(grep -lE "^wire_${r}\(\)" services/*/*.sh | wc -l)
-            [[ "$n" == 1 ]] || { echo "::error::wire role '$r': $n definitions of wire_${r}() under services/ (want 1)"; rc=1; }
-            grep -qE "^wire_${r}\(\)" lib/*.sh mediastack.sh && { echo "::error::wire_${r}() is defined outside services/"; rc=1; }
-          done
-          exit $rc
-      - name: every set-credentials target has exactly one sc_rotate_<target> in services/
-        run: |
-          # the targets are cmd_set_credentials' accepted list (lib/access.sh); each
-          # rotation lives with its service, so a missing or duplicated one fails here
-          targets=$(sed -n 's/^    case "$target" in \([a-z|]*\)) ;; \*)$/\1/p' lib/access.sh | tr '|' ' ')
-          [[ -n "$targets" ]] || { echo "::error::set-credentials target list not found in lib/access.sh"; exit 1; }
-          rc=0
-          for t in $targets; do
-            [[ "$t" == all ]] && continue
-            n=$(grep -lE "^sc_rotate_${t}\(\)" services/*/*.sh | wc -l)
-            [[ "$n" == 1 ]] || { echo "::error::set-credentials '$t': $n definitions of sc_rotate_${t}() under services/ (want 1)"; rc=1; }
-            if grep -qE "^sc_rotate_${t}\(\)" lib/*.sh mediastack.sh; then echo "::error::sc_rotate_${t}() is defined outside services/"; rc=1; fi
-          done
-          exit $rc
+      - name: every listed service has its function in services/ (scripts/check-registries.sh)
+        run: scripts/check-registries.sh
       - name: every registry verb is documented in README
         run: |
           rc=0

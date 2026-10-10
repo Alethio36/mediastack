@@ -208,3 +208,16 @@ sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
                 || wfail "lazylibrarian qBittorrent login not updated — fix in its UI (Settings -> Downloaders)"
         fi
 }
+
+qbittorrent_doctor_tun0() { # qbit must be bound to the tunnel interface (wire sets it; doctor: runtime audit)
+if svc_enabled qbittorrent && [[ "$(c_state "$(svc_cname qbittorrent)")" == running ]]; then
+    if qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" 2>/dev/null; then
+        local iface
+        iface=$(qb_api /app/preferences | jq -r '.current_network_interface // .network_interface // empty' 2>/dev/null || true)
+        [[ "$iface" == tun0 ]] && ok "qBittorrent transfers bound to tun0" \
+            || warn "qBittorrent is NOT bound to tun0 (currently: '${iface:-unset}') — fix: ./mediastack.sh wire qbit"
+    else
+        warn "could not sign in to qBittorrent to verify the tun0 bind"
+    fi
+fi
+}

@@ -192,3 +192,13 @@ wire_seerr() {
     rm -f "$jar"
     ok "seerr initialised — users sign in with their jellyfin logins"
 }
+
+seerr_doctor() { # doctor: apps — initialised
+    local spub
+    spub=$(curl -s -m 10 "$(seerr_url)/api/v1/settings/public" 2>/dev/null || true)
+    case "$(jq -r '.initialized' <<<"$spub" 2>/dev/null)" in
+        true)  ok "seerr initialised" ;;
+        false) warn "seerr not initialised yet — run: ./mediastack.sh wire seerr" ;;
+        *)     warn "seerr public settings unreadable — API may still be warming up" ;;
+    esac
+}

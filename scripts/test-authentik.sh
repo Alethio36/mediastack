@@ -798,11 +798,11 @@ kav_api() { case "$1 $2" in
         "GET /api/users?includePending=true") echo "$KAV_USERS" ;;
     esac; }
 printf 'KAVITA_ADMIN_USER=mediastack\nKAVITA_ADMIN_PASSWORD=p\n' > "$ENV_FILE"
-out=$(_doctor_kavita 2>&1)
+out=$(kavita_doctor 2>&1)
 [[ "$out" != *WARN* && "$out" != *FAIL* ]] \
     || fail_ "doctor: akadmin has every library and test-thio is an admin (sees all) — no gap: $out"; pass
 KAV_USERS=$(jq -c '.[2].roles = ["Login"]' <<<"$KAV_USERS")
-[[ "$(_doctor_kavita 2>&1)" == *"test-thio: Comics — not granted (fine if on purpose"* ]] || fail_ "doctor names the person and the missing library, and how to grant it"; pass
+[[ "$(kavita_doctor 2>&1)" == *"test-thio: Comics — not granted (fine if on purpose"* ]] || fail_ "doctor names the person and the missing library, and how to grant it"; pass
 # set-credentials kavita: changed with the old password, stored, proven
 printf 'KAVITA_ADMIN_USER=mediastack\nKAVITA_ADMIN_PASSWORD=OLDK\n' > "$ENV_FILE"; echo OLDK > "$T/kav-pw"
 kav_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
