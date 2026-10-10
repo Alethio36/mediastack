@@ -10,7 +10,8 @@
 #   * a send's outcome is judged by the hub's answer (a 204/424 is not
 #     "delivered") and recorded per stream; `send` checks its arguments
 #   * an arr's hub entry carries mediastack's tag (ops): --verify names a stale
-#     one, wire re-tags it and changes nothing else
+#     one, wire re-tags it and changes nothing else; mediastack's own writes
+#     to it skip the app's test (forceSave), a download client's do not
 #
 #   scripts/test-notify.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -134,7 +135,8 @@ grep -qF 'would: radarr: re-tag its hub entry ["activity"] -> ["ops"]' "$T/o" ||
 (( WIRE_CHANGES == 1 )) && [[ ! -s "$T/calls" ]] || fail_ "--verify counts the drift and writes nothing"; pass
 : > "$T/calls"; WIRE_DRY=0; WIRE_CHANGES=0
 apprise_entry_tag radarr http://h/api/v3 k "$notes" > "$T/o"
-[[ "$(cat "$T/calls")" == "PUT http://h/api/v3/notification/7" ]] || fail_ "one PUT, to mediastack's entry: $(cat "$T/calls")"; pass
+[[ "$(cat "$T/calls")" == "PUT http://h/api/v3/notification/7?forceSave=true" ]] \
+    || fail_ "one PUT, to mediastack's entry, without the app's own test (forceSave): $(cat "$T/calls")"; pass
 [[ "$(jq -c '.fields | map({(.name): .value}) | add' "$T/put")" == '{"serverUrl":"http://gluetun:8000","configurationKey":"mediastack","authPassword":"********","tags":["ops"]}' ]] \
     || fail_ "only the tags change; a masked secret goes back as-is: $(cat "$T/put")"; pass
 grep -q 'radarr: hub entry re-tagged to ops' "$T/o" || fail_ "the re-tag is reported"; pass
@@ -149,5 +151,15 @@ unset API_RC
 body=$(declare -f wire_apprise)
 [[ "$(grep -c 'apprise_entry_tag' <<<"$body")" == 2 ]] || fail_ "wire_apprise must check the tag for the arrs and for prowlarr"; pass
 [[ "$(grep -c 'tag not checked' <<<"$body")" == 2 ]] || fail_ "a re-point must be re-read before the tag check (else the second PUT undoes it)"; pass
+# the hub entry's address is re-pointed without the app's test too; arr_repoint
+# adds forceSave only when asked (a download client keeps its connection test)
+[[ "$(grep -c 'arr_repoint --force .* notification ' <<<"$body")" == 2 ]] || fail_ "both hub-entry re-points must pass --force"; pass
+: > "$T/calls"
+arr_repoint --force http://h/api/v3 k notification "$notes" mediastack-apprise "serverUrl=http://apprise:8000" >/dev/null
+[[ "$(cat "$T/calls")" == "PUT http://h/api/v3/notification/7?forceSave=true" ]] || fail_ "--force saves with forceSave: $(cat "$T/calls")"; pass
+[[ "$(jq -r '.fields[] | select(.name=="serverUrl") | .value' "$T/put")" == http://apprise:8000 ]] || fail_ "--force still changes the field"; pass
+: > "$T/calls"
+arr_repoint http://h/api/v3 k notification "$notes" mediastack-apprise "serverUrl=http://apprise:8000" >/dev/null
+[[ "$(cat "$T/calls")" == "PUT http://h/api/v3/notification/7" ]] || fail_ "without --force the app tests as before: $(cat "$T/calls")"; pass
 
 echo "OK notify: $checks checks"
