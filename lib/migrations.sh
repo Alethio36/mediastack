@@ -264,3 +264,13 @@ migrate_env_30_to_31() {
     done
     info "New: the portal can send email — optional: ./mediastack.sh configure (docs/email.md)"
 }
+migrate_env_31_to_32() {
+    # Apprise's default moved outside the VPN (docs/vpn-membership.md). An
+    # install that follows the default moves with it at the next `up`, so the
+    # apps holding its address are marked for re-pointing then — exactly what
+    # `vpn apprise off` would do. An explicit APPRISE_VPN stays as set.
+    [[ -n "$(env_get APPRISE_VPN)" ]] && return 0
+    svc_enabled apprise || return 0   # not enabled: nothing to re-point now
+    repoint_mark apprise
+    info "Apprise now runs outside the VPN by default — the next 'up' moves it and re-points every app that notifies it (keep it inside: ./mediastack.sh vpn apprise on)"
+}
