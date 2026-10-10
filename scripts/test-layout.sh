@@ -88,7 +88,7 @@ user_compose_files
     || fail_ "order must be drop-ins by name, then the override: ${USER_FILES[*]}"; pass
 printf 'services:\n  radarr:\n    image: x\n' > "$DROPIN_DIR/c-radarr.yml"
 out=$( (user_compose_files) 2>&1 ) && fail_ "a drop-in redefining a shipped service must be refused"
-[[ "$out" == *"'radarr'"*"shipped (compose.d/radarr.yml)"* ]] || fail_ "the refusal must name both: $out"; pass
+[[ "$out" == *"'radarr'"*"shipped (services/radarr/compose.yml)"* ]] || fail_ "the refusal must name both: $out"; pass
 rm "$DROPIN_DIR/c-radarr.yml"
 printf 'services:\n  hello:\n    image: y\n' > "$DROPIN_DIR/d-dup.yml"
 if (user_compose_files) 2>/dev/null; then fail_ "two drop-ins defining one service must be refused"; fi; pass

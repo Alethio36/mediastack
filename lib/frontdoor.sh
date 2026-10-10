@@ -495,7 +495,7 @@ cmd_frontdoor_install() {
     sudo chmod 644 "$keydir/id_ed25519.pub" "$keydir/known_hosts" "$otdir/passwd"
     sudo chmod 640 "$otdir/config.yaml"
 
-    # 10. Enable the profile (container defined in compose.d/olivetin.yml).
+    # 10. Enable the profile (container defined in services/olivetin/compose.yml).
     if svc_enabled olivetin; then
         ok "'olivetin' already in COMPOSE_PROFILES"
     else

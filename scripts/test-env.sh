@@ -45,7 +45,7 @@ mapfile -t read_by_script < <(grep -ohE 'env_(get|set) "?[A-Z][A-Z0-9_]+([" )]|$
                               | sed -E 's/env_(get|set) "?//; s/[" )]$//' | grep -vx VAR | sort -u)
 missing=$(comm -23 <(printf '%s\n' "${read_by_script[@]}" | sort -u) <(known_of "${read_by_script[@]}" | sort -u) | tr '\n' ' ')
 [[ -z "$missing" ]] || fail_ "the script reads keys the schema does not hold: $missing"; pass
-mapfile -t read_by_compose < <(grep -ohE '\$\{[A-Z][A-Z0-9_]+' docker-compose.yml compose.d/*.yml | cut -c3- | sort -u)
+mapfile -t read_by_compose < <(grep -ohE '\$\{[A-Z][A-Z0-9_]+' docker-compose.yml services/*/compose.yml | cut -c3- | sort -u)
 missing=$(comm -23 <(printf '%s\n' "${read_by_compose[@]}" | sort -u) <(known_of "${read_by_compose[@]}" | sort -u) | tr '\n' ' ')
 [[ -z "$missing" ]] || fail_ "compose files read keys the schema does not hold: $missing"; pass
 

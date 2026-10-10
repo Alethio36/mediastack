@@ -33,7 +33,7 @@ killswitch stops being one readable compose line and becomes pods + a
 default-deny NetworkPolicy + native sidecar ordering, i.e. the most
 safety-critical thing requires the most expertise to reason about. Pod
 rescheduling is itself a leak vector the static compose model doesn't have. A
-veteran who wants k8s can port `compose.d/` downstream; the project won't carry
+veteran who wants k8s can port `services/` downstream; the project won't carry
 it.
 
 **Reopen only if:** the project gives up the Compose on-ramp for newcomers —

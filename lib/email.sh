@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lib/email.sh — the portal's outgoing email (SMTP): the settings' checks,
 # `email status|test`, and what doctor reads. configure asks the settings
-# (lib/configure.sh); compose hands them to authentik (compose.d/authentik.yml).
+# (lib/configure.sh); compose hands them to authentik (services/authentik/compose.yml).
 # Sourced by the entrypoint.
 
 # The portal sends through any SMTP server (docs/email.md). authentik reads
@@ -9,7 +9,7 @@
 # `email test` refuses while the running authentik has older ones.
 EMAIL_WORKER_WAIT=300   # seconds email test waits for authentik's worker after a start (its migrations run first)
 SMTP_KEYS=(SMTP_HOST SMTP_PORT SMTP_STARTTLS SMTP_TLS SMTP_USER SMTP_PASSWORD SMTP_FROM)
-# .env key -> what authentik's containers carry (compose.d/authentik.yml)
+# .env key -> what authentik's containers carry (services/authentik/compose.yml)
 declare -A SMTP_AK=([SMTP_HOST]=AUTHENTIK_EMAIL__HOST [SMTP_PORT]=AUTHENTIK_EMAIL__PORT [SMTP_USER]=AUTHENTIK_EMAIL__USERNAME
                     [SMTP_PASSWORD]=AUTHENTIK_EMAIL__PASSWORD [SMTP_STARTTLS]=AUTHENTIK_EMAIL__USE_TLS
                     [SMTP_TLS]=AUTHENTIK_EMAIL__USE_SSL [SMTP_FROM]=AUTHENTIK_EMAIL__FROM)

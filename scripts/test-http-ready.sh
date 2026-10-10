@@ -83,7 +83,7 @@ grep -q -- '-H X-Api-Key: k123 http://x/api/v3/system/status' "$T/args" || fail_
 # a readiness probe or healthcheck must not depend on the internet: seerr's
 # /api/v1/status asks GitHub for the latest release on every call (found live:
 # without outbound DNS it outlasted the 5s probe for 90s on a healthy seerr)
-if grep -nE 'seerr.*api/v1/status|5055/api/v1/status' lib/*.sh mediastack.sh compose.d/*.yml | grep -v '^[^:]*:[0-9]*:[[:space:]]*#'; then
+if grep -nE 'seerr.*api/v1/status|5055/api/v1/status' lib/*.sh mediastack.sh services/*/compose.yml | grep -v '^[^:]*:[0-9]*:[[:space:]]*#'; then
     fail_ "seerr's /api/v1/status used as a probe (above) — use /api/v1/settings/public"
 fi; pass
 

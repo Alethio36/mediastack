@@ -55,12 +55,12 @@ malformed override fails the sync loudly rather than being skipped.
 `trash-sync` regenerates `${CONFIG_ROOT}/recyclarr/recyclarr.yml` from `.env` +
 overrides on every run (generated file — never edit it), pushes the sentinel
 banner (idempotent), then runs the one-shot recyclarr container
-(`compose.d/recyclarr.yml`, profile-gated so `up` never starts it; it shares
+(`services/recyclarr/compose.yml`, profile-gated so `up` never starts it; it shares
 gluetun's namespace, so instance URLs are localhost and guide fetches ride
 the tunnel). Success stamps `cache/trash-last-sync`; `doctor` warns when the
 stamp is older than 26h or missing.
 
-The pinned `recyclarr:8` image is refreshed (patch releases) at the start of every trash-sync; a major version bump is a schema migration and stays a deliberate manual tag change in `compose.d/recyclarr.yml`.
+The pinned `recyclarr:8` image is refreshed (patch releases) at the start of every trash-sync; a major version bump is a schema migration and stays a deliberate manual tag change in `services/recyclarr/compose.yml`.
 
 Preview without applying: `./mediastack.sh trash-sync --dry-run`. It regenerates the config to a scratch copy (`recyclarr.preview.yml`, removed afterwards), reports whether the live `recyclarr.yml` would change, previews the sentinel banners, and runs `recyclarr sync --preview` against the scratch copy — nothing is written to the arrs, `.env`, or the cache. It needs a prior real run (recyclarr provisioned, profile choices answered) and a terminal, and refuses otherwise: recyclarr renders its preview only on a TTY (any redirected stdout, or `--debug`, switches it to log mode and the preview is discarded), so the preview container is run with a forced pseudo-TTY.
 

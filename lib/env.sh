@@ -47,7 +47,7 @@ ENV_LOOKUP_AWK='
 
 env_stems() { # every service's variable stem, from the compose files themselves (no docker needed)
     local f
-    for f in compose.d/*.yml "$DROPIN_DIR"/*.yml "$OVERRIDE_FILE"; do
+    for f in services/*/compose.yml "$DROPIN_DIR"/*.yml "$OVERRIDE_FILE"; do
         [[ -e "$f" ]] && yaml_services "$f"
     done | sort -u | while read -r f; do printf '%s ' "$(uvar "$f")"; done   # uvar prints no newline
 }
