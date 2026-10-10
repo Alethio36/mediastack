@@ -279,6 +279,28 @@ grep -q 'maint_lock backup 0' <(awk '/^backup_take\(\)/,/^}/' lib/backup.sh) || 
 # wire talks to the apps an update or backup stops and recreates: it refuses
 # while one runs (found live: a wire --verify during the 04:00 update)
 grep -q 'maint_lock wire 0' <(awk '/^cmd_wire\(\)/,/^}/' lib/wire.sh) || fail_ "wire takes the maintenance lock"; pass
+# after every stack start Prowlarr re-tests its indexers once FlareSolverr is
+# healthy: a cold FlareSolverr failed its first requests and the arrs reported
+# "all indexers unavailable" nightly (found live)
+grep -q 'healthcheck:' services/flaresolverr/compose.yml || fail_ "flaresolverr needs a healthcheck (the start waits on it)"; pass
+grep -q '^    prowlarr_indexers_retest' <(awk '/^cmd_up\(\)/,/^}/' mediastack.sh) \
+    && grep -q '^    prowlarr_indexers_retest' <(awk '/^backup_take\(\)/,/^}/' lib/backup.sh) \
+    && grep -q '^    prowlarr_indexers_retest' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) \
+    || fail_ "up, a restore point and an update each end with prowlarr_indexers_retest"; pass
+( info() { echo ":: $*"; }; ok() { echo "OK $*"; }; warn() { echo "WARN $*"; }
+  svc_enabled() { return 0; }; c_state() { echo running; }; svc_cname() { echo "$1"; }
+  arr_key() { echo k; }; arr_url() { echo http://p; }; arr_apiver() { echo v1; }
+  http_ready() { return 0; }; wait_verdict() { return 0; }
+  api() { echo "$1 $2" >> "$T/rt.calls"; case "$2" in *indexer/testall) printf '%s' "$RT_OUT" ;; *) echo '[]' ;; esac; }
+  : > "$T/rt.calls"; RT_OUT='[{"id":2,"isValid":false},{"id":5,"isValid":true}]'
+  out=$(prowlarr_indexers_retest 2>&1)
+  [[ "$out" == *"still failing after the start (ids: 2)"* ]] || fail_ "a failing indexer is named: $out"
+  grep -q 'indexerproxy/testall' "$T/rt.calls" && grep -q '/indexer/testall' "$T/rt.calls" || fail_ "proxies, then indexers, are re-tested"
+  RT_OUT='[{"id":2,"isValid":true}]'; [[ "$(prowlarr_indexers_retest 2>&1)" == *"every indexer answers"* ]] || fail_ "all good is said"
+  RT_OUT='[]'; [[ "$(prowlarr_indexers_retest 2>&1)" == *"no indexers yet"* ]] || fail_ "none is not 'all good'"
+  wait_verdict() { declare -gA VERDICT_WHY=([flaresolverr]="is unhealthy"); return 1; }; : > "$T/rt.calls"
+  [[ "$(prowlarr_indexers_retest 2>&1)" == *"not re-tested — flaresolverr is unhealthy"* && ! -s "$T/rt.calls" ]] || fail_ "an unhealthy flaresolverr: no test, and said why"
+) || exit 1; pass
 grep -q 'apply_timer mediastack-backup .* "backup --auto" BACKUP_SCHEDULE' lib/backup.sh || fail_ "apply-timer installs the backup timer"; pass
 
 # ---- schedules run in .env's TZ, not the host's (found live 8 Oct 2026) ----

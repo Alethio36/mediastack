@@ -564,14 +564,6 @@ all built; what each still leaves open is noted below.
   straight to the hub is invisible to it — three weeks of arr events answered
   424 (a retired tag) showed only as log noise. Doctor should read the hub's
   log for failed sends since its last run and name the sender and tag.
-- **Prowlarr's indexers after a restart (next, after the re-org).** Every
-  nightly restore point restarts the stack; Prowlarr validates its FlareSolverr
-  proxy before FlareSolverr (a browser) is up, its first indexer requests fail,
-  it backs the indexer off, and the arrs report "all indexers unavailable"
-  (seen nightly in Prowlarr's log, 04:0x). FlareSolverr gets a healthcheck,
-  and once it is healthy after any stack start, Prowlarr re-tests its
-  indexers. Not covered: FlareSolverr losing Cloudflare's challenge in the
-  day — a second indexer (not behind Cloudflare) is the operator's fix.
 - **An ERR trap that names an unexpected stop (to discuss).** The scripts run
   under `set -e`: an unguarded command that fails ends the run with no message
   (found when a `grep` matching nothing stopped `wire` mid-way). A trap in the

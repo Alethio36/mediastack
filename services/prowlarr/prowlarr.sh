@@ -188,3 +188,29 @@ JSON
     fi
     prowlarr_download_client
 }
+
+prowlarr_indexers_retest() { # after a stack start: once FlareSolverr is up, Prowlarr re-tests its proxies and indexers
+    # A cold start fails Prowlarr's first requests (FlareSolverr launches a
+    # browser), Prowlarr backs those indexers off, and the arrs report "all
+    # indexers unavailable" until the backoff runs out. A test that passes
+    # once FlareSolverr answers says what really works now.
+    svc_enabled prowlarr && [[ "$(c_state "$(svc_cname prowlarr)")" == running ]] || return 0
+    local key url out bad
+    if svc_enabled flaresolverr; then
+        wait_verdict flaresolverr \
+            || { warn "prowlarr: indexers not re-tested — flaresolverr ${VERDICT_WHY[flaresolverr]} (check: ./mediastack.sh logs flaresolverr)"; return 0; }
+    fi
+    key=$(arr_key prowlarr); url="$(arr_url prowlarr)/api/$(arr_apiver prowlarr)"
+    [[ -n "$key" ]] || { warn "prowlarr: no API key readable — indexers not re-tested"; return 0; }
+    http_ready prowlarr "$url/system/status" '^200$' -H "X-Api-Key: $key" || return 0
+    if svc_enabled flaresolverr; then
+        out=$(api POST "$url/indexerproxy/testall" "$key" '{}') \
+            || warn "prowlarr: re-testing its proxies failed — $(oneline "$out")"
+    fi
+    out=$(api POST "$url/indexer/testall" "$key" '{}') \
+        || { warn "prowlarr: re-testing its indexers failed — $(oneline "$out")"; return 0; }
+    bad=$(jq -r '[.[]? | select(.isValid == false) | .id] | join(" ")' <<<"$out" 2>/dev/null)
+    if [[ "$(jq 'length' <<<"$out" 2>/dev/null)" == 0 ]]; then info "prowlarr: no indexers yet — nothing to re-test"
+    elif [[ -z "$bad" ]]; then ok "prowlarr: every indexer answers after the start"
+    else warn "prowlarr: indexers still failing after the start (ids: $bad) — check them in Prowlarr; with one indexer, the arrs report all unavailable"; fi
+}

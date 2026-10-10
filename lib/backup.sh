@@ -133,6 +133,7 @@ backup_take() { # backup_take KIND NOTE — a full cold restore point into the G
     esac
     prune_backups
     points_private
+    prowlarr_indexers_retest   # the stack was stopped: its first indexer requests raced a cold FlareSolverr
 }
 
 IMAGE_STORE=""   # containerd | classic — Docker's image store, read once (image_store_init)
@@ -883,6 +884,7 @@ cmd_update() {
         line=$(update_change "$s" "${before[$s]}" "${before_d[$s]}" "$(c_version "$(svc_cname "$s")")" "$(svc_digest "$s")")
         [[ -z "$line" ]] || changed+=("$line")
     done
+    prowlarr_indexers_retest
     # search functional probe: index must exist and be non-empty
     if svc_enabled jellysearch; then
         jellysearch_update_probe || bad+=("jellysearch(index)")
