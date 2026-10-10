@@ -15,6 +15,10 @@ cmd_credentials() {
     printf '%-22s %s\n' "qBittorrent user"     "$(env_get QBITTORRENT_USER '(not set — run wire)')"
     printf '%-22s %s\n' "qBittorrent password" "$(env_get QBITTORRENT_PASSWORD '(not set — run wire)')"
     svc_enabled deluge && printf '%-22s %s\n' "Deluge password" "$(env_get DELUGE_PASSWORD '(not set — run wire deluge)')"
+    if svc_enabled transmission; then
+        printf '%-22s %s\n' "Transmission user"     "$(env_get TRANSMISSION_USER '(not set — run wire transmission)')"
+        printf '%-22s %s\n' "Transmission password" "$(env_get TRANSMISSION_PASSWORD '(not set — run wire transmission)')"
+    fi
     printf '%-22s %s\n' "Pi-hole password"     "$(env_get PIHOLE_PASSWORD '(dns profile not configured)')"
     printf '%-22s %s\n' "Traefik dash user"    "$(env_get TRAEFIK_DASH_USER '(traefik not configured)')"
     printf '%-22s %s\n' "Traefik dash password" "$(env_get TRAEFIK_DASH_PASSWORD '(traefik not configured)')"
@@ -66,11 +70,12 @@ credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assist
 cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, atomically
     load_env; render
     local target="${1:-}"
-    case "$target" in arr|qbit|deluge|jellyfin|pihole|traefik|audiobookshelf|kavita|portal|all) ;; *)
-        die "usage: set-credentials <arr|qbit|deluge|jellyfin|pihole|traefik|audiobookshelf|kavita|portal|all>
+    case "$target" in arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|portal|all) ;; *)
+        die "usage: set-credentials <arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|portal|all>
   arr             the shared login of every arr app (+ cleanuparr's account password)
   qbit            qBittorrent's WebUI login (+ every place that stores it)
   deluge          Deluge's web password (+ every download-client entry holding it)
+  transmission    Transmission's password (recreated to take it; + every entry holding it)
   jellyfin        the Jellyfin admin password (Seerr/Wizarr need no change)
   pihole          the Pi-hole admin password
   traefik         the Traefik dashboard password
@@ -106,6 +111,11 @@ arr's download-client entry and cleanuparr's connection."
         local pass
         ask_secret "New Deluge password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
         sc_rotate_deluge "$pass"
+        ;;
+    transmission)
+        local pass
+        ask_secret "New Transmission password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        sc_rotate_transmission "$pass"
         ;;
     pihole)
         local pass
@@ -157,8 +167,8 @@ shared password also sits in the arrs' and qBittorrent's settings."
         local pass
         explain "One password across the stack" \
 "Sets a single password on the arr login (6 apps + cleanuparr follows),
-qBittorrent (and everything storing its login), Deluge once wire has set it
-up (and every entry holding it), the Jellyfin admin,
+qBittorrent (and everything storing its login), Deluge and Transmission once
+wire has set them up (and every entry holding them), the Jellyfin admin,
 Pi-hole, the Traefik dashboard, Audiobookshelf's root and Kavita's admin.
 Usernames stay as they are. Deliberate trade-off: one reused password
 means one leak opens everything — use a strong, stack-unique one.
@@ -169,6 +179,7 @@ rest), and Wizarr's admin account — rotate that in Wizarr's UI
         sc_rotate_arr "$(env_get ARR_USER admin)" "$pass"
         sc_rotate_qbit "$(env_get QBITTORRENT_USER admin)" "$pass"
         if svc_enabled deluge && [[ -n "$(env_get DELUGE_PASSWORD)" ]]; then sc_rotate_deluge "$pass"; fi
+        if svc_enabled transmission && [[ -n "$(env_get TRANSMISSION_USER)" ]]; then sc_rotate_transmission "$pass"; fi
         sc_rotate_jellyfin "$pass"
         sc_rotate_pihole "$pass"
         sc_rotate_traefik "$pass"
@@ -176,7 +187,7 @@ rest), and Wizarr's admin account — rotate that in Wizarr's UI
         sc_rotate_kavita "$pass"
         warn "Wizarr's admin password is NOT rotated by this — change it in Wizarr's UI."
         svc_enabled authentik && info "the portal's admin keeps its own password: ./mediastack.sh set-credentials portal"
-        ok "one password now covers arr + qbit + deluge (if set up) + jellyfin + pihole + traefik + audiobookshelf + kavita — view: ./mediastack.sh credentials"
+        ok "one password now covers arr + qbit + deluge/transmission (if set up) + jellyfin + pihole + traefik + audiobookshelf + kavita — view: ./mediastack.sh credentials"
         ;;
     esac
 }

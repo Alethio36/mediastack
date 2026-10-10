@@ -46,6 +46,7 @@ addr_repoint() { # addr_repoint <what> <stored> <want> -- <command...> — re-po
 declare -A WIRE_CALLERS=(
     [qbittorrent]="arr prowlarr cleanuparr lazylibrarian"
     [deluge]="arr prowlarr cleanuparr"
+    [transmission]="arr prowlarr cleanuparr"
     [apprise]="apprise cleanuparr seerr"
     [arr]="prowlarr cleanuparr seerr bazarr"
     [prowlarr]="prowlarr"

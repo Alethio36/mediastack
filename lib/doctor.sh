@@ -406,6 +406,7 @@ _doctor_runtime_audit() {
     (( drift == 0 )) && ok "effective UIDs match the .env map"
     qbittorrent_doctor_tun0
     deluge_doctor_tun0
+    transmission_doctor_bind
 
 }
 

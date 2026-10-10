@@ -23,6 +23,10 @@ services:
       - PGID=${MEDIA_GROUP_GID}
       - UMASK=002
       - TZ=${TZ}
+      # its RPC/web login (the image writes them into settings.json at start);
+      # `wire transmission` generates them, set-credentials rotates them
+      - USER=${TRANSMISSION_USER:-}
+      - PASS=${TRANSMISSION_PASSWORD:-}
     volumes:
       - ${CONFIG_ROOT}/transmission:/config
       - ${DATA_ROOT}/torrent:/data/torrent
