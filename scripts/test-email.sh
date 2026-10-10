@@ -95,7 +95,7 @@ printf 'TZ=America/Los_Angeles\nSMTP_HOST=keep.example.com\n' > "$ENV_FILE"; mig
 
 # ---- configure's email step ----
 explain() { :; }; hr() { :; }
-cfg() { printf '%b' "$1" | _configure_email >/dev/null 2>&1; }
+cfg() { printf '%b' "$1" | authentik_configure_email >/dev/null 2>&1; }
 : > "$ENV_FILE"; cfg 'n\n'; [[ -z "$(env_get SMTP_HOST)" ]] || fail_ "skipped: nothing set"; pass
 : > "$ENV_FILE"; cfg 'y\nSMTP.Example.com\n1\n\nme@example.com\npa$s\nabcd1234\n\n'
 [[ "$(env_get SMTP_HOST)" == smtp.example.com && "$(env_get SMTP_PORT)" == 587 && "$(env_get SMTP_STARTTLS)" == true \

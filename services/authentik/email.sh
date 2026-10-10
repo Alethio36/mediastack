@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # services/authentik/email.sh — the portal's outgoing email (SMTP): the
-# settings' checks, `email status|test`, and what doctor reads. configure asks
-# the settings (lib/configure.sh); compose hands them to authentik
+# settings' checks, `email status|test`, what doctor reads, and configure's
+# Email step (authentik_configure_email); compose hands them to authentik
 # (compose.yml beside this file). Sourced by the entrypoint.
 
 # The portal sends through any SMTP server (docs/email.md). authentik reads
@@ -99,4 +99,58 @@ $(sed 's/^/  /' <<<"$p")"
             fi ;;
         *) die "usage: email [status|test <address>]" ;;
     esac
+}
+
+authentik_configure_email() {
+    # -- email (optional): what the portal sends with
+    svc_enabled authentik || return 0
+    explain "Email (optional)" \
+        "Lets the portal send email. Any SMTP service works: your own mailbox with" \
+        "an app password, a sending service, or a relay on your domain or LAN —" \
+        "docs/email.md walks through each. Skip it and nothing changes" \
+        "(./mediastack.sh reset-password covers someone locked out)."
+    local cur choice
+    cur=$(env_get SMTP_HOST)
+    if [[ -n "$cur" ]]; then
+        ask SMTP_CHOICE "Email is set ($cur, from $(env_get SMTP_FROM)): k = keep, c = change, r = remove" "k"; choice=${REPLY_VAL,,}
+        case "$choice" in
+            r) local k; for k in SMTP_HOST SMTP_PORT SMTP_STARTTLS SMTP_TLS SMTP_USER SMTP_PASSWORD SMTP_FROM; do env_set "$k" ""; done
+               ok "Email removed — takes effect at the next: ./mediastack.sh up"; return 0 ;;
+            c) ;;
+            *) return 0 ;;
+        esac
+    else
+        confirm "Set up email now?" || { info "Email skipped — later: ./mediastack.sh configure (docs/email.md)"; return 0; }
+    fi
+    while true; do
+        ask SMTP_HOST "Mail server (e.g. smtp.gmail.com, smtp.fastmail.com, smtp-relay.brevo.com)" "$cur"
+        env_type_ok host "${REPLY_VAL,,}" && { env_set SMTP_HOST "${REPLY_VAL,,}"; break; }
+        fail "'$REPLY_VAL' is not a server name or address."
+    done
+    echo "  Security: 1) STARTTLS — port 587, most services (recommended)"
+    echo "            2) TLS      — port 465"
+    echo "            3) none     — port 25, only a relay on this machine or your LAN"
+    local sec port
+    while true; do ask SMTP_SEC "Security" "1"; [[ "$REPLY_VAL" =~ ^[123]$ ]] && break; fail "Pick 1-3."; done
+    sec=$REPLY_VAL
+    case "$sec" in 1) env_set SMTP_STARTTLS true; env_set SMTP_TLS false; port=587 ;;
+                   2) env_set SMTP_STARTTLS false; env_set SMTP_TLS true; port=465 ;;
+                   3) env_set SMTP_STARTTLS false; env_set SMTP_TLS false; port=25
+                      warn "unencrypted: the login and every message cross the network readable — only for a relay on this machine or your LAN" ;; esac
+    while true; do ask SMTP_PORT "Port" "$port"; env_type_ok port "$REPLY_VAL" && { env_set SMTP_PORT "$REPLY_VAL"; break; }; fail "'$REPLY_VAL' is not a port."; done
+    ask SMTP_USER "Login (often your full email address; Enter = the server takes none)" "$(env_get SMTP_USER)"
+    env_set SMTP_USER "$REPLY_VAL"
+    if [[ -n "$REPLY_VAL" ]]; then
+        while true; do
+            ask_token "Password (an app password or the service's SMTP key — input hidden)" "$(env_get SMTP_PASSWORD)"
+            [[ "$REPLY_VAL" =~ [\$[:space:]] ]] && { fail "it holds a \$ or a space, which compose would rewrite — use an app password or SMTP key (Gmail shows its app passwords in groups of four: type it without the spaces)"; continue; }
+            env_set SMTP_PASSWORD "$REPLY_VAL"; break
+        done
+    else env_set SMTP_PASSWORD ""; fi
+    while true; do
+        ask SMTP_FROM "Send as (an address this login may send from)" "$(env_get SMTP_FROM "$(env_get SMTP_USER)")"
+        env_type_ok email "$REPLY_VAL" && { env_set SMTP_FROM "$REPLY_VAL"; break; }
+        fail "'$REPLY_VAL' is not an email address."
+    done
+    ok "Email set. authentik reads it when it starts: ./mediastack.sh up, then ./mediastack.sh email test <your address>"
 }
