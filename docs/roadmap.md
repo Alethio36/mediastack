@@ -526,7 +526,11 @@ all built; what each still leaves open is noted below.
   points at Jellyfin's dashboard); (3) Wizarr's admin (no API found yet — UI
   only); (4) Navidrome's per-user Subsonic password, reset by the admin.
 - **LDAP bind cache after a password change** *(test in the rebuild's
-  household pass, then decide)*. Jellyfin asks authentik's LDAP outpost to
+  household pass, then decide)*. (Searches are direct since Oct 12 2026 — a
+  cached directory hid a new sign-up from Jellyfin for up to 5 minutes; binds
+  are still cached. Seen the same day: after 7–10 wrong passwords, Milo's
+  right one still worked — explained by the throttle summing addresses, now
+  fixed, so the cache's part in it is still untested.) Jellyfin asks authentik's LDAP outpost to
   bind each sign-in; the outpost runs `bind_mode: cached` and, after a
   successful bind, answers that user + password from memory until the
   authentik session the bind created expires. So a password changed in the

@@ -507,7 +507,11 @@ entries:
       authorization_flow: !KeyOf flow-ldap
       authentication_flow: !KeyOf flow-ldap
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
-      search_mode: cached
+      # searches ask authentik live: a cached directory left a new sign-up
+      # invisible to Jellyfin until the outpost's next reload (up to 5
+      # minutes, found live), and a group change likewise; one API call per
+      # Jellyfin sign-in. Binds stay cached (docs/roadmap.md: LDAP bind cache)
+      search_mode: direct
       bind_mode: cached
       mfa_support: false
     # the full name: authentik validates a blueprint in a dry run first, where

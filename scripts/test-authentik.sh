@@ -478,6 +478,8 @@ grep -q 'mediastack-ldap-allow:' lib/edge.sh && grep -q 'sourceRange: \["$(env_g
 grep -q 'traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"' services/authentik/compose.yml || fail_ "the LDAP route carries the allow-list"; pass
 bp=services/authentik/blueprints/mediastack-portal.yaml
 sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'mfa_support: false' || fail_ "LDAP binds: no MFA prompt (TV apps cannot answer one)"; pass
+sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'search_mode: direct' \
+    || fail_ "LDAP searches ask authentik live (cached: a new sign-up waited up to 5 minutes for Jellyfin, found live)"; pass
 sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'authorization_flow: !KeyOf flow-ldap' \
     || fail_ "the outpost binds through authorization_flow — it must be the LDAP bind flow (found live)"; pass
 sed -n '/model: authentik_outposts.outpost/,/^  - /p' "$bp" | grep -q '^      config:' || fail_ "an outpost needs its config block (authentik requires it; found live)"; pass
