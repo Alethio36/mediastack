@@ -92,5 +92,14 @@ CHANGED="services/kavita/kavita.sh"; PENDING=""
 [[ "$(upgrade_finish x)" == *"New tooling is live"* ]] || fail_ "a service's code is tooling"; pass
 CHANGED="docs/x.md"; PENDING=""
 [[ "$(upgrade_finish x)" == *"Docs/templates only"* ]] || fail_ "docs-only"; pass
+# the portal's setup files reach authentik only at up, its flows at wire (found building password reset by email)
+svc_enabled() { [[ "$1" == authentik ]]; }
+CHANGED=$'services/authentik/templates/mediastack-password-reset.html\nlib/x.sh'; PENDING=""
+[[ "$(upgrade_finish x)" == *"The portal's setup changed — apply: ./mediastack.sh up && ./mediastack.sh wire authentik"* ]] \
+    || fail_ "a portal setup change asks for up and wire authentik, not 'nothing to apply'"; pass
+CHANGED="services/authentik/blueprints/mediastack-portal.yaml"; PENDING="radarr"
+[[ "$(upgrade_finish x 2>&1)" == *"it changes: radarr"*"after up, ./mediastack.sh wire authentik"* ]] || fail_ "with pending changes too: both said"; pass
+svc_enabled() { return 1; }
+[[ "$(upgrade_finish x)" != *"wire authentik"* ]] || fail_ "no portal: nothing said about it"; pass
 
 echo "OK upgrade: $checks checks"

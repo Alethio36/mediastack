@@ -90,6 +90,7 @@ $(sed 's/^/  /' <<<"$p")"
                 && grep -q "Test email sent" <<<"$out"; then
                 state_set SMTP_TESTED "$(smtp_fingerprint)"
                 ok "sent — check $to (and its spam folder; a message that lands there needs SPF/DKIM for $(env_get SMTP_FROM | cut -d@ -f2): docs/email.md)"
+                authentik_recovery_refresh
             elif grep -q ResultTimeout <<<"$out"; then
                 # the command stopped waiting; the worker may still send it
                 die "authentik's worker did not finish the send within the command's wait. It may still go out — check $to before testing again. What it did: ./mediastack.sh logs authentik-worker --no-follow | grep -iE 'email_sent|send_mail|smtp'"
@@ -107,15 +108,17 @@ authentik_configure_email() {
     explain "Email (optional)" \
         "Lets the portal send email. Any SMTP service works: your own mailbox with" \
         "an app password, a sending service, or a relay on your domain or LAN —" \
-        "docs/email.md walks through each. Skip it and nothing changes" \
-        "(./mediastack.sh reset-password covers someone locked out)."
+        "docs/email.md walks through each. Once a test passes, the portal's" \
+        "sign-in page offers \"Forgot password?\" (a reset link by email). Skip it" \
+        "and ./mediastack.sh reset-password covers someone locked out."
     local cur choice
     cur=$(env_get SMTP_HOST)
     if [[ -n "$cur" ]]; then
         ask SMTP_CHOICE "Email is set ($cur, from $(env_get SMTP_FROM)): k = keep, c = change, r = remove" "k"; choice=${REPLY_VAL,,}
         case "$choice" in
             r) local k; for k in SMTP_HOST SMTP_PORT SMTP_STARTTLS SMTP_TLS SMTP_USER SMTP_PASSWORD SMTP_FROM; do env_set "$k" ""; done
-               ok "Email removed — takes effect at the next: ./mediastack.sh up"; return 0 ;;
+               ok "Email removed — takes effect at the next: ./mediastack.sh up"
+               authentik_recovery_refresh; return 0 ;;
             c) ;;
             *) return 0 ;;
         esac
@@ -153,4 +156,5 @@ authentik_configure_email() {
         fail "'$REPLY_VAL' is not an email address."
     done
     ok "Email set. authentik reads it when it starts: ./mediastack.sh up, then ./mediastack.sh email test <your address>"
+    authentik_recovery_refresh   # new settings: no reset link until they pass a test
 }

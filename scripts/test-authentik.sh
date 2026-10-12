@@ -58,6 +58,12 @@
 #     into .env; reset-password clears a person's login throttle and mints a
 #     single-use link, never for akadmin, the search account, a service
 #     account or a deactivated one
+#   * password reset by email: the flow never reveals an account, never
+#     creates one, leaves a deactivated one deactivated and clears the login
+#     throttle; its email is mediastack's own (no inline logo, the portal's
+#     name as data, byte-stable), synced and read by a restart on change; the
+#     sign-in page links it only while email has passed a test, never over a
+#     flow set in authentik's UI; doctor fails a link without working email
 #
 #   scripts/test-authentik.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -318,7 +324,7 @@ first_start() { # first_start DRY DISCOVERED -> what wire_authentik did: "gate|n
     ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
       authentik_blueprint_status() { echo ""; }
       authentik_blueprint_discovered() { echo waited > "$T/waited"; echo "$DISC"; }
-      wire_authentik_gate() { echo gate > "$T/gated"; }
+      wire_authentik_gate() { echo gate > "$T/gated"; }; wire_authentik_recovery() { :; }   # its own section below
       rm -f "$T/waited" "$T/gated"; WIRE_DRY=$1 DISC=$2 WIRE_FAILS=0
       wire_authentik >/dev/null 2>&1
       echo "$(cat "$T/gated" 2>/dev/null || echo nogate) fails=$WIRE_FAILS $(cat "$T/waited" 2>/dev/null || echo nowait)" )
@@ -1036,5 +1042,88 @@ grep -qxF "POST /api/account/update $want" "$T/calls" && [[ "$out" == *"test-thi
     || fail_ "kavita: the matched account (email any case), only its email changed: $out / $(grep update "$T/calls")"; pass
 rm -f "$T/calls"; out=$(kav_email_move gone@b.c x@b.c 2>&1)
 [[ "$out" == *"nothing to move"* ]] && ! grep -q update "$T/calls" || fail_ "no account with the old email: nothing written: $out"; pass
+
+# ---- password reset by email: the flow, its email, and a link only while email works ----
+bp=services/authentik/blueprints/mediastack-portal.yaml
+grep -q "^      slug: $AUTHENTIK_RECOVERY_FLOW\$" "$bp" && sed -n '/slug: mediastack-recovery$/,/^  - /p' "$bp" | grep -q 'designation: recovery' \
+    || fail_ "the blueprint's recovery flow is AUTHENTIK_RECOVERY_FLOW, designated recovery"; pass
+sed -n '/name: mediastack-recovery-identification$/,/^  - /p' "$bp" > "$T/rid"
+grep -q 'pretend_user_exists: true' "$T/rid" && grep -q 'show_matched_user: false' "$T/rid" \
+    || fail_ "an unknown name gets the same answer: no account revealed"; pass
+sed -n '/name: mediastack-recovery-write$/,/^  - /p' "$bp" | grep -q 'user_creation_mode: never_create' || fail_ "a reset never creates an account"; pass
+sed -n '/name: mediastack-recovery-email$/,/^  - /p' "$bp" > "$T/rem"
+grep -q 'activate_user_on_success: false' "$T/rem" || fail_ "a deactivated account stays deactivated"; pass
+tpl=$(sed -n 's/^ *template: //p' "$T/rem")
+[[ -f "services/authentik/templates/$tpl" && -f "services/authentik/templates/${tpl%.html}.txt" ]] \
+    || fail_ "the email stage's template ($tpl) and its text part ship in services/authentik/templates/"; pass
+sed -n '/id: binding-recovery-login$/,/^  - /p' "$bp" | grep -q 'evaluate_on_plan: false' \
+    && grep -B1 -A2 'target: !KeyOf binding-recovery-login' "$bp" | grep -q 'policy: !KeyOf policy-recovery-clear-throttle' \
+    && sed -n '/name: mediastack-recovery-clear-throttle$/,/^  - /p' "$bp" | grep -q 'Reputation.objects.filter(identifier=user.username).delete()' \
+    || fail_ "the login throttle is cleared at the sign-in, after the new password (as reset-password does)"; pass
+# the email: no inline logo (Gmail: a broken image and a file), the name as data
+! grep -rq 'cid:' services/authentik/templates/ || fail_ "a template must not use an inline (cid:) image"; pass
+! grep -q 'extends' services/authentik/templates/*.html || fail_ "the template is self-contained (authentik's base.html carries the inline logo)"; pass
+h=$(authentik_template_render services/authentik/templates/mediastack-password-reset.html 'Tom & Jerry "<b>" {{ x }}')
+[[ "$h" == *'Tom &amp; Jerry &quot;&lt;b&gt;&quot; &#123;&#123; x &#125;&#125;'* && "$h" != *@@PORTAL_TITLE@@* ]] \
+    || fail_ "html: the name escaped, braces never template code"; pass
+[[ "$(authentik_template_render services/authentik/templates/mediastack-password-reset.html X | sha256sum)" == \
+   "$(authentik_template_render services/authentik/templates/mediastack-password-reset.html X | sha256sum)" ]] || fail_ "rendering is byte-stable"; pass
+t=$(authentik_template_render services/authentik/templates/mediastack-password-reset.txt 'A {% b %}')
+[[ "$t" == *'A {% templatetag openbrace %}% b %{% templatetag closebrace %}'* ]] || fail_ "txt: braces reach Django as literals: $t"; pass
+grep -q '{% autoescape off %}' services/authentik/templates/mediastack-password-reset.txt || fail_ "txt: no HTML escaping in plain text (a link's & stays &)"; pass
+grep -q -- '- ${CONFIG_ROOT}/authentik/templates:/templates' "$T/worker" || fail_ "the worker mounts the templates"; pass
+# the sync: rendered in, unchanged files untouched, ours that left removed, yours kept, a change restarts
+( ENV_FILE=$T/tenv; printf 'CONFIG_ROOT=%s/cfg\nAUTHENTIK_UID=1000\nPORTAL_TITLE=Our Place\n' "$T" > "$ENV_FILE"
+  sudo() { if [[ "$1 $2" == "docker restart" ]]; then echo "RESTART $3" >> "$T/tcalls"; return 0; fi
+           if [[ "$1" == install ]]; then local a=() x; for x in "$@"; do [[ "$x" == -o || "$x" == -g || "$x" == 1000 || "$x" == mediacenter ]] || a+=("$x"); done; "${a[@]}"; return; fi
+           "$@"; }
+  c_state() { echo running; }; svc_cname() { echo "c-$1"; }; info() { echo ":: $*"; }
+  rm -f "$T/tcalls"; authentik_templates_sync > "$T/tout"
+  grep -q 'Our Place' "$T/cfg/authentik/templates/mediastack-password-reset.html" && grep -q 'Our Place' "$T/cfg/authentik/templates/mediastack-password-reset.txt" \
+      || fail_ "sync: both parts rendered with the portal's name"
+  grep -qx 'RESTART c-authentik' "$T/tcalls" && grep -qx 'RESTART c-authentik-worker' "$T/tcalls" || fail_ "sync: a change restarts the server (renders) and the worker (sends)"
+  touch "$T/cfg/authentik/templates/my-own.html" "$T/cfg/authentik/templates/mediastack-gone.html"; rm -f "$T/tcalls"
+  authentik_templates_sync > "$T/tout"
+  [[ ! -e "$T/cfg/authentik/templates/mediastack-gone.html" && -e "$T/cfg/authentik/templates/my-own.html" ]] || fail_ "sync: ours that left removed, yours kept"
+  rm -f "$T/tcalls"; authentik_templates_sync > "$T/tout"
+  [[ ! -s "$T/tout" && ! -e "$T/tcalls" ]] || fail_ "sync: nothing changed, nothing touched: $(cat "$T/tout")" ) || exit 1; pass
+grep -q 'authentik_templates_sync' <(awk '/^authentik_prepare\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "the templates sync before authentik starts"; pass
+# the link: only while email works, never over a flow set in authentik's UI
+rec() { # rec READY SIGNIN BRAND [DRY] -> the PATCH calls made
+    ( printf 'SMTP_HOST=smtp.example.com\nSMTP_PORT=587\nSMTP_FROM=a@example.com\n' > "$T/renv"; ENV_FILE=$T/renv
+      if [[ "$1" == yes ]]; then echo "$(smtp_fingerprint)" > "$T/st-SMTP_TESTED"; else rm -f "$T/st-SMTP_TESTED"; fi
+      state_get() { cat "$T/st-$1" 2>/dev/null || true; }
+      SIGNIN=$2; BRAND=$3; WIRE_DRY=${4:-0}; rm -f "$T/calls"
+      ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+          case "$1 $2" in
+              "GET /flows/instances/?slug=mediastack-recovery") echo '{"results":[{"pk":"F-OURS"}]}' ;;
+              "GET /stages/identification/?name=default-authentication-identification")
+                  jq -cn --arg c "$SIGNIN" '{results:[{pk:"S1", name:"default-authentication-identification", recovery_flow:(if $c == "" then null else $c end)}]}' ;;
+              "GET /core/brands/?domain=authentik-default") jq -cn --arg c "$BRAND" '{results:[{brand_uuid:"B1", flow_recovery:(if $c == "" then null else $c end)}]}' ;;
+              PATCH*) echo '{}' ;;
+          esac; }
+      wire_authentik_recovery >/dev/null; grep '^PATCH' "$T/calls" || true )
+}
+[[ "$(rec yes "" "")" == $'PATCH /stages/identification/S1/ {"recovery_flow":"F-OURS"}\nPATCH /core/brands/B1/ {"flow_recovery":"F-OURS"}' ]] \
+    || fail_ "email tested: the sign-in page and the brand link the reset flow"; pass
+[[ -z "$(rec yes F-OURS F-OURS)" ]] || fail_ "already linked: no write"; pass
+[[ "$(rec no F-OURS F-OURS)" == $'PATCH /stages/identification/S1/ {"recovery_flow":null}\nPATCH /core/brands/B1/ {"flow_recovery":null}' ]] \
+    || fail_ "email untested (or gone): the link comes off — never a dead link"; pass
+[[ -z "$(rec no "" "")" ]] || fail_ "no email, no link: nothing to do"; pass
+[[ -z "$(rec yes F-THEIRS F-THEIRS)" && -z "$(rec no F-THEIRS F-THEIRS)" ]] || fail_ "a recovery flow set in authentik's UI is never touched"; pass
+[[ -z "$(rec yes "" "" 1)" ]] || fail_ "a dry run writes nothing"; pass
+grep -q 'wire_authentik_recovery' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik sets the link"; pass
+grep -q 'authentik_recovery_refresh' <(awk '/^cmd_email\(\)/,/^}/' services/authentik/email.sh) \
+    && [[ "$(awk '/^authentik_configure_email\(\)/,/^}/' services/authentik/email.sh | grep -c authentik_recovery_refresh)" == 2 ]] \
+    || fail_ "a passed test shows the link at once; removing or changing email takes it off at once"; pass
+# doctor: a link without working email is a failure (people get no email)
+( printf 'SMTP_HOST=\n' > "$T/denv"; ENV_FILE=$T/denv; D_FAILS=0; fail() { echo "FAIL $*"; }
+  ak_api() { case "$1 $2" in
+      "GET /flows/instances/?slug=mediastack-recovery") echo '{"results":[{"pk":"F-OURS"}]}' ;;
+      "GET /stages/identification/?name=default-authentication-identification") echo '{"results":[{"pk":"S1","name":"default-authentication-identification","recovery_flow":"F-OURS"}]}' ;;
+      "GET /core/brands/?domain=authentik-default") echo '{"results":[{"brand_uuid":"B1","flow_recovery":"F-OURS"}]}' ;;
+  esac; }
+  out=$(authentik_recovery_doctor); [[ "$out" == *'FAIL authentik: "Forgot password?" shows, but email'* ]] || fail_ "doctor: a link without working email: $out" ) || exit 1; pass
+grep -q 'authentik_recovery_doctor' services/authentik/authentik.sh || fail_ "doctor checks the reset link"; pass
 
 echo "OK authentik: $checks checks"

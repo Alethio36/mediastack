@@ -10,7 +10,7 @@ version: 1
 metadata:
   name: Mediastack - Portal
   labels:
-    blueprints.goauthentik.io/description: "mediastack: groups, sign-up by invitation, the portal's name"
+    blueprints.goauthentik.io/description: "mediastack: groups, sign-up by invitation, password reset by email, the portal's name"
 entries:
   # -- groups -------------------------------------------------------------
   - model: authentik_core.group
@@ -205,6 +205,157 @@ entries:
       target: !KeyOf flow-join
       stage: !KeyOf stage-login
       order: 100
+
+  # -- password reset by email ---------------------------------------------
+  # Always here; the sign-in page links to it only while email works: `wire
+  # authentik` sets the link once the current SMTP settings pass `email test`.
+  # authentik's example recovery flow, with mediastack's email template
+  # (services/authentik/templates/) and the login throttle cleared before the
+  # sign-in, as `reset-password` does.
+  - model: authentik_flows.flow
+    id: flow-recovery
+    identifiers:
+      slug: mediastack-recovery
+    attrs:
+      name: mediastack - password reset by email
+      title: Reset your password
+      designation: recovery
+      authentication: require_unauthenticated
+
+  # by username or email; an unknown one gets the same "email sent" screen
+  # (no account is revealed) and no email
+  - model: authentik_stages_identification.identificationstage
+    id: stage-recovery-identification
+    identifiers:
+      name: mediastack-recovery-identification
+    attrs:
+      user_fields: [username, email]
+      pretend_user_exists: true
+      show_matched_user: false
+  - model: authentik_stages_email.emailstage
+    id: stage-recovery-email
+    identifiers:
+      name: mediastack-recovery-email
+    attrs:
+      use_global_settings: true
+      template: mediastack-password-reset.html
+      subject: !Format ["Reset your %s password", !Env [MEDIASTACK_PORTAL_TITLE, Mediastack]]
+      token_expiry: minutes=30
+      # a deactivated account stays deactivated: deliberate, not a lockout
+      activate_user_on_success: false
+      recovery_max_attempts: 5
+      recovery_cache_timeout: minutes=5
+  - model: authentik_stages_prompt.prompt
+    id: field-recovery-password
+    identifiers:
+      name: mediastack-recovery-password
+    attrs:
+      field_key: password
+      label: New password
+      type: password
+      required: true
+      placeholder: New password
+      order: 0
+  - model: authentik_stages_prompt.prompt
+    id: field-recovery-password-repeat
+    identifiers:
+      name: mediastack-recovery-password-repeat
+    attrs:
+      field_key: password_repeat
+      label: New password (again)
+      type: password
+      required: true
+      placeholder: New password (again)
+      order: 1
+  - model: authentik_stages_prompt.promptstage
+    id: stage-recovery-password
+    identifiers:
+      name: mediastack-recovery-password
+    attrs:
+      fields:
+        - !KeyOf field-recovery-password
+        - !KeyOf field-recovery-password-repeat
+  - model: authentik_stages_user_write.userwritestage
+    id: stage-recovery-write
+    identifiers:
+      name: mediastack-recovery-write
+    attrs:
+      user_creation_mode: never_create
+  - model: authentik_stages_user_login.userloginstage
+    id: stage-recovery-login
+    identifiers:
+      name: mediastack-recovery-login
+
+  # coming back through the email's link: the steps before it are skipped
+  # (authentik's own example policy, as it ships it)
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-recovery-skip-if-restored
+    identifiers:
+      name: mediastack-recovery-skip-if-restored
+    attrs:
+      expression: |
+        return bool(request.context.get("is_restored", True))
+  # failed sign-ins lower a reputation score that locks the LDAP path
+  # (Jellyfin) out: a new password clears it, as `reset-password` does
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-recovery-clear-throttle
+    identifiers:
+      name: mediastack-recovery-clear-throttle
+    attrs:
+      expression: |
+        from authentik.policies.reputation.models import Reputation
+        user = request.context.get("pending_user")
+        if user is not None:
+            Reputation.objects.filter(identifier=user.username).delete()
+        return True
+
+  - model: authentik_flows.flowstagebinding
+    id: binding-recovery-identification
+    identifiers:
+      target: !KeyOf flow-recovery
+      stage: !KeyOf stage-recovery-identification
+      order: 10
+    attrs:
+      evaluate_on_plan: true
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf binding-recovery-identification
+      policy: !KeyOf policy-recovery-skip-if-restored
+      order: 0
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-recovery
+      stage: !KeyOf stage-recovery-email
+      order: 20
+    attrs:
+      evaluate_on_plan: true
+      re_evaluate_policies: true
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-recovery
+      stage: !KeyOf stage-recovery-password
+      order: 30
+  - model: authentik_flows.flowstagebinding
+    identifiers:
+      target: !KeyOf flow-recovery
+      stage: !KeyOf stage-recovery-write
+      order: 40
+  # checked at the sign-in, after the new password is written
+  - model: authentik_flows.flowstagebinding
+    id: binding-recovery-login
+    identifiers:
+      target: !KeyOf flow-recovery
+      stage: !KeyOf stage-recovery-login
+      order: 100
+    attrs:
+      evaluate_on_plan: false
+      re_evaluate_policies: true
+  - model: authentik_policies.policybinding
+    identifiers:
+      target: !KeyOf binding-recovery-login
+      policy: !KeyOf policy-recovery-clear-throttle
+      order: 0
 
   # -- the first card on the dashboard ------------------------------------
   # No login behind it (an application needs no provider): it carries the

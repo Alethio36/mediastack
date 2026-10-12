@@ -147,7 +147,7 @@ Connect
 | `reset-password <user>` | someone locked out of the portal: clears their login throttle and prints a single-use sign-in link (24 hours) to send them — they then set a new password in the portal's Settings. Not for akadmin (`set-credentials portal`); with Wizarr, reset it in Jellyfin's dashboard |
 | `set-email <user> <address> [--yes]` | change a person's portal email — people cannot change their own (Kavita, and later ROMM, sign people in by email, so it is who they are there). Kavita's account follows the change, so their next sign-in lands on the same account. An address another person already has is warned about and asks first; `--yes` decides for scripts. Use this rather than authentik's admin page, which changes the portal only |
 | `users` | the portal's people: username, name, email, groups, and whether they can sign in (the stack's own `akadmin` and service accounts left out) |
-| `email [status\|test <address>]` | the portal's outgoing email: `status` shows the settings and whether they passed a test; `test` sends a real message through authentik and, if the server refuses, says why it usually happens. Set up with `configure` — [docs/email.md](docs/email.md) |
+| `email [status\|test <address>]` | the portal's outgoing email: `status` shows the settings and whether they passed a test; `test` sends a real message through authentik and, if the server refuses, says why it usually happens; a pass turns on the sign-in page's **Forgot password?** (a reset link by email). Set up with `configure` — [docs/email.md](docs/email.md) |
 | `notify [status\|test [stream]\|set <stream>\|clear <stream>\|send <stream> <title> <message> [--type T]]` | the notification streams (`ops`, `users`): what each is set to (URLs hidden) and whether it delivered, a test, replace or clear a stream's URLs, or send your own message — see "Notifications" |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
 | `trash-sync [--dry-run]` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update. `--dry-run` previews the drift (`recyclarr --preview`) and changes nothing |
@@ -557,10 +557,14 @@ others in authentik's Directory → Groups). Sign-up refuses a username the
 apps would confuse: the stack's own accounts there (Audiobookshelf's root,
 Jellyfin's local admin) and an existing person's name in a different case.
 Someone locked out — a forgotten
-password, or too many wrong ones from the Jellyfin app —
-`./mediastack.sh reset-password <username>` clears their login throttle and
-prints a single-use sign-in link to send them; they set a new password in the
-portal's Settings, and it works in every app.
+password, or too many wrong ones from the Jellyfin app — helps themselves
+once email works: the sign-in page's **Forgot password?** emails them a link
+(30 minutes, single use) to choose a new one, which clears their login
+throttle and works in every app. The link shows only while the portal's email
+settings have passed `email test`, so a portal without email never offers a
+dead one. Without email, `./mediastack.sh reset-password <username>` clears
+their login throttle and prints a single-use sign-in link to send them; they
+set a new password in the portal's Settings.
 
 Each person's email is their own: sign-up refuses one another account already
 has, and nobody can change their own (apps such as Kavita know people by it).
@@ -569,7 +573,8 @@ Kavita's account follows, and an address someone else already has is warned
 about first. `./mediastack.sh users` lists everyone with their email and
 groups. The portal can also send email — optional, through any SMTP service
 (a Gmail account with an app password is the simplest):
-[docs/email.md](docs/email.md), then `./mediastack.sh email test <address>`.
+[docs/email.md](docs/email.md), then `./mediastack.sh email test <address>` —
+a passed test turns on **Forgot password?** on the sign-in page.
 
 Moving an existing household onto the portal: invite each person, and once
 they have joined, `./mediastack.sh link-account <username>` ties their local

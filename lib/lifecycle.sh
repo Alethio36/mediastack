@@ -88,8 +88,14 @@ upgrade_finish() { # upgrade_finish <commit before the pull> — run by the pull
     # say what (if anything) the pull requires — images are never part of an
     # upgrade, so they are never mentioned here (that's: update, nightly)
     pending=$(compose_pending)
+    # the portal's setup files reach authentik at `up` (authentik_prepare), its flows at `wire authentik`
+    local portal=0
+    svc_enabled authentik && grep -qE '^services/authentik/(blueprints|templates)/' <<<"$changed" && portal=1
     if [[ -n "$pending" ]]; then
         ok "Upgrade complete. Apply with ./mediastack.sh up — it changes: $(paste -sd' ' <<<"$pending")"
+        (( portal )) && info "The portal's setup changed too: after up, ./mediastack.sh wire authentik"
+    elif (( portal )); then
+        ok "Upgrade complete. The portal's setup changed — apply: ./mediastack.sh up && ./mediastack.sh wire authentik"
     elif grep -qE '^(mediastack\.sh|lib/|services/[^/]+/[^/]+\.sh$)' <<<"$changed"; then
         ok "Upgrade complete. New tooling is live — nothing to apply."
     else

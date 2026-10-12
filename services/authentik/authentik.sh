@@ -119,6 +119,45 @@ authentik_blueprints_sync() { # the worker applies what is in CONFIG_ROOT/authen
     return 0
 }
 
+authentik_template_render() { # authentik_template_render FILE TITLE -> the template with the portal's name in it (byte-stable)
+    # the name is data, never template code: HTML-escaped in .html, and a
+    # brace reaches Django only as a literal ({ and } as entities, or templatetag)
+    local t=$2 body
+    body=$(<"$1")
+    if [[ "$1" == *.html ]]; then
+        t=${t//&/"&amp;"}; t=${t//</"&lt;"}; t=${t//>/"&gt;"}; t=${t//\"/"&quot;"}; t=${t//\'/"&#39;"}
+        t=${t//\{/"&#123;"}; t=${t//\}/"&#125;"}
+    else
+        t=${t//\{/$'\x01'}; t=${t//\}/$'\x02'}
+        t=${t//$'\x01'/"{% templatetag openbrace %}"}; t=${t//$'\x02'/"{% templatetag closebrace %}"}
+    fi
+    printf '%s\n' "${body//@@PORTAL_TITLE@@/"$t"}"
+}
+
+authentik_templates_sync() { # authentik renders CONFIG_ROOT/authentik/templates: keep mediastack's there, with the portal's name in them
+    local dst uid f out n=""
+    dst="$(authentik_dir)/templates"; uid=$(env_get AUTHENTIK_UID)
+    sudo install -d -o "$uid" -g mediacenter -m 755 "$dst"
+    out=$(mktemp)
+    for f in "$SCRIPT_DIR"/services/authentik/templates/*; do
+        authentik_template_render "$f" "$(env_get PORTAL_TITLE Mediastack)" > "$out"
+        sudo cmp -s "$out" "$dst/${f##*/}" || { sudo install -o "$uid" -g mediacenter -m 644 "$out" "$dst/${f##*/}"; n=1; }
+    done
+    rm -f "$out"
+    # one mediastack no longer ships leaves with it; a template of your own there stays
+    for f in $(sudo find "$dst" -maxdepth 1 -name 'mediastack-*' -printf '%f\n'); do
+        [[ -e "$SCRIPT_DIR/services/authentik/templates/$f" ]] || { sudo rm -f "$dst/$f"; n=1; }
+    done
+    [[ -n "$n" ]] || return 0
+    # authentik keeps a template it has read in memory (the server renders the
+    # email, the worker sends it): running ones restart to read the new file
+    local c
+    for c in authentik authentik-worker; do
+        [[ "$(c_state "$(svc_cname "$c")")" == running ]] && sudo docker restart "$(svc_cname "$c")" >/dev/null
+    done
+    info "authentik: its email templates updated"
+}
+
 gate_bind_sync() { # MEDIASTACK_GATE_BIND: where a gated tool's host port listens — 127.0.0.1 while the portal guards it (addr-ok: host bind, not app-to-app)
     # MEDIASTACK_GATE_TRUST: who may name the user to an app that trusts a
     # header (Navidrome) — Traefik's fixed address while the portal runs, nobody otherwise
@@ -155,6 +194,7 @@ authentik_prepare() { # before `up`/`enable` start it: the edge, secrets, the re
     authentik_secrets
     authentik_release_check
     authentik_blueprints_sync
+    authentik_templates_sync
 }
 
 authentik_blueprint_instance() { # -> the blueprint's instance JSON ("" when authentik has not discovered it yet)
@@ -391,6 +431,7 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                 elif [[ "$(state_get SMTP_TESTED)" != "$(smtp_fingerprint)" ]]; then warn "email: these settings have not passed a test — ./mediastack.sh email test <your address>"
                 else ok "email: $(env_get SMTP_HOST) — these settings passed a test"; fi
             fi
+            authentik_recovery_doctor
             local sset
             if sset=$(ak_api GET /admin/settings/); then
                 jq -e '.default_user_change_email == false and .default_user_change_username == false' <<<"$sset" >/dev/null \
@@ -471,6 +512,7 @@ wire_authentik() {
            return 0 ;;
     esac
     wire_authentik_identity
+    wire_authentik_recovery
     wire_authentik_gate
 }
 
@@ -485,6 +527,70 @@ wire_authentik_identity() { # people cannot change their own email or username: 
     ak_api PATCH /admin/settings/ '{"default_user_change_email":false,"default_user_change_username":false}' >/dev/null \
         && ok "authentik: people can no longer change their own email or username" \
         || wfail "authentik rejected the change to its self-service settings"
+}
+
+AUTHENTIK_RECOVERY_FLOW=mediastack-recovery
+AUTHENTIK_SIGNIN_STAGE=default-authentication-identification   # authentik's own sign-in page: where its "Forgot password?" link shows
+
+authentik_email_ready() { smtp_configured && [[ "$(state_get SMTP_TESTED)" == "$(smtp_fingerprint)" ]]; }   # the current settings passed `email test`
+
+authentik_recovery_targets() { # -> one line per place the reset flow is linked: "PATH FIELD CURRENT-FLOW-PK LABEL"
+    local out
+    out=$(ak_api GET "/stages/identification/?name=$AUTHENTIK_SIGNIN_STAGE") || return 1
+    jq -er --arg n "$AUTHENTIK_SIGNIN_STAGE" '[.results[] | select(.name == $n)][0] | "/stages/identification/\(.pk)/ recovery_flow \(.recovery_flow // "-") sign-in-page"' <<<"$out" || return 1
+    out=$(ak_api GET "/core/brands/?domain=authentik-default") || return 1
+    jq -er '.results[0] | "/core/brands/\(.brand_uuid)/ flow_recovery \(.flow_recovery // "-") brand"' <<<"$out" || return 1
+}
+
+wire_authentik_recovery() { # "Forgot password?" on the sign-in page while email works; a recovery flow set in authentik's UI is left alone
+    local out flow want targets path field cur label
+    out=$(ak_api GET "/flows/instances/?slug=$AUTHENTIK_RECOVERY_FLOW") || { wfail "authentik: its flows are unreadable"; return 0; }
+    flow=$(jq -r '.results[0].pk // empty' <<<"$out")
+    [[ -n "$flow" ]] || { wfail "authentik: the password-reset flow ($AUTHENTIK_RECOVERY_FLOW) is missing — the blueprint creates it: ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; return 0; }
+    targets=$(authentik_recovery_targets) \
+        || { wfail "authentik: its sign-in page ($AUTHENTIK_SIGNIN_STAGE) or brand is unreadable — the reset link cannot be set"; return 0; }
+    want=-; authentik_email_ready && want=$flow
+    while read -r path field cur label; do
+        if [[ "$cur" == "$want" ]]; then continue
+        elif [[ "$cur" != - && "$cur" != "$flow" ]]; then ok "authentik: a recovery flow set in its UI ($label) — untouched"; continue; fi
+        if [[ "$want" == - ]]; then w_would "authentik: take the password-reset link off the $label (email is not set up, or its settings have not passed a test)" || continue
+        else w_would "authentik: link the password-reset flow from the $label (email passed its test)" || continue; fi
+        ak_api PATCH "$path" "$(jq -cn --arg f "$field" --arg v "$want" '{($f): (if $v == "-" then null else $v end)}')" >/dev/null \
+            || wfail "authentik rejected the password-reset link on the $label"
+    done <<<"$targets"
+    if [[ "$want" == - ]]; then
+        if smtp_configured; then info "authentik: no \"Forgot password?\" link until these email settings pass a test: ./mediastack.sh email test <your address>"
+        else info "authentik: no \"Forgot password?\" link without email — a locked-out person's way back: ./mediastack.sh reset-password <user>"; fi
+    else ok "authentik: \"Forgot password?\" on the sign-in page — a reset link by email"; fi
+}
+
+authentik_recovery_doctor() { # doctor: "Forgot password?" shows exactly while email works
+    local out flow targets shown=0 other=0 path field cur label
+    out=$(ak_api GET "/flows/instances/?slug=$AUTHENTIK_RECOVERY_FLOW") && flow=$(jq -r '.results[0].pk // empty' <<<"$out") \
+        && [[ -n "$flow" ]] && targets=$(authentik_recovery_targets) \
+        || { warn "authentik: the password-reset link is unreadable — ./mediastack.sh wire authentik"; return 0; }
+    while read -r path field cur label; do
+        [[ "$label" == sign-in-page ]] || continue
+        [[ "$cur" == "$flow" ]] && shown=1
+        [[ "$cur" != - && "$cur" != "$flow" ]] && other=1
+    done <<<"$targets"
+    if (( other )); then info "authentik: the sign-in page links a recovery flow set in its UI — not mediastack's"
+    elif (( shown )) && ! authentik_email_ready; then
+        d_fail "authentik: \"Forgot password?\" shows, but email is not set up or its settings have not passed a test" \
+            "people asking for a reset get no email" "./mediastack.sh email test <your address> (or ./mediastack.sh wire authentik to take the link off)"
+    elif (( ! shown )) && authentik_email_ready; then
+        warn "authentik: email works but the sign-in page has no \"Forgot password?\" link — ./mediastack.sh wire authentik"
+    elif (( shown )); then ok "authentik: \"Forgot password?\" on the sign-in page (email passed its test)"
+    else info "authentik: no \"Forgot password?\" link (no tested email) — a locked-out person: ./mediastack.sh reset-password <user>"; fi
+}
+
+authentik_recovery_refresh() { # outside wire (email test, configure): the reset link follows the email settings now, when authentik is up
+    svc_enabled authentik || return 0
+    if [[ "$(c_health "$(svc_cname authentik)")" != healthy ]]; then
+        info "authentik is not running — the sign-in page's reset link follows at the next: ./mediastack.sh wire authentik"
+        return 0
+    fi
+    wire_authentik_recovery
 }
 
 wire_authentik_gate() { # the gate on the built-in outpost, the first admin in `admins`, the dashboard cards

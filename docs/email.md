@@ -2,9 +2,9 @@
 
 The portal (authentik) can send email. It is optional: without it nothing
 breaks, and someone locked out gets a sign-in link from
-`./mediastack.sh reset-password <user>` instead. With it, the portal has a
-working outgoing mail path you can test — the base later features (password
-reset by email) need.
+`./mediastack.sh reset-password <user>` instead. With it, people reset a
+forgotten password themselves: once the settings pass `email test`, the
+portal's sign-in page shows **Forgot password?**, which emails them a link.
 
 mediastack speaks plain **SMTP**, so any provider works. You need six things
 from yours:
@@ -87,6 +87,18 @@ and the send-as address; run it again to keep, change or remove them.
 the portal's own mail works. `email status` shows the settings and whether
 they have passed a test; `doctor` reports the same.
 
+**Password reset by email.** A pass also puts **Forgot password?** on the
+sign-in page (`wire authentik` keeps it in step). Someone enters their
+username or email and gets a link, valid 30 minutes and once, to choose a new
+password; it signs them in and clears their login throttle, so the Jellyfin
+app lets them in again too. The answer is the same for a name that does not
+exist (nobody can find out who has an account), and a deactivated account
+stays deactivated. Changing or removing the email settings takes the link off
+until the new ones pass a test — the page never offers a reset that sends
+nothing. The email is mediastack's own template, with your portal's name and
+no images (an inline logo shows in Gmail as a broken picture and a file).
+A recovery flow you set yourself in authentik's UI is left alone.
+
 **The password may not contain `$` or spaces** — compose would rewrite it.
 App passwords and SMTP keys never do; `configure` refuses one that does.
 
@@ -108,3 +120,4 @@ as your mailbox (A).
 ## Turning it off
 
 `./mediastack.sh configure` → Email → `r` (remove), then `./mediastack.sh up`.
+**Forgot password?** comes off the sign-in page with it.

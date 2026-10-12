@@ -255,16 +255,18 @@ arrive on their own, as with watchtower, but validated first.
   data root), so it comes after the MVP.
 
 ### End-user experience
-- **Password reset by email** *(after email, Oct 2026)*: with SMTP set
-  (docs/email.md), a "forgot password?" link on the portal's sign-in — a
-  recovery flow (identify, email a link, set a new password) bound to the
-  brand only when email works, so a portal without it never shows a dead
-  link. Until then `reset-password` mints the link for an admin to send.
-  Ship mediastack's own email template with it (authentik reads
-  `CONFIG_ROOT/authentik/templates`): authentik's built-in one references its
-  logo as an inline `cid:logo` image that Gmail shows as a broken image plus
-  an attachment (seen on the first test mail, Oct 2026) — the template
-  comes from the household's branding below.
+- **Password reset by email** — *shipped (Oct 2026)*. The
+  `mediastack-recovery` flow (blueprint): identify by username or email (an
+  unknown one gets the same answer), a 30-minute single-use link in
+  mediastack's own template (no inline logo: Gmail showed authentik's as a
+  broken image plus a file), a new password, the login throttle cleared, signed
+  in; a deactivated account stays deactivated. `wire authentik` links it from
+  the sign-in page and the brand only while the email settings have passed
+  `email test` (`email test` and `configure` update it at once; doctor fails a
+  link without working email); a recovery flow set in authentik's UI is left
+  alone. `reset-password` stays the way back without email. Still open: the
+  email's look follows the branding kit below (a logo needs a public address —
+  the portal is LAN-only, so a linked image would not load in Gmail either).
 - **Personalization: the household's own look, everywhere** *(direction, Oct
   2026)*. Today one setting reaches people: `PORTAL_TITLE` (the portal's
   name, its sign-up page, the app cards). The direction is one branding kit
