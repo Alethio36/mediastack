@@ -267,6 +267,11 @@ arrive on their own, as with watchtower, but validated first.
   alone. `reset-password` stays the way back without email. Still open: the
   email's look follows the branding kit below (a logo needs a public address —
   the portal is LAN-only, so a linked image would not load in Gmail either).
+- **Invitations by email** — *shipped (Oct 2026)*: `invite --email <address>`
+  has authentik send the sign-up link (its send endpoint, mediastack's
+  template; the request names the portal so the link is the portal's, not the
+  script's 127.0.0.1). Its subject is authentik's own. Possible later: pre-fill
+  the address on the sign-up page (the invitation's fixed data).
 - **Personalization: the household's own look, everywhere** *(direction, Oct
   2026)*. Today one setting reaches people: `PORTAL_TITLE` (the portal's
   name, its sign-up page, the app cards). The direction is one branding kit

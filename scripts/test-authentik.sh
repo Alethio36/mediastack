@@ -1165,6 +1165,32 @@ grep -q 'wire_authentik_recovery' <(awk '/^wire_authentik\(\)/,/^}/' services/au
 grep -q 'authentik_recovery_refresh' <(awk '/^cmd_email\(\)/,/^}/' services/authentik/email.sh) \
     && [[ "$(awk '/^authentik_configure_email\(\)/,/^}/' services/authentik/email.sh | grep -c authentik_recovery_refresh)" == 2 ]] \
     || fail_ "a passed test shows the link at once; removing or changing email takes it off at once"; pass
+# ---- invite --email: the portal sends the link, in mediastack's template ----
+grep -q '{% autoescape off %}' services/authentik/templates/mediastack-invitation.txt || fail_ "invitation txt: no HTML escaping in plain text"; pass
+( printf 'AUTHENTIK_HOST=portal\nTRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_API_TOKEN=TOK\n' > "$T/ienv"; ENV_FILE=$T/ienv
+  authentik_url() { echo http://127.0.0.1:9000; }; authentik_portal() { echo https://portal.media.example.com; }
+  curl() { printf '%s\n' "$@" > "$T/curl"; printf '\n%s' "${CURL_CODE:-204}"; }
+  CURL_CODE=204 out=$(authentik_invite_email inv-1 milo@example.com 2>&1) || fail_ "a 204 is a send: $out"
+  grep -qx 'Host: portal.media.example.com' "$T/curl" && grep -qx 'X-Forwarded-Proto: https' "$T/curl" \
+      || fail_ "asked as the portal over https (authentik builds the link from the request's address)"
+  grep -qx 'http://127.0.0.1:9000/api/v3/stages/invitation/invitations/inv-1/send_email/' "$T/curl" \
+      && grep -qxF '{"email_addresses":["milo@example.com"],"template":"mediastack-invitation.html"}' "$T/curl" \
+      || fail_ "authentik's send endpoint, one address, mediastack's template: $(cat "$T/curl")"
+  [[ "$out" == *"Emailed to milo@example.com"* ]] || fail_ "says it was handed over: $out"
+  out=$( (CURL_CODE=500; authentik_invite_email inv-1 milo@example.com) 2>&1) && fail_ "a refusal must stop"
+  [[ "$out" == *"refused to email the invitation [HTTP 500]"*"the link above works"* ]] || fail_ "a refusal says so, and that the printed link still works: $out" ) || exit 1; pass
+[[ -f services/authentik/templates/mediastack-invitation.html && -f services/authentik/templates/mediastack-invitation.txt ]] || fail_ "the invitation template and its text part ship"; pass
+# the verb: --email needs tested email, checked before anything is minted; Wizarr cannot send
+inv() { ( load_env() { :; }; render() { :; }; svc_enabled() { [[ " $SVCS " == *" $1 "* ]]; }
+          authentik_email_ready() { [[ "$READY" == yes ]]; }; authentik_invite() { echo "MINT $*"; }
+          cmd_invite "$@" ) 2>&1; }
+SVCS=authentik READY=no; out=$(inv --email milo@example.com) && fail_ "--email without tested email must stop"
+[[ "$out" == *"needs the portal's email working"* && "$out" != *MINT* ]] || fail_ "--email without tested email: refused before minting: $out"; pass
+READY=yes; [[ "$(inv --expires 30 --email milo@example.com)" == "MINT 30 milo@example.com" ]] || fail_ "--email with tested email: minted and sent"; pass
+[[ "$(inv)" == "MINT 7 " ]] || fail_ "no --email: the link only, as before"; pass
+out=$(inv --email not-an-address) && fail_ "a bad address must stop"; [[ "$out" == *"is not an email address"* ]] || fail_ "a bad address says so: $out"; pass
+SVCS=wizarr; out=$(inv --email milo@example.com) && fail_ "Wizarr cannot send"; [[ "$out" == *"needs the portal (authentik)"* ]] || fail_ "Wizarr + --email says why: $out"; pass
+
 # the sign-in page's show-password button: set once, never over "off" in authentik's UI
 showpw() { # showpw CURRENT SEEDED -> the PATCH calls made, then the state
     ( state_get() { cat "$T/st-$1" 2>/dev/null || true; }; state_set() { echo "$2" > "$T/st-$1"; }

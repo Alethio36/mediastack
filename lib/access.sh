@@ -232,18 +232,23 @@ cmd_set_email() { # an admin changes a person's portal email; Kavita follows; a 
 cmd_invite() { # mint an invitation (authentik's or Wizarr's, whichever runs) and print the ready-to-share URL
     load_env; render
     if svc_enabled authentik; then
-        local days=7   # single use, a week: an unused link stops working on its own
+        local days=7 to=""   # single use, a week: an unused link stops working on its own
+        local usage="usage: invite [--expires 1|7|30] [--email ADDRESS]   (default: 7 days)"
         while [[ $# -gt 0 ]]; do case "$1" in
-            --expires) case "${2:-}" in 1|7|30) days="$2"; shift 2 ;;
-                       *) die "usage: invite [--expires 1|7|30]   (default: 7 days)" ;; esac ;;
-            *) die "usage: invite [--expires 1|7|30]   (default: 7 days)" ;;
+            --expires) case "${2:-}" in 1|7|30) days="$2"; shift 2 ;; *) die "$usage" ;; esac ;;
+            --email) env_type_ok email "${2:-}" || die "'${2:-}' is not an email address — $usage"; to="$2"; shift 2 ;;
+            *) die "$usage" ;;
         esac; done
-        authentik_invite "$days"; return 0
+        # checked before the invitation exists: no link is minted for a send that cannot happen
+        [[ -z "$to" ]] || authentik_email_ready \
+            || die "sending the invitation needs the portal's email working — set it up and test it: ./mediastack.sh email test <your address> (docs/email.md)"
+        authentik_invite "$days" "$to"; return 0
     fi
     local expires="" host domain base key
     while [[ $# -gt 0 ]]; do case "$1" in
         --expires) case "${2:-}" in 1|7|30) expires="$2"; shift 2 ;;
                    *) die "usage: invite [--expires 1|7|30]   (no flag = never expires)" ;; esac ;;
+        --email) die "sending the invitation by email needs the portal (authentik) — with Wizarr, share the printed link yourself" ;;
         *) die "usage: invite [--expires 1|7|30]   (no flag = never expires)" ;;
     esac; done
     svc_enabled wizarr || die "Neither account model is enabled — invitations come from authentik or Wizarr: ./mediastack.sh enable authentik   (or: enable wizarr)"

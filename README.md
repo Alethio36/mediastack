@@ -141,7 +141,7 @@ Connect
 | command | what it does |
 |---|---|
 | `wire [qbit\|deluge\|transmission\|arr\|prowlarr\|bazarr\|apprise\|cleanuparr\|lazylibrarian\|jellyfin\|seerr\|wizarr\|authentik\|audiobookshelf\|kavita] [--dry-run\|--verify]` | connect the apps to each other (the arrs also get their recycle bin — see below); idempotent — GUI-configured apps are never overwritten, with one exception: an address mediastack itself wrote (how one app reaches another) is re-pointed when a VPN toggle moves its target — an address you set by hand is left alone. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable) |
-| `invite [--expires 1\|7\|30]` | mint an invitation and print the ready-to-share URL — with authentik: a single-use sign-up link to the portal (default: 7 days); with Wizarr: a Wizarr invitation (default: never expires) |
+| `invite [--expires 1\|7\|30] [--email ADDRESS]` | mint an invitation and print the ready-to-share URL — with authentik: a single-use sign-up link to the portal (default: 7 days), and with `--email` the portal emails it too (needs email that passed `email test`); with Wizarr: a Wizarr invitation (default: never expires) |
 | `set-credentials <arr\|qbit\|deluge\|transmission\|jellyfin\|pihole\|traefik\|audiobookshelf\|kavita\|portal\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `audiobookshelf` rotates its root password and ends every root session; `kavita` its admin's; `portal` sets akadmin's password through authentik's API; `all` sets one password across the stack except `portal`, which guards the rest (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
 | `link-account <portal-user>` | an existing household's people keep their history: after someone joins the portal, their local Jellyfin, Kavita and Audiobookshelf accounts become their portal account — you confirm which account is whose, see the plan, then it links (Audiobookshelf needs them to sign in once, within 10 minutes) |
 | `reset-password <user>` | someone locked out of the portal: clears their login throttle and prints a single-use sign-in link (24 hours) to send them — they then set a new password in the portal's Settings. Not for akadmin (`set-credentials portal`); with Wizarr, reset it in Jellyfin's dashboard |
@@ -550,7 +550,8 @@ state lives here, and two instances means two divergent truths.
 ## The portal and the gate (authentik)
 
 With authentik enabled, `portal.<domain>` is where your users join (by
-invitation: `./mediastack.sh invite`) and log in; its dashboard shows each person
+invitation: `./mediastack.sh invite`, or `invite --email <address>` to have the
+portal send it) and log in; its dashboard shows each person
 the apps they may use. Two groups decide access: `media-users` (everyone who
 joins) and `admins` (you — `wire authentik` puts the first admin there; add
 others in authentik's Directory → Groups). Sign-up refuses a username the

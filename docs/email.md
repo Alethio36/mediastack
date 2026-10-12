@@ -97,6 +97,12 @@ stays deactivated. Changing or removing the email settings takes the link off
 until the new ones pass a test — the page never offers a reset that sends
 nothing. The email is mediastack's own template, with your portal's name and
 no images (an inline logo shows in Gmail as a broken picture and a file).
+**Invitations by email.** `./mediastack.sh invite --email <address>` mints the
+single-use sign-up link as usual (printed, so you can still send it yourself)
+and has the portal email it, in mediastack's own template. The subject line is
+authentik's ("You have been invited to portal.<domain>"). It needs email that
+passed a test, and says so before minting anything.
+
 A recovery flow you set yourself in authentik's UI is left alone. A link
 opened again after it worked lands on the dashboard (the reset signed them
 in); opened signed out once used or expired, it starts a new reset.

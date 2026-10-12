@@ -282,8 +282,8 @@ authentik_oidc_issuer() { # authentik_oidc_issuer SVC -> the issuer of its house
     echo "$(authentik_portal)/application/o/mediastack-app-$1/"
 }
 
-authentik_invite() { # authentik_invite DAYS -> a single-use sign-up link, printed
-    local days="$1" flow name exp out pk
+authentik_invite() { # authentik_invite DAYS [ADDRESS] -> a single-use sign-up link, printed (and emailed to ADDRESS)
+    local days="$1" to="${2:-}" flow name exp out pk
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
     out=$(ak_api GET "/flows/instances/?slug=$AUTHENTIK_JOIN_FLOW") \
         || die "authentik's API refused the sign-up flow lookup: $(head -c200 <<<"$out")"
@@ -297,6 +297,23 @@ authentik_invite() { # authentik_invite DAYS -> a single-use sign-up link, print
     pk=$(jq -r '.pk // empty' <<<"$out"); [[ -n "$pk" ]] || die "authentik answered without an invitation id: $(head -c200 <<<"$out")"
     ok "Invitation created — single use, expires in $days day(s) ($(date -d "$exp" '+%Y-%m-%d %H:%M'))"
     echo "$(authentik_portal)/if/flow/$AUTHENTIK_JOIN_FLOW/?itoken=$pk"
+    [[ -z "$to" ]] || authentik_invite_email "$pk" "$to"
+}
+
+authentik_invite_email() { # authentik_invite_email INVITATION-PK ADDRESS — authentik emails the sign-up link, in mediastack's template
+    # authentik builds the link from the request's own address: the script asks
+    # as the portal (its real name, https) — otherwise the mail would carry the
+    # script's http://127.0.0.1 address. Its subject is authentik's own.
+    local pk="$1" to="$2" host out code
+    host=$(authentik_portal); host=${host#https://}
+    out=$(curl -sS -m 20 -X POST -H "Authorization: Bearer $(env_get AUTHENTIK_API_TOKEN)" -H "Content-Type: application/json" \
+          -H "Host: $host" -H "X-Forwarded-Proto: https" \
+          -d "$(jq -cn --arg a "$to" '{email_addresses:[$a], template:"mediastack-invitation.html"}')" \
+          -w $'\n%{http_code}' "$(authentik_url)/api/v3/stages/invitation/invitations/$pk/send_email/" 2>&1) \
+        || die "authentik is unreachable — the invitation was not emailed (the link above works; send it yourself): $(oneline "$out")"
+    code=${out##*$'\n'}
+    [[ "$code" =~ ^2 ]] || die "authentik refused to email the invitation [HTTP $code]: $(oneline "${out%$'\n'*}") — the link above works; send it yourself"
+    ok "Emailed to $to — authentik sends it in the background; not there in a few minutes? Its spam folder, then: ./mediastack.sh logs authentik-worker --no-follow"
 }
 
 authentik_admin_rotate() { # authentik_admin_rotate NEW-PASSWORD — akadmin's password, then .env; rc 1 after printing why
