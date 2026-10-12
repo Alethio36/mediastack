@@ -8,7 +8,8 @@
 #     caller handles it
 #   * die prints only its own message; a die inside an unguarded $( ) adds
 #     the one line naming where it was called from
-#   * a ( ) subshell's failure is named once (its own line, not its exit too)
+#   * a ( ) subshell's failure is named once (its own line, not its exit too);
+#     a false (( )) is named like any other failure
 #   * stopped_run's EXIT guard (lib/backup.sh) still restarts what it stopped,
 #     called guarded (the way backup calls it) and unguarded
 # Each case runs in its own bash that sources the real entrypoint (minus its
@@ -32,6 +33,7 @@ f_subst()  { local x; x=$(grep -q nomatch /dev/null); echo "f_subst went on"; } 
 f_die()    { die "boom"; }
 f_diesub() { local x; x=$(f_die); echo "f_diesub went on"; }   # FX:diesub
 f_sub()    { ( true; test "$secret" = nope ); echo "f_sub went on"; }   # FX:sub
+f_arith()  { local n=0; (( n > 0 )); echo "f_arith went on"; }   # FX:arith
 # stopped_run's world, stubbed: compose and sudo record, the marker lives in $T
 DC()         { echo "DC $*" >> "$T/dc"; }
 sudo()       { "$@"; }
@@ -91,6 +93,11 @@ run 'f_diesub'
 run 'f_sub'
 (( rc == 1 && $(trap_lines) == 1 )) || fail_ "( ) subshell: $(trap_lines) line(s), expected 1"; pass
 grep -qF "fx.sh:$(line_of sub) in f_sub: test \"\$secret\" = nope" "$T/err" || fail_ "( ) subshell: not its own line"; pass
+
+# ---- a false (( )) is not a subshell: named ----
+run 'f_arith'
+(( rc == 1 && $(trap_lines) == 1 )) && grep -qF "fx.sh:$(line_of arith) in f_arith: (( n > 0 ))" "$T/err" \
+    || fail_ "a false (( )) under set -e was not named"; pass
 
 # ---- stopped_run's EXIT guard still restarts ----
 run 'rc2=0; stopped_run backup "" false || rc2=$?; echo "rc=$rc2"'

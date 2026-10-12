@@ -24,11 +24,13 @@ hr()    { echo "── $* ──────────────────
 # so no secret value is printed. Silent wherever the failure is handled:
 # bash skips the trap under if/while/!/&&/|| itself, and inside $( ) set -e is
 # off (the caller's own line reports an unhandled one). A ( ) subshell has
-# already reported its own failing line, so its exit is not named twice. The
+# already reported its own failing line, so its exit is not named twice; an
+# arithmetic (( )) that is false is a failure like any other. The
 # exit code is untouched; exit (and so die) never fires the trap.
 on_err() {
     local rc=$? cmd=${BASH_COMMAND//$'\n'/ } src chain="" i
-    [[ $- == *e* && $cmd != '('* ]] || return 0
+    [[ $- == *e* ]] || return 0
+    if [[ $cmd == '('* && $cmd != '(('* ]]; then return 0; fi   # a ( ) subshell (not (( ))): named inside already
     src=${BASH_SOURCE[1]:-$0}; src=${src#"$SCRIPT_DIR"/}; src=${src#./}   # no [1] at a bash -c top level
     # FUNCNAME[0] is on_err; bash's own "main" for a script's top level is the
     # entry called from line 0 (absent under bash -c, where the tests run)
