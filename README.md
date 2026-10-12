@@ -556,7 +556,9 @@ joins) and `admins` (you — `wire authentik` puts the first admin there; add
 others in authentik's Directory → Groups). Sign-up refuses a username the
 apps would confuse: the stack's own accounts there (Audiobookshelf's root,
 Jellyfin's local admin) and an existing person's name in a different case.
-Someone locked out — a forgotten
+The sign-in page has a show-password button, so a mistyped password can be
+seen before it is sent (`wire authentik` adds it once; switched off in
+authentik's UI, it stays off). Someone locked out — a forgotten
 password, or too many wrong ones from the Jellyfin app — helps themselves
 once email works: the sign-in page's **Forgot password?** emails them a link
 (30 minutes, single use) to choose a new one, which clears their login

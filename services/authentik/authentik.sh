@@ -513,6 +513,7 @@ wire_authentik() {
     esac
     wire_authentik_identity
     wire_authentik_recovery
+    wire_authentik_show_password
     wire_authentik_gate
 }
 
@@ -531,6 +532,32 @@ wire_authentik_identity() { # people cannot change their own email or username: 
 
 AUTHENTIK_RECOVERY_FLOW=mediastack-recovery
 AUTHENTIK_SIGNIN_STAGE=default-authentication-identification   # authentik's own sign-in page: where its "Forgot password?" link shows
+
+AUTHENTIK_SIGNIN_PASSWORD=default-authentication-password   # authentik's own sign-in password step
+
+wire_authentik_show_password() { # a show-password button at sign-in, set once: turned off in authentik's UI, it stays off
+    # (the reset and sign-up forms cannot have one: authentik's prompt fields
+    # render a bare masked input — their "again" field catches a typo there)
+    local out pk cur
+    out=$(ak_api GET "/stages/password/?name=$AUTHENTIK_SIGNIN_PASSWORD") || { wfail "authentik: its sign-in password step is unreadable: $(oneline "$out")"; return 0; }
+    pk=$(jq -r --arg n "$AUTHENTIK_SIGNIN_PASSWORD" '[.results[] | select(.name == $n)][0].pk // empty' <<<"$out")
+    if [[ -z "$pk" ]]; then
+        info "authentik: no sign-in password step named $AUTHENTIK_SIGNIN_PASSWORD (a sign-in of your own) — no show-password button set"
+        return 0
+    fi
+    cur=$(jq -r --arg n "$AUTHENTIK_SIGNIN_PASSWORD" '[.results[] | select(.name == $n)][0].allow_show_password' <<<"$out")
+    if [[ "$cur" == true ]]; then
+        [[ -n "$(state_get AUTHENTIK_SHOW_PASSWORD)" ]] || state_set AUTHENTIK_SHOW_PASSWORD 1
+        ok "authentik: a show-password button at sign-in"; return 0
+    fi
+    if [[ -n "$(state_get AUTHENTIK_SHOW_PASSWORD)" ]]; then
+        ok "authentik: the sign-in page's show-password button was turned off in its UI — untouched"; return 0
+    fi
+    w_would "authentik: add a show-password button at sign-in (see a mistyped password before sending it)" || return 0
+    if out=$(ak_api PATCH "/stages/password/$pk/" '{"allow_show_password":true}'); then
+        state_set AUTHENTIK_SHOW_PASSWORD 1; ok "authentik: show-password button added at sign-in"
+    else wfail "authentik rejected the show-password button: $(oneline "$out")"; fi
+}
 
 authentik_email_ready() { smtp_configured && [[ "$(state_get SMTP_TESTED)" == "$(smtp_fingerprint)" ]]; }   # the current settings passed `email test`
 

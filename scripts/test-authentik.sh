@@ -324,7 +324,7 @@ first_start() { # first_start DRY DISCOVERED -> what wire_authentik did: "gate|n
     ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
       authentik_blueprint_status() { echo ""; }
       authentik_blueprint_discovered() { echo waited > "$T/waited"; echo "$DISC"; }
-      wire_authentik_gate() { echo gate > "$T/gated"; }; wire_authentik_recovery() { :; }   # its own section below
+      wire_authentik_gate() { echo gate > "$T/gated"; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }   # their own sections below
       rm -f "$T/waited" "$T/gated"; WIRE_DRY=$1 DISC=$2 WIRE_FAILS=0
       wire_authentik >/dev/null 2>&1
       echo "$(cat "$T/gated" 2>/dev/null || echo nogate) fails=$WIRE_FAILS $(cat "$T/waited" 2>/dev/null || echo nowait)" )
@@ -1163,6 +1163,23 @@ grep -q 'wire_authentik_recovery' <(awk '/^wire_authentik\(\)/,/^}/' services/au
 grep -q 'authentik_recovery_refresh' <(awk '/^cmd_email\(\)/,/^}/' services/authentik/email.sh) \
     && [[ "$(awk '/^authentik_configure_email\(\)/,/^}/' services/authentik/email.sh | grep -c authentik_recovery_refresh)" == 2 ]] \
     || fail_ "a passed test shows the link at once; removing or changing email takes it off at once"; pass
+# the sign-in page's show-password button: set once, never over "off" in authentik's UI
+showpw() { # showpw CURRENT SEEDED -> the PATCH calls made, then the state
+    ( state_get() { cat "$T/st-$1" 2>/dev/null || true; }; state_set() { echo "$2" > "$T/st-$1"; }
+      if [[ -n "$2" ]]; then echo 1 > "$T/st-AUTHENTIK_SHOW_PASSWORD"; else rm -f "$T/st-AUTHENTIK_SHOW_PASSWORD"; fi
+      CUR=$1; WIRE_DRY=0; rm -f "$T/calls"
+      ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+          case "$1 $2" in
+              "GET /stages/password/?name=default-authentication-password") jq -cn --argjson c "$CUR" '{results:[{pk:"P1", name:"default-authentication-password", allow_show_password:$c}]}' ;;
+              PATCH*) echo '{}' ;;
+          esac; }
+      wire_authentik_show_password >/dev/null; grep '^PATCH' "$T/calls" || true; echo "seeded=$(state_get AUTHENTIK_SHOW_PASSWORD)" )
+}
+[[ "$(showpw false "")" == $'PATCH /stages/password/P1/ {"allow_show_password":true}\nseeded=1' ]] || fail_ "show password: set once, remembered: $(showpw false "")"; pass
+[[ "$(showpw false 1)" == "seeded=1" ]] || fail_ "show password: turned off in authentik's UI after we set it — never set again"; pass
+[[ "$(showpw true "")" == "seeded=1" ]] || fail_ "show password: already on — no write, remembered (so a later 'off' stays off)"; pass
+grep -q 'wire_authentik_show_password' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik sets the show-password button"; pass
+
 # doctor: a link without working email is a failure (people get no email)
 ( printf 'SMTP_HOST=\n' > "$T/denv"; ENV_FILE=$T/denv; D_FAILS=0; fail() { echo "FAIL $*"; }
   ak_api() { case "$1 $2" in
