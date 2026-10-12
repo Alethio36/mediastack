@@ -221,6 +221,11 @@ entries:
       title: Reset your password
       designation: recovery
       authentication: require_unauthenticated
+      # someone already signed in (the reset signs them in, so the same link
+      # clicked again) lands on the dashboard, not on authentik's "does not
+      # apply to current user" (found live); signed out, a used or expired
+      # link simply starts the reset again
+      denied_action: continue
 
   # by username or email; an unknown one gets the same "email sent" screen
   # (no account is revealed) and no email

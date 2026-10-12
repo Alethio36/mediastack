@@ -1088,6 +1088,8 @@ sed -n '/name: mediastack-recovery-identification$/,/^  - /p' "$bp" > "$T/rid"
 grep -q 'pretend_user_exists: true' "$T/rid" && grep -q 'show_matched_user: false' "$T/rid" \
     || fail_ "an unknown name gets the same answer: no account revealed"; pass
 sed -n '/name: mediastack-recovery-write$/,/^  - /p' "$bp" | grep -q 'user_creation_mode: never_create' || fail_ "a reset never creates an account"; pass
+sed -n '/slug: mediastack-recovery$/,/^  - /p' "$bp" | grep -q 'denied_action: continue' \
+    || fail_ "someone signed in who opens a reset link lands on the dashboard, not an error (found live)"; pass
 sed -n '/name: mediastack-recovery-email$/,/^  - /p' "$bp" > "$T/rem"
 grep -q 'activate_user_on_success: false' "$T/rem" || fail_ "a deactivated account stays deactivated"; pass
 tpl=$(sed -n 's/^ *template: //p' "$T/rem")
