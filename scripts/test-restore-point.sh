@@ -279,6 +279,28 @@ grep -q 'maint_lock backup 0' <(awk '/^backup_take\(\)/,/^}/' lib/backup.sh) || 
 # wire talks to the apps an update or backup stops and recreates: it refuses
 # while one runs (found live: a wire --verify during the 04:00 update)
 grep -q 'maint_lock wire 0' <(awk '/^cmd_wire\(\)/,/^}/' lib/wire.sh) || fail_ "wire takes the maintenance lock"; pass
+# ...except update's own wire --verify, a child inside the hold (found live 11-12 Oct:
+# it was refused, and the nightly update died silently before trash-sync)
+( exec 8<"$MAINT_LOCK"; flock 8; sleep 4 ) & holder=$!; sleep 0.5
+child() { MAINT_LOCKED=$1 bash -c "source '$lib'; MAINT_LOCK='$MAINT_LOCK'; maint_lock wire 0 && echo INSIDE" 2>&1 || true; }
+[[ "$(child 1)" == INSIDE ]] || fail_ "the holder's child (MAINT_LOCKED=1) is inside the hold"; pass
+[[ "$(child "")" == *"wire refused"* ]] || fail_ "any other wire still refuses"; pass
+wait "$holder"
+grep -q 'MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" wire --verify' <(awk '/^update_verify_wiring\(\)/,/^}/' lib/backup.sh) \
+    || fail_ "update runs its wire --verify inside its hold"; pass
+# what the verify answered: kept, drift, or could not run — the update goes on after each
+mkdir -p "$T/fake"; fail() { echo "FAIL $*"; }
+# the verify runs under set -e, as in a real run: a plain statement, never under || or in $( )
+verify() { printf '#!/bin/bash\necho "lock=$MAINT_LOCKED"\n%s\n' "$1" > "$T/fake/mediastack.sh"; chmod +x "$T/fake/mediastack.sh"
+           set +e; ( set -e; SCRIPT_DIR=$T/fake; update_verify_wiring; echo "went on" ) > "$T/vout" 2>&1; set -e
+           out=$(<"$T/vout"); }
+verify 'exit 0'; [[ "$out" == *"OK wire --verify: the new versions kept"*"went on" ]] || fail_ "kept: $out"; pass
+verify 'echo "would: set jellyfin transcode path"; exit 1'
+[[ "$out" == *"found drift"*"would: set jellyfin"*"NOTIFY Mediastack update changed settings"*"went on" ]] || fail_ "drift: $out"; pass
+verify 'echo "ERROR Another update or backup is running — wire refused." >&2; exit 1'
+[[ "$out" == *"FAIL wire --verify could not run after the update (exit 1)"*"lock=1"*"wire refused"*"NOTIFY Mediastack update: wiring not verified"*"went on" ]] \
+    || fail_ "could not run: named, alerted, the update goes on: $out"; pass
+[[ "$out" != *"found drift"* ]] || fail_ "a verify that could not run is not drift: $out"; pass
 # after every stack start Prowlarr re-tests its indexers once FlareSolverr is
 # healthy: a cold FlareSolverr failed its first requests and the arrs reported
 # "all indexers unavailable" nightly (found live)

@@ -65,10 +65,11 @@ backup_scheduled() {
 # Updates and backups stop and start the stack: two at once would fight over
 # it. One lock: a run you start refuses while another holds it; a timer's run
 # waits (MAINT_WAIT). Held until the process exits; re-entry (update's own
-# restore point) is a no-op.
+# restore point) is a no-op, and so is a child the holder starts with
+# MAINT_LOCKED=1 (update's own wire --verify: a separate process, inside the hold).
 MAINT_LOCK=/run/lock/mediastack-maintenance.lock
 MAINT_WAIT=21600   # seconds a timer's run waits: an update postponed for streams (UPDATE_DEFER_MAX_MIN) plus its run
-MAINT_LOCKED=0
+MAINT_LOCKED=${MAINT_LOCKED:-0}
 maint_lock() { # maint_lock WHAT WAIT-SECONDS — 0: refuse at once when held; rc 1 when the wait ran out
     (( MAINT_LOCKED )) && return 0
     [[ -e "$MAINT_LOCK" ]] || : > "$MAINT_LOCK"
@@ -919,17 +920,7 @@ cmd_update() {
     # never applies anything unattended. A child process: wire exits on its own.
     if (( ${#changed[@]} )) && [[ -f "$WIRED_FILE" ]]; then
         hr "Wiring after the update"
-        local vout vrc=0 drift
-        vout=$("$SCRIPT_DIR/mediastack.sh" wire --verify 2>&1) || vrc=$?
-        if (( vrc == 0 )); then
-            ok "wire --verify: the new versions kept their settings"
-        else
-            drift=$(grep -E 'would:|FAIL' <<<"$vout" | head -12)
-            warn "wire --verify found drift after the update — a new version changed settings wire owns:"
-            printf '%s\n' "$drift" | sed 's/^/    /'
-            echo "  Apply: ./mediastack.sh wire     (see it all first: ./mediastack.sh wire --verify)"
-            notify ops "Mediastack update changed settings" "A new version reset settings wire owns:"$'\n'"$(printf '`%s`\n' "$drift")"$'\n'"Apply: \`./mediastack.sh wire\`" warning
-        fi
+        update_verify_wiring
     fi
 
     # nightly TRaSH sync rides the update pipeline: same schedule the
@@ -941,6 +932,27 @@ cmd_update() {
                             notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded."$'\n'"Inspect: \`./mediastack.sh trash-sync\`" failure
                             exit 1; }
     fi
+}
+
+update_verify_wiring() { # wire --verify after a version change: drift warns, a verify that cannot run fails loud; the update goes on
+    local vout vrc=0 drift
+    # its own process (wire exits on its own), inside this update's hold: wire refuses anyone else's
+    vout=$(MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" wire --verify 2>&1) || vrc=$?
+    if (( vrc == 0 )); then
+        ok "wire --verify: the new versions kept their settings"
+        return 0
+    fi
+    drift=$(grep -E 'would:|FAIL' <<<"$vout" | head -12 || true)   # none: wire stopped before comparing anything
+    if [[ -z "$drift" ]]; then
+        fail "wire --verify could not run after the update (exit $vrc): $(oneline "$(tail -3 <<<"$vout")")"
+        echo "  The update itself succeeded. Check: ./mediastack.sh wire --verify"
+        notify ops "Mediastack update: wiring not verified" "wire --verify could not run after the update (exit $vrc): \`$(oneline "$(tail -3 <<<"$vout")")\`"$'\n'"Check: \`./mediastack.sh wire --verify\`" failure
+        return 0
+    fi
+    warn "wire --verify found drift after the update — a new version changed settings wire owns:"
+    printf '%s\n' "$drift" | sed 's/^/    /'
+    echo "  Apply: ./mediastack.sh wire     (see it all first: ./mediastack.sh wire --verify)"
+    notify ops "Mediastack update changed settings" "A new version reset settings wire owns:"$'\n'"$(printf '`%s`\n' "$drift")"$'\n'"Apply: \`./mediastack.sh wire\`" warning
 }
 
 cmd_apply_timer() {
