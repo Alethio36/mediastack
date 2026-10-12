@@ -18,19 +18,18 @@ fail()  { echo "${C_RED}FAIL${C_RST} $*"; }
 die()   { echo "${C_RED}ERROR${C_RST} $*" >&2; exit 1; }
 hr()    { echo "── $* ────────────────────────────────────────────"; }
 
-# The entrypoint's ERR trap (set -E carries it into functions and ( )
-# subshells). An unguarded command that fails ends the run under set -e; this
-# names it in one line. BASH_COMMAND is the command's text before expansion,
-# so no secret value is printed. Silent wherever the failure is handled:
-# bash skips the trap under if/while/!/&&/|| itself, and inside $( ) set -e is
-# off (the caller's own line reports an unhandled one). A ( ) subshell has
-# already reported its own failing line, so its exit is not named twice; an
-# arithmetic (( )) that is false is a failure like any other. The
-# exit code is untouched; exit (and so die) never fires the trap.
+# The entrypoint's ERR trap (set -E carries it into functions). An unguarded
+# command that fails ends the run under set -e; this names it in one line.
+# BASH_COMMAND is the command's text before expansion, so no secret value is
+# printed. Only the main shell reports — that is where a failure ends the
+# run: a failing $( ), ( ) or pipeline part is named once, by the line in
+# the main shell that it fails, and a process substitution's failure, whose
+# status nothing reads, is not named at all. Silent wherever the failure is
+# handled (bash skips the trap under if/while/!/&&/||). The exit code is
+# untouched; exit (and so die) never fires the trap.
 on_err() {
     local rc=$? cmd=${BASH_COMMAND//$'\n'/ } src chain="" i
-    [[ $- == *e* ]] || return 0
-    if [[ $cmd == '('* && $cmd != '(('* ]]; then return 0; fi   # a ( ) subshell (not (( ))): named inside already
+    [[ $- == *e* ]] && (( BASH_SUBSHELL == 0 )) || return 0
     src=${BASH_SOURCE[1]:-$0}; src=${src#"$SCRIPT_DIR"/}; src=${src#./}   # no [1] at a bash -c top level
     # FUNCNAME[0] is on_err; bash's own "main" for a script's top level is the
     # entry called from line 0 (absent under bash -c, where the tests run)

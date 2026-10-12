@@ -567,9 +567,10 @@ all built; what each still leaves open is noted below.
 - **An ERR trap that names an unexpected stop** — *shipped (Oct 2026)*.
   `set -E` + `on_err` (lib/common.sh): an unguarded failure prints one line
   (exit code, file:line, caller chain, the command unexpanded) and the exit
-  code is kept; silent under if/||/&& and inside `$( )` (set -e is off
-  there, the caller's line reports it); a `( )` subshell is named once; `die`
-  never fires it. Not sent to notifications yet; the panel shows it as it
+  code is kept; silent under if/||/&&; only the main shell reports (where a
+  failure ends the run), so a `$( )`, `( )` or pipeline part is named once,
+  at its line in the caller, and a process substitution's failure (status
+  unread) not at all; `die` never fires it. Not sent to notifications yet; the panel shows it as it
   shows any stderr. Pinned by scripts/test-errtrap.sh.
 - **A `--dry-run` smoke test in CI.** The rest of the suite is in place: each
   `scripts/test-*.sh` / `check-*.sh` states in its header what it pins, and the
