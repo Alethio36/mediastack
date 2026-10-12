@@ -1098,16 +1098,26 @@ rec() { # rec READY SIGNIN BRAND [DRY] -> the PATCH calls made
           case "$1 $2" in
               "GET /flows/instances/?slug=mediastack-recovery") echo '{"results":[{"pk":"F-OURS"}]}' ;;
               "GET /stages/identification/?name=default-authentication-identification")
-                  jq -cn --arg c "$SIGNIN" '{results:[{pk:"S1", name:"default-authentication-identification", recovery_flow:(if $c == "" then null else $c end)}]}' ;;
+                  jq -cn --arg c "$SIGNIN" '{results:[{pk:"S1", name:"default-authentication-identification", user_fields:["username","email"], sources:[], recovery_flow:(if $c == "" then null else $c end)}]}' ;;
               "GET /core/brands/?domain=authentik-default") jq -cn --arg c "$BRAND" '{results:[{brand_uuid:"B1", flow_recovery:(if $c == "" then null else $c end)}]}' ;;
+              "PATCH /stages/identification/S1/")
+                  # authentik 2026.8: an update without user_fields or sources is refused (found live)
+                  if [[ -n "${REFUSE:-}" ]] || ! jq -e '(.user_fields | length) > 0 or (.sources | length) > 0' <<<"$3" >/dev/null 2>&1; then
+                      echo '{"non_field_errors":["When no user fields are selected, at least one source must be selected"]}'; return 1; fi
+                  echo '{}' ;;
               PATCH*) echo '{}' ;;
           esac; }
-      wire_authentik_recovery >/dev/null; grep '^PATCH' "$T/calls" || true )
+      wire_authentik_recovery > "$T/rout"; grep '^PATCH' "$T/calls" || true )
 }
-[[ "$(rec yes "" "")" == $'PATCH /stages/identification/S1/ {"recovery_flow":"F-OURS"}\nPATCH /core/brands/B1/ {"flow_recovery":"F-OURS"}' ]] \
-    || fail_ "email tested: the sign-in page and the brand link the reset flow"; pass
+[[ "$(rec yes "" "")" == $'PATCH /stages/identification/S1/ {"user_fields":["username","email"],"sources":[],"recovery_flow":"F-OURS"}\nPATCH /core/brands/B1/ {"flow_recovery":"F-OURS"}' ]] \
+    || fail_ "email tested: the sign-in page (its user_fields and sources sent back as they are) and the brand link the reset flow: $(rec yes "" "")"; pass
+grep -q 'Forgot password' "$T/rout" && ! grep -q '^FAIL' "$T/rout" || fail_ "linked: says so, no failure"; pass
+REFUSE=1 rec yes "" "" >/dev/null
+grep -q 'FAIL authentik rejected the password-reset link on the sign-in-page: {"non_field_errors":\["When no user fields' "$T/rout" \
+    && ! grep -q 'Forgot password?\" on the sign-in page' "$T/rout" \
+    || fail_ "a refused write names authentik's answer and never reports the link as set: $(cat "$T/rout")"; pass
 [[ -z "$(rec yes F-OURS F-OURS)" ]] || fail_ "already linked: no write"; pass
-[[ "$(rec no F-OURS F-OURS)" == $'PATCH /stages/identification/S1/ {"recovery_flow":null}\nPATCH /core/brands/B1/ {"flow_recovery":null}' ]] \
+[[ "$(rec no F-OURS F-OURS)" == $'PATCH /stages/identification/S1/ {"user_fields":["username","email"],"sources":[],"recovery_flow":null}\nPATCH /core/brands/B1/ {"flow_recovery":null}' ]] \
     || fail_ "email untested (or gone): the link comes off — never a dead link"; pass
 [[ -z "$(rec no "" "")" ]] || fail_ "no email, no link: nothing to do"; pass
 [[ -z "$(rec yes F-THEIRS F-THEIRS)" && -z "$(rec no F-THEIRS F-THEIRS)" ]] || fail_ "a recovery flow set in authentik's UI is never touched"; pass

@@ -534,30 +534,35 @@ AUTHENTIK_SIGNIN_STAGE=default-authentication-identification   # authentik's own
 
 authentik_email_ready() { smtp_configured && [[ "$(state_get SMTP_TESTED)" == "$(smtp_fingerprint)" ]]; }   # the current settings passed `email test`
 
-authentik_recovery_targets() { # -> one line per place the reset flow is linked: "PATH FIELD CURRENT-FLOW-PK LABEL"
+authentik_recovery_targets() { # -> one line per place the reset flow is linked: "PATH FIELD CURRENT-FLOW-PK LABEL KEEP-JSON"
+    # KEEP: what a write must send back unchanged — authentik refuses an
+    # identification stage update without its user_fields or sources (its
+    # check reads only the fields sent; found live, 2026.8)
     local out
     out=$(ak_api GET "/stages/identification/?name=$AUTHENTIK_SIGNIN_STAGE") || return 1
-    jq -er --arg n "$AUTHENTIK_SIGNIN_STAGE" '[.results[] | select(.name == $n)][0] | "/stages/identification/\(.pk)/ recovery_flow \(.recovery_flow // "-") sign-in-page"' <<<"$out" || return 1
+    jq -er --arg n "$AUTHENTIK_SIGNIN_STAGE" '[.results[] | select(.name == $n)][0]
+        | "/stages/identification/\(.pk)/ recovery_flow \(.recovery_flow // "-") sign-in-page \({user_fields, sources} | tojson)"' <<<"$out" || return 1
     out=$(ak_api GET "/core/brands/?domain=authentik-default") || return 1
-    jq -er '.results[0] | "/core/brands/\(.brand_uuid)/ flow_recovery \(.flow_recovery // "-") brand"' <<<"$out" || return 1
+    jq -er '.results[0] | "/core/brands/\(.brand_uuid)/ flow_recovery \(.flow_recovery // "-") brand {}"' <<<"$out" || return 1
 }
 
 wire_authentik_recovery() { # "Forgot password?" on the sign-in page while email works; a recovery flow set in authentik's UI is left alone
-    local out flow want targets path field cur label
+    local out flow want targets path field cur label keep bad=0
     out=$(ak_api GET "/flows/instances/?slug=$AUTHENTIK_RECOVERY_FLOW") || { wfail "authentik: its flows are unreadable"; return 0; }
     flow=$(jq -r '.results[0].pk // empty' <<<"$out")
     [[ -n "$flow" ]] || { wfail "authentik: the password-reset flow ($AUTHENTIK_RECOVERY_FLOW) is missing — the blueprint creates it: ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; return 0; }
     targets=$(authentik_recovery_targets) \
         || { wfail "authentik: its sign-in page ($AUTHENTIK_SIGNIN_STAGE) or brand is unreadable — the reset link cannot be set"; return 0; }
     want=-; authentik_email_ready && want=$flow
-    while read -r path field cur label; do
+    while read -r path field cur label keep; do
         if [[ "$cur" == "$want" ]]; then continue
         elif [[ "$cur" != - && "$cur" != "$flow" ]]; then ok "authentik: a recovery flow set in its UI ($label) — untouched"; continue; fi
         if [[ "$want" == - ]]; then w_would "authentik: take the password-reset link off the $label (email is not set up, or its settings have not passed a test)" || continue
         else w_would "authentik: link the password-reset flow from the $label (email passed its test)" || continue; fi
-        ak_api PATCH "$path" "$(jq -cn --arg f "$field" --arg v "$want" '{($f): (if $v == "-" then null else $v end)}')" >/dev/null \
-            || wfail "authentik rejected the password-reset link on the $label"
+        out=$(ak_api PATCH "$path" "$(jq -cn --arg f "$field" --arg v "$want" --argjson k "$keep" '$k + {($f): (if $v == "-" then null else $v end)}')") \
+            || { wfail "authentik rejected the password-reset link on the $label: $(oneline "$out")"; bad=1; }
     done <<<"$targets"
+    (( bad )) && return 0
     if [[ "$want" == - ]]; then
         if smtp_configured; then info "authentik: no \"Forgot password?\" link until these email settings pass a test: ./mediastack.sh email test <your address>"
         else info "authentik: no \"Forgot password?\" link without email — a locked-out person's way back: ./mediastack.sh reset-password <user>"; fi
@@ -569,7 +574,7 @@ authentik_recovery_doctor() { # doctor: "Forgot password?" shows exactly while e
     out=$(ak_api GET "/flows/instances/?slug=$AUTHENTIK_RECOVERY_FLOW") && flow=$(jq -r '.results[0].pk // empty' <<<"$out") \
         && [[ -n "$flow" ]] && targets=$(authentik_recovery_targets) \
         || { warn "authentik: the password-reset link is unreadable — ./mediastack.sh wire authentik"; return 0; }
-    while read -r path field cur label; do
+    while read -r path field cur label _; do
         [[ "$label" == sign-in-page ]] || continue
         [[ "$cur" == "$flow" ]] && shown=1
         [[ "$cur" != - && "$cur" != "$flow" ]] && other=1
