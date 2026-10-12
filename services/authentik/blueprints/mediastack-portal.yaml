@@ -515,9 +515,15 @@ entries:
       # searches ask authentik live: a cached directory left a new sign-up
       # invisible to Jellyfin until the outpost's next reload (up to 5
       # minutes, found live), and a group change likewise; one API call per
-      # Jellyfin sign-in. Binds stay cached (docs/roadmap.md: LDAP bind cache)
+      # Jellyfin sign-in.
       search_mode: direct
-      bind_mode: cached
+      # binds run authentik's real sign-in every time: a cached bind answered a
+      # remembered username + password itself, past the throttle — a correct
+      # guess got in at -5 while its owner had a recent Jellyfin sign-in (found
+      # live) — and kept a changed password or a deactivated person working
+      # for the life of the session. Jellyfin binds only at sign-in (its own
+      # token after), so the cost is a slower sign-in, not slower playback.
+      bind_mode: direct
       mfa_support: false
     # the full name: authentik validates a blueprint in a dry run first, where
     # the short form fails as a "global" permission (found live, 2026.8); on

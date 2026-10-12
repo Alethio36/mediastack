@@ -530,35 +530,16 @@ all built; what each still leaves open is noted below.
   targets; (2) Wizarr mode's `reset-password` through Jellyfin's API (today it
   points at Jellyfin's dashboard); (3) Wizarr's admin (no API found yet — UI
   only); (4) Navidrome's per-user Subsonic password, reset by the admin.
-- **LDAP bind cache after a password change** *(test in the rebuild's
-  household pass, then decide)*. (Searches are direct since Oct 12 2026 — a
-  cached directory hid a new sign-up from Jellyfin for up to 5 minutes; binds
-  are still cached. Seen the same day: after 7–10 wrong passwords, Milo's
-  right one still worked — explained by the throttle summing addresses, now
-  fixed, so the cache's part in it is still untested.) Jellyfin asks authentik's LDAP outpost to
-  bind each sign-in; the outpost runs `bind_mode: cached` and, after a
-  successful bind, answers that user + password from memory until the
-  authentik session the bind created expires. So a password changed in the
-  portal can keep working in Jellyfin (and its TV/phone apps) for a while —
-  proven live (Sept 2026); a new or long-unused password is checked
-  properly. Only LDAP sign-ins are affected (Kavita and Audiobookshelf use
-  OIDC, Navidrome the forward-auth gate — each asks authentik every time).
-  * *Unknowns:* how long the window lasts, and — the more important one —
-    whether a **deactivated** person is also served from the cache (still in
-    Jellyfin after being switched off in the portal).
-  * *Test (~15 min):* sign in to Jellyfin as a test user with password A;
-    change it to B in the portal; sign in again at once with A — the outpost
-    logs `authenticated from session` if the cache served it; repeat every
-    few minutes until A fails (the window). Then sign in with B, deactivate
-    the user, and try once more.
-  * *Fix options:* `bind_mode: direct` — every bind runs authentik's real
-    login flow, no window, deactivation included; costs a slower sign-in,
-    and Jellyfin binds only when someone signs in (its own token carries the
-    session after), so the cost is small — the likely choice if the test
-    confirms binds happen only at sign-in. Or keep the cache with a short
-    session on the LDAP login stage (e.g. 10 minutes): bounded, not closed.
-    `wire` already restarts the outpost after a portal-setup change for the
-    same reason (its bind cache cleared).
+- **LDAP bind cache** — *closed (Oct 12 2026): `bind_mode: direct`*. The
+  outpost's cached binds answered a remembered username + password without
+  running authentik's sign-in, so they bypassed the Jellyfin throttle: with
+  `t2` at the -5 floor, its correct password still got in until the outpost
+  was restarted (proven live), meaning a correct guess would too while its
+  owner had a recent Jellyfin sign-in. The same cache kept a changed password
+  (proven Sept 2026) or a deactivated person working for the session's life.
+  Direct binds run the real sign-in each time; Jellyfin binds only at sign-in,
+  so the cost is a slower sign-in, not playback. Searches went direct the same
+  day (a cached directory hid a new sign-up for up to 5 minutes).
 - Post-migration hardening: move the panel off LAN-open once SSO lands; phase-2
   sudo narrowing (read-only verbs drop root); staging→production certs once a box
   stops being a test box.
