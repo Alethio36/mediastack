@@ -564,12 +564,13 @@ all built; what each still leaves open is noted below.
   straight to the hub is invisible to it — three weeks of arr events answered
   424 (a retired tag) showed only as log noise. Doctor should read the hub's
   log for failed sends since its last run and name the sender and tag.
-- **An ERR trap that names an unexpected stop (to discuss).** The scripts run
-  under `set -e`: an unguarded command that fails ends the run with no message
-  (found when a `grep` matching nothing stopped `wire` mid-way). A trap in the
-  entrypoint printing file, line and command before exiting would make every
-  such stop fail loud. Open questions: interaction with subshells and
-  `|| true` guards, `set -E` for functions, and what the panel shows.
+- **An ERR trap that names an unexpected stop** — *shipped (Oct 2026)*.
+  `set -E` + `on_err` (lib/common.sh): an unguarded failure prints one line
+  (exit code, file:line, caller chain, the command unexpanded) and the exit
+  code is kept; silent under if/||/&& and inside `$( )` (set -e is off
+  there, the caller's line reports it); a `( )` subshell is named once; `die`
+  never fires it. Not sent to notifications yet; the panel shows it as it
+  shows any stderr. Pinned by scripts/test-errtrap.sh.
 - **A `--dry-run` smoke test in CI.** The rest of the suite is in place: each
   `scripts/test-*.sh` / `check-*.sh` states in its header what it pins, and the
   lint workflow runs them all.

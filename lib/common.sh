@@ -18,6 +18,26 @@ fail()  { echo "${C_RED}FAIL${C_RST} $*"; }
 die()   { echo "${C_RED}ERROR${C_RST} $*" >&2; exit 1; }
 hr()    { echo "── $* ────────────────────────────────────────────"; }
 
+# The entrypoint's ERR trap (set -E carries it into functions and ( )
+# subshells). An unguarded command that fails ends the run under set -e; this
+# names it in one line. BASH_COMMAND is the command's text before expansion,
+# so no secret value is printed. Silent wherever the failure is handled:
+# bash skips the trap under if/while/!/&&/|| itself, and inside $( ) set -e is
+# off (the caller's own line reports an unhandled one). A ( ) subshell has
+# already reported its own failing line, so its exit is not named twice. The
+# exit code is untouched; exit (and so die) never fires the trap.
+on_err() {
+    local rc=$? cmd=${BASH_COMMAND//$'\n'/ } src chain="" i
+    [[ $- == *e* && $cmd != '('* ]] || return 0
+    src=${BASH_SOURCE[1]:-$0}; src=${src#"$SCRIPT_DIR"/}; src=${src#./}   # no [1] at a bash -c top level
+    # FUNCNAME[0] is on_err; bash's own "main" for a script's top level is the
+    # entry called from line 0 (absent under bash -c, where the tests run)
+    for (( i = 1; i < ${#FUNCNAME[@]}; i++ )); do
+        (( BASH_LINENO[i] == 0 )) || chain+="${chain:+ < }${FUNCNAME[i]}"
+    done
+    echo "${C_RED}ERROR${C_RST} unhandled failure (exit $rc) at $src:${BASH_LINENO[0]}${chain:+ in $chain}: $cmd" >&2
+}
+
 confirm() { # confirm "question" -> 0 yes / 1 no
     local ans
     read -r -p "$1 [y/N]: " ans

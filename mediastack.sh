@@ -10,7 +10,7 @@
 #   * Service discovery is label-driven (mediastack.* labels in services/*/compose.yml):
 #     this script contains no hardcoded service lists.
 # ============================================================================
-set -euo pipefail
+set -Eeuo pipefail   # -E: the ERR trap (on_err, lib/common.sh) reaches into functions
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -45,6 +45,7 @@ SCRIPT_SCHEMA=35
 # functions and constants only, so their order does not matter.
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
+trap on_err ERR   # an unhandled failure names its command, file:line and caller chain
 # shellcheck source=lib/frontdoor.sh
 source "$SCRIPT_DIR/lib/frontdoor.sh"
 # shellcheck source=lib/wire.sh

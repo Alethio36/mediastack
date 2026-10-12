@@ -271,6 +271,10 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
   `[synced]` prefix and a banner custom format; hand edits to them are
   reverted nightly by design — durable tuning goes in
   `custom/trash-overrides.yml` ([docs/trash-sync.md](docs/trash-sync.md)).
+* **No silent stops.** A command the script did not expect to fail names
+  itself before the run ends — one `ERROR unhandled failure` line with the
+  exit code, file:line, the functions it was called from and the command
+  (as written, so no secret is printed). Paste that line into a bug report.
 * **`git pull` is always safe.** Your state lives in `.env` and gitignored
   dirs; tracked files are never written at runtime. `upgrade` wraps pull +
   config migration.

@@ -31,6 +31,8 @@ jobs:
           exit $rc
       - name: the portal's email and people (scripts/test-email.sh)
         run: scripts/test-email.sh
+      - name: an unhandled failure names itself, a handled one stays silent (scripts/test-errtrap.sh)
+        run: scripts/test-errtrap.sh
       - name: dispatch contracts (scripts/test-dispatch.sh)
         run: scripts/test-dispatch.sh
       - name: media manifest loss-vs-churn contract (scripts/test-manifest.sh)
