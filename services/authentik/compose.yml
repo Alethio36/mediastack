@@ -130,6 +130,7 @@ services:
       MEDIASTACK_KAVITA_URL: https://${KAVITA_HOST:-books}.${TRAEFIK_DOMAIN:-unset.invalid}
       MEDIASTACK_KAVITA_CLIENT_SECRET: ${AUTHENTIK_KAVITA_CLIENT_SECRET}
       # the stack's own accounts in the apps: nobody may sign up with these names
+      MEDIASTACK_TRAEFIK_ADDRESS: ${TRAEFIK_ADDRESS:-172.31.250.2}   # the LDAP throttle counts the Jellyfin path by it
       MEDIASTACK_RESERVED_USERNAMES: ${ABS_ADMIN_USER:-},${JELLYFIN_ADMIN_USER:-},${KAVITA_ADMIN_USER:-}
     volumes:
       - ${CONFIG_ROOT}/authentik/data:/data

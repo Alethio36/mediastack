@@ -405,22 +405,38 @@ entries:
   # -- LDAP: how Jellyfin checks a password -------------------------------
   # authentik's own LDAP front door (the mediastack-ldap outpost, a member of
   # the shard). Binds run a flow with no MFA step — TV and phone apps send a
-  # username and password and cannot answer a prompt — throttled by a
-  # reputation policy (authentik's brute-force protection). Only the search
-  # account may list the directory; only media-users and admins may bind.
-  # A reputation policy PASSES for a bad reputation (score <= threshold; it is
-  # made for "show these a captcha"), so it is bound negated: continue only
-  # with a good one. By username only — every bind reaches the outpost from
-  # Traefik's one address, so an IP check would let one person's typos lock
-  # everyone out (found live).
+  # username and password and cannot answer a prompt — throttled against
+  # password guessing. Only the search account may list the directory; only
+  # media-users and admins may bind.
+  #
+  # The throttle: authentik keeps a score per person AND address, -1 for a
+  # failed sign-in, +1 for a good one, floored at -5. Every bind arrives from
+  # Traefik's fixed address, so that one score is the Jellyfin path's: at the
+  # floor, the path refuses that person (until the score expires after a day,
+  # or a reset clears it). Only that address counts — authentik's reputation
+  # policy sums every address, and a person's web sign-ins lifted the sum past
+  # the floor, letting every guess through (found live: -5 + 1 + 1). And
+  # per person, so one person's typos never lock out another.
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-ldap-throttle
+    identifiers:
+      name: mediastack-ldap-throttle
+    attrs:
+      expression: !Format
+        - |
+          from django.db.models import Sum
+          from authentik.policies.reputation.models import Reputation
+          score = Reputation.objects.filter(identifier=request.user.username, ip="%s").aggregate(total=Sum("score"))["total"] or 0
+          if score <= -5:
+              ak_message("Too many wrong passwords. Wait a while, or reset it from the portal's sign-in page.")
+              return False
+          return True
+        - !Env [MEDIASTACK_TRAEFIK_ADDRESS, "172.31.250.2"]
+  # the summing reputation policy it replaces (its bindings go with it)
   - model: authentik_policies_reputation.reputationpolicy
-    id: policy-ldap-reputation
+    state: absent
     identifiers:
       name: mediastack-ldap-reputation
-    attrs:
-      check_ip: false
-      check_username: true
-      threshold: -5
   - model: authentik_stages_password.passwordstage
     id: stage-ldap-password
     identifiers:
@@ -467,16 +483,7 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf binding-ldap-login
-      policy: !KeyOf policy-ldap-reputation
-      order: 0
-    attrs:
-      negate: true
-  # the earlier binding on the whole flow (it refused everyone in good standing)
-  - model: authentik_policies.policybinding
-    state: absent
-    identifiers:
-      target: !KeyOf flow-ldap
-      policy: !KeyOf policy-ldap-reputation
+      policy: !KeyOf policy-ldap-throttle
       order: 0
 
   - model: authentik_core.user

@@ -449,7 +449,9 @@ all built; what each still leaves open is noted below.
      (LDAP, part 1):* the LDAP outpost joins the shard (the server's release,
      moved in lockstep by `update --to`); the blueprint adds an LDAP provider
      (`dc=ldap,dc=mediastack`) whose binds run a flow with no MFA step,
-     throttled by a reputation policy, open to `media-users`, `admins` and one
+     throttled per person on the Jellyfin path (their score at Traefik's
+     address, floor -5 — authentik's own reputation policy summed every address
+     and web sign-ins hid the guessing, fixed Oct 12 2026), open to `media-users`, `admins` and one
      search account (the only one with search rights); Traefik serves it as
      LDAPS on `ldap.<domain>` with the wildcard certificate, to the stack network
      only; `wire authentik` fetches the outpost's token. *Done (LDAP, part 2):*

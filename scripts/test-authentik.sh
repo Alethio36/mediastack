@@ -483,13 +483,48 @@ sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'authorization_flow: 
 sed -n '/model: authentik_outposts.outpost/,/^  - /p' "$bp" | grep -q '^      config:' || fail_ "an outpost needs its config block (authentik requires it; found live)"; pass
 grep -A3 'permissions:' "$bp" | grep -q 'permission: authentik_providers_ldap.search_full_directory' \
     || fail_ "only the search account may list the directory — by the full permission name (the dry run rejects the short form)"; pass
-# reputation: it PASSES for a bad score, so bound negated, at the login step
-# (the user is known there), by username only (every bind shares Traefik's IP)
-sed -n '/target: !KeyOf binding-ldap-login/,/^  - /p' "$bp" | grep -q 'policy: !KeyOf policy-ldap-reputation' \
-    && sed -n '/target: !KeyOf binding-ldap-login/,/^  - /p' "$bp" | grep -q 'negate: true' || fail_ "reputation: negated, at the login step"; pass
-sed -n '/name: mediastack-ldap-reputation/,/^  - /p' "$bp" | grep -q 'check_ip: false' || fail_ "reputation by username only — binds share one IP"; pass
+# the throttle: at the login step (the user is known there), counting only the
+# person's score at Traefik's address — the Jellyfin path (found live: authentik's
+# reputation policy summed every address, and web sign-ins hid the guessing)
+sed -n '/target: !KeyOf binding-ldap-login/,/^  - /p' "$bp" | grep -q 'policy: !KeyOf policy-ldap-throttle' \
+    && ! sed -n '/target: !KeyOf binding-ldap-login/,/^  - /p' "$bp" | grep -q 'negate: true' || fail_ "throttle: at the login step, not negated (True = let in)"; pass
+sed -n '/name: mediastack-ldap-reputation$/,/^  - /p' "$bp" | grep -q 'state: absent' || grep -B2 'name: mediastack-ldap-reputation$' "$bp" | grep -q 'state: absent' \
+    || fail_ "the summing reputation policy is removed (its bindings with it)"; pass
+grep -q 'MEDIASTACK_TRAEFIK_ADDRESS: ${TRAEFIK_ADDRESS:-172.31.250.2}' "$T/worker" || fail_ "the worker passes Traefik's address to the throttle"; pass
+# run the expression itself against scores: per person, only the Jellyfin path, floor -5
+expr=$(awk '/name: mediastack-ldap-throttle$/{f=1} f && /^        - \|$/{g=1; next} g && /^        - !Env/{exit} g{sub(/^          /, ""); print}' "$bp")
+[[ "$expr" == *'ip="%s"'* ]] || fail_ "throttle expression not found in the blueprint"; pass
+throttle_says() { # throttle_says USER 'ROWS' -> allow|refuse   (ROWS: identifier,ip,score;...)
+    python3 - "$1" "$2" "${expr//%s/172.31.250.2}" <<'PY'
+import sys, types
+user, rows, expr = sys.argv[1], sys.argv[2], sys.argv[3]
+rows = [tuple(r.split(",")) for r in rows.split(";") if r]
+class Q:
+    def __init__(s, kw): s.kw = kw
+    def aggregate(s, **_):
+        m = [int(sc) for i, ip, sc in rows if i == s.kw["identifier"] and ip == s.kw["ip"]]
+        return {"total": sum(m) if m else None}
+class Mgr:
+    def filter(s, **kw): return Q(kw)
+mods = {"django": types.ModuleType("django"), "django.db": types.ModuleType("django.db"), "django.db.models": types.ModuleType("django.db.models"),
+        "authentik": types.ModuleType("authentik"), "authentik.policies": types.ModuleType("authentik.policies"),
+        "authentik.policies.reputation": types.ModuleType("authentik.policies.reputation"),
+        "authentik.policies.reputation.models": types.ModuleType("authentik.policies.reputation.models")}
+mods["django.db.models"].Sum = lambda f: f
+mods["authentik.policies.reputation.models"].Reputation = type("R", (), {"objects": Mgr()})
+sys.modules.update(mods)
+req = types.SimpleNamespace(user=types.SimpleNamespace(username=user))
+env = {"request": req, "ak_message": lambda m: None}
+exec("def _f():\n" + "\n".join("    " + l for l in expr.splitlines()), env)
+print("allow" if env["_f"]() else "refuse")
+PY
+}
+[[ "$(throttle_says milo 'milo,172.31.250.2,-5;milo,192.168.69.18,1;milo,192.168.69.103,1')" == refuse ]] \
+    || fail_ "at the floor on the Jellyfin path: refused, whatever the web sign-ins (the live -5 + 1 + 1 case)"; pass
+[[ "$(throttle_says milo 'milo,172.31.250.2,-4;milo,192.168.69.18,-5')" == allow ]] || fail_ "above the floor on the Jellyfin path: let in (web failures do not count)"; pass
+[[ "$(throttle_says milo 'jo,172.31.250.2,-5')" == allow ]] || fail_ "another person's failures never lock this one out"; pass
+[[ "$(throttle_says milo '')" == allow ]] || fail_ "no score at all: let in"; pass
 sed -n '/stage: !KeyOf stage-ldap-login/,/^  - /p' "$bp" | grep -q 're_evaluate_policies: true' || fail_ "the login step re-checks once the user is known"; pass
-grep -B3 'target: !KeyOf flow-ldap$' "$bp" | grep -q 'state: absent' || fail_ "the old flow-level binding is removed"; pass
 [[ "$(grep -c 'target: !KeyOf app-ldap' "$bp")" == 3 ]] || fail_ "binds: media-users, admins, the search account — nobody else"; pass
 
 # ---- update --to: the outpost and worker move with the server, the database stays ----
