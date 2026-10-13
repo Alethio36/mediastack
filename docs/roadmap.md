@@ -156,7 +156,7 @@ list it joins.
    none; edge: Traefik | NPM; the VPN; the hub; the panel) out of `lib/` as
    contracts, one slice at a time, least risky first: hub → panel → sign-in
    → edge → VPN. Each slice changes no behaviour: the snapshots stay
-   identical, the live check passes, and anzac3 gets a Proxmox snapshot
+   identical, the live check passes, and the test box gets a snapshot
    before it lands. No `.env` or label changes during it.
    *Harness in place (Oct 2026):* `scripts/test-snapshot.sh` (what the stack
    generates, byte-compared for seven fixtures and the host's files),
@@ -327,7 +327,8 @@ arrive on their own, as with watchtower, but validated first.
     one source; Dispatcharr earns its place with several sources, a
     provider's connection limit, or recording. Alternatives weighed (Oct 13
     2026, from each repo's history): **Threadfin** — dormant, no commit since
-    Sept 2025; **TVHeadend** — the mature one (since 2007, still active, a
+    Sept 2025; **StreamMaster** — its original repo was deleted in early 2025
+    and the surviving fork has had no commit since Sept 2025; **TVHeadend** — the mature one (since 2007, still active, a
     maintained Jellyfin plugin) but no tagged release since 4.2.8 (2019,
     rolling builds since) and built around tuners and muxes, so pruning
     thousands of IPTV channels is exactly the hard part it doesn't solve;
@@ -385,10 +386,10 @@ arrive on their own, as with watchtower, but validated first.
   email's look follows the branding kit below (a logo needs a public address —
   the portal is LAN-only, so a linked image would not load in Gmail either);
   the "check your inbox" page is a dead end — it wants a link back to the
-  sign-in page. Checked in authentik's source (Oct 2026): the page's text is
-  fixed, but every flow page renders the footer links
+  sign-in page. *Tabled (Oct 2026).* Checked in authentik's source: the
+  page's text is fixed, but every flow page renders the footer links
   (`login/base_full.html`), so the minimal fix is one footer link back to
-  the sign-in page (low priority); a deeper look at the flow stays open.
+  the sign-in page; a deeper look at the flow stays open.
 - **Invitations by email** — *shipped (Oct 2026)*: `invite --email <address>`
   has authentik send the sign-up link (its send endpoint, mediastack's
   template; the request names the portal so the link is the portal's, not the
@@ -453,13 +454,20 @@ arrive on their own, as with watchtower, but validated first.
   Gotify or Matrix) keeps `ops` at home; `users` can stay on Discord ("a new
   film is available" says little). Less detail per message ("1 film
   imported") is the other lever, and fits the richer layout above.
-- **A Jellyfin sign-in takes ~8 s** *(to investigate, Oct 2026)*. Since the
-  LDAP binds went direct (Security & access), every sign-in runs authentik's
-  sign-in twice, ~4 s each (the directory search takes under half a second).
-  Find where the 4 s goes — password hashing, the flow's round trips — before
-  deciding whether to tune it or accept it (sign-ins are rare; the app keeps
-  its session). First step: the field names of authentik server's request
-  log (a query on the guessed ones returned nothing).
+- **A Jellyfin sign-in takes ~8–12 s** *(to investigate, Oct 2026)*. Since
+  the LDAP binds went direct (Security & access), every bind runs authentik's
+  sign-in, ~3.5 s each, and a sign-in makes three (measured Oct 13: 11.7 s):
+  the search account, the person, then the search account again — Jellyfin's
+  LDAP plugin reconnects to check the admin filter. The two searches take
+  0.25–0.5 s. Passwords are PBKDF2-SHA256 at 1,000,000 iterations; lowering
+  that is off the table (safety). Candidate lever: the search account binds
+  with an app password (the LDAP flow's password stage already has the token
+  backend) and keeps no usable password, so two of the three binds skip the
+  hash — if the hash, not the flow's round trips, is where the time goes.
+  Find where the 3.5 s goes — password hashing, the flow's round trips —
+  before deciding whether to tune it or accept it (sign-ins are rare; the app
+  keeps its session). The server's request log is JSON: `event` is the path,
+  with `method` and `runtime` beside it.
 
 ### Media monitoring
 Answering "what happened to X?" after the fact: the nightly media manifest

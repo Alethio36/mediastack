@@ -184,7 +184,7 @@ ENV_FILE=$T/env
 # ---- unit-failed: a scheduled or boot run that dies tells ops, once per cooldown ----
 (
     STATE_DIR=$(mktemp -d); SENT=$(mktemp -d)
-    load_env() { :; }; hostname() { echo anzac-test; }
+    load_env() { :; }; hostname() { echo testbox; }
     systemctl() { case "$*" in
         *"-p Result"*) echo exit-code ;; *"-p ExecMainStatus"*) echo 1 ;; *"-p InvocationID"*) echo inv123 ;; esac; }
     journalctl() { [[ "$1" == "_SYSTEMD_INVOCATION_ID=inv123" ]] || { echo "journal read without the run's invocation id: $*" >&2; return 1; }
@@ -198,7 +198,7 @@ ENV_FILE=$T/env
     [[ "$(cat "$SENT/1.tag")" == ops && "$(cat "$SENT/1.type")" == failure ]] || fail_ "unit-failed sends to ops as a failure"; pass
     [[ "$(cat "$SENT/1.title")" == "Mediastack: mediastack-update.service failed" ]] || fail_ "the title names the unit: $(cat "$SENT/1.title")"; pass
     body=$(cat "$SENT/1.body")
-    [[ "$body" == *"Result: exit-code, exit status 1, on anzac-test"* && "$body" == *"lib/backup.sh:812"* && "$body" == *"journalctl -u mediastack-update.service"* ]] \
+    [[ "$body" == *"Result: exit-code, exit status 1, on testbox"* && "$body" == *"lib/backup.sh:812"* && "$body" == *"journalctl -u mediastack-update.service"* ]] \
         || fail_ "the body carries result, exit status, host, that run's lines and where to look: $body"; pass
     cmd_unit_failed mediastack-update.service >/dev/null
     [[ $(sends) == 1 ]] || fail_ "a second failure inside the cooldown must not send again"; pass

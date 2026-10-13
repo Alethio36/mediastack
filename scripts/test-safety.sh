@@ -228,7 +228,7 @@ for broken_unit in mediastack-update.service mediastack-vpnguard.service; do
 done
 for broken_host in 's|NOPASSWD: @REPO@/mediastack.sh|NOPASSWD: ALL|:frontdoor-sudoers' \
                    's|,no-pty||:olivetin-authorized_keys' \
-                   's|^host.docker.internal|anzac3|:olivetin-known_hosts'; do
+                   's|^host.docker.internal|otherhost|:olivetin-known_hosts'; do
     h=$tmp/host-${broken_host##*:}; mkdir -p "$h"; cp -r "$fixtures/_host/expected" "$h/"
     sed -i "${broken_host%:*}" "$h/expected/${broken_host##*:}"
     out=$(rule_panel "$h" 2>&1); checks=$((checks + 1))
