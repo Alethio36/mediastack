@@ -149,7 +149,7 @@ wire_seerr() {
     # An agent mediastack made is kept current (the one from before per-event
     # routing is upgraded); one edited in Seerr's UI is left alone — except
     # its address, when mediastack made it and a VPN toggle moved apprise.
-    if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
+    if hub_configured; then
         local wh want_t hub next
         want_t=$(seerr_hub_types); hub="http://$(svc_addr apprise)/notify/mediastack"
         if ! wh=$(seerr_api GET /settings/notifications/webhook "$jar"); then

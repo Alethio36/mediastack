@@ -14,6 +14,8 @@
 #     to it skip the app's test (forceSave), a download client's do not
 #   * Apprise defaults outside the VPN; the schema-32 migration marks its
 #     callers for re-pointing only where it actually moves
+#   * the hub is reached only through its interface (hub_*): nothing outside
+#     services/apprise/ speaks its HTTP API, and every interface name exists
 #
 #   scripts/test-notify.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -104,7 +106,7 @@ done
 [[ "$(notify_url_shown ntfy://ntfy.sh/topic)" == "ntfy (ntfy.sh)" ]] || fail_ "the service and host should show"; pass
 
 # ---- sending: judged by the hub's answer, recorded per stream ----
-svc_enabled() { return 0; }; svc_cname() { echo x; }; c_state() { echo running; }; apprise_url() { echo http://hub; }
+svc_enabled() { return 0; }; svc_cname() { echo x; }; c_state() { echo running; }; hub_local_url() { echo http://hub; }
 CODE=200
 curl() { printf 'body\n%s' "$CODE"; }
 notify ops "t" "b"
@@ -112,7 +114,7 @@ notify ops "t" "b"
 CODE=424; rm -f "$T/out"; notify users "t" "b"; notify users "t" "b"
 [[ "$(state_get notify-users-fail)" == *"HTTP 424"* && -z "$(state_get notify-users-ok)" ]] || fail_ "a 424 is not delivered: $(state_get notify-users-fail)"; pass
 [[ "$(grep -c WARN "$T/out")" == 1 ]] || fail_ "one warning per run, not one per send"; pass
-[[ "$(notify_outcome 204 '')" == *"notify set"* ]] || fail_ "204: nothing set up for the stream — say how to fix it"; pass
+[[ "$(hub_outcome 204 '')" == *"notify set"* ]] || fail_ "204: nothing set up for the stream — say how to fix it"; pass
 CODE=200; state_del notify-ops-ok; svc_enabled() { return 1; }; notify ops t b
 [[ -z "$(state_get notify-ops-ok)" ]] || fail_ "the hub off: nothing sent, nothing recorded"; pass
 
@@ -178,5 +180,18 @@ ENV_FILE=$T/env
 [[ -z "$(mig COMPOSE_PROFILES=gluetun,apprise APPRISE_VPN=true)" ]] || fail_ "an explicit 'inside' stays, nothing to re-point"; pass
 [[ -z "$(mig COMPOSE_PROFILES=gluetun,apprise APPRISE_VPN=false)" ]] || fail_ "already outside: nothing to re-point"; pass
 [[ -z "$(mig COMPOSE_PROFILES=gluetun,radarr)" ]] || fail_ "Apprise not enabled: nothing to re-point"; pass
+
+# ---- the hub is reached only through its interface (services/apprise/hub.sh) ----
+# Only the provider's folder speaks the hub's HTTP API; everything else calls
+# hub_*. A second provider defines every name in the interface. Migrations
+# are left out: they record what happened to Apprise itself (schema 32 moved
+# its VPN default), whatever the hub is later.
+leak=$(grep -rnE 'hub_local_url|/(notify|get|add|del)/\$HUB_KEY|svc_(enabled|cname|hostport) "?apprise' lib services mediastack.sh --include=*.sh \
+        | grep -vE '^(services/apprise/|lib/migrations\.sh:)' || true)
+[[ -z "$leak" ]] || fail_ "the hub's own API used outside services/apprise/: $leak"; pass
+for f in hub_enabled hub_running hub_local_url hub_configured hub_send hub_outcome hub_cfg_get hub_cfg_put; do
+    grep -qE "^$f\(\)" services/apprise/hub.sh || fail_ "the hub interface lacks $f"; pass
+done
+[[ "$(sed -n 's/^HUB_SVC=//p' services/apprise/hub.sh)" == apprise ]] || fail_ "HUB_SVC names the hub's service"; pass
 
 echo "OK notify: $checks checks"

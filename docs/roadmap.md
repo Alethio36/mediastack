@@ -166,6 +166,15 @@ list it joins.
    writes beyond the panel's config, theme and wrapper (its sudoers file and
    refresh timer live inside the installer) — the panel slice makes them
    renderable first.
+   *Hub — done (Oct 2026):* everything that speaks Apprise's HTTP API is
+   behind the hub interface (`hub_*`, `services/apprise/hub.sh`: send, what an
+   answer means, the stored configuration, "is it set up"); `lib/notify.sh`
+   (streams, routing, the verb, doctor), Seerr and Cleanuparr call only that,
+   and `scripts/test-notify.sh` fails anything else that reaches past it.
+   Proven identical: every request and every line of output, old code against
+   new, with the hub mocked. Left as code, by the phase 2 rule: the apps' own
+   hub entries (the arrs, Prowlarr, Seerr, Cleanuparr) — a notification-hub
+   role waits for a second provider.
 
 Guardrails in place: a template holds data and placeholders only;
 `scripts/test-roles.sh` fails an unknown role, consumer or placeholder, a

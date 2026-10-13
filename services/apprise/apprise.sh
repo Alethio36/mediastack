@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# services/apprise/apprise.sh — the `wire apprise` role (sending, routing
-# and the `notify` verb: lib/notify.sh).
+# services/apprise/apprise.sh — the `wire apprise` role (the hub interface:
+# hub.sh; streams, routing and the `notify` verb: lib/notify.sh).
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
 
@@ -33,22 +33,22 @@ wire_apprise() {
     hr "wire: apprise"
     svc_enabled apprise || { info "apprise not enabled — skipped"; return 0; }
     wire_gate apprise
-    http_ready apprise "$(apprise_url)/status" '^2' || return 1
+    http_ready apprise "$(hub_local_url)/status" '^2' || return 1
     wire_arrs_ready || true
 
     # --- notification endpoints: stored once under key 'mediastack';
     # an existing config is never touched (edit in apprise's UI or re-add)
-    code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)
+    code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$(hub_local_url)/get/mediastack" 2>/dev/null || echo 000)
     if [[ "$code" == 200 ]]; then
         # the URLs are yours (notify set / Apprise's UI); only the event tags on
         # the lines mediastack wrote are kept current, so Seerr's events route
         local cur want
-        cur=$(notify_cfg_get); want=$(notify_cfg_edit retag <<<"$cur")
+        cur=$(hub_cfg_get); want=$(notify_cfg_edit retag <<<"$cur")
         local t; while IFS= read -r t; do warn "$(notify_legacy_note "$t")"; done < <(notify_legacy_lines <<<"$cur")
         if [[ "$cur" == "$want" ]]; then
             ok "notification endpoints configured, routing current (manage: ./mediastack.sh notify)"
         elif w_would "tag the streams' URLs with the Seerr events each receives (${NOTIFY_EVENTS[users]// /, } -> users, the rest -> ops)"; then
-            notify_cfg_put "$want"
+            hub_cfg_put "$want"
             ok "notification routing updated"
         fi
     elif (( WIRE_DRY )); then
@@ -78,7 +78,7 @@ Getting a URL:
             local resp acode
             resp=$(curl -sS -m 10 -X POST -H "Content-Type: application/json" \
                    -d "$(jq -cn --arg c "$cfg" '{config:$c,format:"text"}')" \
-                   -w $'\n%{http_code}' "$(apprise_url)/add/mediastack" 2>&1) \
+                   -w $'\n%{http_code}' "$(hub_local_url)/add/mediastack" 2>&1) \
                 || { wfail "apprise unreachable while storing config: $(head -c200 <<<"$resp")"; return 1; }
             acode=${resp##*$'\n'}
             [[ "$acode" =~ ^2 ]] \

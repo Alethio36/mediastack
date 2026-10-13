@@ -150,7 +150,7 @@ wire_cleanuparr() {
     fi
 
     # ops notifications via the hub, when the hub is wired
-    if svc_enabled apprise && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(apprise_url)/get/mediastack" 2>/dev/null || echo 000)" == 200 ]]; then
+    if hub_configured; then
         local cnp=""
         if ! cnp=$(cup_api GET /configuration/notification_providers "$KH"); then
             wfail "cleanuparr: could not read its notification providers — nothing created [HTTP $(cup_code)]"

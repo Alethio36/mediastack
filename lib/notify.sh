@@ -11,6 +11,9 @@
 # sends them (upper case): Apprise versions that lower-case tags do so on
 # both sides, older ones compare them as written — either way they match.
 #
+# The hub itself (sending, its stored configuration, what its answers mean)
+# is reached only through the hub interface (hub_*: services/apprise/hub.sh).
+#
 # Configuration lines mediastack writes look like  ops,MEDIA_PENDING,...=URL.
 # A line whose tags are one stream plus event names is mediastack's, and
 # `notify set` / `wire apprise` rewrite its tags; any other line (your own
@@ -19,7 +22,6 @@
 # Sourced by the entrypoint; relies on lib/common.sh, the svc/c_state helpers
 # and, for Seerr's own test, SEERR_API_KEY at call time.
 
-NOTIFY_KEY=mediastack
 NOTIFY_STREAMS=(ops users)
 # which Seerr events each stream receives (Seerr's own names; test -> ops)
 declare -A NOTIFY_EVENTS=(
@@ -46,7 +48,6 @@ SEERR_HUB_PAYLOADS_BEFORE=(
 SEERR_HUB_TYPES_BEFORE=222   # the events every earlier version turned on
 NOTIFY_LEGACY_TAGS=(activity) # streams mediastack no longer has
 
-apprise_url() { local p; p=$(svc_hostport apprise) || return 1; echo "http://127.0.0.1:$p"; }
 
 seerr_agent_next() { # seerr_agent_next AGENT-JSON -> the agent as it should be; "same" when current; "yours" when not mediastack's
     local have_p have_t want_t p mine=0
@@ -73,7 +74,7 @@ notify_legacy_lines() { # stdin: config text -> the tags of lines for streams me
 }
 
 notify_legacy_note() { # the sentence wire, status and doctor say about a leftover line
-    echo "the hub has a URL tagged '$1' — a stream mediastack no longer has (it became ops): nothing is sent to it. Remove that line in Apprise's UI ($(svc_url apprise 2>/dev/null || echo "port 8000")/cfg/$NOTIFY_KEY)"
+    echo "the hub has a URL tagged '$1' — a stream mediastack no longer has (it became ops): nothing is sent to it. Remove that line in Apprise's UI ($(svc_url "$HUB_SVC" 2>/dev/null || echo "port 8000")/cfg/$HUB_KEY)"
 }
 
 seerr_hub_types() { # the agent's types: every routed event's bit, summed
@@ -87,24 +88,6 @@ notify_tagline() { # notify_tagline STREAM -> the tags mediastack writes on that
 }
 
 # ---------------------------------------------------------------- sending --
-notify_post() { # notify_post TAG TITLE BODY TYPE -> "code<TAB>body" of the hub's answer; rc 1 when unreachable
-    local out
-    out=$(curl -sS -m 10 -X POST -H "Content-Type: application/json" \
-          -d "$(jq -cn --arg t "$2" --arg b "$3" --arg g "$1" --arg y "$4" \
-                '{title:$t,body:$b,tag:$g,type:$y,format:"markdown"}')" \
-          -w $'\n%{http_code}' "$(apprise_url)/notify/$NOTIFY_KEY" 2>&1) || { printf '000\t%s\n' "$(oneline "$out")"; return 1; }
-    printf '%s\t%s\n' "${out##*$'\n'}" "$(oneline "${out%$'\n'*}")"
-}
-
-notify_outcome() { # notify_outcome CODE BODY -> "" when delivered, else why not (for people)
-    case "$1" in
-        200) ;;
-        204) echo "nothing is set up for this stream (no URL carries its tag): ./mediastack.sh notify set <stream>" ;;
-        000) echo "the hub is unreachable: $2" ;;
-        *)   echo "the hub answered HTTP $1${2:+: $2}" ;;
-    esac
-}
-
 notify_record() { # notify_record STREAM WHY — keep the latest outcome for status/doctor
     [[ " ${NOTIFY_STREAMS[*]} " == *" $1 "* ]] || return 0
     if [[ -z "$2" ]]; then state_set "notify-$1-ok" "$(date +%s)"
@@ -114,10 +97,10 @@ notify_record() { # notify_record STREAM WHY — keep the latest outcome for sta
 NOTIFY_WARNED=0
 notify() { # notify TAG TITLE BODY [TYPE] — never blocks, never fails the caller; the outcome is recorded
     local tag="$1" title="$2" body="$3" type="${4:-info}" ans why
-    svc_enabled apprise 2>/dev/null || return 0
-    [[ "$(c_state "$(svc_cname apprise)" 2>/dev/null)" == running ]] || return 0
-    ans=$(notify_post "$tag" "$title" "$body" "$type") || true   # unreachable: judged just below
-    why=$(notify_outcome "${ans%%$'\t'*}" "${ans#*$'\t'}")
+    hub_enabled 2>/dev/null || return 0
+    hub_running 2>/dev/null || return 0
+    ans=$(hub_send "$tag" "$title" "$body" "$type") || true   # unreachable: judged just below
+    why=$(hub_outcome "${ans%%$'\t'*}" "${ans#*$'\t'}")
     notify_record "$tag" "$why"
     [[ -z "$why" ]] && return 0
     if (( ! NOTIFY_WARNED )); then
@@ -132,32 +115,6 @@ notify_interruption() { # notify_interruption TITLE BODY [TYPE] — household se
 }
 
 # ------------------------------------------------------- the configuration --
-notify_cfg_get() { # the hub's stored configuration text (empty when none)
-    local out code
-    out=$(curl -sS -m 10 -X POST -w $'\n%{http_code}' "$(apprise_url)/get/$NOTIFY_KEY" 2>&1) \
-        || die "the notification hub is unreachable: $(oneline "$out")"
-    code=${out##*$'\n'}
-    case "$code" in
-        200) printf '%s\n' "${out%$'\n'*}" ;;
-        204|404) ;;   # nothing stored yet
-        *) die "the notification hub refused to show its configuration [HTTP $code]: $(oneline "${out%$'\n'*}")" ;;
-    esac
-}
-
-notify_cfg_put() { # notify_cfg_put TEXT — store it (empty: remove the configuration)
-    local out code
-    if [[ -z "$(grep -v '^[[:space:]]*$' <<<"$1" || true)" ]]; then   # nothing left to store
-        out=$(curl -sS -m 10 -X POST -w $'\n%{http_code}' "$(apprise_url)/del/$NOTIFY_KEY" 2>&1) || die "the hub is unreachable: $(oneline "$out")"
-    else
-        out=$(curl -sS -m 10 -X POST -H "Content-Type: application/json" \
-              -d "$(jq -cn --arg c "$1" '{config:$c,format:"text"}')" \
-              -w $'\n%{http_code}' "$(apprise_url)/add/$NOTIFY_KEY" 2>&1) || die "the hub is unreachable: $(oneline "$out")"
-    fi
-    code=${out##*$'\n'}
-    [[ "$code" =~ ^2 ]] || die "the hub rejected the configuration [HTTP $code]: $(oneline "${out%$'\n'*}")
-  Check the URL against https://github.com/caronc/apprise/wiki"
-}
-
 notify_line_stream() { # notify_line_stream LINE -> the stream when the line is mediastack's (one stream + event names), else nothing
     local tags t s="" known=" ${NOTIFY_STREAMS[*]} ${NOTIFY_EVENTS[*]} "
     [[ "$1" =~ ^([A-Za-z0-9_\ ,-]+)= ]] || return 0
@@ -221,8 +178,8 @@ cmd_notify() {
 
 notify_need_hub() {
     load_env
-    svc_enabled apprise || die "the notification hub (apprise) is not enabled — enable it: ./mediastack.sh enable apprise"
-    [[ "$(c_state "$(svc_cname apprise)")" == running ]] || die "the notification hub (apprise) is not running — start it: ./mediastack.sh up"
+    hub_enabled || die "the notification hub ($HUB_SVC) is not enabled — enable it: ./mediastack.sh enable $HUB_SVC"
+    hub_running || die "the notification hub ($HUB_SVC) is not running — start it: ./mediastack.sh up"
 }
 
 notify_stream_ok() { [[ " ${NOTIFY_STREAMS[*]} " == *" $1 "* ]] || die "unknown stream '$1' (streams: ${NOTIFY_STREAMS[*]})"; }
@@ -230,7 +187,7 @@ notify_stream_ok() { [[ " ${NOTIFY_STREAMS[*]} " == *" $1 "* ]] || die "unknown 
 notify_status() {
     notify_need_hub
     local cfg s u n ok fail
-    cfg=$(notify_cfg_get)
+    cfg=$(hub_cfg_get)
     hr "Notifications"
     for s in "${NOTIFY_STREAMS[@]}"; do
         n=0; local shown=""
@@ -251,8 +208,8 @@ notify_test() {
     local s streams=("${NOTIFY_STREAMS[@]}") ans why rc=0
     [[ -n "${1:-}" ]] && { notify_stream_ok "$1"; streams=("$1"); }
     for s in "${streams[@]}"; do
-        ans=$(notify_post "$s" "Mediastack test" "A test on the $s stream — if you can read this, it works." info) || true   # judged below
-        why=$(notify_outcome "${ans%%$'\t'*}" "${ans#*$'\t'}")
+        ans=$(hub_send "$s" "Mediastack test" "A test on the $s stream — if you can read this, it works." info) || true   # judged below
+        why=$(hub_outcome "${ans%%$'\t'*}" "${ans#*$'\t'}")
         notify_record "$s" "$why"
         if [[ -z "$why" ]]; then ok "$s: the hub delivered the test — check it arrived"
         else fail "$s: $why"; rc=1; fi
@@ -288,8 +245,8 @@ stream's current URLs; anything else in the hub's configuration is kept.
   ntfy      ntfy://ntfy.sh/your-topic (subscribe to the topic in the app)
   anything  else: https://github.com/caronc/apprise/wiki"
     ask_token "URLs for $1" ""
-    local cfg; cfg=$(notify_cfg_get | notify_cfg_edit set "$1" "$REPLY_VAL")
-    notify_cfg_put "$cfg"
+    local cfg; cfg=$(hub_cfg_get | notify_cfg_edit set "$1" "$REPLY_VAL")
+    hub_cfg_put "$cfg"
     ok "$1: URLs stored"
     notify_test "$1"
 }
@@ -298,7 +255,7 @@ notify_clear() {
     notify_stream_ok "$1"
     notify_need_hub
     confirm "Remove every URL of the '$1' stream? It stops receiving notifications" || { info "Nothing changed."; return 0; }
-    notify_cfg_put "$(notify_cfg_get | notify_cfg_edit clear "$1")"
+    hub_cfg_put "$(hub_cfg_get | notify_cfg_edit clear "$1")"
     ok "$1: no URLs — the stream is off (set it again: ./mediastack.sh notify set $1)"
 }
 
@@ -315,8 +272,8 @@ notify_send_cmd() { # notify send STREAM TITLE MESSAGE [--type info|success|warn
     notify_stream_ok "$stream"
     notify_need_hub
     local ans why
-    ans=$(notify_post "$stream" "$title" "$body" "$type") || true   # judged below
-    why=$(notify_outcome "${ans%%$'\t'*}" "${ans#*$'\t'}")
+    ans=$(hub_send "$stream" "$title" "$body" "$type") || true   # judged below
+    why=$(hub_outcome "${ans%%$'\t'*}" "${ans#*$'\t'}")
     notify_record "$stream" "$why"
     [[ -z "$why" ]] || die "$stream: not delivered — $why"
     ok "$stream: delivered"
@@ -325,9 +282,9 @@ notify_send_cmd() { # notify send STREAM TITLE MESSAGE [--type info|success|warn
 # ------------------------------------------------------------------ doctor --
 _doctor_notify() {
     hr "doctor: notifications"
-    if ! svc_enabled apprise; then info "the notification hub (apprise) is off"; return 0; fi
+    if ! hub_enabled; then info "the notification hub ($HUB_SVC) is off"; return 0; fi
     local s ok fail t cfg
-    if [[ "$(c_state "$(svc_cname apprise)")" == running ]] && cfg=$( (notify_cfg_get) 2>/dev/null ); then
+    if hub_running && cfg=$( (hub_cfg_get) 2>/dev/null ); then
         while IFS= read -r t; do warn "$(notify_legacy_note "$t")"; done < <(notify_legacy_lines <<<"$cfg")
     fi
     for s in "${NOTIFY_STREAMS[@]}"; do
