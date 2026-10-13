@@ -616,6 +616,15 @@ keeps Jellyfin administrator rights in step with the portal's `admins` group.
 The stack's own Jellyfin admin (in `credentials`) stays a local account: it is
 what the script uses, and your way in if the portal is ever down.
 
+A Jellyfin sign-in takes several seconds (about eight today): the portal checks
+the password live every time, with nothing remembered, so a changed password, a
+deactivated person or a lockout counts at once. Only signing in waits — the app
+keeps its session, so playback is not slowed. About five wrong passwords in
+Jellyfin lock that person out of Jellyfin's sign-in for a day; a password reset
+clears it at once (**Forgot password?** on the portal's sign-in page, or
+`./mediastack.sh reset-password <username>`). Wrong passwords on the portal's
+own page do not count toward it.
+
 Audiobookshelf signs people in through the portal (OIDC): its login page goes
 straight to the portal (the app shows a "Log in with <portal name>" button);
 the root account's password form is behind
