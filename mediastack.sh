@@ -81,8 +81,6 @@ source "$SCRIPT_DIR/lib/recycle.sh"
 source "$SCRIPT_DIR/lib/footprint.sh"
 # shellcheck source=lib/notify.sh
 source "$SCRIPT_DIR/lib/notify.sh"
-# shellcheck source=lib/link.sh
-source "$SCRIPT_DIR/lib/link.sh"
 # shellcheck source=lib/configure.sh
 source "$SCRIPT_DIR/lib/configure.sh"
 # shellcheck source=lib/lifecycle.sh

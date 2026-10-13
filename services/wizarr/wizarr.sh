@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# services/wizarr/wizarr.sh — Wizarr's address and its `wire wizarr` role.
+# services/wizarr/wizarr.sh — Wizarr's address, its `wire wizarr` role and its
+# half of `invite` (wizarr_invite; the verb itself is lib/access.sh).
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
 
@@ -72,4 +73,40 @@ wizarr_doctor() { # doctor: apps — its stored API key works ('invite' needs it
         [[ "$wcode" =~ ^2 ]] && ok "wizarr API key works ('invite' is ready)" \
             || d_fail "wizarr rejected the stored API key [HTTP $wcode]" "'invite' cannot mint links" "recreate the key in wizarr's Settings -> API Keys, then: ./mediastack.sh wire wizarr"
     fi
+}
+
+wizarr_invite() { # wizarr_invite [EXPIRES-DAYS] — mint a Wizarr invitation and print the ready-to-share URL
+    local expires="${1:-}" host domain base key
+    [[ "$(c_state "$(svc_cname wizarr)")" == running ]] || die "wizarr is not running: ./mediastack.sh up"
+    key=$(env_get WIZARR_API_KEY)
+    [[ -n "$key" ]] || die "No wizarr API key stored yet — run: ./mediastack.sh wire wizarr"
+    # server discovery: a create without server_ids deliberately answers 400
+    # WITH the available_servers list (upstream-documented behaviour)
+    local disc dcode ids out code url exp_line
+    disc=$(curl -sS -m 15 -X POST -H "X-API-Key: $key" -H "Content-Type: application/json" \
+           -d '{}' -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1) \
+        || die "wizarr unreachable: $(head -c200 <<<"$disc")"
+    dcode=${disc##*$'\n'}; disc=${disc%$'\n'*}
+    [[ "$dcode" == 400 || "$dcode" =~ ^2 ]] || die "wizarr refused the request [HTTP $dcode]: $(head -c200 <<<"$disc")
+  (401 = stale API key: re-run 'wire wizarr')"
+    ids=$(jq -c '[.available_servers[]?.id]' <<<"$disc" 2>/dev/null)
+    [[ "$ids" != "[]" && -n "$ids" ]] || die "wizarr has no verified media server yet — finish its one-time
+  first-run in the UI (see: wire wizarr), then retry."
+    out=$(curl -sS -m 15 -X POST -H "X-API-Key: $key" -H "Content-Type: application/json" \
+          -d "$(jq -cn --argjson ids "$ids" --argjson e "${expires:-null}" \
+               '{server_ids:$ids} + (if $e then {expires_in_days:$e} else {} end)')" \
+          -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1) \
+        || die "wizarr unreachable during creation: $(head -c200 <<<"$out")"
+    code=${out##*$'\n'}; out=${out%$'\n'*}
+    [[ "$code" =~ ^2 ]] || die "invitation rejected [HTTP $code]: $(head -c200 <<<"$out")"
+    url=$(jq -r '.invitation.url // empty' <<<"$out")
+    [[ -n "$url" ]] || die "invitation created but no URL in the reply: $(head -c300 <<<"$out")"
+    host=$(env_get WIZARR_HOST invites); domain=$(env_get TRAEFIK_DOMAIN)
+    if [[ -n "$domain" ]]; then base="https://$host.$domain"
+    else base="http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_hostport wizarr)"; fi
+    exp_line="never expires"
+    [[ -n "$expires" ]] && exp_line="expires in $expires day(s)"
+    hr "Invitation ready"
+    echo "  ${base}${url}"
+    echo "  ($exp_line — manage or revoke in wizarr's UI)"
 }

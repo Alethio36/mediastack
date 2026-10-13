@@ -175,6 +175,18 @@ list it joins.
    Proven by the snapshot (37 files identical, no bless) and, live, by
    `frontdoor-install` rewriting all nine installed files byte-identical;
    `scripts/test-frontdoor.sh` keeps the two apart.
+   *Sign-in — done (Oct 2026):* the account model is asked once
+   (`signin_model`/`signin_is`: authentik | wizarr | none), the portal's
+   people and admins read once (`signin_people`, `signin_admins`), each
+   provider's half of `invite` lives in its folder (`authentik_invite`,
+   `wizarr_invite`), and `link-account` — portal-only — moved to
+   `services/authentik/link.sh`; no sign-in provider's API is spoken from
+   `lib/` (`scripts/test-authentik.sh` fails it). Not a provider interface on
+   purpose: the three models are not interchangeable (authentik has the gate,
+   LDAP, OIDC and email; Wizarr only invites), so OIDC and authentik's upkeep
+   stay authentik's own. Proven identical old against new across all three
+   models with the providers mocked, and live by four before/after baselines.
+   The gate's Traefik half moves with the edge slice.
    *Hub — done (Oct 2026):* everything that speaks Apprise's HTTP API is
    behind the hub interface (`hub_*`, `services/apprise/hub.sh`: send, what an
    answer means, the stored configuration, "is it set up"); `lib/notify.sh`

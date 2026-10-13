@@ -23,6 +23,10 @@ authentik_dir() { echo "$(env_get CONFIG_ROOT)/authentik"; }
 
 authentik_has_db() { sudo test -e "$(authentik_dir)/db/pgdata/PG_VERSION"; }
 
+signin_people() { # -> every portal account (authentik's user-list JSON); rc != 0 when unreadable
+    ak_api GET "/core/users/?page_size=1000"
+}
+
 signin_admins() { # -> the portal's admins group members (authentik's user-list JSON); rc != 0 when unreadable
     ak_api GET "/core/users/?groups_by_name=admins&page_size=500"
 }

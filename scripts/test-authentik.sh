@@ -1238,6 +1238,8 @@ leak=$(grep -rnE 'svc_enabled (authentik|wizarr)' mediastack.sh lib services --i
 [[ -z "$leak" ]] || fail_ "the account model asked by a service's name (use signin_is): $leak"; pass
 copies=$(grep -rn 'groups_by_name=admins' mediastack.sh lib services --include=*.sh | grep -vc '^services/authentik/' || true)
 [[ "$copies" == 0 ]] || fail_ "the admins lookup is copied outside signin_admins ($copies)"; pass
+api=$(grep -rnE '\bak_api\b|wizarr_url|/api/invitations' mediastack.sh lib --include=*.sh || true)
+[[ -z "$api" ]] || fail_ "a sign-in provider's API spoken from lib/ (it belongs in services/authentik or services/wizarr): $api"; pass
 for m in authentik wizarr none; do
     got=$(svc_enabled() { case "$1" in authentik) [[ $m == authentik ]] ;; wizarr) [[ $m != none ]] ;; *) return 1 ;; esac; }; signin_model)
     [[ "$got" == "$m" ]] || fail_ "signin_model: $m expected, got $got"; pass

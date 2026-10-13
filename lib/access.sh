@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # lib/access.sh — who can get in: the logins the stack created or stores
 # (`credentials`), rotating one everywhere it lives (`set-credentials`), and
-# household invitations (`invite`). The account model — which provider signs
+# household invitations (`invite`: authentik_invite or wizarr_invite, each in
+# its provider's folder — no provider's API is spoken here). The account model — which provider signs
 # people in — is asked here once (signin_model), never by a service's name. Each target's rotation is
 # sc_rotate_<target> in its service's folder (services/<name>/*.sh); this file
 # keeps the verbs, their order and their words. Sourced by the entrypoint;
@@ -217,7 +218,7 @@ cmd_users() { # the portal's people, as authentik has them
     signin_is authentik || die "the portal (authentik) is not enabled — with Wizarr, people are Jellyfin's own (its dashboard → Users)"
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
     local out
-    out=$(ak_api GET "/core/users/?page_size=1000") || die "authentik refused the user list: $(oneline "$out")"
+    out=$(signin_people) || die "authentik refused the user list: $(oneline "$out")"
     { printf 'USERNAME\tNAME\tEMAIL\tGROUPS\tSIGN-IN\n'
       jq -r '.results[] | select(.type == "internal" and .username != "akadmin" and .username != "mediastack-ldap-search")
         | [.username, (.name // "-" | if . == "" then "-" else . end), (.email // "" | if . == "" then "-" else . end),
@@ -252,7 +253,7 @@ cmd_invite() { # mint an invitation (authentik's or Wizarr's, whichever runs) an
             || die "sending the invitation needs the portal's email working — set it up and test it: ./mediastack.sh email test <your address> (docs/email.md)"
         authentik_invite "$days" "$to"; return 0
     fi
-    local expires="" host domain base key
+    local expires=""
     while [[ $# -gt 0 ]]; do case "$1" in
         --expires) case "${2:-}" in 1|7|30) expires="$2"; shift 2 ;;
                    *) die "usage: invite [--expires 1|7|30]   (no flag = never expires)" ;; esac ;;
@@ -260,36 +261,5 @@ cmd_invite() { # mint an invitation (authentik's or Wizarr's, whichever runs) an
         *) die "usage: invite [--expires 1|7|30]   (no flag = never expires)" ;;
     esac; done
     signin_is wizarr || die "Neither account model is enabled — invitations come from authentik or Wizarr: ./mediastack.sh enable authentik   (or: enable wizarr)"
-    [[ "$(c_state "$(svc_cname wizarr)")" == running ]] || die "wizarr is not running: ./mediastack.sh up"
-    key=$(env_get WIZARR_API_KEY)
-    [[ -n "$key" ]] || die "No wizarr API key stored yet — run: ./mediastack.sh wire wizarr"
-    # server discovery: a create without server_ids deliberately answers 400
-    # WITH the available_servers list (upstream-documented behaviour)
-    local disc dcode ids out code url exp_line
-    disc=$(curl -sS -m 15 -X POST -H "X-API-Key: $key" -H "Content-Type: application/json" \
-           -d '{}' -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1) \
-        || die "wizarr unreachable: $(head -c200 <<<"$disc")"
-    dcode=${disc##*$'\n'}; disc=${disc%$'\n'*}
-    [[ "$dcode" == 400 || "$dcode" =~ ^2 ]] || die "wizarr refused the request [HTTP $dcode]: $(head -c200 <<<"$disc")
-  (401 = stale API key: re-run 'wire wizarr')"
-    ids=$(jq -c '[.available_servers[]?.id]' <<<"$disc" 2>/dev/null)
-    [[ "$ids" != "[]" && -n "$ids" ]] || die "wizarr has no verified media server yet — finish its one-time
-  first-run in the UI (see: wire wizarr), then retry."
-    out=$(curl -sS -m 15 -X POST -H "X-API-Key: $key" -H "Content-Type: application/json" \
-          -d "$(jq -cn --argjson ids "$ids" --argjson e "${expires:-null}" \
-               '{server_ids:$ids} + (if $e then {expires_in_days:$e} else {} end)')" \
-          -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1) \
-        || die "wizarr unreachable during creation: $(head -c200 <<<"$out")"
-    code=${out##*$'\n'}; out=${out%$'\n'*}
-    [[ "$code" =~ ^2 ]] || die "invitation rejected [HTTP $code]: $(head -c200 <<<"$out")"
-    url=$(jq -r '.invitation.url // empty' <<<"$out")
-    [[ -n "$url" ]] || die "invitation created but no URL in the reply: $(head -c300 <<<"$out")"
-    host=$(env_get WIZARR_HOST invites); domain=$(env_get TRAEFIK_DOMAIN)
-    if [[ -n "$domain" ]]; then base="https://$host.$domain"
-    else base="http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_hostport wizarr)"; fi
-    exp_line="never expires"
-    [[ -n "$expires" ]] && exp_line="expires in $expires day(s)"
-    hr "Invitation ready"
-    echo "  ${base}${url}"
-    echo "  ($exp_line — manage or revoke in wizarr's UI)"
+    wizarr_invite "$expires"
 }

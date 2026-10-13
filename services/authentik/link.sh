@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# link.sh — `link-account`: a person's existing local accounts in Jellyfin,
+# services/authentik/link.sh — `link-account`: a person's existing local accounts in Jellyfin,
 # Kavita and Audiobookshelf become their portal account, history kept.
 #
 # Never by name or email matching on its own: the operator confirms which local
