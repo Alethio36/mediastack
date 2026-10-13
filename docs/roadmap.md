@@ -606,6 +606,24 @@ all built; what each still leaves open is noted below.
   targets; (2) Wizarr mode's `reset-password` through Jellyfin's API (today it
   points at Jellyfin's dashboard); (3) Wizarr's admin (no API found yet — UI
   only); (4) Navidrome's per-user Subsonic password, reset by the admin.
+- **The panel signs people in through the portal** *(decided Oct 2026; after
+  phase 3)*. Today the panel sits behind the gate and then asks for OliveTin's
+  own admin login — two sign-ins. Decided: a **signed JWT**, not the trusted
+  header. OliveTin cannot restrict which address may send a name header (unlike
+  Navidrome's trusted sources), and every container on the stack network
+  reaches it directly: a forged name there runs stack commands as root. The
+  gate's `X-authentik-jwt`, verified against its provider's JWKS, cannot be
+  forged without authentik's key. Needs: a signing key on the gate's proxy
+  provider (it has none; the OIDC providers use authentik's self-signed key),
+  the gate passing `X-authentik-jwt` (the strip middleware already removes it
+  everywhere else), and OliveTin's JWT settings (header, JWKS URL, username and
+  groups claims onto the `admins` list) only while the portal runs — the local
+  admin stays, the only login in Wizarr and no-portal installs. Hidden cost:
+  OliveTin's config is written by `frontdoor-install`, and its auth settings
+  load only at start, so changing the account model must re-render the config
+  and restart it. To check live: a list-valued `groups` claim, and the JWKS
+  URL for a forward-auth provider. Proof: one sign-in reaches the panel, and a
+  forged token sent from another container lands on the login page.
 - **LDAP bind cache** — *closed (Oct 12 2026): `bind_mode: direct`*. The
   outpost's cached binds answered a remembered username + password without
   running authentik's sign-in, so they bypassed the Jellyfin throttle: with

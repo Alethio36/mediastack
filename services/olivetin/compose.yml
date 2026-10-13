@@ -57,7 +57,7 @@ services:
       mediastack.managed: "true"
       mediastack.port: "1337"
       mediastack.subdomain: "panel"
-      mediastack.auth: "gate"   # no login of its own: behind the portal (mediastack-gate)
+      mediastack.auth: "gate"   # behind the portal (mediastack-gate); its own admin login still follows (docs/roadmap.md)
       traefik.enable: "true"
       traefik.http.routers.olivetin.rule: "Host(`${OLIVETIN_HOST:-panel}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.olivetin.entrypoints: "websecure"
