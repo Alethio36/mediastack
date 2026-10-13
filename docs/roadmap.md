@@ -314,7 +314,7 @@ arrive on their own, as with watchtower, but validated first.
   churn and temporary space, and the arrs noticing replaced files (re-import,
   upgrade loops). Decide in the watchlist before shipping. After the MVP,
   unless the rollout shows the household's files seldom direct-play.
-- **Live TV from outside sources — Dispatcharr?** *(to discuss, Oct 2026)*.
+- **Live TV from outside sources — Dispatcharr** *(chosen to try, Oct 2026)*.
   An IPTV manager in the arr style: it takes M3U playlists and Xtream Codes
   accounts, matches the programme guide (EPG), and hands the result to
   Jellyfin as one tuner (M3U + XMLTV, or an HDHomeRun-style device); it
@@ -336,7 +336,7 @@ arrive on their own, as with watchtower, but validated first.
     contributors a year; adds .strm files for VOD in Jellyfin's libraries);
     **Dispatcharr** — the most active and the most complete (v0.32, since Feb
     2025, ~90 contributors a year, ~500 commits in 90 days). Nothing more
-    mature does the same job; Dispatcharr leads for a feature-rich setup,
+    mature does the same job; Dispatcharr is the one to try for a feature-rich setup,
     its youth answered by pinning a version (it tags
     releases now) and backing up its database.
   * **Fit with the house rules:** its all-in-one image bundles its database
