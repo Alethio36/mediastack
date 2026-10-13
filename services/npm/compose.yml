@@ -45,7 +45,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
-    networks: [mediastack]
+    networks: [mediastack, mediastack-panel]   # the edge reaches the panel (docker-compose.yml)
     logging: *logging
     dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped

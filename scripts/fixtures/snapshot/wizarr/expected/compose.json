@@ -10,6 +10,9 @@
         ]
       },
       "name": "mediastack"
+    },
+    "mediastack-panel": {
+      "name": "mediastack-panel"
     }
   },
   "services": {
@@ -530,7 +533,8 @@
             "portal.media.example.com"
           ],
           "ipv4_address": "172.31.250.2"
-        }
+        },
+        "mediastack-panel": {}
       },
       "ports": [
         {

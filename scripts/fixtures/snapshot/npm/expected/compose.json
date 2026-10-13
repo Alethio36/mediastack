@@ -10,6 +10,9 @@
         ]
       },
       "name": "mediastack"
+    },
+    "mediastack-panel": {
+      "name": "mediastack-panel"
     }
   },
   "services": {
@@ -306,7 +309,8 @@
         "mediastack.vpn": "false"
       },
       "networks": {
-        "mediastack": {}
+        "mediastack": {},
+        "mediastack-panel": {}
       },
       "ports": [
         {

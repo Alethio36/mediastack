@@ -206,7 +206,6 @@ traefik_gate_middleware() { # mediastack-gate: what a router with mediastack.aut
           X-authentik-email: ""
           X-authentik-name: ""
           X-authentik-uid: ""
-          X-authentik-jwt: ""
 STRIP
     if signin_is authentik; then
         # authentik's built-in outpost decides (services/authentik/authentik.sh attaches the gate to it)
@@ -221,7 +220,6 @@ STRIP
           - X-authentik-email
           - X-authentik-name
           - X-authentik-uid
-          - X-authentik-jwt
 GATE
     else
         # no portal (Wizarr mode): the route stays as it was — an accepted risk,

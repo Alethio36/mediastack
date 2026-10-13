@@ -46,7 +46,7 @@ services:
     extra_hosts:
       # lets the container SSH back to the host (StrictHostKeyChecking stays on)
       - "host.docker.internal:host-gateway"
-    networks: [mediastack]
+    networks: [mediastack-panel]   # the edge's only: docker-compose.yml
     security_opt:
       - no-new-privileges:true
     # No healthcheck on purpose: the image ships no shell/wget, so a CMD-SHELL
@@ -57,7 +57,8 @@ services:
       mediastack.managed: "true"
       mediastack.port: "1337"
       mediastack.subdomain: "panel"
-      mediastack.auth: "gate"   # behind the portal (mediastack-gate); its own admin login still follows (docs/roadmap.md)
+      mediastack.auth: "gate"   # behind the portal (mediastack-gate), which also signs people in to it
+      traefik.docker.network: "mediastack-panel"
       traefik.enable: "true"
       traefik.http.routers.olivetin.rule: "Host(`${OLIVETIN_HOST:-panel}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.olivetin.entrypoints: "websecure"

@@ -653,18 +653,21 @@ all built; what each still leaves open is noted below.
   via `hub_notify_url`): it follows the hub's VPN move, and without a hub the
   rule sends nothing.
 - **The panel signs people in through the portal** — *shipped (Oct 2026)*.
-  One sign-in: the gate passes `X-authentik-jwt`, and OliveTin (while the
-  portal runs) verifies it against the gate's published keys
-  (`/application/o/mediastack-admin-tools/jwks/`: the gate provider now signs
-  with authentik's key) and accepts only the gate's audience (a fixed
-  `client_id: mediastack-gate` — Kavita's and Audiobookshelf's providers
-  share the key); its `groups` claim meets the `admins` list. Not the trusted
-  header: OliveTin cannot restrict who sends one, and every container on the
-  stack network reaches it. The local admin stays — the only login without
-  the portal. `frontdoor-install` writes it and restarts the panel when its
-  config changed (auth settings load at start); `wire authentik` says when
-  the installed panel does not sign in through the portal yet. Held by the
-  `paneljwt` safety rule.
+  One sign-in: while the portal runs, OliveTin trusts the gate's identity
+  headers (`X-authentik-username`, `X-authentik-groups`, split on authentik's
+  `|`), and the `admins` list decides. That is safe because Traefik's
+  forwardAuth deletes any copy of those headers a caller sent before adding
+  authentik's, and the panel sits on its own network (`mediastack-panel`) that
+  only the edge joins — the reason a header was first rejected (every stack
+  container reached the panel) no longer holds. A signed token was tried first
+  and dropped (proven live): authentik's proxy providers clear their signing
+  key on every save, so the gate's token is HS256 with an internal secret and
+  its keys endpoint publishes nothing to verify against. The local admin
+  stays — the only login without the portal. `frontdoor-install` writes it and
+  restarts the panel when its config changed (auth settings load at start);
+  `wire authentik` says when the installed panel does not sign in through the
+  portal yet. Held by the `panelauth` safety rule (headers only with the
+  portal; nothing but the panel and the edge on its network).
 - **LDAP bind cache** — *closed (Oct 12 2026): `bind_mode: direct`*. The
   outpost's cached binds answered a remembered username + password without
   running authentik's sign-in, so they bypassed the Jellyfin throttle: with

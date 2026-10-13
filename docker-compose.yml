@@ -51,3 +51,8 @@ networks:
       config:
         - subnet: ${MEDIASTACK_SUBNET:-172.31.250.0/24}
           ip_range: ${MEDIASTACK_IP_RANGE:-172.31.250.128/25}
+  # the panel's own network: it holds the panel and the edge only, so while
+  # the portal runs, the identity headers the panel trusts can come from the
+  # gate alone — no other container can reach the panel to send them
+  mediastack-panel:
+    name: mediastack-panel

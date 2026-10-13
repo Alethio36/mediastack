@@ -10,6 +10,9 @@
         ]
       },
       "name": "mediastack"
+    },
+    "mediastack-panel": {
+      "name": "mediastack-panel"
     }
   },
   "services": {
@@ -1115,6 +1118,7 @@
         "mediastack.managed": "true",
         "mediastack.port": "1337",
         "mediastack.subdomain": "panel",
+        "traefik.docker.network": "mediastack-panel",
         "traefik.enable": "true",
         "traefik.http.routers.olivetin.entrypoints": "websecure",
         "traefik.http.routers.olivetin.middlewares": "mediastack-gate@file",
@@ -1123,7 +1127,7 @@
         "traefik.http.services.olivetin.loadbalancer.server.port": "1337"
       },
       "networks": {
-        "mediastack": {}
+        "mediastack-panel": {}
       },
       "profiles": [
         "olivetin"
@@ -1565,7 +1569,8 @@
             "portal.media.example.com"
           ],
           "ipv4_address": "172.31.250.2"
-        }
+        },
+        "mediastack-panel": {}
       },
       "ports": [
         {

@@ -601,7 +601,9 @@ download clients, LazyLibrarian, Cleanuparr, WatchState, Pi-hole, ErsatzTV) and
 Traefik's dashboard. Navidrome sits behind a *household* gate: anyone in
 `media-users` gets in, and the portal tells Navidrome who they are (it creates
 them on their first visit); music apps use `/rest/` with a password each user
-sets once in Navidrome's settings. Every route past a gate strips the portal's
+sets once in Navidrome's settings. The panel needs no login of its own past
+the gate: it trusts the portal's identity headers, on a network only the edge
+joins (`mediastack-panel`; docs/frontdoor.md). Every route past a gate strips the portal's
 identity headers, and Navidrome trusts only Traefik's address — Traefik keeps
 one fixed address on the stack network's fixed range (`MEDIASTACK_SUBNET`,
 `MEDIASTACK_IP_RANGE`, `TRAEFIK_ADDRESS`; change them only if they clash with

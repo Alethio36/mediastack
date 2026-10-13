@@ -11,6 +11,7 @@
 #     folder), only on a yes (default No), and a busy one is kept untouched
 #   * removal through the registry: every present "remove" entry, units
 #     stopped first, nothing marked keep/ask/users touched
+#   * uninstall removes every docker network docker-compose.yml names
 #
 #   scripts/test-footprint.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -95,5 +96,10 @@ userdel() { echo "userdel $*" >> "$T/log"; }
 : > "$T/log"; footprint_remove timers panel deps
 [[ "$(cat "$T/log")" == $'systemctl disable --now mediastack-a.timer\nrm /etc/systemd/system/mediastack-a.timer\nrm /etc/sudoers.d/mediastack-x\nuserdel -r olivetin\nsystemctl daemon-reload' ]] \
     || fail_ "registry removal: $(cat "$T/log")"; pass
+
+# a network the stack creates is one uninstall removes (mediastack-panel was added later)
+want=$(awk '/^networks:/{n=1; next} n && /^[^ #]/{n=0} n && /^    name:/{print $2}' docker-compose.yml | sort | tr '\n' ' ')
+got=$(grep -oE 'for net in [a-z -]+; do' lib/lifecycle.sh | sed -E 's/for net in (.*); do/\1/' | tr ' ' '\n' | sort | tr '\n' ' ')
+[[ -n "$want" && "$want" == "$got" ]] || fail_ "uninstall removes networks '$got', docker-compose.yml names '$want'"; pass
 
 echo "OK footprint: $checks checks"

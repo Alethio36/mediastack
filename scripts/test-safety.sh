@@ -17,10 +17,9 @@
 #   ldap       the LDAP route answers the stack network only
 #   socket     only Traefik mounts the Docker socket, and read-only
 #   acme       the certificate server is staging exactly when ACME_ENV says so
-#   paneljwt   the panel trusts no unsigned name header, ever; with the portal
-#              it signs in only with the gate's token — authentik's signature,
-#              checked against the gate's keys, and the gate's audience; a
-#              group's name is never split on its spaces
+#   panelauth  the panel trusts the gate's identity headers only while the
+#              portal runs, and its network holds nothing but the edge — no
+#              other container can reach it to send them
 #   secrets    a secret's value appears in an app's environment only — never in
 #              a label, a command, Traefik's files or the panel's
 # and once on what the host gets (_host/expected/):
@@ -37,7 +36,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 fixtures=scripts/fixtures/snapshot
-RULES=(vpn torrent edge gated strip trust dashboard ldap socket acme paneljwt secrets)
+RULES=(vpn torrent edge gated strip trust dashboard ldap socket acme panelauth secrets)
 HOST_RULES=(panel units)
 
 # ---- helpers: D is a case folder (env.set + expected/) ----
@@ -118,19 +117,21 @@ rule_acme() {
     else (( ! staging )) || echo "traefik.yml uses the staging server but ACME_ENV is not staging"; fi
     return 0
 }
-rule_paneljwt() {
-    local f=$1/expected/olivetin-config.yaml
+rule_panelauth() {
+    local f=$1/expected/olivetin-config.yaml c out
     [[ -f "$f" ]] || return 0
-    ! grep -nE '^authHttpHeader(Username|UserGroup):' "$f" || echo "the panel trusts a name header — any container on the stack network could send it"
-    ! grep -q '^authJwtHmacSecret:' "$f" || echo "the panel checks tokens with a shared secret, not the gate's published keys"
+    c=$(cj "$1")
     if portal_on "$1"; then
-        grep -qx 'authJwtHeader: X-authentik-jwt' "$f" || echo "with the portal, the panel does not read the gate's token"
-        grep -qx 'authJwtAud: mediastack-gate' "$f" || echo "the panel accepts tokens for any audience (Kavita's and Audiobookshelf's providers share the key)"
-        grep -qE '^authJwtCertsUrl: http://[^ ]+/application/o/mediastack-admin-tools/jwks/$' "$f" || echo "the panel does not check tokens against the gate's published keys"
-        grep -qxF 'authHttpHeaderUserGroupSep: "\u001f"' "$f" || echo "the panel splits the groups claim on spaces — a group named 'x admins' would count as admins"
+        grep -qx 'authHttpHeaderUsername: X-authentik-username' "$f" || echo "with the portal, the panel does not read the gate's username header"
+        grep -qx 'authHttpHeaderUserGroup: X-authentik-groups' "$f" || echo "with the portal, the panel does not read the gate's groups header"
+        grep -qx 'authHttpHeaderUserGroupSep: "|"' "$f" || echo "the panel splits authentik's groups on something other than its \"|\""
     else
-        ! grep -q '^authJwt' "$f" || echo "without the portal, the panel expects a token nobody sends"
+        ! grep -qE '^authHttpHeader(Username|UserGroup):' "$f" || echo "without the portal nothing replaces the identity headers — the panel would trust whoever sends them"
     fi
+    out=$(jq -r '.services.olivetin.networks // {} | keys | join(" ")' "$c")
+    [[ "$out" == mediastack-panel ]] || echo "the panel is on '$out', not on mediastack-panel alone"
+    out=$(jq -r '.services | to_entries[] | select(.value.networks // {} | has("mediastack-panel")) | .key' "$c" | grep -vxE 'olivetin|traefik|npm' | tr '\n' ' ')
+    [[ -z "$out" ]] || echo "mediastack-panel holds more than the panel and the edge: $out"
     return 0
 }
 
@@ -208,7 +209,7 @@ broken() { # broken RULE -> a portal copy (plus the host files) with exactly tha
         socket)    jq '.services.jellyfin.volumes += [{"type":"bind","source":"/var/run/docker.sock","target":"/var/run/docker.sock"}]' "$c" ;;
         acme)      echo 'ACME_ENV=staging' >> "$b/env.set"; cat "$c" ;;
         secrets)   jq '.services.jellyfin.labels.leak = "fixture-secret-wireguard"' "$c" ;;
-        paneljwt)  sed -i '/^authJwtAud:/d' "$b/expected/olivetin-config.yaml"; cat "$c" ;;
+        panelauth) jq '.services.jellyfin.networks["mediastack-panel"] = null' "$c" ;;
     esac > "$c.new"
     mv "$c.new" "$c"; echo "$b"
 }

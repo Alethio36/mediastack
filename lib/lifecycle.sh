@@ -171,7 +171,10 @@ cmd_nuke() {
     INSPECT_JSON=""
     ok "containers removed (with their anonymous volumes)"
     rm -f "$PINS_FILE"
-    sudo docker network rm mediastack >/dev/null 2>&1 && ok "network removed" || true
+    local net
+    for net in mediastack mediastack-panel; do   # docker-compose.yml's networks
+        sudo docker network rm "$net" >/dev/null 2>&1 && ok "network $net removed" || true
+    done
 
     local gid u
     gid=$(getent group mediacenter | cut -d: -f3 || true)
