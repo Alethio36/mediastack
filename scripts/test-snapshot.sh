@@ -23,7 +23,8 @@
 # and once for the host (_host/expected/): what frontdoor-install writes — the
 # panel's OliveTin config (its password hash replaced), theme, wrapper,
 # sudoers file, forced-command key line, known_hosts, container passwd and
-# refresh units (keys and ids are fixture values) — and the VPN boot-guard unit.
+# refresh units (keys and ids are fixture values) — the VPN boot-guard unit,
+# a scheduled unit pair (the update's) and the failure hook's template.
 #
 # compose.json keeps the fields mediastack writes — image, names, profiles,
 # networks, ports, volumes, depends_on, dns_search, labels, environment, user,
@@ -131,6 +132,9 @@ snap_host() { # snap_host OUT — what the panel and the VPN guard install, from
     panel_passwd_render 990 991 > "$out/olivetin-passwd"
     _fd_refresh_service_render | normalize > "$out/mediastack-frontdoor-refresh.service"
     _fd_refresh_timer_render > "$out/mediastack-frontdoor-refresh.timer"
+    failure_unit_render | normalize > "$out/mediastack-failure@.service"
+    timer_service_render "Mediastack update pipeline" "update --auto" | normalize > "$out/mediastack-update.service"
+    timer_timer_render "Mediastack update pipeline" "*-*-* 04:00:00 Etc/UTC" > "$out/mediastack-update.timer"
     VPNGUARD_UNIT=$work/vpnguard.service
     rm -f "$VPNGUARD_UNIT"; vpnguard_ensure
     normalize < "$VPNGUARD_UNIT" > "$out/mediastack-vpnguard.service"

@@ -185,6 +185,7 @@ Internal (called by the panel, timers and units — not meant for hand use)
 | `list [all\|managed\|enabled\|disabled\|vpntoggle\|wire\|pinned] [--json]` | enumerate services by set — the panel's dropdown source |
 | `vpn-apply <svc> on\|off` | the one-shot the panel's Toggle VPN button runs (`vpn` is the interactive form) |
 | `vpn-guard [--boot]` | re-attach VPN'd services after a host boot / docker restart (systemd unit) |
+| `unit-failed <unit>` | tell the `ops` stream that a scheduled or boot run failed — its result, exit status and last lines (systemd's OnFailure hook; once per unit per 6 hours) |
 | `audit-extract` | hourly (timer): copy new deletion events from auditd's rotating log into `BACKUP_ROOT/audit/`, prune it to `AUDIT_KEEP_DAYS`, flag a gap if auditd rotated first |
 
 Every verb rejects arguments it does not accept — a typo or an unsupported

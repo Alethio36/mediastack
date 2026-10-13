@@ -1,0 +1,7 @@
+[Unit]
+Description=Mediastack update pipeline
+OnFailure=mediastack-failure@%n.service
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/mediastack.sh update --auto

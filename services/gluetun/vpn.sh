@@ -71,6 +71,7 @@ vpnguard_ensure() {
 Description=Mediastack boot guard (services a cut-off backup stopped; VPN attachment)
 After=docker.service
 Requires=docker.service
+$FAILURE_HOOK
 [Service]
 Type=oneshot
 WorkingDirectory=$SCRIPT_DIR
@@ -82,6 +83,7 @@ EOF
     # cat` to users (found live) — an existing 600 one is repaired too
     if ! sudo cmp -s "$tmp" "$VPNGUARD_UNIT" 2>/dev/null || [[ "$(stat -c %a "$VPNGUARD_UNIT" 2>/dev/null)" != 644 ]]; then
         sudo install -m 644 "$tmp" "$VPNGUARD_UNIT"
+        failure_unit_ensure
         sudo systemctl daemon-reload
         sudo systemctl enable mediastack-vpnguard.service >/dev/null 2>&1 || true
         info "VPN boot-guard unit installed/updated"

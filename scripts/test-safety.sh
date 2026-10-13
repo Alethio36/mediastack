@@ -24,6 +24,8 @@
 #              nothing else; its key is pinned to the forced-command wrapper
 #              with no pty and no forwarding; the host key is labelled only for
 #              the name the container uses
+#   units      every service unit mediastack ships tells ops when it fails
+#              (OnFailure= the failure hook), and the hook runs unit-failed
 #
 # Each rule is also run against a copy broken on purpose (--self-test, also
 # run by default), so a rule that can no longer fail is caught too.
@@ -32,7 +34,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 fixtures=scripts/fixtures/snapshot
 RULES=(vpn torrent edge gated strip trust dashboard ldap socket acme secrets)
-HOST_RULES=(panel)
+HOST_RULES=(panel units)
 
 # ---- helpers: D is a case folder (env.set + expected/) ----
 cj()       { echo "$1/expected/compose.json"; }
@@ -138,6 +140,17 @@ rule_panel() { # D is the _host folder here
     return 0
 }
 
+rule_units() { # D is the _host folder here
+    local e=$1/expected f
+    for f in "$e"/*.service; do
+        [[ "${f##*/}" == mediastack-failure@.service ]] && continue
+        grep -qx 'OnFailure=mediastack-failure@%n.service' "$f" || echo "${f##*/}: no failure hook — a failed run would tell nobody"
+    done
+    grep -qE '^ExecStart=.*/mediastack\.sh unit-failed %i$' "$e/mediastack-failure@.service" 2>/dev/null \
+        || echo "the failure hook's template does not run unit-failed"
+    return 0
+}
+
 # ---- every rule on every case ----
 fails=0 checks=0
 for d in "$fixtures"/*/env.set; do
@@ -184,6 +197,12 @@ for r in "${RULES[@]}"; do
     [[ -n "$out" ]] || { echo "FAIL self-test [$r]: the rule passed a copy broken for it — it can no longer fail" >&2; fails=$((fails + 1)); }
 done
 
+for broken_unit in mediastack-update.service mediastack-vpnguard.service; do
+    h=$tmp/units-$broken_unit; mkdir -p "$h"; cp -r "$fixtures/_host/expected" "$h/"
+    sed -i '/^OnFailure=/d' "$h/expected/$broken_unit"
+    out=$(rule_units "$h" 2>&1); checks=$((checks + 1))
+    [[ -n "$out" ]] || { echo "FAIL self-test [units] passed $broken_unit without its hook" >&2; fails=$((fails + 1)); }
+done
 for broken_host in 's|NOPASSWD: @REPO@/mediastack.sh|NOPASSWD: ALL|:frontdoor-sudoers' \
                    's|,no-pty||:olivetin-authorized_keys' \
                    's|^host.docker.internal|anzac3|:olivetin-known_hosts'; do

@@ -188,6 +188,7 @@ _fd_refresh_service_render() {
 [Unit]
 Description=Mediastack OliveTin entity-list refresh
 After=docker.service
+$FAILURE_HOOK
 [Service]
 Type=oneshot
 WorkingDirectory=$SCRIPT_DIR
@@ -365,6 +366,7 @@ cmd_frontdoor_install() {
 
     # Host-side entity-refresh timer: fills the dropdowns from the host, every
     # 5 min and on boot. No userless OliveTin action, no container write needed.
+    failure_unit_ensure
     _fd_refresh_service_render | sudo tee "$SYSTEMD_DIR/mediastack-frontdoor-refresh.service" >/dev/null
     _fd_refresh_timer_render   | sudo tee "$SYSTEMD_DIR/mediastack-frontdoor-refresh.timer" >/dev/null
     sudo systemctl daemon-reload

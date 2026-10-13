@@ -696,11 +696,17 @@ all built; what each still leaves open is noted below.
   at its line in the caller, and a process substitution's failure (status
   unread) not at all; `die` never fires it. Not sent to notifications yet; the panel shows it as it
   shows any stderr. Pinned by scripts/test-errtrap.sh.
-- **A scheduled run that dies tells `ops`** *(Oct 2026)*. Three nightly
-  updates died before trash-sync with no alert (the wire-lock bug, fixed);
-  nobody noticed for three nights. An `OnFailure=` unit on each timer's
-  service posting the unit, exit code and the journal's last lines to
-  `ops` — it fires however the run ended, the ERR trap's line included.
+- **A scheduled run that dies tells `ops`** — *shipped (Oct 2026)*. Three
+  nightly updates died before trash-sync with no alert (the wire-lock bug,
+  fixed); nobody noticed for three nights. Every service unit mediastack
+  ships (the scheduled ones, the panel's refresh, the boot guard) carries
+  `OnFailure=mediastack-failure@%n.service`, which runs `unit-failed`: the
+  unit, its result and exit status, and that run's last journal lines, to
+  `ops` — however the run ended, the ERR trap's line included. Once per unit
+  per 6 hours (the panel refreshes every 5 minutes). Pinned by the host
+  snapshot, the `units` safety rule and scripts/test-notify.sh. Existing
+  installs: `apply-timer`, `audit on` and `frontdoor-install` rewrite their
+  units; `up` the boot guard's.
 - **`upgrade` takes the maintenance lock** — *shipped (Oct 2026)*. A `git
   pull` landed mid-update: one nightly run mixed old and new code. `upgrade`
   now refuses at once while an update, backup or wire holds the lock, and

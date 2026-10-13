@@ -1,0 +1,7 @@
+[Unit]
+Description=Mediastack update pipeline (scheduled)
+[Timer]
+OnCalendar=*-*-* 04:00:00 Etc/UTC
+Persistent=true
+[Install]
+WantedBy=timers.target

@@ -181,6 +181,36 @@ ENV_FILE=$T/env
 [[ -z "$(mig COMPOSE_PROFILES=gluetun,apprise APPRISE_VPN=false)" ]] || fail_ "already outside: nothing to re-point"; pass
 [[ -z "$(mig COMPOSE_PROFILES=gluetun,radarr)" ]] || fail_ "Apprise not enabled: nothing to re-point"; pass
 
+# ---- unit-failed: a scheduled or boot run that dies tells ops, once per cooldown ----
+(
+    STATE_DIR=$(mktemp -d); SENT=$(mktemp -d)
+    load_env() { :; }; hostname() { echo anzac-test; }
+    systemctl() { case "$*" in
+        *"-p Result"*) echo exit-code ;; *"-p ExecMainStatus"*) echo 1 ;; *"-p InvocationID"*) echo inv123 ;; esac; }
+    journalctl() { [[ "$1" == "_SYSTEMD_INVOCATION_ID=inv123" ]] || { echo "journal read without the run's invocation id: $*" >&2; return 1; }
+                   printf 'ERROR unhandled failure (exit 1) at lib/backup.sh:812 in update_run\n'; }
+    notify() { local n; n=$(( $(find "$SENT" -name '*.tag' | wc -l) + 1 ))   # one send = four files
+               printf '%s' "$1" > "$SENT/$n.tag"; printf '%s' "$2" > "$SENT/$n.title"
+               printf '%s' "$3" > "$SENT/$n.body"; printf '%s' "$4" > "$SENT/$n.type"; }
+    sends() { find "$SENT" -name '*.tag' | wc -l; }
+    ( cmd_unit_failed sshd.service ) 2>/dev/null && fail_ "unit-failed must refuse a unit that is not mediastack's"; pass
+    cmd_unit_failed mediastack-update.service >/dev/null
+    [[ "$(cat "$SENT/1.tag")" == ops && "$(cat "$SENT/1.type")" == failure ]] || fail_ "unit-failed sends to ops as a failure"; pass
+    [[ "$(cat "$SENT/1.title")" == "Mediastack: mediastack-update.service failed" ]] || fail_ "the title names the unit: $(cat "$SENT/1.title")"; pass
+    body=$(cat "$SENT/1.body")
+    [[ "$body" == *"Result: exit-code, exit status 1, on anzac-test"* && "$body" == *"lib/backup.sh:812"* && "$body" == *"journalctl -u mediastack-update.service"* ]] \
+        || fail_ "the body carries result, exit status, host, that run's lines and where to look: $body"; pass
+    cmd_unit_failed mediastack-update.service >/dev/null
+    [[ $(sends) == 1 ]] || fail_ "a second failure inside the cooldown must not send again"; pass
+    cmd_unit_failed mediastack-backup.service >/dev/null
+    [[ $(sends) == 2 ]] || fail_ "the cooldown is per unit — another unit still sends"; pass
+    state_set unit-failed-mediastack-update $(( $(date +%s) - FAILURE_COOLDOWN - 1 ))
+    cmd_unit_failed mediastack-update.service >/dev/null
+    [[ $(sends) == 3 ]] || fail_ "after the cooldown a failure sends again"; pass
+    rm -rf "$STATE_DIR" "$SENT"
+)
+checks=$((checks + 7))
+
 # ---- the hub is reached only through its interface (services/apprise/hub.sh) ----
 # Only the provider's folder speaks the hub's HTTP API; everything else calls
 # hub_*. A second provider defines every name in the interface. Migrations

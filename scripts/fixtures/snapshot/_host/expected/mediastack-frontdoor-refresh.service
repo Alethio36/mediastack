@@ -1,6 +1,7 @@
 [Unit]
 Description=Mediastack OliveTin entity-list refresh
 After=docker.service
+OnFailure=mediastack-failure@%n.service
 [Service]
 Type=oneshot
 WorkingDirectory=@REPO@

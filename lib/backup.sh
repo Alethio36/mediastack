@@ -984,26 +984,77 @@ apply_timer() {
     ok "$label timer installed: $sched (next: $(systemctl show "$unit.timer" -p NextElapseUSecRealtime --value 2>/dev/null || echo '?'))"
 }
 
-timer_write() { # timer_write UNIT DESCRIPTION VERB ONCALENDAR — write, enable and start one oneshot service + timer
-    local unit="$1" desc="$2" verb="$3" sched="$4"
-    [[ "$unit" == mediastack-* ]] || die "timer_write: unit '$unit' must be named mediastack-* (the host-footprint registry owns that prefix)"
-    sudo tee "$SYSTEMD_DIR/$unit.service" >/dev/null <<EOF
+# ---- a scheduled or boot run that dies tells ops ----
+# Three nightly updates once died with nobody told. Every mediastack service
+# unit carries FAILURE_HOOK: when it fails — however it ended, the ERR trap's
+# line included — systemd starts mediastack-failure@<unit>, which runs
+# `unit-failed <unit>`: the unit, its result and exit status, and the last
+# lines of that run, to ops. One message per unit per FAILURE_COOLDOWN (the
+# panel's refresh runs every 5 minutes).
+FAILURE_UNIT=mediastack-failure@.service
+FAILURE_HOOK='OnFailure=mediastack-failure@%n.service'
+FAILURE_COOLDOWN=21600
+failure_unit_render() {
+    cat <<EOF
 [Unit]
-Description=$desc
+Description=Mediastack: tell ops that %i failed
 [Service]
 Type=oneshot
 WorkingDirectory=$SCRIPT_DIR
-ExecStart=$SCRIPT_DIR/mediastack.sh $verb
+ExecStart=$SCRIPT_DIR/mediastack.sh unit-failed %i
 EOF
-    sudo tee "$SYSTEMD_DIR/$unit.timer" >/dev/null <<EOF
+}
+failure_unit_ensure() { failure_unit_render | sudo tee "$SYSTEMD_DIR/$FAILURE_UNIT" >/dev/null; }   # the caller daemon-reloads
+
+cmd_unit_failed() { # unit-failed UNIT — the OnFailure hook's verb: tell ops, once per unit per cooldown
+    local unit="${1:-}" key now last res code inv lines
+    [[ "$unit" =~ ^mediastack-[a-z0-9-]+\.service$ ]] || die "usage: unit-failed mediastack-<name>.service (systemd's OnFailure hook runs it)"
+    load_env
+    key="unit-failed-${unit%.service}"; now=$(date +%s); last=$(state_get "$key")
+    if [[ -n "$last" ]] && (( now - last < FAILURE_COOLDOWN )); then
+        info "$unit failed again — ops was told $(( (now - last) / 60 )) min ago (once per unit per $(( FAILURE_COOLDOWN / 3600 )) hours)"
+        return 0
+    fi
+    res=$(systemctl show -p Result --value "$unit" 2>/dev/null || true)
+    code=$(systemctl show -p ExecMainStatus --value "$unit" 2>/dev/null || true)
+    inv=$(systemctl show -p InvocationID --value "$unit" 2>/dev/null || true)
+    if [[ -n "$inv" ]]; then lines=$(journalctl "_SYSTEMD_INVOCATION_ID=$inv" -o cat --no-pager -n 12 2>/dev/null || true)
+    else lines=$(journalctl -u "$unit" -o cat --no-pager -n 12 2>/dev/null || true); fi
+    lines=$(cut -c1-200 <<<"$lines")
+    notify ops "Mediastack: $unit failed" "$(printf 'Result: %s, exit status %s, on %s. Its last lines:\n```\n%s\n```\nInspect: journalctl -u %s -n 50' \
+        "${res:-unknown}" "${code:-?}" "$(hostname)" "${lines:-(none in the journal)}" "$unit")" failure
+    state_set "$key" "$now"
+}
+
+timer_service_render() { # timer_service_render DESCRIPTION VERB — one oneshot service, with the failure hook
+    cat <<EOF
 [Unit]
-Description=$desc (scheduled)
+Description=$1
+$FAILURE_HOOK
+[Service]
+Type=oneshot
+WorkingDirectory=$SCRIPT_DIR
+ExecStart=$SCRIPT_DIR/mediastack.sh $2
+EOF
+}
+timer_timer_render() { # timer_timer_render DESCRIPTION ONCALENDAR
+    cat <<EOF
+[Unit]
+Description=$1 (scheduled)
 [Timer]
-OnCalendar=$sched
+OnCalendar=$2
 Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+}
+
+timer_write() { # timer_write UNIT DESCRIPTION VERB ONCALENDAR — write, enable and start one oneshot service + timer
+    local unit="$1" desc="$2" verb="$3" sched="$4"
+    [[ "$unit" == mediastack-* ]] || die "timer_write: unit '$unit' must be named mediastack-* (the host-footprint registry owns that prefix)"
+    failure_unit_ensure
+    timer_service_render "$desc" "$verb" | sudo tee "$SYSTEMD_DIR/$unit.service" >/dev/null
+    timer_timer_render "$desc" "$sched"   | sudo tee "$SYSTEMD_DIR/$unit.timer" >/dev/null
     sudo systemctl daemon-reload
     sudo systemctl enable --now "$unit.timer"
 }

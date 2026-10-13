@@ -1080,6 +1080,7 @@ VERBS=(
     "list~list [--json]~free~Internal~Enabled services, one per line (--json: panel entity records)."
     "vpn-apply~vpn-apply <svc> on|off~max=2~Internal~Set a service's VPN membership AND apply it (panel button)."
     "vpn-guard~vpn-guard [--boot]~allow=--boot~Internal~Re-pin VPN dependents onto the live gluetun (boot/daemon unit)."
+    "unit-failed~unit-failed <unit>~max=1~Internal~Tell ops a scheduled or boot run failed (systemd's OnFailure hook)."
     "frontdoor-refresh~frontdoor-refresh~none~Internal~Regenerate the panel's config and entity files."
     "audit-extract~audit-extract~none~Internal~Copy new deletion events from auditd's rotating log into the durable log (hourly timer)."
 )

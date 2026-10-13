@@ -1,0 +1,6 @@
+[Unit]
+Description=Mediastack: tell ops that %i failed
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/mediastack.sh unit-failed %i
