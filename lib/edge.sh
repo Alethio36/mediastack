@@ -91,7 +91,9 @@ traefik_gen() {
             sudo mv "$acme" "$acme.old-$stored.$(date +%s)"
         fi
     fi
-    prehash=$(sudo cat "$croot/traefik/traefik.yml" "$croot/traefik/dynamic/00-mediastack.yml" 2>/dev/null | sha256sum)
+    # a fresh install has neither file yet: hash what exists (cat's miss is no
+    # failure here — under pipefail it ended every first run; found by the snapshot test)
+    prehash=$( { sudo cat "$croot/traefik/traefik.yml" "$croot/traefik/dynamic/00-mediastack.yml" 2>/dev/null || true; } | sha256sum)
     caline=""
     [[ "$acmeenv" == staging ]] && caline='      caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"'
     local tmp; tmp=$(mktemp)
