@@ -301,6 +301,20 @@ verify 'echo "ERROR Another update or backup is running — wire refused." >&2; 
 [[ "$out" == *"FAIL wire --verify could not run after the update (exit 1)"*"lock=1"*"wire refused"*"NOTIFY Mediastack update: wiring not verified"*"went on" ]] \
     || fail_ "could not run: named, alerted, the update goes on: $out"; pass
 [[ "$out" != *"found drift"* ]] || fail_ "a verify that could not run is not drift: $out"; pass
+# each verdict is recorded for the closing summary
+for v in 'exit 0|kept every setting' 'echo "would: x"; exit 1|changed settings' 'exit 1|not verified'; do
+    ( set +e; printf '#!/bin/bash\n%s\n' "${v%%|*}" > "$T/fake/mediastack.sh"; SCRIPT_DIR=$T/fake; UPDATE_WIRING=""
+      update_verify_wiring >/dev/null 2>&1; [[ "$UPDATE_WIRING" == *"${v#*|}"* ]] ) || fail_ "verdict not recorded for: ${v%%|*}"; pass
+done
+# ops hears "updated" last — after the verify and trash-sync — while the
+# household hears "complete" as soon as its services are back
+upd=$(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh)
+n_users=$(grep -n 'notify_interruption "$ntitle complete"' <<<"$upd" | cut -d: -f1)
+n_sync=$(grep -n 'cmd_trash_sync ||' <<<"$upd" | cut -d: -f1)
+n_ops=$(grep -n 'notify ops "Mediastack updated"' <<<"$upd" | cut -d: -f1)
+[[ -n "$n_users" && -n "$n_sync" && -n "$n_ops" ]] && (( n_users < n_sync && n_sync < n_ops )) \
+    || fail_ "the household's 'complete' comes before trash-sync, ops' 'updated' after it ($n_users/$n_sync/$n_ops)"; pass
+[[ $(grep -c 'notify ops "Mediastack updated"' <<<"$upd") == 1 ]] || fail_ "one 'updated' summary, not two"; pass
 # after every stack start Prowlarr re-tests its indexers once FlareSolverr is
 # healthy: a cold FlareSolverr failed its first requests and the arrs reported
 # "all indexers unavailable" nightly (found live)

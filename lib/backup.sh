@@ -836,7 +836,7 @@ cmd_update() {
     fi
     hr "Pulling images"
     info "pulling from registries — the slowest step on a full update; a minute or two is normal"
-    local changed=() line
+    local changed=() line synced=0
     local -A before=() before_d=()
     image_store_init   # here, not in svc_digest's $( ): once for every target
     for s in "${targets[@]}"; do before[$s]=$(c_version "$(svc_cname "$s")"); before_d[$s]=$(svc_digest "$s"); done
@@ -910,14 +910,16 @@ cmd_update() {
     fi
     ok "All updated services healthy."
     printf '%s\n' "${targets[@]}" | grep -qx authentik && authentik_release_record
+    # the household hears now (its services are back); ops hears at the end,
+    # once verify and trash-sync have run too — "updated" means the run is done
     (( notify_users )) && notify_interruption "$ntitle complete" "$ndone" success
-    (( ${#changed[@]} )) && notify ops "Mediastack updated" "$(printf '`%s`\n' "${changed[@]}")" success
 
     # a new version can reset what wire set (Jellyfin 12 put its transcode
     # path back to the default): after a version change on a wired
     # deployment, verify the wiring and report drift — the apps are healthy,
     # so this warns and names the fix rather than failing the update, and it
     # never applies anything unattended. A child process: wire exits on its own.
+    UPDATE_WIRING=""
     if (( ${#changed[@]} )) && [[ -f "$WIRED_FILE" ]]; then
         hr "Wiring after the update"
         update_verify_wiring
@@ -931,6 +933,16 @@ cmd_update() {
         cmd_trash_sync || { fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"
                             notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded."$'\n'"Inspect: \`./mediastack.sh trash-sync\`" failure
                             exit 1; }
+        synced=1
+    fi
+
+    # one summary for ops, last: what changed, and how the steps after it went
+    # (drift or a failed verify also sent their own message, with the fix)
+    if (( ${#changed[@]} )); then
+        local summary; summary=$(printf '`%s`\n' "${changed[@]}")
+        [[ -n "$UPDATE_WIRING" ]] && summary+=$'\n'"Wiring: $UPDATE_WIRING"
+        (( synced )) && summary+=$'\n'"TRaSH sync: done"
+        notify ops "Mediastack updated" "$summary" success
     fi
 }
 
@@ -940,18 +952,21 @@ update_verify_wiring() { # wire --verify after a version change: drift warns, a 
     vout=$(MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" wire --verify 2>&1) || vrc=$?
     if (( vrc == 0 )); then
         ok "wire --verify: the new versions kept their settings"
+        UPDATE_WIRING="kept every setting"
         return 0
     fi
     drift=$(grep -E 'would:|FAIL' <<<"$vout" | head -12 || true)   # none: wire stopped before comparing anything
     if [[ -z "$drift" ]]; then
         fail "wire --verify could not run after the update (exit $vrc): $(oneline "$(tail -3 <<<"$vout")")"
         echo "  The update itself succeeded. Check: ./mediastack.sh wire --verify"
+        UPDATE_WIRING="not verified (see the message before this one)"
         notify ops "Mediastack update: wiring not verified" "wire --verify could not run after the update (exit $vrc): \`$(oneline "$(tail -3 <<<"$vout")")\`"$'\n'"Check: \`./mediastack.sh wire --verify\`" failure
         return 0
     fi
     warn "wire --verify found drift after the update — a new version changed settings wire owns:"
     printf '%s\n' "$drift" | sed 's/^/    /'
     echo "  Apply: ./mediastack.sh wire     (see it all first: ./mediastack.sh wire --verify)"
+    UPDATE_WIRING="a new version changed settings (see the message before this one)"
     notify ops "Mediastack update changed settings" "A new version reset settings wire owns:"$'\n'"$(printf '`%s`\n' "$drift")"$'\n'"Apply: \`./mediastack.sh wire\`" warning
 }
 
