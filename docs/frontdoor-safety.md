@@ -78,6 +78,15 @@ decision — review it as one. Existing installs pick up a changed whitelist on
 the next `frontdoor-install`; until then a new button is refused ("not
 permitted"): the table can never make the wrapper allow more than it lists.
 
+**Where the boundary lives.** Everything that decides what can run as root —
+`PANEL`, the wrapper, sudoers, the pinned key and host key — is in
+`lib/frontdoor.sh`. The panel app (OliveTin) is a provider,
+`services/olivetin/olivetin.sh`: it only turns `PANEL` into the app's own
+config, theme and passwd (`panel_*`). A provider cannot widen access — a
+command it renders still has to pass the wrapper's whitelist — and
+`scripts/test-frontdoor.sh` fails if the boundary's pieces move out of
+`lib/frontdoor.sh` or the provider's rendering moves into it.
+
 Today's buttons run: `update`, `enable`, `disable`, `vpn-apply`, `wire`,
 `backup` (+`backup verify`), `rollback`, `unpin`, `up`, `fix-perms`,
 `frontdoor-refresh`, plus the read-only reports `doctor`, `status`,

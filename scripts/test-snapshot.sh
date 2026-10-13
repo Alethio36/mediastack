@@ -122,13 +122,13 @@ snap_case() { # snap_case CASE OUT — one fixture through the up order, outputs
 snap_host() { # snap_host OUT — what the panel and the VPN guard install, from the code alone
     local out=$1
     mkdir -p "$out"
-    { _fd_otcfg_head; printf "      password: '%s'\n" '@ARGON2ID-HASH@'; _fd_otcfg_tail; } | normalize > "$out/olivetin-config.yaml"
-    _fd_theme_css | normalize > "$out/olivetin-theme.css"
+    panel_config_render '@ARGON2ID-HASH@' | normalize > "$out/olivetin-config.yaml"
+    panel_theme_render | normalize > "$out/olivetin-theme.css"
     _fd_wrapper_render "$SCRIPT_DIR/mediastack.sh" | normalize > "$out/olivetin-frontdoor"
     _fd_sudoers_render "$SCRIPT_DIR/mediastack.sh" | normalize > "$out/frontdoor-sudoers"
     _fd_authkeys_render "$FRONTDOOR_WRAPPER" 'ssh-ed25519 @PANEL-PUBKEY@ olivetin-frontdoor' > "$out/olivetin-authorized_keys"
     echo 'ssh-ed25519 @HOST-PUBKEY@ root@host' | _fd_known_hosts_render > "$out/olivetin-known_hosts"
-    _fd_passwd_render 990 991 > "$out/olivetin-passwd"
+    panel_passwd_render 990 991 > "$out/olivetin-passwd"
     _fd_refresh_service_render | normalize > "$out/mediastack-frontdoor-refresh.service"
     _fd_refresh_timer_render > "$out/mediastack-frontdoor-refresh.timer"
     VPNGUARD_UNIT=$work/vpnguard.service

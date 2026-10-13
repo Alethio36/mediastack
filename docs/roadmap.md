@@ -168,6 +168,13 @@ list it joins.
    renderable first. *Done (Oct 2026):* all six are renderers
    (`_fd_*_render`, byte-identical to what the installer wrote), in the host
    snapshot, and held by a `panel` safety rule.
+   *Panel — done (Oct 2026):* the security boundary (`PANEL`, the wrapper,
+   sudoers, the pinned key and host key, install/teardown) stays in
+   `lib/frontdoor.sh`; how OliveTin shows the panel (its config, theme,
+   passwd) moved to `services/olivetin/olivetin.sh` behind `panel_*`.
+   Proven by the snapshot (37 files identical, no bless) and, live, by
+   `frontdoor-install` rewriting all nine installed files byte-identical;
+   `scripts/test-frontdoor.sh` keeps the two apart.
    *Hub — done (Oct 2026):* everything that speaks Apprise's HTTP API is
    behind the hub interface (`hub_*`, `services/apprise/hub.sh`: send, what an
    answer means, the stored configuration, "is it set up"); `lib/notify.sh`

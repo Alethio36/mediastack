@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# lib/frontdoor.sh — the OliveTin web front door: constants, entity/status
-# generation, the forced-command wrapper + config emitters, and the CLI-only
-# frontdoor-install. Sourced by the entrypoint; relies on lib/common.sh
+# lib/frontdoor.sh — the web front door's security boundary: constants,
+# entity/status generation, the PANEL table, the forced-command wrapper, what
+# the host is given (sudoers, key, host key, units) and the CLI-only
+# frontdoor-install. How OliveTin shows the panel (its config, theme, passwd)
+# is the provider's: services/olivetin/olivetin.sh (panel_*). Sourced by the entrypoint; relies on lib/common.sh
 # primitives and the entrypoint's service/render helpers at call time.
 # The wrapper heredoc lives here so the CI front-door audit covers it.
 
@@ -102,36 +104,6 @@ _fd_wrapper_render() { # _fd_wrapper_render MEDIASTACK-PATH -> the wrapper, whit
     _fd_wrapper_src | sed -e "s#__MEDIASTACK__#$1#" -e "s#__VERBS__#$verbs#" -e "s#__MAXARGS__#$(_fd_panel_maxargs)#"
 }
 
-_fd_otcfg_head() {
-    cat <<'OTCFG_HEAD'
-# Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install.
-logLevel: "INFO"
-pageTitle: "Mediastack"
-# custom-webui/themes/mediastack/theme.css (written by frontdoor-install) styles
-# the status tiles into a coloured grid.
-themeName: "mediastack"
-# hide the small on-start indicator badges on each button, for a cleaner grid
-showNavigateOnStartIcons: false
-
-# Everyone must log in; the panel can change the stack, so no guest access.
-authRequireGuestsToLogin: true
-accessControlLists:
-  - name: admins
-    matchUsergroups: [admins]
-    permissions:
-      view: true
-      exec: true
-      logs: true
-    addToEveryAction: true
-
-authLocalUsers:
-  enabled: true
-  users:
-    - username: admin
-      usergroup: admins
-OTCFG_HEAD
-}
-
 # ---- the panel: ONE table, everything else generated from it ----
 # One line per button: group~title~icon~timeout~command~confirm~flags
 #   command   the mediastack.sh argv the button runs. Arguments come ONLY from
@@ -164,12 +136,12 @@ PANEL=(
     "Maintenance~Fix perms~🔧~120~fix-perms {svc:entity=svc_fixperms:Service}~Confirm~"
     "Maintenance~Refresh panel~♻️~60~frontdoor-refresh~~"
 )
+# shellcheck disable=SC2034  # read by panel_config_render (services/olivetin/olivetin.sh)
 declare -A PANEL_GROUP_NOTE=(
     [Diagnostics]="diagnostics (read-only)"
     [Services]="services (pick one from the dropdown; confirm to run)"
     [Maintenance]="maintenance"
 )
-FD_SSH='ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal'
 FD_PLACEHOLDER='\{([a-z]+):(entity|choices)=([^:}]+):([^}]*)\}'
 
 _fd_panel_argv() { # _fd_panel_argv COMMAND -> the argv with placeholders as {{ NAME }}
@@ -199,151 +171,6 @@ _fd_panel_maxargs() { # the most arguments any button passes
     echo "$max"
 }
 
-_fd_otcfg_tail() {
-    cat <<'OTCFG_ENTITIES'
-
-# Service lists backing the dropdowns; refreshed on the host by the timer
-# (and by the panel's Refresh button).
-entities:
-  - name: svc_enable
-    file: entities/enable.json
-  - name: svc_disable
-    file: entities/disable.json
-  - name: svc_vpn
-    file: entities/vpn.json
-  - name: svc_wire
-    file: entities/wire.json
-  # logs / rollback / fix-perms all target an ENABLED service — the same set the
-  # Disable dropdown offers — so they read disable.json rather than duplicate it.
-  - name: svc_logs
-    file: entities/disable.json
-  - name: svc_rollback
-    file: entities/disable.json
-  - name: svc_fixperms
-    file: entities/disable.json
-  # unpin only makes sense for a currently-pinned service.
-  - name: svc_unpin
-    file: entities/pinned.json
-  # live up/down tiles: one record per enabled service, glyph computed on the host.
-  - name: status
-    file: entities/status.json
-
-# Actions MUST be defined here; the dashboard below only references them by
-# title (OliveTin "pulls" them out of the default Actions view).
-actions:
-OTCFG_ENTITIES
-    local row group title icon timeout cmd confirm flags lastgroup="" rest name kind src atitle c
-    local -a order=()
-    for row in "${PANEL[@]}"; do
-        IFS='~' read -r group title icon timeout cmd confirm flags <<<"$row"
-        if [[ "$group" != "$lastgroup" ]]; then
-            [[ -z "$lastgroup" ]] || echo
-            echo "  # -- ${PANEL_GROUP_NOTE[$group]} --"
-            order+=("$group"); lastgroup=$group
-        else
-            echo
-        fi
-        printf '  - title: %s\n    icon: "%s"\n    timeout: %s\n' "$title" "$icon" "$timeout"
-        [[ "$flags" == single ]] && echo "    maxConcurrent: 1"
-        echo "    onclick: execution-dialog"
-        echo "    shell: $FD_SSH $(_fd_panel_argv "$cmd")"
-        [[ "$cmd" =~ $FD_PLACEHOLDER || -n "$confirm" ]] && echo "    arguments:"
-        rest=$cmd
-        while [[ "$rest" =~ $FD_PLACEHOLDER ]]; do
-            name=${BASH_REMATCH[1]} kind=${BASH_REMATCH[2]} src=${BASH_REMATCH[3]} atitle=${BASH_REMATCH[4]}
-            rest=${rest#*"${BASH_REMATCH[0]}"}
-            echo "      - name: $name"
-            [[ "$kind" == entity ]] && echo "        entity: $src"
-            echo "        title: $atitle"
-            echo "        choices:"
-            if [[ "$kind" == entity ]]; then echo "          - value: '{{ $src.name }}'"
-            else for c in ${src//,/ }; do echo "          - value: \"$c\""; done; fi
-        done
-        if [[ -n "$confirm" ]]; then
-            printf '      - title: %s\n        type: confirmation\n' "${confirm%%|*}"
-            # help text: a YAML double-quoted scalar, so ':' or '#' in it stay text
-            [[ "$confirm" == *"|"* ]] && printf '        description: "%s"\n' "$(sed 's/[\\"]/\\&/g' <<<"${confirm#*|}")"
-        fi
-    done
-    echo
-    cat <<'OTCFG_DASHBOARD'
-# Putting every action on a dashboard makes OliveTin hide the default "Actions"
-# sidebar tab. The status fieldset iterates the `status` entity to render one
-# live up/down tile per enabled service (host-refreshed).
-dashboards:
-  - title: Mediastack
-    contents:
-      - title: '{{ status.glyph }} {{ status.name }}'
-        entity: status
-        type: fieldset
-        cssClass: ms-status
-        contents:
-          - type: display
-            cssClass: '{{ status.cls }}'
-            title: 'state: {{ status.state }} · health: {{ status.health }}'
-OTCFG_DASHBOARD
-    for group in "${order[@]}"; do
-        printf '      - title: %s\n        type: fieldset\n        contents:\n' "$group"
-        for row in "${PANEL[@]}"; do
-            IFS='~' read -r c title _ <<<"$row"
-            [[ "$c" == "$group" ]] && echo "          - title: $title"
-        done
-    done
-}
-
-_fd_theme_css() {
-    cat <<'THEME_CSS'
-/* Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install. */
-
-/* Action dialogs: the help line beside a confirmation checkbox. OliveTin's
-   #666 is near-invisible on the dark theme. */
-.argument-description {
-  color: #b8b8b8;
-  line-height: 1.4;
-}
-
-/* Only reflow the content area that holds status tiles (the Mediastack
-   dashboard); leave every other view's section.transparent alone. */
-main > section.transparent:has(fieldset.ms-status) {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 0.4rem;
-}
-
-/* a status tile = the dashboard-row that directly holds a status fieldset */
-main > section.transparent:has(fieldset.ms-status) > .dashboard-row:has(> fieldset.ms-status) {
-  width: 190px;
-  margin: 0;
-}
-main > section.transparent:has(fieldset.ms-status) > .dashboard-row:has(> fieldset.ms-status) h2 {
-  font-size: 1rem;
-  text-align: center;
-  margin: 0.2rem 0;
-}
-
-/* action rows (Diagnostics/Services/Maintenance) keep a full-width line */
-main > section.transparent:has(fieldset.ms-status) > .dashboard-row:not(:has(> fieldset.ms-status)) {
-  flex: 1 1 100%;
-}
-
-/* the tile's status box: fill the tile, small text, colour bar by state */
-fieldset.ms-status {
-  grid-template-columns: 1fr;
-  padding: 0.3rem;
-}
-fieldset.ms-status .display {
-  font-size: 0.8rem;
-  padding: 0.4rem;
-  border-left: 3px solid transparent;
-}
-.display.ms-up   { border-left-color: #3fb950; }
-.display.ms-warn { border-left-color: #d29922; }
-.display.ms-down { border-left-color: #f85149; }
-THEME_CSS
-}
-
 # ---- what frontdoor-install writes, as pure renderers (same inputs, same bytes;
 # scripts/test-snapshot.sh pins each, scripts/test-safety.sh holds their rules) ----
 _fd_sudoers_render() { # _fd_sudoers_render SCRIPT -> the sudoers file: the panel user may sudo only SCRIPT
@@ -355,9 +182,6 @@ _fd_authkeys_render() { # _fd_authkeys_render WRAPPER PUBKEY -> the one authoriz
 }
 _fd_known_hosts_render() { # stdin: the host's ed25519 .pub -> known_hosts, labelled for the name the container uses
     awk '{print "host.docker.internal", $1, $2}'
-}
-_fd_passwd_render() { # _fd_passwd_render UID GID -> the container's minimal passwd (its uid resolvable)
-    printf 'root:x:0:0:root:/root:/bin/sh\n%s:x:%s:%s:olivetin:/config:/bin/sh\n' "$FRONTDOOR_USER" "$1" "$2"
 }
 _fd_refresh_service_render() {
     cat <<EOF
@@ -501,7 +325,7 @@ cmd_frontdoor_install() {
     #    concatenated between them so its $-laden text is never shell-expanded.
     sudo mkdir -p "$otdir" "$ent"
     local ctmp; ctmp=$(mktemp)
-    { _fd_otcfg_head; printf "      password: '%s'\n" "$hash"; _fd_otcfg_tail; } > "$ctmp"
+    panel_config_render "$hash" > "$ctmp"
     sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$otdir/config.yaml"; rm -f "$ctmp"
     ok "wrote $otdir/config.yaml"
 
@@ -512,13 +336,13 @@ cmd_frontdoor_install() {
     local themedir="$otdir/custom-webui/themes/mediastack"
     sudo mkdir -p "$themedir"
     local ttmp; ttmp=$(mktemp)
-    _fd_theme_css > "$ttmp"
+    panel_theme_render > "$ttmp"
     sudo install -m 0644 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ttmp" "$themedir/theme.css"; rm -f "$ttmp"
     ok "wrote $themedir/theme.css"
 
     # Minimal passwd so the container ssh client can resolve its own uid
     # (it runs as OLIVETIN_UID:GID, which is absent from the image passwd).
-    _fd_passwd_render "$ot_uid" "$ot_gid" | sudo tee "$otdir/passwd" >/dev/null
+    panel_passwd_render "$ot_uid" "$ot_gid" | sudo tee "$otdir/passwd" >/dev/null
     sudo chmod 644 "$otdir/passwd"
     ok "wrote $otdir/passwd (uid $ot_uid resolvable in-container)"
 

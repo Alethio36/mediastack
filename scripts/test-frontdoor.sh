@@ -82,4 +82,17 @@ for row in "${PANEL[@]}"; do
     done
 done; pass
 
+# ---- the boundary and the provider stay apart ----
+# lib/frontdoor.sh holds what decides root access; services/olivetin/ only
+# renders the app's config/theme/passwd behind panel_* (docs/frontdoor-safety.md)
+for f in _fd_wrapper_render _fd_wrapper_src _fd_sudoers_render _fd_authkeys_render _fd_known_hosts_render cmd_frontdoor_install; do
+    grep -qE "^$f\(\)" lib/frontdoor.sh || fail_ "the boundary's $f must live in lib/frontdoor.sh"; pass
+done
+grep -qE '^PANEL=\(' lib/frontdoor.sh || fail_ "the PANEL table must live in lib/frontdoor.sh"; pass
+for f in panel_config_render panel_theme_render panel_passwd_render; do
+    grep -qE "^$f\(\)" services/olivetin/olivetin.sh || fail_ "the panel provider lacks $f"; pass
+done
+! grep -nE "^(FD_SSH=|_fd_otcfg_(head|tail)\(\))|<<'(OTCFG_|THEME_CSS)" lib/frontdoor.sh || fail_ "OliveTin's rendering is back in lib/frontdoor.sh — it belongs to the provider"; pass
+! grep -nE '^(PANEL=|_fd_wrapper|_fd_sudoers|_fd_authkeys)' services/olivetin/olivetin.sh || fail_ "the security boundary leaked into the provider"; pass
+
 echo "OK frontdoor: $checks checks (${#PANEL[@]} buttons)"
