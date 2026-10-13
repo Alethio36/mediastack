@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034  # RENDERED_JSON/INSPECT_JSON/VPNGUARD_UNIT are read by the sourced code
+# shellcheck disable=SC2034  # RENDERED_JSON/INSPECT_JSON/VPNGUARD_UNIT/SYSTEMD_DIR are read by the sourced code
 # test-snapshot.sh — what mediastack generates, byte-compared against a
 # reviewed copy, for one fixture per generator branch. It guards the re-org's
 # platform slices (hub, panel, sign-in, edge, VPN): moving code must leave
@@ -140,8 +140,9 @@ snap_host() { # snap_host OUT — what the panel and the VPN guard install, from
     failure_unit_render | normalize > "$out/mediastack-failure@.service"
     timer_service_render "Mediastack update pipeline" "update --auto" | normalize > "$out/mediastack-update.service"
     timer_timer_render "Mediastack update pipeline" "*-*-* 04:00:00 Etc/UTC" > "$out/mediastack-update.timer"
-    VPNGUARD_UNIT=$work/vpnguard.service
-    rm -f "$VPNGUARD_UNIT"; vpnguard_ensure
+    # every unit vpnguard_ensure writes (its own, the failure hook's) lands in $work, never the host's
+    SYSTEMD_DIR=$work/systemd; VPNGUARD_UNIT=$SYSTEMD_DIR/mediastack-vpnguard.service
+    rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"; vpnguard_ensure
     normalize < "$VPNGUARD_UNIT" > "$out/mediastack-vpnguard.service"
 }
 
