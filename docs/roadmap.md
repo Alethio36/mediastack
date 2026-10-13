@@ -200,6 +200,17 @@ list it joins.
    Jellyfin's LDAP host, new services all read it) — a schema bump renames it
    (e.g. `STACK_DOMAIN` — not `MEDIASTACK_DOMAIN`, already a container variable
    in the authentik shard), with a migration.
+   *VPN — done (Oct 2026); phase 3 complete:* `lib/vpn.sh` became
+   `services/gluetun/vpn.sh` (membership overlay, reattach guard and its boot
+   unit, leak-test, the vpn verbs) and doctor's tunnel checks are
+   `gluetun_doctor`. No VPN interface and no service-name variable for
+   gluetun: the shared-namespace model is gluetun's, and a second provider
+   would need different code, not a parameter. Gluetun's upkeep (up's health
+   wait, update recreating its group, configure's provider questions) stays
+   where it is, like authentik's. Proven by the snapshot (no bless) and live
+   baselines. What phase 3 left in `lib/`: the platform's own machinery
+   (render, wire, roles, addressing, backup/update, doctor's frame, the
+   front door's security boundary) and the call sites into each provider.
    *Hub — done (Oct 2026):* everything that speaks Apprise's HTTP API is
    behind the hub interface (`hub_*`, `services/apprise/hub.sh`: send, what an
    answer means, the stored configuration, "is it set up"); `lib/notify.sh`

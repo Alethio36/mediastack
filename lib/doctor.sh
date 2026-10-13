@@ -240,25 +240,7 @@ _doctor_neighbours() {
 
 _doctor_vpn_backups() {
     hr "doctor: vpn + backups"
-    if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
-        local dgid dnm dbad="" dchecked=0
-        dgid=$(c_id "$(svc_cname gluetun)")
-        for s in $(svc_managed_where mediastack.vpn true); do
-            svc_enabled "$s" || continue
-            [[ $(c_state "$(svc_cname "$s")") == running ]] || continue
-            dnm=$(c_netmode "$(svc_cname "$s")")
-            dchecked=1
-            [[ "$dnm" == "container:$dgid" ]] || dbad+="$s "
-        done
-        if (( dchecked == 0 )); then info "no running VPN'd services to audit"
-        elif [[ -z "$dbad" ]]; then ok "all VPN'd services routed through the gluetun tunnel"
-        else d_fail "VPN'd services NOT attached to gluetun: $dbad" "their traffic bypasses the VPN entirely" "./mediastack.sh up   (recreates with correct attachment), then ./mediastack.sh leak-test"; fi
-    fi
-    if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
-        local vip; vip=$(sudo docker exec "$(svc_cname gluetun)" wget -qO- --timeout=8 https://ipinfo.io/ip 2>/dev/null || true)
-        [[ -n "$vip" ]] && ok "tunnel public IP: $vip" \
-            || d_fail "cannot fetch IP through tunnel" "VPN may be down; downloads are dead (not leaking — kill-switch)" "./mediastack.sh logs gluetun"
-    fi
+    gluetun_doctor
     [[ -f "$STOP_MARKER" ]] && d_fail "services stopped by a cut-off $(head -1 "$STOP_MARKER") are still down" \
         "a backup stops them and was cut off before starting them again (the next boot starts them)" "./mediastack.sh up"
     if [[ -z "$(env_get BACKUP_SCHEDULE)" ]]; then

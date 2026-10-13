@@ -109,4 +109,10 @@ done
 grep -qE '^traefik_doctor\(\)' services/traefik/traefik.sh || fail_ "traefik_doctor is Traefik's (services/traefik/traefik.sh)"; pass
 [[ ! -e lib/edge.sh ]] || fail_ "lib/edge.sh is back"; pass
 
+# ---- the VPN is gluetun's folder ----
+for f in vpn_gen vpn_reattach_guard vpnguard_ensure cmd_leak_test cmd_vpn cmd_vpn_apply gluetun_doctor; do
+    grep -qE "^$f\(\)" services/gluetun/vpn.sh || fail_ "the VPN lacks $f (services/gluetun/vpn.sh)"; pass
+done
+[[ ! -e lib/vpn.sh ]] || fail_ "lib/vpn.sh is back"; pass
+
 echo "OK layout: $checks checks"

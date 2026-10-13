@@ -63,8 +63,6 @@ unset _svc_lib
 source "$SCRIPT_DIR/lib/migrations.sh"
 # shellcheck source=lib/env.sh
 source "$SCRIPT_DIR/lib/env.sh"
-# shellcheck source=lib/vpn.sh
-source "$SCRIPT_DIR/lib/vpn.sh"
 # shellcheck source=lib/backup.sh
 source "$SCRIPT_DIR/lib/backup.sh"
 # shellcheck source=lib/manifest.sh

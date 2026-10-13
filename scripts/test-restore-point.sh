@@ -135,7 +135,7 @@ systemctl() { :; }
 vpnguard_ensure; [[ "$(stat -c %a "$VPNGUARD_UNIT")" == 644 ]] || fail_ "a new boot unit is 644: $(stat -c %a "$VPNGUARD_UNIT")"; pass
 chmod 600 "$VPNGUARD_UNIT"; vpnguard_ensure
 [[ "$(stat -c %a "$VPNGUARD_UNIT")" == 644 ]] || fail_ "an existing 600 boot unit with the same content is repaired"; pass
-grep -q 'stopped_recover' <(awk '/^cmd_vpn_guard\(\)/,/^}/' lib/vpn.sh) || fail_ "the boot guard runs stopped_recover"; pass
+grep -q 'stopped_recover' <(awk '/^cmd_vpn_guard\(\)/,/^}/' services/gluetun/vpn.sh) || fail_ "the boot guard runs stopped_recover"; pass
 
 # ---- meta: what made each point, and what it ran ----
 c_inspect_all() { :; }; svc_cname() { echo "c-$1"; }

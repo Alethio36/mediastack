@@ -5,7 +5,7 @@
 # uninstall removes through it, doctor shows it, and CI fails a write outside
 # the repo that no provider owns (scripts/test-footprint.sh).
 # Sourced by the entrypoint; relies on lib/common.sh, lib/frontdoor.sh
-# (FRONTDOOR_*), lib/vpn.sh (VPNGUARD_UNIT) and lib/audit.sh at call time.
+# (FRONTDOOR_*), services/gluetun/vpn.sh (VPNGUARD_UNIT) and lib/audit.sh at call time.
 #
 # One line per entry:  feature <TAB> kind <TAB> path <TAB> action
 #   kind   unit (a systemd unit file) | file | user | group | fstab | pkg

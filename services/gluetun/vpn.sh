@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# lib/vpn.sh — everything about the gluetun tunnel: the reattach guard (script
-# paths) and its boot unit (daemon/boot paths), the leak-test, and per-service
-# VPN membership (vpn_gen renders local/vpn-overlay.yml; the vpn/vpn-apply
-# verbs). Sourced by the entrypoint; relies on lib/common.sh and the
+# services/gluetun/vpn.sh — everything about the gluetun tunnel: the reattach
+# guard (script paths) and its boot unit (daemon/boot paths), the leak-test,
+# doctor's tunnel checks (gluetun_doctor), and per-service VPN membership
+# (vpn_gen renders local/vpn-overlay.yml, with each route's labels from the
+# edge; the vpn/vpn-apply verbs). Sourced by the entrypoint; relies on lib/common.sh and the
 # entrypoint's service/render/inspect helpers at call time.
 
 # ---------------------------------------------------------- vpn guard --
@@ -144,7 +145,7 @@ cmd_leak_test() {
     else ok "no IPv6 egress"; fi
     # resolver identity: queries must go to gluetun's local resolver (which
     # forwards over the tunnel), not a LAN/ISP resolver
-    if sudo docker exec "$gcn" sh -c 'grep -q "nameserver 127.0.0.1" /etc/resolv.conf' 2>/dev/null; then
+    if sudo docker exec "$gcn" sh -c 'grep -q "nameserver 127.0.0.1" /etc/resolv.conf' 2>/dev/null; then   # addr-ok: gluetun's own resolver, read for the leak-test
         ok "DNS goes to gluetun's own resolver — queries ride the tunnel"
     else
         warn "resolv.conf inside the namespace is not gluetun's resolver — DNS may leak to the LAN (check DNS settings in gluetun)"
@@ -244,7 +245,7 @@ vpn_effective() {   # vpn_effective <svc> <default> -> true|false
 
 vpn_port_line() {   # <stem> <cport> <auth> [local] -> one published port (a gated tool binds where MEDIASTACK_GATE_BIND says)
     local bind=""; [[ "$3" == gate ]] && bind='${MEDIASTACK_GATE_BIND:-}'
-    [[ "${4:-}" == local ]] && bind='127.0.0.1:'   # mediastack.hostport: local — the script only
+    [[ "${4:-}" == local ]] && bind='127.0.0.1:'   # mediastack.hostport: local — the script only (addr-ok: host bind)
     echo "      - \"${bind}\${${1}_PORT:-${2}}:${2}\""
 }
 
@@ -276,7 +277,7 @@ vpn_gen() {
             [[ "$hp" != false ]] && gports+="$(vpn_port_line "$stem" "$cport" "$auth" "$hp")"$'\n'
             glabels+="$(edge_route_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'
             stanzas+="  ${s}:"$'\n'"    network_mode: \"service:gluetun\""$'\n'
-            stanzas+="    depends_on:"$'\n'"      gluetun:"$'\n'"        condition: service_healthy"$'\n'
+            stanzas+="    depends_on:"$'\n'"      gluetun:"$'\n'"        condition: service_healthy"$'\n'   # addr-ok: a YAML key, no address
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"true\""$'\n'
         else
             [[ "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.torrent"] // ""' <<<"$bj")" == true ]] \
@@ -298,7 +299,7 @@ vpn_gen() {
         # gluetun only appears when at least one service is VPN'd; traefik.enable
         # is already set on the base gluetun service, so it is not repeated here.
         if [[ -n "$gports" || -n "$glabels" ]]; then
-            echo "  gluetun:"
+            echo "  gluetun:"   # addr-ok: the overlay's YAML key for the gluetun service, no address
             [[ -n "$gports"  ]] && { echo "    ports:";  printf '%s' "$gports"; }
             [[ -n "$glabels" ]] && { echo "    labels:"; printf '%s' "$glabels"; }
         fi
@@ -392,4 +393,26 @@ cmd_vpn() {
     fi
     vpn_gen
     ok "vpn: $svc $act ($how) — regenerated local/vpn-overlay.yml. Apply with: ./mediastack.sh up"
+}
+
+gluetun_doctor() { # doctor: every VPN'd service joined to the live tunnel, and the tunnel's public IP
+    if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
+        local dgid dnm dbad="" dchecked=0
+        dgid=$(c_id "$(svc_cname gluetun)")
+        for s in $(svc_managed_where mediastack.vpn true); do
+            svc_enabled "$s" || continue
+            [[ $(c_state "$(svc_cname "$s")") == running ]] || continue
+            dnm=$(c_netmode "$(svc_cname "$s")")
+            dchecked=1
+            [[ "$dnm" == "container:$dgid" ]] || dbad+="$s "
+        done
+        if (( dchecked == 0 )); then info "no running VPN'd services to audit"
+        elif [[ -z "$dbad" ]]; then ok "all VPN'd services routed through the gluetun tunnel"
+        else d_fail "VPN'd services NOT attached to gluetun: $dbad" "their traffic bypasses the VPN entirely" "./mediastack.sh up   (recreates with correct attachment), then ./mediastack.sh leak-test"; fi   # addr-ok: a message, no address
+    fi
+    if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
+        local vip; vip=$(sudo docker exec "$(svc_cname gluetun)" wget -qO- --timeout=8 https://ipinfo.io/ip 2>/dev/null || true)
+        [[ -n "$vip" ]] && ok "tunnel public IP: $vip" \
+            || d_fail "cannot fetch IP through tunnel" "VPN may be down; downloads are dead (not leaking — kill-switch)" "./mediastack.sh logs gluetun"
+    fi
 }
