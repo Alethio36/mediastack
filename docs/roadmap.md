@@ -187,6 +187,19 @@ list it joins.
    stay authentik's own. Proven identical old against new across all three
    models with the providers mocked, and live by four before/after baselines.
    The gate's Traefik half moves with the edge slice.
+   *Edge — done (Oct 2026):* the edge is Traefik's folder —
+   `lib/edge.sh` became `services/traefik/edge.sh` (with the gate's
+   middleware), each service's route labels moved out of the VPN code
+   (`edge_route_labels`, `edge_router_name`, `edge_enable_label`, which
+   `vpn_gen` calls), and doctor's certificate checks are `traefik_doctor`;
+   nothing in `lib/` writes Traefik's config or labels
+   (`scripts/test-layout.sh` fails it). No edge interface: NPM ships unwired
+   (its proxy hosts live in its own UI), so there is one provider to wire.
+   Proven by the snapshot (37 files identical, no bless) and live baselines.
+   After phase 3: `TRAEFIK_DOMAIN` is the stack's domain (authentik, Wizarr,
+   Jellyfin's LDAP host, new services all read it) — a schema bump renames it
+   (e.g. `STACK_DOMAIN` — not `MEDIASTACK_DOMAIN`, already a container variable
+   in the authentik shard), with a migration.
    *Hub — done (Oct 2026):* everything that speaks Apprise's HTTP API is
    behind the hub interface (`hub_*`, `services/apprise/hub.sh`: send, what an
    answer means, the stored configuration, "is it set up"); `lib/notify.sh`

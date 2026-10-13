@@ -224,7 +224,6 @@ cmd_leak_test() {
 # mediastack.torrent label marks one (vpn_gen warns, `vpn ... off` refuses)
 is_torrent_client() { [[ "$(svc_label "$1" mediastack.torrent)" == true ]]; }
 
-vpn_rname() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik router name
 vpn_onoff() { [[ "$1" == true ]] && echo "on" || echo "off"; }   # membership -> on/off
 
 vpn_base_json() {   # base compose ONLY — never include the overlay (no self-reference)
@@ -243,30 +242,6 @@ vpn_effective() {   # vpn_effective <svc> <default> -> true|false
     echo "$2"
 }
 
-vpn_traefik_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass>  (router/service only)
-    local i="$1" r="$2" sub="$3" cp="$4" stem="$5" auth="${6:-}" bypass="${7:-}"
-    echo "${i}traefik.http.routers.${r}.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${TRAEFIK_DOMAIN:-unset.invalid}\`)\""
-    echo "${i}traefik.http.routers.${r}.entrypoints: \"websecure\""
-    echo "${i}traefik.http.routers.${r}.tls: \"true\""
-    echo "${i}traefik.http.routers.${r}.service: \"${r}\""
-    echo "${i}traefik.http.services.${r}.loadbalancer.server.port: \"${cp}\""
-    # mediastack.auth: gate -> the portal decides who gets through (lib/edge.sh
-    # defines mediastack-gate: authentik's check when it runs, a no-op otherwise)
-    if [[ "$auth" == gate ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-gate@file\""; fi
-    # mediastack.auth.bypass: a path (the API) that skips the gate — only for a
-    # tool whose API demands its own key, so companion apps keep working. The
-    # longer rule wins in Traefik, so this router takes that path.
-    if [[ "$auth" == gate && -n "$bypass" ]]; then
-        local p paths=""
-        for p in $bypass; do paths+="${paths:+ || }PathPrefix(\`$p\`)"; done
-        echo "${i}traefik.http.routers.${r}-api.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${TRAEFIK_DOMAIN:-unset.invalid}\`) && ($paths)\""
-        echo "${i}traefik.http.routers.${r}-api.entrypoints: \"websecure\""
-        echo "${i}traefik.http.routers.${r}-api.tls: \"true\""
-        echo "${i}traefik.http.routers.${r}-api.service: \"${r}\""
-        # a route past the gate never carries a username header a client made up
-        echo "${i}traefik.http.routers.${r}-api.middlewares: \"mediastack-strip@file\""
-    fi
-}
 vpn_port_line() {   # <stem> <cport> <auth> [local] -> one published port (a gated tool binds where MEDIASTACK_GATE_BIND says)
     local bind=""; [[ "$3" == gate ]] && bind='${MEDIASTACK_GATE_BIND:-}'
     [[ "${4:-}" == local ]] && bind='127.0.0.1:'   # mediastack.hostport: local — the script only
@@ -284,7 +259,7 @@ vpn_gen() {
     # exactly once per container (never duplicated as a mapping key).
     local gports="" glabels="" stanzas="" s stem cport sub rname defv eff hp auth bypass
     for s in $svcs; do
-        stem=$(uvar "$s"); rname=$(vpn_rname "$s")
+        stem=$(uvar "$s"); rname=$(edge_router_name "$s")
         cport=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.port"] // ""' <<<"$bj")
         sub=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.subdomain"] // ""' <<<"$bj")
         defv=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.vpn"] // "false"' <<<"$bj")
@@ -299,7 +274,7 @@ vpn_gen() {
         eff=$(vpn_effective "$s" "$defv")
         if [[ "$eff" == true ]]; then
             [[ "$hp" != false ]] && gports+="$(vpn_port_line "$stem" "$cport" "$auth" "$hp")"$'\n'
-            glabels+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'
+            glabels+="$(edge_route_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'
             stanzas+="  ${s}:"$'\n'"    network_mode: \"service:gluetun\""$'\n'
             stanzas+="    depends_on:"$'\n'"      gluetun:"$'\n'"        condition: service_healthy"$'\n'
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"true\""$'\n'
@@ -310,8 +285,8 @@ vpn_gen() {
             # (docs/adding-a-service.md); on it, gluetun's is shared instead
             stanzas+="  ${s}:"$'\n'"    networks: [mediastack]"$'\n'"    dns_search: [\".\"]"$'\n'
             [[ "$hp" != false ]] && stanzas+="    ports:"$'\n'"$(vpn_port_line "$stem" "$cport" "$auth" "$hp")"$'\n'
-            stanzas+="    labels:"$'\n'"      mediastack.vpn: \"false\""$'\n'"      traefik.enable: \"true\""$'\n'
-            stanzas+="$(vpn_traefik_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'
+            stanzas+="    labels:"$'\n'"      mediastack.vpn: \"false\""$'\n'"$(edge_enable_label "      ")"$'\n'
+            stanzas+="$(edge_route_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'
         fi
     done
     local tmp; tmp=$(mktemp)

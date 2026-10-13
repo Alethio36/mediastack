@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# lib/edge.sh — the Traefik HTTPS edge: traefik_ensure (auto-run by up),
-# traefik_gen (generated static + dynamic config), hostname and certificate
-# re-setup (the traefik-setup verb). Sourced by the entrypoint; relies on
+# services/traefik/edge.sh — the Traefik HTTPS edge: traefik_ensure (auto-run
+# by up), traefik_gen (generated static + dynamic config, the gate's
+# middleware), each service's route labels (edge_route_labels, written into
+# the VPN overlay by vpn_gen), and hostname and certificate re-setup (the
+# traefik-setup verb). Nothing in lib/ writes Traefik's config or labels. Sourced by the entrypoint; relies on
 # lib/common.sh and the entrypoint's service/render/inspect helpers at call
 # time.
 
@@ -304,4 +306,33 @@ cmd_traefik_setup() {
     traefik_ensure --reconfigure
     info "Apply with: ./mediastack.sh up   (recreates traefik if config changed)"
     info "Rename service addresses any time: ./mediastack.sh traefik-setup --hosts"
+}
+
+# ---- each service's routes, as Traefik labels (vpn_gen writes them into the
+# overlay, on gluetun for a VPN'd service, on the service itself otherwise) ----
+edge_enable_label() { echo "${1}traefik.enable: \"true\""; }   # edge_enable_label INDENT — the edge serves this container
+edge_router_name() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik router name
+edge_route_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass>  (router/service only)
+    local i="$1" r="$2" sub="$3" cp="$4" stem="$5" auth="${6:-}" bypass="${7:-}"
+    echo "${i}traefik.http.routers.${r}.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${TRAEFIK_DOMAIN:-unset.invalid}\`)\""
+    echo "${i}traefik.http.routers.${r}.entrypoints: \"websecure\""
+    echo "${i}traefik.http.routers.${r}.tls: \"true\""
+    echo "${i}traefik.http.routers.${r}.service: \"${r}\""
+    echo "${i}traefik.http.services.${r}.loadbalancer.server.port: \"${cp}\""
+    # mediastack.auth: gate -> the portal decides who gets through (services/traefik/edge.sh
+    # defines mediastack-gate: authentik's check when it runs, a no-op otherwise)
+    if [[ "$auth" == gate ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-gate@file\""; fi
+    # mediastack.auth.bypass: a path (the API) that skips the gate — only for a
+    # tool whose API demands its own key, so companion apps keep working. The
+    # longer rule wins in Traefik, so this router takes that path.
+    if [[ "$auth" == gate && -n "$bypass" ]]; then
+        local p paths=""
+        for p in $bypass; do paths+="${paths:+ || }PathPrefix(\`$p\`)"; done
+        echo "${i}traefik.http.routers.${r}-api.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${TRAEFIK_DOMAIN:-unset.invalid}\`) && ($paths)\""
+        echo "${i}traefik.http.routers.${r}-api.entrypoints: \"websecure\""
+        echo "${i}traefik.http.routers.${r}-api.tls: \"true\""
+        echo "${i}traefik.http.routers.${r}-api.service: \"${r}\""
+        # a route past the gate never carries a username header a client made up
+        echo "${i}traefik.http.routers.${r}-api.middlewares: \"mediastack-strip@file\""
+    fi
 }

@@ -106,7 +106,7 @@ bad=$(jq -r '.services | to_entries[] | select(.value.labels["mediastack.subdoma
     | select((.value.labels["mediastack.auth"] // "") | IN("gate","native","open") | not) | .key' <<<"$RENDERED_JSON")
 [[ -z "$bad" ]] || t_fail "web interfaces without mediastack.auth (gate|native|open): $bad"
 for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.subdomain"] != null) | .key' <<<"$RENDERED_JSON"); do
-    r=$(vpn_rname "$s"); auth=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"]' <<<"$RENDERED_JSON")
+    r=$(edge_router_name "$s"); auth=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"]' <<<"$RENDERED_JSON")
     mw=$(jq -r --arg k "traefik.http.routers.$r.middlewares" '[.services[].labels[$k] // empty] | join(",")' <<<"$RENDERED_JSON")
     if [[ "$auth" == gate ]]; then [[ "$mw" == *mediastack-gate@file* ]] || t_fail "$s is gated but its route ($r) has no mediastack-gate middleware"
     else [[ "$mw" != *mediastack-gate@file* ]] || t_fail "$s is $auth but its route carries the gate"; fi
@@ -114,7 +114,7 @@ done
 # an API that skips the gate: only on a gated tool, as its own router without the gate
 for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.auth.bypass"] != null) | .key' <<<"$RENDERED_JSON"); do
     [[ "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"]' <<<"$RENDERED_JSON")" == gate ]] || t_fail "$s: a gate bypass on a service that is not gated"
-    r=$(vpn_rname "$s")
+    r=$(edge_router_name "$s")
     rule=$(jq -r --arg k "traefik.http.routers.$r-api.rule" '[.services[].labels[$k] // empty][0] // ""' <<<"$RENDERED_JSON")
     for p in $(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth.bypass"]' <<<"$RENDERED_JSON"); do
         [[ "$rule" == *"PathPrefix(\`$p\`)"* ]] || t_fail "$s: its $r-api router does not cover $p (got: $rule)"

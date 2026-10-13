@@ -100,4 +100,13 @@ echo 'services: {}' > "$SCRIPT_DIR/docker-compose.override.yml"
 out=$( (user_compose_files) 2>&1 ) && fail_ "a root docker-compose.override.yml must be refused"
 [[ "$out" == *"custom/override.yml"* ]] || fail_ "the refusal must say where it belongs: $out"; pass
 
+# ---- the edge is Traefik's folder: nothing in lib/ writes its config or labels ----
+edge=$(grep -nE 'traefik\.(http|tcp|enable)|traefik\.yml|00-mediastack' mediastack.sh lib/*.sh | grep -v '^[^:]*:[0-9]*:[[:space:]]*#' || true)
+[[ -z "$edge" ]] || fail_ "Traefik config or labels written from lib/ (they belong in services/traefik/): $edge"; pass
+for f in traefik_ensure traefik_gen traefik_gate_middleware edge_route_labels edge_router_name edge_enable_label; do
+    grep -qE "^$f\(\)" services/traefik/edge.sh || fail_ "the edge lacks $f (services/traefik/edge.sh)"; pass
+done
+grep -qE '^traefik_doctor\(\)' services/traefik/traefik.sh || fail_ "traefik_doctor is Traefik's (services/traefik/traefik.sh)"; pass
+[[ ! -e lib/edge.sh ]] || fail_ "lib/edge.sh is back"; pass
+
 echo "OK layout: $checks checks"

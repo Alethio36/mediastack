@@ -370,7 +370,7 @@ TRUSTED=1; out=$(arr_login sonarr)
 [[ "$out" == *'match=no'*'"authenticationMethod":"external"'* ]] || fail_ "trusted: switch to external: $out"; pass
 TRUSTED=;  [[ "$(arr_login sonarr)" == "FORMS sonarr" ]] || fail_ "not trusted: its own forms login"; pass
 # Traefik's dashboard: behind the gate with the portal, its own password without
-AK_ON=1; grep -q 'middlewares: \[$(signin_is authentik && echo mediastack-gate || echo dash-auth)\]' lib/edge.sh \
+AK_ON=1; grep -q 'middlewares: \[$(signin_is authentik && echo mediastack-gate || echo dash-auth)\]' services/traefik/edge.sh \
     || fail_ "the dashboard router chooses the gate or its password by account model"; pass
 
 # disabling the portal: every arr's own login is verified BEFORE the profile
@@ -473,7 +473,7 @@ wire_authentik_ldap_token >/dev/null
 rm -f "$T/calls"; wire_authentik_ldap_token >/dev/null
 ! grep -q '^DC ' "$T/calls" || fail_ "the same token: nothing restarts"; pass
 AK_ON=1; svc_enabled() { [[ "$1" == authentik && -n "${AK_ON:-}" ]]; }
-grep -q 'mediastack-ldap-allow:' lib/edge.sh && grep -q 'sourceRange: \["$(env_get MEDIASTACK_SUBNET 172.31.250.0/24)"\]' lib/edge.sh \
+grep -q 'mediastack-ldap-allow:' services/traefik/edge.sh && grep -q 'sourceRange: \["$(env_get MEDIASTACK_SUBNET 172.31.250.0/24)"\]' services/traefik/edge.sh \
     || fail_ "the LDAP route answers the stack network only"; pass
 grep -q 'traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"' services/authentik/compose.yml || fail_ "the LDAP route carries the allow-list"; pass
 bp=services/authentik/blueprints/mediastack-portal.yaml

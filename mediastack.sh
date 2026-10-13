@@ -65,8 +65,6 @@ source "$SCRIPT_DIR/lib/migrations.sh"
 source "$SCRIPT_DIR/lib/env.sh"
 # shellcheck source=lib/vpn.sh
 source "$SCRIPT_DIR/lib/vpn.sh"
-# shellcheck source=lib/edge.sh
-source "$SCRIPT_DIR/lib/edge.sh"
 # shellcheck source=lib/backup.sh
 source "$SCRIPT_DIR/lib/backup.sh"
 # shellcheck source=lib/manifest.sh
