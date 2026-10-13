@@ -15,7 +15,7 @@ sc_rotate_traefik() { # PASS — regenerated into the watched dynamic config
 }
 
 traefik_doctor() { # doctor: the certificate store — its mode, staging or production, the wildcard
-    if svc_enabled traefik && [[ -n "$(env_get TRAEFIK_DOMAIN)" ]]; then
+    if svc_enabled traefik && [[ -n "$(env_get STACK_DOMAIN)" ]]; then
         local acmef; acmef="$(env_get CONFIG_ROOT)/traefik/acme/acme.json"
         if sudo test -s "$acmef"; then
             [[ "$(sudo stat -c %a "$acmef")" == 600 ]] && ok "acme.json permissions 600" \
@@ -25,9 +25,9 @@ traefik_doctor() { # doctor: the certificate store — its mode, staging or prod
             else
                 ok "production certificates in the store"
             fi
-            sudo grep -q "\*.$(env_get TRAEFIK_DOMAIN)" "$acmef" \
-                && ok "wildcard certificate present for *.$(env_get TRAEFIK_DOMAIN)" \
-                || warn "no wildcard certificate for *.$(env_get TRAEFIK_DOMAIN) yet — check: logs traefik"
+            sudo grep -q "\*.$(env_get STACK_DOMAIN)" "$acmef" \
+                && ok "wildcard certificate present for *.$(env_get STACK_DOMAIN)" \
+                || warn "no wildcard certificate for *.$(env_get STACK_DOMAIN) yet — check: logs traefik"
         else
             warn "traefik configured but no certificates issued yet — check: logs traefik"
         fi

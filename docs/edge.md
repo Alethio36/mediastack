@@ -22,7 +22,7 @@ Global API Key).
 `./mediastack.sh enable traefik` then `up` runs the wizard: domain, email,
 token, certificate environment, dashboard login (view later:
 `credentials`). Re-run any time with `traefik-setup`; answers live in
-`.env` (`TRAEFIK_DOMAIN`, `ACME_EMAIL`, `CF_DNS_API_TOKEN`, `ACME_ENV`).
+`.env` (`STACK_DOMAIN`, `ACME_EMAIL`, `CF_DNS_API_TOKEN`, `ACME_ENV`).
 
 ## Testing vs production certificates
 
@@ -45,7 +45,7 @@ requests (seerr), invites (wizarr), notify (apprise), cleanup (cleanuparr),
 watch (watchstate), music (navidrome), audiobooks (audiobookshelf), books
 (kavita), books-dl (lazylibrarian), tv (ersatztv), pihole, qbit, sonarr,
 radarr, prowlarr, lidarr, bazarr, radarr-4k, sonarr-anime, deluge,
-transmission — all under `TRAEFIK_DOMAIN`. Rename any of them with the guided pass:
+transmission — all under `STACK_DOMAIN`. Rename any of them with the guided pass:
 
     ./mediastack.sh traefik-setup --hosts
 

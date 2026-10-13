@@ -38,7 +38,7 @@ services:
       mediastack.managed: "true"
       mediastack.port: "5000"
       traefik.enable: "true"
-      traefik.http.routers.kavita.rule: "Host(`${KAVITA_HOST:-books}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.kavita.rule: "Host(`${KAVITA_HOST:-books}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.kavita.entrypoints: "websecure"
       traefik.http.routers.kavita.tls: "true"
       traefik.http.services.kavita.loadbalancer.server.port: "5000"

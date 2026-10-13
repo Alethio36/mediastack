@@ -30,7 +30,7 @@ services:
       mediastack.managed: "true"
       mediastack.port: "5690"
       traefik.enable: "true"
-      traefik.http.routers.wizarr.rule: "Host(`${WIZARR_HOST:-invites}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.wizarr.rule: "Host(`${WIZARR_HOST:-invites}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.wizarr.entrypoints: "websecure"
       traefik.http.routers.wizarr.tls: "true"
       traefik.http.services.wizarr.loadbalancer.server.port: "5690"

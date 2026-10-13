@@ -43,13 +43,13 @@ services:
       mediastack.managed: "true"
       mediastack.port: "4533"
       traefik.enable: "true"
-      traefik.http.routers.navidrome.rule: "Host(`${NAVIDROME_HOST:-music}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.navidrome.rule: "Host(`${NAVIDROME_HOST:-music}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.navidrome.entrypoints: "websecure"
       traefik.http.routers.navidrome.tls: "true"
       traefik.http.routers.navidrome.middlewares: "mediastack-gate@file"
       # music apps and public shares skip the gate — and never carry a
       # username header a client made up (mediastack-strip)
-      traefik.http.routers.navidrome-api.rule: "Host(`${NAVIDROME_HOST:-music}.${TRAEFIK_DOMAIN:-unset.invalid}`) && (PathPrefix(`/rest/`) || PathPrefix(`/share/`))"
+      traefik.http.routers.navidrome-api.rule: "Host(`${NAVIDROME_HOST:-music}.${STACK_DOMAIN:-unset.invalid}`) && (PathPrefix(`/rest/`) || PathPrefix(`/share/`))"
       traefik.http.routers.navidrome-api.entrypoints: "websecure"
       traefik.http.routers.navidrome-api.tls: "true"
       traefik.http.routers.navidrome-api.service: "navidrome"

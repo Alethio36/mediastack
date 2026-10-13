@@ -201,7 +201,7 @@ grep -q -- '- ${CONFIG_ROOT}/authentik/blueprints:/blueprints/mediastack:ro' "$T
 
 # ---- invitations ----
 TRAEFIK_ENV="AUTHENTIK_HOST=portal
-TRAEFIK_DOMAIN=media.example.com"
+STACK_DOMAIN=media.example.com"
 printf '%s\n' "$TRAEFIK_ENV" > "$ENV_FILE"
 svc_cname() { echo "c-$1"; }; c_health() { echo healthy; }
 ak_api() {
@@ -563,12 +563,12 @@ unset -f sudo
 ids=$(jf_plugin_ids '[{"Name":"LDAP-Auth","Id":"958aad6637844d2ab89aa7b6fab6e25c"},{"Name":"Webhook","Id":"71552A5A-5C5C-4350-A2AE-EBE451A30173"}]')
 [[ "$ids" == *"|$(jf_guid "$JF_LDAP_GUID")|"* && "$ids" == *"|$(jf_guid 71552A5A-5C5C-4350-A2AE-EBE451A30173)|"* ]] \
     || fail_ "plugins matched by ID, with or without dashes, any case: $ids"; pass
-printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_LDAP_BIND_PASSWORD=BINDPW\nACME_ENV=staging\n' > "$ENV_FILE"
+printf 'STACK_DOMAIN=media.example.com\nAUTHENTIK_LDAP_BIND_PASSWORD=BINDPW\nACME_ENV=staging\n' > "$ENV_FILE"
 w=$(jf_ldap_want)
 [[ "$(jq -r '.LdapServer + ":" + (.LdapPort|tostring) + " ssl=" + (.UseSsl|tostring)' <<<"$w")" == "ldap.media.example.com:443 ssl=true" ]] \
     || fail_ "LDAPS to ldap.<domain>:443 through Traefik: $w"; pass
 [[ "$(jq -r '.SkipSslVerify' <<<"$w")" == true ]] || fail_ "staging certificates: checking off"; pass
-printf 'TRAEFIK_DOMAIN=media.example.com\nACME_ENV=production\n' > "$ENV_FILE"
+printf 'STACK_DOMAIN=media.example.com\nACME_ENV=production\n' > "$ENV_FILE"
 [[ "$(jf_ldap_want | jq -r '.SkipSslVerify')" == false ]] || fail_ "production certificates: checking on"; pass
 [[ "$(jq -r '.LdapSearchFilter' <<<"$w")" == "(|(memberOf=cn=media-users,ou=groups,dc=ldap,dc=mediastack)(memberOf=cn=admins,ou=groups,dc=ldap,dc=mediastack))" ]] \
     || fail_ "media-users or admins may sign in"; pass
@@ -602,7 +602,7 @@ grep -q '^POST /Users/2/Policy .*"IsAdministrator":false' "$T/calls" || fail_ "a
 ! grep -q '^POST /Users/4/' "$T/calls" || fail_ "the stack's own local admin is never touched"; pass
 
 # ---- Audiobookshelf: the stack's root, sign-in through the portal, admin sync ----
-printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_ABS_CLIENT_SECRET=ABSSEC\nPORTAL_TITLE=Home\n' > "$ENV_FILE"
+printf 'STACK_DOMAIN=media.example.com\nAUTHENTIK_ABS_CLIENT_SECRET=ABSSEC\nPORTAL_TITLE=Home\n' > "$ENV_FILE"
 w=$(abs_oidc_want)
 [[ "$(jq -r '.authOpenIDIssuerURL' <<<"$w")" == "https://portal.media.example.com/application/o/mediastack-app-audiobookshelf/" \
    && "$(jq -r '.authOpenIDTokenURL' <<<"$w")" == "https://portal.media.example.com/application/o/token/" \
@@ -617,7 +617,7 @@ w=$(abs_oidc_want)
 [[ "$(jq -r '.authOpenIDSubfolderForRedirectURLs | type + ":" + .' <<<"$w")" == "string:" ]] \
     || fail_ "no subfolder, set explicitly — unset, its callback reads undefined/auth/openid/callback (found live)"; pass
 # first run: a fresh Audiobookshelf gets the stack's root; a hand-made one is not taken over
-rm -f "$T/calls"; printf 'TRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"
+rm -f "$T/calls"; printf 'STACK_DOMAIN=media.example.com\n' > "$ENV_FILE"
 svc_enabled() { [[ "$1" == audiobookshelf ]]; }; wire_gate() { :; }; http_ready() { :; }; abs_url() { echo http://abs; }
 ABS_INIT=false
 abs_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
@@ -652,7 +652,7 @@ grep -q '^PATCH /api/users/a {"type":"admin"}' "$T/calls" && grep -q '^PATCH /ap
     || fail_ "portal accounts: admins are admin, the rest user"; pass
 ! grep -qE '^PATCH /api/users/(r|l|g) ' "$T/calls" || fail_ "the root account, local accounts and a guest outside admins are never touched"; pass
 # sign-in settings: read back after the write — a value it skips is a failure, not success
-printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_ABS_CLIENT_SECRET=ABSSEC\n' > "$ENV_FILE"
+printf 'STACK_DOMAIN=media.example.com\nAUTHENTIK_ABS_CLIENT_SECRET=ABSSEC\n' > "$ENV_FILE"
 ABS_KEPT='{"authOpenIDMatchExistingBy":"username"}'
 abs_api() { echo "$1 $2" >> "$T/calls"
     case "$1 $2" in
@@ -751,7 +751,7 @@ grep -q 'client_id: mediastack-kavita' "$T/kav" && grep -q 'signing_key: !Find' 
    && grep -q 'grant_types: \[authorization_code, refresh_token\]' "$T/kav" \
    && grep -q 'scope-offline_access' "$T/kav" \
     || fail_ "Kavita's OIDC provider: client ID, RS256 key, its callbacks, the code grant, offline_access"; pass
-printf 'TRAEFIK_DOMAIN=media.example.com\nPORTAL_TITLE=Home\nAUTHENTIK_KAVITA_CLIENT_SECRET=KSEC\n' > "$ENV_FILE"
+printf 'STACK_DOMAIN=media.example.com\nPORTAL_TITLE=Home\nAUTHENTIK_KAVITA_CLIENT_SECRET=KSEC\n' > "$ENV_FILE"
 w=$(kav_oidc_want '[3,1]')
 [[ "$(jq -r '.authority' <<<"$w")" == "https://portal.media.example.com/application/o/mediastack-app-kavita/" ]] || fail_ "Kavita's authority is its card's issuer: $w"; pass
 [[ "$(jq -c '[.clientId, .provisionAccounts, .requireVerifiedEmail, .syncUserSettings, .autoLogin, .disablePasswordAuthentication, .providerName]' <<<"$w")" \
@@ -771,7 +771,7 @@ kav_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
         *) echo '{}' ;;
     esac; }
 kav_stubbed() { ( kav_admin_email_check() { :; }; kav_oidc() { echo "KAV_OIDC" >> "$T/calls"; }; kav_admin_sync() { :; }; wire_kavita ); }
-rm -f "$T/calls"; printf 'TRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"
+rm -f "$T/calls"; printf 'STACK_DOMAIN=media.example.com\n' > "$ENV_FILE"
 kav_stubbed >/dev/null
 grep -q '^POST /api/account/register {"username":"mediastack","password":"[A-Za-z0-9]*","email":"mediastack@[a-z0-9]*\.invalid"}' "$T/calls" \
     && [[ "$(env_get KAVITA_ADMIN_USER)" == mediastack && -n "$(env_get KAVITA_ADMIN_PASSWORD)" && "$(env_get KAVITA_ADMIN_EMAIL)" == mediastack@*.invalid ]] \
@@ -781,7 +781,7 @@ rm -f "$T/calls"; printf '' > "$ENV_FILE"; KAV_EXISTS=true; WIRE_FAILS=0
 out=$(kav_stubbed 2>&1) || true
 ! grep -q '^POST /api/account/register' "$T/calls" && [[ "$out" == *"set up by hand"*"KAVITA_ADMIN_USER"* ]] || fail_ "one set up by hand is never taken over — it says what to do"; pass
 # its sign-in settings: merged into its settings with the secret, read back, one restart when its start-up part changes
-printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_KAVITA_CLIENT_SECRET=KSEC\n' > "$ENV_FILE"; rm -f "$T"/state-*
+printf 'STACK_DOMAIN=media.example.com\nAUTHENTIK_KAVITA_CLIENT_SECRET=KSEC\n' > "$ENV_FILE"; rm -f "$T"/state-*
 echo '{"oidcConfig":{"authority":"","clientId":"","secret":"","defaultLibraries":[]},"other":1}' > "$T/kav-settings"
 KAV_KEEP=true; KAV_LIVE=false
 kav_api() { echo "$1 $2" >> "$T/calls"
@@ -803,7 +803,7 @@ grep -q '^NOTIFY ' "$T/calls" && grep -q '^DC restart kavita$' "$T/calls" \
     || fail_ "a new authority: the household warned, then one restart (its OIDC is set up at start-up)"; pass
 rm -f "$T/calls"
 kav_oidc tok >/dev/null && ! grep -qE '^(POST /api/settings|DC )' "$T/calls" || fail_ "already right and live: no write, no restart"; pass
-printf 'TRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_KAVITA_CLIENT_SECRET=ROTATED\n' > "$ENV_FILE"; rm -f "$T/calls"
+printf 'STACK_DOMAIN=media.example.com\nAUTHENTIK_KAVITA_CLIENT_SECRET=ROTATED\n' > "$ENV_FILE"; rm -f "$T/calls"
 kav_oidc tok >/dev/null && grep -q '^POST /api/settings' "$T/calls" && grep -q '^DC restart kavita$' "$T/calls" \
     || fail_ "a new client secret (read back masked) is noticed by its digest: written, and one restart"; pass
 KAV_LIVE=false; rm -f "$T/calls"
@@ -951,7 +951,7 @@ LINK_ABS_WAIT=600; unset -f sleep
 [[ "$(trap -p EXIT)" == *'rm -rf'* ]] || fail_ "the window's safety net never touches the caller's traps (here: this test's clean-up)"; pass
 
 # ---- the portal's admin, and a locked-out person's way back ----
-printf 'AUTHENTIK_ADMIN_PASSWORD=OLDAK\nTRAEFIK_DOMAIN=media.example.com\n' > "$ENV_FILE"
+printf 'AUTHENTIK_ADMIN_PASSWORD=OLDAK\nSTACK_DOMAIN=media.example.com\n' > "$ENV_FILE"
 AK_TYPE=internal; AK_ACTIVE=true
 ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
     case "$1 $2" in
@@ -1176,7 +1176,7 @@ grep -q 'authentik_recovery_refresh' <(awk '/^cmd_email\(\)/,/^}/' services/auth
     || fail_ "a passed test shows the link at once; removing or changing email takes it off at once"; pass
 # ---- invite --email: the portal sends the link, in mediastack's template ----
 grep -q '{% autoescape off %}' services/authentik/templates/mediastack-invitation.txt || fail_ "invitation txt: no HTML escaping in plain text"; pass
-( printf 'AUTHENTIK_HOST=portal\nTRAEFIK_DOMAIN=media.example.com\nAUTHENTIK_API_TOKEN=TOK\n' > "$T/ienv"; ENV_FILE=$T/ienv
+( printf 'AUTHENTIK_HOST=portal\nSTACK_DOMAIN=media.example.com\nAUTHENTIK_API_TOKEN=TOK\n' > "$T/ienv"; ENV_FILE=$T/ienv
   authentik_url() { echo http://127.0.0.1:9000; }; authentik_portal() { echo https://portal.media.example.com; }
   curl() { printf '%s\n' "$@" > "$T/curl"; printf '\n%s' "${CURL_CODE:-204}"; }
   CURL_CODE=204 out=$(authentik_invite_email inv-1 milo@example.com 2>&1) || fail_ "a 204 is a send: $out"

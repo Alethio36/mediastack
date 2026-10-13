@@ -31,7 +31,7 @@ services:
       mediastack.managed: "true"
       mediastack.port: "11011"
       traefik.enable: "true"
-      traefik.http.routers.cleanuparr.rule: "Host(`${CLEANUPARR_HOST:-cleanup}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.cleanuparr.rule: "Host(`${CLEANUPARR_HOST:-cleanup}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.cleanuparr.entrypoints: "websecure"
       traefik.http.routers.cleanuparr.tls: "true"
       traefik.http.routers.cleanuparr.middlewares: "mediastack-gate@file"

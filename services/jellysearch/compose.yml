@@ -42,7 +42,7 @@ services:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
       traefik.enable: "true"
-      traefik.http.routers.jellysearch.rule: "Host(`${JELLYFIN_HOST:-jellyfin}.${TRAEFIK_DOMAIN:-unset.invalid}`) && (QueryRegexp(`searchTerm`, `(.*?)`) || QueryRegexp(`SearchTerm`, `(.*?)`))"
+      traefik.http.routers.jellysearch.rule: "Host(`${JELLYFIN_HOST:-jellyfin}.${STACK_DOMAIN:-unset.invalid}`) && (QueryRegexp(`searchTerm`, `(.*?)`) || QueryRegexp(`SearchTerm`, `(.*?)`))"
       traefik.http.routers.jellysearch.entrypoints: "websecure"
       traefik.http.routers.jellysearch.tls: "true"
       traefik.http.routers.jellysearch.priority: "100"

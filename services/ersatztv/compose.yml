@@ -28,7 +28,7 @@ services:
       mediastack.managed: "true"
       mediastack.port: "8409"
       traefik.enable: "true"
-      traefik.http.routers.ersatztv.rule: "Host(`${ERSATZTV_HOST:-tv}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.ersatztv.rule: "Host(`${ERSATZTV_HOST:-tv}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.ersatztv.entrypoints: "websecure"
       traefik.http.routers.ersatztv.tls: "true"
       traefik.http.routers.ersatztv.middlewares: "mediastack-gate@file"

@@ -28,7 +28,7 @@ wire_lazylibrarian() {
     if [[ -z "$key" ]]; then
         # first-ever start: the API key is minted only after the web UI has
         # been opened once and config saved. Cannot proceed headless.
-        wfail "lazylibrarian has no API key yet — open https://books-dl.\$TRAEFIK_DOMAIN once,
+        wfail "lazylibrarian has no API key yet — open https://books-dl.\$STACK_DOMAIN once,
      go to Config -> Interface, set a username/password and Save, restart it
      in the UI, then re-run: ./mediastack.sh wire lazylibrarian"
         return 1

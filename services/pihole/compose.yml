@@ -35,7 +35,7 @@ services:
       mediastack.managed: "true"
       mediastack.port: "80"
       traefik.enable: "true"
-      traefik.http.routers.pihole.rule: "Host(`${PIHOLE_HOST:-pihole}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.pihole.rule: "Host(`${PIHOLE_HOST:-pihole}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.pihole.entrypoints: "websecure"
       traefik.http.routers.pihole.tls: "true"
       traefik.http.routers.pihole.middlewares: "mediastack-gate@file"

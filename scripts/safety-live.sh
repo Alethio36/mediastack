@@ -40,7 +40,7 @@ pass() { echo "PASS $*"; passes=$((passes + 1)); }
 flunk() { echo "FAIL $*"; fails=$((fails + 1)); }
 note() { echo "  .. $*"; }
 
-domain=$(env_get TRAEFIK_DOMAIN)
+domain=$(env_get STACK_DOMAIN)
 portal=0; signin_is authentik && portal=1
 edge=0; svc_enabled traefik && [[ -n "$domain" ]] && edge=1
 RENDERED_JSON=""; render

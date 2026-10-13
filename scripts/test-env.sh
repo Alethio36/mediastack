@@ -105,4 +105,21 @@ migrate_env
 ! grep -qE '^(WIRE_REPOINT|UID_HANDOVER)=' "$ENV_FILE" || fail_ "markers left in .env"; pass
 [[ "$(env_get UPDATE_DEFER_ACTION)" == skip && "$(env_get KEEP)" == me ]] || fail_ "the inline comment must go and nothing else: $(env_get UPDATE_DEFER_ACTION)"; pass
 
+# ---- migration 35 -> 36: TRAEFIK_DOMAIN becomes STACK_DOMAIN, in place; your custom/ files follow ----
+(
+    ENV_FILE=$T/m36.env; CUSTOM_DIR=$T/m36custom; WARNED=$T/m36.warn; : > "$WARNED"
+    warn() { echo "$*" >> "$WARNED"; }
+    printf 'ENV_SCHEMA=35\nTZ=Etc/UTC\n# writes them here (TRAEFIK_DOMAIN, ACME_EMAIL)\nTRAEFIK_DOMAIN=media.example.com\nACME_EMAIL=a@example.com\n' > "$ENV_FILE"
+    mkdir -p "$CUSTOM_DIR/compose.d"
+    printf 'services:\n  x:\n    labels:\n      h: "x.${TRAEFIK_DOMAIN}"\n' > "$CUSTOM_DIR/compose.d/reads.yml"
+    printf 'services:\n  y:\n    image: y\n' > "$CUSTOM_DIR/compose.d/plain.yml"; cp "$CUSTOM_DIR/compose.d/plain.yml" "$T/plain.before"
+    migrate_env_35_to_36
+    [[ "$(sed -n 4p "$ENV_FILE")" == STACK_DOMAIN=media.example.com ]] || fail_ "the key is renamed in place, value kept: $(sed -n 4p "$ENV_FILE")"
+    ! grep -qw TRAEFIK_DOMAIN "$ENV_FILE" || fail_ "no TRAEFIK_DOMAIN left in .env"
+    grep -q 'x.${STACK_DOMAIN}' "$CUSTOM_DIR/compose.d/reads.yml" || fail_ "a custom file reading TRAEFIK_DOMAIN is rewritten"
+    cmp -s "$CUSTOM_DIR/compose.d/plain.yml" "$T/plain.before" || fail_ "a custom file that does not read it is left alone"
+    [[ $(grep -c 'rewritten to STACK_DOMAIN' "$WARNED") == 1 ]] && grep -q 'reads.yml' "$WARNED" || fail_ "each rewritten file is named, only those: $(cat "$WARNED")"
+); pass
+[[ "$(awk -F'\t' '$1=="TRAEFIK_DOMAIN" {print $2}' lib/env.schema.tsv)" == retired:36 ]] || fail_ "TRAEFIK_DOMAIN is retired in the schema (doctor names a leftover)"; pass
+
 echo "OK env: $checks checks"

@@ -49,7 +49,7 @@ jf_plugin_webhook() { # its consumer is WatchState (the hub hears Seerr, not Jel
 
 jf_ldap_want() { # the LDAP plugin's settings mediastack manages, as JSON (the rest stay yours)
     local dn=dc=ldap,dc=mediastack host skip=false
-    host="$(env_get AUTHENTIK_LDAP_HOST ldap).$(env_get TRAEFIK_DOMAIN)"
+    host="$(env_get AUTHENTIK_LDAP_HOST ldap).$(env_get STACK_DOMAIN)"
     # a staging certificate is not trusted inside Jellyfin: checking waits for production ones
     [[ "$(env_get ACME_ENV production)" == production ]] || skip=true
     jq -cn --arg host "$host" --arg dn "$dn" --arg pw "$(env_get AUTHENTIK_LDAP_BIND_PASSWORD)" --argjson skip "$skip" '{

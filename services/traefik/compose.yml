@@ -36,7 +36,7 @@ services:
         ipv4_address: ${TRAEFIK_ADDRESS:-172.31.250.2}
         # inside the stack, the LDAP name leads to Traefik (LDAPS with the wildcard certificate)
         # and the portal's name too: an app's server talks to authentik (OIDC) at its public address
-        aliases: ["${AUTHENTIK_LDAP_HOST:-ldap}.${TRAEFIK_DOMAIN:-unset.invalid}", "${AUTHENTIK_HOST:-portal}.${TRAEFIK_DOMAIN:-unset.invalid}"]
+        aliases: ["${AUTHENTIK_LDAP_HOST:-ldap}.${STACK_DOMAIN:-unset.invalid}", "${AUTHENTIK_HOST:-portal}.${STACK_DOMAIN:-unset.invalid}"]
     security_opt:
       - no-new-privileges:true
     healthcheck:

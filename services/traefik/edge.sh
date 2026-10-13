@@ -15,12 +15,12 @@ traefik_ensure() { # traefik_ensure [--reconfigure]; runs on up/enable; idempote
     svc_enabled traefik || return 0
     local force=0; [[ "${1:-}" == --reconfigure ]] && force=1
     local domain email token acmeenv duser
-    domain=$(env_get TRAEFIK_DOMAIN); email=$(env_get ACME_EMAIL)
+    domain=$(env_get STACK_DOMAIN); email=$(env_get ACME_EMAIL)
     token=$(env_get CF_DNS_API_TOKEN)
     if [[ -z "$domain" || -z "$email" || -z "$token" ]] || (( force )); then
         if [[ ! -t 0 ]]; then
             (( force )) && die "traefik-setup needs a terminal."
-            die "traefik is enabled but not configured (TRAEFIK_DOMAIN/ACME_EMAIL/CF_DNS_API_TOKEN) and there is no terminal to ask — run './mediastack.sh traefik-setup' interactively first."
+            die "traefik is enabled but not configured (STACK_DOMAIN/ACME_EMAIL/CF_DNS_API_TOKEN) and there is no terminal to ask — run './mediastack.sh traefik-setup' interactively first."
         fi
         hr "Traefik setup"
         (( force )) && info "Enter keeps the value shown in [brackets]."
@@ -53,7 +53,7 @@ scoped to just this domain's zone. (Not the Global API Key.)"
               stack handles the swap itself."
         ask AV "Certificate environment [production/staging]" "$(env_get ACME_ENV production)"
         case "$REPLY_VAL" in production|staging) acmeenv="$REPLY_VAL" ;; *) die "Expected 'production' or 'staging'." ;; esac
-        env_set TRAEFIK_DOMAIN "$domain"; env_set ACME_EMAIL "$email"
+        env_set STACK_DOMAIN "$domain"; env_set ACME_EMAIL "$email"
         env_set CF_DNS_API_TOKEN "$token"; env_set ACME_ENV "$acmeenv"
     fi
     duser=$(env_get TRAEFIK_DASH_USER)
@@ -72,7 +72,7 @@ Enter accepts a generated password; see it later with: credentials"
 
 traefik_gen() {
     local croot domain acmeenv caline hash duser dpass prehash posthash
-    croot=$(env_get CONFIG_ROOT); domain=$(env_get TRAEFIK_DOMAIN)
+    croot=$(env_get CONFIG_ROOT); domain=$(env_get STACK_DOMAIN)
     acmeenv=$(env_get ACME_ENV production)
     # docker creates missing bind sources as root-owned DIRECTORIES; if the
     # container ever started before setup, our file paths are junk dirs now
@@ -244,7 +244,7 @@ traefik_host_vars() {
 
 cmd_traefik_hosts() {
     [[ -t 0 ]] || die "traefik-setup --hosts needs a terminal."
-    local domain; domain=$(env_get TRAEFIK_DOMAIN)
+    local domain; domain=$(env_get STACK_DOMAIN)
     [[ -n "$domain" ]] || die "Run './mediastack.sh traefik-setup' first — no domain configured yet."
     hr "Service hostnames"
     explain "Pick each service's address" \
@@ -314,7 +314,7 @@ edge_enable_label() { echo "${1}traefik.enable: \"true\""; }   # edge_enable_lab
 edge_router_name() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik router name
 edge_route_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass>  (router/service only)
     local i="$1" r="$2" sub="$3" cp="$4" stem="$5" auth="${6:-}" bypass="${7:-}"
-    echo "${i}traefik.http.routers.${r}.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${TRAEFIK_DOMAIN:-unset.invalid}\`)\""
+    echo "${i}traefik.http.routers.${r}.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${STACK_DOMAIN:-unset.invalid}\`)\""
     echo "${i}traefik.http.routers.${r}.entrypoints: \"websecure\""
     echo "${i}traefik.http.routers.${r}.tls: \"true\""
     echo "${i}traefik.http.routers.${r}.service: \"${r}\""
@@ -328,7 +328,7 @@ edge_route_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass> 
     if [[ "$auth" == gate && -n "$bypass" ]]; then
         local p paths=""
         for p in $bypass; do paths+="${paths:+ || }PathPrefix(\`$p\`)"; done
-        echo "${i}traefik.http.routers.${r}-api.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${TRAEFIK_DOMAIN:-unset.invalid}\`) && ($paths)\""
+        echo "${i}traefik.http.routers.${r}-api.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${STACK_DOMAIN:-unset.invalid}\`) && ($paths)\""
         echo "${i}traefik.http.routers.${r}-api.entrypoints: \"websecure\""
         echo "${i}traefik.http.routers.${r}-api.tls: \"true\""
         echo "${i}traefik.http.routers.${r}-api.service: \"${r}\""

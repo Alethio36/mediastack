@@ -29,7 +29,7 @@ wire_wizarr() {
             info "no WIZARR_API_KEY yet — wizarr's first-run is a one-time UI step; run './mediastack.sh wire wizarr' interactively after it"
             return 0
         fi
-        host=$(env_get WIZARR_HOST invites); domain=$(env_get TRAEFIK_DOMAIN)
+        host=$(env_get WIZARR_HOST invites); domain=$(env_get STACK_DOMAIN)
         local jfkey; jfkey=$(env_get JELLYFIN_API_KEY "(empty — run 'wire jellyfin' first to mint it)")
         explain "Wizarr first-run (one-time, in its UI)" \
 "Wizarr's admin account and API keys can only be created in its web UI —
@@ -101,7 +101,7 @@ wizarr_invite() { # wizarr_invite [EXPIRES-DAYS] — mint a Wizarr invitation an
     [[ "$code" =~ ^2 ]] || die "invitation rejected [HTTP $code]: $(head -c200 <<<"$out")"
     url=$(jq -r '.invitation.url // empty' <<<"$out")
     [[ -n "$url" ]] || die "invitation created but no URL in the reply: $(head -c300 <<<"$out")"
-    host=$(env_get WIZARR_HOST invites); domain=$(env_get TRAEFIK_DOMAIN)
+    host=$(env_get WIZARR_HOST invites); domain=$(env_get STACK_DOMAIN)
     if [[ -n "$domain" ]]; then base="https://$host.$domain"
     else base="http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_hostport wizarr)"; fi
     exp_line="never expires"

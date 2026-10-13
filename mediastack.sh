@@ -32,7 +32,7 @@ STOP_MARKER="$LOCAL_DIR/stopped-for-backup"       # marker: a backup has service
 STATE_DIR="$LOCAL_DIR/state"                      # pending work: one file per marker (state_get/state_set)
 ENV_BACKUP_DIR="$LOCAL_DIR/env-backups"           # .env before each schema migration
 ENV_BACKUP_KEEP=10                                # the oldest (your original) + the newest 9
-SCRIPT_SCHEMA=35
+SCRIPT_SCHEMA=36
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -317,7 +317,7 @@ svc_enabled()  { [[ ",$(env_get COMPOSE_PROFILES)," == *",$1,"* ]]; }
 svc_url() { # where a browser reaches the service, best effort
     local s="$1" sub port domain
     [[ "$s" == traefik ]] && { echo "-"; return; }   # it IS the https edge
-    domain=$(env_get TRAEFIK_DOMAIN)
+    domain=$(env_get STACK_DOMAIN)
     sub=$(env_get "$(uvar "$s")_HOST"); [[ -n "$sub" ]] || sub=$(svc_label "$s" mediastack.subdomain)
     # a subdomain only yields an https URL when a domain is actually configured;
     # without one, fall through to the host:port (or internal) form below rather

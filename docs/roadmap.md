@@ -196,10 +196,12 @@ list it joins.
    (`scripts/test-layout.sh` fails it). No edge interface: NPM ships unwired
    (its proxy hosts live in its own UI), so there is one provider to wire.
    Proven by the snapshot (37 files identical, no bless) and live baselines.
-   After phase 3: `TRAEFIK_DOMAIN` is the stack's domain (authentik, Wizarr,
-   Jellyfin's LDAP host, new services all read it) — a schema bump renames it
-   (e.g. `STACK_DOMAIN` — not `MEDIASTACK_DOMAIN`, already a container variable
-   in the authentik shard), with a migration.
+   *Shipped (Oct 2026, schema 36):* `TRAEFIK_DOMAIN` — the stack's domain,
+   read by the portal, Wizarr, Jellyfin's LDAP host and new services — is
+   `STACK_DOMAIN` (not `MEDIASTACK_DOMAIN`, already a container variable in
+   the authentik shard); the migration renames it in place and rewrites any
+   `custom/` file that read the old name, naming each. The old key is
+   `retired:36`, so doctor names a leftover.
    *VPN — done (Oct 2026); phase 3 complete:* `lib/vpn.sh` became
    `services/gluetun/vpn.sh` (membership overlay, reattach guard and its boot
    unit, leak-test, the vpn verbs) and doctor's tunnel checks are

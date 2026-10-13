@@ -98,7 +98,7 @@ services:
       mediastack.auth: "native"   # handles its own login
       mediastack.conflicts: "wizarr"
       traefik.enable: "true"
-      traefik.http.routers.authentik.rule: "Host(`${AUTHENTIK_HOST:-portal}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.authentik.rule: "Host(`${AUTHENTIK_HOST:-portal}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.authentik.entrypoints: "websecure"
       traefik.http.routers.authentik.tls: "true"
       traefik.http.services.authentik.loadbalancer.server.port: "9000"
@@ -122,12 +122,12 @@ services:
       AUTHENTIK_BOOTSTRAP_TOKEN: ${AUTHENTIK_API_TOKEN}
       # read by mediastack's blueprint (blueprints/authentik/)
       MEDIASTACK_PORTAL_TITLE: ${PORTAL_TITLE:-Mediastack}
-      MEDIASTACK_PORTAL_URL: https://${AUTHENTIK_HOST:-portal}.${TRAEFIK_DOMAIN:-unset.invalid}
-      MEDIASTACK_DOMAIN: ${TRAEFIK_DOMAIN:-unset.invalid}
+      MEDIASTACK_PORTAL_URL: https://${AUTHENTIK_HOST:-portal}.${STACK_DOMAIN:-unset.invalid}
+      MEDIASTACK_DOMAIN: ${STACK_DOMAIN:-unset.invalid}
       MEDIASTACK_LDAP_BIND_PASSWORD: ${AUTHENTIK_LDAP_BIND_PASSWORD}
-      MEDIASTACK_ABS_URL: https://${AUDIOBOOKSHELF_HOST:-audiobooks}.${TRAEFIK_DOMAIN:-unset.invalid}
+      MEDIASTACK_ABS_URL: https://${AUDIOBOOKSHELF_HOST:-audiobooks}.${STACK_DOMAIN:-unset.invalid}
       MEDIASTACK_ABS_CLIENT_SECRET: ${AUTHENTIK_ABS_CLIENT_SECRET}
-      MEDIASTACK_KAVITA_URL: https://${KAVITA_HOST:-books}.${TRAEFIK_DOMAIN:-unset.invalid}
+      MEDIASTACK_KAVITA_URL: https://${KAVITA_HOST:-books}.${STACK_DOMAIN:-unset.invalid}
       MEDIASTACK_KAVITA_CLIENT_SECRET: ${AUTHENTIK_KAVITA_CLIENT_SECRET}
       # the stack's own accounts in the apps: nobody may sign up with these names
       MEDIASTACK_TRAEFIK_ADDRESS: ${TRAEFIK_ADDRESS:-172.31.250.2}   # the LDAP throttle counts the Jellyfin path by it
@@ -191,7 +191,7 @@ services:
       # its logs carry a level: count by it (the word "error" fills its warnings)
       mediastack.errors: '"level": ?"(error|critical|fatal|panic)"'
       traefik.enable: "true"
-      traefik.tcp.routers.authentik-ldap.rule: "HostSNI(`${AUTHENTIK_LDAP_HOST:-ldap}.${TRAEFIK_DOMAIN:-unset.invalid}`)"
+      traefik.tcp.routers.authentik-ldap.rule: "HostSNI(`${AUTHENTIK_LDAP_HOST:-ldap}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.tcp.routers.authentik-ldap.entrypoints: "websecure"
       traefik.tcp.routers.authentik-ldap.tls: "true"
       traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"

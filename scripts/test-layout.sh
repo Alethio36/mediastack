@@ -44,8 +44,13 @@ old_install() { # old_install DIR — the layout before schema 28
 }
 
 # ---- the move ----
+# keep every .env backup here: this checks the move, not pruning — with each
+# new migration the steps from schema 27 add a backup, and pruning (as
+# designed) would drop a seeded one the checks below look for
 I=$T/i; old_install "$I"
+keep_was=$ENV_BACKUP_KEEP; ENV_BACKUP_KEEP=1000
 migrate_env
+ENV_BACKUP_KEEP=$keep_was
 [[ "$(env_get ENV_SCHEMA)" == "$SCRIPT_SCHEMA" ]] || fail_ "schema not current: $(env_get ENV_SCHEMA)"; pass
 for f in custom/override.yml custom/proxy.d/nas.yml custom/trash-overrides.yml local/pins.yml local/wired \
          local/vpn-overlay.yml local/env-backups/.env.bak.20260101000000.schema3 local/env-backups/.env.bak.20260202000000.schema4; do

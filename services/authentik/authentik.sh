@@ -95,7 +95,7 @@ authentik_release_record() { # once authentik is healthy on a release, its datab
 AUTHENTIK_BLUEPRINT="Mediastack - Portal"   # metadata.name in services/authentik/blueprints/mediastack-portal.yaml
 AUTHENTIK_JOIN_FLOW=mediastack-join          # its sign-up flow's slug (the invitation links)
 
-authentik_portal() { echo "https://$(env_get AUTHENTIK_HOST portal).$(env_get TRAEFIK_DOMAIN)"; }   # where people go
+authentik_portal() { echo "https://$(env_get AUTHENTIK_HOST portal).$(env_get STACK_DOMAIN)"; }   # where people go
 authentik_url()    { echo "http://127.0.0.1:$(svc_hostport authentik)"; }                             # where the script goes
 
 ak_api() { # ak_api METHOD PATH [json] -> body on stdout; rc from HTTP (authentik's API, as the script's token)
@@ -191,7 +191,7 @@ gate_trusted() { # gate_trusted <svc> -> 0 when <svc> may drop its own login: th
 authentik_prepare() { # before `up`/`enable` start it: the edge, secrets, the release step, its setup files
     svc_enabled authentik || return 0
     # the API is published on 127.0.0.1 only: people reach the portal through Traefik
-    svc_enabled traefik && [[ -n "$(env_get TRAEFIK_DOMAIN)" ]] \
+    svc_enabled traefik && [[ -n "$(env_get STACK_DOMAIN)" ]] \
         || die "authentik (the portal) is reached at https://portal.<your domain>, through Traefik — enable and set it up first:
   ./mediastack.sh enable traefik   (then: ./mediastack.sh traefik-setup)"
     authentik_secrets
