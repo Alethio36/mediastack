@@ -87,6 +87,8 @@ jobs:
         run: scripts/test-render.sh
       - name: generated files identical to the reviewed snapshots (scripts/test-snapshot.sh)
         run: scripts/test-snapshot.sh
+      - name: the safety rules hold on every reviewed snapshot (scripts/test-safety.sh)
+        run: scripts/test-safety.sh
       - name: schema bump enforced
         # a PR diffs against its base; a push (the usual way here — patches land on unstable
         # directly) diffs the whole range it pushed, so a bump in one commit covers a change in another
