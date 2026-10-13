@@ -454,7 +454,7 @@ arrive on their own, as with watchtower, but validated first.
   Gotify or Matrix) keeps `ops` at home; `users` can stay on Discord ("a new
   film is available" says little). Less detail per message ("1 film
   imported") is the other lever, and fits the richer layout above.
-- **A Jellyfin sign-in takes ~8–12 s** *(to investigate, Oct 2026)*. Since
+- **A Jellyfin sign-in takes ~8–12 s** *(parked, Oct 2026)*. Since
   the LDAP binds went direct (Security & access), every bind runs authentik's
   sign-in, ~3.5 s each, and a sign-in makes three (measured Oct 13: 11.7 s):
   the search account, the person, then the search account again — Jellyfin's
@@ -464,10 +464,18 @@ arrive on their own, as with watchtower, but validated first.
   with an app password (the LDAP flow's password stage already has the token
   backend) and keeps no usable password, so two of the three binds skip the
   hash — if the hash, not the flow's round trips, is where the time goes.
-  Find where the 3.5 s goes — password hashing, the flow's round trips —
-  before deciding whether to tune it or accept it (sign-ins are rare; the app
-  keeps its session). The server's request log is JSON: `event` is the path,
-  with `method` and `runtime` beside it.
+  Where a bind's ~3.3 s goes (measured Oct 13): the flow's first GET ~1.5 s,
+  the password POST ~1.06 s (one PBKDF2 hash alone: 0.97 s on 4 CPUs), the
+  last GET ~0.3 s (the throttle and the login), the outpost's own checks
+  ~0.3 s. In the first GET, planning takes 0.1 s (plan from cache, the
+  throttle marker 70 ms) and then the server logs nothing for 1.35 s even
+  at debug level — below what authentik logs (a new session and its plan
+  being saved, or the server process); finding it needs a profiler inside
+  authentik. Parked: the token lever saves ~2 s for one more moving part
+  (wire keeps the search account's token; a one-time change on existing
+  installs), and Jellyfin keeps its session, so people sign in rarely. The
+  server's request log is JSON: `event` is the path, with `method` and
+  `runtime` beside it.
 
 ### Media monitoring
 Answering "what happened to X?" after the fact: the nightly media manifest
