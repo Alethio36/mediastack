@@ -1,0 +1,48 @@
+/* Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install. */
+
+/* Action dialogs: the help line beside a confirmation checkbox. OliveTin's
+   #666 is near-invisible on the dark theme. */
+.argument-description {
+  color: #b8b8b8;
+  line-height: 1.4;
+}
+
+/* Only reflow the content area that holds status tiles (the Mediastack
+   dashboard); leave every other view's section.transparent alone. */
+main > section.transparent:has(fieldset.ms-status) {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 0.4rem;
+}
+
+/* a status tile = the dashboard-row that directly holds a status fieldset */
+main > section.transparent:has(fieldset.ms-status) > .dashboard-row:has(> fieldset.ms-status) {
+  width: 190px;
+  margin: 0;
+}
+main > section.transparent:has(fieldset.ms-status) > .dashboard-row:has(> fieldset.ms-status) h2 {
+  font-size: 1rem;
+  text-align: center;
+  margin: 0.2rem 0;
+}
+
+/* action rows (Diagnostics/Services/Maintenance) keep a full-width line */
+main > section.transparent:has(fieldset.ms-status) > .dashboard-row:not(:has(> fieldset.ms-status)) {
+  flex: 1 1 100%;
+}
+
+/* the tile's status box: fill the tile, small text, colour bar by state */
+fieldset.ms-status {
+  grid-template-columns: 1fr;
+  padding: 0.3rem;
+}
+fieldset.ms-status .display {
+  font-size: 0.8rem;
+  padding: 0.4rem;
+  border-left: 3px solid transparent;
+}
+.display.ms-up   { border-left-color: #3fb950; }
+.display.ms-warn { border-left-color: #d29922; }
+.display.ms-down { border-left-color: #f85149; }

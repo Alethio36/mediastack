@@ -1,0 +1,279 @@
+# Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install.
+logLevel: "INFO"
+pageTitle: "Mediastack"
+# custom-webui/themes/mediastack/theme.css (written by frontdoor-install) styles
+# the status tiles into a coloured grid.
+themeName: "mediastack"
+# hide the small on-start indicator badges on each button, for a cleaner grid
+showNavigateOnStartIcons: false
+
+# Everyone must log in; the panel can change the stack, so no guest access.
+authRequireGuestsToLogin: true
+accessControlLists:
+  - name: admins
+    matchUsergroups: [admins]
+    permissions:
+      view: true
+      exec: true
+      logs: true
+    addToEveryAction: true
+
+authLocalUsers:
+  enabled: true
+  users:
+    - username: admin
+      usergroup: admins
+      password: '@ARGON2ID-HASH@'
+
+# Service lists backing the dropdowns; refreshed on the host by the timer
+# (and by the panel's Refresh button).
+entities:
+  - name: svc_enable
+    file: entities/enable.json
+  - name: svc_disable
+    file: entities/disable.json
+  - name: svc_vpn
+    file: entities/vpn.json
+  - name: svc_wire
+    file: entities/wire.json
+  # logs / rollback / fix-perms all target an ENABLED service — the same set the
+  # Disable dropdown offers — so they read disable.json rather than duplicate it.
+  - name: svc_logs
+    file: entities/disable.json
+  - name: svc_rollback
+    file: entities/disable.json
+  - name: svc_fixperms
+    file: entities/disable.json
+  # unpin only makes sense for a currently-pinned service.
+  - name: svc_unpin
+    file: entities/pinned.json
+  # live up/down tiles: one record per enabled service, glyph computed on the host.
+  - name: status
+    file: entities/status.json
+
+# Actions MUST be defined here; the dashboard below only references them by
+# title (OliveTin "pulls" them out of the default Actions view).
+actions:
+  # -- diagnostics (read-only) --
+  - title: Doctor
+    icon: "🩺"
+    timeout: 300
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal doctor
+
+  - title: Status
+    icon: "📊"
+    timeout: 120
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal status
+
+  - title: VPN leak test
+    icon: "🛡️"
+    timeout: 120
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal leak-test
+
+  - title: View logs
+    icon: "📜"
+    timeout: 60
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal logs {{ svc }} --no-follow
+    arguments:
+      - name: svc
+        entity: svc_logs
+        title: Service
+        choices:
+          - value: '{{ svc_logs.name }}'
+
+  # -- services (pick one from the dropdown; confirm to run) --
+  - title: Enable service
+    icon: "▶️"
+    timeout: 180
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal enable {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_enable
+        title: Service to enable
+        choices:
+          - value: '{{ svc_enable.name }}'
+      - title: Confirm
+        type: confirmation
+
+  - title: Disable service
+    icon: "⏹️"
+    timeout: 180
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal disable {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_disable
+        title: Service to disable
+        choices:
+          - value: '{{ svc_disable.name }}'
+      - title: Confirm
+        type: confirmation
+
+  - title: Toggle VPN
+    icon: "🔒"
+    timeout: 300
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal vpn-apply {{ svc }} {{ state }}
+    arguments:
+      - name: svc
+        entity: svc_vpn
+        title: Service
+        choices:
+          - value: '{{ svc_vpn.name }}'
+      - name: state
+        title: VPN
+        choices:
+          - value: "on"
+          - value: "off"
+      - title: Confirm
+        type: confirmation
+        description: "Restarts the VPN and every service behind it — about 1 minute; downloads resume."
+
+  - title: Wire service
+    icon: "🔗"
+    timeout: 180
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal wire {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_wire
+        title: Service to wire
+        choices:
+          - value: '{{ svc_wire.name }}'
+      - title: Confirm
+        type: confirmation
+
+  # -- maintenance --
+  - title: Update stack
+    icon: "⬆️"
+    timeout: 300
+    maxConcurrent: 1
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal update
+    arguments:
+      - title: Confirm
+        type: confirmation
+        description: "Takes a restore point, then pulls and applies new images for every service."
+
+  - title: Backup now
+    icon: "💾"
+    timeout: 300
+    maxConcurrent: 1
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal backup
+    arguments:
+      - title: Confirm
+        type: confirmation
+        description: "Stops the stack briefly and writes a new restore point."
+
+  - title: Verify backup
+    icon: "🔍"
+    timeout: 120
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal backup verify
+
+  - title: Rollback service
+    icon: "⏮️"
+    timeout: 300
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal rollback {{ svc }} --yes
+    arguments:
+      - name: svc
+        entity: svc_rollback
+        title: Service to roll back
+        choices:
+          - value: '{{ svc_rollback.name }}'
+      - title: Confirm
+        type: confirmation
+        description: "Returns it to the image it ran before, with its config from then (its data since is replaced; the current folder is kept), then pins it."
+
+  - title: Unpin service
+    icon: "📌"
+    timeout: 180
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal unpin {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_unpin
+        title: Service to unpin
+        choices:
+          - value: '{{ svc_unpin.name }}'
+      - title: Confirm
+        type: confirmation
+        description: "Releases the pin: the next update includes it again."
+
+  - title: Apply / reconcile
+    icon: "🔁"
+    timeout: 300
+    maxConcurrent: 1
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal up
+    arguments:
+      - title: Confirm
+        type: confirmation
+        description: "Applies pending changes; services whose settings changed restart."
+
+  - title: Fix perms
+    icon: "🔧"
+    timeout: 120
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal fix-perms {{ svc }}
+    arguments:
+      - name: svc
+        entity: svc_fixperms
+        title: Service
+        choices:
+          - value: '{{ svc_fixperms.name }}'
+      - title: Confirm
+        type: confirmation
+
+  - title: Refresh panel
+    icon: "♻️"
+    timeout: 60
+    onclick: execution-dialog
+    shell: ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal frontdoor-refresh
+
+# Putting every action on a dashboard makes OliveTin hide the default "Actions"
+# sidebar tab. The status fieldset iterates the `status` entity to render one
+# live up/down tile per enabled service (host-refreshed).
+dashboards:
+  - title: Mediastack
+    contents:
+      - title: '{{ status.glyph }} {{ status.name }}'
+        entity: status
+        type: fieldset
+        cssClass: ms-status
+        contents:
+          - type: display
+            cssClass: '{{ status.cls }}'
+            title: 'state: {{ status.state }} · health: {{ status.health }}'
+      - title: Diagnostics
+        type: fieldset
+        contents:
+          - title: Doctor
+          - title: Status
+          - title: VPN leak test
+          - title: View logs
+      - title: Services
+        type: fieldset
+        contents:
+          - title: Enable service
+          - title: Disable service
+          - title: Toggle VPN
+          - title: Wire service
+      - title: Maintenance
+        type: fieldset
+        contents:
+          - title: Update stack
+          - title: Backup now
+          - title: Verify backup
+          - title: Rollback service
+          - title: Unpin service
+          - title: Apply / reconcile
+          - title: Fix perms
+          - title: Refresh panel

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# olivetin-frontdoor — SSH forced-command wrapper (the path-to-root chokepoint).
+# authorized_keys pins this as the ONLY command the olivetin key may run; the
+# client's request arrives in $SSH_ORIGINAL_COMMAND. We whitelist the charset,
+# whitelist the verb, bound the arg count, then hand argv (never a shell string)
+# to mediastack.sh via a narrow sudo entry. No arbitrary evaluation, no
+# interpolating shell: injection has nowhere to land.
+set -euo pipefail
+MEDIASTACK="@REPO@/mediastack.sh"
+cmd=${SSH_ORIGINAL_COMMAND:-}
+[[ -n "$cmd" ]] || { echo "frontdoor: no command supplied" >&2; exit 2; }
+[[ "$cmd" =~ ^[a-z0-9]([a-z0-9' '-]*[a-z0-9])?$ ]] \
+    || { echo "frontdoor: rejected — illegal characters" >&2; exit 3; }
+read -r -a argv <<<"$cmd"
+verb=${argv[0]}; args=("${argv[@]:1}")
+# the verbs and the argument limit are generated from the panel's PANEL table
+# (lib/frontdoor.sh) at frontdoor-install — exactly what a button runs
+case "$verb" in
+    backup|disable|doctor|enable|fix-perms|frontdoor-refresh|leak-test|logs|rollback|status|unpin|up|update|vpn-apply|wire) ;;
+    *) echo "frontdoor: verb '$verb' not permitted" >&2; exit 4 ;;
+esac
+(( ${#args[@]} <= 2 )) || { echo "frontdoor: too many arguments" >&2; exit 5; }
+exec sudo -n "$MEDIASTACK" "$verb" "${args[@]}"

@@ -1,0 +1,596 @@
+{
+  "networks": {
+    "mediastack": {
+      "ipam": {
+        "config": [
+          {
+            "ip_range": "172.31.250.128/25",
+            "subnet": "172.31.250.0/24"
+          }
+        ]
+      },
+      "name": "mediastack"
+    }
+  },
+  "services": {
+    "gluetun": {
+      "cap_add": [
+        "NET_ADMIN"
+      ],
+      "container_name": "mediastack-gluetun",
+      "devices": [
+        {
+          "permissions": "rwm",
+          "source": "/dev/net/tun",
+          "target": "/dev/net/tun"
+        }
+      ],
+      "dns_search": [
+        "."
+      ],
+      "environment": {
+        "DNS_ADDRESS": "",
+        "HTTP_CONTROL_SERVER_ADDRESS": ":8008",
+        "SERVER_CITIES": "",
+        "SERVER_COUNTRIES": "",
+        "SERVER_HOSTNAMES": "",
+        "TZ": "Etc/UTC",
+        "UPDATER_PERIOD": "24h",
+        "VPN_SERVICE_PROVIDER": "nordvpn",
+        "VPN_TYPE": "wireguard",
+        "WIREGUARD_ADDRESSES": "10.5.0.2/32",
+        "WIREGUARD_PRIVATE_KEY": ""
+      },
+      "image": "qmcgaw/gluetun:latest",
+      "labels": {
+        "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.config": "true",
+        "mediastack.desc": "VPN gateway — all download traffic exits through this tunnel",
+        "mediastack.managed": "true",
+        "mediastack.vpn": "false",
+        "traefik.enable": "true",
+        "traefik.http.routers.bazarr-api.entrypoints": "websecure",
+        "traefik.http.routers.bazarr-api.middlewares": "mediastack-strip@file",
+        "traefik.http.routers.bazarr-api.rule": "Host(`bazarr.unset.invalid`) && (PathPrefix(`/api`))",
+        "traefik.http.routers.bazarr-api.service": "bazarr",
+        "traefik.http.routers.bazarr-api.tls": "true",
+        "traefik.http.routers.bazarr.entrypoints": "websecure",
+        "traefik.http.routers.bazarr.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.bazarr.rule": "Host(`bazarr.unset.invalid`)",
+        "traefik.http.routers.bazarr.service": "bazarr",
+        "traefik.http.routers.bazarr.tls": "true",
+        "traefik.http.routers.deluge.entrypoints": "websecure",
+        "traefik.http.routers.deluge.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.deluge.rule": "Host(`deluge.unset.invalid`)",
+        "traefik.http.routers.deluge.service": "deluge",
+        "traefik.http.routers.deluge.tls": "true",
+        "traefik.http.routers.lazylibrarian.entrypoints": "websecure",
+        "traefik.http.routers.lazylibrarian.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.lazylibrarian.rule": "Host(`books-dl.unset.invalid`)",
+        "traefik.http.routers.lazylibrarian.service": "lazylibrarian",
+        "traefik.http.routers.lazylibrarian.tls": "true",
+        "traefik.http.routers.lidarr-api.entrypoints": "websecure",
+        "traefik.http.routers.lidarr-api.middlewares": "mediastack-strip@file",
+        "traefik.http.routers.lidarr-api.rule": "Host(`lidarr.unset.invalid`) && (PathPrefix(`/api`))",
+        "traefik.http.routers.lidarr-api.service": "lidarr",
+        "traefik.http.routers.lidarr-api.tls": "true",
+        "traefik.http.routers.lidarr.entrypoints": "websecure",
+        "traefik.http.routers.lidarr.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.lidarr.rule": "Host(`lidarr.unset.invalid`)",
+        "traefik.http.routers.lidarr.service": "lidarr",
+        "traefik.http.routers.lidarr.tls": "true",
+        "traefik.http.routers.prowlarr-api.entrypoints": "websecure",
+        "traefik.http.routers.prowlarr-api.middlewares": "mediastack-strip@file",
+        "traefik.http.routers.prowlarr-api.rule": "Host(`prowlarr.unset.invalid`) && (PathPrefix(`/api`))",
+        "traefik.http.routers.prowlarr-api.service": "prowlarr",
+        "traefik.http.routers.prowlarr-api.tls": "true",
+        "traefik.http.routers.prowlarr.entrypoints": "websecure",
+        "traefik.http.routers.prowlarr.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.prowlarr.rule": "Host(`prowlarr.unset.invalid`)",
+        "traefik.http.routers.prowlarr.service": "prowlarr",
+        "traefik.http.routers.prowlarr.tls": "true",
+        "traefik.http.routers.qbittorrent.entrypoints": "websecure",
+        "traefik.http.routers.qbittorrent.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.qbittorrent.rule": "Host(`qbit.unset.invalid`)",
+        "traefik.http.routers.qbittorrent.service": "qbittorrent",
+        "traefik.http.routers.qbittorrent.tls": "true",
+        "traefik.http.routers.radarr-api.entrypoints": "websecure",
+        "traefik.http.routers.radarr-api.middlewares": "mediastack-strip@file",
+        "traefik.http.routers.radarr-api.rule": "Host(`radarr.unset.invalid`) && (PathPrefix(`/api`))",
+        "traefik.http.routers.radarr-api.service": "radarr",
+        "traefik.http.routers.radarr-api.tls": "true",
+        "traefik.http.routers.radarr.entrypoints": "websecure",
+        "traefik.http.routers.radarr.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.radarr.rule": "Host(`radarr.unset.invalid`)",
+        "traefik.http.routers.radarr.service": "radarr",
+        "traefik.http.routers.radarr.tls": "true",
+        "traefik.http.routers.radarr4k-api.entrypoints": "websecure",
+        "traefik.http.routers.radarr4k-api.middlewares": "mediastack-strip@file",
+        "traefik.http.routers.radarr4k-api.rule": "Host(`radarr-4k.unset.invalid`) && (PathPrefix(`/api`))",
+        "traefik.http.routers.radarr4k-api.service": "radarr4k",
+        "traefik.http.routers.radarr4k-api.tls": "true",
+        "traefik.http.routers.radarr4k.entrypoints": "websecure",
+        "traefik.http.routers.radarr4k.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.radarr4k.rule": "Host(`radarr-4k.unset.invalid`)",
+        "traefik.http.routers.radarr4k.service": "radarr4k",
+        "traefik.http.routers.radarr4k.tls": "true",
+        "traefik.http.routers.sonarr-api.entrypoints": "websecure",
+        "traefik.http.routers.sonarr-api.middlewares": "mediastack-strip@file",
+        "traefik.http.routers.sonarr-api.rule": "Host(`sonarr.unset.invalid`) && (PathPrefix(`/api`))",
+        "traefik.http.routers.sonarr-api.service": "sonarr",
+        "traefik.http.routers.sonarr-api.tls": "true",
+        "traefik.http.routers.sonarr.entrypoints": "websecure",
+        "traefik.http.routers.sonarr.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.sonarr.rule": "Host(`sonarr.unset.invalid`)",
+        "traefik.http.routers.sonarr.service": "sonarr",
+        "traefik.http.routers.sonarr.tls": "true",
+        "traefik.http.routers.sonarranime-api.entrypoints": "websecure",
+        "traefik.http.routers.sonarranime-api.middlewares": "mediastack-strip@file",
+        "traefik.http.routers.sonarranime-api.rule": "Host(`sonarr-anime.unset.invalid`) && (PathPrefix(`/api`))",
+        "traefik.http.routers.sonarranime-api.service": "sonarranime",
+        "traefik.http.routers.sonarranime-api.tls": "true",
+        "traefik.http.routers.sonarranime.entrypoints": "websecure",
+        "traefik.http.routers.sonarranime.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.sonarranime.rule": "Host(`sonarr-anime.unset.invalid`)",
+        "traefik.http.routers.sonarranime.service": "sonarranime",
+        "traefik.http.routers.sonarranime.tls": "true",
+        "traefik.http.routers.transmission.entrypoints": "websecure",
+        "traefik.http.routers.transmission.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.transmission.rule": "Host(`transmission.unset.invalid`)",
+        "traefik.http.routers.transmission.service": "transmission",
+        "traefik.http.routers.transmission.tls": "true",
+        "traefik.http.services.bazarr.loadbalancer.server.port": "6767",
+        "traefik.http.services.deluge.loadbalancer.server.port": "8112",
+        "traefik.http.services.lazylibrarian.loadbalancer.server.port": "5299",
+        "traefik.http.services.lidarr.loadbalancer.server.port": "8686",
+        "traefik.http.services.prowlarr.loadbalancer.server.port": "9696",
+        "traefik.http.services.qbittorrent.loadbalancer.server.port": "8085",
+        "traefik.http.services.radarr.loadbalancer.server.port": "7878",
+        "traefik.http.services.radarr4k.loadbalancer.server.port": "7879",
+        "traefik.http.services.sonarr.loadbalancer.server.port": "8989",
+        "traefik.http.services.sonarranime.loadbalancer.server.port": "8990",
+        "traefik.http.services.transmission.loadbalancer.server.port": "9091"
+      },
+      "networks": {
+        "mediastack": {}
+      },
+      "ports": [
+        {
+          "protocol": "tcp",
+          "published": "6767",
+          "target": 6767
+        },
+        {
+          "protocol": "tcp",
+          "published": "8112",
+          "target": 8112
+        },
+        {
+          "protocol": "tcp",
+          "published": "5299",
+          "target": 5299
+        },
+        {
+          "protocol": "tcp",
+          "published": "8686",
+          "target": 8686
+        },
+        {
+          "protocol": "tcp",
+          "published": "9696",
+          "target": 9696
+        },
+        {
+          "protocol": "tcp",
+          "published": "8085",
+          "target": 8085
+        },
+        {
+          "protocol": "tcp",
+          "published": "7878",
+          "target": 7878
+        },
+        {
+          "protocol": "tcp",
+          "published": "7879",
+          "target": 7879
+        },
+        {
+          "protocol": "tcp",
+          "published": "8989",
+          "target": 8989
+        },
+        {
+          "protocol": "tcp",
+          "published": "8990",
+          "target": 8990
+        },
+        {
+          "protocol": "tcp",
+          "published": "9091",
+          "target": 9091
+        }
+      ],
+      "profiles": [
+        "gluetun"
+      ],
+      "volumes": [
+        {
+          "source": "@REPO@/services/gluetun/config/gluetun",
+          "target": "/gluetun",
+          "type": "bind"
+        }
+      ]
+    },
+    "jellyfin": {
+      "container_name": "mediastack-jellyfin",
+      "dns_search": [
+        "."
+      ],
+      "environment": {
+        "JELLYFIN_PublishedServerUrl": "",
+        "TZ": "Etc/UTC"
+      },
+      "image": "jellyfin/jellyfin:latest",
+      "labels": {
+        "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.auth": "native",
+        "mediastack.cache": "true",
+        "mediastack.config": "true",
+        "mediastack.desc": "the media server your users watch",
+        "mediastack.managed": "true",
+        "mediastack.port": "8096",
+        "mediastack.subdomain": "jellyfin",
+        "mediastack.transcode": "true",
+        "mediastack.user_facing": "true",
+        "mediastack.vpn": "false",
+        "traefik.enable": "true",
+        "traefik.http.routers.jellyfin.entrypoints": "websecure",
+        "traefik.http.routers.jellyfin.rule": "Host(`jellyfin.unset.invalid`)",
+        "traefik.http.routers.jellyfin.tls": "true",
+        "traefik.http.services.jellyfin.loadbalancer.server.port": "8096"
+      },
+      "networks": {
+        "mediastack": {}
+      },
+      "ports": [
+        {
+          "protocol": "tcp",
+          "published": "8096",
+          "target": 8096
+        }
+      ],
+      "profiles": [
+        "jellyfin"
+      ],
+      "user": "13010:13000",
+      "volumes": [
+        {
+          "source": "@REPO@/services/jellyfin/config/jellyfin",
+          "target": "/config",
+          "type": "bind"
+        },
+        {
+          "source": "@REPO@/services/jellyfin/cache/jellyfin",
+          "target": "/cache",
+          "type": "bind"
+        },
+        {
+          "source": "@REPO@/services/jellyfin/transcodes/jellyfin",
+          "target": "/cache/transcodes",
+          "type": "bind"
+        },
+        {
+          "read_only": true,
+          "source": "@REPO@/services/jellyfin/data/media",
+          "target": "/media",
+          "type": "bind"
+        }
+      ]
+    },
+    "jellysearch": {
+      "container_name": "mediastack-jellysearch",
+      "depends_on": {
+        "jellyfin": "service_healthy",
+        "meilisearch": "service_healthy"
+      },
+      "dns_search": [
+        "."
+      ],
+      "environment": {
+        "INDEX_CRON": "0 0 0/2 ? * * *",
+        "JELLYFIN_URL": "http://jellyfin:8096",
+        "MEILI_MASTER_KEY": "",
+        "MEILI_URL": "http://meilisearch:7700",
+        "TZ": "Etc/UTC"
+      },
+      "image": "domistyle/jellysearch:latest",
+      "labels": {
+        "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.config": "false",
+        "mediastack.desc": "instant, typo-tolerant Jellyfin search",
+        "mediastack.managed": "true",
+        "mediastack.vpn": "false",
+        "traefik.enable": "true",
+        "traefik.http.routers.jellysearch.entrypoints": "websecure",
+        "traefik.http.routers.jellysearch.priority": "100",
+        "traefik.http.routers.jellysearch.rule": "Host(`jellyfin.unset.invalid`) && (QueryRegexp(`searchTerm`, `(.*?)`) || QueryRegexp(`SearchTerm`, `(.*?)`))",
+        "traefik.http.routers.jellysearch.tls": "true",
+        "traefik.http.services.jellysearch.loadbalancer.server.port": "5000"
+      },
+      "networks": {
+        "mediastack": {}
+      },
+      "profiles": [
+        "jellysearch"
+      ],
+      "user": "13010:13000",
+      "volumes": [
+        {
+          "read_only": true,
+          "source": "@REPO@/services/jellysearch/config/jellyfin",
+          "target": "/config",
+          "type": "bind"
+        }
+      ]
+    },
+    "meilisearch": {
+      "container_name": "mediastack-meilisearch",
+      "dns_search": [
+        "."
+      ],
+      "environment": {
+        "MEILI_ENV": "production",
+        "MEILI_LOG_LEVEL": "WARN",
+        "MEILI_MASTER_KEY": "",
+        "MEILI_MAX_INDEXING_MEMORY": "1Gb",
+        "MEILI_MAX_INDEXING_THREADS": "2",
+        "MEILI_NO_ANALYTICS": "true",
+        "TZ": "Etc/UTC"
+      },
+      "image": "getmeili/meilisearch:v1.34",
+      "labels": {
+        "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.cache": "true",
+        "mediastack.config": "false",
+        "mediastack.desc": "search engine backing JellySearch",
+        "mediastack.managed": "true",
+        "mediastack.vpn": "false"
+      },
+      "networks": {
+        "mediastack": {}
+      },
+      "profiles": [
+        "meilisearch"
+      ],
+      "user": "13017:13000",
+      "volumes": [
+        {
+          "source": "@REPO@/services/meilisearch/cache/meilisearch",
+          "target": "/meili_data",
+          "type": "bind"
+        }
+      ]
+    },
+    "prowlarr": {
+      "container_name": "mediastack-prowlarr",
+      "depends_on": {
+        "gluetun": "service_healthy"
+      },
+      "environment": {
+        "PGID": "13000",
+        "PUID": "13006",
+        "TZ": "Etc/UTC",
+        "UMASK": "002"
+      },
+      "image": "lscr.io/linuxserver/prowlarr:latest",
+      "labels": {
+        "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.auth": "gate",
+        "mediastack.auth.bypass": "/api",
+        "mediastack.config": "true",
+        "mediastack.desc": "indexer manager feeding the arrs",
+        "mediastack.managed": "true",
+        "mediastack.port": "9696",
+        "mediastack.subdomain": "prowlarr",
+        "mediastack.vpn": "true",
+        "mediastack.vpntoggle": "true"
+      },
+      "network_mode": "service:gluetun",
+      "profiles": [
+        "prowlarr"
+      ],
+      "volumes": [
+        {
+          "source": "@REPO@/services/prowlarr/config/prowlarr",
+          "target": "/config",
+          "type": "bind"
+        }
+      ]
+    },
+    "qbittorrent": {
+      "container_name": "mediastack-qbittorrent",
+      "depends_on": {
+        "gluetun": "service_healthy"
+      },
+      "environment": {
+        "PGID": "13000",
+        "PUID": "13007",
+        "TZ": "Etc/UTC",
+        "UMASK": "002",
+        "WEBUI_PORT": "8085"
+      },
+      "image": "lscr.io/linuxserver/qbittorrent:latest",
+      "labels": {
+        "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.auth": "gate",
+        "mediastack.config": "true",
+        "mediastack.desc": "torrent client (runs inside the VPN)",
+        "mediastack.managed": "true",
+        "mediastack.port": "8085",
+        "mediastack.subdomain": "qbit",
+        "mediastack.torrent": "true",
+        "mediastack.vpn": "true",
+        "mediastack.vpntoggle": "true"
+      },
+      "network_mode": "service:gluetun",
+      "profiles": [
+        "qbittorrent"
+      ],
+      "volumes": [
+        {
+          "source": "@REPO@/services/qbittorrent/config/qbittorrent",
+          "target": "/config",
+          "type": "bind"
+        },
+        {
+          "source": "@REPO@/services/qbittorrent/data/torrent",
+          "target": "/data/torrent",
+          "type": "bind"
+        }
+      ]
+    },
+    "radarr": {
+      "container_name": "mediastack-radarr",
+      "depends_on": {
+        "gluetun": "service_healthy"
+      },
+      "environment": {
+        "PGID": "13000",
+        "PUID": "13002",
+        "TZ": "Etc/UTC",
+        "UMASK": "002"
+      },
+      "image": "lscr.io/linuxserver/radarr:latest",
+      "labels": {
+        "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.arrtype": "radarr",
+        "mediastack.auth": "gate",
+        "mediastack.auth.bypass": "/api",
+        "mediastack.category": "movies",
+        "mediastack.config": "true",
+        "mediastack.desc": "movie automation",
+        "mediastack.managed": "true",
+        "mediastack.port": "7878",
+        "mediastack.rootfolder": "/data/media/movies",
+        "mediastack.subdomain": "radarr",
+        "mediastack.vpn": "true",
+        "mediastack.vpntoggle": "true"
+      },
+      "network_mode": "service:gluetun",
+      "profiles": [
+        "radarr"
+      ],
+      "volumes": [
+        {
+          "source": "@REPO@/services/radarr/config/radarr",
+          "target": "/config",
+          "type": "bind"
+        },
+        {
+          "source": "@REPO@/services/radarr/data",
+          "target": "/data",
+          "type": "bind"
+        }
+      ]
+    },
+    "seerr": {
+      "container_name": "mediastack-seerr",
+      "dns_search": [
+        "."
+      ],
+      "environment": {
+        "LOG_LEVEL": "info",
+        "TZ": "Etc/UTC"
+      },
+      "image": "ghcr.io/seerr-team/seerr:latest",
+      "labels": {
+        "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.auth": "native",
+        "mediastack.cache": "true",
+        "mediastack.config": "true",
+        "mediastack.desc": "request/discovery site for your users",
+        "mediastack.managed": "true",
+        "mediastack.port": "5055",
+        "mediastack.subdomain": "requests",
+        "mediastack.user_facing": "true",
+        "mediastack.vpn": "false",
+        "traefik.enable": "true",
+        "traefik.http.routers.seerr.entrypoints": "websecure",
+        "traefik.http.routers.seerr.rule": "Host(`requests.unset.invalid`)",
+        "traefik.http.routers.seerr.tls": "true",
+        "traefik.http.services.seerr.loadbalancer.server.port": "5055"
+      },
+      "networks": {
+        "mediastack": {}
+      },
+      "ports": [
+        {
+          "protocol": "tcp",
+          "published": "5055",
+          "target": 5055
+        }
+      ],
+      "profiles": [
+        "seerr"
+      ],
+      "user": "13012:13000",
+      "volumes": [
+        {
+          "source": "@REPO@/services/seerr/config/seerr",
+          "target": "/app/config",
+          "type": "bind"
+        },
+        {
+          "source": "@REPO@/services/seerr/cache/seerr",
+          "target": "/app/config/cache",
+          "type": "bind"
+        }
+      ]
+    },
+    "sonarr": {
+      "container_name": "mediastack-sonarr",
+      "depends_on": {
+        "gluetun": "service_healthy"
+      },
+      "environment": {
+        "PGID": "13000",
+        "PUID": "13001",
+        "TZ": "Etc/UTC",
+        "UMASK": "002"
+      },
+      "image": "lscr.io/linuxserver/sonarr:latest",
+      "labels": {
+        "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.arrtype": "sonarr",
+        "mediastack.auth": "gate",
+        "mediastack.auth.bypass": "/api",
+        "mediastack.category": "tv",
+        "mediastack.config": "true",
+        "mediastack.desc": "TV show automation",
+        "mediastack.managed": "true",
+        "mediastack.port": "8989",
+        "mediastack.rootfolder": "/data/media/tv",
+        "mediastack.subdomain": "sonarr",
+        "mediastack.vpn": "true",
+        "mediastack.vpntoggle": "true"
+      },
+      "network_mode": "service:gluetun",
+      "profiles": [
+        "sonarr"
+      ],
+      "volumes": [
+        {
+          "source": "@REPO@/services/sonarr/config/sonarr",
+          "target": "/config",
+          "type": "bind"
+        },
+        {
+          "source": "@REPO@/services/sonarr/data",
+          "target": "/data",
+          "type": "bind"
+        }
+      ]
+    }
+  }
+}

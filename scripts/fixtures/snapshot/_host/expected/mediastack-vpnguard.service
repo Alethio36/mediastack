@@ -1,0 +1,10 @@
+[Unit]
+Description=Mediastack boot guard (services a cut-off backup stopped; VPN attachment)
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/mediastack.sh vpn-guard --boot
+[Install]
+WantedBy=multi-user.target

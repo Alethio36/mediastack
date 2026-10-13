@@ -1,0 +1,10 @@
+{# the plain-text part of mediastack-invitation.html, for mail apps that show no HTML #}{% autoescape off %}You're invited to join Tom & Jo's <Media> {% templatetag openbrace %}Portal{% templatetag closebrace %}.
+
+Choose a username and password: they are your login for every app here, the same ones in the Jellyfin app on your TV or phone. Your email is how you'll reset a forgotten password.
+
+Join here:
+
+{{ url }}
+
+The invitation works once and expires in {{ expires|timeuntil }}.
+{% endautoescape %}

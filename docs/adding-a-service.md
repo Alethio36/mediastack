@@ -127,6 +127,15 @@ Every service with its own network namespace declares `dns_search: ["."]`
 (`network_mode: service:gluetun`) must not, Docker refuses it, and gets
 gluetun's instead. test-render fails a fragment that breaks either.
 
+What the stack generates is pinned too: `scripts/test-snapshot.sh` runs the
+`up` order for one fixture per branch (`scripts/fixtures/snapshot/`: the
+plain install, the portal, Wizarr, an open edge, NPM, VPN membership moved,
+your own files) and byte-compares the VPN overlay, Traefik's config, the
+portal's email templates, the panel's files and the compose render (cut to
+the fields mediastack writes). A new service changes those on purpose: read
+the diff, then `scripts/test-snapshot.sh --bless` and commit `expected/` with
+the code. A change you did not mean is what it is there to catch.
+
 ### Its code
 
 A service's code lives in its folder beside its fragment:
