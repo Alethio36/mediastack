@@ -306,14 +306,52 @@ arrive on their own, as with watchtower, but validated first.
   differs per GPU generation, and a VM needs passthrough on its host (outside
   mediastack: detect and advise only). Default off; software stays the
   fallback.
-- **A transcoding tool** *(to evaluate)*: re-encode media ahead of time
-  (smaller files, formats every client plays, fewer live transcodes in
-  Jellyfin). Candidates: HandBrake (manual, per file, web GUI), Tdarr
-  (library-wide rules, automated, can spread work over machines), Unmanic
-  (simpler automation). Hidden costs to weigh: sustained CPU/GPU load, disk
-  churn and temporary space, and the arrs noticing replaced files (re-import,
-  upgrade loops). Decide in the watchlist before shipping. After the MVP,
-  unless the rollout shows the household's files seldom direct-play.
+- **Pre-transcoding: every file direct-plays** *(decided Oct 2026; ships after
+  the rollout, measuring starts at the rebuild)*. Goal: every file plays
+  directly on the household's own devices, fully automated, never in the way
+  of someone watching, and losing no picture quality where it can be avoided.
+  * **Tool: Unmanic** (GPL-3, since 2019; watches the libraries, a plugin
+    pipeline per file, CPU or GPU encoders — VAAPI, QSV, NVENC — schedules
+    and an API). Weighed: Tdarr is the most capable but proprietary (an EULA
+    with paid tiers), FileFlows is commercial, HandBrake is one file at a
+    time. To confirm in the evaluation: whether CPU and GPU can work at once
+    (in Unmanic the encoder is a plugin setting, roughly per library).
+  * **Order, cheapest and safest first:** (1) *measure* — Jellyfin records why
+    each playback transcoded (video codec, audio, subtitles, bitrate); a
+    doctor check or verb summarises it over the rollout, so the target comes
+    from real devices; (2) *prevent at download* — Recyclarr scores
+    incompatible formats down (e.g. AV1, Dolby Vision without an HDR10
+    fallback), lossless and free; (3) *fix losslessly* — new container, an
+    added compatible audio track beside the original, subtitles handled;
+    (4) *re-encode the video only where (1) shows the codec is the reason*,
+    at visually transparent quality (lossy but not visible; CPU gives the
+    best quality per size, a GPU is faster).
+  * **Never in the way:** a night window (like the 04:00 update); a hook that
+    pauses Unmanic through its API while Jellyfin has an active playback
+    (the update's session wait, reused); one worker at low CPU priority; a
+    shared GPU paused too (Jellyfin needs its encoder).
+  * **Safe replacement:** work on a copy on the cache disk, check it (same
+    length, every track, it decodes), keep the name and container, then
+    replace and have the arrs and Jellyfin rescan; ops hears a nightly
+    summary through the hub. The replaced original goes to the arr recycle
+    bin (`RECYCLE_ROOT`, kept `RECYCLE_DAYS`), not deleted on the spot.
+  * **Storage:** a re-encode's size follows the target codec and quality,
+    not the source. Re-encoding *to a more compatible* codec usually grows a
+    file (HEVC to H.264: roughly 1.3–1.6x for the same look; AV1 to H.264:
+    more); to HEVC shrinks it but plays on fewer devices. Lossless steps:
+    repackaging keeps the size; an added stereo AAC track is ~170 MB for a
+    two-hour film (192 kb/s). Also: the recycle bin holds replaced originals
+    for `RECYCLE_DAYS` (its space checks already warn); the cache disk needs
+    room for the file in progress; preferring H.264 at download (2) makes
+    new files larger than their HEVC equivalents — (1) decides whether the
+    household's devices need it. Media is not in mediastack's backups, so
+    those do not grow.
+  * **Hidden costs:** a re-encoded file can score below the arr's quality
+    cutoff and be downloaded again (an upgrade loop) — the target must meet
+    the profile, or the file be excluded from upgrades; CPU-only on a 4-core
+    box is hours per film (fine overnight if (2) keeps the list short);
+    remote playback over a slow uplink and picture-based subtitles still
+    force a live transcode, whatever the files are.
 - **Live TV from outside sources — Dispatcharr** *(chosen to try, Oct 2026)*.
   An IPTV manager in the arr style: it takes M3U playlists and Xtream Codes
   accounts, matches the programme guide (EPG), and hands the result to
