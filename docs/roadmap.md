@@ -237,6 +237,35 @@ arrive on their own, as with watchtower, but validated first.
   churn and temporary space, and the arrs noticing replaced files (re-import,
   upgrade loops). Decide in the watchlist before shipping. After the MVP,
   unless the rollout shows the household's files seldom direct-play.
+- **Live TV from outside sources — Dispatcharr?** *(to discuss, Oct 2026)*.
+  An IPTV manager in the arr style: it takes M3U playlists and Xtream Codes
+  accounts, matches the programme guide (EPG), and hands the result to
+  Jellyfin as one tuner (M3U + XMLTV, or an HDHomeRun-style device); it
+  proxies streams (fewer connections to a provider), records (DVR), and has
+  VOD, users and plugins. Where it meets ErsatzTV: ErsatzTV makes channels
+  from the household's own library and also outputs M3U + XMLTV, so it could
+  be one of Dispatcharr's sources — one guide and one tuner in Jellyfin for
+  both. To look into before deciding:
+  * **Need:** Jellyfin's own M3U tuner may be enough for a household with
+    one source; Dispatcharr earns its place with several sources, a
+    provider's connection limit, or recording. Alternatives to weigh in the
+    same pass: Threadfin, Tunarr.
+  * **Fit with the house rules:** its all-in-one image bundles its database
+    and cache (one shard — check whether they can be kept private to it);
+    its guide and stream addresses must reach Jellyfin inside the stack
+    only, its UI behind the admin gate (does it do OIDC or headers?); the
+    VPN side — a provider's streams through the tunnel or not, and what
+    each choice ties to whom.
+  * **Versions:** pre-1.0 and fast-moving; the docs show only `:latest` —
+    check for version tags we can pin. Licence: AGPL-3.0 now (an older
+    copy said CC BY-NC-SA) — confirm on the official repo.
+  * **Sources are the household's:** mediastack ships no playlist and no
+    provider, as it ships no indexer. Free, legal channel lists exist and
+    are the default to document.
+  * **Hidden cost:** guide matching across thousands of channels, live
+    transcodes in Jellyfin (IPTV formats rarely direct-play everywhere),
+    and one more database to back up and restore.
+  Decide in the watchlist before shipping.
 
 ### Storage layout — decided (Sept 2026), after the MVP
 - **No mergerfs in the tooling** — pooling drives is a host storage decision,
@@ -266,7 +295,10 @@ arrive on their own, as with watchtower, but validated first.
   link without working email); a recovery flow set in authentik's UI is left
   alone. `reset-password` stays the way back without email. Still open: the
   email's look follows the branding kit below (a logo needs a public address —
-  the portal is LAN-only, so a linked image would not load in Gmail either).
+  the portal is LAN-only, so a linked image would not load in Gmail either);
+  the "check your inbox" page is a dead end — it wants a link back to the
+  sign-in page (authentik's footer links may carry it; check in its source
+  first).
 - **Invitations by email** — *shipped (Oct 2026)*: `invite --email <address>`
   has authentik send the sign-up link (its send endpoint, mediastack's
   template; the request names the portal so the link is the portal's, not the
@@ -282,7 +314,7 @@ arrive on their own, as with watchtower, but validated first.
     `custom/branding/` folder (the household's own, never overwritten), with
     the shipped defaults when a file is absent.
   * **The portal (authentik):** its brand takes the name, logo, icon and the
-    sign-in background; its emails (password reset, invitations) use a
+    sign-in background (its pages show authentik's own logo today); its emails (password reset, invitations) use a
     mediastack template carrying the name and a logo the portal itself
     serves — a linked image, not an inline attachment (see above).
   * **Each app, as far as it allows:** to survey per app before building —
@@ -315,6 +347,20 @@ arrive on their own, as with watchtower, but validated first.
   Seerr's events could look closer to Seerr's own Discord embeds (poster,
   fields, colour per event) while still routing through the hub — check
   Apprise's Discord options against its docs first.
+- **A self-hosted endpoint for the `ops` stream** *(to discuss, Oct 2026)*.
+  Moving Apprise outside the VPN settled where notifications leave from, not
+  what they say: release names, titles and household activity sit on the
+  notification service either way. An endpoint the household hosts (ntfy,
+  Gotify or Matrix) keeps `ops` at home; `users` can stay on Discord ("a new
+  film is available" says little). Less detail per message ("1 film
+  imported") is the other lever, and fits the richer layout above.
+- **A Jellyfin sign-in takes ~8 s** *(to investigate, Oct 2026)*. Since the
+  LDAP binds went direct (Security & access), every sign-in runs authentik's
+  sign-in twice, ~4 s each (the directory search takes under half a second).
+  Find where the 4 s goes — password hashing, the flow's round trips — before
+  deciding whether to tune it or accept it (sign-ins are rare; the app keeps
+  its session). First step: the field names of authentik server's request
+  log (a query on the guessed ones returned nothing).
 
 ### Media monitoring
 Answering "what happened to X?" after the fact: the nightly media manifest
@@ -566,6 +612,15 @@ all built; what each still leaves open is noted below.
   at its line in the caller, and a process substitution's failure (status
   unread) not at all; `die` never fires it. Not sent to notifications yet; the panel shows it as it
   shows any stderr. Pinned by scripts/test-errtrap.sh.
+- **A scheduled run that dies tells `ops`** *(Oct 2026)*. Three nightly
+  updates died before trash-sync with no alert (the wire-lock bug, fixed);
+  nobody noticed for three nights. An `OnFailure=` unit on each timer's
+  service posting the unit, exit code and the journal's last lines to
+  `ops` — it fires however the run ended, the ERR trap's line included.
+- **`upgrade` takes the maintenance lock** *(Oct 2026)*. A `git pull` landed
+  mid-update: one nightly run mixed old and new code. `upgrade` should wait
+  for (or refuse during) a running update, backup or wire, as they refuse
+  each other.
 - **A `--dry-run` smoke test in CI.** The rest of the suite is in place: each
   `scripts/test-*.sh` / `check-*.sh` states in its header what it pins, and the
   lint workflow runs them all.
