@@ -644,6 +644,14 @@ all built; what each still leaves open is noted below.
   targets; (2) Wizarr mode's `reset-password` through Jellyfin's API (today it
   points at Jellyfin's dashboard); (3) Wizarr's admin (no API found yet — UI
   only); (4) Navidrome's per-user Subsonic password, reset by the admin.
+- **A Jellyfin lockout tells ops** — *shipped (Oct 2026)*. The throttle,
+  refusing a right password after too many wrong ones, raises
+  `mediastack_jellyfin_lockout` (once per person per 6 hours); a notification
+  rule matches it (an expression policy — the event matcher chooses only
+  authentik's own actions) and posts it through the hub to `ops`, shaped as
+  the hub's message. The transport is wire's (`wire_authentik_lockout_alerts`,
+  via `hub_notify_url`): it follows the hub's VPN move, and without a hub the
+  rule sends nothing.
 - **The panel signs people in through the portal** *(decided Oct 2026; after
   phase 3)*. Today the panel sits behind the gate and then asks for OliveTin's
   own admin login — two sign-ins. Decided: a **signed JWT**, not the trusted

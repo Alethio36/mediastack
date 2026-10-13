@@ -12,6 +12,7 @@
 #   hub_outcome CODE BODY           -> "" when delivered, else why not (for people)
 #   hub_cfg_get                     the stored configuration text (empty when none)
 #   hub_cfg_put TEXT                store it (empty: remove the configuration)
+#   hub_notify_url                  where an app on the stack network posts a message (its address follows the VPN)
 #
 # The configuration is Apprise's text format (tags=URL per line); lib/notify.sh
 # edits those lines. The apps' own hub entries (the arrs, Prowlarr, Seerr,
@@ -25,6 +26,8 @@ HUB_KEY=mediastack   # the configuration's key in Apprise (every URL mediastack 
 hub_enabled() { svc_enabled "$HUB_SVC"; }
 hub_running() { [[ "$(c_state "$(svc_cname "$HUB_SVC")")" == running ]]; }
 hub_local_url() { local p; p=$(svc_hostport "$HUB_SVC") || return 1; echo "http://127.0.0.1:$p"; }
+
+hub_notify_url() { echo "http://$(svc_addr "$HUB_SVC")/notify/$HUB_KEY"; }
 
 hub_configured() {
     hub_enabled && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(hub_local_url)/get/$HUB_KEY" 2>/dev/null || echo 000)" == 200 ]]

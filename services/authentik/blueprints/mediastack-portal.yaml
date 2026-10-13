@@ -439,6 +439,13 @@ entries:
           score = Reputation.objects.filter(identifier=request.user.username, ip="%s").aggregate(total=Sum("score"))["total"] or 0
           if score <= -5:
               ak_logger.warning("mediastack: Jellyfin sign-in throttled - right password, too many wrong ones before it; clears after a day or with reset-password", user=request.user.username)
+              # one alert per person per 6 hours (a script guessing would raise hundreds):
+              # the rule mediastack-jellyfin-lockout tells ops through the hub
+              from datetime import timedelta
+              from django.utils.timezone import now
+              from authentik.events.models import Event
+              if not Event.objects.filter(action__endswith="mediastack_jellyfin_lockout", context__username=request.user.username, created__gte=now() - timedelta(hours=6)).exists():
+                  ak_create_event("mediastack_jellyfin_lockout", username=request.user.username)
               return False
           return True
         - !Env [MEDIASTACK_TRAEFIK_ADDRESS, "172.31.250.2"]
@@ -632,3 +639,45 @@ entries:
         - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
         - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
         - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+
+  # -- a Jellyfin lockout tells ops ---------------------------------------
+  # The throttle above raises mediastack_jellyfin_lockout (once per person per
+  # 6 hours). This rule matches it (an expression policy: the event matcher
+  # chooses only authentik's own actions) and posts it to the notification
+  # hub, shaped as the hub's message. The transport — the hub's address — is
+  # wire's (wire_authentik_lockout_alerts): it follows the hub's VPN move,
+  # and a blueprint re-apply would overwrite it.
+  - model: authentik_events.notificationwebhookmapping
+    id: mapping-hub-ops
+    identifiers:
+      name: mediastack-hub-ops
+    attrs:
+      expression: |
+        user = notification.event.context.get("username", "someone")
+        return {
+            "title": "Mediastack: a Jellyfin sign-in is locked",
+            "body": user + " typed the right password after too many wrong ones, so Jellyfin's sign-in stays locked for them for a day, or until a reset: ./mediastack.sh reset-password " + user + " (or Forgot password? on the portal).",
+            "tag": "ops",
+            "type": "warning",
+            "format": "markdown",
+        }
+  - model: authentik_policies_expression.expressionpolicy
+    id: policy-lockout-event
+    identifiers:
+      name: mediastack-lockout-event
+    attrs:
+      expression: |
+        return request.context["event"].action.endswith("mediastack_jellyfin_lockout")
+  - model: authentik_events.notificationrule
+    id: rule-jellyfin-lockout
+    identifiers:
+      name: mediastack-jellyfin-lockout
+    attrs:
+      severity: warning
+      destination_group: !KeyOf group-admins
+  - model: authentik_policies.policybinding
+    identifiers:
+      policy: !KeyOf policy-lockout-event
+      target: !KeyOf rule-jellyfin-lockout
+    attrs:
+      order: 0

@@ -219,7 +219,7 @@ checks=$((checks + 7))
 leak=$(grep -rnE 'hub_local_url|/(notify|get|add|del)/\$HUB_KEY|svc_(enabled|cname|hostport) "?apprise' lib services mediastack.sh --include=*.sh \
         | grep -vE '^(services/apprise/|lib/migrations\.sh:)' || true)
 [[ -z "$leak" ]] || fail_ "the hub's own API used outside services/apprise/: $leak"; pass
-for f in hub_enabled hub_running hub_local_url hub_configured hub_send hub_outcome hub_cfg_get hub_cfg_put; do
+for f in hub_enabled hub_running hub_local_url hub_notify_url hub_configured hub_send hub_outcome hub_cfg_get hub_cfg_put; do
     grep -qE "^$f\(\)" services/apprise/hub.sh || fail_ "the hub interface lacks $f"; pass
 done
 [[ "$(sed -n 's/^HUB_SVC=//p' services/apprise/hub.sh)" == apprise ]] || fail_ "HUB_SVC names the hub's service"; pass

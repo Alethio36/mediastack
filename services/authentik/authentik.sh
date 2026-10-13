@@ -534,6 +534,7 @@ wire_authentik() {
     wire_authentik_identity
     wire_authentik_recovery
     wire_authentik_show_password
+    wire_authentik_lockout_alerts
     wire_authentik_gate
 }
 
@@ -554,6 +555,41 @@ AUTHENTIK_RECOVERY_FLOW=mediastack-recovery
 AUTHENTIK_SIGNIN_STAGE=default-authentication-identification   # authentik's own sign-in page: where its "Forgot password?" link shows
 
 AUTHENTIK_SIGNIN_PASSWORD=default-authentication-password   # authentik's own sign-in password step
+
+wire_authentik_lockout_alerts() { # a Jellyfin lockout tells ops: the rule's transport is the hub, at its address now
+    local out rule mapping tr cur want body
+    out=$(ak_api GET "/events/rules/?name=mediastack-jellyfin-lockout") || { wfail "authentik: its notification rules are unreadable: $(oneline "$out")"; return 0; }
+    rule=$(jq -r '.results[0].pk // empty' <<<"$out")
+    [[ -n "$rule" ]] || { wfail "authentik: the lockout-alert rule is missing — the portal setup did not apply (./mediastack.sh up, then wire authentik)"; return 0; }
+    if ! hub_enabled; then
+        [[ "$(jq -r '.results[0].transports | length' <<<"$out")" == 0 ]] && { info "authentik: lockout alerts off — no notification hub ($HUB_SVC)"; return 0; }
+        w_would "authentik: stop lockout alerts (no notification hub)" || return 0
+        ak_api PATCH "/events/rules/$rule/" '{"transports":[]}' >/dev/null && info "authentik: lockout alerts off — no notification hub ($HUB_SVC)" \
+            || wfail "authentik rejected turning lockout alerts off"
+        return 0
+    fi
+    want=$(hub_notify_url)
+    out=$(ak_api GET "/propertymappings/notification/?name=mediastack-hub-ops") || { wfail "authentik: its webhook mappings are unreadable: $(oneline "$out")"; return 0; }
+    mapping=$(jq -r '.results[0].pk // empty' <<<"$out")
+    [[ -n "$mapping" ]] || { wfail "authentik: the hub's message mapping is missing — the portal setup did not apply"; return 0; }
+    out=$(ak_api GET "/events/transports/?name=mediastack-hub-ops") || { wfail "authentik: its notification transports are unreadable: $(oneline "$out")"; return 0; }
+    tr=$(jq -r '.results[0].pk // empty' <<<"$out"); cur=$(jq -r '.results[0].webhook_url // empty' <<<"$out")
+    body=$(jq -cn --arg u "$want" --arg m "$mapping" '{name:"mediastack-hub-ops", mode:"webhook", webhook_url:$u, webhook_mapping_body:$m, send_once:true}')
+    if [[ -z "$tr" ]]; then
+        w_would "authentik: a Jellyfin lockout tells ops (through the hub at $(addr_of "$want"))" || return 0
+        out=$(ak_api POST /events/transports/ "$body") || { wfail "authentik rejected the hub transport: $(oneline "$out")"; return 0; }
+        tr=$(jq -r '.pk' <<<"$out")
+    elif [[ "$cur" != "$want" ]]; then
+        w_would "authentik: re-point lockout alerts to the hub at $(addr_of "$want") (was $(addr_of "$cur"))" || return 0
+        out=$(ak_api PATCH "/events/transports/$tr/" "$body") || { wfail "authentik rejected re-pointing the hub transport: $(oneline "$out")"; return 0; }
+    fi
+    out=$(ak_api GET "/events/rules/$rule/") || { wfail "authentik: the lockout-alert rule is unreadable: $(oneline "$out")"; return 0; }
+    if [[ "$(jq -c '.transports' <<<"$out")" != "[\"$tr\"]" ]]; then
+        w_would "authentik: attach the hub to the lockout-alert rule" || return 0
+        out=$(ak_api PATCH "/events/rules/$rule/" "$(jq -cn --arg t "$tr" '{transports:[$t]}')") || { wfail "authentik rejected attaching the hub: $(oneline "$out")"; return 0; }
+    fi
+    ok "authentik: a Jellyfin lockout tells ops (through the hub at $(addr_of "$want"))"
+}
 
 wire_authentik_show_password() { # a show-password button at sign-in, set once: turned off in authentik's UI, it stays off
     # (the reset and sign-up forms cannot have one: authentik's prompt fields

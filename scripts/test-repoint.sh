@@ -44,7 +44,7 @@ callers() { wire_callers "$1" | tr '\n' ' '; }
 
 # who calls whom
 eq "arr instance"  "$(callers radarr)"  "prowlarr cleanuparr seerr bazarr "; pass
-eq "apprise"       "$(callers apprise)" "apprise cleanuparr seerr "; pass
+eq "apprise"       "$(callers apprise)" "apprise authentik cleanuparr seerr "; pass
 eq "uncalled"      "$(callers kavita)"  ""; pass
 for k in "${!WIRE_CALLERS[@]}"; do
     for r in ${WIRE_CALLERS[$k]}; do
@@ -78,14 +78,14 @@ touch "$WIRED_FILE"
 repoint_mark apprise; repoint_mark radarr
 : > "$CALLS"
 wire_repoint_pending > "$T/out"
-eq "roles in wire order, once each" "$(tr '\n' ' ' < "$CALLS")" "prowlarr bazarr apprise cleanuparr seerr "; pass
+eq "roles in wire order, once each" "$(tr '\n' ' ' < "$CALLS")" "prowlarr bazarr apprise cleanuparr authentik seerr "; pass
 eq "success clears the marker" "$(state_get WIRE_REPOINT)" ""; pass
 
 repoint_mark apprise
 : > "$CALLS"
 set +e; FAIL_ROLES=cleanuparr wire_repoint_pending > "$T/out"; rc=$?; set -e
 [[ $rc == 1 ]] || fail_ "a failed role must fail the step (rc=$rc)"; pass
-eq "every role still attempted" "$(tr '\n' ' ' < "$CALLS")" "apprise cleanuparr seerr "; pass
+eq "every role still attempted" "$(tr '\n' ' ' < "$CALLS")" "apprise cleanuparr authentik seerr "; pass
 eq "failure keeps the marker for the next up" "$(state_get WIRE_REPOINT)" "apprise"; pass
 grep -q 'wire cleanuparr reported failures' "$T/out" || fail_ "the failure must name the role: $(cat "$T/out")"; pass
 

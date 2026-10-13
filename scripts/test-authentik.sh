@@ -324,7 +324,7 @@ first_start() { # first_start DRY DISCOVERED -> what wire_authentik did: "gate|n
     ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
       authentik_blueprint_status() { echo ""; }
       authentik_blueprint_discovered() { echo waited > "$T/waited"; echo "$DISC"; }
-      wire_authentik_gate() { echo gate > "$T/gated"; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }   # their own sections below
+      wire_authentik_gate() { echo gate > "$T/gated"; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_lockout_alerts() { :; }   # their own sections below
       rm -f "$T/waited" "$T/gated"; WIRE_DRY=$1 DISC=$2 WIRE_FAILS=0
       wire_authentik >/dev/null 2>&1
       echo "$(cat "$T/gated" 2>/dev/null || echo nogate) fails=$WIRE_FAILS $(cat "$T/waited" 2>/dev/null || echo nowait)" )
@@ -498,10 +498,10 @@ grep -q 'MEDIASTACK_TRAEFIK_ADDRESS: ${TRAEFIK_ADDRESS:-172.31.250.2}' "$T/worke
 # run the expression itself against scores: per person, only the Jellyfin path, floor -5
 expr=$(awk '/name: mediastack-ldap-throttle$/{f=1} f && /^        - \|$/{g=1; next} g && /^        - !Env/{exit} g{sub(/^          /, ""); print}' "$bp")
 [[ "$expr" == *'ip="%s"'* ]] || fail_ "throttle expression not found in the blueprint"; pass
-throttle_says() { # throttle_says USER 'ROWS' -> allow|refuse   (ROWS: identifier,ip,score;...)
-    python3 - "$1" "$2" "${expr//%s/172.31.250.2}" <<'PY'
+throttle_says() { # throttle_says USER 'ROWS' [RECENT] -> allow|refuse   (ROWS: identifier,ip,score;...; RECENT=1: an alert in the last 6 h)
+    python3 - "$1" "$2" "${expr//%s/172.31.250.2}" "${3:-0}" <<'PY'
 import sys, types
-user, rows, expr = sys.argv[1], sys.argv[2], sys.argv[3]
+user, rows, expr, recent = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4] == "1"
 rows = [tuple(r.split(",")) for r in rows.split(";") if r]
 class Q:
     def __init__(s, kw): s.kw = kw
@@ -513,22 +513,40 @@ class Mgr:
 mods = {"django": types.ModuleType("django"), "django.db": types.ModuleType("django.db"), "django.db.models": types.ModuleType("django.db.models"),
         "authentik": types.ModuleType("authentik"), "authentik.policies": types.ModuleType("authentik.policies"),
         "authentik.policies.reputation": types.ModuleType("authentik.policies.reputation"),
-        "authentik.policies.reputation.models": types.ModuleType("authentik.policies.reputation.models")}
+        "authentik.policies.reputation.models": types.ModuleType("authentik.policies.reputation.models"),
+        "django.utils": types.ModuleType("django.utils"), "django.utils.timezone": types.ModuleType("django.utils.timezone"),
+        "authentik.events": types.ModuleType("authentik.events"), "authentik.events.models": types.ModuleType("authentik.events.models")}
+import datetime
+mods["django.utils.timezone"].now = datetime.datetime.now
+asked = []
+class EvQ:
+    def __init__(s, kw): s.kw = kw
+    def exists(s): asked.append(s.kw); return recent
+mods["authentik.events.models"].Event = type("E", (), {"objects": types.SimpleNamespace(filter=lambda **kw: EvQ(kw))})
 mods["django.db.models"].Sum = lambda f: f
 mods["authentik.policies.reputation.models"].Reputation = type("R", (), {"objects": Mgr()})
 sys.modules.update(mods)
 req = types.SimpleNamespace(user=types.SimpleNamespace(username=user))
 logged = []
 log = types.SimpleNamespace(warning=lambda m, **kw: logged.append((m, kw)))
-env = {"request": req, "ak_logger": log}
+events = []
+env = {"request": req, "ak_logger": log, "ak_create_event": lambda a, **kw: events.append((a, kw))}
 exec("def _f():\n" + "\n".join("    " + l for l in expr.splitlines()), env)
 ok = env["_f"]()
 # a refusal names the person in the server log; a let-in logs nothing
 assert (not ok) == bool(logged), logged
 assert all("throttled" in m and kw.get("user") == user for m, kw in logged), logged
+# a refusal raises the lockout alert for that person, unless one went out in the
+# last 6 hours (it asks about this person and this action only); a let-in raises none
+if ok:
+    assert not events and not asked, (events, asked)
+else:
+    assert asked and asked[0].get("context__username") == user and asked[0].get("action__endswith") == "mediastack_jellyfin_lockout", asked
+    assert events == ([] if recent else [("mediastack_jellyfin_lockout", {"username": user})]), events
 print("allow" if ok else "refuse")
 PY
 }
+[[ "$(throttle_says milo 'milo,172.31.250.2,-5' 1)" == refuse ]] || fail_ "an alert in the last 6 hours: still refused, no second alert"; pass
 [[ "$(throttle_says milo 'milo,172.31.250.2,-5;milo,192.168.69.18,1;milo,192.168.69.103,1')" == refuse ]] \
     || fail_ "at the floor on the Jellyfin path: refused, whatever the web sign-ins (the live -5 + 1 + 1 case)"; pass
 [[ "$(throttle_says milo 'milo,172.31.250.2,-4;milo,192.168.69.18,-5')" == allow ]] || fail_ "above the floor on the Jellyfin path: let in (web failures do not count)"; pass
@@ -1244,5 +1262,32 @@ for m in authentik wizarr none; do
     got=$(svc_enabled() { case "$1" in authentik) [[ $m == authentik ]] ;; wizarr) [[ $m != none ]] ;; *) return 1 ;; esac; }; signin_model)
     [[ "$got" == "$m" ]] || fail_ "signin_model: $m expected, got $got"; pass
 done
+
+# ---- a Jellyfin lockout tells ops: the rule's transport is the hub, at its address now ----
+lk() { # lk HUB(1|0) TRANSPORT_URL('' = none) DRY -> the authentik API writes, one per line
+    ( ak_api() { echo "$1 $2 ${3:-}" >> "$T/lk-calls"
+        case "$1 $2" in
+          "GET /events/rules/?name=mediastack-jellyfin-lockout") echo '{"results":[{"pk":"R1","transports":["T9"]}]}' ;;
+          "GET /propertymappings/notification/?name=mediastack-hub-ops") echo '{"results":[{"pk":"M1"}]}' ;;
+          "GET /events/transports/?name=mediastack-hub-ops") [[ -n "$LK_URL" ]] && echo "{\"results\":[{\"pk\":\"T1\",\"webhook_url\":\"$LK_URL\"}]}" || echo '{"results":[]}' ;;
+          "POST /events/transports/") echo '{"pk":"T1"}' ;;
+          "GET /events/rules/R1/") echo '{"transports":["T9"]}' ;;
+          *) echo '{}' ;;
+        esac; }
+      hub_enabled() { (( LK_HUB )); }; svc_addr() { echo "apprise:8000"; }
+      LK_HUB=$1 LK_URL=$2 WIRE_DRY=$3; : > "$T/lk-calls"
+      wire_authentik_lockout_alerts >/dev/null 2>&1 )
+    grep -vE '^GET ' "$T/lk-calls" || true
+}
+w=$(lk 1 "" 0)
+grep -q '^POST /events/transports/ .*"webhook_url":"http://apprise:8000/notify/mediastack".*"webhook_mapping_body":"M1".*"send_once":true' <<<"$w" \
+    || fail_ "no transport yet: one is made, posting to the hub's address with the hub's message shape: $w"; pass
+grep -q '^PATCH /events/rules/R1/ {"transports":\["T1"\]}' <<<"$w" || fail_ "the rule gets the hub's transport: $w"; pass
+w=$(lk 1 "http://gluetun:8000/notify/mediastack" 0)
+grep -q '^PATCH /events/transports/T1/ .*"webhook_url":"http://apprise:8000/notify/mediastack"' <<<"$w" || fail_ "the hub moved (VPN): the transport is re-pointed: $w"; pass
+[[ -z "$(lk 1 "" 1)" ]] || fail_ "--verify writes nothing"; pass
+grep -q '^PATCH /events/rules/R1/ {"transports":\[\]}' <<<"$(lk 0 "" 0)" || fail_ "no hub: the rule's transports are emptied (no send to nowhere)"; pass
+grep -q 'hub_notify_url' services/authentik/authentik.sh && ! grep -q '/notify/mediastack' services/authentik/authentik.sh \
+    || fail_ "authentik posts to the hub through the hub interface (hub_notify_url), not a written-out address"; pass
 
 echo "OK authentik: $checks checks"
