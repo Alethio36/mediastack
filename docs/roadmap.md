@@ -131,7 +131,7 @@ validation, notifications, SSO). Before `migrate` moves the first household:
 6. Then `migrate` (below, under Project health).
 Lower priority: RAM and system requirements, measured on the rebuilt box.
 
-### Organised by service — phases 1–2 done (Oct 2026), phase 3 decided later
+### Organised by service — phases 1–2 done (Oct 2026), phase 3 under way
 One folder per service, `services/<name>/`: its fragment (`compose.yml`),
 its code (`<name>.sh`, more files by topic where it has more to say), its
 settings' schema rows (`env.tsv`), its role templates (`provides/`) and
@@ -151,9 +151,21 @@ list it joins.
    Decided against: a hook-dispatch framework (explicit lists instead), roles
    with a single provider (arr servers, the media server, the hub — a role
    when a second provider exists), and splitting `.env.example`.
-3. Later, if it pays: platform features with interchangeable providers
-   (sign-in: authentik | Wizarr | none; edge: Traefik | NPM; the VPN) out of
-   `lib/`.
+3. *Decided (Oct 2026), for modularity rather than need:* the platform
+   features with interchangeable providers (sign-in: authentik | Wizarr |
+   none; edge: Traefik | NPM; the VPN; the hub; the panel) out of `lib/` as
+   contracts, one slice at a time, least risky first: hub → panel → sign-in
+   → edge → VPN. Each slice changes no behaviour: the snapshots stay
+   identical, the live check passes, and anzac3 gets a Proxmox snapshot
+   before it lands. No `.env` or label changes during it.
+   *Harness in place (Oct 2026):* `scripts/test-snapshot.sh` (what the stack
+   generates, byte-compared for seven fixtures and the host's files),
+   `scripts/test-safety.sh` (eleven safety rules on every reviewed snapshot,
+   each proven able to fail) and `scripts/safety-live.sh` (the same rules on
+   the running box, read-only). Not yet covered: what `frontdoor-install`
+   writes beyond the panel's config, theme and wrapper (its sudoers file and
+   refresh timer live inside the installer) — the panel slice makes them
+   renderable first.
 
 Guardrails in place: a template holds data and placeholders only;
 `scripts/test-roles.sh` fails an unknown role, consumer or placeholder, a
