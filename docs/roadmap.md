@@ -236,7 +236,7 @@ is green on it: `scripts/promote.sh` waits for the checks on `unstable`'s
 tip, refuses on any red one, then fast-forwards `stable` and pushes.
 `upgrade` follows the checked-out branch.
 
-### Versions from the repo — direction agreed (Oct 2026), not scheduled
+### Versions from the repo — direction agreed (Oct 2026), after the test box's rebuild
 Today the image an install runs is whatever its upstream tag points at the
 night it updates (26 of 28 images float; on 6 Oct a Jellyfin minor and a
 PostgreSQL patch landed unattended). The direction: **git is the source of
@@ -297,6 +297,15 @@ arrive on their own, as with watchtower, but validated first.
   default, and keep it to the users it is meant for; Prowlarr indexer
   coverage; which Whisparr line to track (it has had more than one). Decide
   in the watchlist before shipping.
+- **Hardware transcoding in Jellyfin** *(tabled, Oct 2026: no GPU to test
+  on)*. Jellyfin's encoding settings are an API `wire` already uses (the
+  transcode path), so a wire step could set the hardware type (VAAPI, QSV,
+  NVENC), the device and the codecs it may decode, after detecting
+  `/dev/dri/renderD128` or an NVIDIA runtime and asking Jellyfin's bundled
+  `vainfo`. Hidden costs: the render group's ID differs per host, support
+  differs per GPU generation, and a VM needs passthrough on its host (outside
+  mediastack: detect and advise only). Default off; software stays the
+  fallback.
 - **A transcoding tool** *(to evaluate)*: re-encode media ahead of time
   (smaller files, formats every client plays, fewer live transcodes in
   Jellyfin). Candidates: HandBrake (manual, per file, web GUI), Tdarr
@@ -316,8 +325,19 @@ arrive on their own, as with watchtower, but validated first.
   both. To look into before deciding:
   * **Need:** Jellyfin's own M3U tuner may be enough for a household with
     one source; Dispatcharr earns its place with several sources, a
-    provider's connection limit, or recording. Alternatives to weigh in the
-    same pass: Threadfin, Tunarr.
+    provider's connection limit, or recording. Alternatives weighed (Oct 13
+    2026, from each repo's history): **Threadfin** — dormant, no commit since
+    Sept 2025; **TVHeadend** — the mature one (since 2007, still active, a
+    maintained Jellyfin plugin) but no tagged release since 4.2.8 (2019,
+    rolling builds since) and built around tuners and muxes, so pruning
+    thousands of IPTV channels is exactly the hard part it doesn't solve;
+    **m3u-editor** — the closest match (v0.13, since Dec 2024, ~36
+    contributors a year; adds .strm files for VOD in Jellyfin's libraries);
+    **Dispatcharr** — the most active and the most complete (v0.32, since Feb
+    2025, ~90 contributors a year, ~500 commits in 90 days). Nothing more
+    mature does the same job; Dispatcharr leads for a feature-rich setup,
+    its youth answered by pinning a version (it tags
+    releases now) and backing up its database.
   * **Fit with the house rules:** its all-in-one image bundles its database
     and cache (one shard — check whether they can be kept private to it);
     its guide and stream addresses must reach Jellyfin inside the stack
@@ -365,8 +385,10 @@ arrive on their own, as with watchtower, but validated first.
   email's look follows the branding kit below (a logo needs a public address —
   the portal is LAN-only, so a linked image would not load in Gmail either);
   the "check your inbox" page is a dead end — it wants a link back to the
-  sign-in page (authentik's footer links may carry it; check in its source
-  first).
+  sign-in page. Checked in authentik's source (Oct 2026): the page's text is
+  fixed, but every flow page renders the footer links
+  (`login/base_full.html`), so the minimal fix is one footer link back to
+  the sign-in page (low priority); a deeper look at the flow stays open.
 - **Invitations by email** — *shipped (Oct 2026)*: `invite --email <address>`
   has authentik send the sign-up link (its send endpoint, mediastack's
   template; the request names the portal so the link is the portal's, not the
@@ -393,6 +415,11 @@ arrive on their own, as with watchtower, but validated first.
   * **Media of the household's own:** pictures for the sign-in page, the
     built-in quick-start page (Next, step 5) in the same look, and a
     welcome note for new people.
+  * **Layout (Oct 2026):** the files in `custom/branding/` (logo, icon,
+    background, media), the words in `.env` beside `PORTAL_TITLE` (one
+    settings file, schema-checked, read by doctor); each service's folder
+    declares how it takes the kit, and `wire` pushes it; a `brand` helper
+    asks for the name, colour and files, checks them and applies.
   Constraints: images are checked (type, size) before any app gets them;
   every value `wire` set is re-applied only while it is still the one
   mediastack wrote (a change made in an app's own settings is left alone,
@@ -415,7 +442,11 @@ arrive on their own, as with watchtower, but validated first.
   Seerr's events could look closer to Seerr's own Discord embeds (poster,
   fields, colour per event) while still routing through the hub — check
   Apprise's Discord options against its docs first.
-- **A self-hosted endpoint for the `ops` stream** *(to discuss, Oct 2026)*.
+- **A self-hosted endpoint for the `ops` stream** *(tabled, Oct 2026 —
+  kept here so it isn't lost)*. Likely not mediastack's to host: it may
+  belong to a separate communications stack (Nextcloud, Matrix, Element),
+  with Apprise pointing at it. Note too that an endpoint on the same box
+  goes down with the alerts it should carry; Discord stays meanwhile.
   Moving Apprise outside the VPN settled where notifications leave from, not
   what they say: release names, titles and household activity sit on the
   notification service either way. An endpoint the household hosts (ntfy,
