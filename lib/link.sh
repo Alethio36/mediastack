@@ -46,7 +46,7 @@ cmd_link_account() {
     load_env; render
     local who="${1:-}" enc out pu email portal names jtok ktok atok jf kv ab
     [[ -n "$who" ]] || die "usage: link-account <portal-user>"
-    svc_enabled authentik || die "link-account ties local accounts to portal accounts — the portal (authentik) is not enabled"
+    signin_is authentik || die "link-account ties local accounts to portal accounts — the portal (authentik) is not enabled"
     [[ -t 0 ]] || die "link-account is interactive — run it at a terminal."
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
     enc=$(jq -rn --arg u "$who" '$u|@uri')
@@ -56,7 +56,7 @@ cmd_link_account() {
     email=$(jq -r '.email // ""' <<<"$pu")
     portal=$(ak_api GET "/core/users/?type=internal&page_size=500") || die "authentik refused the user list: $(oneline "$portal")"
     names=$(jq -c '[.results[].username]' <<<"$portal")
-    out=$(ak_api GET "/core/users/?groups_by_name=admins&page_size=500") || die "authentik refused the admins lookup"
+    out=$(signin_admins) || die "authentik refused the admins lookup"
     LINK_ADMINS=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
 
     hr "link-account: which accounts are $who's"

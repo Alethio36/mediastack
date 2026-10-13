@@ -82,7 +82,7 @@ jf_admin_sync() { # directory users in authentik's `admins` are Jellyfin adminis
     # (the plugin sets this only when it creates a user). Local accounts — the
     # stack's own admin above all — are never touched.
     local tok="$1" out admins users u name id pol want
-    out=$(ak_api GET "/core/users/?groups_by_name=admins&page_size=500") || { wfail "authentik: admins unreadable — Jellyfin admin rights not synced"; return 1; }
+    out=$(signin_admins) || { wfail "authentik: admins unreadable — Jellyfin admin rights not synced"; return 1; }
     admins=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
     users=$(jf_api GET /Users "$tok") || { wfail "could not list jellyfin users [HTTP $(jf_code)]"; return 1; }
     while IFS= read -r u; do
@@ -100,7 +100,7 @@ jf_admin_sync() { # directory users in authentik's `admins` are Jellyfin adminis
 
 jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admin rights follow `admins`
     local tok="$1"
-    svc_enabled authentik || return 0
+    signin_is authentik || return 0
     [[ -n "$(env_get AUTHENTIK_LDAP_TOKEN)" ]] || { info "the portal's LDAP outpost has no token yet — run 'wire authentik' first, then 'wire jellyfin'"; return 0; }
     jf_plugins_ensure "$tok" "LDAP Authentication|$JF_LDAP_GUID|portal accounts sign in to Jellyfin" || return 1
     (( WIRE_DRY )) && ! jf_api GET "/Plugins/$JF_LDAP_GUID/Configuration" "$tok" >/dev/null && return 0   # not installed yet: nothing to compare

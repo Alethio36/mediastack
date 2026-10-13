@@ -146,7 +146,7 @@ http:
       rule: "Host(\`$(env_get TRAEFIK_DASH_HOST dash).$domain\`)"
       entryPoints: [websecure]
       service: api@internal
-      middlewares: [$(svc_enabled authentik && echo mediastack-gate || echo dash-auth)]
+      middlewares: [$(signin_is authentik && echo mediastack-gate || echo dash-auth)]
       tls:
         certResolver: le
         domains:
@@ -206,7 +206,7 @@ traefik_gate_middleware() { # mediastack-gate: what a router with mediastack.aut
           X-authentik-uid: ""
           X-authentik-jwt: ""
 STRIP
-    if svc_enabled authentik; then
+    if signin_is authentik; then
         # authentik's built-in outpost decides (services/authentik/authentik.sh attaches the gate to it)
         cat <<'GATE'
     mediastack-gate:
@@ -294,7 +294,7 @@ restarts traefik, and the new environment reissues automatically."
     case "$REPLY_VAL" in production|staging) env_set ACME_ENV "$REPLY_VAL" ;; *) die "Expected 'production' or 'staging'." ;; esac
     traefik_gen
     # Jellyfin's LDAP checks the certificate only with production ones: follow the switch
-    if svc_enabled authentik && svc_enabled jellyfin; then cmd_wire jellyfin; fi
+    if signin_is authentik && svc_enabled jellyfin; then cmd_wire jellyfin; fi
 }
 
 cmd_traefik_setup() {

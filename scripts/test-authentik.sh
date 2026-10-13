@@ -133,7 +133,7 @@ pg='2026-10-08 03:09:53.702 PDT [1] LOG:  database system is ready to accept con
 RENDERED_JSON=$saved
 
 # ---- secrets ----
-s=$(authentik_secret 60)
+s=$(gen_secret 60)
 [[ ${#s} == 60 && "$s" =~ ^[A-Za-z0-9]+$ ]] || fail_ "a secret: 60 letters and digits, got '$s'"; pass
 ENV_FILE=$T/env; printf 'AUTHENTIK_DB_PASSWORD=keepme\n' > "$ENV_FILE"
 authentik_has_db() { return 1; }
@@ -370,7 +370,7 @@ TRUSTED=1; out=$(arr_login sonarr)
 [[ "$out" == *'match=no'*'"authenticationMethod":"external"'* ]] || fail_ "trusted: switch to external: $out"; pass
 TRUSTED=;  [[ "$(arr_login sonarr)" == "FORMS sonarr" ]] || fail_ "not trusted: its own forms login"; pass
 # Traefik's dashboard: behind the gate with the portal, its own password without
-AK_ON=1; grep -q 'middlewares: \[$(svc_enabled authentik && echo mediastack-gate || echo dash-auth)\]' lib/edge.sh \
+AK_ON=1; grep -q 'middlewares: \[$(signin_is authentik && echo mediastack-gate || echo dash-auth)\]' lib/edge.sh \
     || fail_ "the dashboard router chooses the gate or its password by account model"; pass
 
 # disabling the portal: every arr's own login is verified BEFORE the profile
@@ -1226,5 +1226,21 @@ grep -q 'wire_authentik_show_password' <(awk '/^wire_authentik\(\)/,/^}/' servic
   esac; }
   out=$(authentik_recovery_doctor); [[ "$out" == *'FAIL authentik: "Forgot password?" shows, but email'* ]] || fail_ "doctor: a link without working email: $out" ) || exit 1; pass
 grep -q 'authentik_recovery_doctor' services/authentik/authentik.sh || fail_ "doctor checks the reset link"; pass
+
+# ---- the account model is asked once (signin_model), the admins list read once (signin_admins) ----
+# Outside the providers' folders nothing asks "is authentik/wizarr enabled?"
+# but signin_model itself, and authentik's own upkeep (its release record, the
+# blueprint-change notice) — those are about the service, not who signs in.
+leak=$(grep -rnE 'svc_enabled (authentik|wizarr)' mediastack.sh lib services --include=*.sh \
+        | grep -vE '^services/(authentik|wizarr)/' \
+        | grep -vE '^lib/access\.sh:[0-9]+:\s+(el)?if svc_enabled (authentik|wizarr); then echo (authentik|wizarr)$' \
+        | grep -vE '^mediastack\.sh:[0-9]+:.*authentik_release_record|^lib/lifecycle\.sh:[0-9]+:.*services/authentik/\(blueprints' || true)
+[[ -z "$leak" ]] || fail_ "the account model asked by a service's name (use signin_is): $leak"; pass
+copies=$(grep -rn 'groups_by_name=admins' mediastack.sh lib services --include=*.sh | grep -vc '^services/authentik/' || true)
+[[ "$copies" == 0 ]] || fail_ "the admins lookup is copied outside signin_admins ($copies)"; pass
+for m in authentik wizarr none; do
+    got=$(svc_enabled() { case "$1" in authentik) [[ $m == authentik ]] ;; wizarr) [[ $m != none ]] ;; *) return 1 ;; esac; }; signin_model)
+    [[ "$got" == "$m" ]] || fail_ "signin_model: $m expected, got $got"; pass
+done
 
 echo "OK authentik: $checks checks"

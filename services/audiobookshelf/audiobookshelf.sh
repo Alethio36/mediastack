@@ -90,7 +90,7 @@ abs_root_unlink() { # the root account is the stack's, never a portal identity �
         w_would "audiobookshelf: unlink the root account from the portal identity it was matched to, and rotate its password (ends every root session)" || continue
         abs_api PATCH "/api/users/$id/openid-unlink" "$tok" >/dev/null \
             || { wfail "audiobookshelf refused to unlink its root account from the portal — unlink it in its UI (Users → root)"; return 1; }
-        if abs_root_rotate "$(authentik_secret 24)"; then
+        if abs_root_rotate "$(gen_secret 24)"; then
             wfail "audiobookshelf: its root account had been linked to a portal sign-in (a username match) — unlinked, and its password rotated: every root session has ended (a page already open keeps working up to an hour). Someone may have signed in as root: check authentik's events for logins to Audiobookshelf"
         else
             wfail "audiobookshelf: its root account had been linked to a portal sign-in — unlinked, but its password was NOT rotated, so anyone signed in as root stays signed in: ./mediastack.sh set-credentials audiobookshelf"
@@ -101,7 +101,7 @@ abs_root_unlink() { # the root account is the stack's, never a portal identity �
 
 abs_admin_sync() { # portal-linked accounts follow `admins`; the root account (the stack's) is never touched
     local tok="$1" out admins u want
-    out=$(ak_api GET "/core/users/?groups_by_name=admins&page_size=500") || { wfail "authentik: admins unreadable — Audiobookshelf rights not synced"; return 1; }
+    out=$(signin_admins) || { wfail "authentik: admins unreadable — Audiobookshelf rights not synced"; return 1; }
     admins=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
     out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 1; }
     while IFS= read -r u; do
@@ -128,7 +128,7 @@ wire_audiobookshelf() {
     if [[ "$(jq -r '.isInit' <<<"$st")" != true ]]; then
         w_would "create Audiobookshelf's root account — the stack's own (see: credentials)" || return 0
         [[ -n "$user" ]] || user=mediastack
-        [[ -n "$pass" ]] || pass=$(authentik_secret 24)
+        [[ -n "$pass" ]] || pass=$(gen_secret 24)
         abs_api POST /init "" "$(jq -cn --arg u "$user" --arg p "$pass" '{newRoot:{username:$u, password:$p}}')" >/dev/null \
             || { wfail "audiobookshelf refused its first-run setup"; return 1; }
         env_set ABS_ADMIN_USER "$user"; env_set ABS_ADMIN_PASSWORD "$pass"
@@ -144,7 +144,7 @@ wire_audiobookshelf() {
     tok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
     [[ -n "$tok" ]] || { wfail "audiobookshelf login returned no token"; return 1; }
     ok "audiobookshelf: root login works"
-    svc_enabled authentik || return 0
+    signin_is authentik || return 0
     abs_oidc "$tok" || return 1
     abs_root_unlink "$tok"
     abs_admin_sync "$tok"

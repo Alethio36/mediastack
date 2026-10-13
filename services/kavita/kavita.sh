@@ -108,7 +108,7 @@ kav_email_move() { # kav_email_move OLD NEW — the Kavita account signed in by 
 
 kav_admin_sync() { # portal accounts follow `admins`; the stack's admin and local accounts are never touched
     local tok="$1" out admins u body want has back
-    out=$(ak_api GET "/core/users/?groups_by_name=admins&page_size=500") || { wfail "authentik: admins unreadable — Kavita rights not synced"; return 1; }
+    out=$(signin_admins) || { wfail "authentik: admins unreadable — Kavita rights not synced"; return 1; }
     admins=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
     # people made through the portal have no confirmed email (authentik cannot
     # vouch for one yet): Kavita lists them only with includePending
@@ -137,7 +137,7 @@ kav_admin_email_check() { # the stack's admin must carry an email nobody can sig
     out=$(kav_api GET "/api/users?includePending=true" "$tok") || return 0   # admin sync reports the same read
     email=$(jq -r --arg u "$(env_get KAVITA_ADMIN_USER)" '.[] | select((.username | ascii_downcase) == ($u | ascii_downcase)) | .email // ""' <<<"$out")
     [[ "$email" == *.invalid ]] && return 0
-    warn "kavita: the stack's admin has the email '$email' — Kavita signs a portal user in as whichever account has their email, so anyone who signs up with it becomes this admin. Change it in Kavita (as this admin: Settings → Account) to one nobody else has, e.g. $(env_get KAVITA_ADMIN_USER mediastack)@$(authentik_secret 12 | tr '[:upper:]' '[:lower:]').invalid"
+    warn "kavita: the stack's admin has the email '$email' — Kavita signs a portal user in as whichever account has their email, so anyone who signs up with it becomes this admin. Change it in Kavita (as this admin: Settings → Account) to one nobody else has, e.g. $(env_get KAVITA_ADMIN_USER mediastack)@$(gen_secret 12 | tr '[:upper:]' '[:lower:]').invalid"
 }
 
 wire_kavita() {
@@ -151,9 +151,9 @@ wire_kavita() {
     if [[ "$exists" != true ]]; then
         w_would "create Kavita's admin — the stack's own (see: credentials)" || return 0
         [[ -n "$user" ]] || user=mediastack
-        [[ -n "$pass" ]] || pass=$(authentik_secret 24)
+        [[ -n "$pass" ]] || pass=$(gen_secret 24)
         # never the username (its default): Kavita matches a portal sign-in by email
-        email=$(env_get KAVITA_ADMIN_EMAIL); [[ -n "$email" ]] || email="$user@$(authentik_secret 12 | tr '[:upper:]' '[:lower:]').invalid"
+        email=$(env_get KAVITA_ADMIN_EMAIL); [[ -n "$email" ]] || email="$user@$(gen_secret 12 | tr '[:upper:]' '[:lower:]').invalid"
         out=$(kav_api POST /api/account/register "" "$(jq -cn --arg u "$user" --arg p "$pass" --arg e "$email" '{username:$u, password:$p, email:$e}')") \
             || { wfail "kavita refused its first-run setup: $(oneline "$out")"; return 1; }
         env_set KAVITA_ADMIN_USER "$user"; env_set KAVITA_ADMIN_PASSWORD "$pass"; env_set KAVITA_ADMIN_EMAIL "$email"
@@ -169,7 +169,7 @@ wire_kavita() {
     tok=$(jq -r '.token // empty' <<<"$out")
     [[ -n "$tok" ]] || { wfail "kavita login returned no token"; return 1; }
     ok "kavita: admin login works"
-    svc_enabled authentik || return 0
+    signin_is authentik || return 0
     kav_admin_email_check "$tok"
     kav_oidc "$tok" || return 1
     kav_admin_sync "$tok"
@@ -196,7 +196,7 @@ kavita_doctor() { # claimed; with the portal, who among its people lacks a libra
     ex=$(kav_api GET /api/admin/exists "" 2>/dev/null) || { warn "kavita first-run state unreadable — API may still be warming up"; return 0; }
     [[ "$ex" == true ]] || { d_fail "kavita has no admin yet" "an unclaimed Kavita lets any visitor create the admin account" "./mediastack.sh wire kavita"; return 0; }
     ok "kavita has its admin"
-    svc_enabled authentik && [[ -n "$(env_get KAVITA_ADMIN_PASSWORD)" ]] || return 0
+    signin_is authentik && [[ -n "$(env_get KAVITA_ADMIN_PASSWORD)" ]] || return 0
     out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
         || { d_fail "kavita rejects the stored admin login" "wire and doctor cannot manage it" "./mediastack.sh credentials  # then check the admin in Kavita"; return 0; }
     tok=$(jq -r '.token // empty' <<<"$out")

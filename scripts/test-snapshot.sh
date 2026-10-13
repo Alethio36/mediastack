@@ -110,7 +110,7 @@ snap_case() { # snap_case CASE OUT — one fixture through the up order, outputs
         normalize < "$croot/traefik/traefik.yml" > "$out/traefik/traefik.yml"
         for f in "$croot"/traefik/dynamic/*.yml; do normalize < "$f" > "$out/traefik/dynamic/${f##*/}"; done
     fi
-    if svc_enabled authentik; then
+    if signin_is authentik; then
         mkdir -p "$out/authentik-templates"
         for f in services/authentik/templates/*; do
             authentik_template_render "$f" "$(env_get PORTAL_TITLE Mediastack)" > "$out/authentik-templates/${f##*/}"

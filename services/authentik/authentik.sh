@@ -18,15 +18,14 @@
 AUTHENTIK_RELEASES=(2026.2 2026.5 2026.8)
 AUTHENTIK_MARK=.mediastack-release
 
-authentik_secret() { # authentik_secret N -> N letters and digits from /dev/urandom
-    local s=""
-    while (( ${#s} < $1 )); do s+=$(head -c 64 /dev/urandom | base64 -w0 | tr -dc 'A-Za-z0-9'); done
-    echo "${s:0:$1}"
-}
 
 authentik_dir() { echo "$(env_get CONFIG_ROOT)/authentik"; }
 
 authentik_has_db() { sudo test -e "$(authentik_dir)/db/pgdata/PG_VERSION"; }
+
+signin_admins() { # -> the portal's admins group members (authentik's user-list JSON); rc != 0 when unreadable
+    ak_api GET "/core/users/?groups_by_name=admins&page_size=500"
+}
 
 authentik_secrets() { # generate what is missing — never over a database that already exists
     local k n made=0
@@ -38,13 +37,13 @@ authentik_secrets() { # generate what is missing — never over a database that 
         authentik_has_db && die "authentik's database exists but $k is missing from .env.
   Put it back from a .env backup (local/env-backups/) or a restore point's env file;
   a new value cannot open the existing database."
-        env_set "$k" "$(authentik_secret "$n")"; made=1
+        env_set "$k" "$(gen_secret "$n")"; made=1
     done
     # the LDAP search account's password: the blueprint sets it on every apply,
     # so a new one is simply adopted — no database guard needed
     local k2
     for k2 in AUTHENTIK_LDAP_BIND_PASSWORD AUTHENTIK_ABS_CLIENT_SECRET AUTHENTIK_KAVITA_CLIENT_SECRET; do
-        [[ -n "$(env_get "$k2")" ]] || { env_set "$k2" "$(authentik_secret 48)"; made=1; }
+        [[ -n "$(env_get "$k2")" ]] || { env_set "$k2" "$(gen_secret 48)"; made=1; }
     done
     (( made )) && ok "authentik: secrets generated (the admin login: ./mediastack.sh credentials)"
     return 0

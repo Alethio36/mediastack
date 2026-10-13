@@ -70,6 +70,12 @@ repo_owned() { # repo_owned <path>... — what the script makes in the repo belo
     chown "$(stat -c '%u:%g' "$SCRIPT_DIR")" "$@"
 }
 
+gen_secret() { # gen_secret N -> N letters and digits from /dev/urandom
+    local s=""
+    while (( ${#s} < $1 )); do s+=$(head -c 64 /dev/urandom | base64 -w0 | tr -dc 'A-Za-z0-9'); done
+    echo "${s:0:$1}"
+}
+
 env_get() { # env_get VAR [default]
     local line
     line=$(grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 || true)

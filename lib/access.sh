@@ -1,11 +1,19 @@
 #!/usr/bin/env bash
 # lib/access.sh — who can get in: the logins the stack created or stores
 # (`credentials`), rotating one everywhere it lives (`set-credentials`), and
-# household invitations (`invite`, via Wizarr). Each target's rotation is
+# household invitations (`invite`). The account model — which provider signs
+# people in — is asked here once (signin_model), never by a service's name. Each target's rotation is
 # sc_rotate_<target> in its service's folder (services/<name>/*.sh); this file
 # keeps the verbs, their order and their words. Sourced by the entrypoint;
 # relies on lib/common.sh, the entrypoint's helpers and the services' own
 # API helpers at call time.
+
+signin_model() { # -> authentik | wizarr | none: who signs people in (the installer allows one; the portal wins if both)
+    if svc_enabled authentik; then echo authentik
+    elif svc_enabled wizarr; then echo wizarr
+    else echo none; fi
+}
+signin_is() { [[ "$(signin_model)" == "$1" ]]; }   # signin_is MODEL
 
 cmd_credentials() {
     load_env
@@ -24,19 +32,19 @@ cmd_credentials() {
     printf '%-22s %s\n' "Traefik dash password" "$(env_get TRAEFIK_DASH_PASSWORD '(traefik not configured)')"
     printf '%-22s %s\n' "Jellyfin admin user"   "$(env_get JELLYFIN_ADMIN_USER '(not set — run wire)')"
     printf '%-22s %s\n' "Jellyfin admin password" "$(env_get JELLYFIN_ADMIN_PASSWORD '(not set — run wire)')"
-    svc_enabled authentik && info "With the portal, that Jellyfin admin is the stack's own local account (and the emergency login) — people sign in with their portal accounts; admins get Jellyfin administrator rights from the portal's 'admins' group."
+    signin_is authentik && info "With the portal, that Jellyfin admin is the stack's own local account (and the emergency login) — people sign in with their portal accounts; admins get Jellyfin administrator rights from the portal's 'admins' group."
     printf '%-22s %s\n' "Jellyfin API key"      "$(env_get JELLYFIN_API_KEY '(not set — run wire jellyfin)')"
     if svc_enabled audiobookshelf; then
         printf '%-22s %s\n' "Audiobookshelf root"   "$(env_get ABS_ADMIN_USER '(not set — run wire audiobookshelf)')"
         printf '%-22s %s\n' "Audiobookshelf root pw" "$(env_get ABS_ADMIN_PASSWORD '(not set — run wire audiobookshelf)')"
-        svc_enabled authentik && printf '%-22s %s\n' "Audiobookshelf root at" "$(svc_url audiobookshelf)/audiobookshelf/login?autoLaunch=0   (its login page otherwise goes straight to the portal)"
+        signin_is authentik && printf '%-22s %s\n' "Audiobookshelf root at" "$(svc_url audiobookshelf)/audiobookshelf/login?autoLaunch=0   (its login page otherwise goes straight to the portal)"
     fi
     if svc_enabled kavita; then
         printf '%-22s %s\n' "Kavita admin"          "$(env_get KAVITA_ADMIN_USER '(not set — run wire kavita)')"
         printf '%-22s %s\n' "Kavita admin pw"       "$(env_get KAVITA_ADMIN_PASSWORD '(not set — run wire kavita)')"
-        svc_enabled authentik && printf '%-22s %s\n' "Kavita admin at" "$(svc_url kavita)/login?skipAutoLogin=true   (its login page otherwise goes straight to the portal)"
+        signin_is authentik && printf '%-22s %s\n' "Kavita admin at" "$(svc_url kavita)/login?skipAutoLogin=true   (its login page otherwise goes straight to the portal)"
     fi
-    if svc_enabled authentik; then
+    if signin_is authentik; then
         printf '%-22s %s\n' "Portal admin user"     "akadmin"
         printf '%-22s %s\n' "Portal admin password" "$(env_get AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"
     fi
@@ -62,7 +70,7 @@ credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assist
     [[ -n "$rows" ]] || return 0
     hr "API keys (companion apps)"
     printf '%s' "$rows"
-    if svc_enabled authentik; then
+    if signin_is authentik; then
         info "Give an app the https address and the key: behind the portal the /api path skips its login, the key still guards it."
     fi
 }
@@ -186,7 +194,7 @@ rest), and Wizarr's admin account — rotate that in Wizarr's UI
         sc_rotate_audiobookshelf "$pass"
         sc_rotate_kavita "$pass"
         warn "Wizarr's admin password is NOT rotated by this — change it in Wizarr's UI."
-        svc_enabled authentik && info "the portal's admin keeps its own password: ./mediastack.sh set-credentials portal"
+        signin_is authentik && info "the portal's admin keeps its own password: ./mediastack.sh set-credentials portal"
         ok "one password now covers arr + qbit + deluge/transmission (if set up) + jellyfin + pihole + traefik + audiobookshelf + kavita — view: ./mediastack.sh credentials"
         ;;
     esac
@@ -196,8 +204,8 @@ cmd_reset_password() { # someone locked out: their login throttle cleared, a sin
     load_env; render
     local user="${1:-}"
     [[ -n "$user" ]] || die "usage: reset-password <username>"
-    if ! svc_enabled authentik; then
-        svc_enabled wizarr && die "With Wizarr, accounts are Jellyfin's own: reset it in Jellyfin's dashboard (Administration → Users → $user → Password)."
+    if ! signin_is authentik; then
+        signin_is wizarr && die "With Wizarr, accounts are Jellyfin's own: reset it in Jellyfin's dashboard (Administration → Users → $user → Password)."
         die "Neither account model is enabled — there are no accounts to reset."
     fi
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
@@ -206,7 +214,7 @@ cmd_reset_password() { # someone locked out: their login throttle cleared, a sin
 
 cmd_users() { # the portal's people, as authentik has them
     load_env; render
-    svc_enabled authentik || die "the portal (authentik) is not enabled — with Wizarr, people are Jellyfin's own (its dashboard → Users)"
+    signin_is authentik || die "the portal (authentik) is not enabled — with Wizarr, people are Jellyfin's own (its dashboard → Users)"
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
     local out
     out=$(ak_api GET "/core/users/?page_size=1000") || die "authentik refused the user list: $(oneline "$out")"
@@ -224,14 +232,14 @@ cmd_set_email() { # an admin changes a person's portal email; Kavita follows; a 
     local yes=0 args=()
     while (( $# )); do case "$1" in --yes) yes=1; shift ;; -*) die "Unknown set-email arg '$1'" ;; *) args+=("$1"); shift ;; esac; done
     (( ${#args[@]} == 2 )) || die "usage: set-email <user> <address> [--yes]"
-    svc_enabled authentik || die "set-email is for the portal (authentik); it is not enabled."
+    signin_is authentik || die "set-email is for the portal (authentik); it is not enabled."
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
     authentik_set_email "${args[0]}" "${args[1]}" "$yes"
 }
 
 cmd_invite() { # mint an invitation (authentik's or Wizarr's, whichever runs) and print the ready-to-share URL
     load_env; render
-    if svc_enabled authentik; then
+    if signin_is authentik; then
         local days=7 to=""   # single use, a week: an unused link stops working on its own
         local usage="usage: invite [--expires 1|7|30] [--email ADDRESS]   (default: 7 days)"
         while [[ $# -gt 0 ]]; do case "$1" in
@@ -251,7 +259,7 @@ cmd_invite() { # mint an invitation (authentik's or Wizarr's, whichever runs) an
         --email) die "sending the invitation by email needs the portal (authentik) — with Wizarr, share the printed link yourself" ;;
         *) die "usage: invite [--expires 1|7|30]   (no flag = never expires)" ;;
     esac; done
-    svc_enabled wizarr || die "Neither account model is enabled — invitations come from authentik or Wizarr: ./mediastack.sh enable authentik   (or: enable wizarr)"
+    signin_is wizarr || die "Neither account model is enabled — invitations come from authentik or Wizarr: ./mediastack.sh enable authentik   (or: enable wizarr)"
     [[ "$(c_state "$(svc_cname wizarr)")" == running ]] || die "wizarr is not running: ./mediastack.sh up"
     key=$(env_get WIZARR_API_KEY)
     [[ -n "$key" ]] || die "No wizarr API key stored yet — run: ./mediastack.sh wire wizarr"
