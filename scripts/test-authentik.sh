@@ -518,9 +518,15 @@ mods["django.db.models"].Sum = lambda f: f
 mods["authentik.policies.reputation.models"].Reputation = type("R", (), {"objects": Mgr()})
 sys.modules.update(mods)
 req = types.SimpleNamespace(user=types.SimpleNamespace(username=user))
-env = {"request": req, "ak_message": lambda m: None}
+logged = []
+log = types.SimpleNamespace(warning=lambda m, **kw: logged.append((m, kw)))
+env = {"request": req, "ak_logger": log}
 exec("def _f():\n" + "\n".join("    " + l for l in expr.splitlines()), env)
-print("allow" if env["_f"]() else "refuse")
+ok = env["_f"]()
+# a refusal names the person in the server log; a let-in logs nothing
+assert (not ok) == bool(logged), logged
+assert all("throttled" in m and kw.get("user") == user for m, kw in logged), logged
+print("allow" if ok else "refuse")
 PY
 }
 [[ "$(throttle_says milo 'milo,172.31.250.2,-5;milo,192.168.69.18,1;milo,192.168.69.103,1')" == refuse ]] \
@@ -528,6 +534,7 @@ PY
 [[ "$(throttle_says milo 'milo,172.31.250.2,-4;milo,192.168.69.18,-5')" == allow ]] || fail_ "above the floor on the Jellyfin path: let in (web failures do not count)"; pass
 [[ "$(throttle_says milo 'jo,172.31.250.2,-5')" == allow ]] || fail_ "another person's failures never lock this one out"; pass
 [[ "$(throttle_says milo '')" == allow ]] || fail_ "no score at all: let in"; pass
+! grep -q 'ak_message' <<<"$expr" || fail_ "throttle: no ak_message — on a stage binding it is shown nowhere (found live); the server log tells the admin"; pass
 sed -n '/stage: !KeyOf stage-ldap-login/,/^  - /p' "$bp" | grep -q 're_evaluate_policies: true' || fail_ "the login step re-checks once the user is known"; pass
 [[ "$(grep -c 'target: !KeyOf app-ldap' "$bp")" == 3 ]] || fail_ "binds: media-users, admins, the search account — nobody else"; pass
 

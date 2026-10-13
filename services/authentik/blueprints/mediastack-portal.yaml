@@ -422,6 +422,11 @@ entries:
   # policy sums every address, and a person's web sign-ins lifted the sum past
   # the floor, letting every guess through (found live: -5 + 1 + 1). And
   # per person, so one person's typos never lock out another.
+  # A refusal is told to the admin in authentik's server log: the outpost
+  # answers Jellyfin "invalid credentials" and logs only "Access denied for
+  # user", with no reason, and a message from a policy on a stage binding is
+  # shown nowhere (the stage is just skipped; both found live). The policy runs only after the password stage passed, so
+  # the line means the right password was refused.
   - model: authentik_policies_expression.expressionpolicy
     id: policy-ldap-throttle
     identifiers:
@@ -433,7 +438,7 @@ entries:
           from authentik.policies.reputation.models import Reputation
           score = Reputation.objects.filter(identifier=request.user.username, ip="%s").aggregate(total=Sum("score"))["total"] or 0
           if score <= -5:
-              ak_message("Too many wrong passwords. Wait a while, or reset it from the portal's sign-in page.")
+              ak_logger.warning("mediastack: Jellyfin sign-in throttled - right password, too many wrong ones before it; clears after a day or with reset-password", user=request.user.username)
               return False
           return True
         - !Env [MEDIASTACK_TRAEFIK_ADDRESS, "172.31.250.2"]

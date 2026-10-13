@@ -623,7 +623,9 @@ keeps its session, so playback is not slowed. About five wrong passwords in
 Jellyfin lock that person out of Jellyfin's sign-in for a day; a password reset
 clears it at once (**Forgot password?** on the portal's sign-in page, or
 `./mediastack.sh reset-password <username>`). Wrong passwords on the portal's
-own page do not count toward it.
+own page do not count toward it. Jellyfin refuses a locked-out person exactly
+as it refuses a wrong password, even when they typed the right one; authentik's
+log names each such refusal (`./mediastack.sh logs authentik --no-follow | grep throttled`).
 
 Audiobookshelf signs people in through the portal (OIDC): its login page goes
 straight to the portal (the app shows a "Log in with <portal name>" button);
