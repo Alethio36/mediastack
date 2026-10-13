@@ -1,13 +1,15 @@
 # Deployment state — never tracked. `git status` stays clean on a healthy
 # deployment so `git pull` always fast-forwards.
 .env
+# the folders are the repo root's alone (a leading /): unanchored, a name
+# like config/ would also hide a future services/<x>/config/ from git
 /custom/
-config/
-cache/
-data/
-transcodes/
-backups/
-local/
+/config/
+/cache/
+/data/
+/transcodes/
+/backups/
+/local/
 # where an install before schema 28 kept them — moved on upgrade; ignored
 # until then, so the upgrade that moves them never sees them as untracked
 .env.bak.*

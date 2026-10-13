@@ -9,6 +9,8 @@
 #     patch a drop-in); a drop-in may not redefine a shipped service or
 #     another drop-in's, must define services, and a docker-compose.override.yml
 #     back at the root is refused with where it belongs
+#   * .gitignore hides the deployment folders at the repo root only, never a
+#     same-named folder inside the code
 #
 #   scripts/test-layout.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -119,5 +121,15 @@ for f in vpn_gen vpn_reattach_guard vpnguard_ensure cmd_leak_test cmd_vpn cmd_vp
     grep -qE "^$f\(\)" services/gluetun/vpn.sh || fail_ "the VPN lacks $f (services/gluetun/vpn.sh)"; pass
 done
 [[ ! -e lib/vpn.sh ]] || fail_ "lib/vpn.sh is back"; pass
+
+# the deployment folders are ignored at the repo root only: unanchored, the
+# custom/ rule once hid a snapshot case from CI, and these names would hide a
+# service's own config/ or data/ the same way
+for n in custom config cache data transcodes backups local; do
+    git check-ignore -q --no-index "$n/x" || fail_ "$n/ at the repo root is not ignored"; pass
+    for d in services/probe lib scripts/fixtures/snapshot/probe/expected docs; do
+        ! git check-ignore -q --no-index "$d/$n/x" || fail_ ".gitignore hides $d/$n/ — anchor the rule to the root (/$n/)"; pass
+    done
+done
 
 echo "OK layout: $checks checks"
