@@ -106,9 +106,13 @@ if (( portal )); then
         if svc_bound_local "$s"; then pass "$s: published on 127.0.0.1 only"
         else flunk "$s: its port is published beyond 127.0.0.1"; fi
         [[ -n "$lanip" ]] || continue
-        hp=$(env_get "$(uvar "$s")_PORT" "$(svc_cport "$s")")
-        if curl -s --max-time 3 -o /dev/null "http://$lanip:$hp/" 2>/dev/null; then flunk "$s: $lanip:$hp answered — open to the LAN"
-        else pass "$s: $lanip:$hp refuses"; fi
+        # the host port as Docker bound it (a setting's name varies: PIHOLE_WEB_PORT)
+        hps=$(sudo docker port "$(svc_cname "$(svc_host "$s")")" "$(svc_cport "$s")/tcp" 2>/dev/null | sed 's/.*://' | sort -u || true)
+        [[ -n "$hps" ]] || { pass "$s: no host port published"; continue; }
+        for hp in $hps; do
+            if curl -s --max-time 3 -o /dev/null "http://$lanip:$hp/" 2>/dev/null; then flunk "$s: $lanip:$hp answered — open to the LAN"
+            else pass "$s: $lanip:$hp refuses"; fi
+        done
     done
 else
     note "no portal: gated tools keep their own logins and LAN ports — skipped"
