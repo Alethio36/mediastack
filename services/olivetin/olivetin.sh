@@ -38,6 +38,10 @@ authJwtCertsUrl: http://$(svc_addr authentik)/application/o/mediastack-admin-too
 authJwtAud: mediastack-gate
 authJwtClaimUsername: preferred_username
 authJwtClaimUserGroup: groups
+# OliveTin joins the groups claim into one line and splits it again to match:
+# split on spaces, a group named "Jellyfin admins" would count as admins.
+# The unit separator never appears in a group's name.
+authHttpHeaderUserGroupSep: "\u001f"
 EOF
 }
 

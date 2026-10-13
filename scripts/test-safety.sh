@@ -19,7 +19,8 @@
 #   acme       the certificate server is staging exactly when ACME_ENV says so
 #   paneljwt   the panel trusts no unsigned name header, ever; with the portal
 #              it signs in only with the gate's token — authentik's signature,
-#              checked against the gate's keys, and the gate's audience
+#              checked against the gate's keys, and the gate's audience; a
+#              group's name is never split on its spaces
 #   secrets    a secret's value appears in an app's environment only — never in
 #              a label, a command, Traefik's files or the panel's
 # and once on what the host gets (_host/expected/):
@@ -126,6 +127,7 @@ rule_paneljwt() {
         grep -qx 'authJwtHeader: X-authentik-jwt' "$f" || echo "with the portal, the panel does not read the gate's token"
         grep -qx 'authJwtAud: mediastack-gate' "$f" || echo "the panel accepts tokens for any audience (Kavita's and Audiobookshelf's providers share the key)"
         grep -qE '^authJwtCertsUrl: http://[^ ]+/application/o/mediastack-admin-tools/jwks/$' "$f" || echo "the panel does not check tokens against the gate's published keys"
+        grep -qxF 'authHttpHeaderUserGroupSep: "\u001f"' "$f" || echo "the panel splits the groups claim on spaces — a group named 'x admins' would count as admins"
     else
         ! grep -q '^authJwt' "$f" || echo "without the portal, the panel expects a token nobody sends"
     fi
