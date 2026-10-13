@@ -836,7 +836,7 @@ cmd_update() {
     fi
     hr "Pulling images"
     info "pulling from registries — the slowest step on a full update; a minute or two is normal"
-    local changed=() line synced=0
+    local changed=() line
     local -A before=() before_d=()
     image_store_init   # here, not in svc_digest's $( ): once for every target
     for s in "${targets[@]}"; do before[$s]=$(c_version "$(svc_cname "$s")"); before_d[$s]=$(svc_digest "$s"); done
@@ -919,7 +919,7 @@ cmd_update() {
     # deployment, verify the wiring and report drift — the apps are healthy,
     # so this warns and names the fix rather than failing the update, and it
     # never applies anything unattended. A child process: wire exits on its own.
-    UPDATE_WIRING=""
+    UPDATE_WIRING="" UPDATE_SYNC=""
     if (( ${#changed[@]} )) && [[ -f "$WIRED_FILE" ]]; then
         hr "Wiring after the update"
         update_verify_wiring
@@ -930,20 +930,25 @@ cmd_update() {
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
         recyclarr_pin_notice
         echo
-        cmd_trash_sync || { fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"
-                            notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded."$'\n'"Inspect: \`./mediastack.sh trash-sync\`" failure
-                            exit 1; }
-        synced=1
+        if cmd_trash_sync; then UPDATE_SYNC="done"
+        else
+            fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"
+            notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded."$'\n'"Inspect: \`./mediastack.sh trash-sync\`" failure
+            UPDATE_SYNC=FAILED
+        fi
     fi
 
-    # one summary for ops, last: what changed, and how the steps after it went
-    # (drift or a failed verify also sent their own message, with the fix)
-    if (( ${#changed[@]} )); then
-        local summary; summary=$(printf '`%s`\n' "${changed[@]}")
-        [[ -n "$UPDATE_WIRING" ]] && summary+=$'\n'"Wiring: $UPDATE_WIRING"
-        (( synced )) && summary+=$'\n'"TRaSH sync: done"
-        notify ops "Mediastack updated" "$summary" success
-    fi
+    # ops still hears what changed when trash-sync failed; the run fails after it
+    if (( ${#changed[@]} )); then update_summary "${changed[@]}"; fi
+    [[ "$UPDATE_SYNC" != FAILED ]] || exit 1
+}
+
+update_summary() { # update_summary CHANGED... — ops' one "updated" message, last: what changed, how verify and trash-sync went
+    # (drift, a failed verify or a failed sync also sent their own message, with the fix)
+    local summary; summary=$(printf '`%s`\n' "$@")
+    if [[ -n "$UPDATE_WIRING" ]]; then summary+=$'\n'"Wiring: $UPDATE_WIRING"; fi
+    if [[ -n "$UPDATE_SYNC" ]]; then summary+=$'\n'"TRaSH sync: $UPDATE_SYNC"; fi
+    notify ops "Mediastack updated" "$summary" success
 }
 
 update_verify_wiring() { # wire --verify after a version change: drift warns, a verify that cannot run fails loud; the update goes on

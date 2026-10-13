@@ -310,11 +310,17 @@ done
 # household hears "complete" as soon as its services are back
 upd=$(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh)
 n_users=$(grep -n 'notify_interruption "$ntitle complete"' <<<"$upd" | cut -d: -f1)
-n_sync=$(grep -n 'cmd_trash_sync ||' <<<"$upd" | cut -d: -f1)
-n_ops=$(grep -n 'notify ops "Mediastack updated"' <<<"$upd" | cut -d: -f1)
-[[ -n "$n_users" && -n "$n_sync" && -n "$n_ops" ]] && (( n_users < n_sync && n_sync < n_ops )) \
-    || fail_ "the household's 'complete' comes before trash-sync, ops' 'updated' after it ($n_users/$n_sync/$n_ops)"; pass
-[[ $(grep -c 'notify ops "Mediastack updated"' <<<"$upd") == 1 ]] || fail_ "one 'updated' summary, not two"; pass
+n_sync=$(grep -n 'if cmd_trash_sync; then' <<<"$upd" | cut -d: -f1 || true)
+n_ops=$(grep -n 'update_summary "${changed\[@\]}"' <<<"$upd" | cut -d: -f1 || true)
+n_exit=$(grep -n '"$UPDATE_SYNC" != FAILED' <<<"$upd" | cut -d: -f1 || true)
+[[ -n "$n_users" && -n "$n_sync" && -n "$n_ops" && -n "$n_exit" ]] && (( n_users < n_sync && n_sync < n_ops && n_ops < n_exit )) \
+    || fail_ "household 'complete' before trash-sync, ops' 'updated' after it, a failed sync fails the run last ($n_users/$n_sync/$n_ops/$n_exit)"; pass
+[[ $(grep -c 'notify ops "Mediastack updated"' lib/backup.sh) == 1 ]] || fail_ "one 'updated' summary, not two"; pass
+# a failed trash-sync still tells ops what changed (it once exited before the summary)
+sumr() { ( UPDATE_WIRING=$1 UPDATE_SYNC=$2; notify() { printf 'NOTIFY %s|%s|%s' "$2" "$3" "$4"; }; update_summary radarr:6.1 sonarr:5.0 ); }
+out=$(sumr "kept every setting" FAILED)
+[[ "$out" == "NOTIFY Mediastack updated|"*'`radarr:6.1`'*'`sonarr:5.0`'*"Wiring: kept every setting"*"TRaSH sync: FAILED|success" ]] || fail_ "failed sync: $out"; pass
+out=$(sumr "" ""); [[ "$out" != *Wiring* && "$out" != *TRaSH* ]] || fail_ "no verify, no sync: no lines for them: $out"; pass
 # after every stack start Prowlarr re-tests its indexers once FlareSolverr is
 # healthy: a cold FlareSolverr failed its first requests and the arrs reported
 # "all indexers unavailable" nightly (found live)
