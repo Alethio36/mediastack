@@ -701,10 +701,11 @@ all built; what each still leaves open is noted below.
   nobody noticed for three nights. An `OnFailure=` unit on each timer's
   service posting the unit, exit code and the journal's last lines to
   `ops` — it fires however the run ended, the ERR trap's line included.
-- **`upgrade` takes the maintenance lock** *(Oct 2026)*. A `git pull` landed
-  mid-update: one nightly run mixed old and new code. `upgrade` should wait
-  for (or refuse during) a running update, backup or wire, as they refuse
-  each other.
+- **`upgrade` takes the maintenance lock** — *shipped (Oct 2026)*. A `git
+  pull` landed mid-update: one nightly run mixed old and new code. `upgrade`
+  now refuses at once while an update, backup or wire holds the lock, and
+  holds it across its hand-over to the pulled script (pinned by
+  scripts/test-upgrade.sh).
 - **A `--dry-run` smoke test in CI.** The rest of the suite is in place: each
   `scripts/test-*.sh` / `check-*.sh` states in its header what it pins, and the
   lint workflow runs them all.

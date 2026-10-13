@@ -52,7 +52,9 @@ set +e; (compose_pending >/dev/null 2>&1); rc=$?; set -e
 (( rc != 0 )) || fail_ "a failed dry run must fail loud, never read as 'nothing to apply'"; pass
 DC_FAILS=0
 
-# ---- the hand-over
+# ---- the hand-over (exec is stubbed below, and maint_lock uses exec: the lock
+# counts as held here; the lock's own check runs in a subshell with the real exec)
+MAINT_LOCKED=1
 unset -f DC
 REV=(); LOG=$T/log
 # rev-parse runs inside $(...) — a subshell — so its position lives in a file
@@ -76,6 +78,23 @@ cmd_upgrade >/dev/null
 upgrade_finish() { echo "finish $1" >> "$LOG"; }
 MS_UPGRADE_FROM=aaa111 cmd_upgrade
 eq "the second half finishes, never pulls" "$(paste -sd'|' "$LOG")" "finish aaa111"; pass
+
+# ---- the maintenance lock: held by an update/backup/wire elsewhere -> upgrade
+# refuses before pulling (a pull once landed mid-update)
+(
+    unset -f exec
+    # shellcheck disable=SC2034  # read by maint_lock
+    MAINT_LOCKED=0
+    MAINT_LOCK=$T/maint.lock; : > "$LOG"
+    ( flock 9; sleep 5 ) 9>"$MAINT_LOCK" & holder=$!
+    sleep 0.3
+    out=$( (cmd_upgrade) 2>&1 ) && { kill "$holder"; fail_ "upgrade must refuse while the maintenance lock is held"; }
+    kill "$holder" 2>/dev/null || true
+    [[ "$out" == *"upgrade refused"* ]] || fail_ "the refusal must say what was refused: $out"
+    ! grep -q pull "$LOG" || fail_ "upgrade pulled while the lock was held"
+); pass
+grep -q 'MS_UPGRADE_FROM="$before" MAINT_LOCKED=1 exec' lib/lifecycle.sh \
+    || fail_ "the hand-over must tell the pulled script it already holds the lock"; pass
 
 # ---- the verdicts (re-source for the real upgrade_finish)
 # shellcheck disable=SC1090

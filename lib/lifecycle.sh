@@ -69,6 +69,10 @@ cmd_upgrade() {
   Mediastack keeps your state in .env and custom/, so tracked files
   should be clean. Review 'git status', stash or move changes into
   custom/ (docs/adding-a-service.md), then retry."
+    # never mid-update, -backup or -wire: a pull landing inside a running update
+    # once mixed old and new code in one run. Held across the hand-over (fd 8
+    # survives exec), so the pulled script finishes inside the same hold.
+    maint_lock upgrade 0
     local before; before=$(git rev-parse HEAD)
     git pull --ff-only || die "git pull failed (diverged history?). Resolve manually."
     [[ "$before" == "$(git rev-parse HEAD)" ]] && { ok "Already up to date."; return; }
@@ -76,7 +80,7 @@ cmd_upgrade() {
     # Hand over: this process is still the code from before the pull, so it
     # knows neither the new migrations nor what the new definitions mean.
     # The pulled script finishes the job.
-    MS_UPGRADE_FROM="$before" exec "$SCRIPT_DIR/mediastack.sh" upgrade
+    MS_UPGRADE_FROM="$before" MAINT_LOCKED=1 exec "$SCRIPT_DIR/mediastack.sh" upgrade
 }
 
 upgrade_finish() { # upgrade_finish <commit before the pull> — run by the pulled script
