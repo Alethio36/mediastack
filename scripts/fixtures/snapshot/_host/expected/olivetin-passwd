@@ -1,0 +1,2 @@
+root:x:0:0:root:/root:/bin/sh
+olivetin:x:990:991:olivetin:/config:/bin/sh

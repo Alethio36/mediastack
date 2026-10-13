@@ -165,7 +165,9 @@ list it joins.
    the running box, read-only). Not yet covered: what `frontdoor-install`
    writes beyond the panel's config, theme and wrapper (its sudoers file and
    refresh timer live inside the installer) — the panel slice makes them
-   renderable first.
+   renderable first. *Done (Oct 2026):* all six are renderers
+   (`_fd_*_render`, byte-identical to what the installer wrote), in the host
+   snapshot, and held by a `panel` safety rule.
    *Hub — done (Oct 2026):* everything that speaks Apprise's HTTP API is
    behind the hub interface (`hub_*`, `services/apprise/hub.sh`: send, what an
    answer means, the stored configuration, "is it set up"); `lib/notify.sh`

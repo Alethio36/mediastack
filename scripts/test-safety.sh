@@ -19,6 +19,11 @@
 #   acme       the certificate server is staging exactly when ACME_ENV says so
 #   secrets    a secret's value appears in an app's environment only — never in
 #              a label, a command, Traefik's files or the panel's
+# and once on what the host gets (_host/expected/):
+#   panel      sudoers lets the panel user run exactly mediastack.sh as root and
+#              nothing else; its key is pinned to the forced-command wrapper
+#              with no pty and no forwarding; the host key is labelled only for
+#              the name the container uses
 #
 # Each rule is also run against a copy broken on purpose (--self-test, also
 # run by default), so a rule that can no longer fail is caught too.
@@ -27,6 +32,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 fixtures=scripts/fixtures/snapshot
 RULES=(vpn torrent edge gated strip trust dashboard ldap socket acme secrets)
+HOST_RULES=(panel)
 
 # ---- helpers: D is a case folder (env.set + expected/) ----
 cj()       { echo "$1/expected/compose.json"; }
@@ -118,6 +124,20 @@ rule_secrets() {
     return 0
 }
 
+rule_panel() { # D is the _host folder here
+    local e=$1/expected sud keys
+    sud=$(grep -v '^#' "$e/frontdoor-sudoers" | grep -v '^[[:space:]]*$' || true)
+    [[ "$sud" == 'olivetin ALL=(root) NOPASSWD: @REPO@/mediastack.sh' ]] \
+        || echo "sudoers grants more than mediastack.sh to olivetin: $(tr '\n' '|' <<<"$sud")"
+    keys=$(grep -c . "$e/olivetin-authorized_keys" || true)
+    [[ "$keys" == 1 ]] || echo "authorized_keys holds $keys lines (want exactly the one pinned key)"
+    grep -qE '^command="/usr/local/bin/olivetin-frontdoor",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ssh-' "$e/olivetin-authorized_keys" \
+        || echo "the panel's key is not pinned to the wrapper with no pty and no forwarding"
+    awk '$1 != "host.docker.internal" { bad = 1 } END { exit !bad }' "$e/olivetin-known_hosts" \
+        && echo "known_hosts trusts a name other than host.docker.internal"
+    return 0
+}
+
 # ---- every rule on every case ----
 fails=0 checks=0
 for d in "$fixtures"/*/env.set; do
@@ -128,6 +148,12 @@ for d in "$fixtures"/*/env.set; do
         checks=$((checks + 1))
         [[ -z "$out" ]] || { sed "s|^|FAIL ${d##*/} [$r] |" <<<"$out" >&2; fails=$((fails + 1)); }
     done
+done
+
+for r in "${HOST_RULES[@]}"; do
+    out=$("rule_$r" "$fixtures/_host" 2>&1) || { echo "FAIL _host [$r] the rule itself failed: $out" >&2; fails=$((fails + 1)); continue; }
+    checks=$((checks + 1))
+    [[ -z "$out" ]] || { sed "s|^|FAIL _host [$r] |" <<<"$out" >&2; fails=$((fails + 1)); }
 done
 
 # ---- self-test: each rule must fail on a copy broken for it ----
@@ -158,5 +184,14 @@ for r in "${RULES[@]}"; do
     [[ -n "$out" ]] || { echo "FAIL self-test [$r]: the rule passed a copy broken for it — it can no longer fail" >&2; fails=$((fails + 1)); }
 done
 
+for broken_host in 's|NOPASSWD: @REPO@/mediastack.sh|NOPASSWD: ALL|:frontdoor-sudoers' \
+                   's|,no-pty||:olivetin-authorized_keys' \
+                   's|^host.docker.internal|anzac3|:olivetin-known_hosts'; do
+    h=$tmp/host-${broken_host##*:}; mkdir -p "$h"; cp -r "$fixtures/_host/expected" "$h/"
+    sed -i "${broken_host%:*}" "$h/expected/${broken_host##*:}"
+    out=$(rule_panel "$h" 2>&1); checks=$((checks + 1))
+    [[ -n "$out" ]] || { echo "FAIL self-test [panel] passed a copy with ${broken_host##*:} broken — it can no longer fail" >&2; fails=$((fails + 1)); }
+done
+
 (( ! fails )) || { echo "test-safety: $fails failure(s)" >&2; exit 1; }
-echo "OK safety: $checks checks (${#RULES[@]} rules x $(find "$fixtures" -mindepth 1 -maxdepth 1 -type d ! -name _host | wc -l) cases, each rule proven able to fail)"
+echo "OK safety: $checks checks (${#RULES[@]} rules x $(find "$fixtures" -mindepth 1 -maxdepth 1 -type d ! -name _host | wc -l) cases + ${#HOST_RULES[@]} on the host's files, each rule proven able to fail)"

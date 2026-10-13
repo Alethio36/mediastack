@@ -1,0 +1,2 @@
+# Managed by mediastack.sh frontdoor-install. Do not edit.
+olivetin ALL=(root) NOPASSWD: @REPO@/mediastack.sh

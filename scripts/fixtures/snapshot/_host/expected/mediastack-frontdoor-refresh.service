@@ -1,0 +1,7 @@
+[Unit]
+Description=Mediastack OliveTin entity-list refresh
+After=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/mediastack.sh frontdoor-refresh

@@ -344,6 +344,45 @@ fieldset.ms-status .display {
 THEME_CSS
 }
 
+# ---- what frontdoor-install writes, as pure renderers (same inputs, same bytes;
+# scripts/test-snapshot.sh pins each, scripts/test-safety.sh holds their rules) ----
+_fd_sudoers_render() { # _fd_sudoers_render SCRIPT -> the sudoers file: the panel user may sudo only SCRIPT
+    printf '# Managed by mediastack.sh frontdoor-install. Do not edit.\n%s ALL=(root) NOPASSWD: %s\n' \
+        "$FRONTDOOR_USER" "$1"
+}
+_fd_authkeys_render() { # _fd_authkeys_render WRAPPER PUBKEY -> the one authorized_keys line: forced command, nothing else
+    printf 'command="%s",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding %s\n' "$1" "$2"
+}
+_fd_known_hosts_render() { # stdin: the host's ed25519 .pub -> known_hosts, labelled for the name the container uses
+    awk '{print "host.docker.internal", $1, $2}'
+}
+_fd_passwd_render() { # _fd_passwd_render UID GID -> the container's minimal passwd (its uid resolvable)
+    printf 'root:x:0:0:root:/root:/bin/sh\n%s:x:%s:%s:olivetin:/config:/bin/sh\n' "$FRONTDOOR_USER" "$1" "$2"
+}
+_fd_refresh_service_render() {
+    cat <<EOF
+[Unit]
+Description=Mediastack OliveTin entity-list refresh
+After=docker.service
+[Service]
+Type=oneshot
+WorkingDirectory=$SCRIPT_DIR
+ExecStart=$SCRIPT_DIR/mediastack.sh frontdoor-refresh
+EOF
+}
+_fd_refresh_timer_render() {
+    cat <<EOF
+[Unit]
+Description=Refresh OliveTin entity lists
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+[Install]
+WantedBy=timers.target
+EOF
+}
+
 cmd_frontdoor_install() {
     load_env
     need_cmd argon2; need_cmd openssl; need_cmd ssh-keygen
@@ -395,8 +434,7 @@ cmd_frontdoor_install() {
     #    wrapper (step 5) is what bounds WHICH verbs; sudoers bounds WHICH binary.
     #    Validated with visudo -c before install so a typo can't wedge sudo.
     local stmp; stmp=$(mktemp)
-    printf '# Managed by mediastack.sh frontdoor-install. Do not edit.\n%s ALL=(root) NOPASSWD: %s\n' \
-        "$FRONTDOOR_USER" "$script" > "$stmp"
+    _fd_sudoers_render "$script" > "$stmp"
     sudo visudo -cf "$stmp" >/dev/null || { rm -f "$stmp"; die "sudoers validation failed — not installed."; }
     sudo install -m 0440 -o root -g root "$stmp" "$FRONTDOOR_SUDOERS"; rm -f "$stmp"
     ok "sudoers installed: $FRONTDOOR_USER may sudo only $script"
@@ -419,8 +457,7 @@ cmd_frontdoor_install() {
     local akdir="$ot_home/.ssh" pub
     pub=$(sudo cat "$keydir/id_ed25519.pub")
     sudo mkdir -p "$akdir"
-    printf 'command="%s",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding %s\n' \
-        "$FRONTDOOR_WRAPPER" "$pub" | sudo tee "$akdir/authorized_keys" >/dev/null
+    _fd_authkeys_render "$FRONTDOOR_WRAPPER" "$pub" | sudo tee "$akdir/authorized_keys" >/dev/null
     sudo chown -R "$FRONTDOOR_USER:$FRONTDOOR_USER" "$akdir"
     sudo chmod 700 "$akdir"; sudo chmod 600 "$akdir/authorized_keys"
     ok "authorized_keys pinned (forced command, no pty, no forwarding)"
@@ -431,7 +468,7 @@ cmd_frontdoor_install() {
     local hostpub=/etc/ssh/ssh_host_ed25519_key.pub
     sudo test -f "$hostpub" || die "host ed25519 key $hostpub not found — is openssh-server installed?"
     # authoritative source; ssh-keyscan can capture the banner line instead of the key
-    sudo awk '{print "host.docker.internal", $1, $2}' "$hostpub" | sudo tee "$keydir/known_hosts" >/dev/null
+    sudo cat "$hostpub" | _fd_known_hosts_render | sudo tee "$keydir/known_hosts" >/dev/null
     ok "pinned host key for host.docker.internal (from $hostpub)"
 
     # 7. Panel admin password. Reuse the existing hash on re-runs (so config-only
@@ -481,8 +518,7 @@ cmd_frontdoor_install() {
 
     # Minimal passwd so the container ssh client can resolve its own uid
     # (it runs as OLIVETIN_UID:GID, which is absent from the image passwd).
-    printf 'root:x:0:0:root:/root:/bin/sh\n%s:x:%s:%s:olivetin:/config:/bin/sh\n' \
-        "$FRONTDOOR_USER" "$ot_uid" "$ot_gid" | sudo tee "$otdir/passwd" >/dev/null
+    _fd_passwd_render "$ot_uid" "$ot_gid" | sudo tee "$otdir/passwd" >/dev/null
     sudo chmod 644 "$otdir/passwd"
     ok "wrote $otdir/passwd (uid $ot_uid resolvable in-container)"
 
@@ -505,25 +541,8 @@ cmd_frontdoor_install() {
 
     # Host-side entity-refresh timer: fills the dropdowns from the host, every
     # 5 min and on boot. No userless OliveTin action, no container write needed.
-    sudo tee "$SYSTEMD_DIR/mediastack-frontdoor-refresh.service" >/dev/null <<EOF
-[Unit]
-Description=Mediastack OliveTin entity-list refresh
-After=docker.service
-[Service]
-Type=oneshot
-WorkingDirectory=$SCRIPT_DIR
-ExecStart=$SCRIPT_DIR/mediastack.sh frontdoor-refresh
-EOF
-    sudo tee "$SYSTEMD_DIR/mediastack-frontdoor-refresh.timer" >/dev/null <<EOF
-[Unit]
-Description=Refresh OliveTin entity lists
-[Timer]
-OnBootSec=2min
-OnUnitActiveSec=5min
-Persistent=true
-[Install]
-WantedBy=timers.target
-EOF
+    _fd_refresh_service_render | sudo tee "$SYSTEMD_DIR/mediastack-frontdoor-refresh.service" >/dev/null
+    _fd_refresh_timer_render   | sudo tee "$SYSTEMD_DIR/mediastack-frontdoor-refresh.timer" >/dev/null
     sudo systemctl daemon-reload
     sudo systemctl enable --now mediastack-frontdoor-refresh.timer >/dev/null 2>&1 || true
     ok "entity-refresh timer installed (every 5 min)"

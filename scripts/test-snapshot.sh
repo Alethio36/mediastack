@@ -20,8 +20,10 @@
 #   traefik/                 the static and dynamic config, your proxy.d routes
 #   authentik-templates/     the email templates with the portal's name in them
 #   compose.json             the render, cut to what mediastack owns (below)
-# and once for the host (_host/expected/): the panel's OliveTin config (its
-# password hash replaced), theme and wrapper, and the VPN boot-guard unit.
+# and once for the host (_host/expected/): what frontdoor-install writes — the
+# panel's OliveTin config (its password hash replaced), theme, wrapper,
+# sudoers file, forced-command key line, known_hosts, container passwd and
+# refresh units (keys and ids are fixture values) — and the VPN boot-guard unit.
 #
 # compose.json keeps the fields mediastack writes — image, names, profiles,
 # networks, ports, volumes, depends_on, dns_search, labels, environment, user,
@@ -123,6 +125,12 @@ snap_host() { # snap_host OUT — what the panel and the VPN guard install, from
     { _fd_otcfg_head; printf "      password: '%s'\n" '@ARGON2ID-HASH@'; _fd_otcfg_tail; } | normalize > "$out/olivetin-config.yaml"
     _fd_theme_css | normalize > "$out/olivetin-theme.css"
     _fd_wrapper_render "$SCRIPT_DIR/mediastack.sh" | normalize > "$out/olivetin-frontdoor"
+    _fd_sudoers_render "$SCRIPT_DIR/mediastack.sh" | normalize > "$out/frontdoor-sudoers"
+    _fd_authkeys_render "$FRONTDOOR_WRAPPER" 'ssh-ed25519 @PANEL-PUBKEY@ olivetin-frontdoor' > "$out/olivetin-authorized_keys"
+    echo 'ssh-ed25519 @HOST-PUBKEY@ root@host' | _fd_known_hosts_render > "$out/olivetin-known_hosts"
+    _fd_passwd_render 990 991 > "$out/olivetin-passwd"
+    _fd_refresh_service_render | normalize > "$out/mediastack-frontdoor-refresh.service"
+    _fd_refresh_timer_render > "$out/mediastack-frontdoor-refresh.timer"
     VPNGUARD_UNIT=$work/vpnguard.service
     rm -f "$VPNGUARD_UNIT"; vpnguard_ensure
     normalize < "$VPNGUARD_UNIT" > "$out/mediastack-vpnguard.service"

@@ -1,0 +1,1 @@
+command="/usr/local/bin/olivetin-frontdoor",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ssh-ed25519 @PANEL-PUBKEY@ olivetin-frontdoor

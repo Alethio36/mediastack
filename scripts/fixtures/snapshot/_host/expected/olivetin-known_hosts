@@ -1,0 +1,1 @@
+host.docker.internal ssh-ed25519 @HOST-PUBKEY@
