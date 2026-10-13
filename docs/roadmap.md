@@ -652,24 +652,19 @@ all built; what each still leaves open is noted below.
   the hub's message. The transport is wire's (`wire_authentik_lockout_alerts`,
   via `hub_notify_url`): it follows the hub's VPN move, and without a hub the
   rule sends nothing.
-- **The panel signs people in through the portal** *(decided Oct 2026; after
-  phase 3)*. Today the panel sits behind the gate and then asks for OliveTin's
-  own admin login — two sign-ins. Decided: a **signed JWT**, not the trusted
-  header. OliveTin cannot restrict which address may send a name header (unlike
-  Navidrome's trusted sources), and every container on the stack network
-  reaches it directly: a forged name there runs stack commands as root. The
-  gate's `X-authentik-jwt`, verified against its provider's JWKS, cannot be
-  forged without authentik's key. Needs: a signing key on the gate's proxy
-  provider (it has none; the OIDC providers use authentik's self-signed key),
-  the gate passing `X-authentik-jwt` (the strip middleware already removes it
-  everywhere else), and OliveTin's JWT settings (header, JWKS URL, username and
-  groups claims onto the `admins` list) only while the portal runs — the local
-  admin stays, the only login in Wizarr and no-portal installs. Hidden cost:
-  OliveTin's config is written by `frontdoor-install`, and its auth settings
-  load only at start, so changing the account model must re-render the config
-  and restart it. To check live: a list-valued `groups` claim, and the JWKS
-  URL for a forward-auth provider. Proof: one sign-in reaches the panel, and a
-  forged token sent from another container lands on the login page.
+- **The panel signs people in through the portal** — *shipped (Oct 2026)*.
+  One sign-in: the gate passes `X-authentik-jwt`, and OliveTin (while the
+  portal runs) verifies it against the gate's published keys
+  (`/application/o/mediastack-admin-tools/jwks/`: the gate provider now signs
+  with authentik's key) and accepts only the gate's audience (a fixed
+  `client_id: mediastack-gate` — Kavita's and Audiobookshelf's providers
+  share the key); its `groups` claim meets the `admins` list. Not the trusted
+  header: OliveTin cannot restrict who sends one, and every container on the
+  stack network reaches it. The local admin stays — the only login without
+  the portal. `frontdoor-install` writes it and restarts the panel when its
+  config changed (auth settings load at start); `wire authentik` says when
+  the installed panel does not sign in through the portal yet. Held by the
+  `paneljwt` safety rule.
 - **LDAP bind cache** — *closed (Oct 12 2026): `bind_mode: direct`*. The
   outpost's cached binds answered a remembered username + password without
   running authentik's sign-in, so they bypassed the Jellyfin throttle: with

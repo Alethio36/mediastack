@@ -9,6 +9,8 @@
 #                                   admin password's argon2id hash
 #   panel_theme_render              its theme (custom-webui/themes/mediastack)
 #   panel_passwd_render UID GID     the container's minimal passwd
+#   panel_signin_check              wire authentik's word on whether the installed
+#                                   config signs in through the portal yet
 #
 # A second panel app defines the same names. Sourced by the entrypoint (under
 # the front-door audit, like every services/*/*.sh); relies on lib/frontdoor.sh
@@ -19,7 +21,32 @@
 FD_SSH='ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal'
 
 panel_config_render() { # panel_config_render HASH -> config.yaml; the hash is concatenated, never shell-expanded
-    _fd_otcfg_head; printf "      password: '%s'\n" "$1"; _fd_otcfg_tail
+    _fd_otcfg_head; printf "      password: '%s'\n" "$1"; _fd_otcfg_tail; panel_jwt_render
+}
+
+panel_jwt_render() { # while the portal runs: sign in with the token the gate passes on
+    signin_is authentik || return 0
+    cat <<EOF
+
+# Signed in through the portal: the gate passes a token authentik signed —
+# verified against the gate's published keys, and accepted only with the
+# gate's audience (not Kavita's or Audiobookshelf's, which share the key).
+# Its groups decide (admins: the list above). The local admin above stays:
+# without the portal it is the only way in. Takes effect at OliveTin's start.
+authJwtHeader: X-authentik-jwt
+authJwtCertsUrl: http://$(svc_addr authentik)/application/o/mediastack-admin-tools/jwks/
+authJwtAud: mediastack-gate
+authJwtClaimUsername: preferred_username
+authJwtClaimUserGroup: groups
+EOF
+}
+
+panel_signin_check() { # the installed config signs in through the portal, or says how to make it
+    svc_enabled olivetin || return 0
+    local cfg; cfg="$(env_get CONFIG_ROOT)/olivetin/config.yaml"
+    sudo test -f "$cfg" || return 0   # the panel is not installed
+    if sudo grep -q '^authJwtHeader: X-authentik-jwt$' "$cfg"; then ok "authentik: the panel signs in through the portal"
+    else warn "authentik: the panel still asks for its own login after the portal — to sign in through it: ./mediastack.sh frontdoor-install"; fi
 }
 
 _fd_otcfg_head() {

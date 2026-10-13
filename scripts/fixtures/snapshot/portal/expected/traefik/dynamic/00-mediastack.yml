@@ -37,6 +37,7 @@ http:
           - X-authentik-email
           - X-authentik-name
           - X-authentik-uid
+          - X-authentik-jwt
 tcp:
   middlewares:
     # the LDAP route answers the stack network only — never the LAN

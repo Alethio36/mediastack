@@ -325,8 +325,9 @@ cmd_frontdoor_install() {
     # 8. Write the OliveTin config. Static parts via literal heredocs; the hash is
     #    concatenated between them so its $-laden text is never shell-expanded.
     sudo mkdir -p "$otdir" "$ent"
-    local ctmp; ctmp=$(mktemp)
+    local ctmp cfg_changed=0; ctmp=$(mktemp)
     panel_config_render "$hash" > "$ctmp"
+    sudo cmp -s "$ctmp" "$otdir/config.yaml" 2>/dev/null || cfg_changed=1
     sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$otdir/config.yaml"; rm -f "$ctmp"
     ok "wrote $otdir/config.yaml"
 
@@ -385,6 +386,12 @@ cmd_frontdoor_install() {
         || sudo grep -q '^command=' "$akdir/authorized_keys" \
         || die "post-check FAILED: authorized_keys is not forced-command pinned."
     ok "both narrowings verified (forced-command key + narrow sudoers)"
+
+    # the panel's sign-in settings load only at its start (OliveTin: "requires restart")
+    if (( cfg_changed )) && [[ "$(c_state "$(svc_cname olivetin)")" == running ]]; then
+        sudo docker restart "$(svc_cname olivetin)" >/dev/null && ok "restarted the panel: its new settings load at start" \
+            || warn "the panel's new settings need a restart: sudo docker restart $(svc_cname olivetin)"
+    fi
 
     echo
     hr "Front door ready"

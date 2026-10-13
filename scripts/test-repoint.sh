@@ -51,8 +51,12 @@ for k in "${!WIRE_CALLERS[@]}"; do
         [[ " ${WIRE_ROLES[*]} " == *" $r "* ]] || fail_ "WIRE_CALLERS[$k] names '$r', which is not a wire role"
     done
 done; pass
-# static coverage: every service wire writes an address for is in the table
+# static coverage: every service wire writes an address for is in the table —
+# unless its own fragment cannot toggle the VPN (no mediastack.vpntoggle: its
+# address never moves, e.g. authentik for the panel's token keys); a service
+# without a fragment of its own is still held to the table
 while read -r t; do
+    [[ -f "services/$t/compose.yml" ]] && ! grep -q 'mediastack.vpntoggle: "true"' "services/$t/compose.yml" && continue
     [[ -n "${WIRE_CALLERS[$t]:-}" ]] || fail_ "wire writes an address for '$t' but WIRE_CALLERS has no entry — a toggle would not re-point its callers"
 done < <(grep -hoE 'svc_(addr|host|cport) [a-z][a-z0-9-]*' lib/wire.sh lib/addr.sh services/*/*.sh | awk '{print $2}' | sort -u); pass
 

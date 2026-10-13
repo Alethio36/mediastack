@@ -536,6 +536,7 @@ wire_authentik() {
     wire_authentik_show_password
     wire_authentik_lockout_alerts
     wire_authentik_gate
+    panel_signin_check
 }
 
 wire_authentik_identity() { # people cannot change their own email or username: apps find their account by them

@@ -387,6 +387,12 @@ entries:
       name: mediastack-gate
     attrs:
       mode: forward_domain
+      # the token the gate passes on (X-authentik-jwt) is signed with this key,
+      # published at /application/o/mediastack-admin-tools/jwks/; the fixed
+      # client id is its audience, so the panel accepts the gate's tokens only
+      # (Kavita's and Audiobookshelf's providers share the key)
+      client_id: mediastack-gate
+      signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
       external_host: !Env [MEDIASTACK_PORTAL_URL, ""]
       cookie_domain: !Env [MEDIASTACK_DOMAIN, ""]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]

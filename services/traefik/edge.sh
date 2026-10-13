@@ -221,6 +221,7 @@ STRIP
           - X-authentik-email
           - X-authentik-name
           - X-authentik-uid
+          - X-authentik-jwt
 GATE
     else
         # no portal (Wizarr mode): the route stays as it was — an accepted risk,
