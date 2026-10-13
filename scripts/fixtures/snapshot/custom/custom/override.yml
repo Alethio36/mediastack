@@ -1,0 +1,5 @@
+# a patch to a shipped service
+services:
+  jellyfin:
+    environment:
+      FIXTURE_OVERRIDE: "applied"

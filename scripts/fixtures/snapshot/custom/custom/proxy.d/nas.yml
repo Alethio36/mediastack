@@ -1,0 +1,13 @@
+# a Traefik route of your own, to something outside the stack
+http:
+  routers:
+    nas:
+      rule: "Host(`nas.media.example.com`)"
+      entrypoints: [websecure]
+      tls: {}
+      service: nas
+  services:
+    nas:
+      loadBalancer:
+        servers:
+          - url: "http://192.0.2.10:5000"

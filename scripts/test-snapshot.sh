@@ -155,6 +155,13 @@ compare() { # compare NAME GOT EXPECTED -> 0 identical; prints the diff
     return 1
 }
 
+# a case git does not track is a case CI never runs (a .gitignore rule once hid
+# the custom case: CI ran six of seven, silently) — fail it here instead
+for c in "${cases[@]}" _host; do
+    git -C "$repo" ls-files --error-unmatch "scripts/fixtures/snapshot/$c" >/dev/null 2>&1 \
+        || { echo "ERROR case $c is not tracked by git — CI would never run it (git add it; check .gitignore)" >&2; exit 1; }
+done
+
 failed=0 n=0
 names=("${cases[@]}")
 (( full )) && names+=(_host)

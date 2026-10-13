@@ -1,7 +1,7 @@
 # Deployment state — never tracked. `git status` stays clean on a healthy
 # deployment so `git pull` always fast-forwards.
 .env
-custom/
+/custom/
 config/
 cache/
 data/

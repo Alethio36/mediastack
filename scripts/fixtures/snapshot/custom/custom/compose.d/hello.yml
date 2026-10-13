@@ -1,0 +1,15 @@
+# a service of your own, the way new-service scaffolds it
+services:
+  hello:
+    image: nginx:alpine
+    container_name: mediastack-hello
+    profiles: ["hello"]
+    labels:
+      mediastack.managed: "true"
+      mediastack.port: "8081"
+      mediastack.desc: "snapshot fixture: a drop-in service"
+      mediastack.vpn: "false"
+      mediastack.vpntoggle: "true"
+      mediastack.subdomain: "hello"
+      mediastack.auth: "open"
+    restart: unless-stopped
