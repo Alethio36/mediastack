@@ -291,15 +291,22 @@ backup_snapshot() { # backup_snapshot CROOT DEST — runs with the stack stopped
 # config is worse than leaving it down for the restore to be run again.
 BACKUP_PARTIAL=3   # the work finished, but an archive failed (not an interruption)
 
-stopped_run() { # stopped_run WHAT "SVC..." CMD [ARG...] — stop SVC ("" = the stack), run CMD, start them whatever happens
+stopped_run() { # stopped_run WHAT "SVC..." CMD [ARG...] — stop SVC ("" = what is running), run CMD, start them whatever happens
     local what=$1 svcs=$2; shift 2
+    # "" is named now, as what is running: the trap starts again only what this
+    # run stopped (starting every enabled service would undo a `down`)
+    if [[ -z "$svcs" ]]; then
+        svcs=$(DC ps --services --status running) || { fail "$what: could not list the running services"; return 1; }
+        svcs=$(paste -sd' ' <<<"$svcs")
+        [[ -n "$svcs" ]] || { "$@"; return; }   # nothing running: nothing to stop or start
+    fi
     mkdir -p "$LOCAL_DIR"; repo_owned "$LOCAL_DIR"
     printf '%s\n%s\n' "$what" "$svcs" > "$STOP_MARKER"; repo_owned "$STOP_MARKER"
     (
         trap stopped_restart EXIT
         trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
         # set -e is off in here (the caller tests us with ||): check each step
-        # shellcheck disable=SC2086  # a word list; empty means every service
+        # shellcheck disable=SC2086  # a word list
         DC stop $svcs >/dev/null || { fail "$what: could not stop ${svcs:-the stack}"; exit 1; }
         "$@"
     )

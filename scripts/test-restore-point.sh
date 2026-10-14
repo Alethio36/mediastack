@@ -70,9 +70,10 @@ printf 'CONFIG_ROOT=/cfg\nBACKUP_ROOT=/nas\n' > "$ENV_FILE"
 [[ -z "$(_doctor_backup_disk)" ]] || fail_ "doctor is quiet: backups on another disk"; pass
 
 # ---- stopped services come back, whatever ends the work ----
+# (radarr and sonarr are what runs: a whole-stack stop names them, and only them)
 printf 'BACKUP_ROOT=%s/bk\n' "$T" > "$ENV_FILE"
 sudo() { "$@"; }
-DC() { echo "DC $*" >> "$T/log"; [[ "$1" != up ]] || return "${DC_UP_RC:-0}"; }
+DC() { if [[ "$1" == ps ]]; then printf 'radarr\nsonarr\n'; return; fi; echo "DC $*" >> "$T/log"; [[ "$1" != up ]] || return "${DC_UP_RC:-0}"; }
 notify() { echo "NOTIFY $2" >> "$T/log"; }
 fail() { echo "FAIL $*" >> "$T/log"; }; warn() { echo "WARN $*" >> "$T/log"; }; info() { :; }; ok() { :; }
 mkdir -p "$T/bk/20260927-040000.partial"
@@ -94,14 +95,14 @@ run() { # run SVCS "WORK [ARG...]" -> "rc=N | log lines | marker=yes/no"
     echo "rc=$rc | $(tr '\n' '|' < "$T/log") marker=$([[ -f "$STOP_MARKER" ]] && echo yes || echo no)"
 }
 out=$(run "" work_ok)
-[[ "$out" == "rc=0 | DC stop|WORK marker=backup||"*"DC up -d|"*"marker=no" && "$out" != *NOTIFY* ]] \
+[[ "$out" == "rc=0 | DC stop radarr sonarr|WORK marker=backup|radarr sonarr|"*"DC up -d radarr sonarr|"*"marker=no" && "$out" != *NOTIFY* ]] \
     || fail_ "success: stop, work (marker naming it), start, marker gone, no alert: $out"; pass
 out=$(run "" work_error)
-[[ "$out" == "rc=1 | "*"DC up -d|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "an error: started again and alerted: $out"; pass
+[[ "$out" == "rc=1 | "*"DC up -d radarr sonarr|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "an error: started again and alerted: $out"; pass
 out=$(run "" work_signal)
-[[ "$out" == "rc=143 | "*"DC up -d|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "a signal: started again and alerted: $out"; pass
+[[ "$out" == "rc=143 | "*"DC up -d radarr sonarr|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "a signal: started again and alerted: $out"; pass
 out=$(run "" work_partial)
-[[ "$out" == "rc=$BACKUP_PARTIAL | "*"DC up -d|"*"marker=no" && "$out" != *"stopped early"* ]] \
+[[ "$out" == "rc=$BACKUP_PARTIAL | "*"DC up -d radarr sonarr|"*"marker=no" && "$out" != *"stopped early"* ]] \
     || fail_ "a failed archive: started again, left to the caller's FAILED alert: $out"; pass
 out=$(run "sonarr " work_ok)
 [[ "$out" == *"DC stop sonarr|"*"DC up -d sonarr|"* ]] || fail_ "a scoped stop starts exactly what it stopped: $out"; pass
@@ -115,15 +116,15 @@ svc_managed_where() { echo sonarr; }
 PINS_FILE=$T/nopins CUSTOM_DIR=$T/nocustom
 sudo() { [[ "$1" == cp && "$*" == *"/env" ]] && return 1; "$@"; }
 out=$(run "" "backup_snapshot $T/cfg $T/pt")
-[[ "$out" == "rc=1 | "*"could not copy .env"*"DC up -d|"*"stopped early"*"marker=no" ]] || fail_ "a failed .env copy: a failure, services started again: $out"; pass
+[[ "$out" == "rc=1 | "*"could not copy .env"*"DC up -d radarr sonarr|"*"stopped early"*"marker=no" ]] || fail_ "a failed .env copy: a failure, services started again: $out"; pass
 sudo() { "$@"; }
 out=$(run "" "backup_snapshot $T/cfg $T/pt")
-[[ "$out" == "rc=0 | "*"DC up -d|"*"marker=no" && -s "$T/pt/sonarr.tar.gz" && -s "$T/pt/env" && -s "$T/pt/SHA256SUMS" ]] \
+[[ "$out" == "rc=0 | "*"DC up -d radarr sonarr|"*"marker=no" && -s "$T/pt/sonarr.tar.gz" && -s "$T/pt/env" && -s "$T/pt/SHA256SUMS" ]] \
     || fail_ "a whole snapshot: archive, env, checksums, services started again: $out"; pass
-DC() { echo "DC $*" >> "$T/log"; [[ "$1" != stop ]]; }
+DC() { if [[ "$1" == ps ]]; then printf 'radarr\nsonarr\n'; return; fi; echo "DC $*" >> "$T/log"; [[ "$1" != stop ]]; }
 out=$(run "" work_ok)
-[[ "$out" == "rc=1 | "*"could not stop"*"DC up -d|"*"marker=no" && "$out" != *WORK* ]] || fail_ "a failed stop: no work on running services: $out"; pass
-DC() { echo "DC $*" >> "$T/log"; [[ "$1" != up ]] || return "${DC_UP_RC:-0}"; }
+[[ "$out" == "rc=1 | "*"could not stop"*"DC up -d radarr sonarr|"*"marker=no" && "$out" != *WORK* ]] || fail_ "a failed stop: no work on running services: $out"; pass
+DC() { if [[ "$1" == ps ]]; then printf 'radarr\nsonarr\n'; return; fi; echo "DC $*" >> "$T/log"; [[ "$1" != up ]] || return "${DC_UP_RC:-0}"; }
 printf 'backup\n\n' > "$STOP_MARKER"   # what a power cut leaves
 rm -f "$T/log"; stopped_recover; [[ "$(cat "$T/log")" == *"DC up -d"*"NOTIFY Mediastack backup cut off — services started again at boot"* && ! -f "$STOP_MARKER" ]] \
     || fail_ "at boot, a marker left behind: its services started, alerted, marker gone: $(cat "$T/log")"; pass

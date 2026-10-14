@@ -38,7 +38,7 @@ f_sub()    { ( true; test "$secret" = nope ); echo "f_sub went on"; }   # FX:sub
 f_arith()  { local n=0; (( n > 0 )); echo "f_arith went on"; }   # FX:arith
 f_psub()   { local l; while read -r l; do :; done < <(grep nomatch /dev/null | sort -u); echo "f_psub went on"; }
 # stopped_run's world, stubbed: compose and sudo record, the marker lives in $T
-DC()         { echo "DC $*" >> "$T/dc"; }
+DC()         { if [[ "$1" == ps ]]; then echo radarr; return; fi; echo "DC $*" >> "$T/dc"; }   # radarr runs
 sudo()       { "$@"; }
 repo_owned() { :; }
 notify()     { :; }
@@ -108,12 +108,12 @@ run 'f_arith'
 
 # ---- stopped_run's EXIT guard still restarts ----
 run 'rc2=0; stopped_run backup "" false || rc2=$?; echo "rc=$rc2"'
-grep -qx 'rc=1' "$T/out" && grep -qx 'DC up -d' "$T/dc" && [[ ! -e "$T/local/marker" ]] \
+grep -qx 'rc=1' "$T/out" && grep -qx 'DC up -d radarr' "$T/dc" && [[ ! -e "$T/local/marker" ]] \
     || fail_ "guarded stopped_run: services not restarted or rc lost"; pass
 (( $(trap_lines) == 0 )) || fail_ "guarded stopped_run: the trap spoke"; pass
 rm -f "$T/dc"
 run 'stopped_run backup "" false; echo after'
-(( rc == 1 )) && grep -qx 'DC up -d' "$T/dc" && ! grep -q after "$T/out" \
+(( rc == 1 )) && grep -qx 'DC up -d radarr' "$T/dc" && ! grep -q after "$T/out" \
     || fail_ "unguarded stopped_run: services not restarted, or the run went on"; pass
 (( $(trap_lines) == 1 )) || fail_ "unguarded stopped_run: $(trap_lines) line(s), expected 1"; pass
 
