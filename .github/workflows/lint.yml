@@ -33,6 +33,8 @@ jobs:
         run: scripts/test-email.sh
       - name: an unhandled failure names itself, a handled one stays silent (scripts/test-errtrap.sh)
         run: scripts/test-errtrap.sh
+      - name: a stack stopped with down stays down until up (scripts/test-down.sh)
+        run: scripts/test-down.sh
       - name: dispatch contracts (scripts/test-dispatch.sh)
         run: scripts/test-dispatch.sh
       - name: media manifest loss-vs-churn contract (scripts/test-manifest.sh)

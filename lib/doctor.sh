@@ -389,6 +389,9 @@ cmd_doctor() {
     # place, so a new section cannot forget it.
     local sec
     c_inspect_all   # in the parent scope: a daemon failure dies here, not inside a section's $( )
+    if [[ -n "$(stack_down_since)" ]]; then
+        warn "the stack was stopped with 'down' ($(stack_down_since)): its containers are absent on purpose and scheduled jobs are paused — ./mediastack.sh up resumes both"
+    fi
     for sec in "${DOCTOR_SECTIONS[@]}"; do "_doctor_$sec" || true; done
     echo
     if (( D_FAILS )); then
