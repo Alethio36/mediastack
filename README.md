@@ -39,16 +39,120 @@ internet — the hostnames resolve to your LAN.
 
 ## Install
 
+Six steps. Run every command from the `mediastack` folder as your normal
+user — the script asks for your `sudo` password when it needs it.
+
+### Before you start
+
+`configure` and `up` ask for these, so have them ready:
+
+* **A user that can use `sudo`.** A Debian install given a root password
+  has no `sudo` at all: as root, `apt install sudo && usermod -aG sudo
+  <your-user>`, then log out and back in.
+* **Your VPN:** a NordVPN access token (nordvpn.com → Services → NordVPN →
+  *Set up NordVPN manually*), or your provider's WireGuard private key.
+* **For HTTPS names and the authentik portal** (skip otherwise): a domain
+  on Cloudflare; a wildcard A record `*.<domain>` → this machine's LAN IP,
+  proxy **off** (grey cloud); and a Cloudflare API token with the single
+  permission Zone / DNS / Edit, scoped to that zone.
+* **For notifications** (optional): one URL per stream — `ops` (you) and
+  `users` (your household). A Discord channel's webhook URL works as-is;
+  any [Apprise URL](https://github.com/caronc/apprise/wiki) does.
+* **For the portal's email** (optional, authentik only): an SMTP account —
+  [docs/email.md](docs/email.md).
+
+### 1. Get the code
+
 ```
-git clone <this-repo> && cd mediastack
-./mediastack.sh install      # host dependencies
-./mediastack.sh configure    # guided setup — explains every question
-./mediastack.sh up           # start (runs the HTTPS wizard if traefik is on)
-./mediastack.sh wire         # connect the apps to each other
-./mediastack.sh trash-sync   # quality profiles from the TRaSH Guides
-./mediastack.sh doctor       # verify everything
-./mediastack.sh leak-test    # prove the VPN cannot leak
+sudo apt update && sudo apt install -y git
+git clone https://github.com/Alethio36/mediastack.git
+cd mediastack
 ```
+
+This follows `stable`, the release channel for everyday use (see
+**Release channels** below).
+
+### 2. Install the host dependencies
+
+```
+./mediastack.sh install
+```
+
+Installs curl, git, jq, ca-certificates, argon2 and rsync, and Docker with
+its compose plugin from Docker's own repository (skipped when Docker is
+already there). Debian 12+ or Ubuntu 22.04+. Safe to re-run.
+
+### 3. Set it up
+
+```
+./mediastack.sh configure
+```
+
+In order: your timezone; where configs, media, cache, transcodes and
+backups live; which services run — **standard**, **everything** or
+**custom**; how people sign in — **none**, **Wizarr** or **authentik**;
+the download client, when you picked more than one; your VPN; when updates
+and backups run; and, with authentik, the portal's email. Every question
+explains itself, and Enter takes the default. Re-run it any time: your
+answers become the new defaults.
+
+**standard** has no proxy — services answer on `http://<host>:<port>`. The
+authentik portal needs Traefik and a domain: pick **everything**, or
+**custom** with `traefik`, if you want it.
+
+### 4. Start it
+
+```
+./mediastack.sh up
+```
+
+The first start downloads every image, which takes several minutes. With
+Traefik on, the first `up` asks for your domain, your email, the
+Cloudflare token, real or test certificates, and the Traefik dashboard
+login. Pick **staging** while you are still trying things out: Let's
+Encrypt allows only 5 identical real certificates a week, and switching to
+production later is one setting (`traefik-setup --certs`).
+
+### 5. Connect the apps
+
+```
+./mediastack.sh wire
+./mediastack.sh trash-sync
+```
+
+`wire` connects the apps to each other — download client and indexers to
+the arrs, libraries to Jellyfin, the request site to the arrs, the portal's
+sign-in to every app — asking for each app's admin login (Enter generates
+one) and your notification URLs. With Wizarr, it walks you through
+Wizarr's one-time first run with the exact values to paste. Safe to re-run;
+`wire --verify` shows what has drifted without changing anything.
+
+`trash-sync` asks which [TRaSH Guides](https://trash-guides.info) quality
+profile each arr should use and applies it (`--dry-run` previews;
+[docs/trash-sync.md](docs/trash-sync.md)).
+
+### 6. Check it
+
+```
+./mediastack.sh doctor
+./mediastack.sh leak-test
+```
+
+`doctor` audits the whole deployment and gives a fix for every problem it
+finds; `leak-test` proves downloads cannot leave outside the VPN.
+
+### After install
+
+* Every service's address: `./mediastack.sh status`. The logins the stack
+  generated: `./mediastack.sh credentials`.
+* With authentik, people sign in at `https://portal.<domain>`. The portal's
+  own admin is `akadmin` (its password is in `credentials`); add your
+  household with `./mediastack.sh invite` — see **The portal and the
+  gate**.
+* Three Jellyfin settings stay yours — see **Jellyfin polish**.
+* Updates and backups run on the schedule you chose.
+  `./mediastack.sh down` stops the stack and pauses them until
+  `./mediastack.sh up`.
 
 `./mediastack.sh` with no arguments lists every command; `menu` gives you an
 interactive menu. Passwords the stack created: `credentials`; every

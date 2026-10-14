@@ -661,8 +661,8 @@ cmd_up()   {
     cat <<'EOT'
 Check on it:   ./mediastack.sh status    (what's running, health, versions)
 Verify it:     ./mediastack.sh doctor    (full audit with fixes)
-First time? Services need connecting to each other once — the README's
-"After install" section walks through it app by app.
+First time? Connect the apps: ./mediastack.sh wire — then the README's
+"After install" section.
 EOT
 }
 cmd_down() {
