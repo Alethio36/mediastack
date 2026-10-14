@@ -48,6 +48,8 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "HTTPS names for every service, one certificate through Cloudflare DNS (recommended)"
+      mediastack.conflicts: "npm"   # two front doors on 80/443: one of them, never both
       mediastack.port: "443"
     dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped

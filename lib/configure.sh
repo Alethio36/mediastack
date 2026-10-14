@@ -135,7 +135,7 @@ _configure_roots() {
   * Default keeps it inside this folder — simple, but note: deleting
     this repo folder then deletes your configs. Backups cover you." no
     configure_root DATA_ROOT "Data directory" \
-"Your media library and torrent downloads — usually the largest folder,
+"Your media library and downloads — usually the largest folder,
 often on a NAS or a big second drive, NOT the system disk.
   * Network shares are fine here — but this wizard does NOT create mounts.
     Set one up first with './mediastack.sh add-mount', then enter its path;
@@ -143,7 +143,7 @@ often on a NAS or a big second drive, NOT the system disk.
   * Default keeps it inside this folder like everything else — fine to
     start with; point it at the big disk later and the wizard tells you
     how the move works.
-  * Keep torrents and media on the SAME drive or imports become slow
+  * Keep downloads and media on the SAME drive, or imports become slow
     full copies instead of instant hardlinks (checked below)." yes
     configure_root CACHE_ROOT "Cache directory" \
 "Disposable data: image caches, metadata, the search index. Losing it
@@ -163,9 +163,11 @@ update. A NAS path is ENCOURAGED — backups on the same disk as the configs
 aren't backups.
 (As above: mount the share first; the wizard doesn't create mounts.)" yes
 
-    # hardlink check
-    if [[ $(fsdev_of "$(env_get DATA_ROOT)") != "$(fsdev_of "$(env_get DATA_ROOT)/torrent" 2>/dev/null || fsdev_of "$(env_get DATA_ROOT)")" ]]; then
-        warn "DATA_ROOT and its torrent subdir are on different filesystems — hardlinks will not work: imports fall back to slow, space-doubling copies. Union the drives (e.g. mergerfs) and use the pool as DATA_ROOT (see README)."
+    # hardlink check: a download folder provisioning has yet to make is made
+    # inside DATA_ROOT, on its filesystem — only an existing one can differ
+    local dr; dr=$(env_get DATA_ROOT)
+    if [[ -d "$dr/torrent" && "$(fsdev_of "$dr")" != "$(fsdev_of "$dr/torrent")" ]]; then
+        warn "DATA_ROOT and its download folder (DATA_ROOT/torrent) are on different filesystems — hardlinks will not work: imports fall back to slow, space-doubling copies. Union the drives (e.g. mergerfs) and use the pool as DATA_ROOT (see README)."
     fi
 
 }
@@ -203,6 +205,8 @@ _configure_services() {
     # (and is the default) only when something is enabled already
     local cur_list cur_n=0 def=1
     cur_list=$(env_get COMPOSE_PROFILES)
+    # a .env this run created holds the example's preset, not a choice: nothing to keep
+    if (( ${CONFIGURE_FRESH:-0} )); then cur_list=""; fi
     [[ -n "$cur_list" ]] && { cur_n=$(tr ',' '\n' <<<"$cur_list" | grep -c .); def=0; }
     local -a menu=("Pick exactly what runs — anything, à la carte. Dependencies are handled
 for you (picking qBittorrent brings the VPN; JellySearch brings its
@@ -247,22 +251,35 @@ sign in (none, Wizarr or authentik) is asked next."
         ok "Keeping the current $cur_n service(s): $cur_list"; return 0   # nothing changed: .env untouched
     fi
     info "Resolving dependencies..."
+    # the portal is reached through Traefik: choosing it brings Traefik
+    if [[ " $sel " == *" authentik "* && " $sel " != *" traefik "* ]]; then
+        sel+=" traefik"; info "  + traefik (required by authentik: the portal is reached through it)"
+    fi
+    # shellcheck disable=SC2086  # a word list of services
     sel=$(resolve_deps $sel)
     # services that do the same job two ways (mediastack.conflicts): keep one
-    local pair a b keep
-    while read -r pair; do
+    # the pairs are read first: a loop fed by the list would hand it to the
+    # question's read too, answering every "Keep" with the next pair
+    local pair a b keep pairs
+    mapfile -t pairs < <(conflicts_in $sel)
+    for pair in "${pairs[@]}"; do
         [[ -n "$pair" ]] || continue
         a=${pair% *}; b=${pair#* }
-        explain "Choose one: $a or $b" \
+        if [[ " $a $b " == *" traefik "* && " $(tr '\n' ' ' <<<"$sel") " == *" authentik "* ]]; then
+            keep=traefik; info "$([[ "$a" == traefik ]] && echo "$b" || echo "$a") left out: the portal (authentik) is reached through Traefik"
+        else
+            local kdef=1; [[ "$b" == traefik ]] && kdef=2   # Traefik: the recommended front door
+            explain "Choose one: $a or $b" \
 "These two do the same job in different ways and cannot both run:" \
 "  1) $a — $(svc_label "$a" mediastack.desc)" \
 "  2) $b — $(svc_label "$b" mediastack.desc)" \
 "Switching later is possible (disable one, enable the other)."
-        ask "PICK_$a" "Keep" 1
-        case "$REPLY_VAL" in 1) keep=$a ;; 2) keep=$b ;; *) die "Unknown choice '$REPLY_VAL' — expected 1 or 2." ;; esac
+            ask "PICK_$a" "Keep" "$kdef"
+            case "$REPLY_VAL" in 1) keep=$a ;; 2) keep=$b ;; *) die "Unknown choice '$REPLY_VAL' — expected 1 or 2." ;; esac
+        fi
         sel=$(printf '%s\n' $sel | grep -vx "$([[ "$keep" == "$a" ]] && echo "$b" || echo "$a")")
         ok "Keeping $keep"
-    done < <(conflicts_in $sel)
+    done
     if [[ " $(tr '\n' ' ' <<<"$sel") " == *" authentik "* ]]; then
         explain "The portal's name" \
 "authentik is the portal your users sign up and log in at. Its name is shown
@@ -333,9 +350,10 @@ your own WireGuard details (for fussy/unlisted providers)."
 "3. Copy it (it is shown only once) and paste it below." \
 "The key is fetched from Nord's API — nothing is installed on this host."
                 local tok key
-                read -r -p "NordVPN access token: " tok
-                key=$(curl -fsS -u "token:${tok}" \
-                      "https://api.nordvpn.com/v1/users/services/credentials" \
+                ask_token "NordVPN access token (input hidden)"; tok=$REPLY_VAL
+                # the login goes in on stdin (-K -), never on the command line where ps shows it
+                key=$(curl -fsS -K - "https://api.nordvpn.com/v1/users/services/credentials" \
+                          <<<"user = \"token:${tok}\"" \
                       | jq -r '.nordlynx_private_key // empty') \
                     || die "Could not reach Nord's API. Check connectivity and retry."
                 [[ -n "$key" ]] || die "Token rejected by NordVPN — regenerate it and re-run configure."
@@ -350,13 +368,13 @@ your own WireGuard details (for fussy/unlisted providers)."
 "Paste values from your provider's WireGuard config file ([Interface]
 PrivateKey and Address). See gluetun's wiki page 'Custom provider' for
 the remaining server-side settings to add to .env / an override file."
-            ask WIREGUARD_PRIVATE_KEY "PrivateKey" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
+            ask_token "PrivateKey (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
             ask WIREGUARD_ADDRESSES "Address" "$(env_get WIREGUARD_ADDRESSES 10.5.0.2/32)"; env_set WIREGUARD_ADDRESSES "$REPLY_VAL" ;;
         *)
             explain "Provider: $REPLY_VAL" \
 "Follow gluetun's wiki for '$REPLY_VAL' to obtain your WireGuard private
 key, then paste it below. Country selection works the same for all."
-            ask WIREGUARD_PRIVATE_KEY "WireGuard private key" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
+            ask_token "WireGuard private key (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
             ask VPN_SERVER_COUNTRIES "Server country (empty = auto)" "$(env_get VPN_SERVER_COUNTRIES)"; env_set VPN_SERVER_COUNTRIES "$REPLY_VAL" ;;
     esac
 
@@ -492,7 +510,8 @@ sched_next() { # sched_next EXPR -> "next: <when>" ("" for never)
 
 cmd_configure() {
     need_cmd jq; need_cmd docker
-    [[ -f "$ENV_FILE" ]] || { cp .env.example "$ENV_FILE"; chmod 600 "$ENV_FILE"; info "Created .env from .env.example"; }
+    CONFIGURE_FRESH=0
+    [[ -f "$ENV_FILE" ]] || { cp .env.example "$ENV_FILE"; chmod 600 "$ENV_FILE"; CONFIGURE_FRESH=1; info "Created .env from .env.example"; }
     chmod 600 "$ENV_FILE" || true
 
     _configure_timezone
@@ -505,6 +524,11 @@ cmd_configure() {
     _configure_schedule
     authentik_configure_email
 
+    # the check `up` makes, made here: a port two services publish fails now, not halfway through a start
+    vpn_gen
+    # shellcheck disable=SC2034  # render's cache (mediastack.sh): cleared so the check sees this .env
+    RENDERED_JSON=""
+    require_free_ports
     provision
     cmd_apply_timer
 
@@ -513,8 +537,9 @@ cmd_configure() {
 Next steps:
   1. ./mediastack.sh up          start everything
   2. ./mediastack.sh wire        connect the apps to each other (safe to re-run)
-  3. ./mediastack.sh doctor      verify the deployment
-  4. ./mediastack.sh leak-test   prove the VPN cannot leak
+  3. ./mediastack.sh trash-sync  quality profiles from the TRaSH Guides
+  4. ./mediastack.sh doctor      verify the deployment
+  5. ./mediastack.sh leak-test   prove the VPN cannot leak
 Addresses and ports: ./mediastack.sh status — passwords the stack made: credentials
 EOF
 }

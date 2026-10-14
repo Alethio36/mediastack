@@ -37,6 +37,7 @@ services:
       mediastack.managed: "true"
       mediastack.port: "81"
       mediastack.desc: "GUI reverse proxy + certificates (alternative to traefik)"
+      mediastack.conflicts: "traefik"   # two front doors on 80/443: one of them, never both
       mediastack.vpn: "false"
       mediastack.config: "true"
     healthcheck:

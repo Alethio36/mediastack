@@ -303,6 +303,7 @@
       "labels": {
         "com.centurylinklabs.watchtower.enable": "false",
         "mediastack.config": "true",
+        "mediastack.conflicts": "traefik",
         "mediastack.desc": "GUI reverse proxy + certificates (alternative to traefik)",
         "mediastack.managed": "true",
         "mediastack.port": "81",

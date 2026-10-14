@@ -691,6 +691,7 @@ cmd_enable() {
     sel=$(resolve_deps "$svc" $cur)
     vpn_gen   # a toggle service enabled for the first time needs its overlay stanza before compose sees it
     RENDERED_JSON=""; require_free_ports "$(echo "$sel" | paste -sd, -)"   # refuse before .env changes
+    cloudflared_enable_check "$sel"   # the tunnel's token, asked before .env changes
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     require_mounts; provision >/dev/null   # users/dirs for the new services
     uid_handover

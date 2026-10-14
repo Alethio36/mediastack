@@ -35,6 +35,8 @@ jobs:
         run: scripts/test-errtrap.sh
       - name: a stack stopped with down stays down until up (scripts/test-down.sh)
         run: scripts/test-down.sh
+      - name: configure's questions — fresh defaults, one front door, hidden secrets (scripts/test-configure.sh)
+        run: scripts/test-configure.sh
       - name: dispatch contracts (scripts/test-dispatch.sh)
         run: scripts/test-dispatch.sh
       - name: media manifest loss-vs-churn contract (scripts/test-manifest.sh)
