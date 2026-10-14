@@ -40,7 +40,7 @@ wire_transmission() {
     hr "wire: Transmission"
     svc_enabled transmission || { info "transmission not enabled — skipped"; return 0; }
     wire_gate transmission
-    http_ready transmission "$(transmission_url)" '^(401|409)$' || return 1
+    http_ready transmission "$(transmission_url)" '^(401|409)$' || return 0
     local cur out k want
     # --- its login: in .env, carried by the container's environment (USER/PASS)
     if [[ -z "$(env_get TRANSMISSION_USER)" || -z "$(env_get TRANSMISSION_PASSWORD)" ]]; then
@@ -51,16 +51,16 @@ wire_transmission() {
     if transmission_login_live; then
         ok "transmission: login from .env works"
     elif w_would "transmission: recreate it so it takes its login from .env"; then
-        DC up -d transmission >/dev/null 2>&1 || { wfail "transmission: recreate failed — apply with: ./mediastack.sh up"; return 1; }
-        http_ready transmission "$(transmission_url)" '^(401|409)$' || return 1
+        DC up -d transmission >/dev/null 2>&1 || { wfail "transmission: recreate failed — apply with: ./mediastack.sh up"; return 0; }
+        http_ready transmission "$(transmission_url)" '^(401|409)$' || return 0
         transmission_login_live && ok "transmission: login from .env works (recreated)" \
-            || { wfail "transmission does not take the login from .env after a recreate — inspect: logs transmission"; return 1; }
+            || { wfail "transmission does not take the login from .env after a recreate — inspect: logs transmission"; return 0; }
     else
         return 0
     fi
     # --- downloads on the data tree, in progress too (the arrs import from there)
     cur=$(transmission_rpc session-get '{"fields": ["download-dir", "incomplete-dir-enabled"]}') \
-        || { wfail "transmission: its settings are unreadable — $cur"; return 1; }
+        || { wfail "transmission: its settings are unreadable — $cur"; return 0; }
     for k in download-dir incomplete-dir-enabled; do
         case "$k" in download-dir) want="\"$TRANSMISSION_SAVE\"" ;; incomplete-dir-enabled) want=false ;; esac
         if [[ "$(jq -c --arg k "$k" '.[$k]' <<<"$cur")" == "$want" ]]; then ok "transmission: $k $want"

@@ -144,9 +144,9 @@ wire_kavita() {
     hr "wire: kavita"
     svc_enabled kavita || { info "kavita not enabled — skipped"; return 0; }
     wire_gate kavita
-    kav_ready || return 1
+    kav_ready || return 0
     local exists user pass email out tok
-    exists=$(kav_api GET /api/admin/exists "") || { wfail "kavita: first-run state unreadable: $(oneline "$exists")"; return 1; }
+    exists=$(kav_api GET /api/admin/exists "") || { wfail "kavita: first-run state unreadable: $(oneline "$exists")"; return 0; }
     user=$(env_get KAVITA_ADMIN_USER); pass=$(env_get KAVITA_ADMIN_PASSWORD)
     if [[ "$exists" != true ]]; then
         w_would "create Kavita's admin — the stack's own (see: credentials)" || return 0
@@ -155,23 +155,29 @@ wire_kavita() {
         # never the username (its default): Kavita matches a portal sign-in by email
         email=$(env_get KAVITA_ADMIN_EMAIL); [[ -n "$email" ]] || email="$user@$(gen_secret 12 | tr '[:upper:]' '[:lower:]').invalid"
         out=$(kav_api POST /api/account/register "" "$(jq -cn --arg u "$user" --arg p "$pass" --arg e "$email" '{username:$u, password:$p, email:$e}')") \
-            || { wfail "kavita refused its first-run setup: $(oneline "$out")"; return 1; }
+            || { wfail "kavita refused its first-run setup: $(oneline "$out")"; return 0; }
         env_set KAVITA_ADMIN_USER "$user"; env_set KAVITA_ADMIN_PASSWORD "$pass"; env_set KAVITA_ADMIN_EMAIL "$email"
         ok "kavita: admin '$user' created (the stack's own — people sign in with their own accounts)"
     elif [[ -z "$user" || -z "$pass" ]]; then
         wfail "kavita was set up by hand and its admin login is not in .env. Either put it there (KAVITA_ADMIN_USER / KAVITA_ADMIN_PASSWORD), or start it fresh — this deletes its users, libraries and reading progress:
        ./mediastack.sh disable kavita && sudo mv \"$(env_get CONFIG_ROOT)/kavita\" \"$(env_get CONFIG_ROOT)/kavita.old\" && ./mediastack.sh enable kavita && ./mediastack.sh wire kavita"
-        return 1
+        return 0
     fi
     (( WIRE_DRY )) && [[ -z "$(env_get KAVITA_ADMIN_PASSWORD)" ]] && return 0
     out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { wfail "kavita rejected the admin login from .env: $(oneline "$out")"; return 1; }
+        || { wfail "kavita rejected the admin login from .env: $(oneline "$out")"; return 0; }
     tok=$(jq -r '.token // empty' <<<"$out")
-    [[ -n "$tok" ]] || { wfail "kavita login returned no token"; return 1; }
+    [[ -n "$tok" ]] || { wfail "kavita login returned no token"; return 0; }
     ok "kavita: admin login works"
     signin_is authentik || return 0
     kav_admin_email_check "$tok"
-    kav_oidc "$tok" || return 1
+    if [[ "$(env_get ACME_ENV)" != production ]]; then
+        # Kavita checks the portal's address over TLS and refuses the staging
+        # certificate (SslStream handshake in IsValidAuthority, seen live)
+        warn "kavita: sign-in through the portal needs real certificates — Kavita refuses the staging one. Skipped; after: ./mediastack.sh traefik-setup --certs, run: ./mediastack.sh wire kavita"
+        return 0
+    fi
+    kav_oidc "$tok" || return 0
     kav_admin_sync "$tok"
 }
 

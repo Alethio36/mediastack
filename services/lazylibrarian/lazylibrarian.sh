@@ -19,19 +19,34 @@ ll_api() { # ll_api cmd [k=v ...] -> body; the &cmd= API, apikey-authenticated
     curl -sS -m 15 "$(ll_url)/api?$q" 2>/dev/null
 }
 
+ll_api_enable() { # api_enabled + a new api_key into config.ini's [GENERAL], written while it is stopped
+    local f own key
+    f="$(env_get CONFIG_ROOT)/lazylibrarian/config.ini"
+    sudo test -f "$f" || { wfail "lazylibrarian: no $f yet — it writes one at its first start; re-run: ./mediastack.sh wire lazylibrarian"; return 1; }
+    key=$(head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n')   # 32 hex, as it mints its own
+    DC stop lazylibrarian >/dev/null 2>&1 || { wfail "lazylibrarian: could not stop it to write its API key"; return 1; }
+    own=$(sudo stat -c %u:%g "$f")
+    sudo sed -i -e '/^api_enabled *=/d' -e '/^api_key *=/d' -e "/^\[GENERAL\]\$/a api_enabled = 1\napi_key = $key" "$f"
+    sudo chown "$own" "$f"
+    DC start lazylibrarian >/dev/null 2>&1 || { wfail "lazylibrarian did not start again — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
+    http_ready lazylibrarian "$(ll_url)/" '^([23][0-9][0-9]|401|403)$' || return 1
+    [[ "$(ll_api getVersion | head -c1)" == "{" ]] \
+        || { wfail "lazylibrarian did not take the API key written to its config.ini — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
+    ok "lazylibrarian: API on, with a key of its own"
+}
+
 wire_lazylibrarian() {
     hr "wire: LazyLibrarian"
     svc_enabled lazylibrarian || { info "lazylibrarian not enabled — skipped"; return 0; }
     wire_gate lazylibrarian
-    http_ready lazylibrarian "$(ll_url)/" '^([23][0-9][0-9]|401|403)$' || return 1
+    http_ready lazylibrarian "$(ll_url)/" '^([23][0-9][0-9]|401|403)$' || return 0
     local key; key=$(ll_key)
     if [[ -z "$key" ]]; then
-        # first-ever start: the API key is minted only after the web UI has
-        # been opened once and config saved. Cannot proceed headless.
-        wfail "lazylibrarian has no API key yet — open https://books-dl.\$STACK_DOMAIN once,
-     go to Config -> Interface, set a username/password and Save, restart it
-     in the UI, then re-run: ./mediastack.sh wire lazylibrarian"
-        return 1
+        # a fresh LazyLibrarian has its API off and no key; config.ini holds only
+        # what differs from its defaults, and is read at start
+        w_would "lazylibrarian: switch its API on, with a key of its own" || return 0
+        ll_api_enable || return 0
+        key=$(ll_key)
     fi
     ok "API key found"
 

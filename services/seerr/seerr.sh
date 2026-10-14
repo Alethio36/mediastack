@@ -26,12 +26,13 @@ seerr_api() { # seerr_api METHOD PATH JAR [json-body] -> body; rc = http 2xx
 wire_seerr() {
     hr "wire: seerr"
     svc_enabled seerr || { info "seerr not enabled — skipped"; return 0; }
-    svc_enabled jellyfin || { wfail "seerr is enabled but jellyfin is not — seerr cannot function without it"; return 1; }
+    svc_enabled jellyfin || { wfail "seerr is enabled but jellyfin is not — seerr cannot function without it"; return 0; }
     wire_gate seerr jellyfin
     # /settings/public, not /status: /status asks GitHub for the latest release
     # on every call, so without outbound DNS it outlasts the probe (seen live:
     # EAI_AGAIN on api.github.com, HTTP 000 for 90s on a healthy seerr)
-    http_ready seerr "$(seerr_url)/api/v1/settings/public" '^200$' || return 1
+    http_ready seerr "$(seerr_url)/api/v1/settings/public" '^200$' || return 0
+    jf_ready || return 0   # seerr checks jellyfin's address as it signs in: its API must answer
     local jar pub
     jar=$(mktemp)
     pub=$(seerr_api GET /settings/public "$jar" || true)   # soft read: unread = uninitialised: the hostname re-send below is handled as already configured
@@ -65,9 +66,9 @@ wire_seerr() {
             $seerr_initialized || info "seerr already holds the jellyfin hostname (earlier attempt) — signing in without it"
             out=$(seerr_api POST /auth/jellyfin "$jar" "$(jq -cn --arg u "$juser" --arg p "$jpass" \
                   '{username:$u,password:$p,serverType:2}')") \
-                || { wfail "seerr rejected the jellyfin sign-in [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
+                || { wfail "seerr rejected the jellyfin sign-in [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 0; }
         else
-            wfail "seerr rejected the jellyfin sign-in [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1
+            wfail "seerr rejected the jellyfin sign-in [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 0
         fi
     }
     ok "signed in — seerr owner is jellyfin admin '$juser'"
@@ -77,11 +78,11 @@ wire_seerr() {
     # ?enable=<csv-ids> declares the complete enabled set in one call
     local libs ids n
     libs=$(seerr_api GET "/settings/jellyfin/library?sync=true" "$jar") \
-        || { wfail "library sync failed [HTTP $(seerr_code)]: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 1; }
+        || { wfail "library sync failed [HTTP $(seerr_code)]: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 0; }
     ids=$(jq -r '[.[].id] | join(",")' <<<"$libs" 2>/dev/null)
-    [[ -n "$ids" ]] || { wfail "seerr returned no libraries from jellyfin — are the libraries created? re-run 'wire jellyfin' first: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 1; }
+    [[ -n "$ids" ]] || { wfail "seerr returned no libraries from jellyfin — are the libraries created? re-run 'wire jellyfin' first: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 0; }
     libs=$(seerr_api GET "/settings/jellyfin/library?enable=$ids" "$jar") \
-        || { wfail "enabling libraries failed [HTTP $(seerr_code)]: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 1; }
+        || { wfail "enabling libraries failed [HTTP $(seerr_code)]: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 0; }
     n=$(jq '[.[] | select(.enabled)] | length' <<<"$libs" 2>/dev/null)
     ok "libraries synced — ${n:-0} enabled"
     fi
@@ -93,9 +94,9 @@ wire_seerr() {
     local have_radarr have_sonarr set_radarr set_sonarr
     wire_arrs_ready || true
     set_radarr=$(seerr_api GET /settings/radarr "$jar") \
-        || { wfail "seerr: could not read its radarr servers — nothing created [HTTP $(seerr_code)]"; rm -f "$jar"; return 1; }
+        || { wfail "seerr: could not read its radarr servers — nothing created [HTTP $(seerr_code)]"; rm -f "$jar"; return 0; }
     set_sonarr=$(seerr_api GET /settings/sonarr "$jar") \
-        || { wfail "seerr: could not read its sonarr servers — nothing created [HTTP $(seerr_code)]"; rm -f "$jar"; return 1; }
+        || { wfail "seerr: could not read its sonarr servers — nothing created [HTTP $(seerr_code)]"; rm -f "$jar"; return 0; }
     have_radarr=$(jq -r '[.[].name] | join(" ")' <<<"$set_radarr" 2>/dev/null || true)
     have_sonarr=$(jq -r '[.[].name] | join(" ")' <<<"$set_sonarr" 2>/dev/null || true)
     local s ty key port root profs pid pname body ep is4k
@@ -185,7 +186,7 @@ wire_seerr() {
         return 0
     fi
     out=$(seerr_api POST /settings/initialize "$jar") \
-        || { wfail "seerr initialise call failed [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 1; }
+        || { wfail "seerr initialise call failed [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 0; }
     local skey
     skey=$(seerr_api GET /settings/main "$jar" | jq -r '.apiKey // empty' 2>/dev/null || true)   # soft read: optional: stored only when read
     [[ -n "$skey" ]] && env_set SEERR_API_KEY "$skey"

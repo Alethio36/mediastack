@@ -399,7 +399,7 @@ prune_backups() {
         info "Pruning restore point $p (older than the retention policy keeps)"
         sudo rm -rf "${broot:?}/$p"; pruned=$((pruned+1))
     done
-    ok "restore points: kept $(( ${#all[@]} - pruned )), pruned $pruned — policy: the last $keepd backups, plus one per week for $keepw weeks, plus one per month for $keepm months (change via BACKUP_KEEP_* in .env)"
+    ok "restore points: kept $(( ${#all[@]} - pruned )), pruned $pruned — policy: the last $keepd backups, plus one per week for $keepw weeks, plus one per month for $keepm months (BACKUP_KEEP_* in .env — the next backup uses them)"
 }
 
 # Scoped pre-update restore point: stops and snapshots ONLY the named

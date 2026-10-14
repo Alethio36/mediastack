@@ -89,7 +89,7 @@ wire_prowlarr() {
     arr_login prowlarr
     local s key t impl cur aexists abody
     cur=$(api GET "$purl/api/v1/applications" "$pkey") \
-        || { wfail "prowlarr: could not read its apps — nothing created [$(oneline "$cur")]"; return 1; }
+        || { wfail "prowlarr: could not read its apps — nothing created [$(oneline "$cur")]"; return 0; }
     for s in $(arr_instances); do
         t=$(svc_label "$s" mediastack.arrtype)
         arr_known "$t" || continue
@@ -143,7 +143,7 @@ JSON
         # by default — only Cloudflare-protected indexers should pay the tax.
         local fid
         local tags; tags=$(api GET "$purl/api/v1/tag" "$pkey") \
-            || { wfail "prowlarr: could not read its tags — flaresolverr not set up [$(oneline "$tags")]"; prowlarr_download_client; return 1; }
+            || { wfail "prowlarr: could not read its tags — flaresolverr not set up [$(oneline "$tags")]"; prowlarr_download_client; return 0; }
         fid=$(jq -r '.[] | select(.label=="flared") | .id' <<<"$tags" 2>/dev/null | head -1)
         if [[ -n "$fid" ]]; then
             ok "tag 'flared' exists"

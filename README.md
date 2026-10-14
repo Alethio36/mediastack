@@ -92,7 +92,8 @@ In order: your timezone; where configs, media, cache, transcodes and
 backups live; which services run — **standard**, **everything** or
 **custom**; how people sign in — **none**, **Wizarr** or **authentik**;
 the download client, when you picked more than one; your VPN; when updates
-and backups run; and, with authentik, the portal's email. Every question
+and backups run; with authentik, the portal's email; and, with Traefik,
+whether to install the web panel now (default yes). Every question
 explains itself, and Enter takes the default. Re-run it any time: your
 answers become the new defaults.
 
@@ -625,10 +626,9 @@ replacement. It monitors authors, grabs ebooks/audiobooks, and hands them
 to qBittorrent. `wire lazylibrarian` sets its download client and book
 folders (`/data/media/books`, `/data/media/audiobooks`) and registers it
 in Prowlarr as a first-class app, so indexers sync automatically like the
-arrs. One manual step on first run: LazyLibrarian mints its API key only
-after you open its UI (`https://books-dl.<your-domain>`), set a login
-under Config -> Interface, and restart it — then re-run
-`wire lazylibrarian`. It lives in the VPN namespace, so grabs ride the
+arrs. A fresh LazyLibrarian has its API off: `wire` switches it on with a
+key of its own (written to its `config.ini` while it is stopped), before
+Prowlarr registers it. It lives in the VPN namespace, so grabs ride the
 tunnel.
 
 ## Music (Navidrome)

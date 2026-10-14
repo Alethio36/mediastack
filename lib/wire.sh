@@ -20,7 +20,8 @@ WIRE_FAILS=0
 # install). To add an integration: append its role here and define a matching
 # wire_<role> function in its service's folder (services/<name>/<name>.sh);
 # CI checks every role has exactly one.
-WIRE_ROLES=(qbit deluge transmission arr prowlarr bazarr apprise cleanuparr lazylibrarian authentik jellyfin seerr wizarr audiobookshelf kavita)
+# lazylibrarian before prowlarr: prowlarr registers it with the key wire switches on
+WIRE_ROLES=(qbit deluge transmission arr lazylibrarian prowlarr bazarr apprise cleanuparr authentik jellyfin seerr wizarr audiobookshelf kavita)
 # roles that write without observing (one big settings blob / blind writeCFG):
 # their dry-run always says "would", so --verify cannot read drift from them
 WIRE_BLIND=(bazarr lazylibrarian seerr)
@@ -29,6 +30,10 @@ WIRE_VERIFY=0
 WIRE_ARRS_OK=0   # wire_arrs_ready passed this run
 wire_is_blind() { local r; for r in "${WIRE_BLIND[@]}"; do [[ "$1" == "$r" ]] && return 0; done; return 1; }
 wfail() { fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); }
+# A wire step (wire_<role>) reports a failure with wfail and returns 0: the
+# failure is counted, the run goes on to the next app, and the summary at the
+# end exits 1. A step returning 1 would end the whole run at the error trap
+# (scripts/test-wire.sh holds this). A helper may return 1 to its caller.
 
 w_would() { # w_would "description" -> 0 if execution should proceed
     WIRE_CHANGES=$((WIRE_CHANGES+1))
@@ -157,8 +162,9 @@ cmd_wire() {
     elif (( WIRE_DRY )); then
         hr "wire --dry-run: showing changes, touching nothing"
     fi
-    if (( ! WIRE_DRY )) && [[ ! -f "$WIRED_FILE" ]]; then
-        if confirm "First wire on this deployment — take a restore point first? (recommended)"; then
+    if (( ! WIRE_DRY )) && [[ ! -f "$WIRED_FILE" && -z "$(state_get wire-restore-asked)" ]]; then
+        state_set wire-restore-asked yes   # asked once, whatever the answer and however the run ends
+        if confirm_yes "First wire on this deployment — take a restore point first? (recommended)"; then
             backup_take manual "before the first wire"
             # the backup bounced every container — let the apps come back
             # before wiring their APIs

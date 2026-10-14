@@ -233,6 +233,17 @@ ask_countries() { # ask_countries "prompt" -> REPLY_VAL: country names, comma-se
     done
 }
 
+_configure_panel_offer() { # with Traefik on and no panel yet: offer it (its own command does the host-side setup)
+    if ! svc_enabled traefik || svc_enabled olivetin; then return 0; fi
+    explain "Web panel (optional)" \
+"Buttons for the stack's everyday commands — status, restarts, updates,
+backups — in your browser at https://$(svc_subdomain olivetin).<domain>, behind the
+portal when it runs. Installing it adds a host user that may run only this
+script: its own SSH key and a sudo rule for nothing else."
+    confirm_yes "Install the web panel now?" || { info "Later: ./mediastack.sh frontdoor-install"; return 0; }
+    cmd_frontdoor_install
+}
+
 _configure_services() {
     # -- services (à la carte)
     render
@@ -600,7 +611,8 @@ cmd_configure() {
     provision
     cmd_apply_timer
 
-    echo; hr "Configure complete"
+    echo; _configure_panel_offer
+    hr "Configure complete"
     cat <<EOF
 Next steps:
   1. ./mediastack.sh up          start everything

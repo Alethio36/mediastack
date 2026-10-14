@@ -317,13 +317,23 @@ cmd_frontdoor_install() {
     if [[ -n "$hash" ]]; then
         ok "reusing existing admin password (change it with: frontdoor-install --set-password)"
     else
-        [[ -t 0 ]] || die "run frontdoor-install interactively to set the panel password."
-        hr "OliveTin admin password"
         local pw pw2
-        read -rs -p "Set OliveTin admin password: " pw; echo
-        read -rs -p "Confirm password: "            pw2; echo
-        [[ -n "$pw" ]] || die "empty password."
-        [[ "$pw" == "$pw2" ]] || die "passwords did not match."
+        if signin_is authentik && (( ! setpw )); then
+            # the portal signs admins in to the panel; this login is only the
+            # fallback should the portal go — set one then with --set-password
+            pw=$(head -c18 /dev/urandom | base64 | tr -d '=+/')
+            info "the panel signs in through the portal — its own admin password is a generated fallback (set one: frontdoor-install --set-password)"
+        else
+            [[ -t 0 ]] || die "run frontdoor-install interactively to set the panel password."
+            hr "OliveTin admin password"
+            while true; do
+                read -rs -p "Set OliveTin admin password: " pw; echo
+                [[ -n "$pw" ]] || { fail "The password cannot be empty."; continue; }
+                read -rs -p "Confirm password: " pw2; echo
+                [[ "$pw" == "$pw2" ]] && break
+                fail "The passwords did not match — again."
+            done
+        fi
         hash=$(printf '%s' "$pw" | argon2 "$(openssl rand -base64 16)" -id -t 4 -m 16 -p 6 -l 32 -e)
         unset pw pw2
         [[ "$hash" == '$argon2id$'* ]] || die "argon2 did not produce an argon2id hash — aborting."
@@ -404,12 +414,17 @@ cmd_frontdoor_install() {
     echo
     hr "Front door ready"
     # the panel is served only through Traefik (no host port): no domain, no URL
-    local url; url=$(svc_url olivetin)
-    [[ "$url" == https://* ]] || url="none yet — the panel is served through Traefik: ./mediastack.sh traefik-setup"
+    local url signin; url=$(svc_url olivetin)
+    if [[ "$url" != https://* ]]; then
+        if svc_enabled traefik; then url="https://$(svc_subdomain olivetin).<your domain> — once ./mediastack.sh up has set up Traefik"
+        else url="none — the panel is served through Traefik: ./mediastack.sh enable traefik"; fi
+    fi
+    if signin_is authentik; then signin="Sign in through the portal (admins)."
+    else signin="Log in as 'admin' (change the password: ./mediastack.sh frontdoor-install --set-password)."; fi
     cat <<EOT
 Bring it up:   ./mediastack.sh up        (starts the 'olivetin' container)
 Reach it:      $url  (LAN)
-Log in as 'admin' (change the password: ./mediastack.sh frontdoor-install --set-password).
+$signin
 
 Host-side checks worth confirming once (needs the live box):
   * sshd accepts the olivetin key from containers (host-gateway reachable, sshd up)

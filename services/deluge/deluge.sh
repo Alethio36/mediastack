@@ -36,7 +36,7 @@ wire_deluge() {
     hr "wire: Deluge"
     svc_enabled deluge || { info "deluge not enabled — skipped"; return 0; }
     wire_gate deluge
-    http_ready deluge "$(deluge_url)/" '^200$' || return 1
+    http_ready deluge "$(deluge_url)/" '^200$' || return 0
     local pass out hosts hid dd cur k want plugins
     # --- its password: the image's first-run one is replaced, the new one kept in .env
     pass=$(env_get DELUGE_PASSWORD)
@@ -46,23 +46,23 @@ wire_deluge() {
         w_would "deluge: replace its first-run password (stored in .env — view: credentials)" || return 0
         [[ -n "$pass" ]] || pass=$(head -c12 /dev/urandom | base64 | tr -d '=+/')
         out=$(deluge_rpc auth.change_password "$(jq -cn --arg o "$DELUGE_FIRST_PASSWORD" --arg n "$pass" '[$o, $n]')") \
-            || { wfail "deluge refused the new password — $out"; return 1; }
-        deluge_login "$pass" || { wfail "deluge did not accept its new password — inspect: logs deluge"; return 1; }
+            || { wfail "deluge refused the new password — $out"; return 0; }
+        deluge_login "$pass" || { wfail "deluge did not accept its new password — inspect: logs deluge"; return 0; }
         env_set DELUGE_PASSWORD "$pass"
         ok "deluge: password set and verified (view: credentials)"
     else
         wfail "deluge rejects DELUGE_PASSWORD and its first-run password — put its current web password in .env (DELUGE_PASSWORD), then re-run"
-        return 1
+        return 0
     fi
     # --- its web UI talks to its daemon: now, and by itself after a restart
-    hosts=$(deluge_rpc web.get_hosts '[]') || { wfail "deluge: its daemon list is unreadable — $hosts"; return 1; }
+    hosts=$(deluge_rpc web.get_hosts '[]') || { wfail "deluge: its daemon list is unreadable — $hosts"; return 0; }
     hid=$(jq -r '.[0][0] // empty' <<<"$hosts")
-    [[ -n "$hid" ]] || { wfail "deluge: its web UI lists no daemon — inspect: logs deluge"; return 1; }
+    [[ -n "$hid" ]] || { wfail "deluge: its web UI lists no daemon — inspect: logs deluge"; return 0; }
     if [[ "$(deluge_rpc web.connected '[]')" == true ]]; then
         ok "deluge: web UI connected to its daemon"
     elif w_would "deluge: connect its web UI to its daemon"; then
         deluge_connect && ok "deluge: web UI connected to its daemon" \
-            || { wfail "deluge: its web UI could not connect to its daemon — inspect: logs deluge"; return 1; }
+            || { wfail "deluge: its web UI could not connect to its daemon — inspect: logs deluge"; return 0; }
     else
         info "deluge: its daemon settings are checked once it is connected (the real run)"; return 0
     fi
@@ -74,7 +74,7 @@ wire_deluge() {
     fi
     # --- downloads on the data tree (the arrs import from there), transfers on tun0
     cur=$(deluge_rpc core.get_config_values '[["download_location", "outgoing_interface"]]') \
-        || { wfail "deluge: its settings are unreadable — $cur"; return 1; }
+        || { wfail "deluge: its settings are unreadable — $cur"; return 0; }
     for k in download_location outgoing_interface; do
         case "$k" in download_location) want=$DELUGE_SAVE ;; outgoing_interface) want=tun0 ;; esac
         if [[ "$(jq -r --arg k "$k" '.[$k] // ""' <<<"$cur")" == "$want" ]]; then ok "deluge: $k $want"
@@ -84,7 +84,7 @@ wire_deluge() {
         fi
     done
     # --- the arrs' categories are Deluge labels
-    plugins=$(deluge_rpc core.get_enabled_plugins '[]') || { wfail "deluge: its plugins are unreadable — $plugins"; return 1; }
+    plugins=$(deluge_rpc core.get_enabled_plugins '[]') || { wfail "deluge: its plugins are unreadable — $plugins"; return 0; }
     if jq -e 'index("Label")' <<<"$plugins" >/dev/null; then ok "deluge: Label plugin on (the arrs' categories)"
     elif w_would "deluge: switch its Label plugin on (the arrs' categories need it)"; then
         out=$(deluge_rpc core.enable_plugin '["Label"]') && ok "deluge: Label plugin on (the arrs' categories)" \

@@ -33,7 +33,7 @@ wire_apprise() {
     hr "wire: apprise"
     svc_enabled apprise || { info "apprise not enabled — skipped"; return 0; }
     wire_gate apprise
-    http_ready apprise "$(hub_local_url)/status" '^2' || return 1
+    http_ready apprise "$(hub_local_url)/status" '^2' || return 0
     wire_arrs_ready || true
 
     # --- notification endpoints: stored once under key 'mediastack';
@@ -68,8 +68,9 @@ Getting a URL:
             (subscribe to the topic in the ntfy app — zero signup)
   anything  else: https://github.com/caronc/apprise/wiki"
         local ops_u usr_u cfg="" u
-        ask AP_OPS "URLs for ops" ""; ops_u="$REPLY_VAL"
-        ask AP_USR "URLs for users" ""; usr_u="$REPLY_VAL"
+        # a webhook URL is a password: whoever holds it can post — read hidden
+        ask_hidden "URLs for ops (input hidden; Enter = none)"; ops_u="$REPLY_VAL"
+        ask_hidden "URLs for users (input hidden; Enter = none)"; usr_u="$REPLY_VAL"
         for u in ${ops_u//,/ }; do cfg+="$(notify_tagline ops)=$u"$'\n'; done
         for u in ${usr_u//,/ }; do cfg+="$(notify_tagline users)=$u"$'\n'; done
         if [[ -z "$cfg" ]]; then
@@ -79,11 +80,11 @@ Getting a URL:
             resp=$(curl -sS -m 10 -X POST -H "Content-Type: application/json" \
                    -d "$(jq -cn --arg c "$cfg" '{config:$c,format:"text"}')" \
                    -w $'\n%{http_code}' "$(hub_local_url)/add/mediastack" 2>&1) \
-                || { wfail "apprise unreachable while storing config: $(head -c200 <<<"$resp")"; return 1; }
+                || { wfail "apprise unreachable while storing config: $(head -c200 <<<"$resp")"; return 0; }
             acode=${resp##*$'\n'}
             [[ "$acode" =~ ^2 ]] \
                 || { wfail "apprise rejected the config [HTTP $acode]: $(head -c200 <<<"${resp%$'\n'*}")
-     check the URL syntax against https://github.com/caronc/apprise/wiki"; return 1; }
+     check the URL syntax against https://github.com/caronc/apprise/wiki"; return 0; }
             ok "notification endpoints stored"
             notify ops "Mediastack" "Notifications are wired up — this is your ops stream." info
             info "a test notification went to the ops stream — check it arrived"

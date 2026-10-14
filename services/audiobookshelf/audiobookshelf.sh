@@ -121,31 +121,31 @@ wire_audiobookshelf() {
     hr "wire: audiobookshelf"
     svc_enabled audiobookshelf || { info "audiobookshelf not enabled — skipped"; return 0; }
     wire_gate audiobookshelf
-    http_ready audiobookshelf "$(abs_url)/healthcheck" '^2' || return 1
+    http_ready audiobookshelf "$(abs_url)/healthcheck" '^2' || return 0
     local st user pass out tok
-    st=$(abs_api GET /status "") || { wfail "audiobookshelf: status unreadable"; return 1; }
+    st=$(abs_api GET /status "") || { wfail "audiobookshelf: status unreadable"; return 0; }
     user=$(env_get ABS_ADMIN_USER); pass=$(env_get ABS_ADMIN_PASSWORD)
     if [[ "$(jq -r '.isInit' <<<"$st")" != true ]]; then
         w_would "create Audiobookshelf's root account — the stack's own (see: credentials)" || return 0
         [[ -n "$user" ]] || user=mediastack
         [[ -n "$pass" ]] || pass=$(gen_secret 24)
         abs_api POST /init "" "$(jq -cn --arg u "$user" --arg p "$pass" '{newRoot:{username:$u, password:$p}}')" >/dev/null \
-            || { wfail "audiobookshelf refused its first-run setup"; return 1; }
+            || { wfail "audiobookshelf refused its first-run setup"; return 0; }
         env_set ABS_ADMIN_USER "$user"; env_set ABS_ADMIN_PASSWORD "$pass"
         ok "audiobookshelf: root account '$user' created (the stack's own — people sign in with their own accounts)"
     elif [[ -z "$user" || -z "$pass" ]]; then
         wfail "audiobookshelf was set up by hand and its root login is not in .env. Either put it there (ABS_ADMIN_USER / ABS_ADMIN_PASSWORD), or start it fresh — this deletes its users, libraries and progress:
        ./mediastack.sh disable audiobookshelf && sudo mv \"$(env_get CONFIG_ROOT)/audiobookshelf\" \"$(env_get CONFIG_ROOT)/audiobookshelf.old\" && ./mediastack.sh enable audiobookshelf && ./mediastack.sh wire audiobookshelf"
-        return 1
+        return 0
     fi
     (( WIRE_DRY )) && [[ -z "$(env_get ABS_ADMIN_PASSWORD)" ]] && return 0
     out=$(abs_api POST /login "" "$(jq -cn --arg u "$(env_get ABS_ADMIN_USER)" --arg p "$(env_get ABS_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { wfail "audiobookshelf rejected the root login from .env"; return 1; }
+        || { wfail "audiobookshelf rejected the root login from .env"; return 0; }
     tok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
-    [[ -n "$tok" ]] || { wfail "audiobookshelf login returned no token"; return 1; }
+    [[ -n "$tok" ]] || { wfail "audiobookshelf login returned no token"; return 0; }
     ok "audiobookshelf: root login works"
     signin_is authentik || return 0
-    abs_oidc "$tok" || return 1
+    abs_oidc "$tok" || return 0
     abs_root_unlink "$tok"
     abs_admin_sync "$tok"
 }

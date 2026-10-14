@@ -10,7 +10,8 @@ JF_LDAP_PROVIDER=Jellyfin.Plugin.LDAP_Auth.LdapAuthenticationProviderPlugin   # 
 jf_plugin_ids() { # jf_plugin_ids PLUGINS-JSON -> "|id|id|" (dashes removed, lower case)
     # by ID, not name: a plugin can load under another name than its catalog
     # entry (found live: "LDAP Authentication" loads as "LDAP-Auth")
-    jq -r '"|" + ([.[].Id | ascii_downcase | gsub("-"; "")] | join("|")) + "|"' <<<"$1" 2>/dev/null
+    # not JSON (a startup page) is no plugin seen: the caller FAILs what it misses
+    jq -r '"|" + ([.[].Id | ascii_downcase | gsub("-"; "")] | join("|")) + "|"' <<<"$1" 2>/dev/null || echo "||"
 }
 jf_guid() { tr -d '-' <<<"$1" | tr '[:upper:]' '[:lower:]'; }
 
@@ -168,7 +169,9 @@ jf_api() { # jf_api METHOD PATH TOKEN [json-body] -> body on stdout; rc = http 2
     echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
 }
-jf_ready() { http_ready jellyfin "$(jf_url)/health" '^200$'; }
+# ready is when the API answers: /health says 200 between the restart's two
+# phases while the API still answers 503 (measured live, 14 Oct 2026)
+jf_ready() { http_ready jellyfin "$(jf_url)/System/Info/Public" '^200$'; }
 jf_libname() { # jf_libname <arr service> <media subdir> -> default library name
     # an instance names its own library (mediastack.jflibrary: "Movies (4K)");
     # otherwise its type's name; a type wire doesn't know, its folder's name
@@ -182,13 +185,13 @@ wire_jellyfin() {
     hr "wire: jellyfin"
     svc_enabled jellyfin || { info "jellyfin not enabled — skipped"; return 0; }
     wire_gate jellyfin
-    jf_ready || return 1
+    jf_ready || return 0
     local pub completed juser jpass
     pub=$(jf_api GET /System/Info/Public "" || true)   # soft read: checked two lines below
     # NB: jq's // operator treats false as missing — read booleans plainly
     completed=$(jq -r '.StartupWizardCompleted' <<<"$pub" 2>/dev/null)
     [[ "$completed" == true || "$completed" == false ]] \
-        || { wfail "jellyfin gave no readable public info [HTTP $(jf_code)]: $(head -c200 <<<"$pub")"; return 1; }
+        || { wfail "jellyfin gave no readable public info [HTTP $(jf_code)]: $(head -c200 <<<"$pub")"; return 0; }
     juser=$(env_get JELLYFIN_ADMIN_USER); jpass=$(env_get JELLYFIN_ADMIN_PASSWORD)
 
     # --- first-run wizard: only ever runs while jellyfin says it is unclaimed.
@@ -200,7 +203,7 @@ wire_jellyfin() {
                 w_would "complete jellyfin's first-run wizard (admin login asked on the real run)" || true
             elif [[ ! -t 0 ]]; then
                 wfail "jellyfin's first-run wizard is incomplete and there is no terminal to ask for the admin login — run './mediastack.sh wire jellyfin' interactively"
-                return 1
+                return 0
             else
                 explain "Jellyfin admin" \
 "Jellyfin needs one administrator account. This is the operator/recovery
@@ -223,7 +226,7 @@ credentials)."
                     postuser) out=$(jf_api POST /Startup/User "" "$(jq -cn --arg u "$juser" --arg p "$jpass" '{Name:$u,Password:$p}')") ;;
                     remote)   out=$(jf_api POST /Startup/RemoteAccess "" '{"EnableRemoteAccess":true,"EnableAutomaticPortMapping":false}') ;;
                     complete) out=$(jf_api POST /Startup/Complete "") ;;
-                esac || { wfail "jellyfin wizard step '$step' rejected [HTTP $(jf_code)]: $(head -c200 <<<"$out")"; return 1; }
+                esac || { wfail "jellyfin wizard step '$step' rejected [HTTP $(jf_code)]: $(head -c200 <<<"$out")"; return 0; }
             done
             ok "first-run wizard completed — admin '$juser'"
         fi
@@ -243,9 +246,9 @@ credentials)."
     local auth tok
     auth=$(jf_api POST /Users/AuthenticateByName "" "$(jq -cn --arg u "$juser" --arg p "$jpass" '{Username:$u,Pw:$p}')") \
         || { (( WIRE_DRY )) && { info "cannot verify further without logging in — real run continues from here"; return 0; }
-             wfail "jellyfin rejected the admin login from .env [HTTP $(jf_code)]: $(head -c200 <<<"$auth")"; return 1; }
+             wfail "jellyfin rejected the admin login from .env [HTTP $(jf_code)]: $(head -c200 <<<"$auth")"; return 0; }
     tok=$(jq -r '.AccessToken // empty' <<<"$auth")
-    [[ -n "$tok" ]] || { wfail "jellyfin login succeeded but returned no token: $(head -c200 <<<"$auth")"; return 1; }
+    [[ -n "$tok" ]] || { wfail "jellyfin login succeeded but returned no token: $(head -c200 <<<"$auth")"; return 0; }
     jf_server_name "$tok"
     jf_transcode_path "$tok"
     jf_plugin_webhook "$tok"
@@ -258,7 +261,7 @@ credentials)."
     # in the override, e.g. /data/tvshows) and must not be offered a twin
     # at /media/tv. GUI renames/merges are respected the same way.
     local vf droot jcn; vf=$(jf_api GET /Library/VirtualFolders "$tok" || true)   # soft read: checked on the next line
-    [[ "$(jf_code)" =~ ^2 ]] || { wfail "could not list jellyfin libraries [HTTP $(jf_code)]: $(head -c200 <<<"$vf")"; return 1; }
+    [[ "$(jf_code)" =~ ^2 ]] || { wfail "could not list jellyfin libraries [HTTP $(jf_code)]: $(head -c200 <<<"$vf")"; return 0; }
     droot=$(env_get DATA_ROOT); jcn=$(svc_cname jellyfin)
     local -A covered=()   # host dir -> the container location a library uses for it
     local loc hp
@@ -310,17 +313,17 @@ credentials)."
     # --- one API key for the stack (update-defer streaming check + doctor)
     local keys have
     keys=$(jf_api GET /Auth/Keys "$tok") \
-        || { wfail "could not list jellyfin API keys [HTTP $(jf_code)] — nothing created"; return 1; }
+        || { wfail "could not list jellyfin API keys [HTTP $(jf_code)] — nothing created"; return 0; }
     have=$(jq -r '.Items[]? | select(.AppName=="mediastack") | .AccessToken' <<<"$keys" 2>/dev/null | head -1)
     if [[ -n "$have" ]]; then
         [[ "$(env_get JELLYFIN_API_KEY)" == "$have" ]] || env_set JELLYFIN_API_KEY "$have"
         ok "stack API key present"
     elif w_would "mint a jellyfin API key for the stack (app 'mediastack')"; then
         jf_api POST "/Auth/Keys?app=mediastack" "$tok" >/dev/null \
-            || { wfail "API key creation rejected [HTTP $(jf_code)]"; return 1; }
+            || { wfail "API key creation rejected [HTTP $(jf_code)]"; return 0; }
         keys=$(jf_api GET /Auth/Keys "$tok" || true)   # soft read: re-read after creating the key: empty FAILs below
         have=$(jq -r '.Items[]? | select(.AppName=="mediastack") | .AccessToken' <<<"$keys" 2>/dev/null | head -1)
-        [[ -n "$have" ]] || { wfail "API key created but not readable back — check Dashboard -> API Keys"; return 1; }
+        [[ -n "$have" ]] || { wfail "API key created but not readable back — check Dashboard -> API Keys"; return 0; }
         env_set JELLYFIN_API_KEY "$have"
         ok "stack API key minted and stored (JELLYFIN_API_KEY)"
     fi

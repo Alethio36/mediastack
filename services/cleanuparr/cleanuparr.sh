@@ -26,21 +26,21 @@ wire_cleanuparr() {
     hr "wire: cleanuparr"
     svc_enabled cleanuparr || { info "cleanuparr not enabled — skipped"; return 0; }
     wire_gate cleanuparr
-    http_ready cleanuparr "$(cup_url)/health" '^2' || return 1
+    http_ready cleanuparr "$(cup_url)/health" '^2' || return 0
 
     local user pass st out
     user=$(env_get ARR_USER); pass=$(env_get ARR_PASSWORD)
-    [[ -n "$user" && -n "$pass" ]] || { wfail "cleanuparr bootstrap reuses the arr login — run 'wire arr' first (a full 'wire' does both in order)"; return 1; }
+    [[ -n "$user" && -n "$pass" ]] || { wfail "cleanuparr bootstrap reuses the arr login — run 'wire arr' first (a full 'wire' does both in order)"; return 0; }
 
     st=$(cup_api GET /auth/status "" || true)   # soft read: unread = not set up: the setup call below answers 409 when it is, which is accepted
     if [[ "$(jq -r '.setupCompleted' <<<"$st" 2>/dev/null)" != true ]]; then
         if w_would "create cleanuparr's account ('$user' — same login as the arrs) and complete setup"; then
             out=$(cup_api POST /auth/setup/account "" "$(jq -cn --arg u "$user" --arg p "$pass" '{username:$u,password:$p}')")
             [[ "$(cup_code)" =~ ^2 || "$(cup_code)" == 409 ]] \
-                || { wfail "cleanuparr account creation rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 1; }
+                || { wfail "cleanuparr account creation rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 0; }
             out=$(cup_api POST /auth/setup/complete "")
             [[ "$(cup_code)" =~ ^2 || "$(cup_code)" == 409 ]] \
-                || { wfail "cleanuparr setup completion rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 1; }
+                || { wfail "cleanuparr setup completion rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 0; }
             ok "account created — sign in with the arr login (view: credentials)"
         fi
     else
@@ -52,11 +52,11 @@ wire_cleanuparr() {
     local tok akey
     out=$(cup_api POST /auth/login "" "$(jq -cn --arg u "$user" --arg p "$pass" '{username:$u,password:$p}')") \
         || { wfail "cleanuparr rejected the arr login [HTTP $(cup_code)]: $(head -c200 <<<"$out")
-     if you changed its password in the UI, this is expected — its config stays yours"; return 1; }
+     if you changed its password in the UI, this is expected — its config stays yours"; return 0; }
     tok=$(jq -r '.tokens.accessToken // empty' <<<"$out")
-    [[ -n "$tok" ]] || { wfail "cleanuparr login gave no access token: $(head -c200 <<<"$out")"; return 1; }
+    [[ -n "$tok" ]] || { wfail "cleanuparr login gave no access token: $(head -c200 <<<"$out")"; return 0; }
     akey=$(cup_api GET /account/api-key "Authorization: Bearer $tok" | jq -r '.apiKey // empty' 2>/dev/null || true)   # soft read: checked on the next line
-    [[ -n "$akey" ]] || { wfail "could not read cleanuparr's API key [HTTP $(cup_code)]"; return 1; }
+    [[ -n "$akey" ]] || { wfail "could not read cleanuparr's API key [HTTP $(cup_code)]"; return 0; }
     [[ "$(env_get CLEANUPARR_API_KEY)" == "$akey" ]] || env_set CLEANUPARR_API_KEY "$akey"
     local KH="X-Api-Key: $akey"
 
@@ -88,7 +88,7 @@ wire_cleanuparr() {
         else
             dc=$(jq -c '{enabled: true} + del(.priority)' <<<"$e")
             out=$(cup_api POST /configuration/download_client/test "$KH" "$dc") \
-                || { wfail "cleanuparr could not reach $(jq -r '.typeName' <<<"$e") [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 1; }
+                || { wfail "cleanuparr could not reach $(jq -r '.typeName' <<<"$e") [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 0; }
             out=$(cup_api POST /configuration/download_client "$KH" "$dc") \
                 && ok "$name connected" \
                 || { wfail "$name entry rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; dl_ok=0; }

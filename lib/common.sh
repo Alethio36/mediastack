@@ -39,6 +39,18 @@ on_err() {
     echo "${C_RED}ERROR${C_RST} unhandled failure (exit $rc) at $src:${BASH_LINENO[0]}${chain:+ in $chain}: $cmd" >&2
 }
 
+confirm_yes() { # confirm_yes "question" -> 0 yes (also Enter, or input that has ended) / 1 no
+    local ans
+    read -r -p "$1 [Y/n]: " ans || true
+    [[ -z "$ans" || "${ans,,}" == y || "${ans,,}" == yes ]]
+}
+
+ask_hidden() { # ask_hidden "prompt" -> REPLY_VAL, typed without echo; empty is an answer
+    local a
+    read -r -s -p "$1: " a || [[ -n "$a" ]] || { echo; die "no answer to '$1': the input ended"; }
+    echo; REPLY_VAL=$a
+}
+
 confirm() { # confirm "question" -> 0 yes / 1 no
     local ans
     read -r -p "$1 [y/N]: " ans

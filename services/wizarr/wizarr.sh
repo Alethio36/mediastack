@@ -17,7 +17,7 @@ wire_wizarr() {
     wire_gate wizarr
     # a virgin wizarr 302s /health to /setup (onboarding middleware) —
     # any 2xx/3xx means the app is up and serving
-    http_ready wizarr "$(wizarr_url)/health" '^[23]' || return 1
+    http_ready wizarr "$(wizarr_url)/health" '^[23]' || return 0
     local key host domain
     key=$(env_get WIZARR_API_KEY)
     if [[ -z "$key" ]]; then
@@ -51,14 +51,14 @@ Paste nothing to skip for now — re-run 'wire wizarr' any time."
     fi
     local out
     if ! out=$(curl -sS -m 15 -H "X-API-Key: $key" -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1); then
-        wfail "wizarr unreachable while verifying the API key: $(head -c200 <<<"$out")"; return 1
+        wfail "wizarr unreachable while verifying the API key: $(head -c200 <<<"$out")"; return 0
     fi
     code=${out##*$'\n'}
     if [[ "$code" =~ ^2 ]]; then
         ok "API key verified — mint invites with: ./mediastack.sh invite"
     else
         wfail "wizarr rejected the stored API key [HTTP $code] — recreate it in Settings -> API Keys, then re-run 'wire wizarr' (the old value stays in .env until replaced)"
-        return 1
+        return 0
     fi
 }
 

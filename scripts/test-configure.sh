@@ -175,4 +175,16 @@ printf 'COMPOSE_PROFILES=traefik,authentik\nSTACK_DOMAIN=media.example.com\nACME
     || fail_ "a fallback login is generated, not left empty: $(grep TRAEFIK_DASH "$ENV_FILE")"; pass
 grep -q 'admins sign in through the portal' "$T/out" || fail_ "and it says so"; pass
 
+# ---- the panel, offered at the end when Traefik serves it ----
+cmd_frontdoor_install() { echo INSTALLED; }
+printf 'COMPOSE_PROFILES=traefik,sonarr\n' > "$ENV_FILE"
+printf '\n' | _configure_panel_offer > "$T/out" 2>&1
+grep -q INSTALLED "$T/out" || fail_ "Enter installs the panel (default yes)"; pass
+printf 'n\n' | _configure_panel_offer > "$T/out" 2>&1
+! grep -q INSTALLED "$T/out" && grep -q 'Later: ./mediastack.sh frontdoor-install' "$T/out" || fail_ "n leaves it, with the command for later"; pass
+printf 'COMPOSE_PROFILES=sonarr\n' > "$ENV_FILE"
+_configure_panel_offer </dev/null > "$T/out" 2>&1; [[ ! -s "$T/out" ]] || fail_ "without Traefik nothing is offered"; pass
+printf 'COMPOSE_PROFILES=traefik,olivetin\n' > "$ENV_FILE"
+_configure_panel_offer </dev/null > "$T/out" 2>&1; [[ ! -s "$T/out" ]] || fail_ "an installed panel is not offered again"; pass
+
 echo "OK configure: $checks checks"

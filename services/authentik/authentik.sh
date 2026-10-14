@@ -483,14 +483,14 @@ wire_authentik() {
     hr "wire: authentik"
     svc_enabled authentik || { info "authentik not enabled — skipped"; return 0; }
     wire_gate authentik
-    http_ready authentik "$(authentik_url)/-/health/ready/" '^2' || return 1
+    http_ready authentik "$(authentik_url)/-/health/ready/" '^2' || return 0
     # its base URL: the address in links it generates (invitations included).
     # Set when unset, or when it is still the one mediastack last wrote (a
     # renamed host); a URL you set in authentik's UI is left alone.
     local want cur mine
     want=$(authentik_portal); mine=$(state_get AUTHENTIK_BASE_URL)
     cur=$(ak_api GET /admin/settings/ | jq -r '.base_url // ""') \
-        || { wfail "authentik: its settings are unreadable — is AUTHENTIK_API_TOKEN the one it started with?"; return 1; }
+        || { wfail "authentik: its settings are unreadable — is AUTHENTIK_API_TOKEN the one it started with?"; return 0; }
     if [[ "$cur" == "$want" ]]; then
         ok "authentik: base URL $want"
     elif [[ -n "$cur" && "$cur" != "$mine" ]]; then
