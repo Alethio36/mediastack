@@ -21,7 +21,7 @@ traefik_doctor() { # doctor: the certificate store — its mode, staging or prod
             [[ "$(sudo stat -c %a "$acmef")" == 600 ]] && ok "acme.json permissions 600" \
                 || warn "acme.json is NOT mode 600 — traefik will refuse it; fix: sudo chmod 600 $acmef"
             if sudo grep -q "acme-staging" "$acmef"; then
-                warn "STAGING certificates active — browsers will warn. For real use: set ACME_ENV=production in .env, then ./mediastack.sh up"
+                warn "STAGING certificates active — browsers will warn, and apps that check the portal's certificate refuse it (Kavita's portal sign-in is skipped; Audiobookshelf's likely fails). For real use: ./mediastack.sh traefik-setup --certs"
             else
                 ok "production certificates in the store"
             fi

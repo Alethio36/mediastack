@@ -112,7 +112,11 @@ Traefik on, the first `up` asks for your domain, your email, the
 Cloudflare token, real or test certificates, and the Traefik dashboard
 login. Pick **staging** while you are still trying things out: Let's
 Encrypt allows only 5 identical real certificates a week, and switching to
-production later is one setting (`traefik-setup --certs`).
+production later is one setting (`traefik-setup --certs`). Known limitation:
+apps that check the portal's certificate themselves refuse a staging one,
+so Kavita's portal sign-in is skipped until production (wire says so) and
+Audiobookshelf's is expected to fail; Jellyfin's LDAP sign-in skips the
+check on staging.
 
 ### 5. Connect the apps
 

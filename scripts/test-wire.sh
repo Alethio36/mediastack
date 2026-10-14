@@ -9,6 +9,8 @@
 #   * LazyLibrarian's API switched on in config.ini while it is stopped: the
 #     two keys under [GENERAL], an old api_enabled replaced, the owner kept
 #   * the closing summary lists every failure again, named by its step
+#   * settings wire wrote to .env reach the containers that read them at
+#     start: what became pending during the run is recreated, nothing else
 #
 #   scripts/test-wire.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -62,5 +64,14 @@ WIRE_STEP=seerr; wfail $'library sync failed [HTTP 400]\n     a second line' >/d
 WIRE_STEP=kavita; wfail "kavita refused" >/dev/null; WIRE_STEP=""
 [[ "$(wire_fail_summary)" == $'  - seerr: library sync failed [HTTP 400]\n  - kavita: kavita refused' ]] \
     || fail_ "one line per failure, its step first: $(wire_fail_summary)"; pass
+
+# ---- what wire wrote to .env reaches the containers that read it at start ----
+: > "$T/dc"
+compose_pending() { printf 'traefik\nauthentik-worker\n'; }
+wire_apply_settings "traefik" >/dev/null
+[[ "$(grep -E '^DC up' "$T/dc")" == "DC up -d authentik-worker" ]] || fail_ "only what became pending during wire is recreated: $(cat "$T/dc")"; pass
+: > "$T/dc"; compose_pending() { echo traefik; }
+wire_apply_settings "traefik" >/dev/null
+! grep -q '^DC up' "$T/dc" || fail_ "nothing new pending: nothing recreated"; pass
 
 echo "OK wire: $checks checks"

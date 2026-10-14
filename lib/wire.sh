@@ -32,6 +32,18 @@ wire_is_blind() { local r; for r in "${WIRE_BLIND[@]}"; do [[ "$1" == "$r" ]] &&
 WIRE_FAIL_LIST=()   # one line per failure, named by its step, for the summary
 WIRE_STEP=""        # the step running (cmd_wire sets it)
 wfail() { fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); WIRE_FAIL_LIST+=("${WIRE_STEP:+$WIRE_STEP: }${1%%$'\n'*}"); }
+wire_apply_settings() { # wire_apply_settings "PENDING-BEFORE" — recreate what wire's own .env writes changed
+    # (the stack's admin names, say: authentik's worker reserves them at start).
+    # Only what became pending during this run: anything pending before is up's to apply.
+    local after s new=()
+    after=$(compose_pending)
+    while read -r s; do
+        [[ -n "$s" ]] && ! grep -qx "$s" <<<"$1" && new+=("$s")
+    done <<<"$after"
+    (( ${#new[@]} )) || return 0
+    info "wire changed settings these read only at start — recreating: ${new[*]}"
+    DC up -d "${new[@]}" >/dev/null 2>&1 || wfail "recreating ${new[*]} failed — apply with: ./mediastack.sh up"
+}
 wire_fail_summary() { # the failures again, together, after everything else scrolled past
     local f
     for f in "${WIRE_FAIL_LIST[@]}"; do echo "  - $f"; done
@@ -183,7 +195,8 @@ cmd_wire() {
     # dispatch by the WIRE_ROLES registry: `all` runs every role in order,
     # a section runs its one wire_<role>. Both resolve the function by name,
     # so there is no second list to keep in sync with the one above.
-    local role skipped=""
+    local role skipped="" pending_before=""
+    (( WIRE_DRY || WIRE_VERIFY )) || pending_before=$(compose_pending)
     if [[ "$section" == all ]]; then
         for role in "${WIRE_ROLES[@]}"; do
             if (( WIRE_VERIFY )) && wire_is_blind "$role"; then skipped+="$role "; continue; fi
@@ -207,6 +220,7 @@ cmd_wire() {
         info "note: items marked as pending on credentials resolve mid-run — the real run creates them in order."
     else
         mkdir -p "$LOCAL_DIR"; touch "$WIRED_FILE"; repo_owned "$LOCAL_DIR" "$WIRED_FILE"
+        WIRE_STEP=apply; wire_apply_settings "$pending_before"; WIRE_STEP=""
         if (( WIRE_FAILS )); then
             fail "wire finished with $WIRE_FAILS failure(s):"
             wire_fail_summary

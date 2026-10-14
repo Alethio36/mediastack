@@ -54,10 +54,13 @@ scoped to just this domain's zone. (Not the Global API Key.)"
               Encrypt allows only 5 identical ones per week, so
               repeated install testing can lock you out for days.
   staging     unlimited test certificates. Browsers show a warning
-              you can click through — everything else works the
-              same. Pick this while you are still testing; one
-              setting change switches to production later and the
-              stack handles the swap itself."
+              you can click through. Pick this while you are still
+              testing; one setting change switches to production
+              later and the stack handles the swap itself.
+              Known limitation: apps that check the portal's
+              certificate themselves refuse a staging one — Kavita's
+              portal sign-in is skipped until production, and
+              Audiobookshelf's is expected to fail."
         while true; do
             ask AV "Certificate environment [production/staging]" "$(env_get ACME_ENV)"
             case "${REPLY_VAL,,}" in production|staging) acmeenv="${REPLY_VAL,,}"; break ;; *) fail "Type production or staging." ;; esac
@@ -314,11 +317,14 @@ cmd_traefik_certs() {
               Encrypt allows only 5 identical ones per week, so
               repeated install testing can lock you out for days.
   staging     unlimited test certificates. Browsers show a warning
-              you can click through — everything else works the same.
+              you can click through. Known limitation: Kavita's portal
+              sign-in waits for production; Audiobookshelf's likely fails.
 Switching either way is safe: the stack resets the certificate store,
 restarts traefik, and the new environment reissues automatically."
-    ask AV "Certificate environment [production/staging]" "$cur"
-    case "$REPLY_VAL" in production|staging) env_set ACME_ENV "$REPLY_VAL" ;; *) die "Expected 'production' or 'staging'." ;; esac
+    while true; do
+        ask AV "Certificate environment [production/staging]" "$cur"
+        case "${REPLY_VAL,,}" in production|staging) env_set ACME_ENV "${REPLY_VAL,,}"; break ;; *) fail "Type production or staging." ;; esac
+    done
     traefik_gen
     # Jellyfin's LDAP checks the certificate only with production ones: follow the switch
     if signin_is authentik && svc_enabled jellyfin; then cmd_wire jellyfin; fi
