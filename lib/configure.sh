@@ -133,7 +133,8 @@ _configure_roots() {
 "Where every service keeps its settings and databases. A few GB.
   * MUST be on a local disk (databases corrupt on network shares).
   * Default keeps it inside this folder — simple, but note: deleting
-    this repo folder then deletes your configs. Backups cover you." no
+    this repo folder then deletes your configs, and with the default
+    backup folder (also inside it) your backups too." no
     configure_root DATA_ROOT "Data directory" \
 "Your media library and downloads — usually the largest folder,
 often on a NAS or a big second drive, NOT the system disk.
@@ -154,8 +155,6 @@ someone is watching: a few GB per concurrent stream, written and read back
 at the video's bitrate, deleted when the stream ends.
   * Local SSD is right. A network share here stutters playback — every
     segment crosses the wire twice.
-  * Have RAM to spare? A tmpfs mount (e.g. 4G) is the fastest option and
-    empties itself on reboot.
   * Nothing here is kept or backed up." yes
     configure_root BACKUP_ROOT "Backup directory" \
 "Where restore points are written — by the daily backup and before every
@@ -195,6 +194,44 @@ _configure_selfheal() {
 
 }
 
+svc_own_installer() { # svc_own_installer SVC ",ENABLED," — true (and says so) for a service its own command sets up, not yet enabled
+    local inst; inst=$(svc_label "$1" mediastack.installer)
+    [[ -n "$inst" && "$2" != *",$1,"* ]] || return 1
+    info "$1 — $(svc_label "$1" mediastack.desc): set up by its own command, not here: ./mediastack.sh $inst"
+}
+
+_configure_pick_download_clients() { # "everything": keep one download client, or all of them (edits sel)
+    local -a dls menu; local c i=0 keep
+    # in priority order, as the active-client question lists them: the first is the default
+    mapfile -t dls < <(for c in $(role_all_providers download-client arr); do
+        printf '%s\t%s\n' "$(jq -r '.priority // 50' "services/$c/provides/download-client.arr.json")" "$c"
+    done | sort -n -k1,1 -k2,2 | cut -f2 | while read -r c; do [[ " $sel " == *" $c "* ]] && echo "$c"; done)
+    (( ${#dls[@]} > 1 )) || return 0
+    menu=("\"everything\" includes ${#dls[@]} download clients that do the same job. Most setups run one.")
+    for c in "${dls[@]}"; do i=$((i + 1)); menu+=("  $i) $c only"); done
+    menu+=("  $((i + 1))) all of them — one is the active client (asked next), the others stay ready")
+    explain "Download clients" "${menu[@]}"
+    while true; do
+        ask DL_KEEP "Choice" 1
+        [[ "$REPLY_VAL" =~ ^[0-9]+$ ]] && (( REPLY_VAL >= 1 && REPLY_VAL <= i + 1 )) && break
+        fail "Pick 1-$((i + 1))."
+    done
+    (( REPLY_VAL <= i )) || return 0
+    keep=${dls[REPLY_VAL - 1]}
+    for c in "${dls[@]}"; do
+        [[ "$c" == "$keep" ]] || sel=$(tr ' ' '\n' <<<"$sel" | grep -vx "$c" | paste -sd' ' -)
+    done
+    sel+=" "
+}
+
+ask_countries() { # ask_countries "prompt" -> REPLY_VAL: country names, comma-separated, or empty
+    while true; do
+        ask VPN_SERVER_COUNTRIES "$1" "$(env_get VPN_SERVER_COUNTRIES)"
+        [[ -z "$REPLY_VAL" || "$REPLY_VAL" =~ ^[A-Za-z][A-Za-z\ ,.\'-]*$ ]] && return 0
+        fail "'$REPLY_VAL' is not a country name (e.g. Switzerland, or Netherlands,Sweden)."
+    done
+}
+
 _configure_services() {
     # -- services (à la carte)
     render
@@ -221,15 +258,25 @@ sign in (none, Wizarr or authentik) is asked next."
     (( cur_n )) && menu+=("  0) keep current: $cur_n enabled ($(tr ',' ' ' <<<"$cur_list"))")
     explain "Services" "${menu[@]}"
     local mode sel="" cur_en s d dp
-    ask SVC_MODE "Choice" "$def"; mode="$REPLY_VAL"
+    while true; do
+        ask SVC_MODE "Choice" "$def"; mode="$REPLY_VAL"
+        case "$mode" in
+            0) (( cur_n )) && break; fail "Nothing is enabled yet — pick 1, 2 or 3." ;;
+            1|2|3) break ;;
+            *) fail "Pick $( (( cur_n )) && echo 0-3 || echo 1-3 )." ;;
+        esac
+    done
     cur_en=",$cur_list,"
     case "$mode" in
-        0) (( cur_n )) || die "Nothing is enabled yet — pick 1, 2 or 3."
-           sel=$(tr ',' ' ' <<<"$cur_list") ;;
+        0) sel=$(tr ',' ' ' <<<"$cur_list") ;;
         1) sel="$STD" ;;
-        2) sel=$(svc_managed | tr '\n' ' ') ;;
+        2) for s in $(svc_managed); do
+               svc_own_installer "$s" "$cur_en" || sel+="$s "
+           done
+           _configure_pick_download_clients ;;
         3) for s in $(svc_managed); do
                case "$s" in wizarr|authentik) continue ;; esac   # the Accounts question decides these
+               svc_own_installer "$s" "$cur_en" && continue
                d=$(svc_label "$s" mediastack.desc)
                # default: current state if configured before, else standard membership
                local dp def
@@ -242,7 +289,6 @@ sign in (none, Wizarr or authentik) is asked next."
                REPLY_VAL="${REPLY_VAL:-$def}"
                [[ "${REPLY_VAL,,}" == y* ]] && sel+="$s "
            done ;;
-        *) die "Unknown choice '$mode' — expected 0, 1, 2 or 3." ;;
     esac
     [[ -n "$sel" ]] || die "No services selected — nothing to run."
     # shellcheck disable=SC2086  # a word list of services
@@ -274,8 +320,10 @@ sign in (none, Wizarr or authentik) is asked next."
 "  1) $a — $(svc_label "$a" mediastack.desc)" \
 "  2) $b — $(svc_label "$b" mediastack.desc)" \
 "Switching later is possible (disable one, enable the other)."
-            ask "PICK_$a" "Keep" "$kdef"
-            case "$REPLY_VAL" in 1) keep=$a ;; 2) keep=$b ;; *) die "Unknown choice '$REPLY_VAL' — expected 1 or 2." ;; esac
+            while true; do
+                ask "PICK_$a" "Keep" "$kdef"
+                case "$REPLY_VAL" in 1) keep=$a; break ;; 2) keep=$b; break ;; *) fail "Pick 1 or 2." ;; esac
+            done
         fi
         sel=$(printf '%s\n' $sel | grep -vx "$([[ "$keep" == "$a" ]] && echo "$b" || echo "$a")")
         ok "Keeping $keep"
@@ -284,7 +332,12 @@ sign in (none, Wizarr or authentik) is asked next."
         explain "The portal's name" \
 "authentik is the portal your users sign up and log in at. Its name is shown
 on the login and sign-up pages (\"Join <name>\")."
-        ask PORTAL_TITLE "Portal name" "$(env_get PORTAL_TITLE Mediastack)"; env_set PORTAL_TITLE "$REPLY_VAL"
+        while true; do
+            ask PORTAL_TITLE "Portal name" "$(env_get PORTAL_TITLE Mediastack)"
+            [[ "$REPLY_VAL" =~ [^[:space:]] ]] && break
+            fail "The portal needs a name."
+        done
+        env_set PORTAL_TITLE "$REPLY_VAL"
     fi
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     ok "Enabled: $(env_get COMPOSE_PROFILES)"
@@ -336,7 +389,12 @@ _configure_vpn() {
 "All download traffic runs inside a VPN container. Supported: any gluetun
 provider (nordvpn, mullvad, protonvpn, surfshark, ...) or 'custom' to paste
 your own WireGuard details (for fussy/unlisted providers)."
-    ask VPN_PROVIDER "VPN provider" "$(env_get VPN_PROVIDER nordvpn)"
+    while true; do
+        ask VPN_PROVIDER "VPN provider" "$(env_get VPN_PROVIDER nordvpn)"
+        REPLY_VAL=${REPLY_VAL,,}
+        [[ "$REPLY_VAL" =~ ^[a-z0-9][a-z0-9\ ._-]*$ ]] && break
+        fail "'$REPLY_VAL' is not a provider name (gluetun's names: nordvpn, mullvad, protonvpn, ... or custom)."
+    done
     env_set VPN_PROVIDER "$REPLY_VAL"
     local wg_cur; wg_cur=$(env_get WIREGUARD_PRIVATE_KEY)
     case "$REPLY_VAL" in
@@ -360,7 +418,7 @@ your own WireGuard details (for fussy/unlisted providers)."
                 env_set WIREGUARD_PRIVATE_KEY "$key"
                 ok "WireGuard key fetched and verified."
                 local cc
-                ask VPN_SERVER_COUNTRIES "Server country (e.g. Switzerland; empty = auto)" "$(env_get VPN_SERVER_COUNTRIES)"
+                ask_countries "Server country (e.g. Switzerland; empty = auto)"
                 cc="$REPLY_VAL"; env_set VPN_SERVER_COUNTRIES "$cc"
             fi ;;
         custom)
@@ -369,13 +427,19 @@ your own WireGuard details (for fussy/unlisted providers)."
 PrivateKey and Address). See gluetun's wiki page 'Custom provider' for
 the remaining server-side settings to add to .env / an override file."
             ask_token "PrivateKey (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
-            ask WIREGUARD_ADDRESSES "Address" "$(env_get WIREGUARD_ADDRESSES 10.5.0.2/32)"; env_set WIREGUARD_ADDRESSES "$REPLY_VAL" ;;
+            while true; do
+                ask WIREGUARD_ADDRESSES "Address" "$(env_get WIREGUARD_ADDRESSES 10.5.0.2/32)"
+                # one or more IP/prefix, comma-separated (the [Interface] Address line)
+                [[ "$REPLY_VAL" =~ ^[0-9A-Fa-f:.]+/[0-9]{1,3}(,[[:space:]]*[0-9A-Fa-f:.]+/[0-9]{1,3})*$ ]] && break
+                fail "'$REPLY_VAL' is not an address like 10.5.0.2/32 (copy the Address line of the config file)."
+            done
+            env_set WIREGUARD_ADDRESSES "$REPLY_VAL" ;;
         *)
             explain "Provider: $REPLY_VAL" \
 "Follow gluetun's wiki for '$REPLY_VAL' to obtain your WireGuard private
 key, then paste it below. Country selection works the same for all."
             ask_token "WireGuard private key (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
-            ask VPN_SERVER_COUNTRIES "Server country (empty = auto)" "$(env_get VPN_SERVER_COUNTRIES)"; env_set VPN_SERVER_COUNTRIES "$REPLY_VAL" ;;
+            ask_countries "Server country (empty = auto)"; env_set VPN_SERVER_COUNTRIES "$REPLY_VAL" ;;
     esac
 
 }
@@ -401,8 +465,11 @@ send to one of them; the others keep running, their entries switched off
         i=$((i + 1)); echo "  $i) $c"
         [[ "$c" == "${cur:-$(head -1 <<<"$enabled")}" ]] && def=$i
     done <<<"$enabled"
-    ask DL_N "Which one" "$def"
-    [[ "$REPLY_VAL" =~ ^[0-9]+$ ]] && (( REPLY_VAL >= 1 && REPLY_VAL <= n )) || die "expected a number from 1 to $n"
+    while true; do
+        ask DL_N "Which one" "$def"
+        [[ "$REPLY_VAL" =~ ^[0-9]+$ ]] && (( REPLY_VAL >= 1 && REPLY_VAL <= n )) && break
+        fail "Pick 1-$n."
+    done
     c=$(sed -n "${REPLY_VAL}p" <<<"$enabled")
     env_set DOWNLOAD_CLIENT "$c"
     ok "download client: $c"

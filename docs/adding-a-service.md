@@ -63,12 +63,14 @@ backups and the update pipeline like any shipped service.
 | `mediastack.hostport: "false"` | (toggle services only) Traefik-only — publish no host port in either VPN state, for serving apps whose container port would collide on the host (e.g. `:80`). Default `"true"` |
 | `mediastack.config: "true"` | owns `${CONFIG_ROOT}/<service>` (provisioned, audited, backed up) |
 | `mediastack.cache: "true"` | owns `${CACHE_ROOT}/<service>` (provisioned, never backed up) |
-| `mediastack.transcode: "true"` | owns `${TRANSCODE_ROOT}/<service>` (provisioned, never backed up) — for apps that write video segments while streaming; the root is local disk or a tmpfs by design |
+| `mediastack.transcode: "true"` | owns `${TRANSCODE_ROOT}/<service>` (provisioned, never backed up) — for apps that write video segments while streaming; the root is local disk by design (tmpfs: docs/roadmap.md, look at later) |
 | `mediastack.internal: "true"` | reachable on the LAN only — status marks it instead of printing a URL |
 | `mediastack.user_facing: "true"` | household-facing: an update to this service notifies the `users` Apprise stream (not just `ops`). Per-deployment override via `set-user-facing` (writes `<SVC>_USER_FACING` in `.env`) |
 | `mediastack.subdomain: "x"` | default hostname for the status URL column (`<X>_HOST` in `.env` overrides) |
 | `mediastack.port: "1234"` | the port the app listens on INSIDE its container — `vpn_gen`'s published port, the Traefik backend port, and what other containers dial. The host-side port is derived from the rendered `ports:` (`svc_port`), so a `${MYAPP_PORT:-1234}:1234` mapping keeps the status table, `wire`'s API calls and the readiness gates on the overridden port |
 | `mediastack.desc: "…"` | one-line description shown in the `configure` service picker |
+| `mediastack.conflicts: "other"` | does the same job as `other` and never runs beside it (either side may declare it): `configure` asks which to keep, `enable` refuses the second |
+| `mediastack.installer: "verb"` | set up by its own command, not `enable`/`configure`: `everything` and `custom` leave it out with a pointer to the verb, `enable` refuses — the verb enables it once its setup is in place |
 | `mediastack.errors: '<regex>'` | what counts as an error line for `doctor`'s log-noise check (extended regex, case-insensitive) — on a service or a shard member (doctor counts every container of a shard). Default: any line containing the word `error` or `fatal`. Set it for an app whose logs carry a level, so a logger name or field key holding the word is not counted — authentik's is `"level": ?"(error\|critical\|fatal\|panic)"` |
 | `traefik.http.routers.*` labels | HTTPS hostname — native Traefik labels, see docs/edge.md |
 

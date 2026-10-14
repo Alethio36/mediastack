@@ -1115,6 +1115,7 @@
       "labels": {
         "com.centurylinklabs.watchtower.enable": "false",
         "mediastack.auth": "gate",
+        "mediastack.installer": "frontdoor-install",
         "mediastack.managed": "true",
         "mediastack.port": "1337",
         "mediastack.subdomain": "panel",

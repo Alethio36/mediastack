@@ -1029,7 +1029,7 @@ grep -q 'grant_types: \[authorization_code, refresh_token\]' "$T/abs" || fail_ "
 acc() { # acc PROFILES ANSWERS -> the wizard's output, then "P=<COMPOSE_PROFILES>" and "SAME" when .env is byte-identical
     ( ENV_FILE=$T/acc.env; printf 'COMPOSE_PROFILES=%s\nPORTAL_TITLE=Mediastack\n' "$1" > "$ENV_FILE"; cp "$ENV_FILE" "$T/acc.before"
       render() { :; }; svc_managed() { printf '%s\n' gluetun jellyfin sonarr wizarr authentik; }
-      svc_label() { echo "desc"; }; conflicts_in() { [[ " $* " == *" authentik "* && " $* " == *" wizarr "* ]] && echo "authentik wizarr" || true; }
+      svc_label() { [[ "$2" == mediastack.desc ]] && echo "desc"; return 0; }; conflicts_in() { [[ " $* " == *" authentik "* && " $* " == *" wizarr "* ]] && echo "authentik wizarr" || true; }
       resolve_deps() { local x; for x in "$@"; do echo "$x"; [[ "$x" == wizarr ]] && echo jellyfin; done | awk '!seen[$0]++'; }
       hr() { echo "== $*"; }; ok() { echo "OK $*"; }; info() { echo ":: $*"; }; warn() { echo "WARN $*"; }; fail() { echo "FAIL $*"; }
       printf '%b' "$2" | _configure_services 2>&1

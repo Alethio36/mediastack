@@ -33,9 +33,16 @@ Before continuing, two things must exist at dash.cloudflare.com:
      with the proxy toggle OFF (grey cloud, 'DNS only')
 This exposes nothing to the internet — the addresses only resolve
 usefully on your own network."
-        ask TD "Base domain (e.g. media.example.com)" "${domain}"; domain="$REPLY_VAL"
-        [[ -n "$domain" ]] || die "A domain is required."
-        ask AE "Email for certificate-expiry notices" "${email}"; email="$REPLY_VAL"
+        while true; do
+            ask TD "Base domain (e.g. media.example.com)" "${domain}"; domain="${REPLY_VAL,,}"
+            env_type_ok domain "$domain" && break
+            fail "'$REPLY_VAL' is not a domain name (e.g. media.example.com)."
+        done
+        while true; do
+            ask AE "Email for certificate-expiry notices" "${email}"; email="$REPLY_VAL"
+            env_type_ok email "$email" && break
+            fail "'$REPLY_VAL' is not an email address."
+        done
         explain "Cloudflare API token" \
 "Lets the stack prove to Let's Encrypt that you control the domain.
 Create one at dash.cloudflare.com -> My Profile -> API Tokens ->
@@ -51,21 +58,40 @@ scoped to just this domain's zone. (Not the Global API Key.)"
               same. Pick this while you are still testing; one
               setting change switches to production later and the
               stack handles the swap itself."
-        ask AV "Certificate environment [production/staging]" "$(env_get ACME_ENV production)"
-        case "$REPLY_VAL" in production|staging) acmeenv="$REPLY_VAL" ;; *) die "Expected 'production' or 'staging'." ;; esac
+        while true; do
+            ask AV "Certificate environment [production/staging]" "$(env_get ACME_ENV production)"
+            case "${REPLY_VAL,,}" in production|staging) acmeenv="${REPLY_VAL,,}"; break ;; *) fail "Type production or staging." ;; esac
+        done
         env_set STACK_DOMAIN "$domain"; env_set ACME_EMAIL "$email"
         env_set CF_DNS_API_TOKEN "$token"; env_set ACME_ENV "$acmeenv"
     fi
     duser=$(env_get TRAEFIK_DASH_USER)
     if [[ -z "$duser" ]] || (( force )); then
-        [[ -t 0 ]] || die "traefik dashboard credentials unset and no terminal — run './mediastack.sh traefik-setup'."
-        explain "Dashboard login" \
+        # a password is only ever generated or typed — an empty one is never kept
+        local dpass; dpass=$(env_get TRAEFIK_DASH_PASSWORD)
+        [[ -n "$dpass" ]] || dpass=$(head -c12 /dev/urandom | base64 | tr -d '=+/')
+        if signin_is authentik; then
+            # the portal signs admins in to the dashboard (mediastack-gate); this
+            # login is only the fallback should the portal ever be removed
+            [[ -n "$duser" ]] || duser="admin"
+            env_set TRAEFIK_DASH_USER "$duser"; env_set TRAEFIK_DASH_PASSWORD "$dpass"
+            info "Dashboard: admins sign in through the portal (a fallback login is kept: ./mediastack.sh credentials)"
+        else
+            [[ -t 0 ]] || die "traefik dashboard credentials unset and no terminal — run './mediastack.sh traefik-setup'."
+            explain "Dashboard login" \
 "Traefik's dashboard (https://dash.<domain>) shows every route and
 certificate. It cannot change anything, but it still gets a login.
-Enter accepts a generated password; see it later with: credentials"
-        ask DU "Dashboard username" "$(env_get TRAEFIK_DASH_USER admin)"; duser="$REPLY_VAL"
-        ask_secret "Dashboard password" "$(env_get TRAEFIK_DASH_PASSWORD "$(head -c12 /dev/urandom | base64 | tr -d '=+/')")"
-        env_set TRAEFIK_DASH_USER "$duser"; env_set TRAEFIK_DASH_PASSWORD "$REPLY_VAL"
+Enter keeps the name shown and accepts a generated password; see them
+later with: credentials"
+            while true; do
+                ask DU "Dashboard username" "${duser:-admin}"; duser="$REPLY_VAL"
+                # basic auth splits on ':' — letters, digits and ._- only
+                [[ "$duser" =~ ^[A-Za-z0-9._-]+$ ]] && break
+                fail "Use letters, digits and . _ - only."
+            done
+            ask_secret "Dashboard password" "$dpass"
+            env_set TRAEFIK_DASH_USER "$duser"; env_set TRAEFIK_DASH_PASSWORD "$REPLY_VAL"
+        fi
     fi
     traefik_gen
 }

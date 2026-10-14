@@ -22,6 +22,14 @@ FRONTDOOR_USER=olivetin
 FRONTDOOR_WRAPPER=/usr/local/bin/olivetin-frontdoor
 FRONTDOOR_SUDOERS=/etc/sudoers.d/mediastack-frontdoor
 
+frontdoor_require() { # up: the panel's container mounts files only frontdoor-install writes
+    svc_enabled olivetin || return 0
+    local pw; pw="$(env_get CONFIG_ROOT)/olivetin/passwd"
+    [[ -f "$pw" ]] && return 0
+    [[ -d "$pw" ]] && die "the web panel (olivetin) is enabled but not installed, and $pw is a directory docker made at a failed start — remove it (sudo rm -r '$pw'), then: ./mediastack.sh frontdoor-install"
+    die "the web panel (olivetin) is enabled but not installed — run: ./mediastack.sh frontdoor-install (or: ./mediastack.sh disable olivetin)"
+}
+
 frontdoor_teardown() { footprint_remove panel; }   # everything frontdoor-install placed (lib/footprint.sh: fp_panel)
 
 # frontdoor_status_json: JSONL for the panel's live up/down tiles — one

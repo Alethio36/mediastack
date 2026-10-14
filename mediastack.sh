@@ -633,6 +633,7 @@ cmd_up()   {
     vpn_gen
     require_mounts; reconcile_disabled
     require_free_ports
+    frontdoor_require   # the panel runs only as frontdoor-install left it
     # label-owned directories BEFORE compose sees them: a missing bind source
     # is created by docker as a root-owned dir, and a service running as its
     # PUID cannot write into that. `enable` and `configure` provision; `up`
@@ -679,7 +680,8 @@ cmd_enable() {
     local svc="${1:?usage: enable <service>}"; load_env
     svc_exists "$svc" || die "No service '$svc'. Known: $(svc_managed | tr '\n' ' ')"
     svc_enabled "$svc" && { ok "'$svc' already enabled."; return; }
-    local c
+    local c inst; inst=$(svc_label "$svc" mediastack.installer)
+    [[ -z "$inst" ]] || die "'$svc' is set up by its own command, which also enables it: ./mediastack.sh $inst"
     for c in $(svc_conflicts "$svc"); do
         svc_enabled "$c" && die "'$svc' and '$c' do the same job two ways and cannot both run:
     $svc — $(svc_label "$svc" mediastack.desc)

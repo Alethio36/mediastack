@@ -559,6 +559,13 @@ all built; what each still leaves open is noted below.
   narrowing below into one "shrink the root surface" goal.
 
 ### Maybe
+- Transcodes on tmpfs *(look at later, Oct 2026)* — RAM-backed scratch suits
+  segments written once, read once and deleted, but after a reboot the
+  tmpfs is empty: Docker restarts Jellyfin before `up` re-creates
+  `TRANSCODE_ROOT/jellyfin` with its owner, so transcoding breaks until `up`
+  (not yet proven live). Needs the folders made at boot before the
+  containers start (or the mount's uid/gid options) before the wizard
+  suggests it again; the hint was taken out of configure.
 - JellySearch + Meilisearch as one shard *(to discuss)* — Meilisearch only serves
   JellySearch, but it is its own fragment today; merging changes existing
   installs' profiles.

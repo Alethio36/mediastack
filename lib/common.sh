@@ -113,7 +113,8 @@ explain() { echo; hr "$1"; shift; printf '%s\n' "$@"; echo; }
 
 ask() { # ask VAR "prompt" "default" -> sets REPLY_VAL
     local def="$3" ans
-    read -r -p "$2 [${def}]: " ans
+    # input that has ended is no answer: a question asked again would spin forever
+    read -r -p "$2 [${def}]: " ans || [[ -n "$ans" ]] || die "no answer to '$2': the input ended"
     REPLY_VAL="${ans:-$def}"
 }
 
@@ -123,7 +124,7 @@ ask_token() { # ask_token "prompt" "current" -> REPLY_VAL; pasted secrets:
     local a hint=""
     [[ -n "${2:-}" ]] && hint=" [Enter keeps the current one]"
     while true; do
-        read -r -s -p "$1${hint}: " a; echo
+        read -r -s -p "$1${hint}: " a || [[ -n "$a" ]] || { echo; die "no answer to '$1': the input ended"; }; echo
         if [[ -z "$a" ]]; then
             [[ -n "${2:-}" ]] && { REPLY_VAL="$2"; info "keeping the current value"; return 0; }
             warn "this value is required — paste it (input is hidden)"
@@ -138,13 +139,13 @@ ask_secret() { # ask_secret "prompt" "generated-default" -> REPLY_VAL
     # a typed password must be entered twice to guard against blind typos.
     local a b
     while true; do
-        read -r -s -p "$1 [Enter = accept a generated one]: " a; echo
+        read -r -s -p "$1 [Enter = accept a generated one]: " a || [[ -n "$a" ]] || { echo; die "no answer to '$1': the input ended"; }; echo
         if [[ -z "$a" ]]; then
             REPLY_VAL="$2"
             info "using a generated password — view any time: ./mediastack.sh credentials"
             return 0
         fi
-        read -r -s -p "Confirm password: " b; echo
+        read -r -s -p "Confirm password: " b || [[ -n "$b" ]] || { echo; die "no answer to 'Confirm password': the input ended"; }; echo
         [[ "$a" == "$b" ]] && { REPLY_VAL="$a"; return 0; }
         fail "Passwords do not match — try again."
     done

@@ -56,6 +56,7 @@ services:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
       mediastack.port: "1337"
+      mediastack.installer: "frontdoor-install"   # host user, SSH key, wrapper, sudoers: its own verb sets it up, never enable/configure
       mediastack.subdomain: "panel"
       mediastack.auth: "gate"   # behind the portal (mediastack-gate), which also signs people in to it
       traefik.docker.network: "mediastack-panel"
