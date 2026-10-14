@@ -262,7 +262,7 @@ rm -f "$T/state" "$T/calls"
 ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
     case "$1 $2" in
         "GET /providers/proxy/?name__iexact=mediastack-gate") echo '{"results":[{"pk":7}]}' ;;
-        "GET /outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") echo '{"results":[{"pk":"op-1","providers":[3]}]}' ;;
+        "GET /outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") echo '{"results":[{"pk":"op-1","providers":[3],"config":{"log_level":"info","authentik_host":""}}]}' ;;
         "GET /core/groups/?search=admins") echo '{"results":[{"pk":"g-adm","name":"admins"},{"pk":"g-x","name":"superadmins"}]}' ;;
         "GET /core/groups/?search=media-users") echo '{"results":[{"pk":"g-mu","name":"media-users"}]}' ;;
         "GET /core/users/?username=akadmin") echo '{"results":[{"pk":1}]}' ;;
@@ -276,6 +276,8 @@ ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
 wire_authentik_gate >/dev/null
 grep -qF 'PATCH /outposts/instances/op-1/ {"providers":[3,7]}' "$T/calls" || fail_ "the gate is added beside the outpost's providers: $(grep PATCH "$T/calls")"; pass
 grep -qF 'POST /core/groups/g-adm/add_user/ {"pk":1}' "$T/calls" || fail_ "akadmin joins 'admins' (not a lookalike group)"; pass
+grep -qF "PATCH /outposts/instances/op-1/ {\"config\":{\"log_level\":\"info\",\"authentik_host\":\"$(authentik_portal)\"}}" "$T/calls" \
+    || fail_ "the outpost sends sign-ins to the portal, the rest of its config kept: $(grep 'PATCH.*config' "$T/calls")"; pass
 rm -f "$T/calls"; wire_authentik_gate >/dev/null
 ! grep -q 'add_user' "$T/calls" || fail_ "akadmin is added once — after that, 'admins' is yours"; pass
 [[ "$(grep -c '^POST /core/applications/' "$T/calls")" == 1 ]] && grep -q '"slug":"mediastack-tool-olivetin"' "$T/calls" \

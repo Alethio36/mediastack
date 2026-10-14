@@ -471,6 +471,9 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                 [[ -n "$hg" ]] && ok "authentik: household gate — ${hg}ask the portal first (media-users and admins)"
                 if authentik_gate_attached; then ok "authentik: the gate is up — $(authentik_gated | tr '\n' ' ')ask the portal first (admins only)"
                 else d_fail "authentik: the gate is not on its built-in outpost" "routes marked gate ($(authentik_gated | tr '\n' ' '| sed 's/ $//')) refuse everyone" "./mediastack.sh wire authentik"; fi
+                local oh; oh=$(authentik_outpost_host_get || echo "(unreadable)")
+                if [[ "$oh" == "$(authentik_portal)" ]]; then ok "authentik: the gates send sign-ins to $oh"
+                else d_fail "authentik: the gates send sign-ins to ${oh:-localhost}, not the portal" "a browser not signed in yet is sent there — nobody gets through a gate" "./mediastack.sh wire authentik"; fi   # addr-ok: authentik's fallback, named in a message
             fi
         fi
     elif svc_enabled wizarr; then
@@ -689,7 +692,9 @@ wire_authentik_gate() { # the gate on the built-in outpost, the first admin in `
     prov=$(jq -r '.results[0].pk // empty' <<<"$out")
     [[ -n "$prov" ]] || { wfail "authentik: the gate provider (mediastack-gate) is missing — the blueprint creates it: ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; return 0; }
     if authentik_gate_attached; then ok "authentik: the gate is on its built-in outpost"
-    else authentik_outpost_add "$prov" "the gate"; fi
+    else authentik_outpost_add "$prov" "the gate" || true; fi   # a failure is counted (wfail); the step goes on
+    # 1b. where that outpost sends browsers to sign in
+    authentik_outpost_host
     # 2. the first admin joins `admins` once — after that, membership is yours to manage
     if [[ -z "$(state_get AUTHENTIK_ADMINS_SEEDED)" ]] && w_would "authentik: put akadmin in 'admins' (the gate lets admins through)"; then
         local g u
@@ -730,6 +735,27 @@ ak_group_pk() { # ak_group_pk NAME -> its pk (exact name, not a lookalike)
 ak_flow_pk() { # ak_flow_pk SLUG -> its pk
     local f; f=$(ak_api GET "/flows/instances/?slug=$1") || return 1
     jq -r '.results[0].pk // empty' <<<"$f"
+}
+
+authentik_outpost_host_get() { # -> the built-in outpost's authentik_host (empty: unset); rc 1 when unreadable
+    local out; out=$(ak_api GET "/outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") || return 1
+    jq -r '.results[0].config.authentik_host // ""' <<<"$out"
+}
+
+authentik_outpost_host() { # the built-in outpost sends browsers to the portal to sign in — its authentik_host, merged into the rest of its config
+    # unset (a fresh install), it sends them to localhost: every gate and
+    # household gate fails for anyone not already signed in (found live)
+    local out outpost cfg want
+    want=$(authentik_portal)
+    out=$(ak_api GET "/outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") || { wfail "authentik: built-in outpost unreadable"; return 0; }
+    outpost=$(jq -r '.results[0].pk // empty' <<<"$out"); cfg=$(jq -c '.results[0].config // {}' <<<"$out")
+    [[ -n "$outpost" ]] || { wfail "authentik: its built-in outpost is missing"; return 0; }
+    if [[ "$(jq -r '.authentik_host // ""' <<<"$cfg")" == "$want" ]]; then ok "authentik: its built-in outpost sends sign-ins to $want"; return 0; fi
+    w_would "authentik: its built-in outpost sends sign-ins to $want (unset, it sends browsers to localhost)" || return 0   # addr-ok: authentik's fallback, named in a message
+    ak_api PATCH "/outposts/instances/$outpost/" "$(jq -cn --argjson c "$cfg" --arg h "$want" '{config: ($c + {authentik_host: $h})}')" >/dev/null \
+        && ok "authentik: its built-in outpost sends sign-ins to $want" \
+        || wfail "authentik refused its built-in outpost's sign-in address"
+    return 0
 }
 
 authentik_outpost_add() { # authentik_outpost_add PROVIDER-PK LABEL — beside what is on the built-in outpost, never replacing it
