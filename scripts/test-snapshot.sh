@@ -114,7 +114,7 @@ snap_case() { # snap_case CASE OUT — one fixture through the up order, outputs
     if signin_is authentik; then
         mkdir -p "$out/authentik-templates"
         for f in services/authentik/templates/*; do
-            authentik_template_render "$f" "$(env_get PORTAL_TITLE Mediastack)" > "$out/authentik-templates/${f##*/}"
+            authentik_template_render "$f" "$(env_get PORTAL_TITLE)" > "$out/authentik-templates/${f##*/}"
         done
     fi
     if svc_enabled olivetin; then   # the panel's config follows the account model (the portal's sign-in)

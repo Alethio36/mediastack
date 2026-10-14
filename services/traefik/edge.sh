@@ -59,7 +59,7 @@ scoped to just this domain's zone. (Not the Global API Key.)"
               setting change switches to production later and the
               stack handles the swap itself."
         while true; do
-            ask AV "Certificate environment [production/staging]" "$(env_get ACME_ENV production)"
+            ask AV "Certificate environment [production/staging]" "$(env_get ACME_ENV)"
             case "${REPLY_VAL,,}" in production|staging) acmeenv="${REPLY_VAL,,}"; break ;; *) fail "Type production or staging." ;; esac
         done
         env_set STACK_DOMAIN "$domain"; env_set ACME_EMAIL "$email"
@@ -99,7 +99,7 @@ later with: credentials"
 traefik_gen() {
     local croot domain acmeenv caline hash duser dpass prehash posthash
     croot=$(env_get CONFIG_ROOT); domain=$(env_get STACK_DOMAIN)
-    acmeenv=$(env_get ACME_ENV production)
+    acmeenv=$(env_get ACME_ENV)
     # docker creates missing bind sources as root-owned DIRECTORIES; if the
     # container ever started before setup, our file paths are junk dirs now
     local f
@@ -171,7 +171,7 @@ STATIC
 http:
   routers:
     dashboard:
-      rule: "Host(\`$(env_get TRAEFIK_DASH_HOST dash).$domain\`)"
+      rule: "Host(\`$(env_get TRAEFIK_DASH_HOST).$domain\`)"
       entryPoints: [websecure]
       service: api@internal
       middlewares: [$(signin_is authentik && echo mediastack-gate || echo dash-auth)]
@@ -191,7 +191,7 @@ tcp:
     # the LDAP route answers the stack network only — never the LAN
     mediastack-ldap-allow:
       ipAllowList:
-        sourceRange: ["$(env_get MEDIASTACK_SUBNET 172.31.250.0/24)"]
+        sourceRange: ["$(env_get MEDIASTACK_SUBNET)"]
 DYNAMIC
     sudo install -d -m 700 "$croot/traefik/dynamic"
     sudo rm -f "$croot/traefik/dynamic.yml"   # pre-dir layout leftover
@@ -302,7 +302,7 @@ certificate covers any choice — renames are free."
 cmd_traefik_certs() {
     [[ -t 0 ]] || die "traefik-setup --certs needs a terminal."
     local cur acmef stored="(none issued yet)"
-    cur=$(env_get ACME_ENV production)
+    cur=$(env_get ACME_ENV)
     acmef="$(env_get CONFIG_ROOT)/traefik/acme/acme.json"
     if sudo test -s "$acmef" 2>/dev/null; then
         sudo grep -q "acme-staging" "$acmef" && stored=staging || stored=production

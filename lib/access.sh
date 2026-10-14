@@ -19,37 +19,37 @@ signin_is() { [[ "$(signin_model)" == "$1" ]]; }   # signin_is MODEL
 cmd_credentials() {
     load_env
     hr "Credentials (stored in .env)"
-    printf '%-22s %s\n' "Arr apps user"        "$(env_get ARR_USER '(not set — run wire)')"
-    printf '%-22s %s\n' "Arr apps password"    "$(env_get ARR_PASSWORD '(not set — run wire)')"
-    printf '%-22s %s\n' "qBittorrent user"     "$(env_get QBITTORRENT_USER '(not set — run wire)')"
-    printf '%-22s %s\n' "qBittorrent password" "$(env_get QBITTORRENT_PASSWORD '(not set — run wire)')"
-    svc_enabled deluge && printf '%-22s %s\n' "Deluge password" "$(env_get DELUGE_PASSWORD '(not set — run wire deluge)')"
+    printf '%-22s %s\n' "Arr apps user"        "$(env_or_note ARR_USER '(not set — run wire)')"
+    printf '%-22s %s\n' "Arr apps password"    "$(env_or_note ARR_PASSWORD '(not set — run wire)')"
+    printf '%-22s %s\n' "qBittorrent user"     "$(env_or_note QBITTORRENT_USER '(not set — run wire)')"
+    printf '%-22s %s\n' "qBittorrent password" "$(env_or_note QBITTORRENT_PASSWORD '(not set — run wire)')"
+    svc_enabled deluge && printf '%-22s %s\n' "Deluge password" "$(env_or_note DELUGE_PASSWORD '(not set — run wire deluge)')"
     if svc_enabled transmission; then
-        printf '%-22s %s\n' "Transmission user"     "$(env_get TRANSMISSION_USER '(not set — run wire transmission)')"
-        printf '%-22s %s\n' "Transmission password" "$(env_get TRANSMISSION_PASSWORD '(not set — run wire transmission)')"
+        printf '%-22s %s\n' "Transmission user"     "$(env_or_note TRANSMISSION_USER '(not set — run wire transmission)')"
+        printf '%-22s %s\n' "Transmission password" "$(env_or_note TRANSMISSION_PASSWORD '(not set — run wire transmission)')"
     fi
-    printf '%-22s %s\n' "Pi-hole password"     "$(env_get PIHOLE_PASSWORD '(dns profile not configured)')"
-    printf '%-22s %s\n' "Traefik dash user"    "$(env_get TRAEFIK_DASH_USER '(traefik not configured)')"
-    printf '%-22s %s\n' "Traefik dash password" "$(env_get TRAEFIK_DASH_PASSWORD '(traefik not configured)')"
-    printf '%-22s %s\n' "Jellyfin admin user"   "$(env_get JELLYFIN_ADMIN_USER '(not set — run wire)')"
-    printf '%-22s %s\n' "Jellyfin admin password" "$(env_get JELLYFIN_ADMIN_PASSWORD '(not set — run wire)')"
+    printf '%-22s %s\n' "Pi-hole password"     "$(env_or_note PIHOLE_PASSWORD '(dns profile not configured)')"
+    printf '%-22s %s\n' "Traefik dash user"    "$(env_or_note TRAEFIK_DASH_USER '(traefik not configured)')"
+    printf '%-22s %s\n' "Traefik dash password" "$(env_or_note TRAEFIK_DASH_PASSWORD '(traefik not configured)')"
+    printf '%-22s %s\n' "Jellyfin admin user"   "$(env_or_note JELLYFIN_ADMIN_USER '(not set — run wire)')"
+    printf '%-22s %s\n' "Jellyfin admin password" "$(env_or_note JELLYFIN_ADMIN_PASSWORD '(not set — run wire)')"
     signin_is authentik && info "With the portal, that Jellyfin admin is the stack's own local account (and the emergency login) — people sign in with their portal accounts; admins get Jellyfin administrator rights from the portal's 'admins' group."
-    printf '%-22s %s\n' "Jellyfin API key"      "$(env_get JELLYFIN_API_KEY '(not set — run wire jellyfin)')"
+    printf '%-22s %s\n' "Jellyfin API key"      "$(env_or_note JELLYFIN_API_KEY '(not set — run wire jellyfin)')"
     if svc_enabled audiobookshelf; then
-        printf '%-22s %s\n' "Audiobookshelf root"   "$(env_get ABS_ADMIN_USER '(not set — run wire audiobookshelf)')"
-        printf '%-22s %s\n' "Audiobookshelf root pw" "$(env_get ABS_ADMIN_PASSWORD '(not set — run wire audiobookshelf)')"
+        printf '%-22s %s\n' "Audiobookshelf root"   "$(env_or_note ABS_ADMIN_USER '(not set — run wire audiobookshelf)')"
+        printf '%-22s %s\n' "Audiobookshelf root pw" "$(env_or_note ABS_ADMIN_PASSWORD '(not set — run wire audiobookshelf)')"
         signin_is authentik && printf '%-22s %s\n' "Audiobookshelf root at" "$(svc_url audiobookshelf)/audiobookshelf/login?autoLaunch=0   (its login page otherwise goes straight to the portal)"
     fi
     if svc_enabled kavita; then
-        printf '%-22s %s\n' "Kavita admin"          "$(env_get KAVITA_ADMIN_USER '(not set — run wire kavita)')"
-        printf '%-22s %s\n' "Kavita admin pw"       "$(env_get KAVITA_ADMIN_PASSWORD '(not set — run wire kavita)')"
+        printf '%-22s %s\n' "Kavita admin"          "$(env_or_note KAVITA_ADMIN_USER '(not set — run wire kavita)')"
+        printf '%-22s %s\n' "Kavita admin pw"       "$(env_or_note KAVITA_ADMIN_PASSWORD '(not set — run wire kavita)')"
         signin_is authentik && printf '%-22s %s\n' "Kavita admin at" "$(svc_url kavita)/login?skipAutoLogin=true   (its login page otherwise goes straight to the portal)"
     fi
     if signin_is authentik; then
         printf '%-22s %s\n' "Portal admin user"     "akadmin"
-        printf '%-22s %s\n' "Portal admin password" "$(env_get AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"
+        printf '%-22s %s\n' "Portal admin password" "$(env_or_note AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"
     fi
-    printf '%-22s %s\n' "Wizarr API key"        "$(env_get WIZARR_API_KEY '(not set — run wire wizarr)')"
+    printf '%-22s %s\n' "Wizarr API key"        "$(env_or_note WIZARR_API_KEY '(not set — run wire wizarr)')"
     credentials_api_keys
     info "Seerr owner = the Jellyfin admin above; all Seerr sign-ins use Jellyfin accounts (no separate Seerr passwords exist)."
     info "The Jellyfin API key is what Wizarr's Add Server form asks for."
@@ -103,7 +103,7 @@ Someone else locked out of the portal: ./mediastack.sh reset-password <username>
 account password follows it. Cleanuparr's USERNAME cannot be changed via
 its API: if you change the username here, sign-in to cleanuparr keeps the
 old one."
-        ask SC_U "Username" "$(env_get ARR_USER admin)"; user="$REPLY_VAL"
+        user=$(env_get ARR_USER); ask SC_U "Username" "${user:-admin}"; user="$REPLY_VAL"
         ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
         sc_rotate_arr "$user" "$pass"
         ;;
@@ -112,7 +112,7 @@ old one."
         explain "Rotate the qBittorrent login" \
 "Changes the WebUI login and updates everything that stores it: each
 arr's download-client entry and cleanuparr's connection."
-        ask SC_QU "Username" "$(env_get QBITTORRENT_USER admin)"; user="$REPLY_VAL"
+        user=$(env_get QBITTORRENT_USER); ask SC_QU "Username" "${user:-admin}"; user="$REPLY_VAL"
         ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
         sc_rotate_qbit "$user" "$pass"
         ;;
@@ -185,8 +185,9 @@ NOT covered: the portal's admin (set-credentials portal — it guards the
 rest), and Wizarr's admin account — rotate that in Wizarr's UI
 (Settings -> Account) yourself."
         ask_secret "New stack password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
-        sc_rotate_arr "$(env_get ARR_USER admin)" "$pass"
-        sc_rotate_qbit "$(env_get QBITTORRENT_USER admin)" "$pass"
+        local au qu; au=$(env_get ARR_USER); qu=$(env_get QBITTORRENT_USER)
+        sc_rotate_arr "${au:-admin}" "$pass"
+        sc_rotate_qbit "${qu:-admin}" "$pass"
         if svc_enabled deluge && [[ -n "$(env_get DELUGE_PASSWORD)" ]]; then sc_rotate_deluge "$pass"; fi
         if svc_enabled transmission && [[ -n "$(env_get TRANSMISSION_USER)" ]]; then sc_rotate_transmission "$pass"; fi
         sc_rotate_jellyfin "$pass"

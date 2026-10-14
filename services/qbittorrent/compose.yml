@@ -19,9 +19,9 @@ services:
     # the mediastack.vpn default below and any QBITTORRENT_VPN override in .env.
     environment:
       - PUID=${QBITTORRENT_UID}
-      - PGID=${MEDIA_GROUP_GID}
+      - PGID=${MEDIA_GROUP_GID:-13000}
       - UMASK=002
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       - WEBUI_PORT=8085
     volumes:
       - ${CONFIG_ROOT}/qbittorrent:/config

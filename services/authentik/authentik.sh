@@ -95,7 +95,7 @@ authentik_release_record() { # once authentik is healthy on a release, its datab
 AUTHENTIK_BLUEPRINT="Mediastack - Portal"   # metadata.name in services/authentik/blueprints/mediastack-portal.yaml
 AUTHENTIK_JOIN_FLOW=mediastack-join          # its sign-up flow's slug (the invitation links)
 
-authentik_portal() { echo "https://$(env_get AUTHENTIK_HOST portal).$(env_get STACK_DOMAIN)"; }   # where people go
+authentik_portal() { echo "https://$(svc_subdomain authentik).$(env_get STACK_DOMAIN)"; }   # where people go
 authentik_url()    { echo "http://127.0.0.1:$(svc_hostport authentik)"; }                             # where the script goes
 
 ak_api() { # ak_api METHOD PATH [json] -> body on stdout; rc from HTTP (authentik's API, as the script's token)
@@ -143,7 +143,7 @@ authentik_templates_sync() { # authentik renders CONFIG_ROOT/authentik/templates
     sudo install -d -o "$uid" -g mediacenter -m 755 "$dst"
     out=$(mktemp)
     for f in "$SCRIPT_DIR"/services/authentik/templates/*; do
-        authentik_template_render "$f" "$(env_get PORTAL_TITLE Mediastack)" > "$out"
+        authentik_template_render "$f" "$(env_get PORTAL_TITLE)" > "$out"
         sudo cmp -s "$out" "$dst/${f##*/}" || { sudo install -o "$uid" -g mediacenter -m 644 "$out" "$dst/${f##*/}"; n=1; }
     done
     rm -f "$out"
@@ -165,7 +165,7 @@ gate_bind_sync() { # MEDIASTACK_GATE_BIND: where a gated tool's host port listen
     # MEDIASTACK_GATE_TRUST: who may name the user to an app that trusts a
     # header (Navidrome) — Traefik's fixed address while the portal runs, nobody otherwise
     local trust=""
-    svc_enabled authentik && trust="$(env_get TRAEFIK_ADDRESS 172.31.250.2)/32"
+    svc_enabled authentik && trust="$(env_get TRAEFIK_ADDRESS)/32"
     [[ "$(env_get MEDIASTACK_GATE_TRUST)" == "$trust" ]] || env_set MEDIASTACK_GATE_TRUST "$trust"
     local want=""
     svc_enabled authentik && want="127.0.0.1:"   # addr-ok: host bind, not app-to-app

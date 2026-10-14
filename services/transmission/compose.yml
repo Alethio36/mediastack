@@ -20,9 +20,9 @@ services:
     profiles: ["transmission"]
     environment:
       - PUID=${TRANSMISSION_UID}
-      - PGID=${MEDIA_GROUP_GID}
+      - PGID=${MEDIA_GROUP_GID:-13000}
       - UMASK=002
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       # its RPC/web login (the image writes them into settings.json at start);
       # `wire transmission` generates them, set-credentials rotates them
       - USER=${TRANSMISSION_USER:-}

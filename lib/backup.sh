@@ -83,12 +83,12 @@ maint_lock() { # maint_lock WHAT WAIT-SECONDS — 0: refuse at once when held; r
 }
 
 defer_while_streaming() { # defer_while_streaming WHAT — postpone while someone streams (UPDATE_DEFER_*); rc 1 = skip this run
-    [[ "$(env_get UPDATE_DEFER_IF_ACTIVE false)" == true ]] || return 0
+    [[ "$(env_get UPDATE_DEFER_IF_ACTIVE)" == true ]] || return 0
     local waited=0 retry max
-    retry=$(( $(env_get UPDATE_DEFER_RETRY_MIN 30) * 60 )); max=$(( $(env_get UPDATE_DEFER_MAX_MIN 180) * 60 ))
+    retry=$(( $(env_get UPDATE_DEFER_RETRY_MIN) * 60 )); max=$(( $(env_get UPDATE_DEFER_MAX_MIN) * 60 ))
     while jellyfin_sessions_active; do
         if (( waited >= max )); then
-            if [[ "$(env_get UPDATE_DEFER_ACTION proceed)" == skip ]]; then
+            if [[ "$(env_get UPDATE_DEFER_ACTION)" == skip ]]; then
                 warn "Streams still active after max deferral — SKIPPING this $1 run."; return 1
             fi
             warn "Streams still active after max deferral — proceeding anyway."; return 0
@@ -365,9 +365,9 @@ prune_partial() { # prune_partial DIR — incomplete points left by a failed or 
 prune_backups() {
     local broot keepd keepw keepm
     broot=$(env_get BACKUP_ROOT)
-    keepd=$(env_get BACKUP_KEEP_DAILY 7)
-    keepw=$(env_get BACKUP_KEEP_WEEKLY 4)
-    keepm=$(env_get BACKUP_KEEP_MONTHLY 6)
+    keepd=$(env_get BACKUP_KEEP_DAILY)
+    keepw=$(env_get BACKUP_KEEP_WEEKLY)
+    keepm=$(env_get BACKUP_KEEP_MONTHLY)
     prune_partial "$broot"
     local -a all
     local d
@@ -454,7 +454,7 @@ preupdate_snapshot() { # preupdate_snapshot CROOT DEST SVC — runs with SVC's s
 # touches $BACKUP_ROOT/pre-update/.
 prune_preupdate() {
     local broot keep pud d n=0 pruned=0
-    broot=$(env_get BACKUP_ROOT); keep=$(env_get BACKUP_KEEP_PREUPDATE 3)
+    broot=$(env_get BACKUP_ROOT); keep=$(env_get BACKUP_KEEP_PREUPDATE)
     pud="$broot/pre-update"; [[ -d "$pud" ]] || return 0
     prune_partial "$pud"
     local -a all=()
@@ -772,7 +772,8 @@ cmd_update() {
     local targets=() s
     for s in $(svc_enabled_managed); do
         [[ -n "$one" && "$s" != "$one" ]] && continue
-        [[ -z "$one" ]] && { [[ "$(env_get "$(uvar "$s")_UPDATE" true)" == true ]] || continue; }
+        # a service is updated unless its <SVC>_UPDATE says false
+        [[ -z "$one" ]] && { [[ "$(env_get "$(uvar "$s")_UPDATE")" != false ]] || continue; }
         [[ -s "$PINS_FILE" ]] && grep -q "^  $s:" "$PINS_FILE" && [[ -z "$to_tag" ]] \
             && { info "$s is pinned — skipping (unpin to resume updates)."; continue; }
         targets+=("$s")
@@ -814,7 +815,7 @@ cmd_update() {
     if (( notify_users )); then
         notify_interruption "$ntitle" "$nstart"
         if (( jf_affected )) && jellyfin_sessions_active; then
-            local grace; grace=$(env_get NOTIFY_GRACE 30)
+            local grace; grace=$(env_get NOTIFY_GRACE)
             (( grace > 0 )) && { info "active stream(s) — warned users, pausing ${grace}s before maintenance"; sleep "$grace"; }
         fi
     fi

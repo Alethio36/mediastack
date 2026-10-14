@@ -31,8 +31,8 @@ sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"; rm -f "$lib"
 [[ -f "$ENV_FILE" ]] || { echo "ERROR no .env — this checks an installed stack" >&2; exit 2; }
-[[ "$(env_get ENV_SCHEMA 0)" == "$SCRIPT_SCHEMA" ]] \
-    || { echo "ERROR .env schema $(env_get ENV_SCHEMA 0) != script $SCRIPT_SCHEMA — run ./mediastack.sh up first (this check changes nothing)" >&2; exit 2; }
+[[ "$(env_get ENV_SCHEMA)" == "$SCRIPT_SCHEMA" ]] \
+    || { echo "ERROR .env schema $(env_get ENV_SCHEMA) != script $SCRIPT_SCHEMA — run ./mediastack.sh up first (this check changes nothing)" >&2; exit 2; }
 env_validate
 
 fails=0 passes=0
@@ -50,7 +50,7 @@ https() { # https HOST PATH -> "code redirect_url" from this box's Traefik
         -w '%{http_code} %{redirect_url}' "https://$1$2" 2>/dev/null || echo "000 "
 }
 host_of() { # host_of SVC -> its https name
-    echo "$(env_get "$(uvar "$1")_HOST" "$(svc_label "$1" mediastack.subdomain)").$domain"
+    echo "$(svc_subdomain "$1").$domain"
 }
 gated_enabled() { # the enabled services the portal guards
     local s
@@ -79,7 +79,7 @@ echo "== gate"
 if (( portal && edge )); then
     for s in $(gated_enabled); do
         h=$(host_of "$s"); read -r code to <<<"$(https "$h" /)"
-        if [[ "$code" == 302 && ( "$to" == *outpost.goauthentik.io* || "$to" == *"$(env_get AUTHENTIK_HOST portal).$domain"* ) ]]; then
+        if [[ "$code" == 302 && ( "$to" == *outpost.goauthentik.io* || "$to" == *"$(svc_subdomain authentik).$domain"* ) ]]; then
             pass "$s: signed out, sent to sign in"
         else flunk "$s: https://$h/ answered $code ${to:-(no redirect)} — want 302 to the portal's sign-in"; fi
         for p in $(svc_label "$s" mediastack.auth.bypass); do
@@ -90,7 +90,7 @@ if (( portal && edge )); then
     done
 fi
 if (( edge )); then
-    dh="$(env_get TRAEFIK_DASH_HOST dash).$domain"; read -r code to <<<"$(https "$dh" /)"
+    dh="$(env_get TRAEFIK_DASH_HOST).$domain"; read -r code to <<<"$(https "$dh" /)"
     want=401; (( portal )) && want=302
     if [[ "$code" == "$want" ]]; then pass "dashboard: asks for a login ($code)"
     else flunk "dashboard answered $code ${to:-} — want $want ($( (( portal )) && echo "the gate" || echo "its basic auth"))"; fi
@@ -120,12 +120,12 @@ fi
 
 echo "== certs"
 if (( edge )); then
-    cert=$(openssl s_client -connect 127.0.0.1:443 -servername "$(env_get TRAEFIK_DASH_HOST dash).$domain" </dev/null 2>/dev/null | openssl x509 2>/dev/null || true)
+    cert=$(openssl s_client -connect 127.0.0.1:443 -servername "$(env_get TRAEFIK_DASH_HOST).$domain" </dev/null 2>/dev/null | openssl x509 2>/dev/null || true)
     if [[ -z "$cert" ]]; then flunk "no certificate served on :443"
     else
         issuer=$(openssl x509 -noout -issuer <<<"$cert")
         staging=0; [[ "$issuer" == *STAGING* ]] && staging=1
-        want=$(env_get ACME_ENV production)
+        want=$(env_get ACME_ENV)
         match=0
         if [[ "$want" == staging ]]; then (( staging )) && match=1; else (( staging )) || match=1; fi
         if (( match )); then pass "issuer matches ACME_ENV=$want (${issuer#issuer=})"

@@ -30,7 +30,7 @@ services:
     profiles: ["olivetin"]
     user: "${OLIVETIN_UID}:${OLIVETIN_GID}"
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       # ssh client aborts if its uid has no passwd entry; give it a home too
       - HOME=/config
     volumes:

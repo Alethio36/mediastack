@@ -14,9 +14,9 @@ services:
     image: getmeili/meilisearch:v1.34
     container_name: ${MEILISEARCH_NAME:-mediastack-meilisearch}
     profiles: ["meilisearch"]
-    user: "${MEILISEARCH_UID}:${MEDIA_GROUP_GID}"
+    user: "${MEILISEARCH_UID}:${MEDIA_GROUP_GID:-13000}"
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       - MEILI_ENV=production
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
       - MEILI_NO_ANALYTICS=true

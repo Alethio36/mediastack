@@ -14,9 +14,9 @@ services:
     profiles: ["sonarr-anime"]
     environment:
       - PUID=${SONARR_ANIME_UID}
-      - PGID=${MEDIA_GROUP_GID}
+      - PGID=${MEDIA_GROUP_GID:-13000}
       - UMASK=002
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
     volumes:
       - ${CONFIG_ROOT}/sonarr-anime:/config
       - ${DATA_ROOT}:/data

@@ -83,9 +83,9 @@ grep -q 'Pick 1-3' "$T/out" && has sonarr || fail_ "and the next answer counts: 
 printf 'COMPOSE_PROFILES=%s\nPORTAL_TITLE=\n' "$PRESET" > "$ENV_FILE"
 # shellcheck disable=SC2034  # read by _configure_services
 CONFIGURE_FRESH=1
-printf '1\n3\n\nHome\n' | _configure_services > "$T/out" 2>&1 || fail_ "an empty portal name is asked again"
-[[ "$(env_get PORTAL_TITLE)" == Home ]] && grep -q 'The portal needs a name' "$T/out" \
-    || fail_ "the portal is named: $(env_get PORTAL_TITLE)"; pass
+printf '1\n3\n\n' | _configure_services > "$T/out" 2>&1 || fail_ "an empty portal name line runs"
+[[ "$(env_get PORTAL_TITLE)" == Mediastack ]] && ! grep -q 'The portal needs a name' "$T/out" \
+    || fail_ "an empty PORTAL_TITLE= line offers the schema's default: $(env_get PORTAL_TITLE)"; pass
 
 services '1\n' 1 && fail_ "input that ends before Accounts stops configure"
 grep -q "no answer to 'Choice': the input ended" "$T/out" || fail_ "and says why"; pass

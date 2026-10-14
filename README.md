@@ -398,9 +398,13 @@ A deployment is `.env` + `custom/` + the roots: that is what to keep, copy
 or back up.
 
 **`.env` is checked.** Every setting is described in `lib/env.schema.tsv`
-(the shared ones) and `services/<name>/env.tsv` (each service's own) — its type, whether it may be empty, who writes it, what it means — including
+(the shared ones) and `services/<name>/env.tsv` (each service's own) — its type, whether it may be empty, who writes it, its default, what it means — including
 the advanced ones read with a default, like `<SERVICE>_PORT` or
-`WIZARR_HOST`). Before any command runs, every value is checked against it: a
+`WIZARR_HOST`). **Empty means the default.** `KEY=` with nothing after it and
+no line at all read the same, for the script and compose alike: the
+setting's default, written once in the schema. A setting without one (a
+schedule, where empty means never; a secret, generated on first use) keeps
+empty as a value of its own. Before any command runs, every value is checked against it: a
 malformed one stops the command, naming the key and what is expected (a
 secret's value is never shown). Write values plain — no quotes, no comment
 after the value: compose would strip them but the script would not, so the

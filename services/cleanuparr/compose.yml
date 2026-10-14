@@ -19,8 +19,8 @@ services:
     profiles: ["cleanuparr"]
     environment:
       - PUID=${CLEANUPARR_UID}
-      - PGID=${MEDIA_GROUP_GID}
-      - TZ=${TZ}
+      - PGID=${MEDIA_GROUP_GID:-13000}
+      - TZ=${TZ:-Etc/UTC}
       - PORT=11011
     ports:
       - "${MEDIASTACK_GATE_BIND:-}${CLEANUPARR_PORT:-11011}:11011"   # 127.0.0.1 while the portal guards it

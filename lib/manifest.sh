@@ -166,13 +166,13 @@ manifest_take() { # manifest_take [--accept]
         info "First manifest — this is the baseline; nothing to compare yet."
     else
         # the deletion log first, so the report can say who removed what
-        if [[ "$(env_get AUDIT_ENABLED false)" == true ]]; then
+        if [[ "$(env_get AUDIT_ENABLED)" == true ]]; then
             ( audit_extract ) || warn "the deletion log could not be brought up to date (above) — who removed what may be incomplete"
         fi
         local from now; from=$(manifest_ts_epoch "$latest"); now=$(date +%s)
         cmp=$(manifest_compare "$dir/$latest" "$new")
         local -a f; IFS=$'\t' read -r -a f <<<"$(head -1 <<<"$cmp")"
-        local limit; limit=$(env_get MANIFEST_ALERT_PCT 5)
+        local limit; limit=$(env_get MANIFEST_ALERT_PCT)
         # mass drop: most likely an unmounted or half-visible share — never let
         # that become the baseline the next comparison trusts. An empty root
         # after a non-empty one is always refused; otherwise the % applies once
@@ -203,7 +203,7 @@ manifest_take() { # manifest_take [--accept]
 # never pruned. Only ever touches timestamp-named files in manifest/.
 prune_manifest() {
     local dir keep cutoff f pruned=0
-    dir=$(manifest_dir); keep=$(env_get MANIFEST_KEEP_DAYS 365)
+    dir=$(manifest_dir); keep=$(env_get MANIFEST_KEEP_DAYS)
     cutoff=$(date -d "-$keep days" +%Y%m%d)
     local -a all; mapfile -t all < <(manifest_list)
     (( ${#all[@]} > 1 )) || return 0

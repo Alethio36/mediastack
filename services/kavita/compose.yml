@@ -22,9 +22,9 @@ services:
     # the identity. Safe non-root: every runtime write lands under
     # /kavita/config, and the one write into the image (index.html base URL)
     # is skipped by Kavita itself when non-root with the default base URL.
-    user: "${KAVITA_UID}:${MEDIA_GROUP_GID}"
+    user: "${KAVITA_UID}:${MEDIA_GROUP_GID:-13000}"
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
     # 127.0.0.1 only: the script's way in (wire kavita); people use the domain
     ports:
       - "127.0.0.1:${KAVITA_PORT:-5000}:5000"

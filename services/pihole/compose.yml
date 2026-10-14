@@ -21,7 +21,7 @@ services:
       - "53:53/udp"
       - "${MEDIASTACK_GATE_BIND:-}${PIHOLE_WEB_PORT:-83}:80/tcp"   # 127.0.0.1 while the portal guards it (DNS stays on the LAN)
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       # Pi-hole v6 variable (v5's WEBPASSWORD is ignored by v6 images).
       - FTLCONF_webserver_api_password=${PIHOLE_PASSWORD}
     volumes:

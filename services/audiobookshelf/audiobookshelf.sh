@@ -17,7 +17,7 @@ abs_api() { # abs_api METHOD PATH TOKEN [json] -> body; rc from HTTP
 abs_oidc_want() { # the sign-in settings mediastack manages in Audiobookshelf (JSON)
     local base issuer
     base=$(authentik_portal); issuer=$(authentik_oidc_issuer audiobookshelf)
-    jq -cn --arg b "$base" --arg i "$issuer" --arg s "$(env_get AUTHENTIK_ABS_CLIENT_SECRET)" --arg t "$(env_get PORTAL_TITLE Mediastack)" '{
+    jq -cn --arg b "$base" --arg i "$issuer" --arg s "$(env_get AUTHENTIK_ABS_CLIENT_SECRET)" --arg t "$(env_get PORTAL_TITLE)" '{
         authActiveAuthMethods: ["local", "openid"],
         authOpenIDIssuerURL: $i,
         authOpenIDAuthorizationURL: ($b + "/application/o/authorize/"),

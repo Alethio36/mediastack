@@ -59,7 +59,7 @@ audit_root() { # the watched tree, canonical; rc 1 when it does not exist
 audit_dir() { echo "$(env_get BACKUP_ROOT)/audit"; }
 
 audit_keep_days() { # AUDIT_KEEP_DAYS, validated
-    local k; k=$(env_get AUDIT_KEEP_DAYS 365)
+    local k; k=$(env_get AUDIT_KEEP_DAYS)
     [[ "$k" =~ ^[1-9][0-9]*$ ]] || die "AUDIT_KEEP_DAYS='$k' is not a whole number of days (1 or more). Fix it in .env."
     echo "$k"
 }
@@ -190,7 +190,7 @@ audit_on() {
     audit_abi b64 >/dev/null || die "this host is $(uname -m): audit supports 64-bit x86, ARM, POWER, s390x and RISC-V kernels."
     guard_gitignored "$(audit_dir)" "Deletion log folder" "it lists every file removed from your library"
     while true; do
-        ask KEEP "Keep the deletion history for how many days" "$(env_get AUDIT_KEEP_DAYS 365)"
+        ask KEEP "Keep the deletion history for how many days" "$(env_get AUDIT_KEEP_DAYS)"
         [[ "$REPLY_VAL" =~ ^[1-9][0-9]*$ ]] && break
         fail "'$REPLY_VAL' is not a whole number of days (1 or more)."
     done
@@ -455,7 +455,7 @@ cmd_audit_extract() { load_env; audit_extract; }
 audit_extract() { # copy new events into the durable log; prune it; flag a gap
     local dir raw rc=0 last ran now oldest tmp users umap mounts day line
     local -A byday=()
-    [[ "$(env_get AUDIT_ENABLED false)" == true ]] || die "deletion attribution is off, yet its copy ran.
+    [[ "$(env_get AUDIT_ENABLED)" == true ]] || die "deletion attribution is off, yet its copy ran.
   A leftover timer? Remove it: ./mediastack.sh audit off"
     dir=$(audit_dir); guard_gitignored "$dir" "Deletion log folder" "it lists every file removed from your library"
     sudo mkdir -p "$dir"; sudo chmod 700 "$dir"
@@ -583,7 +583,7 @@ audit_report() { # audit report [--since YYYY-MM-DD] [--path TEXT]
     audit_report_args "$@"
     load_env
     local dir; dir=$(audit_dir)
-    if [[ "$(env_get AUDIT_ENABLED false)" == true ]]; then
+    if [[ "$(env_get AUDIT_ENABLED)" == true ]]; then
         audit_extract   # up to the minute, not up to the last hourly copy
     else
         warn "deletion attribution is off — showing the history recorded while it was on"
@@ -617,7 +617,7 @@ audit_report_format() { # stdin: log lines; $1: path filter (case-insensitive te
 # ------------------------------------------------------------------ doctor --
 _doctor_audit() {
     hr "doctor: deletion attribution"
-    if [[ "$(env_get AUDIT_ENABLED false)" != true ]]; then
+    if [[ "$(env_get AUDIT_ENABLED)" != true ]]; then
         local left="" p
         for p in "${AUDIT_FOOTPRINT[@]}"; do sudo test -e "$p" && left+="$p "; done
         (( $(audit_loaded_count) > 0 )) && left+="loaded rules (key $AUDIT_KEY) "
@@ -686,7 +686,7 @@ _doctor_audit_log() { # the durable log: its timer, its last copy, recent gaps, 
     fi
     gaps=$(sudo find "$dir" -maxdepth 1 -name '*.tsv' -newermt '7 days ago' -exec cat {} + | awk -F'\t' '$3 == "gap"' | wc -l)
     (( ${gaps:-0} > 0 )) && warn "$gaps gap(s) in the deletion log this week: auditd rotated faster than the hourly copy (audit report shows them)"
-    if k=$(env_get AUDIT_KEEP_DAYS 365) && [[ "$k" =~ ^[1-9][0-9]*$ ]]; then
+    if k=$(env_get AUDIT_KEEP_DAYS) && [[ "$k" =~ ^[1-9][0-9]*$ ]]; then
         ok "deletion history kept $k days"
     else
         d_fail "AUDIT_KEEP_DAYS='$k' is not a whole number of days" "the log cannot be pruned" "set AUDIT_KEEP_DAYS in .env (default 365)"

@@ -76,10 +76,17 @@ gen_secret() { # gen_secret N -> N letters and digits from /dev/urandom
     echo "${s:0:$1}"
 }
 
-env_get() { # env_get VAR [default]
-    local line
+# KEY -> what an empty or absent KEY means: the .env schema's default column,
+# loaded once per run (env_defaults_load, lib/env.sh) — the only place one is written
+declare -gA ENV_DEFAULT=()
+env_or_note() { local v; v=$(env_get "$1"); echo "${v:-$2}"; }   # env_or_note <key> <note> — for display: the value, or the note when it has none
+env_get() { # env_get <key> -> its .env value; empty or absent: the schema's default (none: empty)
+    # one rule for both readers of .env: compose's ${KEY:-x} means the same
+    (( $# == 1 )) || die "env_get $1: a default is written in the .env schema (lib/env.schema.tsv, services/*/env.tsv), never at the call"
+    local line v
     line=$(grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 || true)
-    if [[ -n "$line" ]]; then echo "${line#*=}"; else echo "${2-}"; fi
+    v=${line#*=}
+    if [[ -n "$line" && -n "$v" ]]; then echo "$v"; else echo "${ENV_DEFAULT[$1]-}"; fi
 }
 
 env_del() { sed -i "/^$1=/d" "$ENV_FILE"; } # remove a variable entirely

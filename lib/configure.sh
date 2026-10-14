@@ -7,7 +7,8 @@
 
 configure_root() { # configure_root VAR title "explanation..." allow_network(yes/no)
     local var="$1" title="$2" text="$3" allow_net="$4" cur val fs
-    cur=$(env_get "$var" "$(grep -E "^$var=" .env.example | head -1 | cut -d= -f2-)")
+    cur=$(env_get "$var")   # not set yet: the folder .env.example suggests
+    [[ -n "$cur" ]] || cur=$(grep -E "^$var=" .env.example | head -1 | cut -d= -f2-)
     explain "$title" "$text"
     while true; do
         ask "$var" "$title path" "$cur"; val=$(abspath "$REPLY_VAL")
@@ -107,7 +108,7 @@ _configure_timezone() {
     # -- timezone
     local tz_host tz_cur
     tz_host=$(timedatectl show -p Timezone --value 2>/dev/null || echo Etc/UTC)
-    tz_cur=$(env_get TZ "$tz_host"); [[ "$tz_cur" == Etc/UTC ]] && tz_cur="$tz_host"
+    tz_cur=$(env_get TZ); [[ "$tz_cur" == Etc/UTC ]] && tz_cur="$tz_host"   # the default is no choice: offer the host's
     explain "Timezone" \
         "Used for logs, in-app times and the update/backup schedules (they run" \
         "at their times in this zone, whatever the host's own). IANA format, e.g." \
@@ -177,7 +178,7 @@ _configure_selfheal() {
     # provision (up, enable): a service an `upgrade` added must get its own
     # UID before anything starts it, not only at the next `configure`.
     local ref base
-    base=$(env_get UID_BASE 13000)
+    base=$(env_get UID_BASE)
     while read -r ref; do
         if ! grep -qE "^${ref}=" "$ENV_FILE"; then
             if [[ "$ref" == *_UID ]]; then
@@ -333,7 +334,7 @@ sign in (none, Wizarr or authentik) is asked next."
 "authentik is the portal your users sign up and log in at. Its name is shown
 on the login and sign-up pages (\"Join <name>\")."
         while true; do
-            ask PORTAL_TITLE "Portal name" "$(env_get PORTAL_TITLE Mediastack)"
+            ask PORTAL_TITLE "Portal name" "$(env_get PORTAL_TITLE)"
             [[ "$REPLY_VAL" =~ [^[:space:]] ]] && break
             fail "The portal needs a name."
         done
@@ -390,7 +391,7 @@ _configure_vpn() {
 provider (nordvpn, mullvad, protonvpn, surfshark, ...) or 'custom' to paste
 your own WireGuard details (for fussy/unlisted providers)."
     while true; do
-        ask VPN_PROVIDER "VPN provider" "$(env_get VPN_PROVIDER nordvpn)"
+        ask VPN_PROVIDER "VPN provider" "$(env_get VPN_PROVIDER)"
         REPLY_VAL=${REPLY_VAL,,}
         [[ "$REPLY_VAL" =~ ^[a-z0-9][a-z0-9\ ._-]*$ ]] && break
         fail "'$REPLY_VAL' is not a provider name (gluetun's names: nordvpn, mullvad, protonvpn, ... or custom)."
@@ -428,7 +429,7 @@ PrivateKey and Address). See gluetun's wiki page 'Custom provider' for
 the remaining server-side settings to add to .env / an override file."
             ask_token "PrivateKey (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
             while true; do
-                ask WIREGUARD_ADDRESSES "Address" "$(env_get WIREGUARD_ADDRESSES 10.5.0.2/32)"
+                ask WIREGUARD_ADDRESSES "Address" "$(env_get WIREGUARD_ADDRESSES)"
                 # one or more IP/prefix, comma-separated (the [Interface] Address line)
                 [[ "$REPLY_VAL" =~ ^[0-9A-Fa-f:.]+/[0-9]{1,3}(,[[:space:]]*[0-9A-Fa-f:.]+/[0-9]{1,3})*$ ]] && break
                 fail "'$REPLY_VAL' is not an address like 10.5.0.2/32 (copy the Address line of the config file)."

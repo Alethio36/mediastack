@@ -20,8 +20,8 @@ services:
     profiles: ["lazylibrarian"]
     environment:
       - PUID=${LAZYLIBRARIAN_UID}
-      - PGID=${MEDIA_GROUP_GID}
-      - TZ=${TZ}
+      - PGID=${MEDIA_GROUP_GID:-13000}
+      - TZ=${TZ:-Etc/UTC}
     volumes:
       - ${CONFIG_ROOT}/lazylibrarian:/config
       - ${DATA_ROOT}:/data

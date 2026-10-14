@@ -17,9 +17,9 @@ services:
     init: true
     # Rootless image: PUID/PGID are deliberately unsupported (the image never
     # starts as root) — the runtime identity is set here instead.
-    user: "${SEERR_UID}:${MEDIA_GROUP_GID}"
+    user: "${SEERR_UID}:${MEDIA_GROUP_GID:-13000}"
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       - LOG_LEVEL=${SEERR_LOG_LEVEL:-info}
     ports:
       - "${SEERR_PORT:-5055}:5055"

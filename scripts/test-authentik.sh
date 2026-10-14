@@ -354,7 +354,7 @@ PORTS=$'127.0.0.1:8989\n';                svc_bound_local sonarr || fail_ "127.0
 PORTS=$'0.0.0.0:8989\n[::]:8989\n';       ! svc_bound_local sonarr || fail_ "every address: not local"; pass
 PORTS=$'127.0.0.1:8989\n0.0.0.0:8989\n';  ! svc_bound_local sonarr || fail_ "one open binding is enough to be reachable"; pass
 PORTS="";                                 svc_bound_local sonarr || fail_ "nothing published: local"; pass
-svc_label() { [[ "$2" == mediastack.auth ]] && echo "${AUTH:-gate}"; }
+svc_label() { case "$2" in mediastack.auth) echo "${AUTH:-gate}" ;; mediastack.subdomain) [[ "$1" == authentik ]] && echo portal ;; esac; return 0; }
 AK_ON=1 AUTH=gate PORTS=$'127.0.0.1:8989\n'; gate_trusted sonarr || fail_ "portal + gated + closed: trust it"; pass
 AK_ON=1 AUTH=gate PORTS=$'0.0.0.0:8989\n';   ! gate_trusted sonarr || fail_ "still reachable by IP: keep its own login"; pass
 AK_ON='' AUTH=gate PORTS=$'127.0.0.1:8989\n'; ! gate_trusted sonarr || fail_ "no portal: keep its own login"; pass
@@ -428,6 +428,7 @@ svc_label() { case "$1:$2" in
     sonarr:mediastack.auth) echo gate ;; navidrome:mediastack.auth) echo gate ;;
     navidrome:mediastack.auth.group) echo media-users ;;
     navidrome:mediastack.user_facing|jellyfin:mediastack.user_facing) echo true ;;
+    authentik:mediastack.subdomain) echo portal ;;
     *:mediastack.desc) echo "desc of ${1%%:*}" ;; esac; }
 unset -f authentik_gated authentik_household
 # shellcheck disable=SC1090  # the two real functions, back from their stubs
@@ -473,7 +474,7 @@ wire_authentik_ldap_token >/dev/null
 rm -f "$T/calls"; wire_authentik_ldap_token >/dev/null
 ! grep -q '^DC ' "$T/calls" || fail_ "the same token: nothing restarts"; pass
 AK_ON=1; svc_enabled() { [[ "$1" == authentik && -n "${AK_ON:-}" ]]; }
-grep -q 'mediastack-ldap-allow:' services/traefik/edge.sh && grep -q 'sourceRange: \["$(env_get MEDIASTACK_SUBNET 172.31.250.0/24)"\]' services/traefik/edge.sh \
+grep -q 'mediastack-ldap-allow:' services/traefik/edge.sh && grep -q 'sourceRange: \["$(env_get MEDIASTACK_SUBNET)"\]' services/traefik/edge.sh \
     || fail_ "the LDAP route answers the stack network only"; pass
 grep -q 'traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"' services/authentik/compose.yml || fail_ "the LDAP route carries the allow-list"; pass
 bp=services/authentik/blueprints/mediastack-portal.yaml

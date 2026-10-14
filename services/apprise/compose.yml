@@ -26,8 +26,8 @@ services:
     profiles: ["apprise"]
     environment:
       - PUID=${APPRISE_UID}
-      - PGID=${MEDIA_GROUP_GID}
-      - TZ=${TZ}
+      - PGID=${MEDIA_GROUP_GID:-13000}
+      - TZ=${TZ:-Etc/UTC}
     volumes:
       - ${CONFIG_ROOT}/apprise:/config
     labels:

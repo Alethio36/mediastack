@@ -22,7 +22,7 @@ services:
       gluetun:
         condition: service_healthy
     environment:
-      TZ: ${TZ}
+      TZ: ${TZ:-Etc/UTC}
     volumes:
       # absolute path, stack convention: include-relative paths resolve
       # against compose.d/, not the project root

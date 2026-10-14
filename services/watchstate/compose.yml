@@ -20,9 +20,9 @@ services:
     container_name: ${WATCHSTATE_NAME:-mediastack-watchstate}
     profiles: ["watchstate"]
     # rootless image: runs as, and must own /config as, this user
-    user: "${WATCHSTATE_UID}:${MEDIA_GROUP_GID}"
+    user: "${WATCHSTATE_UID}:${MEDIA_GROUP_GID:-13000}"
     environment:
-      - WS_TZ=${TZ}
+      - WS_TZ=${TZ:-Etc/UTC}
     ports:
       - "${MEDIASTACK_GATE_BIND:-}${WATCHSTATE_PORT:-8080}:8080"   # 127.0.0.1 while the portal guards it
     volumes:

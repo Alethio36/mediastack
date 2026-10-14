@@ -45,7 +45,7 @@ folders and permissions — then it is enabled and started. Nothing to edit."
         [[ "$cport" =~ ^[0-9]+$ ]] && (( cport > 0 && cport < 65536 )) && break
         warn "a port is a number 1-65535"
     done
-    _ns_ask "HTTPS hostname (<name>.$(env_get STACK_DOMAIN '<your domain>'))" "$name"; host="$REPLY_VAL"
+    _ns_ask "HTTPS hostname (<name>.$(env_or_note STACK_DOMAIN '<your domain>'))" "$name"; host="$REPLY_VAL"
     [[ "$host" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "Hostnames: lowercase letters, digits, dashes."
     _ns_ask "One-line description (shown in configure and status)" "$name"; desc="$REPLY_VAL"
     explain "VPN" \

@@ -25,7 +25,7 @@ RECYCLE_WARN_BIN_PCT=10    # warn when the bin holds more than this % of the med
 RECYCLE_WARN_FREE_PCT=10   # warn when the media drive has less than this % free
 RECYCLE_WARNED=0           # wire prints the on-by-default warning once per run
 
-recycle_on() { [[ "$(env_get RECYCLE_ENABLED false)" == true ]]; }
+recycle_on() { [[ "$(env_get RECYCLE_ENABLED)" == true ]]; }
 
 recycle_root() { # the host folder holding one bin per arr
     local r; r=$(env_get RECYCLE_ROOT)
@@ -34,7 +34,7 @@ recycle_root() { # the host folder holding one bin per arr
 }
 
 recycle_days() { # RECYCLE_DAYS, validated (0 = the arrs never empty it)
-    local d; d=$(env_get RECYCLE_DAYS 7)
+    local d; d=$(env_get RECYCLE_DAYS)
     [[ "$d" =~ ^(0|[1-9][0-9]*)$ ]] || { echo "RECYCLE_DAYS='$d' is not a whole number of days (0 = never empty)" >&2; return 1; }
     echo "$d"
 }
@@ -88,7 +88,7 @@ recycle_arr_split() { # recycle_arr_split <svc> -> the reason when that arr's li
 }
 
 recycle_advice() { # what to do about a full bin — the operator decides, mediastack never deletes from it
-    echo "Files older than RECYCLE_DAYS=$(env_get RECYCLE_DAYS 7) are removed by the arrs on their own. To free space now,
+    echo "Files older than RECYCLE_DAYS=$(env_get RECYCLE_DAYS) are removed by the arrs on their own. To free space now,
   look through $(recycle_root) and delete what you no longer need yourself (mediastack never empties it),
   or lower RECYCLE_DAYS in .env and run: ./mediastack.sh wire arr"
 }
@@ -101,7 +101,7 @@ recycle_warn_once() {
 "Files an arr deletes — including the old copy it replaces on an upgrade —
 are MOVED instead of deleted, one folder per arr, to:
     $(recycle_root)/<arr>
-and the arrs remove them after RECYCLE_DAYS=$(env_get RECYCLE_DAYS 7) days.
+and the arrs remove them after RECYCLE_DAYS=$(env_get RECYCLE_DAYS) days.
 
 It lives on the media drive and needs room for that many days of deletes
 and upgrades: a 4K remux can be 50+ GB, and a quality-profile change can

@@ -20,7 +20,7 @@ kav_api() { # kav_api METHOD PATH TOKEN [json] -> body; rc from HTTP
 kav_ready() { http_ready kavita "$(kav_url)/api/health" '^200$'; }
 
 kav_oidc_want() { # kav_oidc_want LIBRARY-IDS-JSON -> the sign-in settings mediastack manages (Kavita's oidcConfig keys)
-    jq -cn --arg i "$(authentik_oidc_issuer kavita)" --arg t "$(env_get PORTAL_TITLE Mediastack)" --argjson l "$1" '{
+    jq -cn --arg i "$(authentik_oidc_issuer kavita)" --arg t "$(env_get PORTAL_TITLE)" --argjson l "$1" '{
         authority: $i, clientId: "mediastack-kavita",
         # created on first sign-in; authentik sends email_verified false until
         # it can send mail, so a verified-email requirement would refuse everyone
@@ -71,7 +71,7 @@ kav_oidc() { # Kavita signs people in through the portal; one restart when its s
     [[ "$(jq -r '.enabled' <<<"$pub")" == true ]] || restart=1
     (( restart )) || return 0
     w_would "kavita: restart once (its sign-in through the portal starts with it)" || return 0
-    notify_interruption "Books: a quick restart" "Kavita restarts to switch on sign-in through $(env_get PORTAL_TITLE Mediastack) — back in about a minute."
+    notify_interruption "Books: a quick restart" "Kavita restarts to switch on sign-in through $(env_get PORTAL_TITLE) — back in about a minute."
     DC restart kavita >/dev/null || { wfail "kavita did not restart — ./mediastack.sh logs kavita"; return 1; }
     kav_ready || return 1
     pub=$(kav_api GET /api/settings/oidc "") || { wfail "kavita: its public sign-in settings are unreadable after the restart"; return 1; }
@@ -137,7 +137,7 @@ kav_admin_email_check() { # the stack's admin must carry an email nobody can sig
     out=$(kav_api GET "/api/users?includePending=true" "$tok") || return 0   # admin sync reports the same read
     email=$(jq -r --arg u "$(env_get KAVITA_ADMIN_USER)" '.[] | select((.username | ascii_downcase) == ($u | ascii_downcase)) | .email // ""' <<<"$out")
     [[ "$email" == *.invalid ]] && return 0
-    warn "kavita: the stack's admin has the email '$email' — Kavita signs a portal user in as whichever account has their email, so anyone who signs up with it becomes this admin. Change it in Kavita (as this admin: Settings → Account) to one nobody else has, e.g. $(env_get KAVITA_ADMIN_USER mediastack)@$(gen_secret 12 | tr '[:upper:]' '[:lower:]').invalid"
+    warn "kavita: the stack's admin has the email '$email' — Kavita signs a portal user in as whichever account has their email, so anyone who signs up with it becomes this admin. Change it in Kavita (as this admin: Settings → Account) to one nobody else has, e.g. $(env_or_note KAVITA_ADMIN_USER mediastack)@$(gen_secret 12 | tr '[:upper:]' '[:lower:]').invalid"
 }
 
 wire_kavita() {

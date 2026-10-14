@@ -143,6 +143,10 @@ compose_pending() { # the services `up` would change — Compose's own dry run o
     done | sort
 }
 
+_nuke_root() { # _nuke_root VAR NAME -> VAR's folder: its .env value, or the one configure suggests inside this folder
+    local v; v=$(env_get "$1"); echo "${v:-$SCRIPT_DIR/$2}"
+}
+
 cmd_nuke() {
     # Deliberately does NOT need a working compose render or .env — it must
     # succeed on a half-deleted deployment. Containers are found by compose
@@ -186,14 +190,12 @@ cmd_nuke() {
     fi
 
     local croot cache tcode
-    croot=$(env_get CONFIG_ROOT "$SCRIPT_DIR/config")
-    cache=$(env_get CACHE_ROOT "$SCRIPT_DIR/cache")
-    tcode=$(env_get TRANSCODE_ROOT "$SCRIPT_DIR/transcodes")
+    croot=$(_nuke_root CONFIG_ROOT config); cache=$(_nuke_root CACHE_ROOT cache); tcode=$(_nuke_root TRANSCODE_ROOT transcodes)
     sudo rm -rf "$croot" "$cache" "$tcode"
     ok "removed $croot, $cache and $tcode"
     local inside=""
-    [[ "$(env_get DATA_ROOT "$SCRIPT_DIR/data")" == "$SCRIPT_DIR/"* ]] && inside+="media ($(env_get DATA_ROOT "$SCRIPT_DIR/data")) "
-    [[ "$(env_get BACKUP_ROOT "$SCRIPT_DIR/backups")" == "$SCRIPT_DIR/"* ]] && inside+="backups ($(env_get BACKUP_ROOT "$SCRIPT_DIR/backups")) "
+    local d; d=$(_nuke_root DATA_ROOT data); [[ "$d" == "$SCRIPT_DIR/"* ]] && inside+="media ($d) "
+    d=$(_nuke_root BACKUP_ROOT backups); [[ "$d" == "$SCRIPT_DIR/"* ]] && inside+="backups ($d) "
     if [[ -n "$inside" ]]; then
         ok "Nuked. Media and backups untouched."
         warn "Still INSIDE this folder: ${inside}— move them out before deleting it."
@@ -288,7 +290,7 @@ server-side setup is out of scope here."
         printf 'username=%s\npassword=%s\n' "$smbuser" "$smbpass" | sudo tee "$credfile" >/dev/null
         sudo chmod 600 "$credfile"
         ok "credentials stored at $credfile (root-only)"
-        gid=$( [[ -f "$ENV_FILE" ]] && env_get MEDIA_GROUP_GID 13000 || echo 13000 )
+        gid=$(env_get MEDIA_GROUP_GID)   # no .env yet: the schema's default
         # SMB has no POSIX ownership: map files to the shared media group.
         opts="_netdev,x-systemd.automount,hard,nofail,credentials=$credfile,uid=0,gid=$gid,file_mode=0664,dir_mode=2775,iocharset=utf8"
         fsline="$remote $mpoint cifs $opts 0 0"

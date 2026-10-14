@@ -19,7 +19,7 @@ services:
       gluetun:
         condition: service_healthy
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       - LOG_LEVEL=${FLARESOLVERR_LOG_LEVEL:-info}
     labels:
       <<: *no-foreign-watchtower

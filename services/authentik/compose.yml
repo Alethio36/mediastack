@@ -18,7 +18,7 @@ x-armour: &no-foreign-watchtower
   com.centurylinklabs.watchtower.enable: "false"
 
 x-authentik-env: &authentik-env
-  TZ: ${TZ}
+  TZ: ${TZ:-Etc/UTC}
   AUTHENTIK_SECRET_KEY: ${AUTHENTIK_SECRET_KEY}
   AUTHENTIK_POSTGRESQL__HOST: authentik-db
   AUTHENTIK_POSTGRESQL__NAME: authentik
@@ -66,7 +66,7 @@ services:
     container_name: ${AUTHENTIK_NAME:-mediastack-authentik}
     profiles: ["authentik"]
     command: server
-    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID}"
+    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID:-13000}"
     environment:
       <<: *authentik-env
     volumes:
@@ -113,7 +113,7 @@ services:
     container_name: ${AUTHENTIK_WORKER_NAME:-mediastack-authentik-worker}
     profiles: ["authentik"]
     command: worker
-    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID}"
+    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID:-13000}"
     environment:
       <<: *authentik-env
       # read once, on the very first start: the first admin (akadmin) and an
@@ -161,7 +161,7 @@ services:
     image: ghcr.io/goauthentik/ldap:2026.8
     container_name: ${AUTHENTIK_LDAP_NAME:-mediastack-authentik-ldap}
     profiles: ["authentik"]
-    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID}"
+    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID:-13000}"
     environment:
       AUTHENTIK_HOST: http://authentik:9000
       AUTHENTIK_INSECURE: "true"   # the stack network, never the outside
@@ -206,9 +206,9 @@ services:
     image: postgres:16
     container_name: ${AUTHENTIK_DB_NAME:-mediastack-authentik-db}
     profiles: ["authentik"]
-    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID}"
+    user: "${AUTHENTIK_UID}:${MEDIA_GROUP_GID:-13000}"
     environment:
-      TZ: ${TZ}
+      TZ: ${TZ:-Etc/UTC}
       POSTGRES_DB: authentik
       POSTGRES_USER: authentik
       POSTGRES_PASSWORD: ${AUTHENTIK_DB_PASSWORD}

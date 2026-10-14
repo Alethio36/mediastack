@@ -87,6 +87,7 @@ source "$SCRIPT_DIR/lib/lifecycle.sh"
 source "$SCRIPT_DIR/lib/access.sh"
 # shellcheck source=lib/newservice.sh
 source "$SCRIPT_DIR/lib/newservice.sh"
+env_defaults_load   # the .env schema's defaults, read once here: every $( ) inherits them
 
 load_env() {
     # NOTE: .env is deliberately NOT sourced — compose reads it natively, and
@@ -213,7 +214,7 @@ svc_disabled_managed() { _svc_managed_by_profile false; }
 # notify the 'users' stream). A ${STEM}_USER_FACING override in .env (set via
 # set-user-facing) wins over the fragment's mediastack.user_facing default.
 is_user_facing() {
-    local ov; ov=$(env_get "$(uvar "$1")_USER_FACING" "")
+    local ov; ov=$(env_get "$(uvar "$1")_USER_FACING")
     [[ -n "$ov" ]] && { [[ "$ov" == true ]]; return; }
     [[ "$(svc_label "$1" mediastack.user_facing)" == true ]]
 }
@@ -276,7 +277,7 @@ cidr_has() { # cidr_has CIDR IP -> 0 when IP is inside CIDR
 }
 network_problems() { # the stack network's addressing, as .env sets it — one line per problem
     local sub rng tr
-    sub=$(env_get MEDIASTACK_SUBNET 172.31.250.0/24); rng=$(env_get MEDIASTACK_IP_RANGE 172.31.250.128/25); tr=$(env_get TRAEFIK_ADDRESS 172.31.250.2)
+    sub=$(env_get MEDIASTACK_SUBNET); rng=$(env_get MEDIASTACK_IP_RANGE); tr=$(env_get TRAEFIK_ADDRESS)
     cidr_has "$sub" "${rng%/*}" || echo "MEDIASTACK_IP_RANGE ($rng) is not inside MEDIASTACK_SUBNET ($sub)"
     cidr_has "$sub" "$tr" || echo "TRAEFIK_ADDRESS ($tr) is not inside MEDIASTACK_SUBNET ($sub)"
     ! cidr_has "$rng" "$tr" || echo "TRAEFIK_ADDRESS ($tr) is inside MEDIASTACK_IP_RANGE ($rng) — a container could take it first"
@@ -286,7 +287,7 @@ network_ensure() { # an older stack network (no fixed range) is recreated once, 
     local want cur bad
     bad=$(network_problems); [[ -z "$bad" ]] || die "the stack network's settings in .env disagree:
 $bad"
-    want=$(env_get MEDIASTACK_SUBNET 172.31.250.0/24)
+    want=$(env_get MEDIASTACK_SUBNET)
     cur=$(sudo docker network inspect mediastack --format '{{range .IPAM.Config}}{{.Subnet}} {{end}}' 2>/dev/null | awk '{print $1}' || true)   # soft read: no network yet — up creates it
     [[ -z "$cur" || "$cur" == "$want" ]] && return 0
     warn "the stack network moves to its fixed range ($cur -> $want) so Traefik keeps one address — a one-time restart of every container"
@@ -329,11 +330,15 @@ svc_hostport() { # svc_port, but a missing host port is an error (API callers)
 }
 uvar()         { echo "${1^^}" | tr '-' '_' | tr -cd 'A-Z0-9_'; } # service -> env var stem (radarr-4k -> RADARR_4K)
 svc_enabled()  { [[ ",$(env_get COMPOSE_PROFILES)," == *",$1,"* ]]; }
+svc_subdomain() { # svc_subdomain SVC -> its HTTPS name's first label: <SVC>_HOST in .env, else its mediastack.subdomain (the per-service default, which its compose fallback repeats)
+    local h; h=$(env_get "$(uvar "$1")_HOST"); [[ -n "$h" ]] || h=$(svc_label "$1" mediastack.subdomain)
+    echo "$h"
+}
 svc_url() { # where a browser reaches the service, best effort
     local s="$1" sub port domain
     [[ "$s" == traefik ]] && { echo "-"; return; }   # it IS the https edge
     domain=$(env_get STACK_DOMAIN)
-    sub=$(env_get "$(uvar "$s")_HOST"); [[ -n "$sub" ]] || sub=$(svc_label "$s" mediastack.subdomain)
+    sub=$(svc_subdomain "$s")
     # a subdomain only yields an https URL when a domain is actually configured;
     # without one, fall through to the host:port (or internal) form below rather
     # than printing a dead https://<sub>.unset
@@ -430,7 +435,7 @@ cmd_menu() {
 uid_handover() {
     local pending s uid cn croot cache media gid
     pending=$(state_get UID_HANDOVER); [[ -n "$pending" ]] || return 0
-    gid=$(env_get MEDIA_GROUP_GID 13000); croot=$(env_get CONFIG_ROOT)
+    gid=$(env_get MEDIA_GROUP_GID); croot=$(env_get CONFIG_ROOT)
     cache=$(env_get CACHE_ROOT); media="$(env_get DATA_ROOT)/media"
     hr "Ownership handover: $pending"
     for s in $pending; do
@@ -461,7 +466,7 @@ provision() {
     _configure_selfheal   # a service new since the last configure gets its UID before anything starts it
     gate_bind_sync        # gated tools listen on 127.0.0.1 while the portal guards them
     RENDERED_JSON=""; render
-    local gid; gid=$(env_get MEDIA_GROUP_GID 13000)
+    local gid; gid=$(env_get MEDIA_GROUP_GID)
     getent group mediacenter >/dev/null || { sudo groupadd -g "$gid" mediacenter; ok "group mediacenter ($gid)"; }
     local s v uid croot droot cache tcode
     croot=$(env_get CONFIG_ROOT); droot=$(env_get DATA_ROOT); cache=$(env_get CACHE_ROOT); tcode=$(env_get TRANSCODE_ROOT)
@@ -1007,7 +1012,7 @@ user_facing_list() {
     echo "user-facing services — updates notify the household ('users' stream):"
     for s in $(svc_managed); do
         is_user_facing "$s" || continue
-        [[ -n "$(env_get "$(uvar "$s")_USER_FACING" "")" ]] && tag=" (override)" || tag=""
+        [[ -n "$(env_get "$(uvar "$s")_USER_FACING")" ]] && tag=" (override)" || tag=""
         printf '  %s%s\n' "$s" "$tag"
     done
 }

@@ -22,14 +22,14 @@ services:
     # are ignored (its own UID variables were removed in 2.4.0), so `user:`
     # sets the identity. PORT moves it off :80 — a non-root bind below 1024
     # depends on the host's ip_unprivileged_port_start (upstream #4144).
-    user: "${AUDIOBOOKSHELF_UID}:${MEDIA_GROUP_GID}"
+    user: "${AUDIOBOOKSHELF_UID}:${MEDIA_GROUP_GID:-13000}"
     # Network, host-port and route are generated into local/vpn-overlay.yml by
     # vpn_gen. Traefik-only (mediastack.hostport=false — no host publish).
     # Defaults OUT of the VPN; toggle with:
     #   ./mediastack.sh vpn audiobookshelf on
     environment:
       - PORT=13378
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
     volumes:
       - ${CONFIG_ROOT}/audiobookshelf:/config
       - ${CACHE_ROOT}/audiobookshelf:/metadata

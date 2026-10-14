@@ -18,11 +18,11 @@ services:
     image: jellyfin/jellyfin:latest
     container_name: ${JELLYFIN_NAME:-mediastack-jellyfin}
     profiles: ["jellyfin"]
-    user: "${JELLYFIN_UID}:${MEDIA_GROUP_GID}"
+    user: "${JELLYFIN_UID}:${MEDIA_GROUP_GID:-13000}"
     ports:
       - "${JELLYFIN_PORT:-8096}:8096"
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       - JELLYFIN_PublishedServerUrl=${JELLYFIN_PUBLISHED_URL:-}
     volumes:
       - ${CONFIG_ROOT}/jellyfin:/config

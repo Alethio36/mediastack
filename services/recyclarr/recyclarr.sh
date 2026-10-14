@@ -86,7 +86,8 @@ trash_overrides_for() { # $1 = svc; emits indented custom_formats block
 # finds and removes it). trash-sync self-provisions so configure isn't needed.
 trash_provision() {
     local uid gid
-    uid=$(env_get RECYCLARR_UID 13020); gid=$(env_get MEDIA_GROUP_GID 13000)
+    uid=$(env_get RECYCLARR_UID); uid=${uid:-13020}   # configure never ran: trash-sync takes this one
+    gid=$(env_get MEDIA_GROUP_GID)
     env_set RECYCLARR_UID "$uid"
     if ! getent group mediacenter >/dev/null; then
         sudo groupadd -g "$gid" mediacenter && ok "group mediacenter ($gid)" \
@@ -106,7 +107,7 @@ trash_provision() {
 
 trash_gen_config() { # trash_gen_config [out-path] — default: the live recyclarr.yml
     local uid out tmp
-    uid=$(env_get RECYCLARR_UID 13020)
+    uid=$(env_get RECYCLARR_UID); uid=${uid:-13020}   # as trash_provision
     out="${1:-$(env_get CONFIG_ROOT)/recyclarr/recyclarr.yml}"
     tmp=$(mktemp)
     {

@@ -368,7 +368,8 @@ grep -q 'apply_timer mediastack-backup .* "backup --auto" BACKUP_SCHEDULE' lib/b
   [[ "$(apply_timer mediastack-update d "update --auto" UPDATE_SCHEDULE l)" == "WRITE *-*-* 04:00 Europe/Berlin" ]] \
       || fail_ "the schedule carries TZ: $(apply_timer mediastack-update d "update --auto" UPDATE_SCHEDULE l)"
   printf 'UPDATE_SCHEDULE=Tue 04:00\n' > "$ENV_FILE"
-  [[ "$(apply_timer mediastack-update d "update --auto" UPDATE_SCHEDULE l)" == "WRITE Tue 04:00" ]] || fail_ "no TZ: the host's zone, as written"
+  # no TZ in .env means its default zone, for the timers as for the apps (compose: ${TZ:-Etc/UTC})
+  [[ "$(apply_timer mediastack-update d "update --auto" UPDATE_SCHEDULE l)" == "WRITE Tue 04:00 Etc/UTC" ]] || fail_ "no TZ: the default zone, as the apps get it"
   printf 'UPDATE_SCHEDULE=*-*-* 04:00 Europe/Berlin\nTZ=Europe/Berlin\n' > "$ENV_FILE"
   out=$( ( apply_timer mediastack-update d "update --auto" UPDATE_SCHEDULE l ) 2>&1 ) && fail_ "a zone in the schedule must refuse"
   [[ "$out" == *"names a time zone"*"remove it from UPDATE_SCHEDULE"* ]] || fail_ "the refusal says why and what to do: $out"

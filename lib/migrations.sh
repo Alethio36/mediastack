@@ -6,7 +6,7 @@
 # entrypoint; relies on lib/common.sh's env_* primitives.
 
 migrate_env() {
-    local have; have=$(env_get ENV_SCHEMA 0)
+    local have; have=$(env_get ENV_SCHEMA); have=${have:-0}   # no layout version: older than schema 1
     if (( have > SCRIPT_SCHEMA )); then
         die ".env schema ($have) is NEWER than this script ($SCRIPT_SCHEMA).
   You likely downgraded the repo. Run 'git pull' to return to the newer
@@ -69,7 +69,7 @@ migrate_env_6_to_7() {
     if ! grep -qE '^WIZARR_UID=' "$ENV_FILE"; then
         local max
         max=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
-        env_set WIZARR_UID "$(( ${max:-$(env_get UID_BASE 13000)} + 1 ))"
+        env_set WIZARR_UID "$(( ${max:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable WIZARR_UID -> $(env_get WIZARR_UID)"
     fi
     grep -qE '^WIZARR_UPDATE=' "$ENV_FILE" || env_set WIZARR_UPDATE true
@@ -79,14 +79,14 @@ migrate_env_7_to_8() {
     if ! grep -qE '^APPRISE_UID=' "$ENV_FILE"; then
         local max
         max=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
-        env_set APPRISE_UID "$(( ${max:-$(env_get UID_BASE 13000)} + 1 ))"
+        env_set APPRISE_UID "$(( ${max:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable APPRISE_UID -> $(env_get APPRISE_UID)"
     fi
     grep -qE '^APPRISE_UPDATE=' "$ENV_FILE" || env_set APPRISE_UPDATE true
     if ! grep -qE '^CLEANUPARR_UID=' "$ENV_FILE"; then
         local cmax
         cmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
-        env_set CLEANUPARR_UID "$(( ${cmax:-$(env_get UID_BASE 13000)} + 1 ))"
+        env_set CLEANUPARR_UID "$(( ${cmax:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable CLEANUPARR_UID -> $(env_get CLEANUPARR_UID)"
     fi
     grep -qE '^CLEANUPARR_UPDATE=' "$ENV_FILE" || env_set CLEANUPARR_UPDATE true
@@ -96,7 +96,7 @@ migrate_env_8_to_9() {
     if ! grep -qE '^WATCHSTATE_UID=' "$ENV_FILE"; then
         local wmax
         wmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
-        env_set WATCHSTATE_UID "$(( ${wmax:-$(env_get UID_BASE 13000)} + 1 ))"
+        env_set WATCHSTATE_UID "$(( ${wmax:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable WATCHSTATE_UID -> $(env_get WATCHSTATE_UID)"
     fi
     grep -qE '^WATCHSTATE_UPDATE=' "$ENV_FILE" || env_set WATCHSTATE_UPDATE true
@@ -105,7 +105,7 @@ migrate_env_9_to_10() {
     if ! grep -qE '^NAVIDROME_UID=' "$ENV_FILE"; then
         local nmax
         nmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
-        env_set NAVIDROME_UID "$(( ${nmax:-$(env_get UID_BASE 13000)} + 1 ))"
+        env_set NAVIDROME_UID "$(( ${nmax:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable NAVIDROME_UID -> $(env_get NAVIDROME_UID)"
     fi
     grep -qE '^NAVIDROME_UPDATE=' "$ENV_FILE" || env_set NAVIDROME_UPDATE true
@@ -117,7 +117,7 @@ migrate_env_10_to_11() {
         var="${svc}_UID"
         if ! grep -qE "^${var}=" "$ENV_FILE"; then
             last=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
-            env_set "$var" "$(( ${last:-$(env_get UID_BASE 13000)} + 1 ))"
+            env_set "$var" "$(( ${last:-$(env_get UID_BASE)} + 1 ))"
             info "New service variable $var -> $(env_get "$var")"
         fi
         grep -qE "^${svc}_UPDATE=" "$ENV_FILE" || env_set "${svc}_UPDATE" true
@@ -127,7 +127,7 @@ migrate_env_11_to_12() {
     if ! grep -qE '^LAZYLIBRARIAN_UID=' "$ENV_FILE"; then
         local lmax
         lmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
-        env_set LAZYLIBRARIAN_UID "$(( ${lmax:-$(env_get UID_BASE 13000)} + 1 ))"
+        env_set LAZYLIBRARIAN_UID "$(( ${lmax:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable LAZYLIBRARIAN_UID -> $(env_get LAZYLIBRARIAN_UID)"
     fi
     grep -qE '^LAZYLIBRARIAN_UPDATE=' "$ENV_FILE" || env_set LAZYLIBRARIAN_UPDATE true
@@ -205,7 +205,7 @@ migrate_env_26_to_27() {
     for kv in RECYCLE_ENABLED=true RECYCLE_ROOT= RECYCLE_DAYS=7; do
         grep -qE "^${kv%%=*}=" "$ENV_FILE" || env_set "${kv%%=*}" "${kv#*=}"
     done
-    warn "New: the arr recycle bin is ON. Files an arr deletes or replaces on an upgrade are moved to DATA_ROOT/recycle and kept $(env_get RECYCLE_DAYS 7) days."
+    warn "New: the arr recycle bin is ON. Files an arr deletes or replaces on an upgrade are moved to DATA_ROOT/recycle and kept $(env_get RECYCLE_DAYS) days."
     warn "  It uses space on the media drive (a 4K remux can be 50+ GB); doctor and the nightly manifest warn when it grows."
     warn "  Applied at the next: ./mediastack.sh wire arr   —   turn it off first with RECYCLE_ENABLED=false in .env"
 }

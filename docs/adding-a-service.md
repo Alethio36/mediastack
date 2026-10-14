@@ -194,6 +194,17 @@ shared ones); `lib/env.sh` reads them all as one schema. The settings
 themselves still go in `.env.example` — the one file people read to
 understand theirs — and `scripts/test-env.sh` holds the two together.
 
+**A default is written once: in the schema's `default` column.** `env_get
+KEY` returns it when the value is empty or absent, and takes no default of
+its own (it refuses one). Every `${KEY}` in your fragment says the same
+default — `${KEY:-x}`, never bare — and `.env.example` shows it or nothing;
+CI holds all three together. `-` means none: empty is a value of its own
+(not set up yet, never, any, generated on first use), and a derived value
+(one setting standing in for another) is plain code, not a default. A
+family key (`<svc>_PORT`, `<svc>_HOST`) differs per service, so its default
+lives in the fragment — a `_HOST` fallback must equal the service's
+`mediastack.subdomain`.
+
 ### Wiring it to other apps (`wire`)
 
 If a `wire` role writes this service's address into another app's settings:

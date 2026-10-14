@@ -20,9 +20,9 @@ services:
     profiles: ["deluge"]
     environment:
       - PUID=${DELUGE_UID}
-      - PGID=${MEDIA_GROUP_GID}
+      - PGID=${MEDIA_GROUP_GID:-13000}
       - UMASK=002
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
     volumes:
       - ${CONFIG_ROOT}/deluge:/config
       - ${DATA_ROOT}/torrent:/data/torrent

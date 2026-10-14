@@ -19,7 +19,15 @@ env_schema_all() { # the whole schema: the shared rows, then every service's (se
     for f in "$ENV_SCHEMA_FILE" "$SCRIPT_DIR"/services/*/env.tsv; do [[ -e "$f" ]] && cat "$f"; done
     return 0
 }
-env_schema_rows() { env_schema_all | grep -vE '^(#|[[:space:]]*$)'; }   # key type empty writer meaning
+env_schema_rows() { env_schema_all | grep -vE '^(#|[[:space:]]*$)'; }   # key type empty writer default meaning
+
+env_defaults_load() { # the schema's defaults into ENV_DEFAULT — once, in the top-level shell, so every $( ) inherits them
+    local k d
+    ENV_DEFAULT=()
+    while IFS=$'\t' read -r k _ _ _ d _; do
+        [[ "$d" == - || "$k" == *'<'* ]] || ENV_DEFAULT[$k]=$d   # a family's defaults live with each service
+    done < <(env_schema_rows)
+}
 
 # one awk pass: the schema's rows, then KEY=VALUE lines; prints
 # key <TAB> type <TAB> empty <TAB> value for every key the schema knows —
@@ -131,7 +139,8 @@ env_value_problem() { # env_value_problem KEY VALUE TYPE EMPTY -> what is wrong 
         echo "$k=$shown has a comment after the value: the script reads it as part of the value. Move the comment to its own line above."; return
     fi
     if [[ -z "$v" ]]; then
-        [[ "$e" == ok ]] || echo "$k is empty — expected $(env_type_expect "$t")."
+        # empty means the schema's default, for both readers; with none, it must be allowed
+        [[ "$e" == ok || -n "${ENV_DEFAULT[$k]-}" ]] || echo "$k is empty — expected $(env_type_expect "$t")."
         return
     fi
     env_type_ok "$t" "$v" || echo "$k=$shown is not $(env_type_expect "$t")."

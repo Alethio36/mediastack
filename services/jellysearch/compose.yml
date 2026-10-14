@@ -22,14 +22,14 @@ services:
     profiles: ["jellysearch"]
     # Runs as Jellyfin's identity: its whole job is reading Jellyfin's DB.
     # (The image default 1000:100 cannot read a config owned by other IDs.)
-    user: "${JELLYFIN_UID}:${MEDIA_GROUP_GID}"
+    user: "${JELLYFIN_UID}:${MEDIA_GROUP_GID:-13000}"
     depends_on:
       jellyfin:
         condition: service_healthy
       meilisearch:
         condition: service_healthy
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       - MEILI_URL=http://meilisearch:7700
       - MEILI_MASTER_KEY=${MEILI_MASTER_KEY}
       - JELLYFIN_URL=http://jellyfin:8096

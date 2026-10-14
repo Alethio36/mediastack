@@ -18,7 +18,7 @@ services:
     image: deluan/navidrome:latest
     container_name: ${NAVIDROME_NAME:-mediastack-navidrome}
     profiles: ["navidrome"]
-    user: "${NAVIDROME_UID}:${MEDIA_GROUP_GID}"
+    user: "${NAVIDROME_UID}:${MEDIA_GROUP_GID:-13000}"
     environment:
       - ND_MUSICFOLDER=/music
       - ND_DATAFOLDER=/data
@@ -27,7 +27,7 @@ services:
       - ND_SESSIONTIMEOUT=24h
       # served behind traefik under its own hostname
       - ND_BASEURL=
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       # behind the portal: Traefik (only its fixed address — MEDIASTACK_GATE_TRUST,
       # empty without authentik) tells Navidrome who the user is; it creates
       # them on their first visit. Music apps use /rest/ with a password each

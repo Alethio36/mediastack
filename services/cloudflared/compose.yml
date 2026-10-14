@@ -16,7 +16,7 @@ services:
     profiles: ["cloudflared"]
     command: tunnel run
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     labels:
       <<: *no-foreign-watchtower

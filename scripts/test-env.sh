@@ -15,6 +15,10 @@
 #     '# mediastack: ignore' on the line above are not
 #   * schema 29: pending-work markers leave .env for local/state; the shipped
 #     inline comment on UPDATE_DEFER_ACTION is stripped
+#   * one default per setting, in the schema: env_get takes no default at the
+#     call, compose's ${KEY:-x} says the schema's x (never a bare ${KEY}),
+#     .env.example shows the default or nothing, a family's _HOST fallback is
+#     its service's subdomain label, and empty or absent reads as the default
 #
 #   scripts/test-env.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -33,10 +37,43 @@ fail_() { echo "FAIL: $*" >&2; exit 1; }
 known_of() { printf '%s=\n' "$@" > "$T/keys"; env_schema_known "$T/keys" | cut -f1; }   # which of these keys the schema knows
 
 # ---- the schema itself ----
-while IFS=$'\t' read -r k t e w m; do
-    [[ -n "$m" && "$e" =~ ^(ok|no)$ && "$w" =~ ^(you|wizard|script|advanced|-)$ ]] || fail_ "malformed schema row: $k"
+while IFS=$'\t' read -r k t e w d m; do
+    [[ -n "$d" && -n "$m" && "$m" != *$'\t'* && "$e" =~ ^(ok|no)$ && "$w" =~ ^(you|wizard|script|advanced|-)$ ]] || fail_ "malformed schema row: $k"
     [[ "$t" == retired:* || "$(env_type_expect "$t")" != "?" ]] || fail_ "$k: unknown type $t"
+    # a family's defaults differ per service; a retired key has none
+    [[ "$d" == - || ( "$k" != *'<'* && "$t" != retired:* ) ]] || fail_ "$k: a family or retired key carries no default (got '$d')"
+    [[ "$d" == - || "$t" == retired:* ]] || env_type_ok "$t" "$d" || fail_ "$k: its default '$d' is not a $t"
 done < <(env_schema_rows); pass
+
+# ---- one default per setting: the schema's ----
+calls=$(grep -rnoE '\$\(env_get ("[^"]*"|[^ )"]+) [^)|;&<>]' mediastack.sh lib services scripts || true)
+[[ -z "$calls" ]] || fail_ "env_get with a default at the call — write it in the schema instead: $calls"; pass
+( ENV_FILE=$T/none.env; : > "$ENV_FILE"; [[ "$(env_get BACKUP_KEEP_DAILY)" == 7 && -z "$(env_get UPDATE_SCHEDULE)" ]] ) \
+    || fail_ "absent: the schema's default, or empty when it has none"; pass
+( ENV_FILE=$T/empty.env; printf 'BACKUP_KEEP_DAILY=\nBACKUP_KEEP_WEEKLY=9\n' > "$ENV_FILE"
+  [[ "$(env_get BACKUP_KEEP_DAILY)" == 7 && "$(env_get BACKUP_KEEP_WEEKLY)" == 9 ]] ) || fail_ "empty reads as the default, a value as itself"; pass
+( env_get BACKUP_KEEP_DAILY 5 ) >/dev/null 2>&1 && fail_ "env_get refuses a default at the call"; pass
+bad=""
+while IFS=$'\t' read -r k _ _ _ d _; do
+    [[ "$d" != - && "$k" != *'<'* ]] || continue
+    while read -r ref; do
+        [[ "$ref" == "\${$k:-$d}" ]] || bad+="  $ref (schema: $d)"$'\n'
+    done < <(grep -ohE "\\\$\{$k(:-[^}]*)?\}" docker-compose.yml services/*/compose.yml | sort -u)
+    ex=$(grep -E "^$k=" .env.example | head -1 | cut -d= -f2- || true)
+    [[ -z "$ex" || "$ex" == "$d" ]] || bad+="  .env.example $k=$ex (schema: $d)"$'\n'
+done < <(env_schema_rows)
+[[ -z "$bad" ]] || fail_ "compose or .env.example disagree with the schema's default:"$'\n'"$bad"; pass
+# a family's _HOST: the fallback a fragment writes is its service's subdomain label
+bad=""
+for f in services/*/compose.yml; do
+    while read -r ref; do
+        k=${ref#\$\{}; k=${k%%:*}; v=${ref#*:-}; v=${v%\}}
+        awk -F'\t' -v k="$k" '$1==k {f=1} END {exit !f}' <(env_schema_rows) && continue   # an exact key: checked above
+        svc=""; for d in services/*/; do d=${d%/}; d=${d#services/}; [[ "$(uvar "$d")_HOST" == "$k" ]] && svc=$d; done
+        grep -qE "^\s+mediastack\.subdomain: \"$v\"" "services/$svc/compose.yml" 2>/dev/null || bad+="  $f: $ref ($svc's subdomain label differs)"$'\n'
+    done < <(grep -ohE '\$\{[A-Z0-9_]+_HOST:-[^}]*\}' "$f" | sort -u)
+done
+[[ -z "$bad" ]] || fail_ "a _HOST fallback is not its service's subdomain label:"$'\n'"$bad"; pass
 [[ -z "$(env_schema_rows | cut -f1 | sort | uniq -d)" ]] || fail_ "a key appears twice in the schema"; pass
 
 # ---- every key the code reads is in the schema ----
@@ -54,7 +91,7 @@ ENV_FILE=.env.example
 env_validate || fail_ ".env.example has values the schema refuses"; pass
 [[ "$(env_get ENV_SCHEMA)" == "$SCRIPT_SCHEMA" ]] || fail_ ".env.example says ENV_SCHEMA=$(env_get ENV_SCHEMA), the script is $SCRIPT_SCHEMA"; pass
 missing=""
-while IFS=$'\t' read -r k t e w m; do
+while IFS=$'\t' read -r k t e w d m; do
     [[ "$w" =~ ^(you|wizard)$ && "$k" != *'<'* ]] || continue
     grep -qE "^$k=" .env.example || missing+="$k "
 done < <(env_schema_rows)
@@ -76,12 +113,13 @@ if command -v systemd-analyze >/dev/null; then good calendar '*-*-* 03:30'; bad 
 
 # ---- values in a .env ----
 ENV_FILE=$T/.env
-printf 'RECYCLE_DAYS=abc\nUPDATE_DEFER_ACTION=skip   # note\nARR_PASSWORD="s3cret pass"\nNOTIFY_GRACE=\nAUDIT_KEEP_DAYS=365\nRECYCLE_ROOT=\n' > "$ENV_FILE"
+printf 'RECYCLE_DAYS=abc\nUPDATE_DEFER_ACTION=skip   # note\nARR_PASSWORD="s3cret pass"\nNOTIFY_GRACE=\nCONFIG_ROOT=\nAUDIT_KEEP_DAYS=365\nRECYCLE_ROOT=\n' > "$ENV_FILE"
 out=$( (env_validate) 2>&1 ) && fail_ "bad values must stop the command"
 [[ "$out" == *"RECYCLE_DAYS='abc' is not a whole number"* ]] || fail_ "type problem: $out"; pass
 [[ "$out" == *"UPDATE_DEFER_ACTION='skip   # note' has a comment after the value"* ]] || fail_ "inline comment: $out"; pass
 [[ "$out" == *"ARR_PASSWORD=(hidden) is quoted"* && "$out" != *s3cret* ]] || fail_ "a secret must never be shown: $out"; pass
-[[ "$out" == *"NOTIFY_GRACE is empty"* && "$out" != *RECYCLE_ROOT* && "$out" != *AUDIT_KEEP_DAYS* ]] || fail_ "empty: only where the schema says no: $out"; pass
+# empty is fine where the schema allows it or has a default (NOTIFY_GRACE: 30); only a required key without one is a problem
+[[ "$out" == *"CONFIG_ROOT is empty"* && "$out" != *NOTIFY_GRACE* && "$out" != *RECYCLE_ROOT* && "$out" != *AUDIT_KEEP_DAYS* ]] || fail_ "empty: only a required key without a default: $out"; pass
 
 # ---- family keys: only for services that exist ----
 DROPIN_DIR=$T/custom/compose.d; OVERRIDE_FILE=$T/custom/override.yml; CUSTOM_DIR=$T/custom; mkdir -p "$DROPIN_DIR"

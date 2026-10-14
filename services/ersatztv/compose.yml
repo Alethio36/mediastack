@@ -17,7 +17,7 @@ services:
     container_name: ${ERSATZTV_NAME:-mediastack-ersatztv}
     profiles: ["ersatztv"]
     environment:
-      - TZ=${TZ}
+      - TZ=${TZ:-Etc/UTC}
     ports:
       - "${MEDIASTACK_GATE_BIND:-}${ERSATZTV_PORT:-8409}:8409"   # 127.0.0.1 while the portal guards it
     volumes:
