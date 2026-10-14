@@ -111,7 +111,7 @@ authentik_configure_email() {
         "docs/email.md walks through each. Once a test passes, the portal's" \
         "sign-in page offers \"Forgot password?\" (a reset link by email). Skip it" \
         "and ./mediastack.sh reset-password covers someone locked out."
-    local cur choice
+    local cur choice pw from
     cur=$(env_get SMTP_HOST)
     if [[ -n "$cur" ]]; then
         ask SMTP_CHOICE "Email is set ($cur, from $(env_get SMTP_FROM)): k = keep, c = change, r = remove" "k"; choice=${REPLY_VAL,,}
@@ -145,13 +145,21 @@ authentik_configure_email() {
     env_set SMTP_USER "$REPLY_VAL"
     if [[ -n "$REPLY_VAL" ]]; then
         while true; do
-            ask_token "Password (an app password or the service's SMTP key — input hidden)" "$(env_get SMTP_PASSWORD)"
-            [[ "$REPLY_VAL" =~ [\$[:space:]] ]] && { fail "it holds a \$ or a space, which compose would rewrite — use an app password or SMTP key (Gmail shows its app passwords in groups of four: type it without the spaces)"; continue; }
-            env_set SMTP_PASSWORD "$REPLY_VAL"; break
+            ask_token "Password (an app password or the service's SMTP key; spaces are dropped — input hidden)" "$(env_get SMTP_PASSWORD)"
+            # compose would rewrite a space or a $; an app password's spaces are only
+            # how it is shown (Gmail: groups of four), so they go
+            pw=${REPLY_VAL//[[:space:]]/}
+            [[ "$pw" == "$REPLY_VAL" ]] || info "spaces dropped"
+            [[ "$pw" == *'$'* ]] && { fail "it holds a \$, which compose would rewrite — use an app password or SMTP key"; continue; }
+            env_set SMTP_PASSWORD "$pw"; break
         done
     else env_set SMTP_PASSWORD ""; fi
+    # an empty SMTP_FROM= line (a fresh .env) is no sender: the login is, when it is an address
+    from=$(env_get SMTP_FROM)
+    if [[ -z "$from" ]] && env_type_ok email "$(env_get SMTP_USER)"; then from=$(env_get SMTP_USER); fi
+    info "Send as: the From address people see — usually the login itself (Gmail: your address, or an alias added in Gmail's settings)"
     while true; do
-        ask SMTP_FROM "Send as (an address this login may send from)" "$(env_get SMTP_FROM "$(env_get SMTP_USER)")"
+        ask SMTP_FROM "Send as" "$from"
         env_type_ok email "$REPLY_VAL" && { env_set SMTP_FROM "$REPLY_VAL"; break; }
         fail "'$REPLY_VAL' is not an email address."
     done

@@ -16,7 +16,7 @@ from yours:
 | Port | goes with the security | 587 (STARTTLS), 465 (TLS) |
 | Login | your account at the server | often your full email address |
 | Password | **an app password or SMTP key** — not your normal password | `abcdefghijklmnop` |
-| Send as | the From address | one the login may send from |
+| Send as | the From address people see | one the login may send from — offered as the login when that is an address |
 
 ## 1. Pick a sender
 
@@ -28,7 +28,8 @@ to set up in DNS, and the provider's reputation gets it delivered.
 * **Gmail** — server `smtp.gmail.com`, STARTTLS on 587. Login: your Gmail
   address. Password: an **app password** (2-Step Verification must be on;
   then https://myaccount.google.com/apppasswords). Google shows it as four
-  groups of four letters — **type it without the spaces**. Send as: your
+  groups of four letters; paste it with or without the spaces — `configure`
+  drops them. Send as: your
   Gmail address (or an alias you have added in Gmail). A Google Workspace
   account may have app passwords turned off by its admin.
 * **Fastmail** — server `smtp.fastmail.com`, TLS on 465 (or STARTTLS on
@@ -107,8 +108,9 @@ A recovery flow you set yourself in authentik's UI is left alone. A link
 opened again after it worked lands on the dashboard (the reset signed them
 in); opened signed out once used or expired, it starts a new reset.
 
-**The password may not contain `$` or spaces** — compose would rewrite it.
-App passwords and SMTP keys never do; `configure` refuses one that does.
+**The password may not contain `$` or spaces** — compose would rewrite them.
+App passwords and SMTP keys never do: `configure` drops spaces (an app
+password's are only how it is shown) and refuses a `$`.
 
 ## 4. Troubleshooting
 

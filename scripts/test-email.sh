@@ -105,6 +105,11 @@ cfg 'c\nsmtp.example.com\n2\n\n\n\n\n'
 [[ "$(env_get SMTP_PORT)" == 465 && "$(env_get SMTP_TLS)" == true && "$(env_get SMTP_STARTTLS)" == false && "$(env_get SMTP_PASSWORD)" == abcd1234 ]] \
     || fail_ "change to TLS: 465 suggested, Enter keeps the password: $(cat "$ENV_FILE")"; pass
 cfg 'r\n'; [[ -z "$(env_get SMTP_HOST)" && -z "$(env_get SMTP_PASSWORD)" ]] || fail_ "remove: every key emptied"; pass
+# a fresh .env carries SMTP_FROM= empty: the login is still offered; an app password's spaces go
+printf 'SMTP_HOST=\nSMTP_USER=\nSMTP_PASSWORD=\nSMTP_FROM=\n' > "$ENV_FILE"
+cfg 'y\nsmtp.gmail.com\n1\n\nme@gmail.com\nabcd efgh ijkl mnop\n\n'
+[[ "$(env_get SMTP_PASSWORD)" == abcdefghijklmnop && "$(env_get SMTP_FROM)" == me@gmail.com ]] \
+    || fail_ "fresh .env: spaces dropped, Enter sends as the login: $(cat "$ENV_FILE")"; pass
 
 # ---- users: the portal's people (not the stack's own, not service accounts) ----
 c_health() { echo healthy; }
