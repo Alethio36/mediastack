@@ -55,6 +55,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.desc: "web panel: the stack's everyday commands as buttons"
       mediastack.port: "1337"
       mediastack.installer: "frontdoor-install"   # host user, SSH key, wrapper, sudoers: its own verb sets it up, never enable/configure
       mediastack.subdomain: "panel"

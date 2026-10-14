@@ -224,4 +224,14 @@ for f in hub_enabled hub_running hub_local_url hub_notify_url hub_configured hub
 done
 [[ "$(sed -n 's/^HUB_SVC=//p' services/apprise/hub.sh)" == apprise ]] || fail_ "HUB_SVC names the hub's service"; pass
 
+# ---- URLs typed blind: their shape checked, their outline shown ----
+D=https://discord.com/api/webhooks/1539/QzABCDEFGHIJ
+out=$(notify_urls_ok ops "$D" 2>&1) && [[ "$out" == *"ops: 1 URL(s) — https://discord.com/…GHIJ"* && "$out" != *QzABC* ]] \
+    || fail_ "a good URL passes, shown as its outline only: $out"; pass
+out=$(notify_urls_ok ops "${D}${D}" 2>&1) && fail_ "two pastes run together are refused"
+[[ "$out" == *"one entry holds two URLs"* ]] || fail_ "and named: $out"; pass
+out=$(notify_urls_ok ops "discord.com/api/webhooks/x" 2>&1) && fail_ "a URL without its scheme is refused"; pass
+out=$(notify_urls_ok ops "$D,ntfy://ntfy.sh/mytopic" 2>&1) && [[ "$out" == *"2 URL(s)"* ]] || fail_ "two URLs, comma-separated: $out"; pass
+notify_urls_ok users "" >/dev/null 2>&1 || fail_ "empty (no URLs for this stream) is allowed"; pass
+
 echo "OK notify: $checks checks"

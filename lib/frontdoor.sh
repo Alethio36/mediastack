@@ -239,7 +239,8 @@ cmd_frontdoor_install() {
         ok "created host user '$FRONTDOOR_USER' (system, /bin/sh)"
     fi
     local ot_uid ot_gid ot_home
-    sudo usermod -s /bin/sh "$FRONTDOOR_USER"   # sshd execs the forced command via this shell
+    # sshd execs the forced command via this shell
+    [[ "$(getent passwd "$FRONTDOOR_USER" | cut -d: -f7)" == /bin/sh ]] || sudo usermod -s /bin/sh "$FRONTDOOR_USER"
     ot_uid=$(id -u "$FRONTDOOR_USER"); ot_gid=$(id -g "$FRONTDOOR_USER")
     ot_home=$(getent passwd "$FRONTDOOR_USER" | cut -d: -f6)
     [[ -n "$ot_home" ]] || die "could not resolve $FRONTDOOR_USER home directory"

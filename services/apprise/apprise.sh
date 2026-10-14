@@ -69,8 +69,10 @@ Getting a URL:
   anything  else: https://github.com/caronc/apprise/wiki"
         local ops_u usr_u cfg="" u
         # a webhook URL is a password: whoever holds it can post — read hidden
-        ask_hidden "URLs for ops (input hidden; Enter = none)"; ops_u="$REPLY_VAL"
-        ask_hidden "URLs for users (input hidden; Enter = none)"; usr_u="$REPLY_VAL"
+        while true; do ask_hidden "URLs for ops (input hidden; Enter = none)"; notify_urls_ok ops "$REPLY_VAL" && break; done
+        ops_u="$REPLY_VAL"
+        while true; do ask_hidden "URLs for users (input hidden; Enter = none)"; notify_urls_ok users "$REPLY_VAL" && break; done
+        usr_u="$REPLY_VAL"
         for u in ${ops_u//,/ }; do cfg+="$(notify_tagline ops)=$u"$'\n'; done
         for u in ${usr_u//,/ }; do cfg+="$(notify_tagline users)=$u"$'\n'; done
         if [[ -z "$cfg" ]]; then

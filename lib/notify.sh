@@ -233,6 +233,30 @@ notify_test_seerr() { # ask Seerr to send its own test through its hub agent: pr
     else fail "seerr: its test failed [HTTP $code]: $(oneline "${out%$'\n'*}")"; return 1; fi
 }
 
+notify_urls_ok() { # notify_urls_ok STREAM "URL,URL" — 0 when every entry is one URL; says what it got (masked) or what is wrong
+    # the URLs are typed hidden (each is a password), so a doubled or half paste
+    # cannot be seen: check its shape, then show its outline (found live: two
+    # pastes run together, refused by the hub only when it sent)
+    local u bad=0 shown=()
+    for u in ${2//,/ }; do
+        if [[ ! "$u" =~ ^[A-Za-z][A-Za-z0-9+.-]*://[^[:space:]]+$ ]]; then
+            fail "$1: '${u:0:12}…' is not a URL (scheme://…)"; bad=1
+        elif [[ "${u#*://}" == *://* ]]; then
+            fail "$1: one entry holds two URLs (${u%%://*}://… twice) — a paste ran into another; separate URLs with a comma"; bad=1
+        else
+            shown+=("$(notify_url_outline "$u")")
+        fi
+    done
+    (( bad )) && return 1
+    (( ${#shown[@]} )) && info "$1: ${#shown[@]} URL(s) — ${shown[*]}"
+    return 0
+}
+notify_url_outline() { # notify_url_outline URL -> scheme://host/…last4: enough to recognise, too little to use
+    local u=$1 rest host
+    rest=${u#*://}; host=${rest%%/*}
+    echo "${u%%://*}://${host}/…${u: -4}"
+}
+
 notify_set() {
     notify_stream_ok "$1"
     [[ -t 0 ]] || die "notify set is interactive — run it at a terminal."
@@ -244,7 +268,10 @@ stream's current URLs; anything else in the hub's configuration is kept.
             -> Copy Webhook URL, and paste that https://... URL as-is
   ntfy      ntfy://ntfy.sh/your-topic (subscribe to the topic in the app)
   anything  else: https://github.com/caronc/apprise/wiki"
-    ask_token "URLs for $1" ""
+    while true; do
+        ask_token "URLs for $1 (input hidden)" ""
+        notify_urls_ok "$1" "$REPLY_VAL" && break
+    done
     local cfg; cfg=$(hub_cfg_get | notify_cfg_edit set "$1" "$REPLY_VAL")
     hub_cfg_put "$cfg"
     ok "$1: URLs stored"

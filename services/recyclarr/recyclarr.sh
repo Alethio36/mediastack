@@ -17,6 +17,14 @@ trash_instances() { # enabled arrs recyclarr can manage (types sonarr, radarr), 
 
 trash_envkey() { echo "TRASH_PROFILE_$(tr 'a-z-' 'A-Z_' <<<"$1")"; }
 
+trash_preset_words() { # trash_preset_words PROFILE -> what an instance's preset profile is, for the menu
+    case "$1" in
+        anime) echo "TRaSH's anime profile ([Anime] Remux-1080p) — anime releases are scored by their own rules (release groups, dual audio), so the 1080p/720p/4k choice does not apply" ;;
+        uhd)   echo "TRaSH's UHD profile (4K) — this instance exists for 4K" ;;
+        *)     echo "profile '$1', set by what this instance is for (mediastack.trashprofile)" ;;
+    esac
+}
+
 # profile menu: stored once in .env; radarr-4k and sonarr-anime pre-answered
 trash_menu() {
     local s key cur
@@ -26,7 +34,7 @@ trash_menu() {
         # an instance with one obvious job carries it: mediastack.trashprofile
         local pre; pre=$(svc_label "$s" mediastack.trashprofile)
         if [[ -n "$pre" ]]; then
-            env_set "$key" "$pre"; info "$s: pre-answered '$pre' (that is its whole job)"; continue
+            env_set "$key" "$pre"; info "$s: $(trash_preset_words "$pre")"; continue
         fi
         if [[ ! -t 0 ]]; then
             env_set "$key" skip
