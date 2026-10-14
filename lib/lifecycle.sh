@@ -97,7 +97,7 @@ upgrade_finish() { # upgrade_finish <commit before the pull> — run by the pull
     svc_enabled authentik && grep -qE '^services/authentik/(blueprints|templates)/' <<<"$changed" && portal=1
     if [[ -n "$pending" ]]; then
         ok "Upgrade complete. Apply with ./mediastack.sh up — it changes: $(paste -sd' ' <<<"$pending")"
-        (( portal )) && info "The portal's setup changed too: after up, ./mediastack.sh wire authentik"
+        if (( portal )); then info "The portal's setup changed too: after up, ./mediastack.sh wire authentik"; fi
     elif (( portal )); then
         ok "Upgrade complete. The portal's setup changed — apply: ./mediastack.sh up && ./mediastack.sh wire authentik"
     elif grep -qE '^(mediastack\.sh|lib/|services/[^/]+/[^/]+\.sh$)' <<<"$changed"; then

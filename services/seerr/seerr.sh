@@ -74,17 +74,20 @@ wire_seerr() {
     ok "signed in — seerr owner is jellyfin admin '$juser'"
 
     if ! $seerr_initialized; then
-    # v3.4.1 API: ?sync=true fetches from jellyfin and returns the list;
-    # ?enable=<csv-ids> declares the complete enabled set in one call
-    local libs ids n
-    libs=$(seerr_api GET "/settings/jellyfin/library?sync=true" "$jar") \
+    # v3.5 API (its ?sync= and ?enable= query parameters are gone): POST
+    # .../library/sync fetches from jellyfin and returns the list; each library
+    # is then enabled on its own, PUT .../library/<id> {"enabled":true}
+    local libs id n=0 ids=()
+    libs=$(seerr_api POST /settings/jellyfin/library/sync "$jar") \
         || { wfail "library sync failed [HTTP $(seerr_code)]: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 0; }
-    ids=$(jq -r '[.[].id] | join(",")' <<<"$libs" 2>/dev/null)
-    [[ -n "$ids" ]] || { wfail "seerr returned no libraries from jellyfin — are the libraries created? re-run 'wire jellyfin' first: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 0; }
-    libs=$(seerr_api GET "/settings/jellyfin/library?enable=$ids" "$jar") \
-        || { wfail "enabling libraries failed [HTTP $(seerr_code)]: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 0; }
-    n=$(jq '[.[] | select(.enabled)] | length' <<<"$libs" 2>/dev/null)
-    ok "libraries synced — ${n:-0} enabled"
+    mapfile -t ids < <(jq -r '.[].id' <<<"$libs" 2>/dev/null)
+    (( ${#ids[@]} )) || { wfail "seerr returned no libraries from jellyfin — are the libraries created? re-run 'wire jellyfin' first: $(head -c200 <<<"$libs")"; rm -f "$jar"; return 0; }
+    for id in "${ids[@]}"; do
+        seerr_api PUT "/settings/jellyfin/library/$id" "$jar" '{"enabled":true}' >/dev/null \
+            || { wfail "enabling library $id failed [HTTP $(seerr_code)]"; rm -f "$jar"; return 0; }
+        n=$((n + 1))
+    done
+    ok "libraries synced — $n enabled"
     fi
 
     # one server entry per arr instance, connection details straight from the

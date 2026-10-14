@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # globals set here are read by the sourced libraries
 # test-wire.sh — wire goes on past a failed app, and the pieces of this that
 # run without the apps:
 #   * no wire step (wire_<role>) returns 1: it reports with wfail and returns
@@ -7,6 +8,7 @@
 #   * Jellyfin's plugin list read softly: a startup page is no plugin seen
 #   * LazyLibrarian's API switched on in config.ini while it is stopped: the
 #     two keys under [GENERAL], an old api_enabled replaced, the owner kept
+#   * the closing summary lists every failure again, named by its step
 #
 #   scripts/test-wire.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -53,5 +55,12 @@ out=$(ll_api_enable 2>&1) || fail_ "switching the API on runs: $out"
 ll_api() { echo 'API not enabled'; }; : > "$T/dc"
 ll_api_enable >/dev/null 2>&1 && fail_ "an API that does not answer after the write is a failure"
 (( WIRE_FAILS > 0 )) || fail_ "and it is counted"; pass
+
+# ---- the summary names every failure by its step ----
+WIRE_FAILS=0; WIRE_FAIL_LIST=()
+WIRE_STEP=seerr; wfail $'library sync failed [HTTP 400]\n     a second line' >/dev/null
+WIRE_STEP=kavita; wfail "kavita refused" >/dev/null; WIRE_STEP=""
+[[ "$(wire_fail_summary)" == $'  - seerr: library sync failed [HTTP 400]\n  - kavita: kavita refused' ]] \
+    || fail_ "one line per failure, its step first: $(wire_fail_summary)"; pass
 
 echo "OK wire: $checks checks"

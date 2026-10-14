@@ -29,7 +29,13 @@ WIRE_VERIFY=0
 # shellcheck disable=SC2034  # read by wire_arrs_ready (services/_arr/arr.sh)
 WIRE_ARRS_OK=0   # wire_arrs_ready passed this run
 wire_is_blind() { local r; for r in "${WIRE_BLIND[@]}"; do [[ "$1" == "$r" ]] && return 0; done; return 1; }
-wfail() { fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); }
+WIRE_FAIL_LIST=()   # one line per failure, named by its step, for the summary
+WIRE_STEP=""        # the step running (cmd_wire sets it)
+wfail() { fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); WIRE_FAIL_LIST+=("${WIRE_STEP:+$WIRE_STEP: }${1%%$'\n'*}"); }
+wire_fail_summary() { # the failures again, together, after everything else scrolled past
+    local f
+    for f in "${WIRE_FAIL_LIST[@]}"; do echo "  - $f"; done
+}
 # A wire step (wire_<role>) reports a failure with wfail and returns 0: the
 # failure is counted, the run goes on to the next app, and the summary at the
 # end exits 1. A step returning 1 would end the whole run at the error trap
@@ -181,16 +187,17 @@ cmd_wire() {
     if [[ "$section" == all ]]; then
         for role in "${WIRE_ROLES[@]}"; do
             if (( WIRE_VERIFY )) && wire_is_blind "$role"; then skipped+="$role "; continue; fi
-            "wire_$role"
+            WIRE_STEP=$role; "wire_$role"
         done
     else
-        "wire_$section"
+        WIRE_STEP=$section; "wire_$section"
     fi
+    WIRE_STEP=""
     echo
     if (( WIRE_VERIFY )); then
         [[ -n "$skipped" ]] && info "not verifiable (write blind, skipped): ${skipped% }"
         if (( WIRE_FAILS )); then
-            fail "wire --verify: $WIRE_FAILS check(s) could not run — see the FAIL lines above"; exit 1
+            fail "wire --verify: $WIRE_FAILS check(s) could not run:"; wire_fail_summary; exit 1
         elif (( WIRE_CHANGES )); then
             fail "wire --verify: $WIRE_CHANGES drift item(s) — see the would: lines above. Apply: ./mediastack.sh wire"; exit 1
         fi
@@ -201,7 +208,9 @@ cmd_wire() {
     else
         mkdir -p "$LOCAL_DIR"; touch "$WIRED_FILE"; repo_owned "$LOCAL_DIR" "$WIRED_FILE"
         if (( WIRE_FAILS )); then
-            fail "wire finished with $WIRE_FAILS failure(s) — see the FAIL lines above. Re-run after fixing; completed items just skip."
+            fail "wire finished with $WIRE_FAILS failure(s):"
+            wire_fail_summary
+            info "Fix them, then re-run ./mediastack.sh wire — completed items just skip."
             exit 1
         fi
         ok "wire complete. Verify: ./mediastack.sh doctor   Credentials: ./mediastack.sh credentials"
