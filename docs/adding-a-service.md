@@ -72,6 +72,7 @@ backups and the update pipeline like any shipped service.
 | `mediastack.conflicts: "other"` | does the same job as `other` and never runs beside it (either side may declare it): `configure` asks which to keep, `enable` refuses the second |
 | `mediastack.installer: "verb"` | set up by its own command, not `enable`/`configure`: `everything` and `custom` leave it out with a pointer to the verb, `enable` refuses — the verb enables it once its setup is in place |
 | `mediastack.errors: '<regex>'` | what counts as an error line for `doctor`'s log-noise check (extended regex, case-insensitive) — on a service or a shard member (doctor counts every container of a shard). Default: any line containing the word `error` or `fatal`. Set it for an app whose logs carry a level, so a logger name or field key holding the word is not counted — authentik's is `"level": ?"(error\|critical\|fatal\|panic)"` |
+| `mediastack.errors.except: '<regex>'` | lines the errors pattern matches that are routine for this app (extended regex, case-insensitive) — for one that logs normal events at an error level. Kavita logs its startup migrations at `[Fatal]` with "This is not an error" |
 | `traefik.http.routers.*` labels | HTTPS hostname — native Traefik labels, see docs/edge.md |
 
 Labels the arr family carries (only meaningful with `wire arr` / `trash-sync`):

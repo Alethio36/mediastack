@@ -129,7 +129,16 @@ RENDERED_JSON=$(jq -n --arg re "$re" '{services:{"authentik-db":{labels:{"medias
 pg='2026-10-08 03:09:53.702 PDT [1] LOG:  database system is ready to accept connections
 2026-10-08 03:10:01.000 PDT [9] ERROR:  relation "x" does not exist
 2026-10-08 03:10:02.000 PDT [9] FATAL:  terminating connection due to administrator command'
-[[ "$(log_errors authentik-db <<<"$pg")" == 2 ]] || fail_ "postgres: its ERROR/FATAL lines, not its LOG lines"; pass
+[[ "$(log_errors authentik-db <<<"$pg")" == 1 ]] || fail_ "postgres: FATAL counts; a handled ERROR and LOG lines do not"; pass
+# kavita: its migrations logged at [Fatal] are routine; a real Error/Fatal counts
+k_re=$(sed -n "s/^ *mediastack\.errors: '\(.*\)'\$/\1/p" services/kavita/compose.yml)
+k_ex=$(sed -n "s/^ *mediastack\.errors\.except: '\(.*\)'\$/\1/p" services/kavita/compose.yml)
+RENDERED_JSON=$(jq -n --arg re "$k_re" --arg ex "$k_ex" '{services:{kavita:{labels:{"mediastack.errors":$re,"mediastack.errors.except":$ex}}}}')
+kv='[Kavita] [2026-10-14 07:12:00 -07:00  7] [Fatal] Kavita.Server.Program Running ManualMigrateX migration - Please be patient, this may take some time.
+[Kavita] [2026-10-14 07:12:01 -07:00  7] [Fatal] Kavita.Server.Program Running ManualMigrateX migration - Completed. This is not an error
+[Kavita] [2026-10-14 07:12:02 -07:00  7] [Information] Kavita.Server Starting
+[Kavita] [2026-10-14 07:13:00 -07:00  9] [Error] Kavita.Services.ScannerService Library scan failed'
+[[ "$(log_errors kavita <<<"$kv")" == 1 ]] || fail_ "kavita: its migration lines are routine, a real error counts: $(log_errors kavita <<<"$kv")"; pass
 RENDERED_JSON=$saved
 
 # ---- secrets ----

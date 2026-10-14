@@ -323,11 +323,16 @@ _doctor_apps() {
 
 # an app that declares nothing: any line naming an error. One whose logs carry
 # a level declares its own pattern (mediastack.errors), so the word in a
-# logger name or a field key is not counted as a failure.
+# logger name or a field key is not counted as a failure; one that logs
+# routine lines at an error level also names those (mediastack.errors.except).
 LOG_ERRORS_DEFAULT='\b(error|fatal)\b'
-log_errors() { # log_errors <svc> < log -> lines matching its error pattern (case-insensitive)
-    local re; re=$(svc_label "$1" mediastack.errors)
-    grep -ciE -- "${re:-$LOG_ERRORS_DEFAULT}" || true
+log_errors() { # log_errors <svc> < log -> lines matching its error pattern and not its exceptions (case-insensitive)
+    local re ex; re=$(svc_label "$1" mediastack.errors); ex=$(svc_label "$1" mediastack.errors.except)
+    if [[ -n "$ex" ]]; then
+        { grep -iE -- "${re:-$LOG_ERRORS_DEFAULT}" || true; } | { grep -ciEv -- "$ex" || true; }
+    else
+        grep -ciE -- "${re:-$LOG_ERRORS_DEFAULT}" || true
+    fi
 }
 
 _doctor_runtime_audit() {

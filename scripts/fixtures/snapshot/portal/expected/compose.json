@@ -226,7 +226,7 @@
       "image": "postgres:16",
       "labels": {
         "com.centurylinklabs.watchtower.enable": "false",
-        "mediastack.errors": "(ERROR|FATAL|PANIC):",
+        "mediastack.errors": "(FATAL|PANIC):",
         "mediastack.shard": "authentik"
       },
       "networks": {
@@ -870,6 +870,8 @@
         "mediastack.auth": "native",
         "mediastack.config": "true",
         "mediastack.desc": "reading server for ebooks, comics and manga",
+        "mediastack.errors": "\\[(Error|Fatal)\\]",
+        "mediastack.errors.except": "Please be patient|This is not an error",
         "mediastack.managed": "true",
         "mediastack.port": "5000",
         "mediastack.subdomain": "books",

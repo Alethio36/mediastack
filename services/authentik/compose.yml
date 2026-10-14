@@ -219,8 +219,11 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.shard: "authentik"
-      # PostgreSQL's own severities: ERROR, FATAL, PANIC
-      mediastack.errors: '(ERROR|FATAL|PANIC):'
+      # PostgreSQL's own trouble: FATAL (a session refused or ended) and PANIC.
+      # ERROR is one statement refused and handed back to authentik, which
+      # handles it — a first boot logs dozens (a table queried before its
+      # migration, two first-time inserts colliding on a name), seen live
+      mediastack.errors: '(FATAL|PANIC):'
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d authentik -U authentik"]
       interval: 30s
