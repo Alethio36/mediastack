@@ -470,6 +470,9 @@
     },
     "seerr": {
       "container_name": "mediastack-seerr",
+      "depends_on": {
+        "jellyfin": "service_started"
+      },
       "dns_search": [
         "."
       ],
