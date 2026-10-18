@@ -207,8 +207,16 @@ prowlarr_indexers_retest() { # after a stack start: once FlareSolverr is up, Pro
     # a test through FlareSolverr waits on a Cloudflare challenge (up to its
     # 60s maxTimeout, per indexer): far past api's default 20s (found live)
     if svc_enabled flaresolverr; then
-        out=$(API_TIMEOUT=$PROWLARR_TEST_WAIT api POST "$url/indexerproxy/testall" "$key" '{}') \
-            || warn "prowlarr: re-testing its proxies failed — $(oneline "$out")"
+        if out=$(API_TIMEOUT=$PROWLARR_TEST_WAIT api POST "$url/indexerproxy/testall" "$key" '{}'); then
+            # a passing test leaves "all indexer proxies are unavailable" in
+            # its health list until Prowlarr's own health check runs (proven
+            # live, Oct 2026: still there after the test, gone after the
+            # check) — so run that check now
+            api POST "$url/command" "$key" '{"name":"CheckHealth"}' >/dev/null \
+                || warn "prowlarr: could not ask it to re-check its health — its list may show the proxy failed until its next own check"
+        else
+            warn "prowlarr: re-testing its proxies failed — $(oneline "$out")"
+        fi
     fi
     out=$(API_TIMEOUT=$PROWLARR_TEST_WAIT api POST "$url/indexer/testall" "$key" '{}') || true   # soft read: a failing indexer answers 400 with the results; the report reads them
     # each arr keeps its own failure record for what Prowlarr syncs it, and

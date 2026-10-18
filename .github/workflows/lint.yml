@@ -51,6 +51,8 @@ jobs:
         run: scripts/test-matrix.sh
       - name: LazyLibrarian's download client follows the stack's choice (scripts/test-ll-client.sh)
         run: scripts/test-ll-client.sh
+      - name: night jobs — the VPN group recreated only on a gluetun change, the tunnel ready before recyclarr, Prowlarr's health re-checked (scripts/test-night-jobs.sh)
+        run: scripts/test-night-jobs.sh
       - name: configure's questions — fresh defaults, one front door, hidden secrets (scripts/test-configure.sh)
         run: scripts/test-configure.sh
       - name: wire goes on past a failed app; LazyLibrarian's API and Jellyfin's plugins (scripts/test-wire.sh)

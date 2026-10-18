@@ -98,6 +98,23 @@ defer_while_streaming() { # defer_while_streaming WHAT — postpone while someon
     done
 }
 
+# Would `up` recreate gluetun? Only then must its VPN group be recreated with
+# it. Being in a full update's target list is not that: every full update
+# lists it, and the group was force-recreated each time, whatever changed
+# (found by the soak, Oct 2026). Compose recreates on a new image or a changed
+# config; both are compared with the running container. Anything unreadable
+# counts as "it will": the group then goes together, as before.
+gluetun_recreates() {
+    local cn have_img have_hash want_img want_hash
+    cn=$(svc_cname gluetun)
+    read -r have_img have_hash < <(sudo docker inspect -f '{{.Image}} {{index .Config.Labels "com.docker.compose.config-hash"}}' "$cn" 2>/dev/null) || return 0
+    [[ -n "$have_img" && -n "$have_hash" ]] || return 0
+    want_img=$(sudo docker image inspect -f '{{.Id}}' "$(svc_image gluetun)" 2>/dev/null) || return 0
+    want_hash=$(DC config --hash gluetun 2>/dev/null | awk '$1 == "gluetun" {print $2}')
+    [[ -n "$want_img" && -n "$want_hash" ]] || return 0
+    [[ "$have_img" != "$want_img" || "$have_hash" != "$want_hash" ]]
+}
+
 # Every restore point says who made it and what ran: `meta` holds its kind —
 # manual (backup by hand or the panel), scheduled (the backup timer), update
 # (a full update's point), update-scoped (update <svc>), migrate (an import) —
@@ -859,7 +876,7 @@ cmd_update() {
     # stale, so there is no repair window. vpn_reattach_guard still runs after
     # as the catch-all for drift arriving via any OTHER path (out-of-band
     # compose, reboots) — this only closes the update path's own recreate.
-    if printf '%s\n' "${targets[@]}" | grep -qx gluetun; then
+    if printf '%s\n' "${targets[@]}" | grep -qx gluetun && gluetun_recreates; then
         # gluetun is in this run: recreate it AND its borrowers as one
         # force-recreated group so no borrower is left on the old ID. Other
         # targets apply normally in the same call — only the VPN group is
@@ -872,7 +889,7 @@ cmd_update() {
         done < <(jq -r '.services | to_entries[]
             | select((.value.network_mode // "") == "service:gluetun") | .key' \
             <<<"$RENDERED_JSON")
-        info "gluetun is updating — recreating its ${#grp[@]}-member VPN group together so none is orphaned"
+        info "gluetun changed — recreating its ${#grp[@]}-member VPN group together so none is orphaned"
         apply_up --remove-orphans --force-recreate "${grp[@]}"
         apply_up --remove-orphans "${targets[@]}"
     else

@@ -418,3 +418,28 @@ gluetun_doctor() { # doctor: every VPN'd service joined to the live tunnel, and 
             || d_fail "cannot fetch IP through tunnel" "VPN may be down; downloads are dead (not leaking — kill-switch)" "./mediastack.sh logs gluetun"
     fi
 }
+
+# A service on gluetun's network reaches the internet only once the tunnel's
+# DNS serves and its route holds: gluetun reports healthy before that (found
+# by the soak, Oct 2026: right after the VPN group restarted, recyclarr got
+# "Could not resolve host", then "Connection reset", wiped its guide copy and
+# failed). Ready = a name resolves and HTTPS answers through the tunnel twice
+# in a row; a service not on gluetun's network needs no wait.
+VPN_EGRESS_WAIT=120   # seconds
+vpn_egress_ready() { # vpn_egress_ready SVC -> 0 when SVC may go out; else a FAIL with the last error
+    local who=$1 gcn t0 good=0 out=""
+    render
+    [[ "$(jq -r --arg s "$who" '.services[$s].network_mode // ""' <<<"$RENDERED_JSON")" == service:gluetun ]] || return 0
+    gcn=$(svc_cname gluetun); t0=$(date +%s)
+    while (( $(date +%s) - t0 < VPN_EGRESS_WAIT )); do
+        if out=$(sudo docker exec "$gcn" wget -qO- --timeout=8 https://ipinfo.io/ip 2>&1); then
+            good=$((good + 1)); (( good >= 2 )) && return 0
+        else
+            good=0
+        fi
+        sleep 5
+    done
+    out=$(oneline "${out:-no answer}")
+    fail "$who: the tunnel still cannot reach the internet after ${VPN_EGRESS_WAIT}s (last: ${out% }) — not started. Check: ./mediastack.sh logs gluetun"
+    return 1
+}

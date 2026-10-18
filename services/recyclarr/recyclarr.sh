@@ -306,6 +306,9 @@ cmd_trash_sync() { # trash-sync [--dry-run]
         trash_sentinel "$s"
     done
     hr "trash-sync: recyclarr"
+    # a failed fetch makes recyclarr delete its guide copy: never start it
+    # while the tunnel it rides cannot reach GitHub
+    vpn_egress_ready recyclarr || { (( WIRE_DRY )) && sudo rm -f "$preview"; return 1; }
     local slog rc summary
     slog=$(mktemp)
     if (( WIRE_DRY )); then

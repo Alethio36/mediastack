@@ -148,10 +148,19 @@ says why. Stopped dependents are left to `doctor`/`leak-test` on next start.
 
 When an update recreates gluetun (new image → new container ID), its
 `service:gluetun` borrowers would be left on the dead ID unless they are
-recreated too. `update` therefore detects gluetun in the target set and
-force-recreates gluetun together with its enabled borrowers as one group, so
-no borrower is ever orphaned in the first place — prevention, with no repair
-window. `vpn_reattach_guard` still runs afterward as the catch-all for drift
+recreated too. `update` therefore checks whether gluetun itself will be
+recreated — a new image, or a config whose compose hash differs from the
+running container's (`gluetun_recreates`) — and only then force-recreates
+gluetun together with its enabled borrowers as one group, so no borrower is
+ever orphaned in the first place — prevention, with no repair window. Being
+in the target list is not enough: every full update lists gluetun, and until
+Oct 2026 the whole group was recreated every time, a tunnel bounce on every
+update night. Anything it cannot read counts as a change.
+
+After the tunnel restarts, gluetun reports healthy before its DNS serves.
+`trash-sync` therefore waits until HTTPS by name works through the tunnel
+twice in a row (`vpn_egress_ready`, up to 2 minutes) before starting
+recyclarr — a failed fetch makes recyclarr delete its guide copy. `vpn_reattach_guard` still runs afterward as the catch-all for drift
 that arrives by any other route (out-of-band `docker compose`, reboots,
 manual container ops); the cascade only covers the update path's own recreate.
 
