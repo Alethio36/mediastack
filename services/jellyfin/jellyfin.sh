@@ -217,7 +217,27 @@ jf_api() { # jf_api METHOD PATH TOKEN [json-body] -> body on stdout; rc = http 2
 }
 # ready is when the API answers: /health says 200 between the restart's two
 # phases while the API still answers 503 (measured live, 14 Oct 2026)
-jf_ready() { http_ready jellyfin "$(jf_url)/System/Info/Public" '^200$'; }
+# Ready means the real server. While it loads, Jellyfin 12 runs a temporary
+# setup server that can answer /System/Info/Public with 200, then drops every
+# connection as the real one takes over (proven live on 12.2, Oct 2026: 200,
+# then 000, then 503, then 200 only after "Startup complete"). So: its own
+# "Startup complete" since this container started, then the API.
+JF_STARTED_LINE='Main: Startup complete'
+jf_ready() {
+    local cn since t0 log
+    cn=$(svc_cname jellyfin); since=$(c_get "$cn" '.State.StartedAt'); t0=$(date +%s)
+    [[ -n "$since" ]] || { wfail "jellyfin's container has no start time — is it running? (./mediastack.sh status)"; return 1; }
+    # read whole, then search: piped into grep -q, docker would die of SIGPIPE
+    # and pipefail would call a found line "not found" (caught by the test)
+    while log=$(sudo docker logs --since "$since" "$cn" 2>&1 || true); ! grep -qF "$JF_STARTED_LINE" <<<"$log"; do
+        if (( $(date +%s) - t0 >= API_WAIT )); then
+            wfail "jellyfin never logged '$JF_STARTED_LINE' within ${API_WAIT}s of starting — inspect: ./mediastack.sh logs jellyfin"
+            return 1
+        fi
+        sleep 2
+    done
+    http_ready jellyfin "$(jf_url)/System/Info/Public" '^200$'
+}
 jf_libname() { # jf_libname <arr service> <media subdir> -> default library name
     # an instance names its own library (mediastack.jflibrary: "Movies (4K)");
     # otherwise its type's name; a type wire doesn't know, its folder's name

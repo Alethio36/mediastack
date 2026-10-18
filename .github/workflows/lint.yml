@@ -45,6 +45,8 @@ jobs:
         run: scripts/test-ll-login.sh
       - name: Jellyfin trusts Traefik as its proxy exactly while Traefik is on (scripts/test-jf-proxies.sh)
         run: scripts/test-jf-proxies.sh
+      - name: Jellyfin is ready only after its real server started (scripts/test-jf-ready.sh)
+        run: scripts/test-jf-ready.sh
       - name: configure's questions — fresh defaults, one front door, hidden secrets (scripts/test-configure.sh)
         run: scripts/test-configure.sh
       - name: wire goes on past a failed app; LazyLibrarian's API and Jellyfin's plugins (scripts/test-wire.sh)
