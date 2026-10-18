@@ -17,6 +17,11 @@ services:
     image: ghcr.io/wizarrrr/wizarr:latest
     container_name: ${WIZARR_NAME:-mediastack-wizarr}
     profiles: ["wizarr"]
+    # invitations make Jellyfin accounts: enabling Wizarr brings Jellyfin
+    # (resolve_deps reads this); start order only, no health wait
+    depends_on:
+      jellyfin:
+        condition: service_started
     environment:
       - PUID=${WIZARR_UID}
       - PGID=${MEDIA_GROUP_GID:-13000}

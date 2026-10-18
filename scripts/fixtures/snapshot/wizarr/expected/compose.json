@@ -587,6 +587,9 @@
     },
     "wizarr": {
       "container_name": "mediastack-wizarr",
+      "depends_on": {
+        "jellyfin": "service_started"
+      },
       "dns_search": [
         "."
       ],
