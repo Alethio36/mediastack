@@ -39,6 +39,8 @@ jobs:
         run: scripts/test-sudo-keepalive.sh
       - name: up retries only gluetun's health race (scripts/test-up-race.sh)
         run: scripts/test-up-race.sh
+      - name: doctor reads each arr's own health list (scripts/test-arr-health.sh)
+        run: scripts/test-arr-health.sh
       - name: configure's questions — fresh defaults, one front door, hidden secrets (scripts/test-configure.sh)
         run: scripts/test-configure.sh
       - name: wire goes on past a failed app; LazyLibrarian's API and Jellyfin's plugins (scripts/test-wire.sh)

@@ -160,6 +160,30 @@ arr_instances() { # arr_instances [type] -> enabled arr services (optionally by 
     done
 }
 
+arr_doctor() { # doctor: apps — each arr's and Prowlarr's own health list (indexers, download client, root folders, its notification connection to the hub)
+    local s key out n
+    for s in $(arr_instances) $(svc_enabled prowlarr && echo prowlarr); do
+        [[ "$(c_state "$(svc_cname "$s")")" == running ]] || continue
+        key=$(arr_key "$s")
+        [[ -n "$key" ]] || { warn "$s: no API key yet — still initialising?"; continue; }
+        if ! out=$(api GET "$(arr_url "$s")/api/$(arr_apiver "$s")/health" "$key"); then
+            warn "$s: its health list is unreadable: $(oneline "$out")"; continue
+        fi
+        jq -e 'type == "array"' <<<"$out" >/dev/null 2>&1 \
+            || { warn "$s: its health list is not a list: $(oneline "$out")"; continue; }
+        n=0
+        while IFS=$'\t' read -r type msg wiki; do
+            n=$((n+1))
+            case "$type" in
+                error)   d_fail "$s: $msg" "$s's own health check reports it (System -> Status)" "${wiki:-open $s -> System -> Status}" ;;
+                warning) warn "$s: $msg" ;;
+                *)       info "$s: $msg" ;;
+            esac
+        done < <(jq -r '.[] | [.type, .message, (.wikiUrl // "" | tostring)] | @tsv' <<<"$out")
+        (( n )) || ok "$s: its health list is clear"
+    done
+}
+
 # ---- arr root folders + download client ----
 wire_arr() {
     hr "wire: arr instances (root folders + download client + recycle bin)"

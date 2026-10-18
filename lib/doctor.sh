@@ -319,6 +319,7 @@ _doctor_apps() {
         svc_enabled "$s" && [[ "$(c_state "$(svc_cname "$s")")" == running ]] || continue
         "${s}_doctor"
     done
+    arr_doctor
 }
 
 # an app that declares nothing: any line naming an error. One whose logs carry
