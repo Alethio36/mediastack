@@ -5,7 +5,7 @@
 #     failure notice) every verb skips while the mark stands, exiting 0;
 #     the same verb run by hand, or with no mark, runs
 #   * a backup of the whole stack stops and starts again only what was
-#     running: a stopped stack is backed up cold and stays stopped
+#     running, and says so: a stopped stack is backed up cold and stays stopped
 #   * a start other than `up` says once that scheduled jobs stay paused
 # Each case runs in its own bash that sources the real entrypoint (minus its
 # last line, main "$@") with Docker and the host stubbed.
@@ -85,12 +85,16 @@ reset; : > "$T/ps"
 run "$job; stopped_run backup '' job"
 [[ $rc == 0 && -e "$T/ran" ]] || fail_ "with nothing running the backup still runs (rc=$rc)"; pass
 [[ ! -e "$T/dc" && ! -e "$T/local/marker" ]] || fail_ "with nothing running nothing is stopped or started: $(cat "$T/dc" 2>/dev/null)"; pass
+grep -q 'nothing is running — nothing to stop or start' "$T/out" && ! grep -qE 'stopping|starting again' "$T/out" \
+    || fail_ "a cold backup says nothing is stopped, and never claims a stop or a restart: $(cat "$T/out")"; pass
 
 reset; printf 'radarr\nsonarr\n' > "$T/ps"
 run "$job; stopped_run backup '' job"
 [[ $rc == 0 && -e "$T/ran" ]] || fail_ "the backup runs (rc=$rc)"; pass
 grep -qx 'DC stop radarr sonarr' "$T/dc" || fail_ "what is running is stopped: $(cat "$T/dc")"; pass
 grep -qx 'DC up -d radarr sonarr' "$T/dc" || fail_ "and only that starts again: $(cat "$T/dc")"; pass
+grep -q 'backup: stopping 2 service(s)' "$T/out" && grep -q 'backup: starting again' "$T/out" \
+    || fail_ "a warm backup says what it stops and that it starts them again: $(cat "$T/out")"; pass
 
 reset   # no $T/ps: compose cannot list
 run "$job; stopped_run backup '' job"

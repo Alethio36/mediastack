@@ -120,9 +120,8 @@ backup_take() { # backup_take KIND NOTE — a full cold restore point into the G
 
     # shellcheck disable=SC2046  # a word list of services
     point_record "$dest" "$1" "$2" $(point_services)
-    [[ -s "$dest/images.lock" ]] || warn "images.lock is empty — image-exact rollback unavailable for this point"
+    [[ -s "$dest/images.lock" ]] || warn "images.lock is empty (nothing was running) — this point restores configs, not exact images"
 
-    info "Stopping stack for a consistent snapshot... (all services briefly stop; ~20-40s)"
     local rc=0
     stopped_run backup "" backup_snapshot "$croot" "$dest" || rc=$?
     case $rc in
@@ -275,7 +274,6 @@ backup_snapshot() { # backup_snapshot CROOT DEST — runs with the stack stopped
     fi
     point_private "$dest" || return 1
     ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' ) || { fail "could not write the restore point's checksums"; return 1; }
-    info "Restarting stack... (waiting on gluetun health; can take up to ~1min)"
     return "$rc"
 }
 
@@ -298,8 +296,9 @@ stopped_run() { # stopped_run WHAT "SVC..." CMD [ARG...] — stop SVC ("" = what
     if [[ -z "$svcs" ]]; then
         svcs=$(DC ps --services --status running) || { fail "$what: could not list the running services"; return 1; }
         svcs=$(paste -sd' ' <<<"$svcs")
-        [[ -n "$svcs" ]] || { "$@"; return; }   # nothing running: nothing to stop or start
+        [[ -n "$svcs" ]] || { info "$what: nothing is running — nothing to stop or start"; "$@"; return; }
     fi
+    info "$what: stopping $(wc -w <<<"$svcs") service(s) for a consistent copy — they start again when it is done (~20-40s)"
     mkdir -p "$LOCAL_DIR"; repo_owned "$LOCAL_DIR"
     printf '%s\n%s\n' "$what" "$svcs" > "$STOP_MARKER"; repo_owned "$STOP_MARKER"
     (
@@ -323,6 +322,7 @@ stopped_start() { # start what STOP_MARKER names; the marker goes only once they
 stopped_restart() { # stopped_run's EXIT trap: the services come back first, messages after
     local rc=$? what
     what=$(head -1 "$STOP_MARKER")
+    info "$what: starting again what it stopped (up to ~1 min)"
     if ! stopped_start; then
         fail "$what: the services it stopped did not start again — run: ./mediastack.sh up"
         notify ops "Mediastack is DOWN" "The $what stopped services that did not start again. Run \`./mediastack.sh up\` on the host." failure
