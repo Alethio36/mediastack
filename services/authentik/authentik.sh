@@ -544,7 +544,7 @@ wire_authentik() {
 
 wire_authentik_identity() { # people cannot change their own email or username: apps find their account by them
     local cur
-    cur=$(ak_api GET /admin/settings/) || { wfail "authentik: its settings are unreadable"; return 1; }
+    cur=$(ak_api GET /admin/settings/) || { wfail "authentik: its settings are unreadable"; return 0; }
     if jq -e '.default_user_change_email == false and .default_user_change_username == false' <<<"$cur" >/dev/null; then
         ok "authentik: people cannot change their own email or username (an admin can: ./mediastack.sh set-email)"
         return 0

@@ -34,6 +34,21 @@ bad=$(for f in services/*/*.sh; do awk -v F="$f" -v R="^wire_($roles)\$" '
     fn ~ R && /return 1/ { print F ":" NR ": " $0 }
     /^}/ { fn="" }' "$f"; done)
 [[ -z "$bad" ]] || fail_ "a wire step returns 1 — report with wfail and return 0 (lib/wire.sh):"$'\n'"$bad"; pass
+# nor does a helper one calls bare: set -e ends the whole run on it (found live, Oct 2026)
+returners=$(awk '/^[a-z_]+\(\) *\{/ { fn=$1; sub(/\(\).*/, "", fn) }
+    fn != "" && /return 1/ { print fn }
+    /^}/ { fn="" }' mediastack.sh lib/*.sh services/*/*.sh | sort -u | tr '\n' ' ')
+bad=$(for f in services/*/*.sh; do awk -v F="$f" -v R="^wire_($roles)\$" -v L="$returners" '
+    BEGIN { n = split(L, a, " "); for (i = 1; i <= n; i++) ret[a[i]] = 1 }
+    /^[a-z_]+\(\) *\{/ { fn=$1; sub(/\(\).*/, "", fn) }
+    /^}/ { fn=""; st=""; next }
+    { st = st $0 }                       # one statement: continued lines joined
+    /\\$/ { sub(/\\$/, "", st); next }
+    st ~ /<</ { st=""; next }           # a here-document: its guard follows the terminator, out of sight here
+    { split(st, w, " ") }
+    fn ~ R && (w[1] in ret) && st !~ /\|\||&&/ { print F ":" NR ": " st }
+    { st="" }' "$f"; done)
+[[ -z "$bad" ]] || fail_ "a wire step calls a helper that can return 1, unguarded — the helper reports with wfail and returns 0:"$'\n'"$bad"; pass
 
 # ---- Jellyfin's plugins, read softly ----
 [[ "$(jf_plugin_ids '<html>Jellyfin is starting</html>')" == "||" ]] || fail_ "a startup page is no plugin seen"; pass

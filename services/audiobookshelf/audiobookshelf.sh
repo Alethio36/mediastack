@@ -85,11 +85,11 @@ abs_root_rotate() { # abs_root_rotate NEW-PASSWORD — root's password, and with
 
 abs_root_unlink() { # the root account is the stack's, never a portal identity — undo a link a username match made
     local tok="$1" out id
-    out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 1; }
+    out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 0; }
     for id in $(jq -r '.users[] | select(.type == "root" and .hasOpenIDLink == true) | .id' <<<"$out"); do
         w_would "audiobookshelf: unlink the root account from the portal identity it was matched to, and rotate its password (ends every root session)" || continue
         abs_api PATCH "/api/users/$id/openid-unlink" "$tok" >/dev/null \
-            || { wfail "audiobookshelf refused to unlink its root account from the portal — unlink it in its UI (Users → root)"; return 1; }
+            || { wfail "audiobookshelf refused to unlink its root account from the portal — unlink it in its UI (Users → root)"; return 0; }
         if abs_root_rotate "$(gen_secret 24)"; then
             wfail "audiobookshelf: its root account had been linked to a portal sign-in (a username match) — unlinked, and its password rotated: every root session has ended (a page already open keeps working up to an hour). Someone may have signed in as root: check authentik's events for logins to Audiobookshelf"
         else
@@ -101,9 +101,9 @@ abs_root_unlink() { # the root account is the stack's, never a portal identity �
 
 abs_admin_sync() { # portal-linked accounts follow `admins`; the root account (the stack's) is never touched
     local tok="$1" out admins u want
-    out=$(signin_admins) || { wfail "authentik: admins unreadable — Audiobookshelf rights not synced"; return 1; }
+    out=$(signin_admins) || { wfail "authentik: admins unreadable — Audiobookshelf rights not synced"; return 0; }
     admins=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
-    out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 1; }
+    out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 0; }
     while IFS= read -r u; do
         [[ -n "$u" ]] || continue
         if [[ "$admins" == *" $(jq -r '.username' <<<"$u") "* ]]; then want="admin"

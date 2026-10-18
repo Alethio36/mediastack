@@ -25,13 +25,13 @@ prowlarr_app_repoint() { # <target> <entry name> <applications JSON> <prowlarr a
 prowlarr_download_client() { # manual grabs in prowlarr's UI go to the download client (category 'prowlarr')
     local key url ver base dcs dl miss e name impl schema tmpl body resp p other out
     key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr); base="$url/api/$ver"
-    [[ -n "$key" ]] || { wfail "prowlarr: no ApiKey readable — re-run wire in a minute"; return 1; }
+    [[ -n "$key" ]] || { wfail "prowlarr: no ApiKey readable — re-run wire in a minute"; return 0; }
     dl=$(role_pick download-client)
     [[ -n "$dl" ]] || { info "prowlarr: no download client enabled"; return 0; }
     miss=$(role_env_missing "$dl" download-client prowlarr | paste -sd' ' -)
     [[ -z "$miss" ]] || { info "prowlarr download client $dl pends on its credentials ($miss)"; return 0; }
     dcs=$(api GET "$base/downloadclient" "$key") \
-        || { wfail "prowlarr: could not read its download clients — nothing created [$(oneline "$dcs")]"; return 1; }
+        || { wfail "prowlarr: could not read its download clients — nothing created [$(oneline "$dcs")]"; return 0; }
     e=$(role_entry "$dl" download-client prowlarr); name=$(jq -r '.name' <<<"$e"); impl=$(jq -r '.implementation' <<<"$e")
     if [[ -n "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .id' <<<"$dcs")" ]]; then
         ok "prowlarr download client $name registered"
@@ -43,7 +43,7 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go to the download 
                 "host=$(svc_host "$dl")" "port=$(svc_cport "$dl")" "${login[@]}"
             if (( ! WIRE_DRY )); then
                 dcs=$(api GET "$base/downloadclient" "$key") \
-                    || { wfail "prowlarr: could not re-read its download clients [$(oneline "$dcs")]"; return 1; }
+                    || { wfail "prowlarr: could not re-read its download clients [$(oneline "$dcs")]"; return 0; }
             fi
         fi
         if [[ "$(jq -r --arg n "$name" '.[]? | select(.name == $n) | .enable' <<<"$dcs")" == false ]] \
@@ -54,7 +54,7 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go to the download 
     elif w_would "prowlarr: register $impl as its download client (manual grabs -> category 'prowlarr')"; then
         schema=$(api GET "$base/downloadclient/schema" "$key" || true)   # soft read: create path only: an empty schema FAILs below, nothing created
         tmpl=$(jq -c --arg i "$impl" '[.[] | select(.implementation == $i)][0] // empty' <<<"$schema" 2>/dev/null)
-        [[ -n "$tmpl" ]] || { wfail "prowlarr: its API offers no $impl client type — is the image very old?"; return 1; }
+        [[ -n "$tmpl" ]] || { wfail "prowlarr: its API offers no $impl client type — is the image very old?"; return 0; }
         body=$(jq -c --argjson e "$e" '
             .name = $e.name | .enable = true
             | .fields = [ .fields[]
@@ -64,7 +64,7 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go to the download 
                   else . end ]' <<<"$tmpl")
         resp=$(api POST "$base/downloadclient" "$key" "$body") \
             && ok "prowlarr download client $name registered" \
-            || { wfail "prowlarr: download client $name rejected: $(head -c200 <<<"$resp")"; return 1; }
+            || { wfail "prowlarr: download client $name rejected: $(head -c200 <<<"$resp")"; return 0; }
     fi
     for p in $(role_all_providers download-client prowlarr); do
         [[ "$p" == "$dl" ]] && continue

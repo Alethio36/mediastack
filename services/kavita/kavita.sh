@@ -108,11 +108,11 @@ kav_email_move() { # kav_email_move OLD NEW — the Kavita account signed in by 
 
 kav_admin_sync() { # portal accounts follow `admins`; the stack's admin and local accounts are never touched
     local tok="$1" out admins u body want has back
-    out=$(signin_admins) || { wfail "authentik: admins unreadable — Kavita rights not synced"; return 1; }
+    out=$(signin_admins) || { wfail "authentik: admins unreadable — Kavita rights not synced"; return 0; }
     admins=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
     # people made through the portal have no confirmed email (authentik cannot
     # vouch for one yet): Kavita lists them only with includePending
-    out=$(kav_api GET "/api/users?includePending=true" "$tok") || { wfail "kavita: users unreadable: $(oneline "$out")"; return 1; }
+    out=$(kav_api GET "/api/users?includePending=true" "$tok") || { wfail "kavita: users unreadable: $(oneline "$out")"; return 0; }
     while IFS= read -r u; do
         [[ -n "$u" ]] || continue
         want=false; [[ "$admins" == *" $(jq -r '.username' <<<"$u") "* ]] && want=true
