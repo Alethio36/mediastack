@@ -634,7 +634,11 @@ in Prowlarr as a first-class app, so indexers sync automatically like the
 arrs. A fresh LazyLibrarian has its API off: `wire` switches it on with a
 key of its own (written to its `config.ini` while it is stopped), before
 Prowlarr registers it. It lives in the VPN namespace, so grabs ride the
-tunnel.
+tunnel. Its page has no login of its own: behind the authentik portal the
+portal guards it; otherwise `wire` gives it the arr login (a browser
+sign-in prompt — its API still takes only its key, so Prowlarr is
+unaffected), and `set-credentials arr` keeps it in step. LazyLibrarian
+keeps that password in plain text in its `config.ini`.
 
 ## Music (Navidrome)
 

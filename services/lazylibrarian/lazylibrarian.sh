@@ -35,6 +35,54 @@ ll_api_enable() { # api_enabled + a new api_key into config.ini's [GENERAL], wri
     ok "lazylibrarian: API on, with a key of its own"
 }
 
+# Its page has no login of its own. Behind a trusted portal gate it needs none
+# (the gate admits admins only, its port is closed to the LAN); anywhere else
+# it takes the shared arr login, as HTTP basic auth on the page only — the API
+# keeps taking just its key, so Prowlarr's sync is untouched (proven live, Oct
+# 2026). Read at start only: written while it is stopped, and only on a change.
+ll_login() {
+    local f u p cur_u cur_p own mode tmp
+    f="$(env_get CONFIG_ROOT)/lazylibrarian/config.ini"
+    if gate_trusted lazylibrarian; then u=""; p=""
+    else
+        u=$(env_get ARR_USER); p=$(env_get ARR_PASSWORD)
+        [[ -n "$u" && -n "$p" ]] || { info "lazylibrarian: the shared arr login is not set yet — 'wire arr' creates it"; return 0; }
+    fi
+    cur_u=$(sudo sed -n 's/^http_user *= *//p' "$f" | head -1)
+    cur_p=$(sudo sed -n 's/^http_pass *= *//p' "$f" | head -1)
+    if [[ "$cur_u" == "$u" && "$cur_p" == "$p" ]]; then
+        if [[ -n "$u" ]]; then ok "lazylibrarian: its page asks for the arr login ('$u')"
+        else ok "lazylibrarian: no login of its own — the portal guards it"; fi
+        return 0
+    fi
+    if [[ -n "$u" ]]; then w_would "lazylibrarian: its page asks for the arr login ('$u')" || return 0
+    else w_would "lazylibrarian: drop its own login — the portal guards it" || return 0; fi
+    DC stop lazylibrarian >/dev/null 2>&1 || { wfail "lazylibrarian: could not stop it to write its login"; return 1; }
+    own=$(sudo stat -c %u:%g "$f"); mode=$(sudo stat -c %a "$f"); tmp=$(mktemp)
+    # awk takes the login from its environment: no quoting of what the password holds
+    sudo cat "$f" | U="$u" P="$p" awk '
+        /^http_(user|pass) *=/ { next }
+        { print }
+        /^\[GENERAL\]$/ && ENVIRON["U"] != "" { print "http_user = " ENVIRON["U"]; print "http_pass = " ENVIRON["P"] }' > "$tmp"
+    sudo install -o "${own%:*}" -g "${own#*:}" -m "$mode" "$tmp" "$f"; rm -f "$tmp"
+    DC start lazylibrarian >/dev/null 2>&1 || { wfail "lazylibrarian did not start again — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
+    http_ready lazylibrarian "$(ll_url)/" '^([23][0-9][0-9]|401)$' || return 1
+    ll_login_proven "$u" "$p"
+}
+
+ll_login_proven() { # ll_login_proven USER PASS — the page refuses a stranger and admits the login ("" "": admits anyone)
+    local anon with
+    anon=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$(ll_url)/" || true)
+    if [[ -z "$1" ]]; then
+        [[ "$anon" =~ ^[23] ]] && { ok "lazylibrarian: its own login is off — the portal guards it"; return 0; }
+        wfail "lazylibrarian still asks for a login after it was removed (HTTP $anon) — inspect its config.ini"; return 1
+    fi
+    with=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -u "$1:$2" "$(ll_url)/" || true)
+    [[ "$anon" == 401 && "$with" =~ ^[23] ]] && { ok "lazylibrarian: its page asks for the arr login ('$1')"; return 0; }
+    wfail "lazylibrarian did not take the login written to its config.ini (no login: HTTP $anon, with it: HTTP $with) — inspect: ./mediastack.sh logs lazylibrarian"
+    return 1
+}
+
 wire_lazylibrarian() {
     hr "wire: LazyLibrarian"
     svc_enabled lazylibrarian || { info "lazylibrarian not enabled — skipped"; return 0; }
@@ -49,6 +97,7 @@ wire_lazylibrarian() {
         key=$(ll_key)
     fi
     ok "API key found"
+    ll_login || return 0
 
     # download client: qBittorrent, at its app-to-app address (svc_addr)
     (( WIRE_DRY )) && { w_would "point lazylibrarian at qBittorrent and set its book folder" || true; }

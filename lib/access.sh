@@ -100,7 +100,8 @@ Someone else locked out of the portal: ./mediastack.sh reset-password <username>
         local user pass
         explain "Rotate the arr login" \
 "One login for Sonarr/Radarr/Lidarr/Prowlarr/Bazarr — and cleanuparr's
-account password follows it. Cleanuparr's USERNAME cannot be changed via
+account password follows it, as does LazyLibrarian's page (unless the
+portal guards it). Cleanuparr's USERNAME cannot be changed via
 its API: if you change the username here, sign-in to cleanuparr keeps the
 old one."
         user=$(env_get ARR_USER); ask SC_U "Username" "${user:-admin}"; user="$REPLY_VAL"
@@ -175,7 +176,7 @@ shared password also sits in the arrs' and qBittorrent's settings."
     all)
         local pass
         explain "One password across the stack" \
-"Sets a single password on the arr login (6 apps + cleanuparr follows),
+"Sets a single password on the arr login (6 apps; cleanuparr and LazyLibrarian follow),
 qBittorrent (and everything storing its login), Deluge and Transmission once
 wire has set them up (and every entry holding them), the Jellyfin admin,
 Pi-hole, the Traefik dashboard, Audiobookshelf's root and Kavita's admin.

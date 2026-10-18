@@ -313,6 +313,8 @@ sc_rotate_arr() { # USER PASS — every arr-family app + cleanuparr follows
             arr_forms_login "$s" force   # the new password is stored either way (the login it falls back to)
             arr_login "$s"               # and, behind the portal, it goes back to trusting it
         done
+        # LazyLibrarian's page takes the same login (none behind the portal)
+        if svc_enabled lazylibrarian && [[ "$(c_state "$(svc_cname lazylibrarian)")" == running ]]; then ll_login || true; fi   # a failure is reported by ll_login; the rest still rotates
         if svc_enabled cleanuparr && [[ "$(c_state "$(svc_cname cleanuparr)")" == running ]]; then
             local lout ltok
             lout=$(cup_api POST /auth/login "" "$(jq -cn --arg u "$olduser" --arg p "$oldpass" '{username:$u,password:$p}')" || true)
