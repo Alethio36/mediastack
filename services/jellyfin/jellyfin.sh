@@ -45,7 +45,7 @@ jf_plugins_ensure() { # jf_plugins_ensure TOKEN "Name|GUID|why"... — install w
 }
 
 jf_plugin_webhook() { # its consumer is WatchState (the hub hears Seerr, not Jellyfin)
-    jf_plugins_ensure "$1" "Webhook|71552A5A-5C5C-4350-A2AE-EBE451A30173|WatchState's webhooks need it"
+    jf_plugins_ensure "$1" "Webhook|71552A5A-5C5C-4350-A2AE-EBE451A30173|WatchState's webhooks need it" || return 0   # reported by it
 }
 
 jf_ldap_want() { # the LDAP plugin's settings mediastack manages, as JSON (the rest stay yours)
@@ -103,9 +103,9 @@ jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admi
     local tok="$1"
     signin_is authentik || return 0
     [[ -n "$(env_get AUTHENTIK_LDAP_TOKEN)" ]] || { info "the portal's LDAP outpost has no token yet — run 'wire authentik' first, then 'wire jellyfin'"; return 0; }
-    jf_plugins_ensure "$tok" "LDAP Authentication|$JF_LDAP_GUID|portal accounts sign in to Jellyfin" || return 1
+    jf_plugins_ensure "$tok" "LDAP Authentication|$JF_LDAP_GUID|portal accounts sign in to Jellyfin" || return 0
     (( WIRE_DRY )) && ! jf_api GET "/Plugins/$JF_LDAP_GUID/Configuration" "$tok" >/dev/null && return 0   # not installed yet: nothing to compare
-    jf_ldap_configure "$tok" || return 1
+    jf_ldap_configure "$tok" || return 0
     jf_admin_sync "$tok"
 }
 
@@ -133,7 +133,7 @@ jf_transcode_path() { # transcodes belong on the cache volume, not in /config
     # does. Segments are written at source bitrate for the whole session.
     local tok="$1" cfg have
     cfg=$(jf_api GET /System/Configuration/encoding "$tok" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
-    [[ "$(jf_code)" =~ ^2 ]] || { wfail "could not read jellyfin's encoding settings [HTTP $(jf_code)]: $(head -c200 <<<"$cfg")"; return 1; }
+    [[ "$(jf_code)" =~ ^2 ]] || { wfail "could not read jellyfin's encoding settings [HTTP $(jf_code)]: $(head -c200 <<<"$cfg")"; return 0; }
     have=$(jq -r '.TranscodingTempPath // empty' <<<"$cfg" 2>/dev/null)
     if [[ "$have" == "$JF_TRANSCODE_PATH" ]]; then ok "transcodes go to $JF_TRANSCODE_PATH (the cache volume)"; return 0; fi
     w_would "point jellyfin's transcodes at $JF_TRANSCODE_PATH (now: ${have:-the default, /config/data/transcodes})" || return 0
@@ -157,9 +157,9 @@ jf_known_proxies() {
     addr=$(env_get TRAEFIK_ADDRESS)
     if svc_enabled traefik; then want=true; else want=false; fi
     cfg=$(jf_api GET /System/Configuration/network "$tok") \
-        || { wfail "could not read jellyfin's network settings [HTTP $(jf_code)]: $(head -c200 <<<"$cfg")"; return 1; }
+        || { wfail "could not read jellyfin's network settings [HTTP $(jf_code)]: $(head -c200 <<<"$cfg")"; return 0; }
     have=$(jf_proxy_trusted "$cfg" "$addr")
-    [[ -n "$have" ]] || { wfail "jellyfin's network settings have no KnownProxies — the setting moved in this version; set Dashboard -> Networking -> Known proxies by hand (Traefik: $addr)"; return 1; }
+    [[ -n "$have" ]] || { wfail "jellyfin's network settings have no KnownProxies — the setting moved in this version; set Dashboard -> Networking -> Known proxies by hand (Traefik: $addr)"; return 0; }
     if [[ "$have" == "$want" ]]; then
         if [[ "$want" == true ]]; then ok "jellyfin trusts Traefik ($addr) to name each client's own address"
         else ok "jellyfin trusts no proxy of the stack's (Traefik is off)"; fi
@@ -173,18 +173,18 @@ jf_known_proxies() {
         new=$(jq -c --arg a "$addr" '.KnownProxies = ((.KnownProxies // []) - [$a])' <<<"$cfg")
     fi
     jf_api POST /System/Configuration/network "$tok" "$new" >/dev/null \
-        || { wfail "jellyfin rejected its network settings [HTTP $(jf_code)] — set Dashboard -> Networking -> Known proxies by hand"; return 1; }
+        || { wfail "jellyfin rejected its network settings [HTTP $(jf_code)] — set Dashboard -> Networking -> Known proxies by hand"; return 0; }
     info "jellyfin reads its proxies at start — restarting it once..."
     is_user_facing jellyfin && notify_interruption "Jellyfin maintenance" "Jellyfin is restarting briefly for maintenance — back in a moment."
-    DC restart jellyfin >/dev/null 2>&1 || { wfail "jellyfin restart failed — restart it, then re-run wire jellyfin"; return 1; }
-    jf_ready || return 1
+    DC restart jellyfin >/dev/null 2>&1 || { wfail "jellyfin restart failed — restart it, then re-run wire jellyfin"; return 0; }
+    jf_ready || return 0
     cfg=$(jf_api GET /System/Configuration/network "$tok" || true)   # soft read: judged on the next line
     if [[ "$(jf_proxy_trusted "$cfg" "$addr")" == "$want" ]]; then
         if [[ "$want" == true ]]; then ok "jellyfin now trusts Traefik ($addr) — sessions show each client's own address"
         else ok "jellyfin no longer trusts $addr"; fi
     else
-        wfail "jellyfin's Known proxies did not keep the change after its restart — check Dashboard -> Networking"
-        return 1
+        wfail "jellyfin's Known proxies did not read back as changed after its restart [HTTP $(jf_code)]: $(jq -c '.KnownProxies' <<<"$cfg" 2>/dev/null || head -c200 <<<"$cfg") — check Dashboard -> Networking"
+        return 0
     fi
 }
 

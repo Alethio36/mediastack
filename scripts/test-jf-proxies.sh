@@ -72,7 +72,7 @@ fresh '{"KnownProxies":[]}'; POST_OK=0; run
     || fail_ "a rejected write: a failure, no restart — $(cat "$T/out")"; pass
 
 fresh '{"KnownProxies":[]}'; LOSE=1; run
-(( WIRE_FAILS == 1 )) && grep -q 'did not keep the change after its restart' "$T/out" || fail_ "a change lost over the restart is a failure — $(cat "$T/out")"; pass
+(( WIRE_FAILS == 1 )) && grep -q 'did not read back as changed after its restart \[HTTP 200\]: \[\]' "$T/out" || fail_ "a change lost over the restart is a failure, with what was read — $(cat "$T/out")"; pass
 
 fresh '{"KnownProxies":[]}'; WIRE_DRY=1; jf_known_proxies tok > "$T/out" 2>&1 || true
 [[ ! -e "$T/posts" && ! -e "$T/dc" ]] && grep -q 'would: jellyfin: trust Traefik' "$T/out" || fail_ "a dry run writes nothing — $(cat "$T/out")"; pass
