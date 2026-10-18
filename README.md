@@ -592,7 +592,10 @@ own hostname that captures `?searchTerm` requests at a higher priority
 `wire jellyfin` performs the minimum first-run only: metadata defaults,
 one admin account (the operator/recovery login, stored in `.env` — view:
 `credentials`), remote access on with UPnP off, a server name you choose
-(the container default is a random ID hash), the transcode path moved
+(the container default is a random ID hash), Traefik's address in Known
+proxies while Traefik is on (so sessions show each client's own address
+rather than Traefik's; one Jellyfin restart when it changes; any other
+entries stay yours), the transcode path moved
 to `TRANSCODE_ROOT` (Jellyfin's default is inside `/config`, which
 `backup` archives; segments are written at source bitrate for the whole
 session, so give `TRANSCODE_ROOT` a few GB per concurrent stream on local

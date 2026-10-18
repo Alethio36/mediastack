@@ -43,6 +43,8 @@ jobs:
         run: scripts/test-arr-health.sh
       - name: LazyLibrarian's page takes the arr login unless the portal guards it (scripts/test-ll-login.sh)
         run: scripts/test-ll-login.sh
+      - name: Jellyfin trusts Traefik as its proxy exactly while Traefik is on (scripts/test-jf-proxies.sh)
+        run: scripts/test-jf-proxies.sh
       - name: configure's questions — fresh defaults, one front door, hidden secrets (scripts/test-configure.sh)
         run: scripts/test-configure.sh
       - name: wire goes on past a failed app; LazyLibrarian's API and Jellyfin's plugins (scripts/test-wire.sh)

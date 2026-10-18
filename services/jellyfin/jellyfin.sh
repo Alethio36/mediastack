@@ -142,6 +142,52 @@ jf_transcode_path() { # transcodes belong on the cache volume, not in /config
         || wfail "Jellyfin rejected the transcode path [HTTP $(jf_code)] — set Dashboard -> Playback -> Transcoding -> Transcode path to $JF_TRANSCODE_PATH"
 }
 
+# Behind Traefik, Jellyfin must trust Traefik's address to read each client's
+# own address from the forwarded header — otherwise every client looks like
+# Traefik (one address in sessions and logs, everyone local). Jellyfin reads
+# its proxies at start: a change restarts it once. Proven live on Jellyfin 12
+# (Oct 2026): before, every session came from Traefik's address; after, the
+# client's own — and with "LAN networks" left empty it still counts the private
+# ranges as local, so nothing else needs setting. Other entries stay yours.
+jf_proxy_trusted() { # jf_proxy_trusted NETWORK-JSON ADDRESS -> "true" | "false" | "" (no KnownProxies: the setting moved)
+    jq -r --arg a "$2" 'if has("KnownProxies") then ((.KnownProxies // []) | index($a) != null) else "" end' <<<"$1" 2>/dev/null
+}
+jf_known_proxies() {
+    local tok="$1" cfg addr have want new
+    addr=$(env_get TRAEFIK_ADDRESS)
+    if svc_enabled traefik; then want=true; else want=false; fi
+    cfg=$(jf_api GET /System/Configuration/network "$tok") \
+        || { wfail "could not read jellyfin's network settings [HTTP $(jf_code)]: $(head -c200 <<<"$cfg")"; return 1; }
+    have=$(jf_proxy_trusted "$cfg" "$addr")
+    [[ -n "$have" ]] || { wfail "jellyfin's network settings have no KnownProxies — the setting moved in this version; set Dashboard -> Networking -> Known proxies by hand (Traefik: $addr)"; return 1; }
+    if [[ "$have" == "$want" ]]; then
+        if [[ "$want" == true ]]; then ok "jellyfin trusts Traefik ($addr) to name each client's own address"
+        else ok "jellyfin trusts no proxy of the stack's (Traefik is off)"; fi
+        return 0
+    fi
+    if [[ "$want" == true ]]; then
+        w_would "jellyfin: trust Traefik ($addr) to name each client's own address (one jellyfin restart)" || return 0
+        new=$(jq -c --arg a "$addr" '.KnownProxies = ((.KnownProxies // []) + [$a])' <<<"$cfg")
+    else
+        w_would "jellyfin: stop trusting $addr — Traefik is off, so that address could be anyone's (one jellyfin restart)" || return 0
+        new=$(jq -c --arg a "$addr" '.KnownProxies = ((.KnownProxies // []) - [$a])' <<<"$cfg")
+    fi
+    jf_api POST /System/Configuration/network "$tok" "$new" >/dev/null \
+        || { wfail "jellyfin rejected its network settings [HTTP $(jf_code)] — set Dashboard -> Networking -> Known proxies by hand"; return 1; }
+    info "jellyfin reads its proxies at start — restarting it once..."
+    is_user_facing jellyfin && notify_interruption "Jellyfin maintenance" "Jellyfin is restarting briefly for maintenance — back in a moment."
+    DC restart jellyfin >/dev/null 2>&1 || { wfail "jellyfin restart failed — restart it, then re-run wire jellyfin"; return 1; }
+    jf_ready || return 1
+    cfg=$(jf_api GET /System/Configuration/network "$tok" || true)   # soft read: judged on the next line
+    if [[ "$(jf_proxy_trusted "$cfg" "$addr")" == "$want" ]]; then
+        if [[ "$want" == true ]]; then ok "jellyfin now trusts Traefik ($addr) — sessions show each client's own address"
+        else ok "jellyfin no longer trusts $addr"; fi
+    else
+        wfail "jellyfin's Known proxies did not keep the change after its restart — check Dashboard -> Networking"
+        return 1
+    fi
+}
+
 # ---- jellyfin (wave 4) ----
 # Wire's jellyfin surface is deliberately tiny: complete the first-run wizard
 # (once, ever — the API gate closes itself), create libraries whose PATH is
@@ -251,6 +297,7 @@ credentials)."
     [[ -n "$tok" ]] || { wfail "jellyfin login succeeded but returned no token: $(head -c200 <<<"$auth")"; return 0; }
     jf_server_name "$tok"
     jf_transcode_path "$tok"
+    jf_known_proxies "$tok"
     jf_plugin_webhook "$tok"
     jf_ldap "$tok"
 
@@ -362,7 +409,22 @@ jellyfin_doctor() { # doctor: apps — claimed, and the stack key works
             401) d_fail "jellyfin rejects the stack API key (HTTP 401)" "the key was revoked, or the server refuses the auth carrier (Jellyfin 12+ disables legacy X-Emby-Token/api_key)" "./mediastack.sh wire jellyfin  # re-mints the key; script auth is already on the MediaBrowser header" ;;
             *)   warn "jellyfin API key check inconclusive (HTTP $(jf_code))" ;;
         esac
+        jellyfin_doctor_proxies "$jkey"
     fi
+}
+
+jellyfin_doctor_proxies() { # jellyfin_doctor_proxies KEY — behind Traefik, Jellyfin trusts it (else every client looks like Traefik)
+    svc_enabled traefik || return 0
+    local cfg addr; addr=$(env_get TRAEFIK_ADDRESS)
+    cfg=$(jf_api GET /System/Configuration/network "$1" 2>/dev/null) \
+        || { warn "jellyfin's network settings unreadable [HTTP $(jf_code)] — Known proxies not checked"; return 0; }
+    case "$(jf_proxy_trusted "$cfg" "$addr")" in
+        true)  ok "jellyfin trusts Traefik ($addr) — sessions show each client's own address" ;;
+        false) d_fail "jellyfin does not trust Traefik ($addr) as its proxy" \
+                   "every client looks like Traefik: one address in sessions and logs, everyone counted as local" \
+                   "./mediastack.sh wire jellyfin  # adds it to Known proxies (one jellyfin restart)" ;;
+        *)     warn "jellyfin's network settings have no KnownProxies — check Dashboard -> Networking -> Known proxies holds $addr" ;;
+    esac
 }
 
 jellyfin_doctor_transcodes() { # jellyfin_doctor_transcodes <CONFIG_ROOT> (doctor: host resources)
