@@ -55,6 +55,7 @@ qb_api() { # qb_api PATH [data...] (form-encoded) -> body on stdout, rc from htt
 
 wire_qbit() {
     hr "wire: qBittorrent"
+    svc_enabled qbittorrent || { info "qbittorrent not enabled — skipped"; return 0; }
     wire_gate qbittorrent
     # auth-free settle: any HTTP status proves the listener (000 = no socket);
     # avoids misreading a boot gap as bad credentials on re-runs
@@ -150,6 +151,7 @@ type your own to use it instead. Stored in .env (view: credentials)."
 
 sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
         local user="$1" pass="$2" s
+        svc_enabled qbittorrent || { info "qbittorrent not enabled — skipped"; return 0; }
         qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" \
             || die "cannot sign in to qBittorrent with the stored credentials — fix that first (wire qbit)"
         qb_api /app/setPreferences "json=$(jq -cn --arg u "$user" --arg p "$pass" '{web_ui_username:$u,web_ui_password:$p}')" >/dev/null || true  # re-login below is the verdict

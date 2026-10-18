@@ -50,6 +50,15 @@ bad=$(for f in services/*/*.sh; do awk -v F="$f" -v R="^wire_($roles)\$" -v L="$
     { st="" }' "$f"; done)
 [[ -z "$bad" ]] || fail_ "a wire step calls a helper that can return 1, unguarded — the helper reports with wfail and returns 0:"$'\n'"$bad"; pass
 
+# ---- every wire step and every credential rotation skips a service that is
+# off: on a stack without it, the step otherwise waits out its API and dies
+# (wire_qbit on a Deluge-only stack, found Oct 2026) ----
+unguarded=$(for f in services/*/*.sh; do awk -v F="$f" -v R="^(wire_($roles)|sc_rotate_[a-z_]+)\$" '
+    /^[a-z_]+\(\) *\{/ { fn=$1; sub(/\(\).*/, "", fn); n=0; g=0; next }
+    fn ~ R { n++; if ($0 ~ /svc_enabled|arr_instances|signin_is/) g=1
+             if (n == 4) { if (!g) print F ": " fn; fn="" } }' "$f"; done)
+[[ -z "$unguarded" ]] || fail_ "a wire step or credential rotation does not first check its service is enabled:"$'\n'"$unguarded"; pass
+
 # ---- Jellyfin's plugins, read softly ----
 [[ "$(jf_plugin_ids '<html>Jellyfin is starting</html>')" == "||" ]] || fail_ "a startup page is no plugin seen"; pass
 [[ "$(jf_plugin_ids '[{"Id":"A-B"},{"Id":"c"}]')" == "|ab|c|" ]] || fail_ "ids, dashes gone, lower case"; pass
