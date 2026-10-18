@@ -183,8 +183,8 @@ first (for testing it: `git checkout -b unstable origin/unstable`, then
 Pick any combination — the wizard walks you through it, and
 `enable <service>` / `disable <service>` change it any time. Dependencies
 are automatic (qBittorrent brings the VPN; JellySearch brings its search
-engine), and disabling something another service needs is refused with an
-explanation.
+engine; Seerr and Wizarr bring Jellyfin), and disabling something another
+service needs is refused with an explanation.
 
 | service | what it is |
 |---|---|
@@ -847,6 +847,7 @@ what would reopen it, in [docs/watchlist.md](docs/watchlist.md).
 * [docs/watchlist.md](docs/watchlist.md) — rejected, parked and deferred items, each with what would reopen it
 * [docs/frontdoor.md](docs/frontdoor.md) — the OliveTin web panel: what it is, enabling it, the buttons
 * [docs/frontdoor-safety.md](docs/frontdoor-safety.md) — the front door's safety model and what is (and isn't) exposable
+* [docs/testing.md](docs/testing.md) — the checks CI runs, the config matrix, and the soak harness that simulates days of use on a test box
 
 ## License
 

@@ -120,7 +120,15 @@ validation, notifications, SSO). Before `migrate` moves the first household:
    portal, every verb that needs one refuses with a way forward (read in
    code; to prove on the rebuild).
 3. testhost rebuilt from zero: install, configure, snapshot, then a close look
-   at installing and everyday use. Watch there whether the household's files
+   at installing and everyday use. Everyday use is simulated by the soak
+   harness (`scripts/soak.sh`, [testing.md](testing.md)): stages 1 and 4
+   (simulated nights, a verdict per day) built Oct 2026 — the first run found
+   the VPN group recreated on every update, trash-sync failing on the
+   restarted tunnel and Prowlarr's stale proxy health, all fixed. Next: a
+   second, clean run; then synthetic media through the arrs (stage 2), a
+   daily mishap — gluetun killed, a full disk, drift, a reboot (stage 3) —
+   and the presets live from a fresh install each (stage 5: standard,
+   Deluge-only, Jellyfin-only, Wizarr, no Traefik). Watch there whether the household's files
    direct-play; frequent transcodes would pull the transcoding evaluation
    forward.
 4. A restore drill — a disaster test: `backup`, `restore --service

@@ -162,6 +162,24 @@ needs one service's code at one spot calls it by name — `<name>_<what>`
 `scripts/check-registries.sh` fails a listed name without exactly one
 function under `services/`, and a `<service>_*` call that nothing defines.
 
+Two rules keep one service's trouble from ending a whole run, both enforced
+by `scripts/test-wire.sh`:
+
+* **A wire step and a credential rotation first check their service is
+  enabled** (`svc_enabled x || { info "x not enabled — skipped"; return 0; }`).
+  Without it, a stack that never chose the service waits out its API and dies
+  (`wire_qbit` on a Deluge-only stack did, until Oct 2026).
+* **A failure is reported with `wfail` and the function returns 0** — the step
+  itself and any helper it calls unguarded. Under `set -e` a `return 1` ends
+  the entire `wire`, not just this app.
+
+A service that cannot work without another declares it with `depends_on`
+(`condition: service_started` when it only needs the other one present):
+`configure` and `enable` read that and bring the other along — Seerr and
+Wizarr bring Jellyfin. `scripts/test-matrix.sh` renders every service on its
+own with what it pulls in, so a missing declaration shows as a render
+failure rather than on someone's install.
+
 ### Providing a role (wiring by role)
 
 Some connections are a *role* one service plays for others: a download client
@@ -204,7 +222,10 @@ CI holds all three together. `-` means none: empty is a value of its own
 (one setting standing in for another) is plain code, not a default. A
 family key (`<svc>_PORT`, `<svc>_HOST`) differs per service, so its default
 lives in the fragment — a `_HOST` fallback must equal the service's
-`mediastack.subdomain`.
+`mediastack.subdomain`. A service's `<svc>_UID` is allocated, not defaulted:
+it ships with its own line in `.env.example` (the next free number) and the
+fragment reads a bare `${X_UID}` — `scripts/test-env.sh` fails a UID missing
+from `.env.example` or carrying a compose fallback.
 
 ### Wiring it to other apps (`wire`)
 
