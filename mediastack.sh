@@ -365,7 +365,8 @@ resolve_deps() { # expand a service set to include all transitive dependencies
         grew=0
         for s in $set; do
             for d in $(svc_deps "$s"); do
-                [[ "$set" == *" $d "* ]] || { set+="$d "; grew=1; info "  + $d (required by $s)"; }
+                # the note goes to stderr: stdout is the set, and callers capture it
+                [[ "$set" == *" $d "* ]] || { set+="$d "; grew=1; info "  + $d (required by $s)" >&2; }
             done
         done
     done
