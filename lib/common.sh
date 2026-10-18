@@ -39,6 +39,27 @@ on_err() {
     echo "${C_RED}ERROR${C_RST} unhandled failure (exit $rc) at $src:${BASH_LINENO[0]}${chain:+ in $chain}: $cmd" >&2
 }
 
+# sudo forgets the password after a gap with no sudo call (15 min on Debian),
+# and one long step (a first image pull) is such a gap. A background loop
+# renews it while this run lives. -n: it never asks, so it only keeps a
+# password already typed in this run's terminal. Root (the panel, the
+# timers) needs none; without a terminal there is no terminal's ticket.
+SUDO_KEEPALIVE_EVERY=60   # seconds
+sudo_keepalive() {
+    (( $(id -u) == 0 )) && return 0
+    [[ -t 0 ]] || return 0
+    local parent=$$
+    (
+        trap - ERR; set +e   # a renewal before the first sudo fails, quietly
+        while kill -0 "$parent" 2>/dev/null; do
+            sudo -n -v
+            sleep "$SUDO_KEEPALIVE_EVERY"
+        done
+    ) </dev/null >/dev/null 2>&1 &
+    SUDO_KEEPALIVE_PID=$!
+    trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true' EXIT
+}
+
 confirm_yes() { # confirm_yes "question" -> 0 yes (also Enter, or input that has ended) / 1 no
     local ans
     read -r -p "$1 [Y/n]: " ans || true

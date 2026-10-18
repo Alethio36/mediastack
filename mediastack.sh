@@ -1147,6 +1147,7 @@ main() {
     entry=$(verb_entry "$cmd") || { fail "Unknown command '$cmd'"; echo; cmd_help; exit 1; }
     local spec; spec=$(cut -d'~' -f3 <<<"$entry")
     args_check "$spec" "$@"
+    sudo_keepalive
     if [[ -n "$(stack_down_since)" ]] && scheduled_run; then
         info "the stack was stopped with 'down' ($(stack_down_since)) — skipping '$cmd${*:+ $*}'; scheduled jobs resume after: ./mediastack.sh up"
         exit 0

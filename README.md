@@ -40,7 +40,8 @@ internet — the hostnames resolve to your LAN.
 ## Install
 
 Six steps. Run every command from the `mediastack` folder as your normal
-user — the script asks for your `sudo` password when it needs it.
+user — the script asks for your `sudo` password when it needs it and
+keeps it for the rest of that run, so a long step does not stop to ask again.
 
 ### Before you start
 

@@ -622,9 +622,9 @@ all built; what each still leaves open is noted below.
     notification when it finishes;
   * the Cloudflare token is verified at configure time, not after the pulls.
 
-  Hidden cost: a run longer than sudo's timestamp (15 min on Debian) asks
-  for the password mid-run — the chain needs a `sudo -v` refresher that
-  lives and dies with it (no NOPASSWD: host change). Suggested, not agreed:
+  The sudo refresher this needed shipped on its own (Oct 2026,
+  `sudo_keepalive`): every run keeps the password it was given. Suggested,
+  not agreed:
   one operator login for the arrs, the download client and the Jellyfin
   admin (six questions to two; one leaked password opens all three).
 

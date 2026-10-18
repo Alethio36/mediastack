@@ -35,6 +35,8 @@ jobs:
         run: scripts/test-errtrap.sh
       - name: a stack stopped with down stays down until up (scripts/test-down.sh)
         run: scripts/test-down.sh
+      - name: sudo's password is kept for the run, never asked for by the renewal (scripts/test-sudo-keepalive.sh)
+        run: scripts/test-sudo-keepalive.sh
       - name: configure's questions — fresh defaults, one front door, hidden secrets (scripts/test-configure.sh)
         run: scripts/test-configure.sh
       - name: wire goes on past a failed app; LazyLibrarian's API and Jellyfin's plugins (scripts/test-wire.sh)
