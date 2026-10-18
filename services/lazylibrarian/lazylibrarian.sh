@@ -99,9 +99,14 @@ wire_lazylibrarian() {
     ok "API key found"
     ll_login || return 0
 
-    # download client: qBittorrent, at its app-to-app address (svc_addr)
-    (( WIRE_DRY )) && { w_would "point lazylibrarian at qBittorrent and set its book folder" || true; }
-    if ! (( WIRE_DRY )); then
+    # download client: the one the stack uses (DOWNLOAD_CLIENT, as the arrs);
+    # wire knows LazyLibrarian's qBittorrent settings only
+    local dl; dl=$(role_pick download-client)
+    if [[ "$dl" != qbittorrent ]]; then
+        warn "lazylibrarian: the stack's download client is ${dl:-none}; wire sets up only qBittorrent in LazyLibrarian — add ${dl:-yours} in its UI (Config -> Downloaders)"
+    elif (( WIRE_DRY )); then
+        w_would "point lazylibrarian at qBittorrent" || true
+    else
         local qu qp
         qu=$(env_get QBITTORRENT_USER); qp=$(env_get QBITTORRENT_PASSWORD)
         if [[ -z "$qu" || -z "$qp" ]]; then
@@ -115,14 +120,18 @@ wire_lazylibrarian() {
             ll_api writeCFG "name=LABEL&group=QBITTORRENT&value=prowlarr" >/dev/null
             ll_api writeCFG "name=TOR_DOWNLOADER&group=General&value=qbittorrent" >/dev/null
             ok "qBittorrent set as download client"
-            # book destination on the shared media tree
-            ll_api writeCFG "name=EBOOK_DEST_FOLDER&group=General&value=/data/media/books" >/dev/null
-            ll_api writeCFG "name=AUDIO_DEST_FOLDER&group=General&value=/data/media/audiobooks" >/dev/null
-            ll_api writeCFG "name=DESTINATION_DIR&group=General&value=/data/media/books" >/dev/null
-            ok "book folders set (/data/media/books, /data/media/audiobooks)"
-            ll_api loadCFG >/dev/null
-            ok "config reloaded"
         fi
+    fi
+    # book destination on the shared media tree, whichever client downloads
+    if (( WIRE_DRY )); then
+        w_would "set lazylibrarian's book folders" || true
+    else
+        ll_api writeCFG "name=EBOOK_DEST_FOLDER&group=General&value=/data/media/books" >/dev/null
+        ll_api writeCFG "name=AUDIO_DEST_FOLDER&group=General&value=/data/media/audiobooks" >/dev/null
+        ll_api writeCFG "name=DESTINATION_DIR&group=General&value=/data/media/books" >/dev/null
+        ok "book folders set (/data/media/books, /data/media/audiobooks)"
+        ll_api loadCFG >/dev/null
+        ok "config reloaded"
     fi
     info "indexers arrive automatically from Prowlarr (registered in the prowlarr pass)"
 }

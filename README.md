@@ -631,8 +631,10 @@ app's UI.
 
 The `lazylibrarian` profile automates book acquisition — the Readarr
 replacement. It monitors authors, grabs ebooks/audiobooks, and hands them
-to qBittorrent. `wire lazylibrarian` sets its download client and book
-folders (`/data/media/books`, `/data/media/audiobooks`) and registers it
+to the download client. `wire lazylibrarian` sets qBittorrent as that client
+when it is the stack's choice (`DOWNLOAD_CLIENT`) — with Deluge or
+Transmission, wire says so and you add it in LazyLibrarian's UI (Config ->
+Downloaders) — and its book folders (`/data/media/books`, `/data/media/audiobooks`) and registers it
 in Prowlarr as a first-class app, so indexers sync automatically like the
 arrs. A fresh LazyLibrarian has its API off: `wire` switches it on with a
 key of its own (written to its `config.ini` while it is stopped), before
