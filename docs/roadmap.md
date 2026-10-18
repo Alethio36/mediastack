@@ -600,6 +600,33 @@ all built; what each still leaves open is noted below.
   cover windows of seconds (Traefik's own update, a crash). `down` shows no
   page by design: it frees 80/443. Still to verify live: whether a
   container in health state *starting* also loses its route.
+- Front-loaded questions *(designed, parked Oct 2026 — too small to focus on
+  before shipping)* — today `up` (traefik-setup), `wire` (restore point,
+  Jellyfin admin/server name/library names, arr and download-client logins,
+  notification URLs, Wizarr key) and `trash-sync` (TRaSH profiles) still
+  ask between long waits. Design:
+  * `configure` asks everything; settings go to `.env` (most are already
+    `.env` keys asked only when empty); the later steps stop prompting and
+    a missing answer is one error shape: "X is not set — run configure";
+  * notification URLs are one-shot: held in `local/state` (0600) and handed
+    to Apprise by `wire apprise`, then deleted — a `.env` copy would drift
+    from Apprise, which `notify set` edits;
+  * library names are no longer asked (defaults; renamed in Jellyfin) —
+    also fixes runs without a terminal skipping library creation; the
+    first-wire restore point is always taken (it defaulted to Yes);
+  * the Wizarr API key stays interactive (`wire wizarr`, upstream needs its
+    UI) and becomes a to-do in the closing summary;
+  * configure ends with a summary (secrets in outline) and "Start everything
+    now?" -> up, panel install, wire, trash-sync unattended; stop at the
+    first failed step; trash-sync only when wire had no failures; an ops
+    notification when it finishes;
+  * the Cloudflare token is verified at configure time, not after the pulls.
+
+  Hidden cost: a run longer than sudo's timestamp (15 min on Debian) asks
+  for the password mid-run — the chain needs a `sudo -v` refresher that
+  lives and dies with it (no NOPASSWD: host change). Suggested, not agreed:
+  one operator login for the arrs, the download client and the Jellyfin
+  admin (six questions to two; one leaked password opens all three).
 
 ### Security & access
 - **Traefik without the Docker socket** *(recommended, Oct 2026 — after the
