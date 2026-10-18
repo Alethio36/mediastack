@@ -689,6 +689,24 @@ service by label — `mediastack.auth: native | gate | open`, plus exception pat
   are set in Jellyfin, not by group. The OIDC "SSO" plugin is out (upstream
   archived; continuations beta). **Unverified:** how an existing local user with
   the same name is taken over — decides the account conversion; test live.
+  *Re-evaluated Oct 2026 — still out, too young.* The Flowfin continuation
+  (iderex) shipped its first Jellyfin 12 stable, 5.0.0-JF12-stable, on
+  21 Sep 2026, with a strong, documented security design. Against it: four
+  weeks old, one main maintainer, competing forks (K0lin, MaxRink, danbro96);
+  its own release notes skipped the reverse-proxy, upgrade-in-place and Android
+  checks, and only Jellyfin Web is verified — every app signs in through
+  Quick Connect, none verified. What it would and would not buy: browsers sign
+  in through the portal; apps and TVs still need Quick Connect, and Kodi, MPV
+  Shim and Jellyfin Vue still need passwords (LDAP stays either way). Its docs
+  suggest a linked account is moved to the plugin's own sign-in (revoking
+  "switches it back to Jellyfin's built-in password provider"), which could cut
+  that account's LDAP password — the deciding test, never run. Building our
+  own instead is rejected: a C# plugin running inside Jellyfin, rebuilt for
+  every Jellyfin major and carrying the whole OIDC security surface, is exactly
+  what the forks have not yet proven and far outside an installer's scope. **Revisit when:** a second
+  stable release, Android verified (upstream or by us), it survives a Jellyfin
+  update, and more than one active maintainer — then run the trial, which must
+  show a linked account keeps its LDAP password.
 - **Seerr** — "Sign in with Jellyfin", so it inherits the same users. Its own
   OIDC is still an experimental preview image (`preview-new-oidc`).
 - **Audiobookshelf** — native OIDC: auto-register, optional matching of
