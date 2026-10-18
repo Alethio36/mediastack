@@ -9,7 +9,7 @@
 #   * every night job exited 0
 #   * doctor: no FAIL line beyond the known file's patterns, and no
 #     notification stream whose last send failed
-#   * wire --verify: no drift
+#   * wire --verify (at the real time): no drift
 #   * containers: all running, none unhealthy, no restart count went up
 #   * restore points: no more than the retention keeps
 # Before the simulated days, each enabled timer's real unit runs once at the
@@ -160,14 +160,15 @@ judge_doctor() { # judge_doctor FAKE-TIME
         && problem "doctor: a notification stream's last send failed ($(grep -m1 'the last notification failed' <<<"$out"))"
     return 0
 }
-judge_wire() { # judge_wire FAKE-TIME
+judge_wire() { # at the real time: under the moved clock, qBittorrent's session cookie read as
+    # expired and every day showed a login drift that does not exist (first soak, Oct 2026)
     local out
-    if ! out=$(FAKETIME_DONT_RESET=1 faketime -f "@$1" ./mediastack.sh wire --verify 2>&1 | strip); then
+    if ! out=$(./mediastack.sh wire --verify 2>&1 | strip); then
         problem "wire --verify: $(grep -E '^(FAIL|  would:)' <<<"$out" | head -5 | tr '\n' ' ')"
     fi
 }
 run_job() { # run_job JOB FAKE-TIME|"" -> the job's unit, under the simulated clock when given
-    local job=$1 at=$2 cmd unit rc=0
+    local job=$1 at=$2 cmd unit look rc=0
     cmd=$(unit_cmd "$job")
     unit="mediastack-soak-$job-$(date +%s%N | tail -c 7)"   # a mediastack-*.service: the script sees a scheduled run
     if [[ -n "$at" ]]; then
@@ -177,7 +178,8 @@ run_job() { # run_job JOB FAKE-TIME|"" -> the job's unit, under the simulated cl
     else
         sudo systemctl start --wait "mediastack-$job.service" || rc=$?
     fi
-    (( rc == 0 )) && echo "  $job: ok" || problem "$job (${at:-real time}) exited $rc — journal: journalctl -u ${at:+$unit}${at:-mediastack-$job.service}"
+    if [[ -n "$at" ]]; then look="its output is above (the unit is collected)"; else look="journalctl -u mediastack-$job.service"; fi
+    (( rc == 0 )) && echo "  $job: ok" || problem "$job (${at:-real time}) exited $rc — $look"
 }
 
 # ---- run ----
@@ -204,7 +206,7 @@ for d in $(cut -d' ' -f1 <<<"$SCHED" | uniq); do
     [[ "$later" > "$verdict" ]] && verdict=$later
     judge_containers
     judge_doctor "$verdict"
-    judge_wire "$verdict"
+    judge_wire
     judge_points
     if (( ${#DAY_PROBLEMS[@]} )); then FAILED_DAYS=$((FAILED_DAYS + 1)); echo "  day $d: ${#DAY_PROBLEMS[@]} problem(s)"
     else echo "  day $d: clean"; fi
