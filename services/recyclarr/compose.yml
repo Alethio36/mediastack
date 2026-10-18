@@ -11,7 +11,7 @@ services:
     container_name: mediastack-recyclarr
     profiles: ["recyclarr"]
     network_mode: "service:gluetun"
-    user: "${RECYCLARR_UID:-13020}:${MEDIA_GROUP_GID:-13000}"
+    user: "${RECYCLARR_UID}:${MEDIA_GROUP_GID:-13000}"
     # depends_on is retained as belt-and-braces: trash-sync invokes recyclarr
     # with `run --no-deps` (so this does NOT trigger a gluetun recreate), and
     # vpn_reattach_guard covers drift on every other path. It is therefore

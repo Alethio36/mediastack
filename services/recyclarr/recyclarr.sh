@@ -89,14 +89,19 @@ trash_overrides_for() { # $1 = svc; emits indented custom_formats block
     ' "$f"
 }
 
+recyclarr_uid() { # its UID from .env (configure allocates it, like every service's), or a stop naming the fix
+    local uid; uid=$(env_get RECYCLARR_UID)
+    [[ -n "$uid" ]] || die "RECYCLARR_UID is not set in .env — run: ./mediastack.sh configure"
+    echo "$uid"
+}
+
 # dedicated system user for the recyclarr container: same pattern as every
 # service (uid from .env, primary group mediacenter — which is also how nuke
-# finds and removes it). trash-sync self-provisions so configure isn't needed.
+# finds and removes it). trash-sync makes the user and its folder itself.
 trash_provision() {
     local uid gid
-    uid=$(env_get RECYCLARR_UID); uid=${uid:-13020}   # configure never ran: trash-sync takes this one
+    uid=$(recyclarr_uid)
     gid=$(env_get MEDIA_GROUP_GID)
-    env_set RECYCLARR_UID "$uid"
     if ! getent group mediacenter >/dev/null; then
         sudo groupadd -g "$gid" mediacenter && ok "group mediacenter ($gid)" \
             || { wfail "could not create group mediacenter"; return 1; }
@@ -115,7 +120,7 @@ trash_provision() {
 
 trash_gen_config() { # trash_gen_config [out-path] — default: the live recyclarr.yml
     local uid out tmp
-    uid=$(env_get RECYCLARR_UID); uid=${uid:-13020}   # as trash_provision
+    uid=$(recyclarr_uid)
     out="${1:-$(env_get CONFIG_ROOT)/recyclarr/recyclarr.yml}"
     tmp=$(mktemp)
     {

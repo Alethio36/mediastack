@@ -96,6 +96,17 @@ while IFS=$'\t' read -r k t e w d m; do
     grep -qE "^$k=" .env.example || missing+="$k "
 done < <(env_schema_rows)
 [[ -z "$missing" ]] || fail_ "settings you or a setup step write, missing from .env.example: $missing"; pass
+# a service's UID and update switch are allocated (configure's self-heal), never
+# defaulted: each one a compose file reads has its line in .env.example, and no
+# compose fallback that a fresh install would contradict (RECYCLARR_UID, Oct 2026)
+missing=""; fallback=""
+while read -r ref; do
+    k=$(sed -E 's/\$\{([A-Z0-9_]+).*/\1/' <<<"$ref")
+    grep -qE "^$k=" .env.example || missing+="$k "
+    [[ "$ref" != *:-* ]] || fallback+="$ref "
+done < <(grep -rhoE '\$\{[A-Z0-9_]+_(UID|UPDATE)[^}]*\}' docker-compose.yml services/*/compose.yml | sort -u)
+[[ -z "$missing" ]] || fail_ "service UIDs/update switches a compose file reads, missing from .env.example: $missing"; pass
+[[ -z "$fallback" ]] || fail_ "a service UID/update switch carries a compose fallback (configure allocates it): $fallback"; pass
 unknown=$(env_unknown | cut -f1 | tr '\n' ' ')
 [[ -z "$unknown" ]] || fail_ ".env.example holds keys the schema does not: $unknown"; pass
 
