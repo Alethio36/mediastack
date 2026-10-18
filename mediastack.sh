@@ -627,6 +627,9 @@ $(sed 's/^/  /' <<<"$found")
 }
 
 # ------------------------------------------- up/down/enable/disable/logs --
+up_race() { # the one start failure a retry fixes: gluetun enabled but not yet healthy after a recreate
+    svc_enabled gluetun && [[ "$(c_health "$(svc_cname gluetun)")" != healthy ]]
+}
 cmd_up()   {
     load_env
     state_del "$DOWN_STATE"   # `up` ends a `down`: scheduled jobs resume
@@ -649,7 +652,8 @@ cmd_up()   {
     authentik_prepare
     network_ensure
     if ! DC up -d --remove-orphans; then
-        warn "First start attempt failed — usually gluetun's health race after a recreate."
+        up_race || die "Starting the stack failed — compose's error is above. Fix it, then: ./mediastack.sh up"
+        warn "First start attempt failed while gluetun was not yet healthy — the known race after a recreate."
         info "Waiting for the tunnel (up to ${START_WAIT}s)..."
         wait_verdict --recover gluetun \
             || die "gluetun ${VERDICT_WHY[gluetun]} — nothing VPN'd was started.
