@@ -559,7 +559,8 @@ Apprise's own UI lives at `https://notify.<your-domain>` (or
 `http://<host>:8000` on the LAN) — that's where stored endpoints are
 edited after the first wire.
 
-wire installs Jellyfin's Webhook plugin for WatchState's webhook mode;
+With WatchState enabled, wire installs Jellyfin's Webhook plugin for its
+webhook mode (without WatchState, no plugin and no Jellyfin restart);
 its destinations stay yours to configure in Jellyfin's Dashboard ->
 Plugins -> Webhook (WatchState's UI hands you the exact URL to paste per
 backend).

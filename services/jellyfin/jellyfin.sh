@@ -44,7 +44,8 @@ jf_plugins_ensure() { # jf_plugins_ensure TOKEN "Name|GUID|why"... — install w
     return $rc
 }
 
-jf_plugin_webhook() { # its consumer is WatchState (the hub hears Seerr, not Jellyfin)
+jf_plugin_webhook() { # its only consumer is WatchState (the hub hears Seerr, not Jellyfin): without it, no plugin and no restart
+    svc_enabled watchstate || return 0
     jf_plugins_ensure "$1" "Webhook|71552A5A-5C5C-4350-A2AE-EBE451A30173|WatchState's webhooks need it" || return 0   # reported by it
 }
 
