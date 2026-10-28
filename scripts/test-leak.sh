@@ -8,8 +8,9 @@
 #   * verdicts: 0 all PASS, 1 any FAIL, 2 nothing failed but something UNPROVEN
 #   * each check's three outcomes: the tunnel address (Mullvad's checker), the
 #     UDP client subnet (Google's resolver), the resolvers (bash.ws), the DNS
-#     settings (gluetun's dns, encrypted upstream, no plaintext one), the
-#     control server (refused from the network, 401 inside)
+#     settings (gluetun's dns, encrypted upstream — the image's own "DoT" — no
+#     plaintext one), the LAN resolvers routed into the tunnel, the control
+#     server (refused from the network, 401 inside)
 #   * migration 36 -> 37: VPN_DNS_ADDRESS retired (a value is named), the
 #     resolvers' setting added
 # Sources the real entrypoint (minus its last line, main "$@"); docker, curl
@@ -50,7 +51,7 @@ date() { [[ "${1:-}" == +%s ]] && echo "$NOW" || command date "$@"; }
 RIPE_IP=198.51.100.7 RIPE_ASN=64500 RIPE_FAIL=""
 curl() { # curl -4 -sS -m 15 -w ... URL: RIPEstat's three answers, then the HTTP code
     local url=${*: -1}
-    [[ -n "$RIPE_FAIL" ]] && { echo "curl: (6) Could not resolve host: stat.ripe.net"; return 6; }
+    [[ -n "$RIPE_FAIL" ]] && { printf 'curl: (6) Could not resolve host: stat.ripe.net\n000'; return 6; }
     case "$url" in
         */whats-my-ip/*)         printf '{"data":{"ip":"%s"}}\n200' "$RIPE_IP" ;;
         */network-info/*)        printf '{"data":{"asns":["%s"],"prefix":"198.51.100.0/24"}}\n200' "$RIPE_ASN" ;;
@@ -70,7 +71,7 @@ hostid_ensure > /dev/null 2>&1 || fail_ "a day later: refreshed"; pass
 [[ "$(hostid_get ip | paste -sd' ')" == "198.51.101.9 198.51.100.7" ]] || fail_ "a new address joins, newest first, the old one kept ($(hostid_get ip | paste -sd' '))"; pass
 NOW=$((NOW + HOSTID_REFRESH_AGE)); RIPE_FAIL=1
 hostid_ensure > "$T/out" 2>&1 || fail_ "a failed refresh within two days: the record still serves"; pass
-grep -q "not refreshed — RIPEstat whats-my-ip: curl: (6)" "$T/out" || fail_ "and says why, with the evidence — $(cat "$T/out")"; pass
+grep -qE "not refreshed — RIPEstat whats-my-ip: curl: \(6\) Could not resolve host: stat.ripe.net ?$" "$T/out" || fail_ "and says why, with the evidence, nothing after it — $(cat "$T/out")"; pass
 NOW=$((NOW + HOSTID_STALE_AGE))
 hostid_ensure > /dev/null 2>&1 && fail_ "refreshes failing past two days: unusable"; pass
 [[ "$HOSTID_WHY" == *"h old (RIPEstat whats-my-ip: curl: (6)"* ]] || fail_ "the reason names its age and the error ($HOSTID_WHY)"; pass
@@ -135,6 +136,8 @@ sudo() {
 }
 dnscfg() { lt_reset; lt_dns_config mediastack-gluetun > "$T/out" 2>&1; }
 dnscfg; [[ $(lt_exit_code) == 0 ]] || fail_ "dns 127.0.0.1, encrypted by default, no plaintext: PASS — $(cat "$T/out")"; pass
+INSPECT='[{"HostConfig":{"Dns":["127.0.0.1"]},"Config":{"Env":["DNS_UPSTREAM_RESOLVER_TYPE=DoT","DNS_UPSTREAM_PLAIN_ADDRESSES="]}}]'; dnscfg
+[[ $(lt_exit_code) == 0 ]] || fail_ "the image's own DNS_UPSTREAM_RESOLVER_TYPE=DoT (capitals, empty plain list): PASS — $(cat "$T/out")"; pass
 INSPECT='[{"HostConfig":{"Dns":null},"Config":{"Env":[]}}]'; dnscfg
 [[ $(lt_exit_code) == 1 ]] && grep -q "dns setting is 'unset'" "$T/out" || fail_ "no dns setting: FAIL (Docker forwards to the host)"; pass
 INSPECT='[{"HostConfig":{"Dns":["127.0.0.1"]},"Config":{"Env":["DNS_UPSTREAM_RESOLVER_TYPE=plain","DNS_UPSTREAM_PLAIN_ADDRESSES=192.168.1.1:53"]}}]'; dnscfg
@@ -142,17 +145,17 @@ INSPECT='[{"HostConfig":{"Dns":["127.0.0.1"]},"Config":{"Env":["DNS_UPSTREAM_RES
 INSPECT='[{"HostConfig":{"Dns":["127.0.0.1"]},"Config":{"Env":[]}}]' RESOLV_OK=1; dnscfg
 [[ $(lt_exit_code) == 1 ]] || fail_ "resolv.conf not gluetun's: FAIL"; pass
 
-# ---- the LAN resolver path ----
+# ---- the LAN resolver path: decided by the route ----
 host_lan_resolvers() { echo 192.168.69.1; }
-timeout() { shift; "$@"; }
-LAN_OUT=""
-sudo() { echo "$LAN_OUT"; }
-lan() { LAN_OUT=$1; lt_reset; lt_dns_lan_path mediastack-gluetun > "$T/out" 2>&1; }
-lan $';; connection timed out; no servers could be reached'; [[ $(lt_exit_code) == 0 ]] || fail_ "no answer from the LAN resolver: PASS"; pass
-lan $'Server: 192.168.69.1\nName:\texample.com\nAddress: 172.66.147.243'; [[ $(lt_exit_code) == 1 ]] || fail_ "the LAN resolver answers: FAIL"; pass
-lan 'OCI runtime exec failed: exec: "nslookup": executable file not found in $PATH'
-[[ $(lt_exit_code) == 2 ]] || fail_ "no nslookup in the image: UNPROVEN, never a pass"; pass
-unset -f timeout
+ROUTE_OUT=""
+sudo() { echo "$ROUTE_OUT"; }
+lan() { ROUTE_OUT=$1; lt_reset; lt_dns_lan_path mediastack-gluetun > "$T/out" 2>&1; }
+lan '192.168.69.1 dev tun0 table 51820 src 10.5.0.2 uid 0'
+[[ $(lt_exit_code) == 0 ]] && grep -q "routed into the tunnel (tun0)" "$T/out" || fail_ "routed into the tunnel (anzac4's live output): PASS — $(cat "$T/out")"; pass
+lan '192.168.69.1 via 172.31.250.1 dev eth0 src 172.31.250.131 uid 0'
+[[ $(lt_exit_code) == 1 ]] || fail_ "routed over eth0: FAIL"; pass
+lan 'OCI runtime exec failed: exec: "ip": executable file not found in $PATH'
+[[ $(lt_exit_code) == 2 ]] || fail_ "no route read: UNPROVEN, never a pass"; pass
 
 # ---- control server ----
 CURL_R="" WGET_OUT=""

@@ -69,7 +69,7 @@ RIPESTAT_BODY=""
 ripestat() { # ripestat PATH — asked from the host (IPv4): the JSON answer in RIPESTAT_BODY; non-zero with the evidence in RIPESTAT_ERR
     local out code   # (globals, not stdout: a $( ) subshell would lose the error)
     RIPESTAT_BODY=""
-    out=$(curl -4 -sS -m 15 -w '\n%{http_code}' "$RIPESTAT/$1" 2>&1) || { RIPESTAT_ERR="RIPEstat ${1%%/*}: $(oneline "$out")"; return 1; }
+    out=$(curl -4 -sS -m 15 -w '\n%{http_code}' "$RIPESTAT/$1" 2>&1) || { RIPESTAT_ERR="RIPEstat ${1%%/*}: $(oneline "${out%$'\n'*}")"; return 1; }
     code=${out##*$'\n'}; out=${out%$'\n'*}
     if [[ "$code" != 200 ]] || ! jq -e '.data' >/dev/null 2>&1 <<<"$out"; then
         RIPESTAT_ERR="RIPEstat ${1%%/*}: HTTP $code $(oneline "$out")"; return 1
@@ -159,6 +159,7 @@ lt_dns_config() { # lt_dns_config GLUETUN — gluetun's DNS as configured
     dns=$(jq -r '.[0].HostConfig.Dns // [] | join(",")' <<<"$j")
     env=$(jq -r '.[0].Config.Env[]' <<<"$j")
     kind=$(sed -n 's/^DNS_UPSTREAM_RESOLVER_TYPE=//p' <<<"$env"); kind=${kind:-dot}   # gluetun's default
+    kind=${kind,,}   # the image itself sets it as "DoT" (found live, Oct 2026)
     plain=$(sed -n 's/^DNS_UPSTREAM_PLAIN_ADDRESSES=//p' <<<"$env")
     # Docker's own resolver answers the namespace's container names; a name it
     # does not know it forwards to its upstream — the host's DNS, from the host
@@ -185,20 +186,21 @@ host_lan_resolvers() { # this host's DNS servers on a private network — where 
         | grep -E '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' || true
 }
 
-lt_dns_lan_path() { # lt_dns_lan_path GLUETUN — the host's LAN resolvers must not answer from inside the namespace
-    local gcn=$1 r out rs
+lt_dns_lan_path() { # lt_dns_lan_path GLUETUN — the namespace must route the host's LAN resolvers into the tunnel, never onto the LAN
+    # Decided by the route, not by asking the resolver: something on the
+    # tunnel's side answers port 53 for any private address, even one where
+    # no resolver exists (found live, Oct 2026) — an answer proves nothing
+    local gcn=$1 r out dev rs
     rs=$(host_lan_resolvers)
-    [[ -n "$rs" ]] || { info "DNS: this host's resolvers are not on a private network — no LAN resolver to try"; return 0; }
+    [[ -n "$rs" ]] || { info "DNS: this host's resolvers are not on a private network — no LAN resolver to check"; return 0; }
     for r in $rs; do
-        # the timeout is the host's: the image's own toolset is not ours to assume
-        out=$(timeout 8 sudo docker exec "$gcn" nslookup example.com "$r" 2>&1 || true)
-        if grep -q '^Name:' <<<"$out"; then
-            lt_fail "DNS: your LAN resolver $r answers from inside the VPN's namespace — a path for queries outside the tunnel"
-        elif grep -qiE 'not found|no such file|executable file' <<<"$out"; then
-            lt_unproven "DNS: could not ask $r from inside the namespace ($(oneline "$out"))"
-        else
-            lt_pass "DNS: your LAN resolver $r is unreachable from inside the VPN's namespace"
-        fi
+        out=$(sudo docker exec "$gcn" ip route get "$r" 2>&1 || true)
+        dev=$(grep -oE ' dev [^ ]+' <<<"$out" | awk '{ print $2; exit }' || true)
+        case "$dev" in
+            tun*|wg*) lt_pass "DNS: your LAN resolver $r is routed into the tunnel ($dev) from the namespace — never onto your LAN" ;;
+            "") lt_unproven "DNS: no route read for your LAN resolver $r inside the namespace ($(oneline "$out"))" ;;
+            *) lt_fail "DNS: the namespace routes your LAN resolver $r over $dev — a path for queries outside the tunnel (a FIREWALL_OUTBOUND_SUBNETS in your override?)" ;;
+        esac
     done
 }
 
