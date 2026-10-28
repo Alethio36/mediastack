@@ -413,9 +413,17 @@ gluetun_doctor() { # doctor: every VPN'd service joined to the live tunnel, and 
         else d_fail "VPN'd services NOT attached to gluetun: $dbad" "their traffic bypasses the VPN entirely" "./mediastack.sh up   (recreates with correct attachment), then ./mediastack.sh leak-test"; fi   # addr-ok: a message, no address
     fi
     if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
-        local vip; vip=$(sudo docker exec "$(svc_cname gluetun)" wget -qO- --timeout=8 https://ipinfo.io/ip 2>/dev/null || true)
-        [[ -n "$vip" ]] && ok "tunnel public IP: $vip" \
-            || d_fail "cannot fetch IP through tunnel" "VPN may be down; downloads are dead (not leaking — kill-switch)" "./mediastack.sh logs gluetun"
+        # egress first (what the apps need), then who the internet sees: an
+        # address-lookup service failing is not the tunnel failing
+        local gcn out ip; gcn=$(svc_cname gluetun)
+        if ! out=$(sudo docker exec "$gcn" wget -q --spider --timeout=8 "$VPN_EGRESS_URL" 2>&1); then
+            d_fail "no egress through the tunnel ($VPN_EGRESS_URL: $(oneline "${out:-no answer}"))" "VPN may be down; downloads are dead (not leaking — kill-switch)" "./mediastack.sh logs gluetun"
+        else
+            out=$(sudo docker exec "$gcn" wget -qO- --timeout=8 https://am.i.mullvad.net/json 2>&1 || true)
+            ip=$(jq -r '.ip // empty' <<<"$out" 2>/dev/null || true)
+            if [[ -n "$ip" ]]; then ok "tunnel egress works; public IP $ip ($(jq -r '.organization // "?"' <<<"$out"))"
+            else warn "tunnel egress works; its public IP is unknown — Mullvad's checker: $(oneline "${out:-no answer}")"; fi
+        fi
     fi
 }
 
@@ -424,15 +432,19 @@ gluetun_doctor() { # doctor: every VPN'd service joined to the live tunnel, and 
 # by the soak, Oct 2026: right after the VPN group restarted, recyclarr got
 # "Could not resolve host", then "Connection reset", wiped its guide copy and
 # failed). Ready = a name resolves and HTTPS answers through the tunnel twice
-# in a row; a service not on gluetun's network needs no wait.
+# in a row; a service not on gluetun's network needs no wait. The probe asks
+# for what recyclarr (the caller) fetches, not an address-lookup service: one
+# rate-limited a shared VPN exit (HTTP 429, found live Oct 2026) and would
+# have held recyclarr back on a healthy tunnel.
 VPN_EGRESS_WAIT=120   # seconds
+VPN_EGRESS_URL=https://github.com
 vpn_egress_ready() { # vpn_egress_ready SVC -> 0 when SVC may go out; else a FAIL with the last error
     local who=$1 gcn t0 good=0 out=""
     render
     [[ "$(jq -r --arg s "$who" '.services[$s].network_mode // ""' <<<"$RENDERED_JSON")" == service:gluetun ]] || return 0
     gcn=$(svc_cname gluetun); t0=$(date +%s)
     while (( $(date +%s) - t0 < VPN_EGRESS_WAIT )); do
-        if out=$(sudo docker exec "$gcn" wget -qO- --timeout=8 https://ipinfo.io/ip 2>&1); then
+        if out=$(sudo docker exec "$gcn" wget -q --spider --timeout=8 "$VPN_EGRESS_URL" 2>&1); then
             good=$((good + 1)); (( good >= 2 )) && return 0
         else
             good=0

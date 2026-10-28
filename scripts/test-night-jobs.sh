@@ -59,8 +59,8 @@ date()  { cat "$T/now"; }   # +%s only
 sudo() { # docker exec gluetun wget ...: the next scripted answer (ok|fail)
     local n a; n=$(cat "$T/n"); echo $((n + 1)) > "$T/n"
     a=$(sed -n "$((n + 1))p" "$T/answers"); echo "PROBE" >> "$T/probes"
-    [[ "${a:-fail}" == ok ]] && { echo 203.0.113.9; return 0; }
-    echo "wget: bad address 'ipinfo.io'"; return 1
+    [[ "${a:-fail}" == ok ]] && return 0
+    echo "wget: bad address 'github.com'"; return 1
 }
 egress() { printf '%s\n' "$@" > "$T/answers"; echo 0 > "$T/n"; echo 1000 > "$T/now"; : > "$T/probes"; VPN_EGRESS_WAIT=60; vpn_egress_ready "${SVC:-recyclarr}" > "$T/out" 2>&1; }
 
@@ -69,7 +69,7 @@ egress ok ok || fail_ "two answers in a row: ready"; pass
 egress fail ok fail ok ok || fail_ "a flapping tunnel, then steady: ready"; pass
 [[ $(wc -l < "$T/probes") == 5 ]] || fail_ "a failure resets the count ($(wc -l < "$T/probes") probes)"; pass
 egress fail && fail_ "never reaching out: not ready"
-grep -q "FAIL recyclarr: the tunnel still cannot reach the internet after 60s (last: wget: bad address 'ipinfo.io')" "$T/out" \
+grep -q "FAIL recyclarr: the tunnel still cannot reach the internet after 60s (last: wget: bad address 'github.com')" "$T/out" \
     || fail_ "never: a FAIL with the last error — $(cat "$T/out")"; pass
 SVC=jellyfin egress fail || fail_ "a service off gluetun's network: no wait"; pass
 [[ ! -s "$T/probes" ]] || fail_ "and no probe"; pass
