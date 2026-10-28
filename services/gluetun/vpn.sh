@@ -110,70 +110,70 @@ cmd_vpn_guard() {
 }
 
 # --------------------------------------------------------------- leak-test --
+# The checks and their verdicts (PASS / FAIL / UNPROVEN) are in leak.sh; this
+# runs them in order. Exit 0 all proven, 1 a leak or a missing safeguard, 2
+# nothing failed but something could not be proven.
 cmd_leak_test() {
     load_env
     local killswitch=0; [[ "${1:-}" == --killswitch ]] && killswitch=1
     local gcn; gcn=$(svc_cname gluetun)
     c_inspect_all
     [[ "$(c_state "$gcn")" == running ]] || die "gluetun is not running — start the stack first."
+    lt_reset
 
     hr "leak-test: attachment audit"
     # Netns-joined containers report an EMPTY SandboxKey, so key equality can
     # never verify the join. The truth is NetworkMode: docker enforces
     # container:<id> joins atomically — matching gluetun's full ID is proof.
-    local gid rc=0 s cn nm
+    local gid s cn nm
     gid=$(c_id "$gcn")
     for s in $(svc_managed_where mediastack.vpn true); do
         svc_enabled "$s" || continue
         cn=$(svc_cname "$s"); [[ "$(c_state "$cn")" == running ]] || { info "$s not running — skipped"; continue; }
         nm=$(c_netmode "$cn")
-        if [[ "$nm" == "container:$gid" ]]; then ok "$s routed through the gluetun tunnel"
-        else fail "$s is NOT joined to gluetun (mode: ${nm:0:40}...) — this IS a leak path"; rc=1; fi
+        if [[ "$nm" == "container:$gid" ]]; then lt_pass "$s routed through the gluetun tunnel"
+        else lt_fail "$s is NOT joined to gluetun (mode: ${nm:0:40}...) — this IS a leak path"; fi
     done
 
-    hr "leak-test: tunnel identity (one test — all VPN'd services share this namespace)"
-    local hostip vinfo vip vcc
-    hostip=$(curl -fsS --max-time 8 https://ipinfo.io/ip 2>/dev/null || echo unknown)
-    vinfo=$(sudo docker run --rm --network "container:$gcn" curlimages/curl:latest \
-            -fsS --max-time 10 https://ipinfo.io/json 2>/dev/null || true)
-    vip=$(jq -r '.ip // empty' <<<"$vinfo"); vcc=$(jq -r '.country // "?"' <<<"$vinfo")
-    if [[ -z "$vip" ]]; then fail "no egress through the tunnel — VPN down?"; rc=1
-    elif [[ "$vip" == "$hostip" ]]; then fail "tunnel IP equals host WAN IP ($vip) — traffic is NOT going through the VPN"; rc=1
-    else ok "tunnel IP $vip ($vcc) != host IP $hostip"; fi
-    # IPv6 egress must fail
-    if sudo docker run --rm --network "container:$gcn" curlimages/curl:latest \
-         -6 -fsS --max-time 8 https://ipv6.google.com >/dev/null 2>&1; then
-        fail "IPv6 egress SUCCEEDED inside the tunnel namespace — IPv6 leak"; rc=1
-    else ok "no IPv6 egress"; fi
-    # resolver identity: queries must go to gluetun's local resolver (which
-    # forwards over the tunnel), not a LAN/ISP resolver
-    if sudo docker exec "$gcn" sh -c 'grep -q "nameserver 127.0.0.1" /etc/resolv.conf' 2>/dev/null; then   # addr-ok: gluetun's own resolver, read for the leak-test
-        ok "DNS goes to gluetun's own resolver — queries ride the tunnel"
-    else
-        warn "resolv.conf inside the namespace is not gluetun's resolver — DNS may leak to the LAN (check DNS settings in gluetun)"
-    fi
-    # interface audit: the namespace must hold exactly lo + one LAN-side
-    # interface + the tunnel. A second ethN means another docker network is
-    # attached — the "accidentally on another network" case.
+    hr "leak-test: the tunnel's namespace"
+    # the namespace must hold exactly lo + one LAN-side interface + the tunnel:
+    # a second ethN means another docker network is attached
     local links eth_n
     links=$(sudo docker exec "$gcn" ip -o link 2>/dev/null | awk -F': ' '{print $2}' | cut -d@ -f1 | grep -v '^lo$' || true)
     eth_n=$(grep -c '^eth' <<<"$links" || true)
-    if [[ "$eth_n" == 1 ]]; then ok "exactly one LAN-side interface in the namespace"
-    else fail "unexpected interface set in namespace: $(tr '\n' ' ' <<<"$links") — a second network is attached"; rc=1; fi
-    grep -qE '^(tun|wg)' <<<"$links" && ok "tunnel interface present" \
-        || { fail "no tunnel interface in the namespace"; rc=1; }
+    if [[ "$eth_n" == 1 ]]; then lt_pass "exactly one LAN-side interface in the namespace"
+    else lt_fail "unexpected interface set in the namespace: $(tr '\n' ' ' <<<"$links") — a second network is attached"; fi
+    if grep -qE '^(tun|wg)' <<<"$links"; then lt_pass "tunnel interface present"
+    else lt_fail "no tunnel interface in the namespace"; fi
+    lt_ipv6 "$gcn"
+
+    hr "leak-test: who the internet sees"
+    local hok=0
+    hostid_ensure && hok=1
+    lt_tunnel_ip "$gcn" "$hok"
+    lt_udp_identity "$gcn" "$hok"
+
+    hr "leak-test: DNS"
+    lt_dns_config "$gcn"
+    lt_dns_lan_path "$gcn"
+    lt_dns_resolvers "$gcn" "$hok"
+
+    hr "leak-test: gluetun's control server"
+    lt_control_server "$gcn"
 
     hr "leak-test: kill-switch"
-    sudo docker exec "$gcn" sh -c 'iptables -S OUTPUT 2>/dev/null | grep -qE -- "^-P OUTPUT DROP|-j DROP"' \
-        && ok "firewall DROP rules present in gluetun" \
-        || warn "could not confirm firewall rules (gluetun still defaults fail-closed)"
+    if sudo docker exec "$gcn" sh -c 'iptables -S OUTPUT 2>/dev/null | grep -qE -- "^-P OUTPUT DROP|-j DROP"'; then
+        lt_pass "firewall DROP rules present in gluetun"
+    else
+        lt_unproven "could not read gluetun's firewall rules (gluetun still defaults fail-closed)"
+    fi
     if (( killswitch )); then
         warn "Disruptive proof: dropping the tunnel interface for ~10s..."
         sudo docker exec "$gcn" sh -c 'ip link set dev tun0 down' || true
         if sudo docker run --rm --network "container:$gcn" curlimages/curl:latest \
-             -fsS --max-time 6 https://ipinfo.io/ip >/dev/null 2>&1; then
-            fail "egress SUCCEEDED with the tunnel down — kill-switch NOT working"; rc=1
-        else ok "egress blocked with tunnel down — kill-switch works"; fi
+             -fsS --max-time 6 https://github.com -o /dev/null >/dev/null 2>&1; then
+            lt_fail "egress SUCCEEDED with the tunnel down — kill-switch NOT working"
+        else lt_pass "egress blocked with tunnel down — kill-switch works"; fi
         sudo docker exec "$gcn" sh -c 'ip link set dev tun0 up' || true
         info "Restarting gluetun to restore a clean tunnel..."
         DC restart gluetun >/dev/null
@@ -182,12 +182,12 @@ cmd_leak_test() {
         sudo docker stop "$gcn" >/dev/null; INSPECT_JSON=""
         local pcn; pcn=$(svc_cname qbittorrent)
         if [[ $(c_state "$pcn") == running ]]; then
-            if sudo docker exec "$pcn" curl -fsS --max-time 6 https://ipinfo.io/ip >/dev/null 2>&1; then
-                fail "egress SUCCEEDED from a dependent with gluetun STOPPED — containment broken"; rc=1
-            else ok "zero egress from dependents with gluetun dead (namespace has no interfaces — fail-safe)"; fi
+            if sudo docker exec "$pcn" curl -fsS --max-time 6 https://github.com -o /dev/null >/dev/null 2>&1; then
+                lt_fail "egress SUCCEEDED from a dependent with gluetun STOPPED — containment broken"
+            else lt_pass "zero egress from dependents with gluetun dead (namespace has no interfaces — fail-safe)"; fi
             if sudo docker exec "$pcn" sh -c 'ip route 2>/dev/null | grep -q default'; then
-                fail "a default route appeared inside the dead namespace"; rc=1
-            else ok "no fallback route appeared — docker cannot re-home a joined container"; fi
+                lt_fail "a default route appeared inside the dead namespace"
+            else lt_pass "no fallback route appeared — docker cannot re-home a joined container"; fi
         else info "qbittorrent not running — hard-stop probe skipped"; fi
         info "Restarting gluetun and re-joining dependents..."
         sudo docker start "$gcn" >/dev/null; INSPECT_JSON=""
@@ -202,14 +202,19 @@ cmd_leak_test() {
     fi
 
     hr "leak-test: host port sweep"
+    render
     for s in $(svc_managed_where mediastack.vpn true); do
-        render
-        jq -e --arg s "$s" '.services[$s].ports // [] | length == 0' <<<"$RENDERED_JSON" >/dev/null \
-            && ok "$s publishes no ports of its own" \
-            || { fail "$s publishes host ports directly — must go through gluetun"; rc=1; }
+        if jq -e --arg s "$s" '.services[$s].ports // [] | length == 0' <<<"$RENDERED_JSON" >/dev/null; then
+            lt_pass "$s publishes no ports of its own"
+        else lt_fail "$s publishes host ports directly — must go through gluetun"; fi
     done
+
     echo
-    (( rc == 0 )) && ok "leak-test passed." || { fail "leak-test FOUND PROBLEMS — see above."; exit 1; }
+    case $(lt_exit_code) in
+        0) ok "leak-test passed: every check proven." ;;
+        1) fail "leak-test FOUND PROBLEMS: $LT_FAIL check(s) failed — see above."; exit 1 ;;
+        *) warn "leak-test: no leak found, but $LT_UNPROVEN check(s) UNPROVEN — see above. Not a pass."; exit 2 ;;
+    esac
 }
 
 # --------------------------------------------------------- vpn membership --

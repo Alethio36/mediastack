@@ -5,8 +5,9 @@
 # before and after each re-org slice, and after any change to the edge, the
 # portal or the VPN. Exit 0 = every check passed.
 #
-#   vpn      leak-test (attachment, tunnel IP, no IPv6, interfaces), and every
-#            enabled torrent client bound to tun0
+#   vpn      leak-test (attachment, the namespace, who the internet sees, DNS,
+#            the control server, the kill-switch rules — an UNPROVEN check
+#            fails this too), and every enabled torrent client bound to tun0
 #   gate     with the portal on: each gated tool, signed out, is sent to sign
 #            in; its API path (a gate bypass) is answered by the app instead;
 #            the dashboard always asks for a login

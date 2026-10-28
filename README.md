@@ -270,7 +270,7 @@ Check
 | command | what it does |
 |---|---|
 | `doctor` | full health/permission/cert/backup/host-port audit — every failure states its fix. Includes each arr's and Prowlarr's own health list (indexers, download client, root folders, the notification connection to the hub): an error there is a doctor problem — on a fresh install, "no indexers" until you add some in Prowlarr |
-| `leak-test [--killswitch]` | prove no VPN'd service can leak (`--killswitch` = destructive proof) |
+| `leak-test [--killswitch]` | prove no VPN'd service can leak: exit 0 every check proven, 1 a leak or a missing safeguard, 2 nothing failed but something UNPROVEN (`--killswitch` = destructive proof) |
 | `audit [status\|on\|off\|report]` | deletion attribution, opt-in: the kernel logs every delete and rename under `DATA_ROOT/media` with who made it — each service runs as its own UID, so the UID names the service; a person is named by their login, even through sudo (the manifest says *what* went missing, this says *who*). `on` installs auditd if the host has none (a host that already runs auditd keeps its own setup: one rules file and one timer are added, nothing else is touched), asks how long to keep the history (`AUDIT_KEEP_DAYS`, default 365) and proves the watch with a test delete; `off` removes it again (and auditd, if mediastack installed it; the history stays). `report [--since YYYY-MM-DD] [--path TEXT]` lists what was deleted or renamed, by whom (default: the last 7 days); a container's paths are shown as host paths. `status` (default) is doctor's check, including the live test delete. Sees this host only — deletes made on the NAS itself or from another machine are the manifest's to catch |
 | `vpn [svc on/off]` | show or change which services run behind the VPN (torrent clients need `--i-know` to leave). A move changes how other apps reach the service, so the next `up` re-points everything wired to call it (`WIRE_CALLERS`); if that fails, the next `up` retries and `doctor` says it is pending |
 | `fix-perms [svc]` | repair ownership of a service's config, cache and transcode folders from the UID map |
@@ -360,9 +360,13 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
 * **Downloads cannot leak.** VPN'd services run inside gluetun's network
   namespace, start only after the tunnel is verifiably up, qBittorrent's
   transfers are additionally bound to the tunnel interface itself (tun0),
-  and `leak-test` proves the chain. Membership is operator-selectable with the
+  and `leak-test` proves the chain — who the internet sees over TCP and UDP,
+  every resolver that answers, gluetun's DNS and control server — without
+  telling any one outside party both of your addresses. A check it cannot run
+  is UNPROVEN, never a pass. Membership is operator-selectable with the
   `vpn` command and audited by the tooling — see
-  [docs/vpn-membership.md](docs/vpn-membership.md).
+  [docs/vpn-membership.md](docs/vpn-membership.md); what leaves your box, and
+  to whom: [docs/privacy.md](docs/privacy.md).
 * **Containers ignore the host's search domain.** A bare name inside the
   stack means a sibling container and nothing else — never
   `<name>.<your-domain>`, which a wildcard DNS record would answer with a
@@ -840,6 +844,7 @@ what would reopen it, in [docs/watchlist.md](docs/watchlist.md).
 * [docs/email.md](docs/email.md) — adding email (SMTP): picking a sender, the settings, testing, troubleshooting
 * [docs/trash-sync.md](docs/trash-sync.md) — quality profiles, overrides, ownership
 * [docs/vpn-membership.md](docs/vpn-membership.md) — moving services in/out of the VPN
+* [docs/privacy.md](docs/privacy.md) — what leaves your box, to whom, from which address
 * [docs/adding-a-service.md](docs/adding-a-service.md) — extend the stack
 * [docs/migration-existing.md](docs/migration-existing.md) — adopt an existing deployment
 * [docs/disaster-recovery.md](docs/disaster-recovery.md) — full rebuild from a restore point
