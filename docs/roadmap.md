@@ -842,6 +842,44 @@ all built; what each still leaves open is noted below.
 - Secrets handling *(explore)* — Docker secrets or an external store instead of
   plaintext `.env`.
 
+- **Metadata through the VPN** *(after MVP, Oct 2026 — approach chosen)*.
+  Jellyfin and Seerr fetch metadata and artwork from the home address
+  (docs/privacy.md): what is in the library, not how it got there, but still a
+  flow to TMDB and the rest. No self-hosted "metadata server" exists to put in
+  between (looked for: TMDB proxies only move the requests to whoever hosts
+  them).
+  * *Chosen: gluetun's built-in HTTP proxy* (`HTTPPROXY=on`, with a user and
+    password), Jellyfin pointed at it with the standard `HTTPS_PROXY` /
+    `NO_PROXY` variables (.NET honours them), Seerr through its own proxy
+    setting. Serving stays off the VPN; only their outbound lookups ride it.
+  * Costs: metadata fails while the tunnel is down (playback does not); the
+    `NO_PROXY` list must hold every internal address they call (WatchState,
+    the portal) — wrong, it breaks quietly, so doctor checks it; VPN exits are
+    rate-limited or challenged by some image hosts more often.
+  * *Alternative on record:* the arrs write `.nfo` files and artwork beside
+    the media (their Kodi/Emby metadata), Jellyfin reads them with its
+    internet fetchers off. Thinner metadata (cast and people), nothing for
+    media no arr manages, and it competes with `JELLYFIN_WRITE_METADATA` for
+    the same files — decide the two together.
+  * Not chosen: Jellyfin inside gluetun's namespace — playback would then die
+    with the tunnel, and a leak-test stop would take streaming down.
+- **Network segmentation** *(after MVP, Oct 2026 — hardening, not a hole)*.
+  Every container shares one network (`mediastack`), so a compromised one
+  can reach every other's API. The easy part ships before: a database with
+  exactly one consumer on its own `internal` network (authentik's, Meilisearch).
+  The rest is a design job, because:
+  * *the VPN group cannot be split* — every service in gluetun's namespace
+    joins whatever networks gluetun joins, and gluetun must be on the network
+    of every app that talks to an arr or a torrent client (Seerr, Jellyfin,
+    Cleanuparr, Traefik, Apprise), so that zone stays nearly flat;
+  * *Traefik is a hub* — it joins every network it routes to;
+  * *addressing assumes one network* — wire's addresses (`svc_addr`), the
+    address tests, Navidrome trusting Traefik's fixed address; every role
+    edge would need a declared network, and existing installs recreate their
+    networks (downtime).
+  * What it buys: a compromised household app could no longer reach Apprise's
+    API (no login), FlareSolverr or another app's database directly.
+
 ### Project health
 - **Optimization & project-health pass.** The build phase prioritized capability
   over refinement. A deliberate sweep: audit `mediastack.sh` for dead code,
