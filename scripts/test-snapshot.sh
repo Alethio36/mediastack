@@ -27,7 +27,7 @@
 # a scheduled unit pair (the update's) and the failure hook's template.
 #
 # compose.json keeps the fields mediastack writes — image, names, profiles,
-# networks, ports, volumes, depends_on, dns_search, labels, environment, user,
+# networks, ports, volumes, depends_on, dns, dns_search, labels, environment, user,
 # capabilities, devices, command — so a newer Compose adding defaults of its
 # own cannot fail the build. Repo paths read @REPO@.
 #
@@ -76,7 +76,7 @@ PROJECT='
 def clean: with_entries(select(.value != null and .value != [] and .value != {}));
 {
   services: (.services | map_values({
-      image, container_name, profiles, network_mode, dns_search, labels, environment,
+      image, container_name, profiles, network_mode, dns, dns_search, labels, environment,
       user, cap_add, cap_drop, devices, privileged, security_opt, sysctls, command, entrypoint,
       networks: (if .networks then (.networks | map_values(if . == null then {} else ({ipv4_address, aliases} | clean) end)) else null end),
       ports: (if .ports then [.ports[] | {host_ip, published, target, protocol} | clean] else null end),

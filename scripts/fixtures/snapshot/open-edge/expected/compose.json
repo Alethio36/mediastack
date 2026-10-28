@@ -69,12 +69,15 @@
           "target": "/dev/net/tun"
         }
       ],
+      "dns": [
+        "127.0.0.1"
+      ],
       "dns_search": [
         "."
       ],
       "environment": {
-        "DNS_ADDRESS": "",
-        "HTTP_CONTROL_SERVER_ADDRESS": ":8008",
+        "DNS_UPSTREAM_RESOLVERS": "cloudflare",
+        "HTTP_CONTROL_SERVER_ADDRESS": "127.0.0.1:8008",
         "SERVER_CITIES": "",
         "SERVER_COUNTRIES": "",
         "SERVER_HOSTNAMES": "",
