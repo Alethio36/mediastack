@@ -278,6 +278,10 @@ cmd_trash_sync() { # trash-sync [--dry-run]
     else
         hr "trash-sync: TRaSH Guides via Recyclarr"
     fi
+    # render here, in the command's own shell: every helper below runs in a
+    # $( ) and would render the stack again (~1s each) — trash-sync spent two
+    # silent minutes on that before saying anything (found live, Oct 2026)
+    render
     insts=$(trash_instances)
     [[ -n "$insts" ]] || { info "no managed arr instances enabled — nothing to sync"; return 0; }
     wire_gate $insts

@@ -152,6 +152,7 @@ wire_arrs_ready() { # every arr-family API answering before a role reads or writ
 # shellcheck disable=SC2120  # type argument is optional by design
 arr_instances() { # arr_instances [type] -> enabled arr services (optionally by type)
     local s t
+    render   # in this scope: each $(svc_label) below would otherwise render again (render's CACHING SEMANTICS)
     for s in $(svc_enabled_managed); do
         t=$(svc_label "$s" mediastack.arrtype)
         [[ -n "$t" ]] || continue
