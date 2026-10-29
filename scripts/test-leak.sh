@@ -181,10 +181,10 @@ fw "${GOOD/-A OUTPUT -d 86.104.249.45\/32 -o eth0 -p udp -m udp --dport 51820 -j
 [[ $(lt_exit_code) == 2 ]] || fail_ "no VPN server among the rules: UNPROVEN — $(cat "$T/out")"; pass
 
 # ---- the traffic: what the host tracks from gluetun ----
-conntrack() { :; }   # present (the stub sudo answers for it)
-CT_OUT=""
+CT_OUT="" ON_SUDO_PATH="conntrack tcpdump"
 sudo() {
     case "$*" in
+        "sh -c"*) [[ " $ON_SUDO_PATH " == *" ${*: -1} "* ]] ;;   # command -v, as root sees the path
         conntrack*) printf '%s\n' "$CT_OUT" ;;
         *"ip -o -4 addr"*) echo "$ADDR_OUT" ;;
     esac
@@ -197,16 +197,16 @@ fl 'udp      17 29 src=172.31.250.131 dst=192.168.69.1 sport=40000 dport=53 src=
 [[ $(lt_exit_code) == 1 ]] && grep -q "udp 192.168.69.1:53" "$T/out" || fail_ "a flow to the LAN resolver: FAIL, named — $(cat "$T/out")"; pass
 fl ''; [[ $(lt_exit_code) == 2 ]] || fail_ "no flow at all, not even the tunnel's: UNPROVEN"; pass
 fl 'x' ''; [[ $(lt_exit_code) == 2 ]] || fail_ "no VPN server known: UNPROVEN"; pass
-unset -f conntrack; PATH_SAVE=$PATH
-# shellcheck disable=SC2123  # deliberately: no conntrack anywhere on the search path
-PATH=/nonexistent
-fl 'x'; PATH=$PATH_SAVE
+command -v conntrack >/dev/null 2>&1 && fail_ "this test needs conntrack off the test runner's own path"
+fl 'udp      17 179 src=172.31.250.131 dst=86.104.249.45 sport=51820 dport=51820 [ASSURED]'
+[[ $(lt_exit_code) == 0 ]] || fail_ "conntrack only on sudo's path (/usr/sbin, found live): present, not UNPROVEN — $(cat "$T/out")"; pass
+ON_SUDO_PATH="tcpdump"; fl 'x'; ON_SUDO_PATH="conntrack tcpdump"
 [[ $(lt_exit_code) == 2 ]] && grep -q "conntrack is not installed on this host — ./mediastack.sh install adds it" "$T/out" || fail_ "conntrack missing: UNPROVEN, naming the fix — $(cat "$T/out")"; pass
 
 # ---- DNS that leaves from the host itself ----
-tcpdump() { :; }
 CAPTURE="" LISTENING=1
 sudo() {
+    [[ "$1 $2" == "sh -c" ]] && return 0   # tcpdump is on sudo's path
     if [[ "$1" == timeout ]]; then
         (( LISTENING )) && echo "tcpdump: listening on any, link-type LINUX_SLL2" >&2
         local i; for i in $(seq 1 30); do [[ -s "$T/name" ]] && break; sleep 0.1; done   # the lookup runs after "listening"
@@ -220,7 +220,6 @@ dh() { CAPTURE=$1; LISTENING=${2:-1}; : > "$T/name"; lt_reset; lt_dns_host_path 
 dh ""; [[ $(lt_exit_code) == 0 ]] || fail_ "no query left the host: PASS — $(cat "$T/out")"; pass
 dh hit; [[ $(lt_exit_code) == 1 ]] && grep -q "left the host as a query" "$T/out" || fail_ "a query left the host: FAIL — $(cat "$T/out")"; pass
 dh "" 0; [[ $(lt_exit_code) == 2 ]] && grep -q "the capture did not start" "$T/out" || fail_ "a capture that never started: UNPROVEN, never a pass — $(cat "$T/out")"; pass
-unset -f tcpdump
 
 # ---- control server ----
 CURL_R="" WGET_OUT=""

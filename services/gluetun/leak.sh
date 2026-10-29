@@ -37,7 +37,9 @@ lt_exit_code() { # 1 any FAIL, 2 no FAIL but something UNPROVEN, 0 all PASS
 # shellcheck disable=SC2034  # read by lib/footprint.sh and lib/lifecycle.sh
 LEAK_TOOLS="conntrack tcpdump"
 leak_tool() { # leak_tool NAME -> 0 when present; otherwise UNPROVEN, naming the fix
-    command -v "$1" >/dev/null 2>&1 && return 0
+    # looked up on sudo's path, where it runs: conntrack lives in /usr/sbin,
+    # off a normal user's path (found live: installed, yet "not installed")
+    sudo sh -c 'command -v "$1"' _ "$1" >/dev/null 2>&1 && return 0
     lt_unproven "$2: $1 is not installed on this host — ./mediastack.sh install adds it (and uninstall removes it again)"
     return 1
 }
