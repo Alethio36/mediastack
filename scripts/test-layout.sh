@@ -132,4 +132,11 @@ for n in custom config cache data transcodes backups local; do
     done
 done
 
+# ---- the script's own state lives in local/, never in a repo-relative cache/ ----
+# (cache/ exists only while CACHE_ROOT is the default — trash-sync's records
+# there ended every run in an error on a cache root elsewhere, found live)
+stray=$(grep -rnE '(tee|install|cat|cp|mv|rm|mkdir|touch)( -[a-z0-9]+)* "?cache/|[<>] *"?cache/|-[sefd] +"?cache/' \
+          mediastack.sh lib services --include=*.sh | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true)
+[[ -z "$stray" ]] || fail_ "a repo-relative cache/ path (use LOCAL_DIR, or the CACHE_ROOT a container mounts): $stray"; pass
+
 echo "OK layout: $checks checks"

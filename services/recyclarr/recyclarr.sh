@@ -257,6 +257,13 @@ trash_preview_summarize() { # $1 = captured `sync --preview` log -> "<count>|<su
 }
 
 # shellcheck disable=SC2120  # arguments arrive via main()'s registry dispatch
+# trash-sync's run records: the script's own state, so local/ — they lived in a
+# repo-relative cache/, which exists only while CACHE_ROOT is the default
+# ./cache (found live: any other cache root ended every run in an error)
+TRASH_LOG="$LOCAL_DIR/trash-sync.log"
+TRASH_STAMP="$LOCAL_DIR/trash-last-sync"
+TRASH_SUMMARY="$LOCAL_DIR/trash-last-summary"
+
 trash_stop() { # end a failed trash-sync: exit when it is the command run, return when the update runs it
     # Returned to main, a failure trips the ERR trap after the FAIL lines
     # ("unhandled failure ... return 1"); exit, as wire does — but the update
@@ -361,14 +368,18 @@ cmd_trash_sync() { # trash-sync [--dry-run]
         || warn "recyclarr image pull failed (registry unreachable?) — syncing with the local image"
     rc=0; trash_recyclarr "$slog" sync || rc=$?
     summary=$(trash_summarize "$slog")
-    sudo install -m 644 "$slog" cache/trash-sync.log; rm -f "$slog"
+    mkdir -p "$LOCAL_DIR"
+    install -m 644 "$slog" "$TRASH_LOG"; rm -f "$slog"
     if (( rc == 0 )); then
-        date +%s | sudo tee cache/trash-last-sync >/dev/null
-        printf '%s' "$summary" | sudo tee cache/trash-last-summary >/dev/null
-        ok "sync complete — $summary (full log: cache/trash-sync.log)"
+        date +%s > "$TRASH_STAMP"
+        printf '%s' "$summary" > "$TRASH_SUMMARY"
+        ok "sync complete — $summary (full log: ${TRASH_LOG#"$SCRIPT_DIR/"})"
     else
-        wfail "recyclarr sync failed — output above is the evidence (also: cache/trash-sync.log)"
+        wfail "recyclarr sync failed — output above is the evidence (also: ${TRASH_LOG#"$SCRIPT_DIR/"})"
     fi
+    local f owned=("$LOCAL_DIR")   # a root run (the update timer) hands what it wrote to the repo's owner
+    for f in "$TRASH_LOG" "$TRASH_STAMP" "$TRASH_SUMMARY"; do [[ -e "$f" ]] && owned+=("$f"); done
+    repo_owned "${owned[@]}"
     if (( WIRE_FAILS )); then
         fail "trash-sync finished with $WIRE_FAILS failure(s)."; trash_stop; return 1
     fi

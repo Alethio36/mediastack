@@ -57,12 +57,12 @@ overrides on every run (generated file — never edit it), pushes the sentinel
 banner (idempotent), then runs the one-shot recyclarr container
 (`services/recyclarr/compose.yml`, profile-gated so `up` never starts it; it shares
 gluetun's namespace, so instance URLs are localhost and guide fetches ride
-the tunnel). Success stamps `cache/trash-last-sync`; `doctor` warns when the
+the tunnel). Success stamps `local/trash-last-sync`; `doctor` warns when the
 stamp is older than 26h or missing.
 
 The pinned `recyclarr:8` image is refreshed (patch releases) at the start of every trash-sync; a major version bump is a schema migration and stays a deliberate manual tag change in `services/recyclarr/compose.yml`.
 
-Preview without applying: `./mediastack.sh trash-sync --dry-run`. It regenerates the config to a scratch copy (`recyclarr.preview.yml`, removed afterwards), reports whether the live `recyclarr.yml` would change, previews the sentinel banners, and runs `recyclarr sync --preview` against the scratch copy — nothing is written to the arrs, `.env`, or the cache. It needs a prior real run (recyclarr provisioned, profile choices answered) and a terminal, and refuses otherwise: recyclarr renders its preview only on a TTY (any redirected stdout, or `--debug`, switches it to log mode and the preview is discarded), so the preview container is run with a forced pseudo-TTY.
+Preview without applying: `./mediastack.sh trash-sync --dry-run`. It regenerates the config to a scratch copy (`recyclarr.preview.yml`, removed afterwards), reports whether the live `recyclarr.yml` would change, previews the sentinel banners, and runs `recyclarr sync --preview` against the scratch copy — nothing is written to the arrs, `.env`, or the run records in `local/`. It needs a prior real run (recyclarr provisioned, profile choices answered) and a terminal, and refuses otherwise: recyclarr renders its preview only on a TTY (any redirected stdout, or `--debug`, switches it to log mode and the preview is discarded), so the preview container is run with a forced pseudo-TTY.
 
 ## Nightly pipeline
 
@@ -73,4 +73,4 @@ weekly). In timer context, instances without a stored choice are set to
 `skip` with a warning rather than blocking the pipeline on a prompt; a
 failed sync step fails the pipeline's exit status loudly but never rolls
 back or masks the update result. Last-run summary: doctor's TRaSH line and
-cache/trash-sync.log.
+local/trash-sync.log.

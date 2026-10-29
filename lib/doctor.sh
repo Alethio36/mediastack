@@ -264,10 +264,10 @@ _doctor_vpn_backups() {
     [[ -z "$(state_get WIRE_REPOINT)" ]] \
         || warn "re-pointing pending for $(state_get WIRE_REPOINT) (a VPN toggle moved it) — apply: ./mediastack.sh up"
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
-        if [[ -s cache/trash-last-sync ]]; then
-            local tage=$(( ( $(date +%s) - $(cat cache/trash-last-sync) ) / 3600 ))
+        if [[ -s "$TRASH_STAMP" ]]; then
+            local tage=$(( ( $(date +%s) - $(cat "$TRASH_STAMP") ) / 3600 ))
             local tsum=""
-            [[ -s cache/trash-last-summary ]] && tsum=" — last run: $(cat cache/trash-last-summary)"
+            [[ -s "$TRASH_SUMMARY" ]] && tsum=" — last run: $(cat "$TRASH_SUMMARY")"
             (( tage > 26 )) && warn "TRaSH sync is ${tage}h old — run: ./mediastack.sh trash-sync" \
                             || ok "TRaSH sync ${tage}h old${tsum}"
         else
