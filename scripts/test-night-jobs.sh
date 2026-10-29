@@ -94,4 +94,17 @@ grep -qx 'POST /command {"name":"CheckHealth"}' "$T/api" || fail_ "a passing pro
 PROXY_OK=0; retest
 ! grep -q CheckHealth "$T/api" && grep -q 'WARN.*re-testing its proxies failed' "$T/out" || fail_ "a failing proxy test: a WARN, no health check — $(cat "$T/out")"; pass
 
+# ---- doctor: how fresh the TRaSH sync should be follows the update schedule ----
+H=3600; NOW=$((1800000000)); WEEK=$((7 * 24 * H))
+v=$(trash_age_verdict $NOW $((NOW - 6 * 24 * H)) $((NOW - 6 * 24 * H - H)) "Tue *-*-* 04:00")
+[[ "${v%%$'\t'*}" == ok ]] || fail_ "weekly updates, synced after the last one, six days ago: fine, not a warning ($v)"; pass
+v=$(trash_age_verdict $NOW $((NOW - WEEK - 10 * H)) $((NOW - 10 * H)) "Tue *-*-* 04:00")
+[[ "${v%%$'\t'*}" == warn && "$v" == *"ran without syncing"* ]] || fail_ "the last update ran 10h ago and nothing synced after it: warn ($v)"; pass
+v=$(trash_age_verdict $NOW $((NOW - WEEK)) $((NOW - 2 * H)) "Tue *-*-* 04:00")
+[[ "${v%%$'\t'*}" == ok ]] || fail_ "the update ran 2h ago, its sync may still be coming: no warning yet ($v)"; pass
+v=$(trash_age_verdict $NOW $((NOW - 30 * 24 * H)) "" "")
+[[ "${v%%$'\t'*}" == ok && "$v" == *"no update schedule"* ]] || fail_ "no update schedule: age is the operator's business ($v)"; pass
+v=$(trash_age_verdict $NOW $((NOW - 3 * H)) "" "*-*-* 04:00")
+[[ "${v%%$'\t'*}" == ok ]] || fail_ "a timer that never fired yet: fine ($v)"; pass
+
 echo "test-night-jobs: $checks checks passed"

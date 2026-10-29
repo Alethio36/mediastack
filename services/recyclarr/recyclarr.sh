@@ -264,6 +264,32 @@ TRASH_LOG="$LOCAL_DIR/trash-sync.log"
 TRASH_STAMP="$LOCAL_DIR/trash-last-sync"
 TRASH_SUMMARY="$LOCAL_DIR/trash-last-summary"
 
+# how fresh the sync should be: it rides the update pipeline, so it is as
+# fresh as updates are frequent — weekly updates sync weekly. Judged against
+# the update timer's last run, not a fixed 26h (which warned six days a week
+# on a weekly schedule, found Oct 2026)
+TRASH_RUN_GRACE=21600   # 6h for an update run to finish its restore point, pulls, a wait for a stream, and the sync
+
+trash_update_last_run() { # epoch of the update timer's last trigger; empty when it never fired or there is no timer
+    local t
+    t=$(systemctl show mediastack-update.timer -p LastTriggerUSec --value 2>/dev/null || true)
+    [[ -n "$t" && "$t" != n/a && "$t" != 0 ]] || return 0
+    date -d "$t" +%s 2>/dev/null || true
+}
+
+trash_age_verdict() { # trash_age_verdict NOW STAMP LASTRUN SCHEDULE -> "ok|warn<TAB>message"
+    local now=$1 stamp=$2 last=$3 sched=$4 age
+    age=$(( (now - stamp) / 3600 ))
+    if [[ -z "$sched" ]]; then
+        printf 'ok\tTRaSH sync %sh old (no update schedule: it syncs when you run trash-sync)' "$age"
+    elif [[ -n "$last" ]] && (( stamp < last && now - last > TRASH_RUN_GRACE )); then
+        printf 'warn\tTRaSH sync %sh old — the scheduled update of %s ran without syncing (its log: %s) — run: ./mediastack.sh trash-sync' \
+            "$age" "$(date -d "@$last" '+%a %F %R')" "${TRASH_LOG#"$SCRIPT_DIR/"}"
+    else
+        printf 'ok\tTRaSH sync %sh old' "$age"
+    fi
+}
+
 trash_stop() { # end a failed trash-sync: exit when it is the command run, return when the update runs it
     # Returned to main, a failure trips the ERR trap after the FAIL lines
     # ("unhandled failure ... return 1"); exit, as wire does — but the update

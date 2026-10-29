@@ -57,8 +57,10 @@ overrides on every run (generated file — never edit it), pushes the sentinel
 banner (idempotent), then runs the one-shot recyclarr container
 (`services/recyclarr/compose.yml`, profile-gated so `up` never starts it; it shares
 gluetun's namespace, so instance URLs are localhost and guide fetches ride
-the tunnel). Success stamps `local/trash-last-sync`; `doctor` warns when the
-stamp is older than 26h or missing.
+the tunnel). Success stamps `local/trash-last-sync`; `doctor` warns when it
+is missing, or when the last scheduled update ran (more than 6h ago) without
+the sync stamping after it. The sync's age follows the update schedule — a
+weekly schedule syncs weekly — so age alone is never the warning.
 
 The pinned `recyclarr:8` image is refreshed (patch releases) at the start of every trash-sync; a major version bump is a schema migration and stays a deliberate manual tag change in `services/recyclarr/compose.yml`.
 

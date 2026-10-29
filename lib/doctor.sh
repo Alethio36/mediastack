@@ -265,11 +265,10 @@ _doctor_vpn_backups() {
         || warn "re-pointing pending for $(state_get WIRE_REPOINT) (a VPN toggle moved it) — apply: ./mediastack.sh up"
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
         if [[ -s "$TRASH_STAMP" ]]; then
-            local tage=$(( ( $(date +%s) - $(cat "$TRASH_STAMP") ) / 3600 ))
-            local tsum=""
+            local tv tsum=""
             [[ -s "$TRASH_SUMMARY" ]] && tsum=" — last run: $(cat "$TRASH_SUMMARY")"
-            (( tage > 26 )) && warn "TRaSH sync is ${tage}h old — run: ./mediastack.sh trash-sync" \
-                            || ok "TRaSH sync ${tage}h old${tsum}"
+            tv=$(trash_age_verdict "$(date +%s)" "$(cat "$TRASH_STAMP")" "$(trash_update_last_run)" "$(env_get UPDATE_SCHEDULE)")
+            if [[ "${tv%%$'\t'*}" == ok ]]; then ok "${tv#*$'\t'}$tsum"; else warn "${tv#*$'\t'}"; fi
         else
             warn "TRaSH configured but never synced — run: ./mediastack.sh trash-sync"
         fi
