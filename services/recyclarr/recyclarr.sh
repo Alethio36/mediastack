@@ -47,7 +47,7 @@ trash_menu() {
   2) 720p    space saver (ours: smaller grabs, WEB-preferred)
   3) 4k      TRaSH UHD guide profile
   4) skip    leave this instance unmanaged"
-        ask TP "Choice for $s [1080p/720p/4k/skip]" "1080p"
+        ask TP "Choice for $s (1080p/720p/4k/skip)" "1080p"
         case "$REPLY_VAL" in
             1080p|720p|4k|skip) env_set "$key" "$REPLY_VAL" ;;
             *) die "Unknown choice '$REPLY_VAL' — expected 1080p, 720p, 4k or skip." ;;

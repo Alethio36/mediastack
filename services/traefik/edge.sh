@@ -44,7 +44,7 @@ usefully on your own network."
 Create one at dash.cloudflare.com -> My Profile -> API Tokens ->
 Create Token: give it the single permission  Zone / DNS / Edit,
 scoped to just this domain's zone. (Not the Global API Key.)"
-        ask_token "Paste the Cloudflare token (input is hidden)" "$token"; token="$REPLY_VAL"
+        ask_token "Paste the Cloudflare token (input hidden)" "$token"; token="$REPLY_VAL"
         explain "Certificates: real or testing?" \
 "  production  real certificates, trusted by every browser. Let's
               Encrypt allows only 5 identical ones per week, so
@@ -58,7 +58,7 @@ scoped to just this domain's zone. (Not the Global API Key.)"
               portal sign-in is skipped until production, and
               Audiobookshelf's is expected to fail."
         while true; do
-            ask AV "Certificate environment [production/staging]" "$(env_get ACME_ENV)"
+            ask AV "Certificate environment (production/staging)" "$(env_get ACME_ENV)"
             case "${REPLY_VAL,,}" in production|staging) acmeenv="${REPLY_VAL,,}"; break ;; *) fail "Type production or staging." ;; esac
         done
         env_set STACK_DOMAIN "$domain"; env_set ACME_EMAIL "$email"
@@ -318,7 +318,7 @@ cmd_traefik_certs() {
 Switching either way is safe: the stack resets the certificate store,
 restarts traefik, and the new environment reissues automatically."
     while true; do
-        ask AV "Certificate environment [production/staging]" "$cur"
+        ask AV "Certificate environment (production/staging)" "$cur"
         case "${REPLY_VAL,,}" in production|staging) env_set ACME_ENV "${REPLY_VAL,,}"; break ;; *) fail "Type production or staging." ;; esac
     done
     traefik_gen

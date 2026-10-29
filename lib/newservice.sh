@@ -37,8 +37,7 @@ folders and permissions — then it is enabled and started. Nothing to edit."
             ok "image found in its registry"; break
         fi
         warn "could not verify '$image' in its registry (typo? private image? offline?)"
-        _ns_ask "Use it anyway? [y/N]" ""
-        [[ "${REPLY_VAL,,}" == y* ]] && break
+        confirm "Use it anyway?" && break
     done
     while true; do
         _ns_ask "Port the app listens on INSIDE the container (see its docs)" ""; cport="$REPLY_VAL"
@@ -53,10 +52,8 @@ folders and permissions — then it is enabled and started. Nothing to edit."
 inside the VPN; apps that SERVE your own media to you run outside it (the
 tunnel adds latency and gains them nothing). Flip it any time:
 ./mediastack.sh vpn $name on|off"
-    _ns_ask "Route $name through the VPN? [y/N]" ""
-    [[ "${REPLY_VAL,,}" == y* ]] && vpn=true || vpn=false
-    _ns_ask "Does it keep settings/state in a config folder? [Y/n]" ""
-    [[ "${REPLY_VAL,,}" == n* ]] && cfg=false || cfg=true
+    if confirm "Route $name through the VPN?"; then vpn=true; else vpn=false; fi
+    if confirm_yes "Does it keep settings/state in a config folder?"; then cfg=true; else cfg=false; fi
     explain "Data access" \
 "  1) none         it needs no media at all
   2) serving      read-only view of the media library (players, readers)
@@ -135,8 +132,7 @@ service's UID, it fails and tells you to switch to 2)."
     _configure_selfheal   # allocate ${stem}_UID / _UPDATE like any new fragment
 
     # ---- enable + start ----
-    _ns_ask "Start it now? [Y/n]" ""
-    if [[ "${REPLY_VAL,,}" == n* ]]; then
+    if ! confirm_yes "Start it now?"; then
         hr "Next steps"
         echo "  ./mediastack.sh enable $name      create its user/folders and start it"
         echo "  ./mediastack.sh vpn $name on|off  change VPN membership (now: $(vpn_onoff "$vpn"))"

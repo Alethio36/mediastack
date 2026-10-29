@@ -182,7 +182,7 @@ cmd_wire() {
     fi
     if (( ! WIRE_DRY )) && [[ ! -f "$WIRED_FILE" && -z "$(state_get wire-restore-asked)" ]]; then
         state_set wire-restore-asked yes   # asked once, whatever the answer and however the run ends
-        if confirm_yes "First wire on this deployment — take a restore point first? (recommended)"; then
+        if confirm_yes "First wire on this deployment — take a restore point first?"; then
             backup_take manual "before the first wire"
             # the backup bounced every container — let the apps come back
             # before wiring their APIs

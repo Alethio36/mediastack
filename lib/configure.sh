@@ -66,7 +66,7 @@ NAS, and the arrs know it by path. Move or re-mount it yourself first,
 then enter the path here.
   keep   keep $var = $old (recommended unless the media is already at the new path)
   new    use $new; the old path is noted in .env and doctor keeps reminding you"
-        ask MV "Choice [keep/new]" "keep"; choice="$REPLY_VAL"
+        ask MV "Choice (keep/new)" "keep"; choice="$REPLY_VAL"
         case "$choice" in
             new)  env_set "${var}_PREVIOUS" "$old"; return 0 ;;
             keep) return 1 ;;
@@ -79,7 +79,7 @@ then enter the path here.
   leave  start empty at the new path; the old path is noted in .env and
          doctor warns until it is gone
   keep   keep $var = $old and change nothing"
-    ask MV "Choice [move/leave/keep]" "keep"; choice="$REPLY_VAL"
+    ask MV "Choice (move/leave/keep)" "keep"; choice="$REPLY_VAL"
     case "$choice" in
         keep)  return 1 ;;
         leave) env_set "${var}_PREVIOUS" "$old"; info "$old left in place — see doctor"; return 0 ;;
@@ -438,7 +438,7 @@ your own WireGuard details (for fussy/unlisted providers)."
                 env_set WIREGUARD_PRIVATE_KEY "$key"
                 ok "WireGuard key fetched and verified."
                 local cc
-                ask_countries "Server country (e.g. Switzerland; empty = auto)"
+                ask_countries "Server country (e.g. Switzerland; Enter = auto)"
                 cc="$REPLY_VAL"; env_set VPN_SERVER_COUNTRIES "$cc"
             fi ;;
         custom)
@@ -459,7 +459,7 @@ the remaining server-side settings to add to .env / an override file."
 "Follow gluetun's wiki for '$REPLY_VAL' to obtain your WireGuard private
 key, then paste it below. Country selection works the same for all."
             ask_token "WireGuard private key (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
-            ask_countries "Server country (empty = auto)"; env_set VPN_SERVER_COUNTRIES "$REPLY_VAL" ;;
+            ask_countries "Server country (Enter = auto)"; env_set VPN_SERVER_COUNTRIES "$REPLY_VAL" ;;
     esac
 
 }
@@ -521,9 +521,8 @@ on by default) — other apps aren't asked. Pick quiet times for YOUR household.
         sched_choose BACKUP_SCHEDULE Backups 1 "$(sched_time_after "$(env_get UPDATE_SCHEDULE)")" \
             "only updates and './mediastack.sh backup' take restore points"
         sched_summary
-        ask SCHED_KEEP "Keep these? (y/n)" y
+        if confirm_yes "Keep these?"; then echo; break; fi
         echo
-        [[ "${REPLY_VAL,,}" == n* ]] || break
     done
 }
 

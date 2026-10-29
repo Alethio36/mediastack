@@ -162,10 +162,16 @@ ask_valid() { # ask_valid TYPE VAR "prompt" "default" "what it must be" -> REPLY
     done
 }
 
+# How every question looks (test-prompts.sh holds them to it):
+#   a value             Prompt [default]:          no brackets when there is no default
+#   one of a few words  Prompt (a/b/c) [default]:  the choices in ( ), the default in [ ]
+#   yes or no           Question? [Y/n] / [y/N]:   confirm_yes / confirm — the capital is the default
+#   hidden input        Prompt (input hidden):     and "Enter = ..." for what an empty answer does
 ask() { # ask VAR "prompt" "default" -> sets REPLY_VAL
-    local def="$3" ans
+    local def="$3" ans hint=""
+    [[ -n "$def" ]] && hint=" [$def]"
     # input that has ended is no answer: a question asked again would spin forever
-    read -r -p "$2 [${def}]: " ans || [[ -n "$ans" ]] || die "no answer to '$2': the input ended"
+    read -r -p "$2$hint: " ans || [[ -n "$ans" ]] || die "no answer to '$2': the input ended"
     REPLY_VAL="${ans:-$def}"
 }
 
@@ -178,7 +184,7 @@ ask_token() { # ask_token "prompt" "current" -> REPLY_VAL; pasted secrets:
         read -r -s -p "$1${hint}: " a || [[ -n "$a" ]] || { echo; die "no answer to '$1': the input ended"; }; echo
         if [[ -z "$a" ]]; then
             [[ -n "${2:-}" ]] && { REPLY_VAL="$2"; info "keeping the current value"; return 0; }
-            warn "this value is required — paste it (input is hidden)"
+            warn "this value is required — paste it (input hidden)"
             continue
         fi
         REPLY_VAL="$a"; return 0

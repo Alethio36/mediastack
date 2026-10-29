@@ -44,7 +44,7 @@ there is no automation API for this by upstream design. Once, ever:
      then Test & Add
   4. Settings -> API Keys -> create one, and paste it below
 Paste nothing to skip for now — re-run 'wire wizarr' any time."
-        ask_token "Wizarr API key (input is hidden; empty = skip)" ""
+        ask_token "Wizarr API key (input hidden; Enter = skip)" ""
         key="$REPLY_VAL"
         [[ -n "$key" ]] || { info "skipped — invites stay in wizarr's UI until a key is stored"; return 0; }
         env_set WIZARR_API_KEY "$key"
