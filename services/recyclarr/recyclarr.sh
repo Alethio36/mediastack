@@ -257,6 +257,14 @@ trash_preview_summarize() { # $1 = captured `sync --preview` log -> "<count>|<su
 }
 
 # shellcheck disable=SC2120  # arguments arrive via main()'s registry dispatch
+trash_stop() { # end a failed trash-sync: exit when it is the command run, return when the update runs it
+    # Returned to main, a failure trips the ERR trap after the FAIL lines
+    # ("unhandled failure ... return 1"); exit, as wire does — but the update
+    # calls this in its own process, under an if, and goes on to report it
+    [[ "${CMD:-}" == trash-sync ]] && exit 1
+    return 1
+}
+
 trash_recyclarr() { # trash_recyclarr LOG [-t] ARGS... — one recyclarr run, shown and kept in LOG; returns recyclarr's exit code
     # The status is read inside the || : a bare "cmd | tee" that fails ends
     # the run under set -e before PIPESTATUS can be read — recyclarr's own
@@ -310,7 +318,7 @@ cmd_trash_sync() { # trash-sync [--dry-run]
     else
         trash_menu
         hr "trash-sync: provision"
-        trash_provision || { fail "trash-sync aborted: provisioning failed."; return 1; }
+        trash_provision || { fail "trash-sync aborted: provisioning failed."; trash_stop; return 1; }
         hr "trash-sync: generate config"
         trash_gen_config
     fi
@@ -324,7 +332,7 @@ cmd_trash_sync() { # trash-sync [--dry-run]
     hr "trash-sync: recyclarr"
     # a failed fetch makes recyclarr delete its guide copy: never start it
     # while the tunnel it rides cannot reach GitHub
-    vpn_egress_ready recyclarr || { (( WIRE_DRY )) && sudo rm -f "$preview"; return 1; }
+    vpn_egress_ready recyclarr || { (( WIRE_DRY )) && sudo rm -f "$preview"; trash_stop; return 1; }
     local slog rc summary
     slog=$(mktemp)
     if (( WIRE_DRY )); then
@@ -342,7 +350,7 @@ cmd_trash_sync() { # trash-sync [--dry-run]
             ok "preview complete — $summary"
         fi
         echo
-        if (( WIRE_FAILS )); then fail "dry-run finished with $WIRE_FAILS failure(s)."; return 1; fi
+        if (( WIRE_FAILS )); then fail "dry-run finished with $WIRE_FAILS failure(s)."; trash_stop; return 1; fi
         info "dry-run complete: $WIRE_CHANGES change(s) would be applied. Run without --dry-run to apply."
         return 0
     fi
@@ -362,7 +370,7 @@ cmd_trash_sync() { # trash-sync [--dry-run]
         wfail "recyclarr sync failed — output above is the evidence (also: cache/trash-sync.log)"
     fi
     if (( WIRE_FAILS )); then
-        fail "trash-sync finished with $WIRE_FAILS failure(s)."; return 1
+        fail "trash-sync finished with $WIRE_FAILS failure(s)."; trash_stop; return 1
     fi
     ok "trash-sync complete."
 }

@@ -13,7 +13,8 @@
 #     unread) is not named and the run goes on; a false (( )) is named like
 #     any other failure
 #   * a failed recyclarr run is handled by trash-sync, never trapped: its exit
-#     code and output kept (trash_recyclarr, services/recyclarr/recyclarr.sh)
+#     code and output kept (trash_recyclarr, services/recyclarr/recyclarr.sh);
+#     a failed trash-sync exits as the command, returns under update (trash_stop)
 #   * stopped_run's EXIT guard (lib/backup.sh) still restarts what it stopped,
 #     called guarded (the way backup calls it) and unguarded
 # Each case runs in its own bash that sources the real entrypoint (minus its
@@ -122,6 +123,16 @@ bare=$(grep -rnE -A1 '\| *tee ' mediastack.sh lib services | grep -E '^[^:]+-[0-
 [[ -z "$bare" ]] || fail_ "a pipeline's status is read after set -e already ended the run: $bare"; pass
 unguarded=$(grep -rnE '^\s*trash_recyclarr ' services | grep -v '|| rc=\$?' || true)
 [[ -z "$unguarded" ]] || fail_ "trash_recyclarr called without || rc=\$? (its failure would be trapped, not handled): $unguarded"; pass
+
+# ---- a failed trash-sync ends without the trap: exit as the command, return under update ----
+run 'CMD=trash-sync; f() { fail "trash-sync finished with 1 failure(s)."; trash_stop; return 1; }; f; echo after'
+(( rc == 1 && $(trap_lines) == 0 )) && ! grep -q after "$T/out" \
+    || fail_ "trash-sync as the command: exit $rc with $(trap_lines) trap line(s), expected 1 and 0"; pass
+run 'CMD=update; f() { fail "x"; trash_stop; return 1; }; if f; then echo ok; else echo "returned $?"; fi; echo after'
+grep -qx 'returned 1' "$T/out" && grep -qx after "$T/out" && (( $(trap_lines) == 0 )) \
+    || fail_ "trash-sync under update: must return 1 and let the update go on"; pass
+stops=$(awk '/^cmd_trash_sync\(\)/{f=1} f&&/^}/{exit} f&&/return 1/&&!/trash_stop; return 1/' services/recyclarr/recyclarr.sh)
+[[ -z "$stops" ]] || fail_ "cmd_trash_sync returns 1 without trash_stop (the trap would follow its FAIL lines): $stops"; pass
 
 # ---- stopped_run's EXIT guard still restarts ----
 run 'rc2=0; stopped_run backup "" false || rc2=$?; echo "rc=$rc2"'
