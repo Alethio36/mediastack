@@ -79,9 +79,11 @@ This follows `stable`, the release channel for everyday use (see
 ./mediastack.sh install
 ```
 
-Installs curl, git, jq, ca-certificates, argon2 and rsync, and Docker with
-its compose plugin from Docker's own repository (skipped when Docker is
-already there). Debian 12+ or Ubuntu 22.04+. Safe to re-run.
+Installs curl, git, jq, ca-certificates, argon2 and rsync, leak-test's tools
+(conntrack and tcpdump — uninstall removes them again unless they were
+already there), and Docker with its compose plugin from Docker's own
+repository (skipped when Docker is already there). Debian 12+ or Ubuntu
+22.04+. Safe to re-run: an existing install gets the tools that way.
 
 ### 3. Set it up
 
@@ -361,7 +363,8 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
   namespace, start only after the tunnel is verifiably up, qBittorrent's
   transfers are additionally bound to the tunnel interface itself (tun0),
   and `leak-test` proves the chain — who the internet sees over TCP and UDP,
-  every resolver that answers, gluetun's DNS and control server — without
+  every resolver that answers, gluetun's DNS, firewall and control server,
+  and the traffic the host itself sees leaving gluetun — without
   telling any one outside party both of your addresses. A check it cannot run
   is UNPROVEN, never a pass. Membership is operator-selectable with the
   `vpn` command and audited by the tooling — see

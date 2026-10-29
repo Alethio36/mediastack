@@ -28,8 +28,10 @@ vpn_reattach_guard() {
     (( ${#vdeps[@]} )) || { warn "vpn guard: no service:gluetun dependents in the rendered config — nothing to verify"; return 0; }
     gid=$(c_id "$(svc_cname gluetun)")
     [[ -n "$gid" ]] || die "vpn guard: cannot resolve the live gluetun container — VPN attachment unverifiable. Inspect gluetun, then re-run."
+    local running=0
     for vd in "${vdeps[@]}"; do
         [[ "$(c_state "$(svc_cname "$vd")")" == running ]] || continue
+        running=$((running + 1))
         nm=$(c_netmode "$(svc_cname "$vd")")
         [[ "$nm" == "container:$gid" ]] || stale+=("$vd")
     done
@@ -45,7 +47,9 @@ vpn_reattach_guard() {
         done
         ok "re-pinned ${#stale[@]} dependent(s) onto the live gluetun"
     fi
-    ok "VPN attachment verified: ${#vdeps[@]} dependent(s) on the live gluetun"
+    # what was checked, not what the config lists: a stopped dependent is not verified
+    if (( running == ${#vdeps[@]} )); then ok "VPN attachment verified: all $running dependent(s) on the live gluetun"
+    else ok "VPN attachment verified: $running running dependent(s) on the live gluetun ($(( ${#vdeps[@]} - running )) not running — checked when they start)"; fi
 }
 
 # --------------------------------------------------------- vpn boot guard --
@@ -156,18 +160,20 @@ cmd_leak_test() {
     hr "leak-test: DNS"
     lt_dns_config "$gcn"
     lt_dns_lan_path "$gcn"
+    lt_dns_host_path "$gcn"
     lt_dns_resolvers "$gcn" "$hok"
 
     hr "leak-test: gluetun's control server"
     lt_control_server "$gcn"
 
+    hr "leak-test: the firewall and the traffic"
+    lt_firewall "$gcn"
+    lt_flows "$gcn"
+
     hr "leak-test: kill-switch"
-    if sudo docker exec "$gcn" sh -c 'iptables -S OUTPUT 2>/dev/null | grep -qE -- "^-P OUTPUT DROP|-j DROP"'; then
-        lt_pass "firewall DROP rules present in gluetun"
+    if (( ! killswitch )); then
+        info "the disruptive proofs (tunnel dropped, gluetun stopped) run with --killswitch"
     else
-        lt_unproven "could not read gluetun's firewall rules (gluetun still defaults fail-closed)"
-    fi
-    if (( killswitch )); then
         warn "Disruptive proof: dropping the tunnel interface for ~10s..."
         sudo docker exec "$gcn" sh -c 'ip link set dev tun0 down' || true
         if sudo docker run --rm --network "container:$gcn" curlimages/curl:latest \
@@ -180,15 +186,21 @@ cmd_leak_test() {
 
         warn "Hard-stop proof: stopping gluetun ENTIRELY (~30s of downtime)..."
         sudo docker stop "$gcn" >/dev/null; INSPECT_JSON=""
-        local pcn; pcn=$(svc_cname qbittorrent)
-        if [[ $(c_state "$pcn") == running ]]; then
+        # any running torrent client joined to this gluetun probes it — not just
+        # qBittorrent; one moved out of the VPN (vpn ... --i-know) is no probe
+        local pcn="" ts tcn
+        for ts in $(svc_managed_where mediastack.torrent true); do
+            tcn=$(svc_cname "$ts")
+            [[ "$(c_state "$tcn")" == running && "$(c_netmode "$tcn")" == "container:$gid" ]] && { pcn=$tcn; break; }
+        done
+        if [[ -n "$pcn" ]]; then
             if sudo docker exec "$pcn" curl -fsS --max-time 6 https://github.com -o /dev/null >/dev/null 2>&1; then
                 lt_fail "egress SUCCEEDED from a dependent with gluetun STOPPED — containment broken"
             else lt_pass "zero egress from dependents with gluetun dead (namespace has no interfaces — fail-safe)"; fi
             if sudo docker exec "$pcn" sh -c 'ip route 2>/dev/null | grep -q default'; then
                 lt_fail "a default route appeared inside the dead namespace"
             else lt_pass "no fallback route appeared — docker cannot re-home a joined container"; fi
-        else info "qbittorrent not running — hard-stop probe skipped"; fi
+        else lt_unproven "hard stop: no torrent client is running in the tunnel to probe from"; fi
         info "Restarting gluetun and re-joining dependents..."
         sudo docker start "$gcn" >/dev/null; INSPECT_JSON=""
         wait_verdict --recover gluetun \

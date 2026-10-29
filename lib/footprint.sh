@@ -5,7 +5,8 @@
 # uninstall removes through it, doctor shows it, and CI fails a write outside
 # the repo that no provider owns (scripts/test-footprint.sh).
 # Sourced by the entrypoint; relies on lib/common.sh, lib/frontdoor.sh
-# (FRONTDOOR_*), services/gluetun/vpn.sh (VPNGUARD_UNIT) and lib/audit.sh at call time.
+# (FRONTDOOR_*), services/gluetun/vpn.sh (VPNGUARD_UNIT), services/gluetun/leak.sh
+# (LEAK_TOOLS) and lib/audit.sh at call time.
 #
 # One line per entry:  feature <TAB> kind <TAB> path <TAB> action
 #   kind   unit (a systemd unit file) | file | user | group | fstab | pkg
@@ -15,6 +16,8 @@
 #          users   the service users + group: uninstall's tier 2 asks first
 #          ask     a mount: uninstall offers it one at a time, default No
 #          keep    a host dependency (docker, packages): listed, never removed
+#          (a pkg) remove: one install put on this host itself (HOST_PKGS_FILE),
+#                  purged by uninstall; one that was already here is keep
 
 FSTAB=/etc/fstab
 FSTAB_MARK="# mediastack add-mount"   # the line add-mount writes above each entry it adds
@@ -26,7 +29,17 @@ FOOTPRINT_PREFIXES=(
     /etc/audit/rules.d/99-mediastack "$FSTAB" /etc/mediastack-cifs- /var/log/audit
     /etc/apt/keyrings /etc/apt/sources.list.d/docker
 )
-FOOTPRINT_FEATURES=(timers panel audit mounts users deps)
+FOOTPRINT_FEATURES=(timers panel audit mounts users deps leakcheck)
+
+# the packages `install` added because they were missing — only these are
+# purged on uninstall; one you already had stays yours. Inside the repo, so
+# an uninstall reads it before the folder goes; deleted, every package
+# counts as yours (the safe direction).
+HOST_PKGS_FILE="$LOCAL_DIR/host-packages"
+host_pkg_installed() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'; }
+host_pkg_ours()      { grep -qxF -- "$1" "$HOST_PKGS_FILE" 2>/dev/null; }
+host_pkg_mark()      { mkdir -p "$LOCAL_DIR"; host_pkg_ours "$1" || echo "$1" >> "$HOST_PKGS_FILE"; repo_owned "$LOCAL_DIR" "$HOST_PKGS_FILE"; }
+host_pkg_unmark()    { [[ -e "$HOST_PKGS_FILE" ]] || return 0; sed -i "/^$1\$/d" "$HOST_PKGS_FILE"; }
 
 fp_timers() {
     local u
@@ -69,6 +82,14 @@ fp_deps() { # what `install` added for docker; other packages are named in the i
     printf 'deps\tfile\t/etc/apt/sources.list.d/docker.list\tkeep\n'
 }
 
+fp_leakcheck() { # the host tools leak-test reads the traffic with (services/gluetun/leak.sh: LEAK_TOOLS)
+    local p
+    for p in $LEAK_TOOLS; do
+        if host_pkg_ours "$p"; then printf 'leakcheck\tpkg\t%s\tremove\n' "$p"
+        else printf 'leakcheck\tpkg\t%s\tkeep\n' "$p"; fi
+    done
+}
+
 fstab_marked() { # mountpoint <TAB> fstab entry, for every entry add-mount marked
     awk -v mark="$FSTAB_MARK" '
         index($0, mark " ") == 1 { m = substr($0, length(mark) + 2); next }
@@ -87,7 +108,7 @@ fp_present() { # fp_present KIND PATH -> 0 when it is on this host
         user)  getent passwd "$2" >/dev/null ;;
         group) getent group "$2" >/dev/null ;;
         fstab) fstab_marked | cut -f1 | grep -qxF -- "$2" ;;
-        pkg)   dpkg-query -W -f='${Status}' "$2" 2>/dev/null | grep -q 'install ok installed' ;;
+        pkg)   host_pkg_installed "$2" ;;
         *) die "footprint: unknown kind '$1'" ;;
     esac
 }
@@ -109,6 +130,8 @@ footprint_remove() { # footprint_remove feature... — remove every present entr
                   sudo rm -f "$path"; reload=1 ;;
             file) sudo rm -f "$path" ;;
             user) sudo userdel -r "$path" 2>/dev/null || sudo userdel "$path" ;;
+            pkg)  sudo apt-get purge -y -qq "$path" >/dev/null || die "apt could not remove $path (its error is above)."
+                  host_pkg_unmark "$path"; ok "$path removed (mediastack installed it)" ;;
             *) die "footprint: '$kind' entries are not removed this way ($feat $path)" ;;
         esac
     done < <(footprint_present "$@")

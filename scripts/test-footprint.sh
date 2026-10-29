@@ -11,6 +11,8 @@
 #     folder), only on a yes (default No), and a busy one is kept untouched
 #   * removal through the registry: every present "remove" entry, units
 #     stopped first, nothing marked keep/ask/users touched
+#   * leak-test's tools: only a package install added is purged on uninstall,
+#     and its mark goes with it; one already on the host is kept
 #   * uninstall removes every docker network docker-compose.yml names
 #
 #   scripts/test-footprint.sh     run (exit 1 on the first failed check)
@@ -98,6 +100,22 @@ userdel() { echo "userdel $*" >> "$T/log"; }
     || fail_ "registry removal: $(cat "$T/log")"; pass
 
 # a network the stack creates is one uninstall removes (mediastack-panel was added later)
+# ---- leak-test's tools: purged only when install put them there ----
+LOCAL_DIR="$T/local"; HOST_PKGS_FILE="$LOCAL_DIR/host-packages"; mkdir -p "$LOCAL_DIR"
+repo_owned() { :; }
+echo tcpdump > "$HOST_PKGS_FILE"
+[[ "$(fp_leakcheck)" == $'leakcheck\tpkg\tconntrack\tkeep\nleakcheck\tpkg\ttcpdump\tremove' ]] \
+    || fail_ "fp_leakcheck: the one install added is removed, the one you had is kept — got: $(fp_leakcheck)"; pass
+host_pkg_installed() { [[ "$1" == conntrack || "$1" == tcpdump ]]; }
+sudo() { echo "SUDO $*" >> "$T/sudo"; }
+: > "$T/sudo"; footprint_remove leakcheck
+grep -qx 'SUDO apt-get purge -y -qq tcpdump' "$T/sudo" && ! grep -q conntrack "$T/sudo" \
+    || fail_ "uninstall purged the wrong packages: $(cat "$T/sudo")"; pass
+! host_pkg_ours tcpdump || fail_ "a purged package is still marked as installed by mediastack"; pass
+host_pkg_mark conntrack; host_pkg_mark conntrack
+[[ "$(grep -c conntrack "$HOST_PKGS_FILE")" == 1 ]] || fail_ "host_pkg_mark recorded a package twice"; pass
+unset -f sudo host_pkg_installed
+
 want=$(awk '/^networks:/{n=1; next} n && /^[^ #]/{n=0} n && /^    name:/{print $2}' docker-compose.yml | sort | tr '\n' ' ')
 got=$(grep -oE 'for net in [a-z -]+; do' lib/lifecycle.sh | sed -E 's/for net in (.*); do/\1/' | tr ' ' '\n' | sort | tr '\n' ' ')
 [[ -n "$want" && "$want" == "$got" ]] || fail_ "uninstall removes networks '$got', docker-compose.yml names '$want'"; pass

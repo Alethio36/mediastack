@@ -5,6 +5,20 @@
 # lib/common.sh and the entrypoint's compose/service helpers at call time.
 
 # --------------------------------------------------------------- install --
+leak_tools_install() { # leak-test reads the host's traffic: conntrack (flows), tcpdump (a probe's packets)
+    local p need=()
+    for p in $LEAK_TOOLS; do
+        if host_pkg_installed "$p"; then
+            host_pkg_ours "$p" || info "$p already on this host — yours: uninstall keeps it"
+        else need+=("$p"); fi
+    done
+    (( ${#need[@]} )) || return 0
+    info "Installing leak-test's tools (${need[*]})..."
+    sudo apt-get install -y -qq "${need[@]}" >/dev/null || die "apt could not install ${need[*]} (its error is above)."
+    for p in "${need[@]}"; do host_pkg_mark "$p"; done
+    ok "${need[*]} installed — uninstall removes them again"
+}
+
 cmd_install() {
     hr "Host dependencies"
     [[ -r /etc/os-release ]] || die "Cannot read /etc/os-release — unsupported OS."
@@ -20,6 +34,7 @@ cmd_install() {
     sudo apt-get update -qq
     # shellcheck disable=SC2086  # one package per word
     sudo apt-get install -y -qq $base_pkgs >/dev/null
+    leak_tools_install
     if ! command -v docker >/dev/null 2>&1; then
         info "Installing Docker from Docker's official repository..."
         sudo install -m 0755 -d /etc/apt/keyrings
@@ -154,7 +169,8 @@ cmd_nuke() {
     hr "NUKE: remove everything the installer created"
     echo "Removes: containers, docker network, systemd units,"
     echo "         service users + group, CONFIG_ROOT, CACHE_ROOT, TRANSCODE_ROOT,"
-    echo "         the deletion-attribution watch (and auditd, if mediastack installed it)."
+    echo "         the deletion-attribution watch (and auditd, if mediastack installed it),"
+    echo "         leak-test's tools (conntrack, tcpdump) if mediastack installed them."
     echo "Keeps  : DATA_ROOT (your media), BACKUP_ROOT (restore points),"
     echo "         .env, this repo folder, and pulled docker images (shared"
     echo "         cache — 'docker image prune -a' reclaims them)."
@@ -168,6 +184,7 @@ cmd_nuke() {
     frontdoor_teardown
     ok "systemd units removed"
     audit_teardown yes
+    footprint_remove leakcheck
     footprint_mounts_list
     sudo docker ps -aq --filter "label=com.docker.compose.project=mediastack" \
         | xargs -r sudo docker rm -f -v >/dev/null
@@ -211,12 +228,14 @@ cmd_uninstall() {
     if [[ "${1:-}" == --nuke ]]; then cmd_nuke; return; fi
     load_env
     hr "Uninstall (tiered)"
-    echo "Tier 1: remove containers + docker network + the deletion-attribution watch (configs, data, users kept)"
+    echo "Tier 1: remove containers + docker network + the deletion-attribution watch"
+    echo "        + leak-test's tools if mediastack installed them (configs, data, users kept)"
     confirm "Proceed with tier 1?" || return 0
     DC down --remove-orphans --volumes; ok "containers removed (anonymous volumes included)"
     systemd_units_teardown
     frontdoor_teardown
     audit_off
+    footprint_remove leakcheck
     echo; echo "Mounts added by add-mount (each kept unless you say otherwise):"
     footprint_mounts_offer
     echo; echo "Tier 2: remove the service system users + group"

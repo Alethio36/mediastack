@@ -36,6 +36,14 @@ never to your home network's DNS (gluetun's `dns: 127.0.0.1`). A VPN'd app
 pointed at a machine on your LAN by a short name (`nas`) therefore fails — use
 its address.
 
+**A query sent to a private address from inside the tunnel** (your router's,
+say) is routed into the tunnel, never onto your LAN — and gets an answer
+anyway: something on the VPN's side answers port 53 for any private address,
+even one with no server behind it (found with NordVPN, Oct 2026; gluetun has
+no such redirect of its own). The apps never send such a query — they ask
+gluetun — but an app configured with its own DNS server would be answered
+by your VPN provider.
+
 ## From your home address
 
 | Who | Asked by | What they learn |
@@ -68,6 +76,12 @@ lookups through the VPN is on the roadmap (Security & access).
 - **The VPN side**, from inside gluetun: Mullvad's checker gives the exit
   address, Google's resolver the subnet a UDP query came from, bash.ws every
   resolver that answered ten never-seen names.
+- **What the host itself sees**, with no outside party at all: every
+  connection the host tracks from gluetun's address (conntrack) must go to the
+  VPN server or the stack's own network, and a lookup of a name nobody knows,
+  made inside the tunnel, must never leave the host as a query (tcpdump). Both
+  tools are added by `install` and removed by uninstall — unless they were
+  already on the host.
 - **The comparison is local.** A VPN-side address that is one of yours, or
   inside your network's blocks, is a leak (`FAIL`); a resolver in your own
   network is a leak. None of these parties is told about the other side.
