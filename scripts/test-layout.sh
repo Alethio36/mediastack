@@ -139,4 +139,11 @@ stray=$(grep -rnE '(tee|install|cat|cp|mv|rm|mkdir|touch)( -[a-z0-9]+)* "?cache/
           mediastack.sh lib services --include=*.sh | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' || true)
 [[ -z "$stray" ]] || fail_ "a repo-relative cache/ path (use LOCAL_DIR, or the CACHE_ROOT a container mounts): $stray"; pass
 
+# ---- the soak's moved clock never reaches curl ----
+# (faked, curl dropped Deluge's fresh session cookie as expired: the update
+# night reported drift that did not exist — proven Oct 2026)
+unpinned=$(grep -nE 'faketime -f' scripts/soak.sh | grep -v 'FAKETIME_SKIP_CMDS=\$SOAK_FAKETIME_SKIP' || true)
+[[ -z "$unpinned" ]] || fail_ "a faketime run in soak.sh without FAKETIME_SKIP_CMDS (curl would run on the moved clock): $unpinned"; pass
+grep -qx 'SOAK_FAKETIME_SKIP=curl' scripts/soak.sh || fail_ "soak.sh no longer keeps curl on the real clock"; pass
+
 echo "OK layout: $checks checks"

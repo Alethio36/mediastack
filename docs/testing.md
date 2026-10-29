@@ -75,9 +75,12 @@ scripts/soak.sh --test-box --days 7 --known ~/soak.known
 
 **Not covered:** only the script's own clock moves. Anything it runs through
 `sudo`, and the containers, see the real time, so a check that reads a
-timestamp they wrote is judged against the real time. `wire --verify` runs at
-the real time on purpose: under the moved clock qBittorrent's session read as
-expired and showed a login drift that does not exist.
+timestamp they wrote is judged against the real time. `curl` keeps the real
+clock too (`FAKETIME_SKIP_CMDS=curl`): moved, it judged an app's fresh session
+cookie already expired and dropped it — Deluge took the login, then refused
+the next call, and the update night's own `wire --verify` reported drift that
+did not exist (proven Oct 2026). The daily `wire --verify` runs at the real
+time as well.
 
 **What it has found so far** (first run, Oct 2026): every full update
 recreated gluetun's whole VPN group whether or not gluetun changed;

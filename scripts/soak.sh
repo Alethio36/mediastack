@@ -149,9 +149,17 @@ judge_points() {
     echo "  restore points: $n (retention keeps at most $keep)"
     (( n <= keep )) || problem "$n restore points — retention keeps at most $keep"
 }
+# Under the moved clock, curl judged an app's fresh session cookie already
+# expired and dropped it: Deluge took the login, then refused the next call
+# ("Not authenticated"), and the update night's own wire --verify reported
+# drift that did not exist (proven Oct 2026: faked, it fails; with curl on the
+# real clock, clean). The script's clock stays moved; curl keeps the real one,
+# for sessions and certificate dates alike.
+SOAK_FAKETIME_SKIP=curl
+
 judge_doctor() { # judge_doctor FAKE-TIME
     local out line
-    out=$(FAKETIME_DONT_RESET=1 faketime -f "@$1" ./mediastack.sh doctor 2>&1 | strip || true)
+    out=$(FAKETIME_DONT_RESET=1 FAKETIME_SKIP_CMDS=$SOAK_FAKETIME_SKIP faketime -f "@$1" ./mediastack.sh doctor 2>&1 | strip || true)
     while IFS= read -r line; do
         [[ "$line" == "FAIL doctor:"* ]] && continue
         is_known "$line" || problem "doctor: ${line#FAIL }"
@@ -160,8 +168,8 @@ judge_doctor() { # judge_doctor FAKE-TIME
         && problem "doctor: a notification stream's last send failed ($(grep -m1 'the last notification failed' <<<"$out"))"
     return 0
 }
-judge_wire() { # at the real time: under the moved clock, qBittorrent's session cookie read as
-    # expired and every day showed a login drift that does not exist (first soak, Oct 2026)
+judge_wire() { # at the real time, as it always was (first soak, Oct 2026: under the moved
+    # clock every day showed a login drift that does not exist — the cookie cause, at SOAK_FAKETIME_SKIP)
     local out
     if ! out=$(./mediastack.sh wire --verify 2>&1 | strip); then
         problem "wire --verify: $(grep -E '^(FAIL|  would:)' <<<"$out" | head -5 | tr '\n' ' ')"
@@ -174,7 +182,7 @@ run_job() { # run_job JOB FAKE-TIME|"" -> the job's unit, under the simulated cl
     if [[ -n "$at" ]]; then
         # shellcheck disable=SC2086  # the unit's ExecStart, word-split as systemd does
         sudo systemd-run --quiet --wait --pipe --collect --unit="$unit" -p WorkingDirectory="$REPO" \
-            -E FAKETIME_DONT_RESET=1 /usr/bin/faketime -f "@$at" $cmd </dev/null | strip | sed 's/^/    | /' || rc=$?
+            -E FAKETIME_DONT_RESET=1 -E FAKETIME_SKIP_CMDS=$SOAK_FAKETIME_SKIP /usr/bin/faketime -f "@$at" $cmd </dev/null | strip | sed 's/^/    | /' || rc=$?
     else
         sudo systemctl start --wait "mediastack-$job.service" || rc=$?
     fi
