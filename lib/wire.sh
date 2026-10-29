@@ -153,7 +153,7 @@ wire_services() { # the enabled services the wire roles touch — derived, so a 
     done
 }
 
-oneline() { tr -s '[:space:]' ' ' <<<"$1" | head -c 200; }   # an app's (multi-line JSON) reply, for a message
+oneline() { tr -s '[:space:]' ' ' <<<"$1" | sed 's/^ //; s/ $//' | head -c 200; }   # an app's (multi-line JSON) reply, for a message — no stray space at either end (it showed as "refused )")
 
 wire_usage() { local IFS='|'; die "usage: wire [${WIRE_ROLES[*]}] [--dry-run|--verify]"; }
 

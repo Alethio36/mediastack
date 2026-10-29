@@ -83,7 +83,6 @@ lt_unproven x > /dev/null; [[ $(lt_exit_code) == 2 ]] || fail_ "an unproven chec
 lt_fail x > /dev/null; [[ $(lt_exit_code) == 1 ]] || fail_ "a failure outranks it: 1"; pass
 
 # ---- the tunnel address ----
-oneline() { tr -s '[:space:]' ' ' <<<"$1" | head -c 200; }
 EXEC_OUT="" EXEC_RC=0
 sudo() { [[ "$2" == exec ]] || return 1; echo "$EXEC_OUT"; return "$EXEC_RC"; }
 tun() { EXEC_OUT=$1; EXEC_RC=${2:-0}; lt_reset; lt_tunnel_ip mediastack-gluetun "${HOK:-1}" > "$T/out" 2>&1; }

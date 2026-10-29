@@ -53,6 +53,8 @@ jobs:
         run: scripts/test-ll-client.sh
       - name: one render per command, not one per helper (scripts/test-render-cache.sh)
         run: scripts/test-render-cache.sh
+      - name: Jellyfin's plugins — why an install fails, doctor's checks; Prowlarr's FlareSolverr registration (scripts/test-jf-plugins.sh)
+        run: scripts/test-jf-plugins.sh
       - name: leak-test's checks — verdicts, the host's own address, the tunnel, UDP, DNS, the control server (scripts/test-leak.sh)
         run: scripts/test-leak.sh
       - name: night jobs — the VPN group recreated only on a gluetun change, the tunnel ready before recyclarr, Prowlarr's health re-checked (scripts/test-night-jobs.sh)

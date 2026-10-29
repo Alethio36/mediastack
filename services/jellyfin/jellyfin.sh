@@ -15,6 +15,32 @@ jf_plugin_ids() { # jf_plugin_ids PLUGINS-JSON -> "|id|id|" (dashes removed, low
 }
 jf_guid() { tr -d '-' <<<"$1" | tr '[:upper:]' '[:lower:]'; }
 
+jf_repo_reach() { # jf_repo_reach URL -> "" when Jellyfin itself reaches it; else what stopped it (asked from inside its container)
+    local out code msg
+    out=$(sudo docker exec "$(svc_cname jellyfin)" curl -sS -m 10 -o /dev/null -w '\n%{http_code}' "$1" 2>&1) || true
+    code=${out##*$'\n'}; msg=${out%$'\n'*}; [[ "$out" == *$'\n'* ]] || msg=""
+    [[ "$code" =~ ^[23][0-9][0-9]$ ]] && return 0
+    if [[ -n "$msg" ]]; then oneline "$msg"; else echo "HTTP ${code:-none}"; fi
+}
+
+jf_catalog_reason() { # jf_catalog_reason TOKEN -> why Jellyfin has nothing to install (", <reason>"), or "" when its catalog is not empty
+    # Jellyfin answers 404 to an install when its catalog is empty, and it is
+    # empty when it cannot reach its repository (found live, Oct 2026: a
+    # network block refused repo.jellyfin.org) — say that, not just "404"
+    local pk n repos url why=""
+    pk=$(jf_api GET /Packages "$1" 2>/dev/null) || return 0
+    n=$(jq 'length' <<<"$pk" 2>/dev/null || echo "?")
+    [[ "$n" == 0 ]] || return 0
+    repos=$(jf_api GET /Repositories "$1" 2>/dev/null) || { echo ", Jellyfin's plugin catalog is empty"; return 0; }
+    while IFS= read -r url; do
+        [[ -n "$url" ]] || continue
+        local r; r=$(jf_repo_reach "$url")
+        [[ -n "$r" ]] && why+="$url: $r; "
+    done < <(jq -r '.[] | select(.Enabled) | .Url' <<<"$repos" 2>/dev/null)
+    if [[ -n "$why" ]]; then echo ", Jellyfin's plugin catalog is empty — Jellyfin cannot reach its repository (${why%; }); something on this network blocks it"
+    else echo ", Jellyfin's plugin catalog is empty (its repository answers now — retry)"; fi
+}
+
 jf_plugins_ensure() { # jf_plugins_ensure TOKEN "Name|GUID|why"... — install what is missing, then ONE jellyfin restart
     local tok="$1"; shift
     local plist plugins spec name guid why missing=() mguids=()
@@ -25,8 +51,10 @@ jf_plugins_ensure() { # jf_plugins_ensure TOKEN "Name|GUID|why"... — install w
         IFS='|' read -r name guid why <<<"$spec"
         if [[ "$plugins" == *"|$(jf_guid "$guid")|"* ]]; then ok "$name plugin installed"; continue; fi
         w_would "install Jellyfin's $name plugin ($why)" || continue
-        jf_api POST "/Packages/Installed/$(jq -rn --arg n "$name" '$n|@uri')?assemblyGuid=$guid" "$tok" >/dev/null \
-            || { wfail "$name plugin install rejected [HTTP $(jf_code)] — install it in Dashboard -> Plugins -> Catalog"; return 1; }
+        if ! jf_api POST "/Packages/Installed/$(jq -rn --arg n "$name" '$n|@uri')?assemblyGuid=$guid" "$tok" >/dev/null; then
+            local code; code=$(jf_code)
+            wfail "$name plugin install rejected [HTTP $code]$(jf_catalog_reason "$tok") — then: ./mediastack.sh wire jellyfin"; return 1
+        fi
         missing+=("$name"); mguids+=("$guid")
     done
     (( ${#missing[@]} )) || return 0
@@ -432,7 +460,37 @@ jellyfin_doctor() { # doctor: apps — claimed, and the stack key works
             *)   warn "jellyfin API key check inconclusive (HTTP $(jf_code))" ;;
         esac
         jellyfin_doctor_proxies "$jkey"
+        jellyfin_doctor_plugins "$jkey"
     fi
+}
+
+jellyfin_doctor_plugins() { # jellyfin_doctor_plugins KEY — the plugins the stack depends on are loaded; their repository is reachable
+    local plist need=() spec name guid why st
+    signin_is authentik && need+=("LDAP Authentication|$JF_LDAP_GUID|portal accounts cannot sign in to Jellyfin")
+    svc_enabled watchstate && need+=("Webhook|71552A5A-5C5C-4350-A2AE-EBE451A30173|WatchState gets no play events from Jellyfin")
+    if (( ${#need[@]} )); then
+        plist=$(jf_api GET /Plugins "$1" 2>/dev/null) || { warn "jellyfin's plugins unreadable [HTTP $(jf_code)] — not checked"; plist=""; }
+        if [[ -n "$plist" ]]; then
+            for spec in "${need[@]}"; do
+                IFS='|' read -r name guid why <<<"$spec"
+                st=$(jq -r --arg g "$(jf_guid "$guid")" '.[] | select((.Id | ascii_downcase | gsub("-"; "")) == $g) | .Status' <<<"$plist" 2>/dev/null | head -1)
+                case "$st" in
+                    Active) ok "jellyfin: $name plugin loaded" ;;
+                    "")     d_fail "jellyfin: $name plugin is not installed" "$why" "./mediastack.sh wire jellyfin" ;;
+                    *)      d_fail "jellyfin: $name plugin is $st, not loaded" "$why" "./mediastack.sh restart jellyfin — still not Active: reinstall it in Dashboard -> Plugins" ;;
+                esac
+            done
+        fi
+    fi
+    # updates and installs need the repository: a block shows here, not as a bare 404 later
+    local repos url r
+    repos=$(jf_api GET /Repositories "$1" 2>/dev/null) || return 0
+    while IFS= read -r url; do
+        [[ -n "$url" ]] || continue
+        r=$(jf_repo_reach "$url")
+        if [[ -z "$r" ]]; then ok "jellyfin reaches its plugin repository ($url)"
+        else warn "jellyfin cannot reach its plugin repository ($url: $r) — plugin installs and updates fail; something on this network blocks it"; fi
+    done < <(jq -r '.[] | select(.Enabled) | .Url' <<<"$repos" 2>/dev/null)
 }
 
 jellyfin_doctor_proxies() { # jellyfin_doctor_proxies KEY — behind Traefik, Jellyfin trusts it (else every client looks like Traefik)

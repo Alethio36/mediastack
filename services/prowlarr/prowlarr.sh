@@ -176,14 +176,20 @@ JSON
                     "host=http://$(svc_addr flaresolverr)/"
             fi
         elif w_would "register FlareSolverr as indexer proxy"; then
-            api POST "$purl/api/v1/indexerproxy" "$pkey" "$(cat <<JSON
+            # Prowlarr tests a proxy before saving it — through FlareSolverr,
+            # which starts its browser on that first request. On a fresh stack
+            # that outlasts api's default 20s (the first wire failed, a re-run
+            # minutes later passed, Oct 2026): the re-test's wait applies here
+            # too, and a failure keeps Prowlarr's answer as the evidence
+            local fout
+            if fout=$(API_TIMEOUT=$PROWLARR_TEST_WAIT api POST "$purl/api/v1/indexerproxy" "$pkey" "$(cat <<JSON
 {"name":"FlareSolverr (mediastack)","implementation":"FlareSolverr",
  "configContract":"FlareSolverrSettings","tags":[${fid:-}],
  "fields":[{"name":"host","value":"http://$(svc_addr flaresolverr)/"},
    {"name":"requestTimeout","value":60}]}
 JSON
-)" >/dev/null && ok "flaresolverr proxy registered (tag 'flared')" \
-              || wfail "flaresolverr proxy registration failed"
+)"); then ok "flaresolverr proxy registered (tag 'flared')"
+            else wfail "flaresolverr proxy registration failed — $(oneline "${fout:-no answer}")"; fi
         fi
     fi
     prowlarr_download_client
