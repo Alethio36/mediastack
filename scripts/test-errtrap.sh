@@ -12,6 +12,8 @@
 #     its line in the caller; a process substitution's failure (its status
 #     unread) is not named and the run goes on; a false (( )) is named like
 #     any other failure
+#   * a failed recyclarr run is handled by trash-sync, never trapped: its exit
+#     code and output kept (trash_recyclarr, services/recyclarr/recyclarr.sh)
 #   * stopped_run's EXIT guard (lib/backup.sh) still restarts what it stopped,
 #     called guarded (the way backup calls it) and unguarded
 # Each case runs in its own bash that sources the real entrypoint (minus its
@@ -105,6 +107,21 @@ run 'f_psub'
 run 'f_arith'
 (( rc == 1 && $(trap_lines) == 1 )) && grep -qF "fx.sh:$(line_of arith) in f_arith: (( n > 0 ))" "$T/err" \
     || fail_ "a false (( )) under set -e was not named"; pass
+
+# ---- a recyclarr run that fails is handled, not trapped (trash_recyclarr) ----
+run 'DC() { echo "DC $*"; echo "[ERR] sonarr-anime: HTTP 500"; return 1; }
+     log=$T/slog; rc=0; trash_recyclarr "$log" sync || rc=$?; echo "rc=$rc"; trash_recyclarr "$log" -t sync --preview || echo "preview rc=$?"'
+grep -qx 'rc=1' "$T/out" && grep -qx 'preview rc=1' "$T/out" && (( $(trap_lines) == 0 )) \
+    || fail_ "a failed recyclarr run: exit code lost, or the trap spoke ($(trap_lines) line(s))"; pass
+grep -qx '\[ERR\] sonarr-anime: HTTP 500' "$T/slog" || fail_ "a failed recyclarr run: its output is not in the log"; pass
+grep -qx 'DC run --rm -t --no-deps recyclarr sync --preview' "$T/out" && grep -qx 'DC run --rm --no-deps recyclarr sync' "$T/out" \
+    || fail_ "trash_recyclarr: compose arguments not as before (-t only for the preview)"; pass
+# the bug was the call site, so the call sites are what is pinned: a bare
+# "cmd | tee" whose status is read on the next line dies under set -e first
+bare=$(grep -rnE -A1 '\| *tee ' mediastack.sh lib services | grep -E '^[^:]+-[0-9]+-.*PIPESTATUS' || true)
+[[ -z "$bare" ]] || fail_ "a pipeline's status is read after set -e already ended the run: $bare"; pass
+unguarded=$(grep -rnE '^\s*trash_recyclarr ' services | grep -v '|| rc=\$?' || true)
+[[ -z "$unguarded" ]] || fail_ "trash_recyclarr called without || rc=\$? (its failure would be trapped, not handled): $unguarded"; pass
 
 # ---- stopped_run's EXIT guard still restarts ----
 run 'rc2=0; stopped_run backup "" false || rc2=$?; echo "rc=$rc2"'

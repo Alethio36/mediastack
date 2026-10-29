@@ -257,6 +257,18 @@ trash_preview_summarize() { # $1 = captured `sync --preview` log -> "<count>|<su
 }
 
 # shellcheck disable=SC2120  # arguments arrive via main()'s registry dispatch
+trash_recyclarr() { # trash_recyclarr LOG [-t] ARGS... — one recyclarr run, shown and kept in LOG; returns recyclarr's exit code
+    # The status is read inside the || : a bare "cmd | tee" that fails ends
+    # the run under set -e before PIPESTATUS can be read — recyclarr's own
+    # error then reached the operator as "unhandled failure" with no FAIL line
+    # and no cache/trash-sync.log (found live, Oct 2026; the nightly path ran
+    # it under an if, where set -e is off, and handled it)
+    local log=$1 tty=() rc=0; shift
+    [[ "${1:-}" == -t ]] && { tty=(-t); shift; }
+    DC run --rm "${tty[@]}" --no-deps recyclarr "$@" 2>&1 | tee "$log" || rc=${PIPESTATUS[0]}
+    return "$rc"
+}
+
 cmd_trash_sync() { # trash-sync [--dry-run]
     WIRE_FAILS=0; WIRE_CHANGES=0; WIRE_DRY=0
     [[ "${1:-}" == --dry-run ]] && WIRE_DRY=1
@@ -314,8 +326,7 @@ cmd_trash_sync() { # trash-sync [--dry-run]
     if (( WIRE_DRY )); then
         # -t: force a pseudo-TTY even though our stdout is a pipe — without it
         # recyclarr enters log mode and prints no preview at all
-        DC run --rm -t --no-deps recyclarr sync --preview --config /config/recyclarr.preview.yml 2>&1 | tee "$slog"
-        rc=${PIPESTATUS[0]}
+        rc=0; trash_recyclarr "$slog" -t sync --preview --config /config/recyclarr.preview.yml || rc=$?
         sudo rm -f "$preview"
         summary=$(trash_preview_summarize "$slog"); rm -f "$slog"
         WIRE_CHANGES=$((WIRE_CHANGES + ${summary%%|*})); summary=${summary#*|}
@@ -336,8 +347,7 @@ cmd_trash_sync() { # trash-sync [--dry-run]
     DC pull -q recyclarr 2>/dev/null \
         && info "recyclarr image: pinned tag up to date" \
         || warn "recyclarr image pull failed (registry unreachable?) — syncing with the local image"
-    DC run --rm --no-deps recyclarr sync 2>&1 | tee "$slog"
-    rc=${PIPESTATUS[0]}
+    rc=0; trash_recyclarr "$slog" sync || rc=$?
     summary=$(trash_summarize "$slog")
     sudo install -m 644 "$slog" cache/trash-sync.log; rm -f "$slog"
     if (( rc == 0 )); then
