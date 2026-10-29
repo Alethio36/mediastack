@@ -33,16 +33,12 @@ Before continuing, two things must exist at dash.cloudflare.com:
      with the proxy toggle OFF (grey cloud, 'DNS only')
 This exposes nothing to the internet — the addresses only resolve
 usefully on your own network."
-        while true; do
-            ask TD "Base domain (e.g. media.example.com)" "${domain}"; domain="${REPLY_VAL,,}"
-            env_type_ok domain "$domain" && break
+        while true; do   # lowercased before the check: ask_valid would judge it as typed
+            ask TD "Base domain (e.g. media.example.com)" "${domain}"
+            env_type_ok domain "${REPLY_VAL,,}" && { domain="${REPLY_VAL,,}"; break; }
             fail "'$REPLY_VAL' is not a domain name (e.g. media.example.com)."
         done
-        while true; do
-            ask AE "Email for certificate-expiry notices" "${email}"; email="$REPLY_VAL"
-            env_type_ok email "$email" && break
-            fail "'$REPLY_VAL' is not an email address."
-        done
+        ask_valid email AE "Email for certificate-expiry notices" "${email}" "an email address"; email="$REPLY_VAL"
         explain "Cloudflare API token" \
 "Lets the stack prove to Let's Encrypt that you control the domain.
 Create one at dash.cloudflare.com -> My Profile -> API Tokens ->

@@ -55,6 +55,8 @@ jobs:
         run: scripts/test-render-cache.sh
       - name: Jellyfin's plugins — why an install fails, doctor's checks; Prowlarr's FlareSolverr registration (scripts/test-jf-plugins.sh)
         run: scripts/test-jf-plugins.sh
+      - name: the wizards' refused answers — a backslash path, the fstab check as text, a refused answer never the default (scripts/test-prompts.sh)
+        run: scripts/test-prompts.sh
       - name: leak-test's checks — verdicts, the host's own address, the tunnel, UDP, DNS, the control server (scripts/test-leak.sh)
         run: scripts/test-leak.sh
       - name: night jobs — the VPN group recreated only on a gluetun change, the tunnel ready before recyclarr, Prowlarr's health re-checked (scripts/test-night-jobs.sh)

@@ -12,9 +12,17 @@ configure_root() { # configure_root VAR title "explanation..." allow_network(yes
     explain "$title" "$text"
     while true; do
         ask "$var" "$title path" "$cur"; val=$(abspath "$REPLY_VAL")
+        # a backslash is the key beside Enter: kept, it named a folder "\"
+        # (found live: CACHE_ROOT=.../mediastack/\, and every later use broke)
+        if [[ "$val" == *\\* ]]; then
+            fail "'$REPLY_VAL' has a backslash in it — a slip of the key beside Enter? Paths use '/'. Enter it again."
+            continue
+        fi
         # Network shares must be mounted BEFORE this wizard runs — we record
-        # the mount identity now and guard it forever after. Catch the trap:
-        if grep -qsE "[[:space:]]${val}[[:space:]]" /etc/fstab && ! findmnt -rn "$val" >/dev/null 2>&1; then
+        # the mount identity now and guard it forever after. Catch the trap.
+        # The path is matched as text, never as a pattern: it went into a
+        # regex once, and a path with a backslash broke grep.
+        if awk -v p="$val" '$1 !~ /^#/ && $2 == p { f = 1 } END { exit !f }' "$FSTAB" 2>/dev/null && ! findmnt -rn "$val" >/dev/null 2>&1; then
             fail "'$val' is listed in /etc/fstab but NOT currently mounted.
   Continuing would record the wrong disk as this path's home. Fix first:
   sudo mount '$val'   (then re-enter the path here)"

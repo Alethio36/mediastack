@@ -151,6 +151,17 @@ env_set() { # env_set VAR value  (idempotent upsert, preserves file order)
 # wire. Each answer lands in REPLY_VAL.
 explain() { echo; hr "$1"; shift; printf '%s\n' "$@"; echo; }
 
+ask_valid() { # ask_valid TYPE VAR "prompt" "default" "what it must be" -> REPLY_VAL, once env_type_ok TYPE accepts it
+    # A refused answer is said and asked again — and never becomes the default
+    # (found live: "alethio36" refused as an email, then offered as the default,
+    # so Enter re-sent it until someone typed the whole address)
+    while true; do
+        ask "$2" "$3" "$4"
+        env_type_ok "$1" "$REPLY_VAL" && return 0
+        fail "'$REPLY_VAL' is not $5."
+    done
+}
+
 ask() { # ask VAR "prompt" "default" -> sets REPLY_VAL
     local def="$3" ans
     # input that has ended is no answer: a question asked again would spin forever
