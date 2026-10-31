@@ -851,6 +851,7 @@ what would reopen it, in [docs/watchlist.md](docs/watchlist.md).
 * [docs/adding-a-service.md](docs/adding-a-service.md) — extend the stack
 * [docs/migration-existing.md](docs/migration-existing.md) — adopt an existing deployment
 * [docs/disaster-recovery.md](docs/disaster-recovery.md) — full rebuild from a restore point
+* [docs/troubleshooting.md](docs/troubleshooting.md) — problems that look like the stack but aren't (e.g. Android phones blocked from the LAN)
 * [docs/roadmap.md](docs/roadmap.md) — project goals, architecture rules, and open work
 * [docs/watchlist.md](docs/watchlist.md) — rejected, parked and deferred items, each with what would reopen it
 * [docs/frontdoor.md](docs/frontdoor.md) — the OliveTin web panel: what it is, enabling it, the buttons
