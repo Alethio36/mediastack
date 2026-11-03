@@ -107,4 +107,21 @@ v=$(trash_age_verdict $NOW $((NOW - 30 * 24 * H)) "" "")
 v=$(trash_age_verdict $NOW $((NOW - 3 * H)) "" "*-*-* 04:00")
 [[ "${v%%$'\t'*}" == ok ]] || fail_ "a timer that never fired yet: fine ($v)"; pass
 
+# ---- the update's TRaSH step: never set up is said, not skipped silently ----
+TD=$(mktemp -d); pushd "$TD" >/dev/null
+info() { echo "INFO $*"; }; recyclarr_pin_notice() { :; }
+cmd_trash_sync() { echo SYNCED; }
+trash_instances() { printf '%s\n' sonarr radarr; }
+: > .env; UPDATE_SYNC=""
+out=$(update_trash_sync; echo "SYNC=$UPDATE_SYNC")
+[[ "$out" == *"trash-sync: never set up on this stack — skipped"* && "$out" == *"SYNC=never set up"* && "$out" != *SYNCED* ]] \
+    || fail_ "arrs to manage, no profile chosen: the update says it skipped — $out"; pass
+trash_instances() { :; }
+out=$(update_trash_sync; echo "SYNC=$UPDATE_SYNC")
+[[ "$out" == "SYNC=" ]] || fail_ "nothing to manage: nothing said — $out"; pass
+echo "TRASH_PROFILE_SONARR=1080p" > .env
+out=$(update_trash_sync; echo "SYNC=$UPDATE_SYNC")
+[[ "$out" == *SYNCED*"SYNC=done"* ]] || fail_ "a profile chosen: it syncs — $out"; pass
+popd >/dev/null; rm -rf "$TD"
+
 echo "test-night-jobs: $checks checks passed"

@@ -75,4 +75,12 @@ weekly). In timer context, instances without a stored choice are set to
 `skip` with a warning rather than blocking the pipeline on a prompt; a
 failed sync step fails the pipeline's exit status loudly but never rolls
 back or masks the update result. Last-run summary: doctor's TRaSH line and
-local/trash-sync.log.
+local/trash-sync.log. Never set up (no profile chosen yet, with arrs it
+could manage): the update says it skipped the step, in its log and in ops'
+"updated" message, every run until `./mediastack.sh trash-sync` is run once
+at a terminal.
+
+Sonarr 4.0.20 has a custom-format cache bug (Nov 2026, upstream): recyclarr's
+create can fail with HTTP 500 (KeyNotFound), and the retry then with 409
+(UNIQUE constraint) — the format was half-written. One restart of that Sonarr
+instance clears it: `./mediastack.sh restart sonarr`, then `trash-sync` again.

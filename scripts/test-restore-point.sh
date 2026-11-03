@@ -316,7 +316,7 @@ done
 # household hears "complete" as soon as its services are back
 upd=$(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh)
 n_users=$(grep -n 'notify_interruption "$ntitle complete"' <<<"$upd" | cut -d: -f1)
-n_sync=$(grep -n 'if cmd_trash_sync; then' <<<"$upd" | cut -d: -f1 || true)
+n_sync=$(grep -n '^    update_trash_sync$' <<<"$upd" | cut -d: -f1 || true)   # the step (update_trash_sync) runs cmd_trash_sync
 n_ops=$(grep -n 'update_summary "${changed\[@\]}"' <<<"$upd" | cut -d: -f1 || true)
 n_exit=$(grep -n '"$UPDATE_SYNC" != FAILED' <<<"$upd" | cut -d: -f1 || true)
 [[ -n "$n_users" && -n "$n_sync" && -n "$n_ops" && -n "$n_exit" ]] && (( n_users < n_sync && n_sync < n_ops && n_ops < n_exit )) \

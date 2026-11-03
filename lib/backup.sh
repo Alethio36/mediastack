@@ -1007,6 +1007,14 @@ cmd_update() {
         update_verify_wiring
     fi
 
+    update_trash_sync
+
+    # ops still hears what changed when trash-sync failed; the run fails after it
+    if (( ${#changed[@]} )); then update_summary "${changed[@]}"; fi
+    [[ "$UPDATE_SYNC" != FAILED ]] || exit 1
+}
+
+update_trash_sync() { # the update pipeline's TRaSH step -> UPDATE_SYNC: done | FAILED | never set up | "" (nothing to manage)
     # nightly TRaSH sync rides the update pipeline: same schedule the
     # operator already chose, guides drift-window stays at one cycle.
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
@@ -1018,11 +1026,10 @@ cmd_update() {
             notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded."$'\n'"Inspect: \`./mediastack.sh trash-sync\`" failure
             UPDATE_SYNC=FAILED
         fi
+    elif [[ -n "$(trash_instances)" ]]; then   # arrs it could manage, never set up: said, not skipped silently
+        info "trash-sync: never set up on this stack — skipped (once, at a terminal: ./mediastack.sh trash-sync)"
+        UPDATE_SYNC="never set up — skipped (once, at a terminal: \`./mediastack.sh trash-sync\`)"
     fi
-
-    # ops still hears what changed when trash-sync failed; the run fails after it
-    if (( ${#changed[@]} )); then update_summary "${changed[@]}"; fi
-    [[ "$UPDATE_SYNC" != FAILED ]] || exit 1
 }
 
 update_summary() { # update_summary CHANGED... — ops' one "updated" message, last: what changed, how verify and trash-sync went
