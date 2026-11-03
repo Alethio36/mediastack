@@ -112,7 +112,13 @@ wire_gate() { # refuse to wire what isn't up
         svc_enabled "$s" || continue
         [[ "$(c_state "$(svc_cname "$s")")" == running ]] || missing+="$s "
     done
-    [[ -z "$missing" ]] || die "Cannot wire: not running: $missing
+    [[ -n "$missing" ]] || return 0
+    if leak_gate_closed; then   # held stopped by a proven leak: up alone would not start them
+        for s in $missing; do
+            if vpn_group | grep -qxF -- "$s"; then leak_gate_refuse "Cannot wire: $s is in the VPN group"; fi
+        done
+    fi
+    die "Cannot wire: not running: $missing
   Start the stack first: ./mediastack.sh up   (then wait for healthy: status)"
 }
 

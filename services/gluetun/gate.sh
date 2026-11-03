@@ -88,10 +88,12 @@ leak_gate_up() { # up's gate: the full leak-test before the VPN group starts; a 
     local rc=0
     hr "Leak gate: proving gluetun before the VPN'd services start"
     leak_test_run 0 0 || rc=$?
+    # opened before the verdict is told: its recovery message reads the gate
+    if (( rc != 1 )); then state_del "$LEAK_GATE"; fi
     leak_verdict "$rc"
     case $rc in
-        0) state_del "$LEAK_GATE"; ok "leak gate: every check proven — starting the VPN'd services" ;;
-        2) state_del "$LEAK_GATE"; warn "leak gate: nothing failed, but not everything was proven (UNPROVEN above) — starting the VPN'd services" ;;
+        0) ok "leak gate: every check proven — starting the VPN'd services" ;;
+        2) warn "leak gate: nothing failed, but not everything was proven (UNPROVEN above) — starting the VPN'd services" ;;
         *) die "leak gate: a problem is proven (FAIL above) — the VPN'd services stay stopped, gluetun stays up for inspection. Fix it, then: ./mediastack.sh up" ;;
     esac
 }

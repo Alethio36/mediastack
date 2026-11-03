@@ -8,6 +8,7 @@
 #   * a verdict acted on: a FAIL closes the gate and stops the running group;
 #     ops hears each change once (a leak, an unproven check, the recovery)
 #   * up's gate: a pass or an unproven opens it, a FAIL keeps it closed and ends up
+#   * wire and trash-sync, refused for a group member the gate holds, name the gate
 #   * up's two phases: everything but the group, the gate, then the group — and
 #     no second phase when the gate fails
 # Sources the real entrypoint (minus its last line, main "$@"); docker and
@@ -70,7 +71,7 @@ state_del "$LEAK_GATE"
 
 # ---- a verdict acted on ----
 NOTES="$T/notes"
-notify() { echo "$1|$2|$4" >> "$NOTES"; }
+notify() { echo "$1|$2|$4" >> "$NOTES"; printf '%s\n--\n' "$3" >> "$T/bodies"; }
 RUNNING="qbittorrent"
 c_state() { [[ " $RUNNING " == *" ${1#mediastack-} "* ]] && echo running || echo exited; }
 : > "$COMPOSE_LOG"
@@ -107,6 +108,20 @@ leak_gate_closed && fail_ "unproven opens it"; pass
 state_set "$LEAK_GATE" "closed earlier"; GATE_RC=1
 (leak_gate_up) > /dev/null 2>&1 && fail_ "a FAIL ends up"; pass
 leak_gate_closed || fail_ "and the gate stays closed"; pass
+# the recovery up itself proves (found live, Nov 2026): told as open, not "stay stopped until up"
+state_set "$LEAK_VERDICT" 1; : > "$T/bodies"; GATE_RC=0
+(leak_gate_up) > /dev/null 2>&1
+grep -q "Every check proven" "$T/bodies" && ! grep -q "stay stopped" "$T/bodies" || fail_ "up's own pass: the recovery, not 'stay stopped until up' ($(cat "$T/bodies"))"; pass
+
+# ---- wire and trash-sync name the gate ----
+RUNNING="jellyfin"; ENABLED="gluetun qbittorrent sonarr jellyfin"
+state_set "$LEAK_GATE" "2026-11-03 10:00:00: firewall lets traffic out"
+out=$( (wire_gate sonarr jellyfin) 2>&1 ) && fail_ "a group member held by the gate: refused"; pass
+[[ "$out" == *"Cannot wire: sonarr is in the VPN group: the leak gate stopped the VPN group (2026-11-03 10:00:00: firewall lets traffic out)"* ]] \
+    || fail_ "names the gate, not 'start the stack' (found live, Nov 2026) — $out"; pass
+state_del "$LEAK_GATE"
+out=$( (wire_gate sonarr jellyfin) 2>&1 ) && fail_ "gate open, sonarr down: refused"; pass
+[[ "$out" == *"Cannot wire: not running: sonarr"* ]] || fail_ "the plain reason when the gate is open — $out"; pass
 
 # ---- up: two phases ----
 UP_LOG="$T/up"
