@@ -8,6 +8,8 @@
 #     not mounted is still caught
 #   * ask_valid: a refused answer is said and asked again, and never becomes
 #     the default (found live: a refused email came back as the default)
+#   * hidden input: terminal escape sequences and control characters are taken
+#     out of a pasted value, and said (found live: ^[[B glued onto a webhook URL)
 #   * one way to ask each kind of question: yes/no only through confirm and
 #     confirm_yes, choices in ( ), a default in [ ] and no empty [ ], "(input
 #     hidden)" and "Enter = ..." — the convention written at ask
@@ -78,5 +80,21 @@ bad=$(src '(ask[a-z_]*|_ns_ask) [A-Z_]* *"[^"]*\[[^]"]*/[^]"]*\]')
 bad=$(src '(ask[a-z_]*|_ns_ask|read -r[ a-z-]*-p|warn) [A-Z_]* *"[^"]*(input is hidden|empty = )')
 [[ -z "$bad" ]] || fail_ "say '(input hidden)' and 'Enter = ...': $bad"; pass
 grep -q '\[\[ -n "\$def" \]\] && hint=" \[\$def\]"' lib/common.sh || fail_ "ask prints [ ] again when there is no default"; pass
+
+# ---- hidden input: an arrow key pressed while pasting is not part of the value ----
+warn() { echo "WARN $*" >> "$T/warn"; }
+: > "$T/warn"
+hidden_clean $'https://discord.com/api/webhooks/1/abc\e[B'
+[[ "$HIDDEN_VAL" == "https://discord.com/api/webhooks/1/abc" ]] || fail_ "a pasted URL with an arrow key glued on (found live): the URL alone ($HIDDEN_VAL)"; pass
+grep -q "took 3 terminal control character" "$T/warn" || fail_ "and it says so"; pass
+: > "$T/warn"; hidden_clean "plain-token_123/+="
+[[ "$HIDDEN_VAL" == "plain-token_123/+=" && ! -s "$T/warn" ]] || fail_ "a clean value: untouched, nothing said"; pass
+hidden_clean $'tok\eOAen\x01d\t'
+[[ "$HIDDEN_VAL" == tokend ]] || fail_ "the other arrow-key form, a control character, a tab: all out ($HIDDEN_VAL)"; pass
+unset -f ask
+ask_token "Token" "" <<<$'secret\e[A' >/dev/null 2>&1
+[[ "$REPLY_VAL" == secret ]] || fail_ "ask_token: the pasted value cleaned ($REPLY_VAL)"; pass
+ask_hidden "URLs" <<<$'json://hub\e[D' >/dev/null 2>&1
+[[ "$REPLY_VAL" == json://hub ]] || fail_ "ask_hidden: the pasted value cleaned ($REPLY_VAL)"; pass
 
 echo "test-prompts: $checks checks passed"

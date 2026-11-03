@@ -70,10 +70,19 @@ confirm_yes() { # confirm_yes "question" -> 0 yes (also Enter, or input that has
     [[ -z "$ans" || "${ans,,}" == y || "${ans,,}" == yes ]]
 }
 
+hidden_clean() { # hidden_clean VALUE -> HIDDEN_VAL: without terminal escape sequences or control characters (says so when it took any)
+    # an arrow key pressed while pasting into a hidden prompt arrives as ESC [ B,
+    # unseen — it glued ^[[B onto a webhook URL (found live, Oct 2026)
+    local c
+    c=$(printf '%s' "$1" | sed -E $'s/\x1b\\[[0-9;?]*[ -/]*[@-~]//g; s/\x1bO[A-Za-z]//g; s/[[:cntrl:]]//g')
+    if [[ "$c" != "$1" ]]; then warn "took $(( ${#1} - ${#c} )) terminal control character(s) out of what you pasted (an arrow key?)"; fi
+    HIDDEN_VAL=$c
+}
+
 ask_hidden() { # ask_hidden "prompt" -> REPLY_VAL, typed without echo; empty is an answer
     local a
     read -r -s -p "$1: " a || [[ -n "$a" ]] || { echo; die "no answer to '$1': the input ended"; }
-    echo; REPLY_VAL=$a
+    echo; hidden_clean "$a"; REPLY_VAL=$HIDDEN_VAL
 }
 
 confirm() { # confirm "question" -> 0 yes / 1 no
@@ -186,6 +195,7 @@ ask_token() { # ask_token "prompt" "current" -> REPLY_VAL; pasted secrets:
     [[ -n "${2:-}" ]] && hint=" [Enter keeps the current one]"
     while true; do
         read -r -s -p "$1${hint}: " a || [[ -n "$a" ]] || { echo; die "no answer to '$1': the input ended"; }; echo
+        hidden_clean "$a"; a=$HIDDEN_VAL
         if [[ -z "$a" ]]; then
             [[ -n "${2:-}" ]] && { REPLY_VAL="$2"; info "keeping the current value"; return 0; }
             warn "this value is required — paste it (input hidden)"
