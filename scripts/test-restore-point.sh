@@ -264,7 +264,7 @@ rm -rf "$T/sk"/*; [[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "no point at a
 out=$(sched) || true
 [[ "$out" == *"NOTIFY Mediastack scheduled backup skipped"* && "$out" != *TAKE* ]] || fail_ "the lock held past the wait: skipped, alerted: $out"; pass
 out=$( ( MAINT_LOCKED=0; maint_lock backup 0 ) 2>&1 ) && fail_ "a run you start refuses while the lock is held"
-[[ "$out" == *"Another update or backup is running — backup refused"* ]] || fail_ "says why: $out"; pass
+[[ "$out" == *"Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — backup refused"* ]] || fail_ "says why: $out"; pass
 wait "$holder"
 MAINT_WAIT=5; ( exec 8<"$MAINT_LOCK"; flock 8; sleep 1 ) & holder=$!; sleep 0.3
 [[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "a timer's run waits for the lock, then runs"; pass
@@ -299,7 +299,7 @@ verify() { printf '#!/bin/bash\necho "lock=$MAINT_LOCKED"\n%s\n' "$1" > "$T/fake
 verify 'exit 0'; [[ "$out" == *"OK wire --verify: the new versions kept"*"went on" ]] || fail_ "kept: $out"; pass
 verify 'echo "would: set jellyfin transcode path"; exit 1'
 [[ "$out" == *"found drift"*"would: set jellyfin"*"NOTIFY Mediastack update changed settings"*"went on" ]] || fail_ "drift: $out"; pass
-verify 'echo "ERROR Another update or backup is running — wire refused." >&2; exit 1'
+verify 'echo "ERROR Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — wire refused." >&2; exit 1'
 [[ "$out" == *"FAIL wire --verify could not run after the update (exit 1)"*"lock=1"*"wire refused"*"NOTIFY Mediastack update: wiring not verified"*"went on" ]] \
     || fail_ "could not run: named, alerted, the update goes on: $out"; pass
 [[ "$out" != *"found drift"* ]] || fail_ "a verify that could not run is not drift: $out"; pass

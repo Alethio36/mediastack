@@ -75,8 +75,8 @@ maint_lock() { # maint_lock WHAT WAIT-SECONDS — 0: refuse at once when held; r
     [[ -e "$MAINT_LOCK" ]] || : > "$MAINT_LOCK"
     exec 8<"$MAINT_LOCK"
     if ! flock -n 8; then
-        (( $2 > 0 )) || die "Another update or backup is running — $1 refused. Try again once it has finished."
-        info "Another update or backup is running — $1 waits for it (up to $(( $2 / 3600 )) hours)..."
+        (( $2 > 0 )) || die "Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — $1 refused. Try again once it has finished."
+        info "Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — $1 waits for it (up to $(( $2 / 3600 )) hours)..."
         flock -w "$2" 8 || return 1
     fi
     MAINT_LOCKED=1

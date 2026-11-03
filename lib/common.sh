@@ -49,13 +49,17 @@ sudo_keepalive() {
     (( $(id -u) == 0 )) && return 0
     [[ -t 0 ]] || return 0
     local parent=$$
+    # 8<&- 9<&-: a lock this run already holds (upgrade hands the maintenance
+    # lock across its exec; audit's is fd 9) must not be inherited — killed at
+    # exit, the loop leaves its `sleep` behind, and that would hold the lock
+    # for up to a minute after the run (found live, Nov 2026: `up` refused)
     (
         trap - ERR; set +e   # a renewal before the first sudo fails, quietly
         while kill -0 "$parent" 2>/dev/null; do
             sudo -n -v
             sleep "$SUDO_KEEPALIVE_EVERY"
         done
-    ) </dev/null >/dev/null 2>&1 &
+    ) </dev/null >/dev/null 2>&1 8<&- 9<&- &
     SUDO_KEEPALIVE_PID=$!
     trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true' EXIT
 }

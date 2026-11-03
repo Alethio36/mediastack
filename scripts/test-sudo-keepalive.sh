@@ -52,4 +52,23 @@ run_case notty 1000 exit notty
 run_case root 0 exit tty
 (( $(count root) == 0 )) || fail_ "root: nothing is renewed"; pass
 
+# a lock the run already holds when the renewals start (upgrade hands the
+# maintenance lock across its exec) is free the moment the run ends — the
+# loop's leftover sleep must not keep it (found live, Nov 2026)
+cat > "$T/lock.sh" <<CASE
+source "$PWD/$lib"
+sudo() { :; }
+id()   { echo 1000; }
+SUDO_KEEPALIVE_EVERY=30
+exec 8<"$T/lock"; flock -n 8 || exit 3
+sudo_keepalive
+sleep 1   # the run's work: the loop is in its sleep by now
+exit 0
+CASE
+: > "$T/lock"
+# checked inside the same terminal session: when script(1) ends, the hangup
+# would kill a leftover sleep and hide the bug (an SSH session goes on)
+script -qec "bash $T/lock.sh; sleep 0.5; (exec 9<$T/lock; flock -n 9) && echo free > $T/lock.result || echo held > $T/lock.result" /dev/null >/dev/null 2>&1 || true
+[[ "$(cat "$T/lock.result" 2>/dev/null)" == free ]] || fail_ "the lock is free once the run has ended (a renewal's sleep still holds it: $(cat "$T/lock.result" 2>/dev/null))"; pass
+
 echo "test-sudo-keepalive: $checks checks passed"
