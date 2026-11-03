@@ -85,7 +85,9 @@ scripts/soak.sh --test-box --days 7 --known ~/soak.known
   `wire --verify: no drift`, `safety-live: ok`): a missing line means a check
   did not run.
 * **The log is `~/soak-<time>.log`.** Copy it off before reverting, or it goes
-  with the snapshot. The known file's entries that matched nothing are listed,
+  with the snapshot. A failed run also keeps its evidence before the apps
+  rotate it away — every stack container's log and the apps' own log folders
+  — in `~/soak-<time>-evidence/<day>/`: copy that off too. The known file's entries that matched nothing are listed,
   so a stale one surfaces.
 
 **Not covered:** only the script's own clock moves. Anything it runs through

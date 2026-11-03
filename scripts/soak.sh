@@ -15,6 +15,10 @@
 #     pattern can name an expected one)
 #   * containers: all running, none unhealthy, no restart count went up
 #   * restore points: no more than the retention keeps
+# A day with a problem keeps its evidence before the apps rotate it away
+# (Nov 2026: a qBittorrent and a Sonarr finding were unreadable four days
+# later): every stack container's log and the apps' own log folders, in
+# ~/soak-<time>-evidence/<day>/.
 # Before the simulated days, each enabled timer's real unit runs once at the
 # real time: the units themselves are proven, not only their commands.
 #
@@ -96,12 +100,15 @@ fi
 command -v faketime >/dev/null || die "faketime is missing: sudo apt install faketime"
 command -v jq >/dev/null || die "jq is missing"
 [[ -f .env ]] || die "no .env — run it from a configured stack's folder"
+grep -q '^TRASH_PROFILE_' .env || die "trash-sync was never run here: every simulated update night would skip it.
+  Run it once first: ./mediastack.sh trash-sync"
 sudo -v || die "sudo is needed"
 ( while kill -0 $$ 2>/dev/null; do sudo -n -v 2>/dev/null; sleep 60; done ) </dev/null >/dev/null 2>&1 &
 KEEPALIVE=$!
 trap 'kill $KEEPALIVE 2>/dev/null || true' EXIT
 
 LOG="$HOME/soak-$(date +%Y%m%d-%H%M%S).log"
+EVIDENCE="${LOG%.log}-evidence"
 exec > >(tee -a "$LOG") 2>&1
 envget() { sed -n "s/^$1=//p" .env | tail -1; }
 strip() { sed -E 's/\x1b\[[0-9;]*m//g'; }
@@ -201,6 +208,22 @@ judge_safety() { # at the real time: safety-live's FAIL and UNPROVEN lines (the 
     (( ${#DAY_PROBLEMS[@]} > before )) || echo "  safety-live: ok ($(grep -c '^PASS ' <<<"$out" || true) passed)"
     return 0
 }
+keep_evidence() { # keep_evidence DAY — a problem day's container logs and app log folders, before they rotate
+    local dir="$EVIDENCE/$1" id name croot
+    mkdir -p "$dir/containers"
+    for id in $(sudo docker ps -aq --filter "label=com.docker.compose.project.working_dir=$REPO"); do
+        name=$(sudo docker inspect -f '{{.Name}}' "$id"); name=${name#/}
+        # shellcheck disable=SC2024  # the file is the operator's, written as them; only docker needs root
+        sudo docker logs --timestamps "$id" > "$dir/containers/$name.log" 2>&1 || true
+    done
+    croot=$(envget CONFIG_ROOT); croot=${croot:-./config}
+    [[ "$croot" == /* ]] || croot="$REPO/${croot#./}"
+    # the apps' own logs: a logs/ or log/ folder up to three levels into their config
+    sudo find "$croot" -maxdepth 3 -type d \( -name logs -o -name log \) -print0 2>/dev/null \
+        | sudo tar --null -T - -czf "$dir/app-logs.tgz" 2>/dev/null || true
+    sudo chown -R "$(id -u):$(id -g)" "$dir"
+    echo "  evidence kept: $dir ($(du -sh "$dir" | cut -f1))"
+}
 run_job() { # run_job JOB FAKE-TIME|"" -> the job's unit, under the simulated clock when given
     local job=$1 at=$2 cmd unit look rc=0
     cmd=$(unit_cmd "$job")
@@ -222,7 +245,7 @@ echo "== the real units, once, at the real time"
 DAY_PROBLEMS=()
 for job in "${JOBS[@]}"; do [[ -n "$(unit_cmd "$job")" ]] && run_job "$job" ""; done
 note_restarts
-(( ${#DAY_PROBLEMS[@]} )) && FAILED_DAYS=$((FAILED_DAYS + 1))
+if (( ${#DAY_PROBLEMS[@]} )); then FAILED_DAYS=$((FAILED_DAYS + 1)); keep_evidence real-units; fi
 
 for d in $(cut -d' ' -f1 <<<"$SCHED" | uniq); do
     echo "== simulated $d"
@@ -243,7 +266,7 @@ for d in $(cut -d' ' -f1 <<<"$SCHED" | uniq); do
     judge_wire
     judge_safety
     judge_points
-    if (( ${#DAY_PROBLEMS[@]} )); then FAILED_DAYS=$((FAILED_DAYS + 1)); echo "  day $d: ${#DAY_PROBLEMS[@]} problem(s)"
+    if (( ${#DAY_PROBLEMS[@]} )); then FAILED_DAYS=$((FAILED_DAYS + 1)); echo "  day $d: ${#DAY_PROBLEMS[@]} problem(s)"; keep_evidence "$d"
     else echo "  day $d: clean"; fi
 done
 
@@ -251,6 +274,7 @@ echo "== known file"
 while IFS= read -r p; do
     [[ -n "${KNOWN_HIT[$p]:-}" ]] && echo "  used:   $p" || echo "  UNUSED: $p (stale? it matched nothing)"
 done < <(known_patterns)
+[[ -d "$EVIDENCE" ]] && echo "== evidence of the failed runs: $EVIDENCE — copy it off with the log"
 echo "== soak: $FAILED_DAYS failed run(s) out of $(( $(cut -d' ' -f1 <<<"$SCHED" | uniq | wc -l) + 1 )) — log: $LOG"
 echo "   Now revert this box to its snapshot: it holds restore points and state dated in the future."
 (( FAILED_DAYS == 0 ))
