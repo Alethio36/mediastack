@@ -76,6 +76,7 @@ wire_qbit() {
         # restart mints. Deterministic: our restart, our time window.
         local tmp="" t=0 qcn ts
         qcn=$(svc_cname qbittorrent)
+        leak_gate_refuse "restarting qBittorrent"   # a raw docker start: DC's chokepoint does not see it
         info "restarting qBittorrent to mint a fresh temporary password (~20s)..."
         ts=$(date +%s)
         sudo docker restart "$qcn" >/dev/null

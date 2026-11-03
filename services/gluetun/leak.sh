@@ -24,10 +24,13 @@
 
 LT_FAIL=0
 LT_UNPROVEN=0
-lt_reset()     { LT_FAIL=0; LT_UNPROVEN=0; }
+# shellcheck disable=SC2034  # LT_FIRST is read by gate.sh (leak_verdict)
+LT_FIRST=""   # the first FAIL (else the first UNPROVEN): what a notification names
+lt_reset()     { LT_FAIL=0; LT_UNPROVEN=0; LT_FIRST=""; }
 lt_pass()      { ok "$*"; }
-lt_fail()      { fail "$*"; LT_FAIL=$((LT_FAIL + 1)); }
-lt_unproven()  { warn "UNPROVEN: $*"; LT_UNPROVEN=$((LT_UNPROVEN + 1)); }
+lt_fail()      { fail "$*"; (( LT_FAIL )) || LT_FIRST="$*"; LT_FAIL=$((LT_FAIL + 1)); }
+# shellcheck disable=SC2034  # LT_FIRST: read by gate.sh
+lt_unproven()  { warn "UNPROVEN: $*"; (( LT_FAIL || LT_UNPROVEN )) || LT_FIRST="$*"; LT_UNPROVEN=$((LT_UNPROVEN + 1)); }
 lt_exit_code() { # 1 any FAIL, 2 no FAIL but something UNPROVEN, 0 all PASS
     if (( LT_FAIL )); then echo 1; elif (( LT_UNPROVEN )); then echo 2; else echo 0; fi
 }

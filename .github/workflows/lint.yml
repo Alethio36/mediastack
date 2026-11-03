@@ -59,6 +59,8 @@ jobs:
         run: scripts/test-prompts.sh
       - name: leak-test's checks — verdicts, the host's own address, the tunnel, UDP, DNS, the control server (scripts/test-leak.sh)
         run: scripts/test-leak.sh
+      - name: the leak gate — the VPN group starts only after gluetun is proven, a leak stops it (scripts/test-gate.sh)
+        run: scripts/test-gate.sh
       - name: night jobs — the VPN group recreated only on a gluetun change, the tunnel ready before recyclarr, Prowlarr's health re-checked (scripts/test-night-jobs.sh)
         run: scripts/test-night-jobs.sh
       - name: configure's questions — fresh defaults, one front door, hidden secrets (scripts/test-configure.sh)

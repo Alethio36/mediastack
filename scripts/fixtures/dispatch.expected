@@ -204,10 +204,16 @@ CALL cmd_leak_test [0]
 ## leak-test --killswitch
 CALL cmd_leak_test [1] --killswitch
 ## leak-test --bogus
-ERROR unknown argument '--bogus' for 'leak-test' (accepts: --killswitch)
+ERROR unknown argument '--bogus' for 'leak-test' (accepts: --killswitch --local)
 rc=1
 ## leak-test --killswitch --killswitch
-CALL cmd_leak_test [2] --killswitch --killswitch
+ERROR 'leak-test' takes at most 1 argument(s) (got: --killswitch --killswitch)
+rc=1
+## leak-test --local
+CALL cmd_leak_test [1] --local
+## leak-test --killswitch --local
+ERROR 'leak-test' takes at most 1 argument(s) (got: --killswitch --local)
+rc=1
 ## vpn
 CALL cmd_vpn [0]
 ## vpn a

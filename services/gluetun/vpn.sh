@@ -130,18 +130,42 @@ cmd_vpn_guard() {
 }
 
 # --------------------------------------------------------------- leak-test --
-# The checks and their verdicts (PASS / FAIL / UNPROVEN) are in leak.sh; this
-# runs them in order. Exit 0 all proven, 1 a leak or a missing safeguard, 2
-# nothing failed but something could not be proven.
+# The checks and their verdicts (PASS / FAIL / UNPROVEN) are in leak.sh;
+# leak_test_run runs them in order and returns the verdict, and the verb acts
+# on it (leak_verdict, gate.sh: a FAIL stops the VPN group). Exit 0 all
+# proven, 1 a leak or a missing safeguard, 2 nothing failed but something
+# could not be proven. --local: only what this host can see for itself — no
+# outside party is asked anything (the 5-minute check).
 cmd_leak_test() {
     load_env
-    local killswitch=0; [[ "${1:-}" == --killswitch ]] && killswitch=1
+    local a killswitch=0 lonly=0 rc=0
+    for a in "$@"; do case $a in
+        --killswitch) killswitch=1 ;;
+        --local) lonly=1 ;;
+        *) die "usage: leak-test [--killswitch|--local]" ;;
+    esac; done
+    leak_test_run "$killswitch" "$lonly" || rc=$?
+    leak_verdict "$rc"
+    echo
+    case $rc in
+        0) ok "leak-test passed: every check proven." ;;
+        1) fail "leak-test FOUND PROBLEMS: $LT_FAIL check(s) failed — see above."; exit 1 ;;
+        *) warn "leak-test: no leak found, but $LT_UNPROVEN check(s) UNPROVEN — see above. Not a pass."; exit 2 ;;
+    esac
+}
+
+leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2); dies when it cannot run at all
+    local killswitch=$1 lonly=$2
     local gcn; gcn=$(svc_cname gluetun)
     c_inspect_all
     [[ "$(c_state "$gcn")" == running ]] || die "gluetun is not running — start the stack first."
     lt_reset
 
     hr "leak-test: attachment audit"
+    # drift first (a restarted gluetun leaves its dependents behind): repaired
+    # loudly here, so what follows judges the tunnel, not a stale join
+    vpn_reattach_guard
+    c_inspect_all
     # Netns-joined containers report an EMPTY SandboxKey, so key equality can
     # never verify the join. NetworkMode names the container joined; the
     # namespace itself (vpn_join) proves it is gluetun's current one.
@@ -168,19 +192,24 @@ cmd_leak_test() {
     else lt_fail "unexpected interface set in the namespace: $(tr '\n' ' ' <<<"$links") — a second network is attached"; fi
     if grep -qE '^(tun|wg)' <<<"$links"; then lt_pass "tunnel interface present"
     else lt_fail "no tunnel interface in the namespace"; fi
-    lt_ipv6 "$gcn"
-
-    hr "leak-test: who the internet sees"
-    local hok=0
-    hostid_ensure && hok=1
-    lt_tunnel_ip "$gcn" "$hok"
-    lt_udp_identity "$gcn" "$hok"
+    if (( lonly )); then
+        info "--local: who the internet sees, IPv6, and the DNS a stranger answers are asked of outside parties — the hourly run does them"
+    else
+        lt_ipv6 "$gcn"
+        hr "leak-test: who the internet sees"
+        local hok=0
+        hostid_ensure && hok=1
+        lt_tunnel_ip "$gcn" "$hok"
+        lt_udp_identity "$gcn" "$hok"
+    fi
 
     hr "leak-test: DNS"
     lt_dns_config "$gcn"
     lt_dns_lan_path "$gcn"
-    lt_dns_host_path "$gcn"
-    lt_dns_resolvers "$gcn" "$hok"
+    if (( ! lonly )); then
+        lt_dns_host_path "$gcn"
+        lt_dns_resolvers "$gcn" "$hok"
+    fi
 
     hr "leak-test: gluetun's control server"
     lt_control_server "$gcn"
@@ -190,7 +219,9 @@ cmd_leak_test() {
     lt_flows "$gcn"
 
     hr "leak-test: kill-switch"
-    if (( ! killswitch )); then
+    if (( lonly )); then
+        info "--local runs no disruptive proof"
+    elif (( ! killswitch )); then
         info "the disruptive proofs (tunnel dropped, gluetun stopped) run with --killswitch"
     else
         warn "Disruptive proof: dropping the tunnel interface for ~10s..."
@@ -247,13 +278,7 @@ cmd_leak_test() {
             lt_pass "$s publishes no ports of its own"
         else lt_fail "$s publishes host ports directly — must go through gluetun"; fi
     done
-
-    echo
-    case $(lt_exit_code) in
-        0) ok "leak-test passed: every check proven." ;;
-        1) fail "leak-test FOUND PROBLEMS: $LT_FAIL check(s) failed — see above."; exit 1 ;;
-        *) warn "leak-test: no leak found, but $LT_UNPROVEN check(s) UNPROVEN — see above. Not a pass."; exit 2 ;;
-    esac
+    return "$(lt_exit_code)"
 }
 
 # --------------------------------------------------------- vpn membership --

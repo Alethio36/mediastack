@@ -161,6 +161,9 @@ DC() { # compose wrapper: project dir pinned, your files, the VPN overlay and pi
     [[ -e "$OVERLAY_FILE" ]] && files+=(-f "$OVERLAY_FILE")
     [[ -s "$PINS_FILE" ]] && files+=(-f "$PINS_FILE")
     [[ " $* " == *" config "* ]] || INSPECT_JSON=""   # see CACHE RULE at c_inspect
+    # the leak gate's chokepoint: while a proven leak holds the VPN group
+    # stopped, nothing starts a member of it (services/gluetun/gate.sh)
+    leak_gate_guards "$@" || leak_gate_refuse "starting it (compose $1)"
     # `up` lifts a `down` before it starts anything; any other start leaves the
     # scheduled jobs paused — say so, once
     if [[ "${1:-}" == up || "${1:-}" == start ]] && [[ -z "${DOWN_WARNED:-}" && -n "$(stack_down_since)" ]]; then
@@ -652,6 +655,20 @@ cmd_up()   {
     traefik_ensure
     authentik_prepare
     network_ensure
+    # two phases: everything outside the VPN group (gluetun with it) first,
+    # then the group — only once its own leak-test has proven gluetun
+    local group=() rest=()
+    mapfile -t group < <(vpn_group)
+    if (( ${#group[@]} )); then
+        svc_enabled gluetun || die "VPN'd services are enabled (${group[*]}) but gluetun is not — enable gluetun, or move them out of the VPN (./mediastack.sh vpn)"
+        mapfile -t rest < <(svc_enabled_managed | grep -vxF -f <(printf '%s\n' "${group[@]}"))
+        DC up -d --remove-orphans "${rest[@]}" \
+            || die "Starting the stack failed — compose's error is above. Nothing VPN'd was started. Fix it, then: ./mediastack.sh up"
+        wait_verdict --recover gluetun \
+            || die "gluetun ${VERDICT_WHY[gluetun]} — nothing VPN'd was started.
+  Inspect: ./mediastack.sh logs gluetun (bad credentials? provider outage?)"
+        leak_gate_up
+    fi
     if ! DC up -d --remove-orphans; then
         up_race || die "Starting the stack failed — compose's error is above. Fix it, then: ./mediastack.sh up"
         warn "First start attempt failed while gluetun was not yet healthy — the known race after a recreate."
@@ -1109,7 +1126,7 @@ VERBS=(
     "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift)."
     "doctor~doctor~none~Check~Full health/permission/port/backup audit; every failure states its fix."
     "audit~audit [status|on|off|report [--since DATE] [--path TEXT]]~free~Check~Deletion attribution (opt-in): who deleted or renamed media; 'report' reads the history, 'status' proves it live."
-    "leak-test~leak-test [--killswitch]~allow=--killswitch~Check~Prove no VPN'd service can leak (--killswitch: disruptive tunnel-drop proof)."
+    "leak-test~leak-test [--killswitch|--local]~allow=--killswitch,--local max=1~Check~Prove no VPN'd service can leak; a leak stops them (--killswitch: disruptive proof; --local: no outside party)."
     "vpn~vpn [svc on|off] [--i-know]~max=3~Check~Show or change which services run behind the VPN; apply with: up."
     "fix-perms~fix-perms [svc]~max=1~Check~Repair ownership of a service's config/cache/transcode folders from the UID map."
     "new-service~new-service <name>~max=1~Other~Add your own service: asks image/port/VPN/folders, then enables and starts it."

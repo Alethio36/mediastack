@@ -149,6 +149,25 @@ gluetun therefore cannot survive a normal `up` or `update`: either every
 dependent is in the live tunnel's namespace, or the command stops and says
 why. Stopped dependents are left to `doctor`/`leak-test` on next start.
 
+### The leak gate
+
+The VPN group — every enabled service in gluetun's namespace — runs only once
+gluetun is proven (`services/gluetun/gate.sh`):
+
+- **`up` starts in two phases:** everything outside the group (gluetun with
+  it), then a full `leak-test`, then the group. A FAIL leaves the group
+  stopped and ends `up`; UNPROVEN (a third party down, say) starts it with a
+  warning.
+- **A FAIL stops the group, whoever ran the test** — `up`, you, the panel:
+  gluetun stays up for inspection, and the stop is remembered in
+  `local/state/leak-gate`. While it holds, nothing starts a member of the
+  group: every compose start of one (or of the whole stack) is refused with
+  the reason, and only `up` — after its own leak-test passes — opens it again.
+- **Ops hears each change of verdict once:** a leak, a check that could not be
+  proven, and the recovery — not the same news every run.
+- The services that call the group (Cleanuparr, Seerr, Bazarr) keep running
+  and log errors while it is stopped; nothing else is stopped.
+
 ### Update cascades the gluetun group
 
 When an update recreates gluetun (new image → new container ID), its

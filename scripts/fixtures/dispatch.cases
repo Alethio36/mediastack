@@ -143,11 +143,13 @@ audit on
 audit report --since 2026-09-01 --path x
 audit bogus
 
-# leak-test  (allow=--killswitch)
+# leak-test  (allow=--killswitch,--local max=1)
 leak-test
 leak-test --killswitch
 leak-test --bogus
 leak-test --killswitch --killswitch
+leak-test --local
+leak-test --killswitch --local
 
 # vpn  (max=3)
 vpn

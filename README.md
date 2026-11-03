@@ -232,7 +232,7 @@ Setup
 Run
 | command | what it does |
 |---|---|
-| `up` / `down` | start / stop the stack. A stack stopped with `down` stays down: its scheduled jobs (updates, backups, the media manifest, the panel's refresh, the boot guard) skip until `up`, and doctor says so. `up` also finishes any pending one-time step — re-pointing the apps that call a service you moved in or out of the VPN, or a service's file-ownership handover — and retries it until it succeeds |
+| `up` / `down` | start / stop the stack. A stack stopped with `down` stays down: its scheduled jobs (updates, backups, the media manifest, the panel's refresh, the boot guard) skip until `up`, and doctor says so. `up` starts the VPN'd services last: everything else (gluetun with it) first, then a full `leak-test`, and only on a pass (or nothing failed but something UNPROVEN, with a warning) the VPN'd services — a FAIL leaves them stopped. `up` also finishes any pending one-time step — re-pointing the apps that call a service you moved in or out of the VPN, or a service's file-ownership handover — and retries it until it succeeds |
 | `enable <svc>` / `disable <svc>` | turn one service on/off (dependencies handled) |
 | `status [svc]` | overview table (ports, VPN, health, versions, URLs) or one-service deep view |
 | `logs <svc> [--no-follow]` | follow one service's logs; `--no-follow` prints a bounded snapshot and returns (used by the web panel) |
@@ -272,7 +272,7 @@ Check
 | command | what it does |
 |---|---|
 | `doctor` | full health/permission/cert/backup/host-port audit — every failure states its fix. Includes each arr's and Prowlarr's own health list (indexers, download client, root folders, the notification connection to the hub): an error there is a doctor problem — on a fresh install, "no indexers" until you add some in Prowlarr |
-| `leak-test [--killswitch]` | prove no VPN'd service can leak: exit 0 every check proven, 1 a leak or a missing safeguard, 2 nothing failed but something UNPROVEN (`--killswitch` = destructive proof) |
+| `leak-test [--killswitch\|--local]` | prove no VPN'd service can leak: exit 0 every check proven, 1 a leak or a missing safeguard, 2 nothing failed but something UNPROVEN. A FAIL stops the VPN'd services (gluetun stays up for inspection) and only `up` starts them again, after its own leak-test passes; ops hears each change of verdict once (`--killswitch` = destructive proof; `--local` = only what the host sees itself, no outside party asked) |
 | `audit [status\|on\|off\|report]` | deletion attribution, opt-in: the kernel logs every delete and rename under `DATA_ROOT/media` with who made it — each service runs as its own UID, so the UID names the service; a person is named by their login, even through sudo (the manifest says *what* went missing, this says *who*). `on` installs auditd if the host has none (a host that already runs auditd keeps its own setup: one rules file and one timer are added, nothing else is touched), asks how long to keep the history (`AUDIT_KEEP_DAYS`, default 365) and proves the watch with a test delete; `off` removes it again (and auditd, if mediastack installed it; the history stays). `report [--since YYYY-MM-DD] [--path TEXT]` lists what was deleted or renamed, by whom (default: the last 7 days); a container's paths are shown as host paths. `status` (default) is doctor's check, including the live test delete. Sees this host only — deletes made on the NAS itself or from another machine are the manifest's to catch |
 | `vpn [svc on/off]` | show or change which services run behind the VPN (torrent clients need `--i-know` to leave). A move changes how other apps reach the service, so the next `up` re-points everything wired to call it (`WIRE_CALLERS`); if that fails, the next `up` retries and `doctor` says it is pending |
 | `fix-perms [svc]` | repair ownership of a service's config, cache and transcode folders from the UID map |
@@ -366,7 +366,8 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
   every resolver that answers, gluetun's DNS, firewall and control server,
   and the traffic the host itself sees leaving gluetun — without
   telling any one outside party both of your addresses. A check it cannot run
-  is UNPROVEN, never a pass. Membership is operator-selectable with the
+  is UNPROVEN, never a pass. A proven leak stops the VPN'd services until
+  `up` proves gluetun again. Membership is operator-selectable with the
   `vpn` command and audited by the tooling — see
   [docs/vpn-membership.md](docs/vpn-membership.md); what leaves your box, and
   to whom: [docs/privacy.md](docs/privacy.md).
