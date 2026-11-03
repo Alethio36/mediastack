@@ -131,8 +131,8 @@ vpn_start_group() { # vpn_start_group SVC... — start these VPN'd services thro
 # and the rest, never the group. This puts back what that policy did: every
 # enabled member that is not running is started, through the gate, whether it
 # crashed or the host just booted. To keep one stopped: disable it, or down.
-vpn_supervise() { # local or full checks (as gluetun's state needs), then any enabled member that is not running
-    local group=() missing=() s rc=0 lonly=0
+vpn_supervise() { # vpn_supervise [full] — local or full checks (as gluetun's state needs, or full), then any member not running
+    local full=${1:-} group=() missing=() s rc=0 lonly=0
     mapfile -t group < <(vpn_group)
     (( ${#group[@]} )) || return 0
     svc_enabled gluetun || return 0
@@ -154,37 +154,60 @@ vpn_supervise() { # local or full checks (as gluetun's state needs), then any en
         (( rc != 1 )) || return 1
         return 0
     fi
-    if gluetun_proven; then lonly=1; fi
+    if [[ "$full" != full ]] && gluetun_proven; then lonly=1; fi
     leak_test_run 0 "$lonly" || rc=$?
     leak_verdict "$rc"
 }
 
-cmd_vpn_watch() { # the 5-minute check (mediastack-leakcheck.timer)
+cmd_vpn_watch() { # the 5-minute check (mediastack-leakcheck.timer); --full: the hourly run (mediastack-leaktest.timer)
     load_env
-    # a backup, an update or `up` has the stack: they start the group themselves
-    maint_try_lock || { info "vpn-watch: an update, a backup or up has the stack — checked again in 5 minutes"; return 0; }
-    [[ ! -e "$STOP_MARKER" ]] || { info "vpn-watch: a backup is mid-copy — checked again in 5 minutes"; return 0; }
+    local full=""; [[ "${1:-}" == --full ]] && full=full
+    # a backup, an update or `up` has the stack: they start the group
+    # themselves. The hourly run waits a while for its turn; the 5-minute one is next soon
+    if [[ -n "$full" ]]; then
+        maint_lock "the hourly leak-test" 600 || { info "vpn-watch: the stack was held for 10 minutes — the full run waits for the next hour"; return 0; }
+    else
+        maint_try_lock || { info "vpn-watch: an update, a backup or up has the stack — checked again in 5 minutes"; return 0; }
+    fi
+    [[ ! -e "$STOP_MARKER" ]] || { info "vpn-watch: a backup is mid-copy — checked again later"; return 0; }
     # its own news went to ops (leak_verdict, one message per change): a
     # failed unit would only tell it again, so only a check that could not run fails
-    vpn_supervise || die "vpn-watch: the VPN'd services could not be started — see above"
+    vpn_supervise "$full" || die "vpn-watch: the VPN'd services could not be started — see above"
 }
 
-LEAKCHECK_UNIT=mediastack-leakcheck
-LEAKCHECK_EVERY='*:0/5'   # fixed: the safety cadence is not a setting
-leakcheck_service_render() { timer_service_render "Mediastack leak check and VPN group supervisor" vpn-watch; }
-leakcheck_timer_render()   { timer_timer_render "Mediastack leak check and VPN group supervisor" "$LEAKCHECK_EVERY"; }
-leakcheck_ensure() { # write, enable and start the 5-minute timer; reloads systemd only when a file changed
-    local svc tim changed=0
+# The gate's three timers, one line each: UNIT|DESCRIPTION|VERB|ONCALENDAR|RANDOM DELAY (s)
+#   every 5 minutes  the local checks, and the supervisor
+#   hourly           the full run, at a random minute: who the internet sees
+#   daily            this host's own address (RIPEstat), at a random time —
+#                    never in the same run as the tunnel's checkers
+# Fixed: the safety cadence is not a setting.
+GATE_TIMERS=(
+    "mediastack-leakcheck|Mediastack leak check and VPN group supervisor|vpn-watch|*:0/5|"
+    "mediastack-leaktest|Mediastack hourly leak-test (the full run)|vpn-watch --full|hourly|3000"
+    "mediastack-hostid|Mediastack record of this host's own address|host-identity|daily|43200"
+)
+gate_timer_field() { # gate_timer_field UNIT N -> field N (1-based) of its GATE_TIMERS line
+    local l; for l in "${GATE_TIMERS[@]}"; do [[ "${l%%|*}" == "$1" ]] && { cut -d'|' -f"$2" <<<"$l"; return; }; done
+}
+gate_service_render() { timer_service_render "$(gate_timer_field "$1" 2)" "$(gate_timer_field "$1" 3)"; }
+gate_timer_render()   { timer_timer_render "$(gate_timer_field "$1" 2)" "$(gate_timer_field "$1" 4)" "$(gate_timer_field "$1" 5)"; }
+gate_timers_ensure() { # write, enable and start the gate's timers; reloads systemd only when a file changed
+    local l u svc tim changed=0
     svc=$(mktemp); tim=$(mktemp)
-    leakcheck_service_render > "$svc"
-    leakcheck_timer_render > "$tim"
-    sudo cmp -s "$svc" "$SYSTEMD_DIR/$LEAKCHECK_UNIT.service" 2>/dev/null || { sudo install -m 644 "$svc" "$SYSTEMD_DIR/$LEAKCHECK_UNIT.service"; changed=1; }
-    sudo cmp -s "$tim" "$SYSTEMD_DIR/$LEAKCHECK_UNIT.timer" 2>/dev/null || { sudo install -m 644 "$tim" "$SYSTEMD_DIR/$LEAKCHECK_UNIT.timer"; changed=1; }
+    for l in "${GATE_TIMERS[@]}"; do
+        u=${l%%|*}
+        gate_service_render "$u" > "$svc"; gate_timer_render "$u" > "$tim"
+        sudo cmp -s "$svc" "$SYSTEMD_DIR/$u.service" 2>/dev/null || { sudo install -m 644 "$svc" "$SYSTEMD_DIR/$u.service"; changed=1; }
+        sudo cmp -s "$tim" "$SYSTEMD_DIR/$u.timer" 2>/dev/null || { sudo install -m 644 "$tim" "$SYSTEMD_DIR/$u.timer"; changed=1; }
+    done
     rm -f "$svc" "$tim"
     (( changed )) || return 0
     failure_unit_ensure
     sudo systemctl daemon-reload
-    sudo systemctl enable --now "$LEAKCHECK_UNIT.timer" >/dev/null 2>&1 \
-        || die "could not enable $LEAKCHECK_UNIT.timer — check: systemctl status $LEAKCHECK_UNIT.timer"
-    info "leak check timer installed: every 5 minutes"
+    for l in "${GATE_TIMERS[@]}"; do
+        u=${l%%|*}
+        sudo systemctl enable --now "$u.timer" >/dev/null 2>&1 \
+            || die "could not enable $u.timer — check: systemctl status $u.timer"
+    done
+    info "leak checks scheduled: local every 5 minutes, the full run hourly, this host's own address daily"
 }

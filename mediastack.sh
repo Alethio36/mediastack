@@ -682,7 +682,7 @@ cmd_up()   {
     fi
     vpn_reattach_guard   # fail-closed: no service may run pinned to a dead gluetun
     vpnguard_ensure      # (re)install the boot/daemon guard unit
-    leakcheck_ensure     # and the 5-minute leak check that supervises the VPN group
+    gate_timers_ensure   # and the leak checks: local every 5 minutes (the VPN group's supervisor), full hourly, the host's address daily
     svc_enabled authentik && authentik_release_record
     sudo rm -f "$STOP_MARKER"   # everything is up: a cut-off backup's marker is settled
     ok "Stack started."
@@ -1138,7 +1138,8 @@ VERBS=(
     "list~list [--json]~free~Internal~Enabled services, one per line (--json: panel entity records)."
     "vpn-apply~vpn-apply <svc> on|off~max=2~Internal~Set a service's VPN membership AND apply it (panel button)."
     "vpn-guard~vpn-guard [--boot]~allow=--boot~Internal~Start the VPN group through the leak gate (boot/daemon unit)."
-    "vpn-watch~vpn-watch~none~Internal~The 5-minute leak check; starts any VPN'd service that is not running, through the gate (its timer)."
+    "vpn-watch~vpn-watch [--full]~allow=--full~Internal~The 5-minute leak check; starts any VPN'd service that is not running, through the gate (--full: the hourly run)."
+    "host-identity~host-identity~none~Internal~Refresh the record of this host's own address that leak-test compares against (daily timer)."
     "unit-failed~unit-failed <unit>~max=1~Internal~Tell ops a scheduled or boot run failed (systemd's OnFailure hook)."
     "frontdoor-refresh~frontdoor-refresh~none~Internal~Regenerate the panel's config and entity files."
     "audit-extract~audit-extract~none~Internal~Copy new deletion events from auditd's rotating log into the durable log (hourly timer)."

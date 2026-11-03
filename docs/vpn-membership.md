@@ -175,6 +175,10 @@ gluetun is proven (`services/gluetun/gate.sh`):
   `leak-test --local`, and any enabled member that is not running — crashed,
   or a boot that came too early — is started through the gate. To keep one
   stopped, `disable` it or `down` the stack; a `docker stop` is undone.
+- **The full run comes hourly** (`vpn-watch --full`, `mediastack-leaktest.timer`,
+  at a random minute): who the internet sees, whatever gluetun's proof. The
+  record of this host's own address it compares against is refreshed once a
+  day at a random time (`host-identity`), never in the same run.
 - **How much proof a start needs follows gluetun:** a full run that finds no
   leak records which gluetun it proved (its container and start time). Until
   gluetun restarts, the local checks are enough before a member starts; after

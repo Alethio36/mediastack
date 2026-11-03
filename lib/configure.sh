@@ -617,6 +617,12 @@ cmd_configure() {
     require_free_ports
     provision
     cmd_apply_timer
+    # leak-test compares the tunnel against this host's own address: the
+    # first record now, before any tunnel runs — then once a day (host-identity)
+    if [[ -z "$(hostid_age)" ]]; then
+        if hostid_refresh; then ok "record of this host's own address made (RIPEstat)"
+        else warn "record of this host's own address not made — $RIPESTAT_ERR. leak-test reports UNPROVEN until it is: ./mediastack.sh host-identity"; fi
+    fi
 
     echo; _configure_panel_offer
     hr "Configure complete"

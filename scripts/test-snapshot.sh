@@ -140,8 +140,11 @@ snap_host() { # snap_host OUT — what the panel and the VPN guard install, from
     failure_unit_render | normalize > "$out/mediastack-failure@.service"
     timer_service_render "Mediastack update pipeline" "update --auto" | normalize > "$out/mediastack-update.service"
     timer_timer_render "Mediastack update pipeline" "*-*-* 04:00:00 Etc/UTC" > "$out/mediastack-update.timer"
-    leakcheck_service_render | normalize > "$out/mediastack-leakcheck.service"
-    leakcheck_timer_render > "$out/mediastack-leakcheck.timer"
+    local u
+    for u in mediastack-leakcheck mediastack-leaktest mediastack-hostid; do
+        gate_service_render "$u" | normalize > "$out/$u.service"
+        gate_timer_render "$u" > "$out/$u.timer"
+    done
     # every unit vpnguard_ensure writes (its own, the failure hook's) lands in $work, never the host's
     SYSTEMD_DIR=$work/systemd; VPNGUARD_UNIT=$SYSTEMD_DIR/mediastack-vpnguard.service
     rm -rf "$SYSTEMD_DIR"; mkdir -p "$SYSTEMD_DIR"; vpnguard_ensure

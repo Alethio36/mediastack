@@ -72,7 +72,9 @@ lookups through the VPN is on the roadmap (Security & access).
 
 - **Your home side**, from the host: RIPEstat is asked for your address, its
   network (ASN) and all of that network's IPv4 blocks. The answer is kept in
-  `local/host-identity` (private, never committed) and refreshed once a day.
+  `local/host-identity` (private, never committed) and refreshed once a day at
+  a random time (`host-identity`, its own timer) — never inside a leak-test, so
+  no run asks about your home address and the VPN's side by side.
 - **The VPN side**, from inside gluetun: Mullvad's checker gives the exit
   address, Google's resolver the subnet a UDP query came from, bash.ws every
   resolver that answered ten never-seen names.

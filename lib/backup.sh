@@ -1106,16 +1106,15 @@ WorkingDirectory=$SCRIPT_DIR
 ExecStart=$SCRIPT_DIR/mediastack.sh $2
 EOF
 }
-timer_timer_render() { # timer_timer_render DESCRIPTION ONCALENDAR
-    cat <<EOF
-[Unit]
-Description=$1 (scheduled)
-[Timer]
-OnCalendar=$2
-Persistent=true
-[Install]
-WantedBy=timers.target
-EOF
+timer_timer_render() { # timer_timer_render DESCRIPTION ONCALENDAR [RANDOM-DELAY-SECONDS]
+    echo "[Unit]"
+    echo "Description=$1 (scheduled)"
+    echo "[Timer]"
+    echo "OnCalendar=$2"
+    [[ -z "${3:-}" ]] || echo "RandomizedDelaySec=$3"   # a new random delay each time it elapses
+    echo "Persistent=true"
+    echo "[Install]"
+    echo "WantedBy=timers.target"
 }
 
 timer_write() { # timer_write UNIT DESCRIPTION VERB ONCALENDAR — write, enable and start one oneshot service + timer

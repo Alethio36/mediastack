@@ -1,0 +1,7 @@
+[Unit]
+Description=Mediastack record of this host's own address
+OnFailure=mediastack-failure@%n.service
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/mediastack.sh host-identity

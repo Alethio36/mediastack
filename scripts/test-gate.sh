@@ -14,7 +14,8 @@
 #   * the supervisor (vpn-watch, every 5 min, and the boot): starts members not running through
 #     the gate; skips while an update, backup or up holds the stack, or a backup is mid-copy
 #   * a backup's restart: everything else, gluetun ready, then the group through the gate
-#   * the 5-minute timer and its place in the footprint
+#   * the gate's timers: local every 5 minutes; the full run hourly, at a random
+#     minute; this host's own address daily, at a random time — and in the footprint
 #   * up's two phases: everything but the group, the gate, then the group — and
 #     no second phase when the gate fails
 # Sources the real entrypoint (minus its last line, main "$@"); docker and
@@ -256,13 +257,32 @@ rc=0; leak_test_run 0 1 > /dev/null 2>&1 || rc=$?
 : > "$UP_LOG"; leak_test_run 0 0 > /dev/null 2>&1
 grep -q proof "$UP_LOG" || fail_ "a full run without a FAIL records which gluetun it proved"; pass
 
-# ---- the 5-minute timer ----
+# ---- the hourly run: the full checks, whatever gluetun's proof ----
+eval 'leak_test_run() { echo "test local=$2" >> "$LEAK_LOG"; return 0; }'   # the stub again (the ordering test above used the real one)
+c_inspect_all() { :; }
+RUNNING="gluetun jellyfin qbittorrent sonarr"; ENABLED="gluetun qbittorrent sonarr jellyfin"
+GSTART="2026-11-03T10:00:00Z"; state_set "$LEAK_PROVEN" "gid1 $GSTART"; : > "$LEAK_LOG"
+vpn_supervise full > /dev/null 2>&1
+grep -qx "test local=0" "$LEAK_LOG" || fail_ "--full: the full run though gluetun is proven ($(cat "$LEAK_LOG"))"; pass
+
+# ---- the gate's timers ----
 SYSTEMD_DIR="$T/systemd"; mkdir -p "$SYSTEMD_DIR"; SCRIPT_DIR=/opt/ms
 sudo() { case "$1" in cmp) shift; cmp "$@" ;; install) shift; install "$@" ;; *) : ;; esac; }
-leakcheck_ensure > /dev/null 2>&1
-grep -qx 'OnCalendar=\*:0/5' "$SYSTEMD_DIR/mediastack-leakcheck.timer" || fail_ "every 5 minutes ($(cat "$SYSTEMD_DIR/mediastack-leakcheck.timer"))"; pass
+gate_timers_ensure > /dev/null 2>&1
+tim() { cat "$SYSTEMD_DIR/$1.timer"; }
+grep -qx 'OnCalendar=\*:0/5' <(tim mediastack-leakcheck) && ! grep -q RandomizedDelaySec <(tim mediastack-leakcheck) \
+    || fail_ "the local checks: every 5 minutes, on the dot ($(tim mediastack-leakcheck))"; pass
 grep -qx 'ExecStart=/opt/ms/mediastack.sh vpn-watch' "$SYSTEMD_DIR/mediastack-leakcheck.service" || fail_ "runs vpn-watch"; pass
-grep -qx "$FAILURE_HOOK" "$SYSTEMD_DIR/mediastack-leakcheck.service" || fail_ "a run that cannot run tells ops (OnFailure)"; pass
-grep -q "mediastack-leakcheck.timer" lib/footprint.sh && grep -q "mediastack-leakcheck.service" lib/footprint.sh || fail_ "both units in the host-footprint registry (uninstall removes them)"; pass
+grep -qx 'OnCalendar=hourly' <(tim mediastack-leaktest) && grep -qx 'RandomizedDelaySec=3000' <(tim mediastack-leaktest) \
+    || fail_ "the full run: hourly, at a random minute ($(tim mediastack-leaktest))"; pass
+grep -qx 'ExecStart=/opt/ms/mediastack.sh vpn-watch --full' "$SYSTEMD_DIR/mediastack-leaktest.service" || fail_ "runs vpn-watch --full"; pass
+grep -qx 'OnCalendar=daily' <(tim mediastack-hostid) && grep -qx 'RandomizedDelaySec=43200' <(tim mediastack-hostid) \
+    || fail_ "the host's own address: daily, at a random time ($(tim mediastack-hostid))"; pass
+grep -qx 'ExecStart=/opt/ms/mediastack.sh host-identity' "$SYSTEMD_DIR/mediastack-hostid.service" || fail_ "runs host-identity"; pass
+(( 43200 + 86400 < HOSTID_STALE_AGE )) || fail_ "two daily runs can be 36h apart: the record must outlive that (stale at $HOSTID_STALE_AGE s)"; pass
+for u in mediastack-leakcheck mediastack-leaktest mediastack-hostid; do
+    grep -qx "$FAILURE_HOOK" "$SYSTEMD_DIR/$u.service" || fail_ "$u: a run that cannot run tells ops (OnFailure)"; pass
+    grep -q "$u.timer" lib/footprint.sh && grep -q "$u.service" lib/footprint.sh || fail_ "$u: both units in the host-footprint registry (uninstall removes them)"; pass
+done
 
 echo "test-gate: $checks checks passed"

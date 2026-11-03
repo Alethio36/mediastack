@@ -290,8 +290,15 @@ rc=1
 CALL cmd_vpn_guard [2] --boot --boot
 ## vpn-watch
 CALL cmd_vpn_watch [0]
+## vpn-watch --full
+CALL cmd_vpn_watch [1] --full
 ## vpn-watch x
-ERROR 'vpn-watch' takes no arguments (got: x)
+ERROR unknown argument 'x' for 'vpn-watch' (accepts: --full)
+rc=1
+## host-identity
+CALL cmd_host_identity [0]
+## host-identity x
+ERROR 'host-identity' takes no arguments (got: x)
 rc=1
 ## frontdoor-refresh
 CALL cmd_frontdoor_refresh [0]

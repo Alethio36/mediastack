@@ -69,8 +69,7 @@ ip4_in_prefixes() { # ip4_in_prefixes IP < a.b.c.d/n lines -> 0 and the first pr
 
 # ------------------------------------------------- this host's own address --
 HOSTID_FILE="$LOCAL_DIR/host-identity"
-HOSTID_REFRESH_AGE=86400    # refreshed when a day old
-HOSTID_STALE_AGE=172800     # older than two days (refreshes failing): comparisons are UNPROVEN
+HOSTID_STALE_AGE=172800     # older than two days (the daily refresh failing): comparisons are UNPROVEN
 HOSTID_KEEP_IPS=50          # every address the host has had, newest first: a leak on an old one still matches
 RIPESTAT=https://stat.ripe.net/data
 RIPESTAT_ERR=""
@@ -120,7 +119,7 @@ hostid_refresh() { # ask RIPEstat for this host's address, network and IPv4 bloc
     {
         echo "# mediastack: this host's own internet address, its network and that network's"
         echo "# IPv4 blocks — leak-test compares the tunnel against them (services/gluetun/leak.sh)."
-        echo "# Private: never commit it, never paste it. Delete it and leak-test rebuilds it."
+        echo "# Private: never commit it, never paste it. Rebuilt once a day (host-identity)."
         echo "updated $now"
         echo "asn $asn"
         hostid_ips_merged "$ip" "$now"
@@ -130,16 +129,31 @@ hostid_refresh() { # ask RIPEstat for this host's address, network and IPv4 bloc
     install -m 600 "$tmp" "$HOSTID_FILE"; rm -f "$tmp"; repo_owned "$HOSTID_FILE"
 }
 
-hostid_ensure() { # refresh the record when a day old -> 0 usable; 1 with the reason in HOSTID_WHY
+# The record is refreshed once a day at a random time (host-identity, its
+# timer), never by leak-test: RIPEstat sees your home address, the tunnel's
+# checkers the VPN's — asked in the same run, a party watching both would
+# see the two questions side by side in time.
+hostid_ensure() { # the record usable? -> 0; 1 with the reason in HOSTID_WHY (nothing is asked here)
     local age; age=$(hostid_age)
-    if [[ -z "$age" ]] || (( age >= HOSTID_REFRESH_AGE )); then
-        if hostid_refresh; then info "record of this host's address refreshed (RIPEstat): your network has $(hostid_get prefix | wc -l) IPv4 blocks"
-        else warn "record of this host's address not refreshed — $RIPESTAT_ERR"; fi
-        age=$(hostid_age)
+    if [[ -z "$age" ]]; then
+        HOSTID_WHY="no record of this host's own address yet — the daily refresh makes one (now: ./mediastack.sh host-identity)"; return 1
     fi
-    if [[ -z "$age" ]]; then HOSTID_WHY="no record of this host's own address (${RIPESTAT_ERR:-never refreshed})"; return 1; fi
-    if (( age >= HOSTID_STALE_AGE )); then HOSTID_WHY="the record of this host's own address is $(( age / 3600 ))h old ($RIPESTAT_ERR)"; return 1; fi
+    if (( age >= HOSTID_STALE_AGE )); then
+        HOSTID_WHY="the record of this host's own address is $(( age / 3600 ))h old — the daily refresh is failing (journalctl -u mediastack-hostid; now: ./mediastack.sh host-identity)"; return 1
+    fi
     return 0
+}
+
+cmd_host_identity() { # refresh the record of this host's own address (its daily timer, or by hand)
+    load_env
+    if hostid_refresh; then
+        ok "record of this host's address refreshed (RIPEstat): your network has $(hostid_get prefix | wc -l) IPv4 blocks"
+        return 0
+    fi
+    # the timer's failure is not news yet: the record serves two days, then
+    # leak-test turns UNPROVEN and says so; by hand, the failure is the answer
+    scheduled_run && { warn "record of this host's address not refreshed — $RIPESTAT_ERR"; return 0; }
+    die "record of this host's address not refreshed — $RIPESTAT_ERR"
 }
 
 # ------------------------------------------------- who the internet sees --

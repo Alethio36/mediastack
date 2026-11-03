@@ -56,6 +56,7 @@ date() { [[ "${1:-}" == +%s ]] && echo "$NOW" || command date "$@"; }
 RIPE_IP=198.51.100.7 RIPE_ASN=64500 RIPE_FAIL=""
 curl() { # curl -4 -sS -m 15 -w ... URL: RIPEstat's three answers, then the HTTP code
     local url=${*: -1}
+    echo "$url" >> "$T/curl"   # who was asked, and how often
     [[ -n "$RIPE_FAIL" ]] && { printf 'curl: (6) Could not resolve host: stat.ripe.net\n000'; return 6; }
     case "$url" in
         */whats-my-ip/*)         printf '{"data":{"ip":"%s"}}\n200' "$RIPE_IP" ;;
@@ -65,22 +66,34 @@ curl() { # curl -4 -sS -m 15 -w ... URL: RIPEstat's three answers, then the HTTP
 }
 hostid_get asn | grep -q . && fail_ "no record yet: nothing to read"; pass
 [[ -z "$(hostid_age)" ]] || fail_ "no record: no age"; pass
-hostid_ensure > "$T/out" 2>&1 || fail_ "first run: refreshed and usable — $(cat "$T/out")"; pass
+# judging the record never asks RIPEstat: the daily refresh does (host-identity),
+# never in the same run as the tunnel's checkers
+curl_calls() { if [[ -s "$T/curl" ]]; then grep -c . "$T/curl"; else echo 0; fi; }
+load_env() { :; }
+hostid_ensure && fail_ "no record: not usable"; pass
+[[ "$HOSTID_WHY" == *"no record"*"./mediastack.sh host-identity"* ]] || fail_ "names the way to make one ($HOSTID_WHY)"; pass
+(( $(curl_calls) == 0 )) || fail_ "and asked nobody"; pass
+scheduled_run() { return 1; }
+cmd_host_identity > "$T/out" 2>&1 || fail_ "host-identity: refreshed — $(cat "$T/out")"; pass
 [[ "$(hostid_get asn)" == 64500 ]] || fail_ "the network is recorded"; pass
 [[ "$(hostid_get prefix | sort | paste -sd' ')" == "198.51.100.0/22 198.51.100.0/24" ]] || fail_ "IPv4 blocks only, the host's own included ($(hostid_get prefix | paste -sd' '))"; pass
 [[ "$(stat -c %a "$HOSTID_FILE")" == 600 ]] || fail_ "the record is private (600)"; pass
-NOW=$((NOW + 3600)); RIPE_IP=198.51.101.9
-hostid_ensure > /dev/null 2>&1; [[ "$(hostid_get ip | paste -sd' ')" == "198.51.100.7" ]] || fail_ "an hour later: not refreshed"; pass
-NOW=$((NOW + HOSTID_REFRESH_AGE))
-hostid_ensure > /dev/null 2>&1 || fail_ "a day later: refreshed"; pass
+: > "$T/curl"; NOW=$((NOW + 86400 + 3600))
+hostid_ensure || fail_ "a day and an hour old: still usable"; pass
+(( $(curl_calls) == 0 )) || fail_ "and not refreshed by being judged"; pass
+RIPE_IP=198.51.101.9; cmd_host_identity > /dev/null 2>&1
 [[ "$(hostid_get ip | paste -sd' ')" == "198.51.101.9 198.51.100.7" ]] || fail_ "a new address joins, newest first, the old one kept ($(hostid_get ip | paste -sd' '))"; pass
-NOW=$((NOW + HOSTID_REFRESH_AGE)); RIPE_FAIL=1
-hostid_ensure > "$T/out" 2>&1 || fail_ "a failed refresh within two days: the record still serves"; pass
-grep -qE "not refreshed — RIPEstat whats-my-ip: curl: \(6\) Could not resolve host: stat.ripe.net ?$" "$T/out" || fail_ "and says why, with the evidence, nothing after it — $(cat "$T/out")"; pass
+RIPE_FAIL=1
+(cmd_host_identity) > "$T/out" 2>&1 && fail_ "by hand, a failed refresh: an error"; pass
+grep -qE "not refreshed — RIPEstat whats-my-ip: curl: \(6\) Could not resolve host: stat.ripe.net ?$" "$T/out" || fail_ "says why, with the evidence — $(cat "$T/out")"; pass
+scheduled_run() { return 0; }
+(cmd_host_identity) > "$T/out" 2>&1 || fail_ "its timer: a failed refresh is not a failed unit (the record serves two days; leak-test says when it no longer does)"; pass
+grep -q "not refreshed" "$T/out" || fail_ "but the journal says so"; pass
 NOW=$((NOW + HOSTID_STALE_AGE))
-hostid_ensure > /dev/null 2>&1 && fail_ "refreshes failing past two days: unusable"; pass
-[[ "$HOSTID_WHY" == *"h old (RIPEstat whats-my-ip: curl: (6)"* ]] || fail_ "the reason names its age and the error ($HOSTID_WHY)"; pass
-RIPE_FAIL=""; hostid_ensure > /dev/null 2>&1 || fail_ "refreshes working again: usable"; pass
+hostid_ensure && fail_ "two days without a refresh: unusable"; pass
+[[ "$HOSTID_WHY" == *"h old — the daily refresh is failing"*"host-identity"* ]] || fail_ "the reason names its age and the fix ($HOSTID_WHY)"; pass
+RIPE_FAIL=""; cmd_host_identity > /dev/null 2>&1; hostid_ensure || fail_ "refreshed again: usable"; pass
+unset -f scheduled_run
 
 # ---- verdicts ----
 lt_reset; [[ $(lt_exit_code) == 0 ]] || fail_ "nothing found: 0"; pass

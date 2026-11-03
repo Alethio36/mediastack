@@ -1,0 +1,8 @@
+[Unit]
+Description=Mediastack hourly leak-test (the full run) (scheduled)
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=3000
+Persistent=true
+[Install]
+WantedBy=timers.target
