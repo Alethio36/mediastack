@@ -131,12 +131,40 @@ validation, notifications, SSO). Before `migrate` moves the first household:
    Deluge-only, Jellyfin-only, Wizarr, no Traefik). Watch there whether the household's files
    direct-play; frequent transcodes would pull the transcoding evaluation
    forward.
-4. A restore drill — a disaster test: `backup`, `restore --service
+4. Front-loaded questions *(decided Oct 2026: after the leak gate, the
+   internal networks and the small fixes; before the tutorial, which
+   describes this flow)* — today `up` (traefik-setup), `wire` (restore point,
+   Jellyfin admin/server name/library names, arr and download-client logins,
+   notification URLs, Wizarr key) and `trash-sync` (TRaSH profiles) still
+   ask between long waits. Design:
+   * `configure` asks everything; settings go to `.env` (most are already
+     `.env` keys asked only when empty); the later steps stop prompting and
+     a missing answer is one error shape: "X is not set — run configure";
+   * notification URLs are one-shot: held in `local/state` (0600) and handed
+     to Apprise by `wire apprise`, then deleted — a `.env` copy would drift
+     from Apprise, which `notify set` edits;
+   * library names are no longer asked (defaults; renamed in Jellyfin) —
+     also fixes runs without a terminal skipping library creation; the
+     first-wire restore point is always taken (it defaulted to Yes);
+   * the Wizarr API key stays interactive (`wire wizarr`, upstream needs its
+     UI) and becomes a to-do in the closing summary;
+   * configure ends with a summary (secrets in outline) and "Start everything
+     now?" -> up, panel install, wire, trash-sync unattended; stop at the
+     first failed step; trash-sync only when wire had no failures; an ops
+     notification when it finishes;
+   * the Cloudflare token is verified at configure time, not after the pulls.
+
+   The sudo refresher this needed shipped on its own (Oct 2026,
+   `sudo_keepalive`): every run keeps the password it was given. Suggested,
+   not agreed:
+   one operator login for the arrs, the download client and the Jellyfin
+   admin (six questions to two; one leaked password opens all three).
+5. A restore drill — a disaster test: `backup`, `restore --service
    authentik`, `restore --all`, the portal's database, Kavita and
    Audiobookshelf included.
-5. The README as a chapter-style tutorial for every technical level, and a
+6. The README as a chapter-style tutorial for every technical level, and a
    small built-in page with local how-tos and a household quick-start.
-6. Then `migrate` (below, under Project health).
+7. Then `migrate` (below, under Project health).
 Lower priority: RAM and system requirements, measured on the rebuilt box.
 
 ### Organised by service — phases 1–2 done (Oct 2026), phase 3 under way
@@ -460,7 +488,7 @@ arrive on their own, as with watchtower, but validated first.
     Navidrome's, the web panel's (OliveTin) — and what only a custom
     stylesheet can reach. An app that takes none is listed, not forced.
   * **Media of the household's own:** pictures for the sign-in page, the
-    built-in quick-start page (Next, step 5) in the same look, and a
+    built-in quick-start page (Next, step 6) in the same look, and a
     welcome note for new people.
   * **Layout (Oct 2026):** the files in `custom/branding/` (logo, icon,
     background, media), the words in `.env` beside `PORTAL_TITLE` (one
@@ -608,33 +636,6 @@ all built; what each still leaves open is noted below.
   cover windows of seconds (Traefik's own update, a crash). `down` shows no
   page by design: it frees 80/443. Still to verify live: whether a
   container in health state *starting* also loses its route.
-- Front-loaded questions *(designed, parked Oct 2026 — too small to focus on
-  before shipping)* — today `up` (traefik-setup), `wire` (restore point,
-  Jellyfin admin/server name/library names, arr and download-client logins,
-  notification URLs, Wizarr key) and `trash-sync` (TRaSH profiles) still
-  ask between long waits. Design:
-  * `configure` asks everything; settings go to `.env` (most are already
-    `.env` keys asked only when empty); the later steps stop prompting and
-    a missing answer is one error shape: "X is not set — run configure";
-  * notification URLs are one-shot: held in `local/state` (0600) and handed
-    to Apprise by `wire apprise`, then deleted — a `.env` copy would drift
-    from Apprise, which `notify set` edits;
-  * library names are no longer asked (defaults; renamed in Jellyfin) —
-    also fixes runs without a terminal skipping library creation; the
-    first-wire restore point is always taken (it defaulted to Yes);
-  * the Wizarr API key stays interactive (`wire wizarr`, upstream needs its
-    UI) and becomes a to-do in the closing summary;
-  * configure ends with a summary (secrets in outline) and "Start everything
-    now?" -> up, panel install, wire, trash-sync unattended; stop at the
-    first failed step; trash-sync only when wire had no failures; an ops
-    notification when it finishes;
-  * the Cloudflare token is verified at configure time, not after the pulls.
-
-  The sudo refresher this needed shipped on its own (Oct 2026,
-  `sudo_keepalive`): every run keeps the password it was given. Suggested,
-  not agreed:
-  one operator login for the arrs, the download client and the Jellyfin
-  admin (six questions to two; one leaked password opens all three).
 
 ### Security & access
 - **Traefik without the Docker socket** *(recommended, Oct 2026 — after the
