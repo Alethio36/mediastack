@@ -160,7 +160,7 @@ vpn_supervise() { # vpn_supervise [full] — local or full checks (as gluetun's 
 }
 
 cmd_vpn_watch() { # the 5-minute check (mediastack-leakcheck.timer); --full: the hourly run (mediastack-leaktest.timer)
-    load_env
+    load_env; render   # once, here: < <(vpn_group) and every $(svc_cname) would each render again in their subshells
     local full=""; [[ "${1:-}" == --full ]] && full=full
     # a backup, an update or `up` has the stack: they start the group
     # themselves. The hourly run waits a while for its turn; the 5-minute one is next soon

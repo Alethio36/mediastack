@@ -6,6 +6,7 @@
 #     reuses that render — called inside a $( ) itself, it still renders once
 #   * trash_instances (both arr types) renders once
 #   * a caller that rendered first passes its render down: no render at all
+#   * credentials renders once for its whole listing (11 times, found live)
 # Found live (Oct 2026): trash-sync rendered ~150 times, two silent minutes
 # before its first line. Sources the real entrypoint (minus main "$@"); DC is
 # a stub that counts renders.
@@ -53,5 +54,15 @@ fresh; out=$(trash_instances)
 
 fresh; render; out=$(trash_instances); out=$(trash_instances)
 (( $(renders) == 1 )) || fail_ "a caller that rendered first: $(renders) renders, expected its own 1"; pass
+
+# credentials: a $(svc_url) per row and $(arr_instances), each a subshell —
+# found live (Nov 2026): 11 renders for one listing
+load_env() { :; }
+env_or_note() { echo x; }
+signin_is() { [[ "$1" == authentik ]]; }
+svc_enabled() { return 0; }
+arr_key() { echo key; }; bazarr_key() { echo key; }
+fresh; cmd_credentials > /dev/null 2>&1
+(( $(renders) == 1 )) || fail_ "credentials: $(renders) renders, expected 1 (it renders in its own scope first)"; pass
 
 echo "test-render-cache: $checks checks passed"

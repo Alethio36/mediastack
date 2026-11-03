@@ -140,7 +140,7 @@ cmd_vpn_guard() {
 # could not be proven. --local: only what this host can see for itself — no
 # outside party is asked anything (the 5-minute check).
 cmd_leak_test() {
-    load_env
+    load_env; render   # once, here: its $(svc_cname) and helpers would each render again in their subshells
     local a killswitch=0 lonly=0 rc=0
     for a in "$@"; do case $a in
         --killswitch) killswitch=1 ;;

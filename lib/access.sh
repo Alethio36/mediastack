@@ -17,7 +17,7 @@ signin_model() { # -> authentik | wizarr | none: who signs people in (the instal
 signin_is() { [[ "$(signin_model)" == "$1" ]]; }   # signin_is MODEL
 
 cmd_credentials() {
-    load_env
+    load_env; render   # once, here: every $(svc_url) and $(arr_instances) below would render again in its subshell
     hr "Credentials (stored in .env)"
     printf '%-22s %s\n' "Arr apps user"        "$(env_or_note ARR_USER '(not set — run wire)')"
     printf '%-22s %s\n' "Arr apps password"    "$(env_or_note ARR_PASSWORD '(not set — run wire)')"
