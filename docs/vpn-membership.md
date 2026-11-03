@@ -187,18 +187,25 @@ gluetun is proven (`services/gluetun/gate.sh`):
   address** (all of it from before the stop), so the gate after a nightly
   backup does not wait out old tunnel sessions.
 
-### Update cascades the gluetun group
+### Update goes through the gate
 
-When an update recreates gluetun (new image → new container ID), its
-`service:gluetun` borrowers would be left on the dead ID unless they are
-recreated too. `update` therefore checks whether gluetun itself will be
-recreated — a new image, or a config whose compose hash differs from the
-running container's (`gluetun_recreates`) — and only then force-recreates
-gluetun together with its enabled borrowers as one group, so no borrower is
-ever orphaned in the first place — prevention, with no repair window. Being
-in the target list is not enough: every full update lists gluetun, and until
-Oct 2026 the whole group was recreated every time, a tunnel bounce on every
-update night. Anything it cannot read counts as a change.
+`update` checks whether gluetun itself will be recreated — a new image, or a
+config whose compose hash differs from the running container's
+(`gluetun_recreates`); being in the target list is not enough (every full
+update lists gluetun, and until Oct 2026 the whole group bounced every night).
+Anything it cannot read counts as a change.
+
+- **gluetun changed:** it is stopped (what the host tracked from its address
+  is forgotten), recreated with the other non-VPN targets, proven by the full
+  leak-test, and only then does the whole VPN group re-join it — the members
+  sat in its old namespace, with no network, meanwhile. On a new gluetun
+  *image*, the kill-switch proof (`leak-test --killswitch`'s disruptive
+  checks) runs after the health gate, the same night.
+- **gluetun unchanged:** the local checks run before the group's targets are
+  recreated (gluetun was proven by the restore point's restart).
+- **A FAIL** stops the group (the gate tells ops), and the update fails.
+- **While the gate is closed** `update` refuses before anything is touched:
+  `up` re-proves gluetun first.
 
 After the tunnel restarts, gluetun reports healthy before its DNS serves.
 `trash-sync` therefore waits until HTTPS by name works through the tunnel

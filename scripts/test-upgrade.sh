@@ -85,6 +85,8 @@ eq "the second half finishes, never pulls" "$(paste -sd'|' "$LOG")" "finish aaa1
     unset -f exec
     # shellcheck disable=SC2034  # read by maint_lock
     MAINT_LOCKED=0
+    # shellcheck disable=SC2034  # read by maint_lock: a held lock refuses within a second
+    MAINT_SHORT_WAIT=1
     MAINT_LOCK=$T/maint.lock; : > "$LOG"
     ( flock 9; sleep 5 ) 9>"$MAINT_LOCK" & holder=$!
     sleep 0.3

@@ -249,7 +249,7 @@ digest_short repo/x@sha256:baba630419915985442f315f08b0cf46d9f4c8a0cc4bd38e94a6d
 
 # ---- the scheduled backup: skip, lock, streams ----
 printf 'BACKUP_ROOT=%s/sk\nUPDATE_DEFER_IF_ACTIVE=false\n' "$T" > "$ENV_FILE"; mkdir -p "$T/sk"
-MAINT_LOCK=$T/maint.lock; MAINT_WAIT=1; load_env() { :; }; warn() { echo "WARN $*"; }; ok() { echo "OK $*"; }; info() { :; }
+MAINT_LOCK=$T/maint.lock; MAINT_WAIT=1; MAINT_SHORT_WAIT=1; load_env() { :; }; warn() { echo "WARN $*"; }; ok() { echo "OK $*"; }; info() { :; }
 notify() { echo "NOTIFY $2"; }
 backup_take() { echo "TAKE $1"; }
 sched() { ( MAINT_LOCKED=0; backup_scheduled ) 2>&1; }
@@ -266,6 +266,10 @@ out=$(sched) || true
 out=$( ( MAINT_LOCKED=0; maint_lock backup 0 ) 2>&1 ) && fail_ "a run you start refuses while the lock is held"
 [[ "$out" == *"Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — backup refused"* ]] || fail_ "says why: $out"; pass
 wait "$holder"
+# a short hold (the 5-minute leak check) is waited out by a run you start, not refused
+MAINT_SHORT_WAIT=5; ( exec 8<"$MAINT_LOCK"; flock 8; sleep 1 ) & holder=$!; sleep 0.3
+( MAINT_LOCKED=0; maint_lock backup 0 ) > /dev/null 2>&1 || fail_ "a run you start waits out a short hold (the leak check)"; pass
+wait "$holder"; MAINT_SHORT_WAIT=1
 MAINT_WAIT=5; ( exec 8<"$MAINT_LOCK"; flock 8; sleep 1 ) & holder=$!; sleep 0.3
 [[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "a timer's run waits for the lock, then runs"; pass
 wait "$holder"; MAINT_WAIT=1
@@ -284,7 +288,7 @@ grep -q 'maint_lock wire 0' <(awk '/^cmd_wire\(\)/,/^}/' lib/wire.sh) || fail_ "
 # ...except update's own wire --verify, a child inside the hold (found live 11-12 Oct:
 # it was refused, and the nightly update died silently before trash-sync)
 ( exec 8<"$MAINT_LOCK"; flock 8; sleep 4 ) & holder=$!; sleep 0.5
-child() { MAINT_LOCKED=$1 bash -c "source '$lib'; MAINT_LOCK='$MAINT_LOCK'; maint_lock wire 0 && echo INSIDE" 2>&1 || true; }
+child() { MAINT_LOCKED=$1 bash -c "source '$lib'; MAINT_LOCK='$MAINT_LOCK'; MAINT_SHORT_WAIT=1; maint_lock wire 0 && echo INSIDE" 2>&1 || true; }
 [[ "$(child 1)" == INSIDE ]] || fail_ "the holder's child (MAINT_LOCKED=1) is inside the hold"; pass
 [[ "$(child "")" == *"wire refused"* ]] || fail_ "any other wire still refuses"; pass
 wait "$holder"

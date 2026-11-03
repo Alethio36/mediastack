@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # safety-live.sh — the safety rules, checked on a RUNNING stack (not CI).
-# Read-only: it changes nothing. Run it on the box, from the repo:
+# Read-only, but for what leak-test itself does: it re-joins a VPN'd service
+# left in gluetun's old namespace, and a proven leak stops the VPN group (the
+# leak gate). Run it on the box, from the repo:
 #   scripts/safety-live.sh
 # before and after each re-org slice, and after any change to the edge, the
 # portal or the VPN. Exit 0 = every check passed.

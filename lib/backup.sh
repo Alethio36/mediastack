@@ -69,15 +69,21 @@ backup_scheduled() {
 # MAINT_LOCKED=1 (update's own wire --verify: a separate process, inside the hold).
 MAINT_LOCK=/run/lock/mediastack-maintenance.lock
 MAINT_WAIT=21600   # seconds a timer's run waits: an update postponed for streams (UPDATE_DEFER_MAX_MIN) plus its run
+MAINT_SHORT_WAIT=120   # seconds a run you start waits: the 5-minute leak check is done well within it, a backup or update is not
 MAINT_LOCKED=${MAINT_LOCKED:-0}
 maint_lock() { # maint_lock WHAT WAIT-SECONDS — 0: refuse at once when held; rc 1 when the wait ran out
     (( MAINT_LOCKED )) && return 0
     [[ -e "$MAINT_LOCK" ]] || : > "$MAINT_LOCK"
     exec 8<"$MAINT_LOCK"
     if ! flock -n 8; then
-        (( $2 > 0 )) || die "Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — $1 refused. Try again once it has finished."
-        info "Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — $1 waits for it (up to $(( $2 / 3600 )) hours)..."
-        flock -w "$2" 8 || return 1
+        if (( $2 == 0 )); then   # yours: a short hold (the leak check) is waited out, a long one refused
+            info "Another maintenance run holds the stack — $1 waits up to $(( MAINT_SHORT_WAIT / 60 )) min for it..."
+            flock -w "$MAINT_SHORT_WAIT" 8 \
+                || die "Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — $1 refused. Try again once it has finished."
+        else
+            info "Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — $1 waits for it (up to $(( $2 / 3600 )) hours)..."
+            flock -w "$2" 8 || return 1
+        fi
     fi
     MAINT_LOCKED=1
 }
@@ -776,6 +782,43 @@ apply_up() {
     die "update: 'up' failed for a non-health reason (rc=$rc) — see compose's message above. Nothing further was applied."
 }
 
+UPDATE_GCHG=0   # update_apply's verdict: 1 when gluetun was recreated (its kill-switch is proven after the health gate)
+update_apply() { # update_apply TARGET... — apply the pulled images; the VPN group through the leak gate
+    # The leak gate (services/gluetun/gate.sh): the VPN group starts last,
+    # after gluetun is proven. gluetun changed -> it is stopped (what the host
+    # tracked from its address is from before: forgotten), recreated with the
+    # rest, proven by the full run, then the whole group re-joins it (the
+    # members still in its old namespace have had no network meanwhile).
+    # gluetun unchanged -> the local checks before the group's targets.
+    local gchg=0 vgrp rest=() mine=() t gip vrc=0 targets=("$@")
+    vgrp=" $(vpn_group | paste -sd' ') "
+    for t in "${targets[@]}"; do
+        if [[ "$t" == gluetun ]] && gluetun_recreates; then gchg=1; fi
+        if [[ "$vgrp" == *" $t "* ]]; then mine+=("$t"); else rest+=("$t"); fi
+    done
+    if (( gchg )); then
+        info "gluetun changed — recreated first and proven by the full leak-test, then its VPN group"
+        gip=$(gluetun_addr)
+        DC stop gluetun >/dev/null || die "update: could not stop gluetun for its recreate — nothing was applied"
+        lt_flows_forget "$gip"
+    fi
+    if (( ${#rest[@]} )); then apply_up --remove-orphans "${rest[@]}"; fi
+    if (( gchg )); then
+        wait_verdict --recover gluetun \
+            || die "gluetun ${VERDICT_WHY[gluetun]} after its update — the VPN'd services stay off. Roll back: ./mediastack.sh rollback gluetun"
+        read -ra mine <<<"$vgrp"   # every member: all of them sit in the old namespace
+    fi
+    if (( ${#mine[@]} )); then
+        vpn_start_group "${mine[@]}" || vrc=$?
+        case $vrc in
+            0) ;;
+            3) die "update: the leak gate stopped the VPN group (FAIL above; ops was told) — the VPN'd services stay off. Roll back what changed (./mediastack.sh rollback gluetun), then: ./mediastack.sh up" ;;
+            *) die "update: the VPN'd services did not start — see above" ;;
+        esac
+    fi
+    UPDATE_GCHG=$gchg
+}
+
 cmd_update() {
     load_env; require_mounts
     render   # once, here: the target discovery below calls helpers in $( ) subshells, each of which would render again
@@ -805,6 +848,8 @@ cmd_update() {
             maint_lock update 0
         fi
     fi
+    # a proven leak holds the VPN group: nothing is updated until up re-proves gluetun
+    if (( ! dry )); then leak_gate_refuse "update"; fi
     # session deferral (auto runs only)
     if (( auto && ! now )); then defer_while_streaming update || return 0; fi
 
@@ -881,6 +926,7 @@ cmd_update() {
     # authentik takes its releases in order and never goes back: check the
     # step to what this run would start (a --to pin included) before pulling
     if printf '%s\n' "${targets[@]}" | grep -qx authentik; then
+        # shellcheck disable=SC2034  # render's cache (mediastack.sh): the check renders this run's pins
         RENDERED_JSON=""; authentik_release_check
     fi
     hr "Pulling images"
@@ -891,34 +937,12 @@ cmd_update() {
     for s in "${targets[@]}"; do before[$s]=$(c_version "$(svc_cname "$s")"); before_d[$s]=$(svc_digest "$s"); done
     DC pull "${targets[@]}"
     hr "Applying"
-    # Cascade: recreating gluetun gives it a new container ID, and compose does
-    # NOT recreate its network_mode:service:gluetun borrowers when only their
-    # namespace-host changed — they would be left on the dead ID (the ghost).
-    # So when gluetun is in this update's target set, expand the recreate to
-    # its enabled borrowers and --force-recreate the group together, the way a
-    # dependency-aware updater would. Prevention: the borrowers never come up
-    # stale, so there is no repair window. vpn_reattach_guard still runs after
-    # as the catch-all for drift arriving via any OTHER path (out-of-band
-    # compose, reboots) — this only closes the update path's own recreate.
-    if printf '%s\n' "${targets[@]}" | grep -qx gluetun && gluetun_recreates; then
-        # gluetun is in this run: recreate it AND its borrowers as one
-        # force-recreated group so no borrower is left on the old ID. Other
-        # targets apply normally in the same call — only the VPN group is
-        # forced, to avoid needlessly recreating unrelated services.
-        render
-        local grp=(gluetun) b
-        while IFS= read -r b; do
-            [[ -z "$b" ]] && continue
-            svc_enabled "$b" && grp+=("$b")
-        done < <(jq -r '.services | to_entries[]
-            | select((.value.network_mode // "") == "service:gluetun") | .key' \
-            <<<"$RENDERED_JSON")
-        info "gluetun changed — recreating its ${#grp[@]}-member VPN group together so none is orphaned"
-        apply_up --remove-orphans --force-recreate "${grp[@]}"
-        apply_up --remove-orphans "${targets[@]}"
-    else
-        apply_up --remove-orphans "${targets[@]}"
-    fi
+    # recreating gluetun builds a new namespace and compose does not recreate
+    # its borrowers whose own config is unchanged: update_apply re-joins the
+    # whole group after the gate (vpn_start_group's guard). vpn_reattach_guard
+    # below stays the catch-all for drift from any other path.
+    update_apply "${targets[@]}"
+    local gchg=$UPDATE_GCHG
     sudo docker image prune -f >/dev/null
 
     vpn_reattach_guard
@@ -934,6 +958,15 @@ cmd_update() {
         line=$(update_change "$s" "${before[$s]}" "${before_d[$s]}" "$(c_version "$(svc_cname "$s")")" "$(svc_digest "$s")")
         [[ -z "$line" ]] || changed+=("$line")
     done
+    # a new gluetun image: its kill-switch proven on the update night itself
+    # (disruptive: the tunnel dropped, then gluetun stopped) — a FAIL stops the group
+    if (( gchg )) && [[ "${before_d[gluetun]}" != "$(svc_digest gluetun)" ]]; then
+        hr "Update: gluetun's new image — proving its kill-switch"
+        local krc=0
+        leak_test_run 1 0 || krc=$?
+        leak_verdict "$krc"
+        (( krc != 1 )) || bad+=("gluetun(kill-switch)")
+    fi
     prowlarr_indexers_retest
     # search functional probe: index must exist and be non-empty
     if svc_enabled jellysearch; then

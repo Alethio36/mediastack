@@ -38,7 +38,8 @@ step calls can end the whole run (see
 ## The soak harness (test box only)
 
 `scripts/soak.sh` simulates days of use. Each simulated day runs the stack's
-night jobs — manifest, update and backup, whichever timers are enabled, on
+night jobs — the record of the host's own address, manifest, update and
+backup, whichever timers are enabled, on
 the days and times their `OnCalendar` gives (systemd reads it, so a weekly
 update lands on its day) — with the clock moved forward by `faketime`, in
 transient units named like the real ones, so the script behaves as on a real
@@ -49,6 +50,9 @@ the real time. After each day it judges:
 * `doctor`: no FAIL line beyond the known file, no notification stream whose
   last send failed
 * `wire --verify`, at the real time: no drift
+* `scripts/safety-live.sh`, at the real time: the full `leak-test` and the
+  edge's safety rules — every FAIL and every UNPROVEN check is a problem (a
+  known pattern can name an expected one, e.g. a rate-limited checker)
 * containers: all running, none unhealthy, no restart count went up
 * restore points: no more than the retention keeps
 
@@ -64,7 +68,14 @@ tmux new -s soak                           # survives a dropped SSH session
 scripts/soak.sh --test-box --days 7 --known ~/soak.known
 ```
 
-* **Take the box's snapshot first**, and revert to it afterwards.
+* **Take the box's snapshot first**, and revert to it afterwards. **After a
+  revert, wait before running anything:** the box's clock jumps forward, and
+  every `Persistent=true` timer (backup, update, the leak checks) catches up
+  at once and holds the stack — `systemctl list-units 'mediastack-*'
+  --state=activating,active` shows nothing but timers when it is done.
+* **The leak checks run on the real clock meanwhile** (every 5 minutes, the
+  full run hourly): a command the soak runs waits up to 2 minutes for one
+  that holds the stack.
 * **Run it in tmux.** A dropped SSH session would otherwise end it; `nohup`
   does not do, because sudo remembers the password per terminal.
 * **About 40–50 minutes for 7 days** — each backup stops the stack for a

@@ -54,12 +54,16 @@ _doctor_environment() {
 
 _doctor_containers() {
     hr "doctor: containers"
-    local s cn st h
+    local s cn st h held=""
     local pending=()
     local p
+    if leak_gate_closed; then held=" $(vpn_group | paste -sd' ') "; fi
     for p in $(svc_managed); do
       for s in $(svc_shard "$p"); do   # a shard's members are checked with it
         cn=$(svc_cname "$s"); st=$(c_state "$cn"); h=$(c_health "$cn")
+        if [[ "$held" == *" $s "* && "$st" != running ]]; then
+            info "$s held stopped by the leak gate (counted once, at the top)"; continue
+        fi
         case "$st:$h" in
             running:healthy|running:-) ok "$s ($st${h:+, $h})" ;;
             running:starting) pending+=("$s") ;;   # verdict deferred
@@ -347,7 +351,11 @@ _doctor_runtime_audit() {
         [[ "$(c_state "$cn")" == running ]] || continue
         cnt=$(sudo docker logs --since 24h "$cn" 2>&1 | log_errors "$s")
         if (( cnt > 25 )); then
-            warn "$s: $cnt error lines in 24h — inspect: ./mediastack.sh logs $s"
+            if leak_gate_closed; then
+                warn "$s: $cnt error lines in 24h — the leak gate holds the VPN group stopped: a service that calls it logs errors until it reopens (inspect: ./mediastack.sh logs $s)"
+            else
+                warn "$s: $cnt error lines in 24h — inspect: ./mediastack.sh logs $s"
+            fi
             noisy=$((noisy+1))
         fi
     done
@@ -396,6 +404,11 @@ cmd_doctor() {
     c_inspect_all   # in the parent scope: a daemon failure dies here, not inside a section's $( )
     if [[ -n "$(stack_down_since)" ]]; then
         warn "the stack was stopped with 'down' ($(stack_down_since)): its containers are absent on purpose and scheduled jobs are paused — ./mediastack.sh up resumes both"
+    fi
+    if leak_gate_closed; then   # one finding for the whole consequence: the members and their callers are attributed below
+        d_fail "the leak gate stopped the VPN group ($(state_get "$LEAK_GATE")) — downloads are off" \
+            "a leak-test proved a problem; gluetun stays up for inspection, and the services that call the group log errors until it reopens" \
+            "./mediastack.sh leak-test   (find it), fix it, then: ./mediastack.sh up"
     fi
     for sec in "${DOCTOR_SECTIONS[@]}"; do "_doctor_$sec" || true; done
     echo

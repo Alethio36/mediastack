@@ -10,6 +10,9 @@
 #   * doctor: no FAIL line beyond the known file's patterns, and no
 #     notification stream whose last send failed
 #   * wire --verify (at the real time): no drift
+#   * safety-live (at the real time): the full leak-test and the edge's safety
+#     rules — every FAIL and every UNPROVEN check is a problem (a known
+#     pattern can name an expected one)
 #   * containers: all running, none unhealthy, no restart count went up
 #   * restore points: no more than the retention keeps
 # Before the simulated days, each enabled timer's real unit runs once at the
@@ -46,7 +49,10 @@ done
 [[ "$DAYS" =~ ^[1-9][0-9]?$ ]] || die "--days takes 1-99 (got: $DAYS)"
 [[ -z "$KNOWN" || -r "$KNOWN" ]] || die "known file not readable: $KNOWN"
 
-JOBS=(manifest update backup)   # the night jobs with timers (lib/backup.sh apply_timer)
+# the night jobs with timers (lib/backup.sh apply_timer), and the record of
+# this host's own address (gate.sh: daily) — refreshed on each simulated day,
+# as its timer would, or leak-test would judge it days old under the moved clock
+JOBS=(hostid manifest update backup)
 unit_cmd() { # unit_cmd JOB -> the ExecStart its real unit runs ("" when the timer is not enabled)
     systemctl is-enabled --quiet "mediastack-$1.timer" 2>/dev/null || return 0
     sed -n 's/^ExecStart=//p' "/etc/systemd/system/mediastack-$1.service" | head -1
@@ -175,6 +181,18 @@ judge_wire() { # at the real time, as it always was (first soak, Oct 2026: under
         problem "wire --verify: $(grep -E '^(FAIL|  would:)' <<<"$out" | head -5 | tr '\n' ' ')"
     fi
 }
+judge_safety() { # at the real time: safety-live's FAIL and UNPROVEN lines (the leak-test's own lines included)
+    local out line
+    out=$(scripts/safety-live.sh 2>&1 | strip || true)
+    while IFS= read -r line; do
+        line=$(sed -E 's/^\s+//' <<<"$line")
+        [[ "$line" == "FAIL leak-test FOUND PROBLEMS"* || "$line" == "FAIL leak-test (its output:)" ]] && continue
+        is_known "$line" || problem "safety-live: $line"
+    done < <(grep -E '^\s*(FAIL |WARN UNPROVEN: )' <<<"$out" || true)
+    grep -q '^safety-live: .* FAILED' <<<"$out" && ! grep -qE '^\s*(FAIL |WARN UNPROVEN: )' <<<"$out" \
+        && problem "safety-live failed without a FAIL line: $(tail -1 <<<"$out")"
+    return 0
+}
 run_job() { # run_job JOB FAKE-TIME|"" -> the job's unit, under the simulated clock when given
     local job=$1 at=$2 cmd unit look rc=0
     cmd=$(unit_cmd "$job")
@@ -215,6 +233,7 @@ for d in $(cut -d' ' -f1 <<<"$SCHED" | uniq); do
     judge_containers
     judge_doctor "$verdict"
     judge_wire
+    judge_safety
     judge_points
     if (( ${#DAY_PROBLEMS[@]} )); then FAILED_DAYS=$((FAILED_DAYS + 1)); echo "  day $d: ${#DAY_PROBLEMS[@]} problem(s)"
     else echo "  day $d: clean"; fi

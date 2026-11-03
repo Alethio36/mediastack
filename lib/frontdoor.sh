@@ -129,7 +129,7 @@ _fd_wrapper_render() { # _fd_wrapper_render MEDIASTACK-PATH -> the wrapper, whit
 PANEL=(
     "Diagnostics~Doctor~🩺~300~doctor~~"
     "Diagnostics~Status~📊~120~status~~"
-    "Diagnostics~VPN leak test~🛡️~120~leak-test~~"
+    "Diagnostics~VPN leak test~🛡️~300~leak-test~~"
     "Diagnostics~View logs~📜~60~logs {svc:entity=svc_logs:Service} --no-follow~~"
     "Services~Enable service~▶️~180~enable {svc:entity=svc_enable:Service to enable}~Confirm~"
     "Services~Disable service~⏹️~180~disable {svc:entity=svc_disable:Service to disable}~Confirm~"

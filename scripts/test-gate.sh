@@ -16,6 +16,9 @@
 #   * a backup's restart: everything else, gluetun ready, then the group through the gate
 #   * the gate's timers: local every 5 minutes; the full run hourly, at a random
 #     minute; this host's own address daily, at a random time — and in the footprint
+#   * update: gluetun unchanged -> the group's targets through the gate; changed ->
+#     stopped, forgotten, recreated, ready, then the whole group; a held group fails it
+#   * doctor during a gated stop: one finding; the held members are not each a problem
 #   * up's two phases: everything but the group, the gate, then the group — and
 #     no second phase when the gate fails
 # Sources the real entrypoint (minus its last line, main "$@"); docker and
@@ -284,5 +287,45 @@ for u in mediastack-leakcheck mediastack-leaktest mediastack-hostid; do
     grep -qx "$FAILURE_HOOK" "$SYSTEMD_DIR/$u.service" || fail_ "$u: a run that cannot run tells ops (OnFailure)"; pass
     grep -q "$u.timer" lib/footprint.sh && grep -q "$u.service" lib/footprint.sh || fail_ "$u: both units in the host-footprint registry (uninstall removes them)"; pass
 done
+
+# ---- update: the VPN group through the gate ----
+APPLY_LOG="$T/apply"
+apply_up() { echo "apply $*" >> "$APPLY_LOG"; }
+DC() { echo "DC $*" >> "$APPLY_LOG"; }
+wait_verdict() { echo "wait $*" >> "$APPLY_LOG"; }
+gluetun_addr() { echo 172.31.250.9; }
+lt_flows_forget() { echo "forget $1" >> "$APPLY_LOG"; }
+VSG_RC=0
+eval 'vpn_start_group() { echo "gate $*" >> "$APPLY_LOG"; return "$VSG_RC"; }'
+ENABLED="gluetun qbittorrent sonarr jellyfin"
+GREC=1; gluetun_recreates() { return "$GREC"; }
+: > "$APPLY_LOG"; update_apply jellyfin sonarr > /dev/null 2>&1
+[[ "$(paste -sd'|' "$APPLY_LOG")" == "apply --remove-orphans jellyfin|gate sonarr" && $UPDATE_GCHG == 0 ]] \
+    || fail_ "gluetun unchanged: the rest applied, the group's targets through the gate ($(paste -sd'|' "$APPLY_LOG"))"; pass
+GREC=0; : > "$APPLY_LOG"; update_apply gluetun jellyfin sonarr > /dev/null 2>&1
+[[ "$(paste -sd'|' "$APPLY_LOG")" == "DC stop gluetun|forget 172.31.250.9|apply --remove-orphans gluetun jellyfin|wait --recover gluetun|gate qbittorrent sonarr" && $UPDATE_GCHG == 1 ]] \
+    || fail_ "gluetun changed: stopped, its tracked connections forgotten, recreated, ready, then the WHOLE group through the gate ($(paste -sd'|' "$APPLY_LOG"))"; pass
+VSG_RC=3; out=$( (update_apply gluetun sonarr) 2>&1 ) && fail_ "the gate held the group: the update fails"; pass
+[[ "$out" == *"the leak gate stopped the VPN group"*"rollback gluetun"* ]] || fail_ "and says what to do — $out"; pass
+VSG_RC=0
+grep -q 'leak_gate_refuse "update"' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) || fail_ "update refuses while the gate is closed, before anything is touched"; pass
+grep -q 'leak_test_run 1 0' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) || fail_ "a new gluetun image: the kill-switch proven the same night"; pass
+
+# ---- doctor during a gated stop: one finding, the rest attributed ----
+D_FAILS=0
+d_fail() { echo "DFAIL $1" >> "$T/doc"; D_FAILS=$((D_FAILS + 1)); }
+svc_managed() { printf '%s\n' gluetun jellyfin qbittorrent sonarr; }
+svc_shard() { printf '%s\n' "$@"; }
+c_health() { echo "-"; }
+RUNNING="gluetun jellyfin"; : > "$T/doc"
+state_set "$LEAK_GATE" "2026-11-03 10:00:00: firewall lets traffic out"
+_doctor_containers > "$T/out" 2>&1
+! grep -q "DFAIL" "$T/doc" || fail_ "the members the gate holds are not each a problem ($(cat "$T/doc"))"; pass
+grep -q "qbittorrent held stopped by the leak gate" "$T/out" || fail_ "they are named as held — $(cat "$T/out")"; pass
+state_del "$LEAK_GATE"; : > "$T/doc"
+_doctor_containers > /dev/null 2>&1
+grep -q "DFAIL qbittorrent is exited" "$T/doc" || fail_ "gate open: a stopped member is a problem again ($(cat "$T/doc"))"; pass
+grep -q 'leak_gate_closed; then' <(awk '/^cmd_doctor\(\)/,/^}/' lib/doctor.sh) && grep -q 'd_fail "the leak gate stopped the VPN group' lib/doctor.sh \
+    || fail_ "doctor counts a gated stop once, at the top, with the fix"; pass
 
 echo "test-gate: $checks checks passed"
