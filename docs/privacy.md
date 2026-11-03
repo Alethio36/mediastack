@@ -81,7 +81,10 @@ lookups through the VPN is on the roadmap (Security & access).
   VPN server or the stack's own network, and a lookup of a name nobody knows,
   made inside the tunnel, must never leave the host as a query (tcpdump). Both
   tools are added by `install` and removed by uninstall — unless they were
-  already on the host.
+  already on the host. gluetun changes servers on its own, and the old
+  server's connection stays tracked for up to ~2 minutes: it is excused only
+  on the tunnel's own port and only once it expires, so the test may wait
+  that long; refreshed, or on any other port, it is a leak.
 - **The comparison is local.** A VPN-side address that is one of yours, or
   inside your network's blocks, is a leak (`FAIL`); a resolver in your own
   network is a leak. None of these parties is told about the other side.

@@ -11,6 +11,9 @@
 #     settings (gluetun's dns, encrypted upstream — the image's own "DoT" — no
 #     plaintext one), the LAN resolvers routed into the tunnel, the control
 #     server (refused from the network, 401 inside)
+#   * traffic: an entry to a VPN server the firewall no longer names is excused
+#     only on the tunnel's own port and only once it expires (gluetun changed
+#     servers); refreshed, or on any other port, it is a FAIL
 #   * attachment: a VPN'd service in gluetun's current namespace (not just
 #     joined to its container ID — a restart keeps the ID, not the namespace)
 #   * migration 36 -> 37: VPN_DNS_ADDRESS retired (a value is named), the
@@ -174,6 +177,7 @@ fw() { GLUETUN_RULES=$1; lt_reset; lt_firewall mediastack-gluetun > "$T/out" 2>&
 GOOD=$'-P OUTPUT DROP\n-A OUTPUT -o lo -j ACCEPT\n-A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT\n-A OUTPUT -s 172.31.250.131/32 -d 172.31.250.0/24 -o eth0 -j ACCEPT\n-A OUTPUT -d 86.104.249.45/32 -o eth0 -p udp -m udp --dport 51820 -j ACCEPT\n-A OUTPUT -o tun0 -j ACCEPT'
 fw "$GOOD"
 [[ $(lt_exit_code) == 0 && "$LT_ENDPOINTS" == "86.104.249.45 " ]] || fail_ "gluetun's own rules: PASS, its VPN server named — $(cat "$T/out")"; pass
+[[ "$LT_TUNNEL_PORTS" == "udp/51820 " ]] || fail_ "the tunnel's protocol and port read from the same rule ($LT_TUNNEL_PORTS)"; pass
 fw "${GOOD/-P OUTPUT DROP/-P OUTPUT ACCEPT}"; [[ $(lt_exit_code) == 1 ]] || fail_ "policy ACCEPT: FAIL"; pass
 fw "$GOOD"$'\n-A OUTPUT -d 192.168.69.0/24 -o eth0 -j ACCEPT'
 [[ $(lt_exit_code) == 1 ]] && grep -q "past the tunnel: -A OUTPUT -d 192.168.69.0/24" "$T/out" || fail_ "the LAN let out the LAN side: FAIL, the rule shown — $(cat "$T/out")"; pass
@@ -183,20 +187,40 @@ fw "${GOOD/-A OUTPUT -d 86.104.249.45\/32 -o eth0 -p udp -m udp --dport 51820 -j
 [[ $(lt_exit_code) == 2 ]] || fail_ "no VPN server among the rules: UNPROVEN — $(cat "$T/out")"; pass
 
 # ---- the traffic: what the host tracks from gluetun ----
-CT_OUT="" ON_SUDO_PATH="conntrack tcpdump"
+CT_OUT="" CT_OUT2="" ON_SUDO_PATH="conntrack tcpdump"
 sudo() {
     case "$*" in
         "sh -c"*) [[ " $ON_SUDO_PATH " == *" ${*: -1} "* ]] ;;   # command -v, as root sees the path
-        conntrack*) printf '%s\n' "$CT_OUT" ;;
+        conntrack*) # the first read, then CT_OUT2 for every later one (a re-read after the wait)
+            if [[ -e "$T/ct_read" ]]; then printf '%s\n' "${CT_OUT2-$CT_OUT}"; else : > "$T/ct_read"; printf '%s\n' "$CT_OUT"; fi ;;
         *"ip -o -4 addr"*) echo "$ADDR_OUT" ;;
     esac
 }
-fl() { CT_OUT=$1; LT_ENDPOINTS=${2-86.104.249.45 }; lt_reset; lt_flows mediastack-gluetun > "$T/out" 2>&1; }
+sleep() { echo "$1" >> "$T/slept"; }
+fl() { CT_OUT=$1; LT_ENDPOINTS=${2-86.104.249.45 }; LT_TUNNEL_PORTS=${FL_PORTS-udp/51820 }; rm -f "$T/ct_read" "$T/slept"; lt_reset; lt_flows mediastack-gluetun > "$T/out" 2>&1; }
 fl 'udp      17 179 src=172.31.250.131 dst=86.104.249.45 sport=51820 dport=51820 src=86.104.249.45 dst=192.168.70.36 sport=51820 dport=51820 [ASSURED] mark=0 use=1
 tcp      6 86390 ESTABLISHED src=172.31.250.131 dst=172.31.250.134 sport=40122 dport=8096 src=172.31.250.134 dst=172.31.250.131 sport=8096 dport=40122 [ASSURED] mark=0 use=1'
 [[ $(lt_exit_code) == 0 ]] || fail_ "the tunnel and the stack network (anzac4's live flow): PASS — $(cat "$T/out")"; pass
 fl 'udp      17 29 src=172.31.250.131 dst=192.168.69.1 sport=40000 dport=53 src=192.168.69.1 dst=192.168.70.36 sport=53 dport=40000 mark=0 use=1'
 [[ $(lt_exit_code) == 1 ]] && grep -q "udp 192.168.69.1:53" "$T/out" || fail_ "a flow to the LAN resolver: FAIL, named — $(cat "$T/out")"; pass
+[[ ! -e "$T/slept" ]] || fail_ "a flow off the tunnel's port: FAIL at once, never waited out (a one-off leaked query expires too)"; pass
+# gluetun changed servers (anzac4, Nov 2026): the firewall names the new one, the old session is still tracked
+CUR='udp      17 115 src=172.31.250.138 dst=194.88.96.24 sport=36984 dport=51820 src=194.88.96.24 dst=192.168.70.36 sport=51820 dport=36984 [ASSURED] mark=0 use=1'
+OLD='udp      17 104 src=172.31.250.138 dst=187.15.144.4 sport=51820 dport=51820 src=187.15.144.4 dst=192.168.70.36 sport=51820 dport=51820 [ASSURED] mark=0 use=1'
+CT_OUT2=$CUR; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
+[[ $(lt_exit_code) == 0 ]] && grep -q "the old session to udp 187.15.144.4:51820 ended" "$T/out" || fail_ "an old session that expires: PASS, named — $(cat "$T/out")"; pass
+[[ "$(cat "$T/slept")" == 109 ]] || fail_ "waited its timeout out, plus 5s ($(cat "$T/slept" 2>/dev/null))"; pass
+CT_OUT2="$CUR"$'\n'"$OLD"; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
+[[ $(lt_exit_code) == 1 ]] && grep -q "still talks to udp 187.15.144.4:51820 .* refreshed" "$T/out" || fail_ "still tracked after its timeout: refreshed, a live path — FAIL — $(cat "$T/out")"; pass
+CT_OUT2="$CUR"$'\n''udp 17 60 src=172.31.250.138 dst=203.0.113.50 sport=51820 dport=51820 [ASSURED]'; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
+[[ $(lt_exit_code) == 2 ]] && grep -q "changed servers again while this waited" "$T/out" || fail_ "another server switch during the wait: UNPROVEN — $(cat "$T/out")"; pass
+CT_OUT2="$CUR"$'\n''udp 17 20 src=172.31.250.138 dst=192.168.69.1 sport=40000 dport=53'; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
+[[ $(lt_exit_code) == 1 ]] && grep -q "udp 192.168.69.1:53" "$T/out" || fail_ "a leak that shows up during the wait: FAIL — $(cat "$T/out")"; pass
+unset CT_OUT2; fl "$CUR"$'\n''udp 17 300 src=172.31.250.138 dst=187.15.144.4 sport=51820 dport=51820 [ASSURED]' "194.88.96.24 "
+[[ $(lt_exit_code) == 2 && ! -e "$T/slept" ]] || fail_ "tracked longer than can be waited out: UNPROVEN, no wait — $(cat "$T/out")"; pass
+FL_PORTS="" fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
+[[ $(lt_exit_code) == 1 ]] || fail_ "the tunnel's port unknown: nothing excused, FAIL"; pass
+unset -f sleep   # the DNS capture's stub below sequences on a real sleep
 fl ''; [[ $(lt_exit_code) == 2 ]] || fail_ "no flow at all, not even the tunnel's: UNPROVEN"; pass
 fl 'x' ''; [[ $(lt_exit_code) == 2 ]] || fail_ "no VPN server known: UNPROVEN"; pass
 command -v conntrack >/dev/null 2>&1 && fail_ "this test needs conntrack off the test runner's own path"

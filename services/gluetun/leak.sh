@@ -248,14 +248,15 @@ lt_ns_subnet() { # lt_ns_subnet GLUETUN -> the namespace's LAN-side subnet (eth0
                  printf "%d.%d.%d.%d/%d\n", int(net/16777216)%256, int(net/65536)%256, int(net/256)%256, net%256, m; exit }'
 }
 
-LT_ENDPOINTS=""   # the VPN servers gluetun's firewall lets out on the LAN side (lt_firewall fills it)
+LT_ENDPOINTS=""      # the VPN servers gluetun's firewall lets out on the LAN side (lt_firewall fills it)
+LT_TUNNEL_PORTS=""   # their protocol/port, e.g. "udp/51820" (lt_firewall fills it)
 lt_firewall() { # lt_firewall GLUETUN — every way out of the namespace: the policy DROP, and each ACCEPT accounted for
     # Through the tunnel, to loopback, replies to a connection already made,
     # into the namespace's own docker subnet, or to one VPN server (a single
     # address on one port): anything else out the LAN side is a path that
     # skips the tunnel. A rule this cannot read is UNPROVEN, shown as written.
     local gcn=$1 rules sub r d unknown=() bad=()
-    LT_ENDPOINTS=""
+    LT_ENDPOINTS="" LT_TUNNEL_PORTS=""
     rules=$(sudo docker exec "$gcn" iptables -S OUTPUT 2>&1) || { lt_unproven "firewall: cannot read gluetun's rules ($(oneline "$rules"))"; return 0; }
     sub=$(lt_ns_subnet "$gcn")
     [[ -n "$sub" ]] || { lt_unproven "firewall: cannot read the namespace's own subnet (eth0)"; return 0; }
@@ -267,7 +268,9 @@ lt_firewall() { # lt_firewall GLUETUN — every way out of the namespace: the po
         if [[ "$r" == *" -o lo "* || "$r" =~ \ -o\ (tun|wg)[^\ ]*\  ]]; then continue
         elif [[ "$r" == *"--ctstate RELATED,ESTABLISHED"* && "$r" != *" -o "* ]]; then continue
         elif [[ "$r" == *" -o eth"* && -n "$d" ]] && ip4_cidr_inside "$d" "$sub"; then continue
-        elif [[ "$r" == *" -o eth"* && "$d" == */32 && "$r" == *"--dport "* ]]; then LT_ENDPOINTS+="${d%/32} "
+        elif [[ "$r" == *" -o eth"* && "$d" == */32 && "$r" == *"--dport "* ]]; then
+            LT_ENDPOINTS+="${d%/32} "
+            LT_TUNNEL_PORTS+="$(grep -oE -- '-p [a-z]+' <<<"$r" | awk '{print $2}' | head -1)/$(grep -oE -- '--dport [0-9]+' <<<"$r" | awk '{print $2}') "
         elif [[ "$r" == *" -o eth"* ]]; then bad+=("$r")
         else unknown+=("$r"); fi
     done <<<"$rules"
@@ -277,23 +280,72 @@ lt_firewall() { # lt_firewall GLUETUN — every way out of the namespace: the po
     else lt_pass "firewall: out the LAN side only to the VPN server (${LT_ENDPOINTS% }) and the stack's own network ($sub)"; fi
 }
 
+# A tracked connection outlives its session: after gluetun changes servers
+# (it does on its own, found live Nov 2026: five times in an hour of
+# restarts), the old server's entry stays tracked until its timeout runs out
+# (~2 min for UDP) while the firewall already names the new one. Such an entry
+# is excused only when it cannot be a leak: the tunnel's own protocol and
+# port, and gone once its timeout has passed. A live path is refreshed and
+# stays; anything else — even a one-off that expires, which is what a leaked
+# DNS query looks like — is a FAIL.
+LT_FLOW_WAIT_MAX=180   # seconds: an entry tracked longer cannot be waited out
+lt_flows_read() { # lt_flows_read GIP -> "proto dst dport timeout" per destination (its longest timeout)
+    local out
+    out=$(sudo conntrack -L -s "$1" 2>/dev/null) || true
+    awk '{ d = ""; dp = "-"; for (i = 1; i <= NF; i++) { if ($i ~ /^dst=/ && d == "") d = substr($i, 5); if ($i ~ /^dport=/ && dp == "-") dp = substr($i, 7) }
+           if (d == "") next
+           k = $1 " " d " " dp; t = ($3 ~ /^[0-9]+$/) ? $3 + 0 : 0
+           if (!(k in m) || t > m[k]) m[k] = t }
+         END { for (k in m) print k, m[k] }' <<<"$out" | sort
+}
+lt_flow_allowed() { # lt_flow_allowed DST SUBNET -> 0 when DST is a VPN server the firewall names, or in the stack's network
+    local e
+    for e in $LT_ENDPOINTS; do [[ "$1" == "$e" ]] && return 0; done
+    ip4_cidr_inside "$1" "$2"
+}
+
 lt_flows() { # lt_flows GLUETUN — the connections the host tracks from gluetun go only to the VPN server and the stack network
-    local gcn=$1 gip sub out flows bad=() proto dst dport e ok
+    local gcn=$1 gip sub flows now bad=() old=() newold=() kept=() proto dst dport t wait=0 k
     leak_tool conntrack "traffic" || return 0
     [[ -n "$LT_ENDPOINTS" ]] || { lt_unproven "traffic: no VPN server known (the firewall check could not name one)"; return 0; }
     sub=$(lt_ns_subnet "$gcn"); gip=$(sudo docker exec "$gcn" ip -o -4 addr show dev eth0 2>/dev/null | awk '{ split($4, a, "/"); print a[1]; exit }')
     [[ -n "$gip" && -n "$sub" ]] || { lt_unproven "traffic: cannot read gluetun's own address"; return 0; }
-    out=$(sudo conntrack -L -s "$gip" 2>/dev/null) || true
-    flows=$(awk '{ d = ""; dp = "-"; for (i = 1; i <= NF; i++) { if ($i ~ /^dst=/ && d == "") d = substr($i, 5); if ($i ~ /^dport=/ && dp == "-") dp = substr($i, 7) }
-                   if (d != "") print $1, d, dp }' <<<"$out" | sort -u)
+    flows=$(lt_flows_read "$gip")
     [[ -n "$flows" ]] || { lt_unproven "traffic: the host tracks no connection from gluetun ($gip) — not even the tunnel's"; return 0; }
-    while read -r proto dst dport; do
-        ok=0
-        for e in $LT_ENDPOINTS; do [[ "$dst" == "$e" ]] && ok=1; done
-        (( ok )) || ip4_cidr_inside "$dst" "$sub" || bad+=("$proto $dst:$dport")
+    while read -r proto dst dport t; do
+        lt_flow_allowed "$dst" "$sub" && continue
+        if [[ " $LT_TUNNEL_PORTS " == *" $proto/$dport "* ]]; then old+=("$proto $dst $dport"); (( t > wait )) && wait=$t
+        else bad+=("$proto $dst:$dport"); fi
     done <<<"$flows"
-    if (( ${#bad[@]} )); then lt_fail "traffic: gluetun's address is talking past the tunnel — ${bad[*]}"
-    else lt_pass "traffic: every connection the host tracks from gluetun goes to the VPN server or the stack's own network ($(wc -l <<<"$flows") seen)"; fi
+    if (( ${#bad[@]} )); then lt_fail "traffic: gluetun's address is talking past the tunnel — ${bad[*]}"; return 0; fi
+    if (( ${#old[@]} )); then
+        if (( wait > LT_FLOW_WAIT_MAX )); then
+            lt_unproven "traffic: $(lt_flow_names "${old[@]}") on the tunnel's own port is not the current VPN server and stays tracked ${wait}s — too long to tell an old session from a live one"
+            return 0
+        fi
+        info "traffic: $(lt_flow_names "${old[@]}") is on the tunnel's own port but not the current VPN server — waiting $(( wait + 5 ))s: an old session expires, a live one is refreshed"
+        sleep $(( wait + 5 ))
+        now=$(lt_flows_read "$gip")
+        while read -r proto dst dport t; do
+            [[ -n "$proto" ]] || continue
+            lt_flow_allowed "$dst" "$sub" && continue
+            k="$proto $dst $dport"
+            if [[ " $LT_TUNNEL_PORTS " != *" $proto/$dport "* ]]; then bad+=("$proto $dst:$dport")
+            elif printf '%s\n' "${old[@]}" | grep -qxF -- "$k"; then kept+=("$k")
+            else newold+=("$k"); fi
+        done <<<"$now"
+        if (( ${#bad[@]} )); then lt_fail "traffic: gluetun's address is talking past the tunnel — ${bad[*]}"; return 0; fi
+        if (( ${#kept[@]} )); then lt_fail "traffic: gluetun's address still talks to $(lt_flow_names "${kept[@]}") past the current VPN server — refreshed, not an old session"; return 0; fi
+        if (( ${#newold[@]} )); then lt_unproven "traffic: gluetun changed servers again while this waited ($(lt_flow_names "${newold[@]}")) — run leak-test again"; return 0; fi
+        lt_pass "traffic: every connection the host tracks from gluetun goes to the VPN server or the stack's own network ($(wc -l <<<"$flows") seen); the old session to $(lt_flow_names "${old[@]}") ended (gluetun changed servers)"
+        return 0
+    fi
+    lt_pass "traffic: every connection the host tracks from gluetun goes to the VPN server or the stack's own network ($(wc -l <<<"$flows") seen)"
+}
+lt_flow_names() { # lt_flow_names "proto dst dport"... -> "udp 1.2.3.4:51820, ..."
+    local f p d dp out=()
+    for f in "$@"; do read -r p d dp <<<"$f"; out+=("$p $d:$dp"); done
+    local IFS=,; echo "${out[*]}" | sed 's/,/, /g'
 }
 
 lt_dns_host_path() { # lt_dns_host_path GLUETUN — a name nobody knows, looked up inside the namespace, must never leave the host as a query
