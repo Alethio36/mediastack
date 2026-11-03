@@ -5,6 +5,12 @@
 # namespace so instance URLs are localhost and the kill-switch covers guide
 # fetches. Binds no ports, so the appport collision rule does not apply.
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
 services:
   recyclarr:
     image: ghcr.io/recyclarr/recyclarr:8
@@ -27,4 +33,5 @@ services:
       # absolute path, stack convention: include-relative paths resolve
       # against compose.d/, not the project root
       - ${CONFIG_ROOT}/recyclarr:/config
+    logging: *logging
     restart: "no"

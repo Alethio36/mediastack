@@ -18,6 +18,8 @@
 #   7. no container inherits the host's search domain: every service with its
 #      own network declares dns_search ["."] (fragment or vpn_gen), and none
 #      sharing another's network carries one (Docker refuses it)
+#   8. every container's log is size-capped (json-file with max-size and
+#      max-file) — Docker's default keeps it until the disk fills
 #
 # Runs on a throwaway copy of the repo; the working tree is never touched.
 # Needs `docker compose` (the standalone plugin renders without a daemon).
@@ -170,3 +172,9 @@ bad=$(jq -r '.services | to_entries[] | select(.value.network_mode != null)
     | select(.value.dns_search != null) | .key' <<<"$RENDERED_JSON")
 [[ -z "$bad" ]] || t_fail "share another container's network but declare dns_search (Docker refuses it): $bad"
 echo "OK $(wc -w <<<"$own") services declare no search domain; $(wc -w <<<"$shared") use gluetun's"
+
+echo ":: 8. every container's log is size-capped"
+bad=$(jq -r '.services | to_entries[] | select(.value.logging.driver != "json-file"
+    or (.value.logging.options["max-size"] // "") == "" or (.value.logging.options["max-file"] // "") == "") | .key' <<<"$RENDERED_JSON")
+[[ -z "$bad" ]] || t_fail "an uncapped log grows until the disk fills (add logging: *logging): $bad"
+echo "OK $(jq '.services | length' <<<"$RENDERED_JSON") services cap their logs"
