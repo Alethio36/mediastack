@@ -20,6 +20,8 @@
 #      sharing another's network carries one (Docker refuses it)
 #   8. every container's log is size-capped (json-file with max-size and
 #      max-file) — Docker's default keeps it until the disk fills
+#   9. a data store with one consumer is on an internal network (no route
+#      out) with that consumer alone: nothing else reaches or resolves it
 #
 # Runs on a throwaway copy of the repo; the working tree is never touched.
 # Needs `docker compose` (the standalone plugin renders without a daemon).
@@ -178,3 +180,16 @@ bad=$(jq -r '.services | to_entries[] | select(.value.logging.driver != "json-fi
     or (.value.logging.options["max-size"] // "") == "" or (.value.logging.options["max-file"] // "") == "") | .key' <<<"$RENDERED_JSON")
 [[ -z "$bad" ]] || t_fail "an uncapped log grows until the disk fills (add logging: *logging): $bad"
 echo "OK $(jq '.services | length' <<<"$RENDERED_JSON") services cap their logs"
+
+echo ":: 9. a one-consumer data store: on an internal network with its consumer alone"
+for pair in "mediastack-authentik-db|authentik-db|authentik authentik-db authentik-worker" \
+            "mediastack-search|meilisearch|jellysearch meilisearch"; do
+    IFS='|' read -r net store members <<<"$pair"
+    [[ "$(jq -r --arg n "$net" '.networks[$n].internal' <<<"$RENDERED_JSON")" == true ]] \
+        || t_fail "$net must be internal: the data store on it has no route out"
+    [[ "$(jq -c --arg s "$store" '.services[$s].networks | keys' <<<"$RENDERED_JSON")" == "[\"$net\"]" ]] \
+        || t_fail "$store must be on $net alone, off the stack network"
+    got=$(jq -r --arg n "$net" '[.services | to_entries[] | select((.value.networks // {}) | has($n)) | .key] | sort | join(" ")' <<<"$RENDERED_JSON")
+    [[ "$got" == "$members" ]] || t_fail "$net joins exactly $members (got: $got)"
+done
+echo "OK authentik-db and meilisearch: internal networks, their consumers alone"

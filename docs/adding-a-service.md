@@ -132,6 +132,13 @@ Every service with its own network namespace declares `dns_search: ["."]`
 (`network_mode: service:gluetun`) must not, Docker refuses it, and gets
 gluetun's instead. test-render fails a fragment that breaks either.
 
+A data store with one consumer (a database, a search engine) does not join
+the stack network: it gets a network of its own in `docker-compose.yml`,
+`internal: true` (no route out), joined by it and its consumer alone — see
+`mediastack-authentik-db` and `mediastack-search`. Nothing else can reach it,
+or even resolve its name. Add the network's name to uninstall's list
+(`lib/lifecycle.sh`), and the pair to test-render's rule 9.
+
 What the stack generates is pinned too: `scripts/test-snapshot.sh` runs the
 `up` order for one fixture per branch (`scripts/fixtures/snapshot/`: the
 plain install, the portal, Wizarr, an open edge, NPM, VPN membership moved,

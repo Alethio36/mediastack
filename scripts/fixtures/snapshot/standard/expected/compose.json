@@ -10,6 +10,9 @@
         ]
       },
       "name": "mediastack"
+    },
+    "mediastack-search": {
+      "name": "mediastack-search"
     }
   },
   "services": {
@@ -322,7 +325,8 @@
         "traefik.http.services.jellysearch.loadbalancer.server.port": "5000"
       },
       "networks": {
-        "mediastack": {}
+        "mediastack": {},
+        "mediastack-search": {}
       },
       "profiles": [
         "jellysearch"
@@ -361,7 +365,7 @@
         "mediastack.vpn": "false"
       },
       "networks": {
-        "mediastack": {}
+        "mediastack-search": {}
       },
       "profiles": [
         "meilisearch"

@@ -68,7 +68,9 @@ own**, inside its own shard. Data tiers are **never shared** across services.
 The marginal tidiness of a shared instance is not worth coupling independent
 services' failure domains, upgrade cycles, and backup granularity — a shared
 database's outage or bad migration would take down every service behind it. One
-service, one shard, one database.
+service, one shard, one database. And one network: a data store with one
+consumer sits on an `internal` network with that consumer alone, so nothing
+else in the stack can reach it or resolve its name, and it has no route out.
 
 ### Runtime & control plane — the deliberate choice
 
@@ -866,8 +868,10 @@ all built; what each still leaves open is noted below.
     with the tunnel, and a leak-test stop would take streaming down.
 - **Network segmentation** *(after MVP, Oct 2026 — hardening, not a hole)*.
   Every container shares one network (`mediastack`), so a compromised one
-  can reach every other's API. The easy part ships before: a database with
-  exactly one consumer on its own `internal` network (authentik's, Meilisearch).
+  can reach every other's API. The easy part is done (Nov 2026): a data store
+  with exactly one consumer sits on its own `internal` network with it alone —
+  authentik's database (`mediastack-authentik-db`) and Meilisearch
+  (`mediastack-search`); test-render pins both.
   The rest is a design job, because:
   * *the VPN group cannot be split* — every service in gluetun's namespace
     joins whatever networks gluetun joins, and gluetun must be on the network

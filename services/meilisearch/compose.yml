@@ -27,7 +27,7 @@ services:
       # Index data is fully re-derivable from Jellyfin's DB: lives in CACHE_ROOT,
       # excluded from backups, wipe freely on a bad upgrade.
       - ${CACHE_ROOT}/meilisearch:/meili_data
-    # No ports: internal only. Never publish 7700.
+    # No ports, and on an internal network with JellySearch alone. Never publish 7700.
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
@@ -42,7 +42,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    networks: [mediastack]
+    networks: [mediastack-search]   # JellySearch's only (docker-compose.yml)
     logging: *logging
     dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped

@@ -11,8 +11,14 @@
       },
       "name": "mediastack"
     },
+    "mediastack-authentik-db": {
+      "name": "mediastack-authentik-db"
+    },
     "mediastack-panel": {
       "name": "mediastack-panel"
+    },
+    "mediastack-search": {
+      "name": "mediastack-search"
     }
   },
   "services": {
@@ -184,7 +190,8 @@
         "traefik.http.services.authentik.loadbalancer.server.port": "9000"
       },
       "networks": {
-        "mediastack": {}
+        "mediastack": {},
+        "mediastack-authentik-db": {}
       },
       "ports": [
         {
@@ -230,7 +237,7 @@
         "mediastack.shard": "authentik"
       },
       "networks": {
-        "mediastack": {}
+        "mediastack-authentik-db": {}
       },
       "profiles": [
         "authentik"
@@ -326,7 +333,8 @@
         "mediastack.shard": "authentik"
       },
       "networks": {
-        "mediastack": {}
+        "mediastack": {},
+        "mediastack-authentik-db": {}
       },
       "profiles": [
         "authentik"
@@ -844,7 +852,8 @@
         "traefik.http.services.jellysearch.loadbalancer.server.port": "5000"
       },
       "networks": {
-        "mediastack": {}
+        "mediastack": {},
+        "mediastack-search": {}
       },
       "profiles": [
         "jellysearch"
@@ -1031,7 +1040,7 @@
         "mediastack.vpn": "false"
       },
       "networks": {
-        "mediastack": {}
+        "mediastack-search": {}
       },
       "profiles": [
         "meilisearch"

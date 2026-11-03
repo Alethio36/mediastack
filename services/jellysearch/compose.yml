@@ -52,7 +52,7 @@ services:
       mediastack.config: "false"
     # No healthcheck: minimal .NET image, no probe tooling. Doctor checks the
     # index via meilisearch instead.
-    networks: [mediastack]
+    networks: [mediastack, mediastack-search]   # meilisearch's network (docker-compose.yml)
     logging: *logging
     dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped

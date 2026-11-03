@@ -103,7 +103,7 @@ services:
       traefik.http.routers.authentik.tls: "true"
       traefik.http.services.authentik.loadbalancer.server.port: "9000"
     healthcheck: *authentik-health
-    networks: [mediastack]
+    networks: [mediastack, mediastack-authentik-db]   # its database's network (docker-compose.yml)
     logging: *logging
     dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped
@@ -148,7 +148,7 @@ services:
       # its logs carry a level: count by it (the word "error" fills its warnings)
       mediastack.errors: '"level": ?"(error|critical|fatal|panic)"'
     healthcheck: *authentik-health
-    networks: [mediastack]
+    networks: [mediastack, mediastack-authentik-db]   # its database's network (docker-compose.yml)
     logging: *logging
     dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped
@@ -230,7 +230,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    networks: [mediastack]
+    networks: [mediastack-authentik-db]   # its consumers' only: authentik and its worker (docker-compose.yml)
     logging: *logging
     dns_search: ["."]   # no host search domain: docs/adding-a-service.md
     restart: unless-stopped

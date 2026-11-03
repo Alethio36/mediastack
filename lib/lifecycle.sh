@@ -193,7 +193,7 @@ cmd_nuke() {
     ok "containers removed (with their anonymous volumes)"
     rm -f "$PINS_FILE"
     local net
-    for net in mediastack mediastack-panel; do   # docker-compose.yml's networks
+    for net in mediastack mediastack-panel mediastack-authentik-db mediastack-search; do   # docker-compose.yml's networks
         sudo docker network rm "$net" >/dev/null 2>&1 && ok "network $net removed" || true
     done
 

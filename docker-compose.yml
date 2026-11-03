@@ -56,3 +56,12 @@ networks:
   # gate alone — no other container can reach the panel to send them
   mediastack-panel:
     name: mediastack-panel
+  # a data store with one consumer sits on a network with that consumer
+  # alone: nothing else in the stack can reach it, or even resolve its name,
+  # and internal: it has no route out at all (docs/adding-a-service.md)
+  mediastack-authentik-db:   # authentik-db; authentik and its worker
+    name: mediastack-authentik-db
+    internal: true
+  mediastack-search:         # meilisearch; JellySearch
+    name: mediastack-search
+    internal: true
