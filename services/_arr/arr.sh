@@ -7,7 +7,7 @@
 # entrypoint's helpers at call time.
 
 arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialising)
-    sudo grep -oP '<ApiKey>\K[^<]+' "$(env_get CONFIG_ROOT)/$1/config.xml" 2>/dev/null | head -1 || true
+    sudo grep -oP '<ApiKey>\K[^<]+' "$(env_get CONFIG_ROOT)/$1/config.xml" 2>/dev/null | sed -n 1p || true
 }
 
 arr_url() { local p; p=$(svc_hostport "$1") || return 1; echo "http://127.0.0.1:$p"; }
@@ -41,7 +41,7 @@ arr_entry_fields() { # arr_entry_fields <list JSON> <entry name> -> "field=value
     jq -r --arg n "$2" '.[]? | select(.name == $n) | .fields[]? | "\(.name)=\(.value // "" | tostring)"' <<<"$1" 2>/dev/null || true
 }
 arr_entry_field() { # arr_entry_field <list JSON> <entry name> <field> -> value
-    arr_entry_fields "$1" "$2" | sed -n "s/^$3=//p" | head -1
+    arr_entry_fields "$1" "$2" | sed -n "s/^$3=//p" | sed -n 1p
 }
 # ARR_META — every per-type fact wire needs, one row per arr type, so a new
 # type (readarr, whisparr) is a row here instead of a hunt through recipes.

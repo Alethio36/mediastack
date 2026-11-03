@@ -410,7 +410,7 @@ credentials)."
     local keys have
     keys=$(jf_api GET /Auth/Keys "$tok") \
         || { wfail "could not list jellyfin API keys [HTTP $(jf_code)] — nothing created"; return 0; }
-    have=$(jq -r '.Items[]? | select(.AppName=="mediastack") | .AccessToken' <<<"$keys" 2>/dev/null | head -1)
+    have=$(jq -r '.Items[]? | select(.AppName=="mediastack") | .AccessToken' <<<"$keys" 2>/dev/null | sed -n 1p)
     if [[ -n "$have" ]]; then
         [[ "$(env_get JELLYFIN_API_KEY)" == "$have" ]] || env_set JELLYFIN_API_KEY "$have"
         ok "stack API key present"
@@ -418,7 +418,7 @@ credentials)."
         jf_api POST "/Auth/Keys?app=mediastack" "$tok" >/dev/null \
             || { wfail "API key creation rejected [HTTP $(jf_code)]"; return 0; }
         keys=$(jf_api GET /Auth/Keys "$tok" || true)   # soft read: re-read after creating the key: empty FAILs below
-        have=$(jq -r '.Items[]? | select(.AppName=="mediastack") | .AccessToken' <<<"$keys" 2>/dev/null | head -1)
+        have=$(jq -r '.Items[]? | select(.AppName=="mediastack") | .AccessToken' <<<"$keys" 2>/dev/null | sed -n 1p)
         [[ -n "$have" ]] || { wfail "API key created but not readable back — check Dashboard -> API Keys"; return 0; }
         env_set JELLYFIN_API_KEY "$have"
         ok "stack API key minted and stored (JELLYFIN_API_KEY)"
@@ -473,7 +473,7 @@ jellyfin_doctor_plugins() { # jellyfin_doctor_plugins KEY — the plugins the st
         if [[ -n "$plist" ]]; then
             for spec in "${need[@]}"; do
                 IFS='|' read -r name guid why <<<"$spec"
-                st=$(jq -r --arg g "$(jf_guid "$guid")" '.[] | select((.Id | ascii_downcase | gsub("-"; "")) == $g) | .Status' <<<"$plist" 2>/dev/null | head -1)
+                st=$(jq -r --arg g "$(jf_guid "$guid")" '.[] | select((.Id | ascii_downcase | gsub("-"; "")) == $g) | .Status' <<<"$plist" 2>/dev/null | sed -n 1p)
                 case "$st" in
                     Active) ok "jellyfin: $name plugin loaded" ;;
                     "")     d_fail "jellyfin: $name plugin is not installed" "$why" "./mediastack.sh wire jellyfin" ;;

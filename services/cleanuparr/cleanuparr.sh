@@ -70,7 +70,7 @@ wire_cleanuparr() {
         e=$(role_entry "$dl" download-client cleanuparr); name=$(jq -r '.name' <<<"$e")
         if [[ " $(jq -r '[.clients[]?.name] | join(" ")' <<<"$cdc" 2>/dev/null) " == *" $name "* ]]; then
             ok "$name already connected — untouched"
-            cst=$(addr_of "$(jq -r --arg n "$name" '.clients[]? | select(.name == $n) | .host' <<<"$cdc" 2>/dev/null | head -1)")
+            cst=$(addr_of "$(jq -r --arg n "$name" '.clients[]? | select(.name == $n) | .host' <<<"$cdc" 2>/dev/null | sed -n 1p)")
             if addr_stale "cleanuparr -> $dl" "$dl" "$cst"; then
                 cbody=$(jq -c --arg n "$name" --argjson e "$e" \
                     '[.clients[]? | select(.name == $n)][0] | .host = $e.host | .username = $e.username | .password = $e.password' <<<"$cdc")
@@ -119,7 +119,7 @@ wire_cleanuparr() {
         names=$(jq -r '[.instances[]?.name] | join(" ")' <<<"$cfg" 2>/dev/null)
         if [[ " $names " == *" $s "* ]]; then
             ok "$s already connected — untouched"
-            local ist ibody; ist=$(addr_of "$(jq -r --arg n "$s" '.instances[]? | select(.name==$n) | .url' <<<"$cfg" 2>/dev/null | head -1)")
+            local ist ibody; ist=$(addr_of "$(jq -r --arg n "$s" '.instances[]? | select(.name==$n) | .url' <<<"$cfg" 2>/dev/null | sed -n 1p)")
             if addr_stale "cleanuparr -> $s" "$s" "$ist"; then
                 ibody=$(jq -c --arg n "$s" --arg u "http://$(svc_addr "$s")" '[.instances[]? | select(.name==$n)][0] | .url = $u' <<<"$cfg")
                 addr_repoint "cleanuparr -> $s" "$ist" "$(svc_addr "$s")" -- \
@@ -156,7 +156,7 @@ wire_cleanuparr() {
             wfail "cleanuparr: could not read its notification providers — nothing created [HTTP $(cup_code)]"
         elif [[ " $(jq -r '[.providers[]?.name] | join(" ")' <<<"$cnp" 2>/dev/null) " == *" mediastack-apprise "* ]]; then
             ok "already notifies the hub — untouched"
-            local ast abody; ast=$(addr_of "$(jq -r '.providers[]? | select(.name=="mediastack-apprise") | (.url // .configuration.url // "")' <<<"$cnp" 2>/dev/null | head -1)")
+            local ast abody; ast=$(addr_of "$(jq -r '.providers[]? | select(.name=="mediastack-apprise") | (.url // .configuration.url // "")' <<<"$cnp" 2>/dev/null | sed -n 1p)")
             if addr_stale "cleanuparr -> apprise" apprise "$ast"; then
                 # GET nests events{} and configuration{}; PUT takes them flat —
                 # a naive round trip would reset every event toggle to false
@@ -164,7 +164,7 @@ wire_cleanuparr() {
                     | {name, isEnabled} + .events
                       + (.configuration | {mode, url: $u, key, tags: (.tags // ""), serviceUrls})' <<<"$cnp")
                 addr_repoint "cleanuparr -> apprise" "$ast" "$(svc_addr apprise)" -- \
-                    cup_api PUT "/configuration/notification_providers/apprise/$(jq -r --arg n mediastack-apprise '.providers[]? | select(.name==$n) | .id' <<<"$cnp" | head -1)" "$KH" "$abody"
+                    cup_api PUT "/configuration/notification_providers/apprise/$(jq -r --arg n mediastack-apprise '.providers[]? | select(.name==$n) | .id' <<<"$cnp" | sed -n 1p)" "$KH" "$abody"
             fi
         else
             out=$(cup_api POST /configuration/notification_providers/apprise "$KH" \
@@ -185,7 +185,7 @@ cleanuparr_dl_login_resync() { # cleanuparr_dl_login_resync PROVIDER — after i
     name=$(role_entry_name "$p" download-client cleanuparr)
     dcs=$(cup_api GET /configuration/download_client "$KH") \
         || { wfail "cleanuparr: could not read its download clients — its $p login was NOT updated; fix in its UI [HTTP $(cup_code)]"; return 0; }
-    id=$(jq -r --arg n "$name" '.clients[]? | select(.name == $n) | .id' <<<"$dcs" 2>/dev/null | head -1)
+    id=$(jq -r --arg n "$name" '.clients[]? | select(.name == $n) | .id' <<<"$dcs" 2>/dev/null | sed -n 1p)
     [[ -n "$id" ]] || return 0
     e=$(role_entry "$p" download-client cleanuparr)
     ent=$(jq -c --arg i "$id" --argjson e "$e" '.clients[] | select(.id == $i) | .username = $e.username | .password = $e.password' <<<"$dcs")

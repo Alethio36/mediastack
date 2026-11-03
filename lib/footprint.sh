@@ -36,7 +36,7 @@ FOOTPRINT_FEATURES=(timers panel audit mounts users deps leakcheck)
 # an uninstall reads it before the folder goes; deleted, every package
 # counts as yours (the safe direction).
 HOST_PKGS_FILE="$LOCAL_DIR/host-packages"
-host_pkg_installed() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q 'install ok installed'; }
+host_pkg_installed() { dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep 'install ok installed' >/dev/null; }
 host_pkg_ours()      { grep -qxF -- "$1" "$HOST_PKGS_FILE" 2>/dev/null; }
 host_pkg_mark()      { mkdir -p "$LOCAL_DIR"; host_pkg_ours "$1" || echo "$1" >> "$HOST_PKGS_FILE"; repo_owned "$LOCAL_DIR" "$HOST_PKGS_FILE"; }
 host_pkg_unmark()    { [[ -e "$HOST_PKGS_FILE" ]] || return 0; sed -i "/^$1\$/d" "$HOST_PKGS_FILE"; }
@@ -110,7 +110,7 @@ fp_present() { # fp_present KIND PATH -> 0 when it is on this host
         unit|file) sudo test -e "$2" ;;
         user)  getent passwd "$2" >/dev/null ;;
         group) getent group "$2" >/dev/null ;;
-        fstab) fstab_marked | cut -f1 | grep -qxF -- "$2" ;;
+        fstab) fstab_marked | cut -f1 | grep -xF -- "$2" >/dev/null ;;
         pkg)   host_pkg_installed "$2" ;;
         *) die "footprint: unknown kind '$1'" ;;
     esac
@@ -202,9 +202,9 @@ footprint_unmarked_note() { # entries for the stack's roots that add-mount did n
     local r p
     for r in DATA_ROOT BACKUP_ROOT; do
         [[ -f "$ENV_FILE" ]] || return 0
-        p=$(findmnt -rn -o TARGET --target "$(env_get "$r")" 2>/dev/null | head -1)
+        p=$(findmnt -rn -o TARGET --target "$(env_get "$r")" 2>/dev/null | sed -n 1p)
         [[ -n "$p" && "$p" != / ]] || continue
-        fstab_marked | cut -f1 | grep -qxF -- "$p" && continue
+        fstab_marked | cut -f1 | grep -xF -- "$p" >/dev/null && continue
         awk -v p="$p" '$2 == p { f = 1 } END { exit !f }' "$FSTAB" 2>/dev/null \
             && info "$r lives on $p, an fstab entry mediastack did not mark (made before add-mount marked its entries, or by hand) — left alone"
     done
@@ -229,7 +229,7 @@ _doctor_footprint() {
     local r m
     while IFS=$'\t' read -r m _; do   # a marked mount that no longer holds any root
         for r in "${ROOTS[@]}"; do
-            [[ "$(findmnt -rn -o TARGET --target "$(env_get "$r")" 2>/dev/null | head -1)" == "$m" ]] && continue 2
+            [[ "$(findmnt -rn -o TARGET --target "$(env_get "$r")" 2>/dev/null | sed -n 1p)" == "$m" ]] && continue 2
         done
         info "the mount $m (add-mount) holds none of this stack's folders — remove it if nothing else uses it: README, \"Removing a mount\""
     done < <(fstab_marked)

@@ -208,7 +208,7 @@ DYNAMIC
     # running traefik needs an explicit restart or it silently stays stale
     posthash=$(sudo cat "$croot/traefik/traefik.yml" "$croot/traefik/dynamic/00-mediastack.yml" 2>/dev/null | sha256sum)
     if [[ "$prehash" != "$posthash" ]] \
-        && sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$(svc_cname traefik)"; then
+        && sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -x "$(svc_cname traefik)" >/dev/null; then
         info "config changed — restarting traefik to load it"
         # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
         INSPECT_JSON=""

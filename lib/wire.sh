@@ -160,7 +160,13 @@ wire_services() { # the enabled services the wire roles touch — derived, so a 
     done
 }
 
-oneline() { tr -s '[:space:]' ' ' <<<"$1" | sed 's/^ //; s/ $//' | head -c 200; }   # an app's (multi-line JSON) reply, for a message — no stray space at either end (it showed as "refused )")
+oneline() { # an app's (multi-line JSON) reply, for a message: one line, no stray space at either end (it showed as "refused )"), 200 characters
+    # cut by bash, not by `| head -c`: on a reply over ~16 KB, head stopped
+    # reading while sed still wrote, and under pipefail the 141 killed the run
+    # that was about to explain an error (found Nov 2026)
+    local s; s=$(tr -s '[:space:]' ' ' <<<"$1" | sed 's/^ //; s/ $//')
+    printf '%s' "${s:0:200}"
+}
 
 wire_usage() { local IFS='|'; die "usage: wire [${WIRE_ROLES[*]}] [--dry-run|--verify]"; }
 

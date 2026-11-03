@@ -100,7 +100,7 @@ hostid_ips_merged() { # hostid_ips_merged IP NOW -> the record's ip lines with I
     { awk '$1 == "ip"' "$HOSTID_FILE" 2>/dev/null || true; echo "ip $1 $2 $2"; } \
         | awk '{ if (!($2 in first) || $3 < first[$2]) first[$2] = $3; if ($4 > last[$2]) last[$2] = $4 }
                END { for (a in last) print "ip", a, first[a], last[a] }' \
-        | sort -k4,4nr -k2,2 | head -n "$HOSTID_KEEP_IPS"
+        | sort -k4,4nr -k2,2 | sed -n "1,${HOSTID_KEEP_IPS}p"
 }
 
 hostid_refresh() { # ask RIPEstat for this host's address, network and IPv4 blocks; rewrite the record. Non-zero with RIPESTAT_ERR
@@ -164,7 +164,7 @@ lt_tunnel_ip() { # lt_tunnel_ip GLUETUN HOSTID_OK — the exit address (Mullvad'
     ip=$(jq -r '.ip // empty' <<<"$out" 2>/dev/null || true); org=$(jq -r '.organization // "?"' <<<"$out" 2>/dev/null || true)
     ip4_valid "$ip" || { lt_unproven "tunnel address: unreadable answer from Mullvad's checker ($(oneline "$out"))"; return 0; }
     (( hok )) || { lt_unproven "tunnel address $ip ($org) not compared: $HOSTID_WHY"; return 0; }
-    if hostid_get ip | grep -qxF "$ip"; then
+    if hostid_get ip | grep -xF "$ip" >/dev/null; then
         lt_fail "tunnel address $ip is THIS HOST'S OWN address — traffic is leaving outside the VPN"
     elif m=$(hostid_get prefix | ip4_in_prefixes "$ip"); then
         lt_fail "tunnel address $ip is inside your own network's block $m — traffic is leaving outside the VPN"
@@ -176,7 +176,7 @@ lt_tunnel_ip() { # lt_tunnel_ip GLUETUN HOSTID_OK — the exit address (Mullvad'
 lt_udp_identity() { # lt_udp_identity GLUETUN HOSTID_OK — Google's resolver, asked over plain UDP, names the subnet the query came from
     local gcn=$1 hok=$2 out net m
     out=$(sudo docker exec "$gcn" nslookup -type=txt o-o.myaddr.l.google.com 8.8.8.8 2>&1 || true)
-    net=$(grep -oE 'edns0-client-subnet [0-9.]+/[0-9]+' <<<"$out" | awk '{ print $2; exit }' || true)
+    net=$(grep -oE 'edns0-client-subnet [0-9.]+/[0-9]+' <<<"$out" | awk 'NR == 1 { print $2 }' || true)
     [[ -n "$net" ]] || { lt_unproven "UDP exit: Google's resolver reported no client subnet ($(oneline "$out"))"; return 0; }
     (( hok )) || { lt_unproven "UDP exit $net not compared: $HOSTID_WHY"; return 0; }
     if m=$(hostid_get prefix | ip4_in_prefixes "${net%/*}"); then
@@ -229,7 +229,7 @@ lt_dns_lan_path() { # lt_dns_lan_path GLUETUN — the namespace must route the h
     [[ -n "$rs" ]] || { info "DNS: this host's resolvers are not on a private network — no LAN resolver to check"; return 0; }
     for r in $rs; do
         out=$(sudo docker exec "$gcn" ip route get "$r" 2>&1 || true)
-        dev=$(grep -oE ' dev [^ ]+' <<<"$out" | awk '{ print $2; exit }' || true)
+        dev=$(grep -oE ' dev [^ ]+' <<<"$out" | awk 'NR == 1 { print $2 }' || true)
         case "$dev" in
             tun*|wg*) lt_pass "DNS: your LAN resolver $r is routed into the tunnel ($dev) from the namespace — never onto your LAN" ;;
             "") lt_unproven "DNS: no route read for your LAN resolver $r inside the namespace ($(oneline "$out"))" ;;
@@ -278,7 +278,7 @@ lt_firewall() { # lt_firewall GLUETUN — every way out of the namespace: the po
     sub=$(lt_ns_subnet "$gcn")
     [[ -n "$sub" ]] || { lt_unproven "firewall: cannot read the namespace's own subnet (eth0)"; return 0; }
     if grep -qx -- '-P OUTPUT DROP' <<<"$rules"; then lt_pass "firewall: everything leaving the namespace is dropped unless a rule lets it out"
-    else lt_fail "firewall: gluetun's outbound policy is not DROP ($(grep -- '^-P OUTPUT' <<<"$rules" | head -1)) — traffic no rule names leaves anyway"; fi
+    else lt_fail "firewall: gluetun's outbound policy is not DROP ($(grep -- '^-P OUTPUT' <<<"$rules" | sed -n 1p)) — traffic no rule names leaves anyway"; fi
     while IFS= read -r r; do
         [[ "$r" == "-A OUTPUT "* && "$r" == *" -j ACCEPT"* ]] || continue
         d=$(grep -oE -- '-d [0-9./]+' <<<"$r" | awk '{print $2}' || true)
@@ -287,7 +287,7 @@ lt_firewall() { # lt_firewall GLUETUN — every way out of the namespace: the po
         elif [[ "$r" == *" -o eth"* && -n "$d" ]] && ip4_cidr_inside "$d" "$sub"; then continue
         elif [[ "$r" == *" -o eth"* && "$d" == */32 && "$r" == *"--dport "* ]]; then
             LT_ENDPOINTS+="${d%/32} "
-            LT_TUNNEL_PORTS+="$(grep -oE -- '-p [a-z]+' <<<"$r" | awk '{print $2}' | head -1)/$(grep -oE -- '--dport [0-9]+' <<<"$r" | awk '{print $2}') "
+            LT_TUNNEL_PORTS+="$(grep -oE -- '-p [a-z]+' <<<"$r" | awk '{print $2}' | sed -n 1p)/$(grep -oE -- '--dport [0-9]+' <<<"$r" | awk '{print $2}') "
         elif [[ "$r" == *" -o eth"* ]]; then bad+=("$r")
         else unknown+=("$r"); fi
     done <<<"$rules"
@@ -316,7 +316,7 @@ lt_flows_read() { # lt_flows_read GIP -> "proto dst dport timeout" per destinati
          END { for (k in m) print k, m[k] }' <<<"$out" | sort
 }
 gluetun_addr() { # gluetun's address on the stack network, "" when it is not running
-    sudo docker exec "$(svc_cname gluetun)" ip -o -4 addr show dev eth0 2>/dev/null | awk '{ split($4, a, "/"); print a[1]; exit }'
+    sudo docker exec "$(svc_cname gluetun)" ip -o -4 addr show dev eth0 2>/dev/null | awk 'NR == 1 { split($4, a, "/"); print a[1] }'
 }
 lt_flows_forget() { # lt_flows_forget GIP — gluetun was stopped on purpose, so forget what the host tracked from its address
     # all of it is from before the stop; kept, the next run would wait each
@@ -335,7 +335,7 @@ lt_flows() { # lt_flows GLUETUN — the connections the host tracks from gluetun
     local gcn=$1 gip sub flows now bad=() old=() newold=() kept=() proto dst dport t wait=0 k o seen
     leak_tool conntrack "traffic" || return 0
     [[ -n "$LT_ENDPOINTS" ]] || { lt_unproven "traffic: no VPN server known (the firewall check could not name one)"; return 0; }
-    sub=$(lt_ns_subnet "$gcn"); gip=$(sudo docker exec "$gcn" ip -o -4 addr show dev eth0 2>/dev/null | awk '{ split($4, a, "/"); print a[1]; exit }')
+    sub=$(lt_ns_subnet "$gcn"); gip=$(sudo docker exec "$gcn" ip -o -4 addr show dev eth0 2>/dev/null | awk 'NR == 1 { split($4, a, "/"); print a[1] }')
     [[ -n "$gip" && -n "$sub" ]] || { lt_unproven "traffic: cannot read gluetun's own address"; return 0; }
     flows=$(lt_flows_read "$gip")
     [[ -n "$flows" ]] || { lt_unproven "traffic: the host tracks no connection from gluetun ($gip) — not even the tunnel's"; return 0; }
@@ -396,7 +396,7 @@ lt_dns_host_path() { # lt_dns_host_path GLUETUN — a name nobody knows, looked 
     sudo docker exec "$gcn" nslookup "$name.example.com" >/dev/null 2>&1 || true
     wait "$pid" 2>/dev/null || true
     n=$(grep -c -- "$name" "$cap" || true)
-    if (( n > 0 )); then lt_fail "DNS outside the tunnel: a lookup inside the namespace left the host as a query ($(oneline "$(grep -- "$name" "$cap" | head -1)"))"
+    if (( n > 0 )); then lt_fail "DNS outside the tunnel: a lookup inside the namespace left the host as a query ($(oneline "$(grep -- "$name" "$cap" | sed -n 1p)"))"
     else lt_pass "DNS outside the tunnel: names nobody knows, looked up inside the namespace, never left the host"; fi
     rm -f "$cap" "$err"
 }
@@ -420,7 +420,7 @@ lt_control_server() { # lt_control_server GLUETUN — gluetun's control API: ref
 
 lt_ipv6() { # lt_ipv6 GLUETUN — only meaningful where the host has IPv6 to leak
     local gcn=$1
-    if ! ip -6 route show default 2>/dev/null | grep -q .; then
+    if ! ip -6 route show default 2>/dev/null | grep . >/dev/null; then
         info "IPv6: this host has no IPv6 route — nothing to leak (not tested)"; return 0
     fi
     if sudo docker run --rm --network "container:$gcn" curlimages/curl:latest -6 -fsS -m 8 -o /dev/null https://ipv6.google.com >/dev/null 2>&1; then

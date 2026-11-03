@@ -229,7 +229,7 @@ _svc_managed_by_profile() { # one env read + one jq, same test as svc_enabled pe
           | select(.value.labels["mediastack.managed"] == "true")
           | .key as $k | select(($p | contains("," + $k + ",")) == $want) | $k ] | sort[]' <<<"$RENDERED_JSON"
 }
-svc_exists()   { svc_all | grep -qx "$1"; }
+svc_exists()   { svc_all | grep -x "$1" >/dev/null; }
 
 # Shards (docs/roadmap.md: Architecture rules — Shards). A service's private
 # containers (its database, its worker) are MEMBERS of its shard: each carries
@@ -799,7 +799,7 @@ c_inspect() { # c_inspect <cname>... -> JSON array of the containers that exist
     # else on stderr — daemon down, permission denied — is zero evidence: die
     local err out; err=$(mktemp)
     out=$(sudo docker inspect --type container "$@" 2>"$err") || true
-    if grep -vE 'No such (object|container)' "$err" | grep -q .; then
+    if grep -vE 'No such (object|container)' "$err" | grep . >/dev/null; then
         cat "$err" >&2; rm -f "$err"
         die "docker inspect failed — container state is unverifiable (evidence above)"
     fi

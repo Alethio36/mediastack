@@ -313,7 +313,7 @@ cmd_frontdoor_install() {
     local hash="" setpw=0 a
     for a in "$@"; do [[ "$a" == --set-password ]] && setpw=1; done
     if (( ! setpw )) && sudo test -f "$otdir/config.yaml"; then
-        hash=$(sudo sed -n "s/^ *password: '\(.*\)'\$/\1/p" "$otdir/config.yaml" | head -1)
+        hash=$(sudo sed -n "s/^ *password: '\(.*\)'\$/\1/p" "$otdir/config.yaml" | sed -n 1p)
     fi
     if [[ -n "$hash" ]]; then
         ok "reusing existing admin password (change it with: frontdoor-install --set-password)"

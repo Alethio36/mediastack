@@ -52,7 +52,7 @@ https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" \
     local cv min=2.24.0
     cv=$(sudo docker compose version --short 2>/dev/null || echo "0"); cv=${cv#v}
     ok "docker compose $cv"
-    [[ "$(printf '%s\n%s\n' "$cv" "$min" | sort -V | head -n1)" == "$min" ]] \
+    [[ "$(printf '%s\n%s\n' "$cv" "$min" | sort -V | sed -n 1p)" == "$min" ]] \
         || warn "compose $cv < $min — 'include:'/wildcard profiles need $min+. Upgrade the compose plugin."
     echo; hr "Dependencies ready"
     cat <<'EOT'

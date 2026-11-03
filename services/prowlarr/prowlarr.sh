@@ -144,7 +144,7 @@ JSON
         local fid
         local tags; tags=$(api GET "$purl/api/v1/tag" "$pkey") \
             || { wfail "prowlarr: could not read its tags — flaresolverr not set up [$(oneline "$tags")]"; prowlarr_download_client; return 0; }
-        fid=$(jq -r '.[] | select(.label=="flared") | .id' <<<"$tags" 2>/dev/null | head -1)
+        fid=$(jq -r '.[] | select(.label=="flared") | .id' <<<"$tags" 2>/dev/null | sed -n 1p)
         if [[ -n "$fid" ]]; then
             ok "tag 'flared' exists"
         elif w_would "create prowlarr tag 'flared' (attach to indexers needing FlareSolverr)"; then

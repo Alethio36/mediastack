@@ -170,7 +170,7 @@ backup_take() { # backup_take KIND NOTE — a full cold restore point into the G
 IMAGE_STORE=""   # containerd | classic — Docker's image store, read once (image_store_init)
 image_store_init() {
     [[ -z "$IMAGE_STORE" ]] || return 0
-    if sudo docker info -f '{{json .DriverStatus}}' 2>/dev/null | grep -q 'io.containerd.snapshotter'; then
+    if sudo docker info -f '{{json .DriverStatus}}' 2>/dev/null | grep 'io.containerd.snapshotter' >/dev/null; then
         IMAGE_STORE=containerd
     else IMAGE_STORE=classic; fi
 }
@@ -271,7 +271,7 @@ cmd_backup_list() { # backup list [svc] — every restore point, newest first; w
 
 point_meta() { # point_meta POINT KEY -> the value ("" when the point has no meta)
     [[ -f "$1/meta" ]] || return 0
-    sed -n "s/^$2=//p" "$1/meta" | head -1
+    sed -n "s/^$2=//p" "$1/meta" | sed -n 1p
 }
 
 point_private() { # point_private DEST — the archives hold every app's keys and databases: root reads them, nobody else
@@ -596,7 +596,7 @@ cmd_restore() {
             # $broot-relative path (may be "pre-update/<ts>").
             from=$( { for d in "$broot"/pre-update/$tsglob "$broot"/$tsglob; do
                         [[ -d "$d" && -f "$d/$svc.tar.gz" ]] && printf '%s\t%s\n' "$(basename "$d")" "${d#"$broot"/}"
-                     done; } | sort -r | head -1 | cut -f2 )
+                     done; } | sort -r | sed -n 1p | cut -f2 )
         else
             # full restore: newest GFS point only — never a partial pre-update one
             from=$(latest_restore_point)
@@ -925,7 +925,7 @@ cmd_update() {
 
     # authentik takes its releases in order and never goes back: check the
     # step to what this run would start (a --to pin included) before pulling
-    if printf '%s\n' "${targets[@]}" | grep -qx authentik; then
+    if printf '%s\n' "${targets[@]}" | grep -x authentik >/dev/null; then
         # shellcheck disable=SC2034  # render's cache (mediastack.sh): the check renders this run's pins
         RENDERED_JSON=""; authentik_release_check
     fi
@@ -991,7 +991,7 @@ cmd_update() {
         exit 1
     fi
     ok "All updated services healthy."
-    printf '%s\n' "${targets[@]}" | grep -qx authentik && authentik_release_record
+    printf '%s\n' "${targets[@]}" | grep -x authentik >/dev/null && authentik_release_record
     # the household hears now (its services are back); ops hears at the end,
     # once verify and trash-sync have run too — "updated" means the run is done
     (( notify_users )) && notify_interruption "$ntitle complete" "$ndone" success
@@ -1042,7 +1042,7 @@ update_verify_wiring() { # wire --verify after a version change: drift warns, a 
         UPDATE_WIRING="kept every setting"
         return 0
     fi
-    drift=$(grep -E 'would:|FAIL' <<<"$vout" | head -12 || true)   # none: wire stopped before comparing anything
+    drift=$(grep -E 'would:|FAIL' <<<"$vout" | sed -n 1,12p || true)   # none: wire stopped before comparing anything
     if [[ -z "$drift" ]]; then
         fail "wire --verify could not run after the update (exit $vrc): $(oneline "$(tail -3 <<<"$vout")")"
         echo "  The update itself succeeded. Check: ./mediastack.sh wire --verify"

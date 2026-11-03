@@ -45,7 +45,7 @@ _doctor_environment() {
     local owner stray; owner=$(stat -c '%u' "$SCRIPT_DIR")
     # (find exits non-zero for paths that do not exist yet — expected, absorbed)
     stray=$({ find "$LOCAL_DIR" "$CUSTOM_DIR" \
-                   ! -uid "$owner" 2>/dev/null || true; } | sed "s|^$SCRIPT_DIR/||" | head -5 | tr '\n' ' ')
+                   ! -uid "$owner" 2>/dev/null || true; } | sed "s|^$SCRIPT_DIR/||" | sed -n 1,5p | tr '\n' ' ')
     [[ -z "$stray" ]] && ok "repo state files belong to the repo owner" \
         || d_fail "not owned by the repo owner: $stray" "the CLI (running as you) cannot update them" \
                   "sudo chown -R $(stat -c '%U:%G' "$SCRIPT_DIR") ${stray% }"
@@ -238,7 +238,7 @@ _doctor_neighbours() {
     local net
     while read -r net; do
         [[ -z "$net" ]] && continue
-        ip route | grep -vE 'dev (docker0|br-)' | grep -v "^default" | grep -q "^${net%.*}" \
+        ip route | grep -vE 'dev (docker0|br-)' | grep -v "^default" | grep "^${net%.*}" >/dev/null \
             && warn "docker subnet $net overlaps a host route — containers may fail to reach the LAN/NAS. Fix: 'default-address-pools' in /etc/docker/daemon.json (restarts ALL containers on this host — do it in a window)."
     done < <(sudo docker network ls -q | xargs -r sudo docker network inspect \
              --format '{{range .IPAM.Config}}{{.Subnet}}{{println}}{{end}}' 2>/dev/null \

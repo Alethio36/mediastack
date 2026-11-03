@@ -8,7 +8,7 @@
 configure_root() { # configure_root VAR title "explanation..." allow_network(yes/no)
     local var="$1" title="$2" text="$3" allow_net="$4" cur val fs
     cur=$(env_get "$var")   # not set yet: the folder .env.example suggests
-    [[ -n "$cur" ]] || cur=$(grep -E "^$var=" .env.example | head -1 | cut -d= -f2-)
+    [[ -n "$cur" ]] || cur=$(grep -E "^$var=" .env.example | sed -n 1p | cut -d= -f2-)
     explain "$title" "$text"
     while true; do
         ask "$var" "$title path" "$cur"; val=$(abspath "$REPLY_VAL")
@@ -131,7 +131,7 @@ _configure_timezone() {
         fi
         fail "'$REPLY_VAL' is not a valid timezone."
         info "Close matches:"; find /usr/share/zoneinfo -type f 2>/dev/null \
-            | sed 's|/usr/share/zoneinfo/||' | grep -i "${REPLY_VAL##*/}" | head -5 || true
+            | sed 's|/usr/share/zoneinfo/||' | grep -i "${REPLY_VAL##*/}" | sed -n 1,5p || true
     done
 
 }
@@ -590,7 +590,7 @@ sched_summary() { # both schedules, when they next run, and how they meet
 
 sched_next() { # sched_next EXPR -> "next: <when>" ("" for never)
     [[ -n "$1" ]] || return 0
-    local n; n=$(systemd-analyze calendar "$1" 2>/dev/null | sed -n 's/^ *Next elapse: //p' | head -1)
+    local n; n=$(systemd-analyze calendar "$1" 2>/dev/null | sed -n 's/^ *Next elapse: //p' | sed -n 1p)
     echo "next: ${n:-?}"
 }
 

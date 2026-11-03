@@ -15,7 +15,7 @@
 # conflicts, the link itself) is link_<app>_* in its service's folder; this
 # file keeps the verb, its order and its questions.
 
-link_secret() { head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 24; }
+link_secret() { local s; s=$(head -c 24 /dev/urandom | base64 | tr -dc 'A-Za-z0-9'); printf '%s' "${s:0:24}"; }
 
 link_pick() { # link_pick APP CANDIDATES-JSON PORTAL-USER -> LINK_PICK: the chosen candidate ("" = leave the app)
     local app="$1" cands="$2" who="$3" n i def

@@ -8,8 +8,8 @@ ll_url() { local p; p=$(svc_hostport lazylibrarian) || return 1; echo "http://12
 ll_key() { # LazyLibrarian mints its API key on first run into config.ini
     local f
     f="$(env_get CONFIG_ROOT)/lazylibrarian/config.ini"
-    [[ -r "$f" ]] || { sudo cat "$f" 2>/dev/null | sed -n 's/^api_key = *//p' | head -1; return; }
-    sed -n 's/^api_key = *//p' "$f" | head -1
+    [[ -r "$f" ]] || { sudo cat "$f" 2>/dev/null | sed -n 's/^api_key = *//p' | sed -n 1p; return; }
+    sed -n 's/^api_key = *//p' "$f" | sed -n 1p
 }
 ll_api() { # ll_api cmd [k=v ...] -> body; the &cmd= API, apikey-authenticated
     local cmd="$1"; shift
@@ -30,7 +30,7 @@ ll_api_enable() { # api_enabled + a new api_key into config.ini's [GENERAL], wri
     sudo chown "$own" "$f"
     DC start lazylibrarian >/dev/null 2>&1 || { wfail "lazylibrarian did not start again — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
     http_ready lazylibrarian "$(ll_url)/" '^([23][0-9][0-9]|401|403)$' || return 1
-    [[ "$(ll_api getVersion | head -c1)" == "{" ]] \
+    [[ "$(ll_api getVersion)" == "{"* ]] \
         || { wfail "lazylibrarian did not take the API key written to its config.ini — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
     ok "lazylibrarian: API on, with a key of its own"
 }
@@ -48,8 +48,8 @@ ll_login() {
         u=$(env_get ARR_USER); p=$(env_get ARR_PASSWORD)
         [[ -n "$u" && -n "$p" ]] || { info "lazylibrarian: the shared arr login is not set yet — 'wire arr' creates it"; return 0; }
     fi
-    cur_u=$(sudo sed -n 's/^http_user *= *//p' "$f" | head -1)
-    cur_p=$(sudo sed -n 's/^http_pass *= *//p' "$f" | head -1)
+    cur_u=$(sudo sed -n 's/^http_user *= *//p' "$f" | sed -n 1p)
+    cur_p=$(sudo sed -n 's/^http_pass *= *//p' "$f" | sed -n 1p)
     if [[ "$cur_u" == "$u" && "$cur_p" == "$p" ]]; then
         if [[ -n "$u" ]]; then ok "lazylibrarian: its page asks for the arr login ('$u')"
         else ok "lazylibrarian: no login of its own — the portal guards it"; fi

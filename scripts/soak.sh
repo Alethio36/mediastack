@@ -55,9 +55,9 @@ done
 JOBS=(hostid manifest update backup)
 unit_cmd() { # unit_cmd JOB -> the ExecStart its real unit runs ("" when the timer is not enabled)
     systemctl is-enabled --quiet "mediastack-$1.timer" 2>/dev/null || return 0
-    sed -n 's/^ExecStart=//p' "/etc/systemd/system/mediastack-$1.service" | head -1
+    sed -n 's/^ExecStart=//p' "/etc/systemd/system/mediastack-$1.service" | sed -n 1p
 }
-unit_calendar() { sed -n 's/^OnCalendar=//p' "/etc/systemd/system/mediastack-$1.timer" | head -1; }
+unit_calendar() { sed -n 's/^OnCalendar=//p' "/etc/systemd/system/mediastack-$1.timer" | sed -n 1p; }
 
 # ---- the simulated schedule: "YYYY-MM-DD HH:MM:SS JOB" lines, in time order ----
 START=$(date '+%F %T')
@@ -130,7 +130,7 @@ note_restarts() { local n s h r; while IFS=$'\t' read -r n s h r; do RESTARTS[$n
 judge_containers() {
     local i n s h r settled=0
     for (( i = 0; i < 36; i++ )); do   # up to 3 min for health checks to settle after the night
-        containers | awk -F'\t' '$3 == "starting"' | grep -q . || { settled=1; break; }
+        containers | awk -F'\t' '$3 == "starting"' | grep . >/dev/null || { settled=1; break; }
         sleep 5
     done
     (( settled )) || problem "containers still starting their health checks after 3 minutes"
@@ -183,7 +183,7 @@ judge_wire() { # at the real time, as it always was (first soak, Oct 2026: under
     # clock every day showed a login drift that does not exist — the cookie cause, at SOAK_FAKETIME_SKIP)
     local out
     if ! out=$(./mediastack.sh wire --verify 2>&1 | strip); then
-        problem "wire --verify: $(grep -E '^(FAIL|  would:)' <<<"$out" | head -5 | tr '\n' ' ')"
+        problem "wire --verify: $(grep -E '^(FAIL|  would:)' <<<"$out" | sed -n 1,5p | tr '\n' ' ')"
     else
         echo "  wire --verify: no drift"
     fi

@@ -23,7 +23,7 @@ transmission_rpc() { # transmission_rpc METHOD ARGUMENTS-JSON -> its .arguments 
             || { echo "unreachable: $out"; return 1; }
         code=$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$out")
         if [[ "$code" == 409 ]]; then
-            TRANSMISSION_SID=$(sed -n 's/^X-Transmission-Session-Id: *\([^[:space:]]*\).*/\1/Ip' <<<"$out" | head -1); continue
+            TRANSMISSION_SID=$(sed -n 's/^X-Transmission-Session-Id: *\([^[:space:]]*\).*/\1/Ip' <<<"$out" | sed -n 1p); continue
         fi
         out=$(sed '1,/^\r\{0,1\}$/d' <<<"$out")
         [[ "$code" == 200 ]] || { echo "HTTP $code"; return 1; }

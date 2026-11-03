@@ -266,7 +266,7 @@ leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2
             if sudo docker exec "$pcn" curl -fsS --max-time 6 https://github.com -o /dev/null >/dev/null 2>&1; then
                 lt_fail "egress SUCCEEDED from a dependent with gluetun STOPPED — containment broken"
             else lt_pass "zero egress from dependents with gluetun dead (they reached out a moment before — fail-safe)"; fi
-            if sudo docker exec "$pcn" sh -c 'ip route 2>/dev/null | grep -q default'; then
+            if sudo docker exec "$pcn" sh -c 'ip route 2>/dev/null | grep default >/dev/null'; then
                 lt_fail "a default route appeared inside the dead namespace"
             else lt_pass "no fallback route appeared — docker cannot re-home a joined container"; fi
             info "Restarting gluetun and re-joining dependents..."

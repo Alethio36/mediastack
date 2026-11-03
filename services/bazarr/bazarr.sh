@@ -4,7 +4,7 @@
 # entrypoint's helpers at call time.
 
 bazarr_key() { # bazarr_key -> api key from its config.yaml ("" while initialising)
-    sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | head -1 || true
+    sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | sed -n 1p || true
 }
 
 # ---- bazarr ----
