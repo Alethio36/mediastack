@@ -799,7 +799,7 @@ c_inspect_all() { # fill the cache for every managed container and its shard's m
     # hundreds of KB that every c_* would re-parse — this keeps it to a few
     # shellcheck disable=SC2086  # one name per word
     INSPECT_JSON=$(c_inspect $names | jq -c '[ .[] | {Name, Id, Image, RestartCount,
-        State: {Status: .State.Status, StartedAt: .State.StartedAt, Health: .State.Health},
+        State: {Status: .State.Status, StartedAt: .State.StartedAt, Health: .State.Health, Pid: .State.Pid},
         HostConfig: {NetworkMode: .HostConfig.NetworkMode},
         Config: {User: .Config.User, Labels: {"org.opencontainers.image.version": .Config.Labels["org.opencontainers.image.version"],
                                               "com.docker.compose.image": .Config.Labels["com.docker.compose.image"]}},
@@ -833,6 +833,15 @@ c_version(){ c_get "$1" '.Config.Labels["org.opencontainers.image.version"]'; }
 
 c_restarts(){ local o; o=$(c_get "$1" '.RestartCount'); echo "${o:-0}"; }
 c_netmode(){ c_get "$1" '.HostConfig.NetworkMode'; }   # "container:<id>" when joined to another namespace
+c_pid()    { c_get "$1" '.State.Pid'; }
+c_netns() { # c_netns <cname> -> its network namespace ("net:[4026533156]"), "" when not running or unreadable
+    # NetworkMode names the container a service joined, not which of its
+    # namespaces: restarting that container builds a new one and leaves the
+    # joined ones in the old (found live, Nov 2026). Only this tells them apart.
+    local p; p=$(c_pid "$1")
+    [[ -n "$p" && "$p" != 0 ]] || return 0
+    sudo readlink "/proc/$p/ns/net" 2>/dev/null || true
+}
 c_id()     { c_get "$1" '.Id'; }
 c_host_path() { # c_host_path <cname> <container-path> -> the host path behind it, "" if no mount covers it
     # longest-prefix match over the container's bind mounts; "/x" is not a

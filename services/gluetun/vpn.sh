@@ -13,35 +13,51 @@
 # they stay joined to the dead namespace and lose egress silently (health
 # stays green — the app runs fine offline). This guard is the single source
 # of truth: enumerate dependents from the rendered config (effective
-# membership, <SVC>_VPN overrides included), compare each running one's
-# NetworkMode to the live gluetun's full ID (leak-test's proof), and
-# force-recreate any that drifted. Loud on drift, self-heals, dies only if a
+# membership, <SVC>_VPN overrides included), check each running one sits in
+# the live gluetun's network namespace (vpn_join: the ID it joined, then the
+# namespace itself — a gluetun restarted in place keeps its ID but builds a
+# new namespace), and force-recreate any that drifted. Loud on drift, self-heals, dies only if a
 # re-pin fails to take. Stopped dependents are skipped — doctor/leak-test
 # catch them when started. Called from cmd_up and cmd_update so neither path
 # can leave a ghost behind.
+vpn_join() { # vpn_join CNAME GLUETUN_ID GLUETUN_NETNS -> ok | other | stale | unknown
+    # other: joined to some other container (a leak path); stale: joined to
+    # gluetun but in a namespace it no longer has (restarted under it: no
+    # egress at all); unknown: its namespace could not be read
+    local ns
+    [[ "$(c_netmode "$1")" == "container:$2" ]] || { echo other; return; }
+    ns=$(c_netns "$1")
+    if [[ -z "$ns" || -z "$3" ]]; then echo unknown
+    elif [[ "$ns" == "$3" ]]; then echo ok
+    else echo stale; fi
+}
+
 vpn_reattach_guard() {
     render; c_inspect_all
-    local gid vd nm vdeps=() stale=()
+    local gid gns vd nm vdeps=() stale=()
     mapfile -t vdeps < <(jq -r '.services | to_entries[]
         | select((.value.network_mode // "") == "service:gluetun") | .key' \
         <<<"$RENDERED_JSON" | sort)
     (( ${#vdeps[@]} )) || { warn "vpn guard: no service:gluetun dependents in the rendered config — nothing to verify"; return 0; }
     gid=$(c_id "$(svc_cname gluetun)")
     [[ -n "$gid" ]] || die "vpn guard: cannot resolve the live gluetun container — VPN attachment unverifiable. Inspect gluetun, then re-run."
+    gns=$(c_netns "$(svc_cname gluetun)")
+    [[ -n "$gns" ]] || die "vpn guard: cannot read the live gluetun's network namespace — VPN attachment unverifiable. Inspect gluetun, then re-run."
     local running=0
     for vd in "${vdeps[@]}"; do
         [[ "$(c_state "$(svc_cname "$vd")")" == running ]] || continue
         running=$((running + 1))
-        nm=$(c_netmode "$(svc_cname "$vd")")
-        [[ "$nm" == "container:$gid" ]] || stale+=("$vd")
+        nm=$(vpn_join "$(svc_cname "$vd")" "$gid" "$gns")
+        [[ "$nm" == unknown ]] && die "vpn guard: cannot read $vd's network namespace — its VPN attachment is unverifiable. Inspect it, then re-run."
+        [[ "$nm" == ok ]] || stale+=("$vd")
     done
     if (( ${#stale[@]} )); then
-        warn "gluetun was recreated — dependents still joined to the old gluetun (dead tunnel): ${stale[*]}"
+        warn "dependents not in the live gluetun's namespace (gluetun recreated or restarted under them — no egress): ${stale[*]}"
         info "re-pinning them onto the live gluetun..."
         DC up -d --force-recreate --no-deps "${stale[@]}"
         for vd in "${stale[@]}"; do
-            nm=$(c_netmode "$(svc_cname "$vd")")
-            [[ "$nm" == "container:$gid" ]] && continue
+            nm=$(vpn_join "$(svc_cname "$vd")" "$gid" "$gns")
+            [[ "$nm" == ok ]] && continue
             notify ops "Mediastack VPN re-pin FAILED" "VPN dependents detached from gluetun and re-pin FAILED: **${stale[*]}**"$'\n'"Fix now: \`./mediastack.sh up\` then \`./mediastack.sh leak-test\`" failure
             die "vpn guard: $vd is still not joined to the live gluetun after recreate — VPN egress is broken. Fix this before anything else."
         done
@@ -127,16 +143,19 @@ cmd_leak_test() {
 
     hr "leak-test: attachment audit"
     # Netns-joined containers report an EMPTY SandboxKey, so key equality can
-    # never verify the join. The truth is NetworkMode: docker enforces
-    # container:<id> joins atomically — matching gluetun's full ID is proof.
-    local gid s cn nm
-    gid=$(c_id "$gcn")
+    # never verify the join. NetworkMode names the container joined; the
+    # namespace itself (vpn_join) proves it is gluetun's current one.
+    local gid gns s cn nm
+    gid=$(c_id "$gcn"); gns=$(c_netns "$gcn")
     for s in $(svc_managed_where mediastack.vpn true); do
         svc_enabled "$s" || continue
         cn=$(svc_cname "$s"); [[ "$(c_state "$cn")" == running ]] || { info "$s not running — skipped"; continue; }
-        nm=$(c_netmode "$cn")
-        if [[ "$nm" == "container:$gid" ]]; then lt_pass "$s routed through the gluetun tunnel"
-        else lt_fail "$s is NOT joined to gluetun (mode: ${nm:0:40}...) — this IS a leak path"; fi
+        case $(vpn_join "$cn" "$gid" "$gns") in
+            ok)    lt_pass "$s routed through the gluetun tunnel" ;;
+            stale) lt_fail "$s sits in gluetun's old namespace (gluetun restarted under it): no egress at all, not a leak — ./mediastack.sh up re-joins it" ;;
+            other) nm=$(c_netmode "$cn"); lt_fail "$s is NOT joined to gluetun (mode: ${nm:0:40}...) — this IS a leak path" ;;
+            *)     lt_unproven "$s: its network namespace could not be read — attachment unverifiable" ;;
+        esac
     done
 
     hr "leak-test: the tunnel's namespace"
@@ -183,34 +202,42 @@ cmd_leak_test() {
         sudo docker exec "$gcn" sh -c 'ip link set dev tun0 up' || true
         info "Restarting gluetun to restore a clean tunnel..."
         DC restart gluetun >/dev/null
+        # the restart left every dependent in the old namespace: re-join them,
+        # or the hard stop below probes from a namespace that is already dead
+        wait_verdict --recover gluetun || die "gluetun ${VERDICT_WHY[gluetun]} after the tunnel-drop proof — inspect: ./mediastack.sh logs gluetun"
+        vpn_reattach_guard
+        gid=$(c_id "$gcn")
 
-        warn "Hard-stop proof: stopping gluetun ENTIRELY (~30s of downtime)..."
-        sudo docker stop "$gcn" >/dev/null; INSPECT_JSON=""
-        # any running torrent client joined to this gluetun probes it — not just
-        # qBittorrent; one moved out of the VPN (vpn ... --i-know) is no probe
+        # any running torrent client in gluetun's live namespace probes it — not
+        # just qBittorrent; one moved out of the VPN (vpn ... --i-know) is no
+        # probe. It must reach out BEFORE the stop: a probe with no egress to
+        # begin with proves nothing by having none after (found live, Nov 2026).
         local pcn="" ts tcn
+        INSPECT_JSON=""; gns=$(c_netns "$gcn")
         for ts in $(svc_managed_where mediastack.torrent true); do
             tcn=$(svc_cname "$ts")
-            [[ "$(c_state "$tcn")" == running && "$(c_netmode "$tcn")" == "container:$gid" ]] && { pcn=$tcn; break; }
+            [[ "$(c_state "$tcn")" == running && "$(vpn_join "$tcn" "$gid" "$gns")" == ok ]] && { pcn=$tcn; break; }
         done
-        if [[ -n "$pcn" ]]; then
+        if [[ -z "$pcn" ]]; then lt_unproven "hard stop: no torrent client is running in the tunnel to probe from"
+        elif ! sudo docker exec "$pcn" curl -fsS --max-time 10 https://github.com -o /dev/null >/dev/null 2>&1; then
+            lt_unproven "hard stop: the probe $pcn cannot reach out even with gluetun up — skipped (it would prove nothing)"
+        else
+            warn "Hard-stop proof: stopping gluetun ENTIRELY (~30s of downtime)..."
+            sudo docker stop "$gcn" >/dev/null; INSPECT_JSON=""
             if sudo docker exec "$pcn" curl -fsS --max-time 6 https://github.com -o /dev/null >/dev/null 2>&1; then
                 lt_fail "egress SUCCEEDED from a dependent with gluetun STOPPED — containment broken"
-            else lt_pass "zero egress from dependents with gluetun dead (namespace has no interfaces — fail-safe)"; fi
+            else lt_pass "zero egress from dependents with gluetun dead (they reached out a moment before — fail-safe)"; fi
             if sudo docker exec "$pcn" sh -c 'ip route 2>/dev/null | grep -q default'; then
                 lt_fail "a default route appeared inside the dead namespace"
             else lt_pass "no fallback route appeared — docker cannot re-home a joined container"; fi
-        else lt_unproven "hard stop: no torrent client is running in the tunnel to probe from"; fi
-        info "Restarting gluetun and re-joining dependents..."
-        sudo docker start "$gcn" >/dev/null; INSPECT_JSON=""
-        wait_verdict --recover gluetun \
-            || warn "gluetun ${VERDICT_WHY[gluetun]} — rejoining its dependents anyway; if they stay dead: ./mediastack.sh up"
-        local rs
-        for rs in $(svc_managed_where mediastack.vpn true); do
-            svc_enabled "$rs" || continue
+            info "Restarting gluetun and re-joining dependents..."
+            sudo docker start "$gcn" >/dev/null
             # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
-            INSPECT_JSON=""; sudo docker restart "$(svc_cname "$rs")" >/dev/null && info "  rejoined: $rs"
-        done
+            INSPECT_JSON=""
+            wait_verdict --recover gluetun \
+                || die "gluetun ${VERDICT_WHY[gluetun]} after the hard-stop proof — its dependents are offline. Inspect: ./mediastack.sh logs gluetun, then ./mediastack.sh up"
+            vpn_reattach_guard   # every running dependent is in the stopped gluetun's namespace: re-joined and verified
+        fi
     fi
 
     hr "leak-test: host port sweep"
@@ -416,18 +443,24 @@ cmd_vpn() {
 
 gluetun_doctor() { # doctor: every VPN'd service joined to the live tunnel, and the tunnel's public IP
     if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
-        local dgid dnm dbad="" dchecked=0
-        dgid=$(c_id "$(svc_cname gluetun)")
+        local dgid dgns dbad="" dstale="" dunk="" dchecked=0
+        dgid=$(c_id "$(svc_cname gluetun)"); dgns=$(c_netns "$(svc_cname gluetun)")
         for s in $(svc_managed_where mediastack.vpn true); do
             svc_enabled "$s" || continue
             [[ $(c_state "$(svc_cname "$s")") == running ]] || continue
-            dnm=$(c_netmode "$(svc_cname "$s")")
             dchecked=1
-            [[ "$dnm" == "container:$dgid" ]] || dbad+="$s "
+            case $(vpn_join "$(svc_cname "$s")" "$dgid" "$dgns") in
+                ok) ;;
+                stale) dstale+="$s " ;;
+                other) dbad+="$s " ;;
+                *) dunk+="$s " ;;
+            esac
         done
         if (( dchecked == 0 )); then info "no running VPN'd services to audit"
-        elif [[ -z "$dbad" ]]; then ok "all VPN'd services routed through the gluetun tunnel"
-        else d_fail "VPN'd services NOT attached to gluetun: $dbad" "their traffic bypasses the VPN entirely" "./mediastack.sh up   (recreates with correct attachment), then ./mediastack.sh leak-test"; fi   # addr-ok: a message, no address
+        elif [[ -z "$dbad$dstale$dunk" ]]; then ok "all VPN'd services routed through the gluetun tunnel"; fi
+        [[ -z "$dbad" ]] || d_fail "VPN'd services NOT attached to gluetun: $dbad" "their traffic bypasses the VPN entirely" "./mediastack.sh up   (recreates with correct attachment), then ./mediastack.sh leak-test"   # addr-ok: a message, no address
+        [[ -z "$dstale" ]] || d_fail "VPN'd services in gluetun's old namespace: $dstale" "gluetun restarted under them: they have no network at all (not a leak)" "./mediastack.sh up   (re-joins them), then ./mediastack.sh leak-test"
+        [[ -z "$dunk" ]] || warn "cannot read the network namespace of: $dunk— their attachment is unverified"
     fi
     if [[ "$(c_state "$(svc_cname gluetun)")" == running ]]; then
         # egress first (what the apps need), then who the internet sees: an

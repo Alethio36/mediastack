@@ -11,6 +11,8 @@
 #     settings (gluetun's dns, encrypted upstream — the image's own "DoT" — no
 #     plaintext one), the LAN resolvers routed into the tunnel, the control
 #     server (refused from the network, 401 inside)
+#   * attachment: a VPN'd service in gluetun's current namespace (not just
+#     joined to its container ID — a restart keeps the ID, not the namespace)
 #   * migration 36 -> 37: VPN_DNS_ADDRESS retired (a value is named), the
 #     resolvers' setting added
 # Sources the real entrypoint (minus its last line, main "$@"); docker, curl
@@ -230,6 +232,33 @@ ctl "401 0" "  HTTP/1.1 401 Unauthorized"; [[ $(lt_exit_code) == 1 ]] || fail_ "
 ctl "000 6" "  HTTP/1.1 401 Unauthorized"; [[ $(lt_exit_code) == 2 ]] || fail_ "name unresolved: UNPROVEN, not a pass"; pass
 ctl "000 7" "  HTTP/1.1 200 OK"; [[ $(lt_exit_code) == 1 ]] || fail_ "no password inside: FAIL"; pass
 unset -f sudo curl date
+
+# ---- attachment: the container joined, then the namespace itself ----
+# gluetun restarted in place keeps its ID but builds a new namespace; the
+# joined ones stay in the old one (found live, Nov 2026)
+declare -A NS=([100]="net:[4026533156]" [200]="net:[4026533156]" [300]="net:[4026532621]" [400]="")
+sudo() { [[ "$1" == readlink ]] || return 1; local p=${2#/proc/}; p=${p%%/*}; [[ -n "${NS[$p]:-}" ]] && echo "${NS[$p]}"; }
+GID=aaaa1111
+INSPECT_JSON='[{"Name":"/g","Id":"aaaa1111","State":{"Pid":100}},
+  {"Name":"/live","HostConfig":{"NetworkMode":"container:aaaa1111"},"State":{"Pid":200}},
+  {"Name":"/old","HostConfig":{"NetworkMode":"container:aaaa1111"},"State":{"Pid":300}},
+  {"Name":"/elsewhere","HostConfig":{"NetworkMode":"container:bbbb2222"},"State":{"Pid":200}},
+  {"Name":"/unreadable","HostConfig":{"NetworkMode":"container:aaaa1111"},"State":{"Pid":400}},
+  {"Name":"/stopped","HostConfig":{"NetworkMode":"container:aaaa1111"},"State":{"Pid":0}}]'
+GNS=$(c_netns g)
+[[ "$GNS" == "net:[4026533156]" ]] || fail_ "gluetun's namespace read from its pid ($GNS)"; pass
+[[ $(vpn_join live "$GID" "$GNS") == ok ]] || fail_ "same container, same namespace: ok"; pass
+[[ $(vpn_join old "$GID" "$GNS") == stale ]] || fail_ "same container ID, gluetun's old namespace: stale, never ok"; pass
+[[ $(vpn_join elsewhere "$GID" "$GNS") == other ]] || fail_ "joined to another container: other"; pass
+[[ $(vpn_join unreadable "$GID" "$GNS") == unknown ]] || fail_ "namespace unreadable: unknown, never ok"; pass
+[[ $(vpn_join stopped "$GID" "$GNS") == unknown ]] || fail_ "no pid: unknown, never ok"; pass
+[[ $(vpn_join live "$GID" "") == unknown ]] || fail_ "gluetun's namespace unknown: unknown, never ok"; pass
+# the inspect cache carries the pid (c_get reads only what the projection keeps)
+RENDERED_JSON='{"services":{"live":{"container_name":"live","labels":{"mediastack.managed":"true"}}}}'
+c_inspect() { echo '[{"Name":"/live","Id":"x","State":{"Status":"running","Pid":200},"HostConfig":{"NetworkMode":"container:aaaa1111"},"Config":{"Labels":{}},"Mounts":[]}]'; }
+INSPECT_JSON=""; c_inspect_all
+[[ $(c_pid live) == 200 ]] || fail_ "the cached inspect keeps .State.Pid ($(c_pid live))"; pass
+unset -f sudo c_inspect; INSPECT_JSON=""; RENDERED_JSON=""
 
 # ---- migration 36 -> 37 ----
 ENV_FILE="$T/env"

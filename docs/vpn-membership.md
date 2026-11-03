@@ -115,8 +115,8 @@ Recreating gluetun gives it a new container ID, and compose does **not**
 recreate `network_mode` dependents whose own config is unchanged — they stay
 joined to the dead namespace and silently lose egress (health checks keep
 passing; the apps run fine offline). `update` therefore verifies, after
-applying, that every rendered `service:gluetun` dependent is joined to the
-*live* gluetun by full container ID. Any that aren't are force-recreated in
+applying, that every rendered `service:gluetun` dependent sits in the *live*
+gluetun's network namespace. Any that don't are force-recreated in
 the same run; if a dependent still isn't joined afterwards, the update fails
 loudly and notifies. Stopped containers are left alone — they are caught by
 `doctor`/`leak-test` when started.
@@ -138,11 +138,16 @@ recreated while gluetun has a new container ID lands nowhere useful and, worst
 case, on a bridge with real egress. The stack closes this with a single guard,
 `vpn_reattach_guard`, run at the end of both `up` and `update`. It enumerates
 every `service:gluetun` dependent from the rendered config, checks each running
-one's live `NetworkMode` against gluetun's current full ID, force-recreates any
-that drifted, and fails loudly (with an ops notification) if a re-pin does not
-take. A ghost gluetun therefore cannot survive a normal `up` or `update`:
-either every dependent is joined to the live tunnel, or the command stops and
-says why. Stopped dependents are left to `doctor`/`leak-test` on next start.
+one's live `NetworkMode` against gluetun's current full ID **and** its network
+namespace against gluetun's (`/proc/<pid>/ns/net`), force-recreates any that
+drifted, and fails loudly (with an ops notification) if a re-pin does not
+take. The ID alone is not enough: a gluetun restarted in place — Docker
+restarting it after a crash, a `docker restart` — keeps its ID but builds a
+new namespace, and its dependents stay in the old one with no network at all
+(found live, Nov 2026; fail-safe, but downloads stop silently). A ghost
+gluetun therefore cannot survive a normal `up` or `update`: either every
+dependent is in the live tunnel's namespace, or the command stops and says
+why. Stopped dependents are left to `doctor`/`leak-test` on next start.
 
 ### Update cascades the gluetun group
 
