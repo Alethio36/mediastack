@@ -308,7 +308,7 @@ lt_flow_allowed() { # lt_flow_allowed DST SUBNET -> 0 when DST is a VPN server t
 }
 
 lt_flows() { # lt_flows GLUETUN — the connections the host tracks from gluetun go only to the VPN server and the stack network
-    local gcn=$1 gip sub flows now bad=() old=() newold=() kept=() proto dst dport t wait=0 k
+    local gcn=$1 gip sub flows now bad=() old=() newold=() kept=() proto dst dport t wait=0 k o seen
     leak_tool conntrack "traffic" || return 0
     [[ -n "$LT_ENDPOINTS" ]] || { lt_unproven "traffic: no VPN server known (the firewall check could not name one)"; return 0; }
     sub=$(lt_ns_subnet "$gcn"); gip=$(sudo docker exec "$gcn" ip -o -4 addr show dev eth0 2>/dev/null | awk '{ split($4, a, "/"); print a[1]; exit }')
@@ -334,8 +334,10 @@ lt_flows() { # lt_flows GLUETUN — the connections the host tracks from gluetun
             lt_flow_allowed "$dst" "$sub" && continue
             k="$proto $dst $dport"
             if [[ " $LT_TUNNEL_PORTS " != *" $proto/$dport "* ]]; then bad+=("$proto $dst:$dport")
-            elif printf '%s\n' "${old[@]}" | grep -qxF -- "$k"; then kept+=("$k")
-            else newold+=("$k"); fi
+            else
+                seen=0; for o in "${old[@]}"; do [[ "$o" == "$k" ]] && seen=1; done
+                if (( seen )); then kept+=("$k"); else newold+=("$k"); fi
+            fi
         done <<<"$now"
         if (( ${#bad[@]} )); then lt_fail "traffic: gluetun's address is talking past the tunnel — ${bad[*]}"; return 0; fi
         if (( ${#kept[@]} )); then lt_fail "traffic: gluetun's address still talks to $(lt_flow_names "${kept[@]}") past the current VPN server — refreshed, not an old session"; return 0; fi

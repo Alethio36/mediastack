@@ -119,6 +119,11 @@ state_set "$LEAK_GATE" "2026-11-03 10:00:00: firewall lets traffic out"
 out=$( (wire_gate sonarr jellyfin) 2>&1 ) && fail_ "a group member held by the gate: refused"; pass
 [[ "$out" == *"Cannot wire: sonarr is in the VPN group: the leak gate stopped the VPN group (2026-11-03 10:00:00: firewall lets traffic out)"* ]] \
     || fail_ "names the gate, not 'start the stack' (found live, Nov 2026) — $out"; pass
+# the group as long as the real one, written slowly: a `| grep -q` read dies of SIGPIPE under pipefail (found live, Nov 2026)
+vpn_group() { local i; echo bazarr; echo sonarr; for i in $(seq 1 2000); do echo "member$i"; done; }
+out=$( (wire_gate sonarr jellyfin) 2>&1 )
+[[ "$out" == *"sonarr is in the VPN group"* ]] || fail_ "a member early in a long group is still found — $out"; pass
+unset -f vpn_group; source services/gluetun/gate.sh
 state_del "$LEAK_GATE"
 out=$( (wire_gate sonarr jellyfin) 2>&1 ) && fail_ "gate open, sonarr down: refused"; pass
 [[ "$out" == *"Cannot wire: not running: sonarr"* ]] || fail_ "the plain reason when the gate is open — $out"; pass

@@ -114,8 +114,9 @@ wire_gate() { # refuse to wire what isn't up
     done
     [[ -n "$missing" ]] || return 0
     if leak_gate_closed; then   # held stopped by a proven leak: up alone would not start them
+        local group; group=" $(vpn_group | paste -sd' ') "   # read whole: grep -q in a pipe dies of SIGPIPE under pipefail
         for s in $missing; do
-            if vpn_group | grep -qxF -- "$s"; then leak_gate_refuse "Cannot wire: $s is in the VPN group"; fi
+            if [[ "$group" == *" $s "* ]]; then leak_gate_refuse "Cannot wire: $s is in the VPN group"; fi
         done
     fi
     die "Cannot wire: not running: $missing

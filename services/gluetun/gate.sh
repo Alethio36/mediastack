@@ -35,7 +35,7 @@ leak_gate_guards() { # leak_gate_guards COMPOSE-ARGS... -> 0 when DC may run the
     # a start (up, start, restart, run, create) of the whole stack or of a
     # group member is refused while the gate is closed; stop, ps, config... pass
     leak_gate_closed || return 0
-    local verb=$1 a targets=() g
+    local verb=$1 a targets=() g t
     case $verb in up|start|restart|run|create) ;; *) return 0 ;; esac
     shift
     for a in "$@"; do
@@ -45,7 +45,7 @@ leak_gate_guards() { # leak_gate_guards COMPOSE-ARGS... -> 0 when DC may run the
     done
     (( ${#targets[@]} )) || return 1    # no service named: the whole stack, the group with it
     for g in $(vpn_namespace_services); do
-        printf '%s\n' "${targets[@]}" | grep -qxF -- "$g" && return 1
+        for t in "${targets[@]}"; do [[ "$t" == "$g" ]] && return 1; done
     done
     return 0
 }
