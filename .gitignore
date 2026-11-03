@@ -19,3 +19,8 @@ docker-compose.override.yml
 
 # Per-session working notes (handoffs) — local state, kept out of the public repo
 session.txt
+
+# a test's temporary copy of the entrypoint (mktemp in the repo root),
+# left behind when a run is killed before its cleanup — never committed
+/.test-*
+/.safety-live.*
