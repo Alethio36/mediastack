@@ -288,6 +288,11 @@ ERROR unknown argument '--bogus' for 'vpn-guard' (accepts: --boot)
 rc=1
 ## vpn-guard --boot --boot
 CALL cmd_vpn_guard [2] --boot --boot
+## vpn-watch
+CALL cmd_vpn_watch [0]
+## vpn-watch x
+ERROR 'vpn-watch' takes no arguments (got: x)
+rc=1
 ## frontdoor-refresh
 CALL cmd_frontdoor_refresh [0]
 ## frontdoor-refresh x

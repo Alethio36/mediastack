@@ -296,7 +296,8 @@ Internal (called by the panel, timers and units — not meant for hand use)
 |---|---|
 | `list [all\|managed\|enabled\|disabled\|vpntoggle\|wire\|pinned] [--json]` | enumerate services by set — the panel's dropdown source |
 | `vpn-apply <svc> on\|off` | the one-shot the panel's Toggle VPN button runs (`vpn` is the interactive form) |
-| `vpn-guard [--boot]` | re-attach VPN'd services after a host boot / docker restart (systemd unit) |
+| `vpn-guard [--boot]` | after a host boot / docker restart: start what a cut-off backup stopped, then the VPN'd services through the leak gate — Docker itself never starts them (systemd unit) |
+| `vpn-watch` | every 5 minutes (`mediastack-leakcheck.timer`): `leak-test --local` — or the full run when gluetun restarted since its last full proof — and any enabled VPN'd service that is not running is started through the gate (a crash, a boot that came too early). To keep one stopped, `disable` it or `down` the stack: a `docker stop` is undone within 5 minutes. Its news goes to ops once per change |
 | `unit-failed <unit>` | tell the `ops` stream that a scheduled or boot run failed — its result, exit status and last lines (systemd's OnFailure hook; once per unit per 6 hours) |
 | `audit-extract` | hourly (timer): copy new deletion events from auditd's rotating log into `BACKUP_ROOT/audit/`, prune it to `AUDIT_KEEP_DAYS`, flag a gap if auditd rotated first |
 

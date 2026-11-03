@@ -301,6 +301,16 @@ lt_flows_read() { # lt_flows_read GIP -> "proto dst dport timeout" per destinati
            if (!(k in m) || t > m[k]) m[k] = t }
          END { for (k in m) print k, m[k] }' <<<"$out" | sort
 }
+gluetun_addr() { # gluetun's address on the stack network, "" when it is not running
+    sudo docker exec "$(svc_cname gluetun)" ip -o -4 addr show dev eth0 2>/dev/null | awk '{ split($4, a, "/"); print a[1]; exit }'
+}
+lt_flows_forget() { # lt_flows_forget GIP — gluetun was stopped on purpose, so forget what the host tracked from its address
+    # all of it is from before the stop; kept, the next run would wait each
+    # old tunnel session out (~2 min). Without conntrack the run waits instead.
+    [[ -n "$1" ]] || return 0
+    sudo sh -c 'command -v conntrack' >/dev/null 2>&1 || return 0
+    sudo conntrack -D -s "$1" >/dev/null 2>&1 || true   # exit 1 = nothing was tracked
+}
 lt_flow_allowed() { # lt_flow_allowed DST SUBNET -> 0 when DST is a VPN server the firewall names, or in the stack's network
     local e
     for e in $LT_ENDPOINTS; do [[ "$1" == "$e" ]] && return 0; done

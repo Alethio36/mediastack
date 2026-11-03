@@ -151,6 +151,7 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
   deluge:
     network_mode: "service:gluetun"
     depends_on:
@@ -158,6 +159,7 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
   lazylibrarian:
     network_mode: "service:gluetun"
     depends_on:
@@ -165,6 +167,7 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
   lidarr:
     network_mode: "service:gluetun"
     depends_on:
@@ -172,6 +175,7 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
   prowlarr:
     network_mode: "service:gluetun"
     depends_on:
@@ -179,6 +183,7 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
   qbittorrent:
     network_mode: "service:gluetun"
     depends_on:
@@ -186,6 +191,7 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
   radarr:
     network_mode: "service:gluetun"
     depends_on:
@@ -193,6 +199,7 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
   radarr-4k:
     network_mode: "service:gluetun"
     depends_on:
@@ -200,6 +207,7 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
   sonarr:
     network_mode: "service:gluetun"
     depends_on:
@@ -207,6 +215,7 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
   sonarr-anime:
     network_mode: "service:gluetun"
     depends_on:
@@ -214,6 +223,7 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
   transmission:
     network_mode: "service:gluetun"
     depends_on:
@@ -221,3 +231,8 @@ services:
         condition: service_healthy
     labels:
       mediastack.vpn: "true"
+    restart: "no"
+  flaresolverr:
+    restart: "no"
+  recyclarr:
+    restart: "no"

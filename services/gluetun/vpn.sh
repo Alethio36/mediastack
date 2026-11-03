@@ -63,9 +63,11 @@ vpn_reattach_guard() {
         done
         ok "re-pinned ${#stale[@]} dependent(s) onto the live gluetun"
     fi
-    # what was checked, not what the config lists: a stopped dependent is not verified
-    if (( running == ${#vdeps[@]} )); then ok "VPN attachment verified: all $running dependent(s) on the live gluetun"
-    else ok "VPN attachment verified: $running running dependent(s) on the live gluetun ($(( ${#vdeps[@]} - running )) not running — checked when they start)"; fi
+    # what was checked, not what the config lists: a stopped member is not
+    # verified (recyclarr, run only by trash-sync, is not a member)
+    local idle; idle=$(( $(vpn_group | wc -l) - running ))
+    if (( idle <= 0 )); then ok "VPN attachment verified: all $running dependent(s) on the live gluetun"
+    else ok "VPN attachment verified: $running running dependent(s) on the live gluetun ($idle not running — checked when they start)"; fi
 }
 
 # --------------------------------------------------------- vpn boot guard --
@@ -88,7 +90,7 @@ vpnguard_ensure() {
     local tmp; tmp=$(mktemp)
     cat >"$tmp" <<EOF
 [Unit]
-Description=Mediastack boot guard (services a cut-off backup stopped; VPN attachment)
+Description=Mediastack boot guard (services a cut-off backup stopped; the VPN group through the leak gate)
 After=docker.service
 Requires=docker.service
 $FAILURE_HOOK
@@ -114,19 +116,20 @@ EOF
 cmd_vpn_guard() {
     load_env
     local boot=0; [[ "${1:-}" == --boot ]] && boot=1
+    # one start of the group at a time: the 5-minute check skips while this
+    # runs (at boot its timer catches up at once: Persistent=true)
+    if (( boot )); then maint_lock "the boot guard" "$MAINT_WAIT" || die "vpn-guard: an update or backup held the stack for $(( MAINT_WAIT / 3600 )) hours"
+    else maint_lock vpn-guard 0; fi
     (( boot )) && stopped_recover
-    # On boot, docker starts containers asynchronously — gluetun may not be
-    # healthy yet. Wait (bounded) before judging attachment, or we would race
-    # the very startup we are guarding and falsely repair/​fail. Mirrors cmd_up's
-    # gluetun health-race handling.
     local gcn; gcn=$(svc_cname gluetun)
     if [[ $(c_state "$gcn") == absent ]]; then
         (( boot )) && { info "vpn-guard: gluetun not present — stack not up, nothing to guard"; return 0; }
         die "vpn-guard: gluetun container not found — is the stack up?"
     fi
-    wait_verdict --recover gluetun \
-        || { warn "vpn-guard: gluetun ${VERDICT_WHY[gluetun]} — deferring (next boot/up will retry)"; return 0; }
-    vpn_reattach_guard
+    # Docker started gluetun and the rest, never the VPN group (restart "no"):
+    # the supervisor waits for gluetun (Docker starts it asynchronously),
+    # proves it, then starts the group (gate.sh)
+    vpn_supervise
 }
 
 # --------------------------------------------------------------- leak-test --
@@ -160,27 +163,6 @@ leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2
     c_inspect_all
     [[ "$(c_state "$gcn")" == running ]] || die "gluetun is not running — start the stack first."
     lt_reset
-
-    hr "leak-test: attachment audit"
-    # drift first (a restarted gluetun leaves its dependents behind): repaired
-    # loudly here, so what follows judges the tunnel, not a stale join
-    vpn_reattach_guard
-    c_inspect_all
-    # Netns-joined containers report an EMPTY SandboxKey, so key equality can
-    # never verify the join. NetworkMode names the container joined; the
-    # namespace itself (vpn_join) proves it is gluetun's current one.
-    local gid gns s cn nm
-    gid=$(c_id "$gcn"); gns=$(c_netns "$gcn")
-    for s in $(svc_managed_where mediastack.vpn true); do
-        svc_enabled "$s" || continue
-        cn=$(svc_cname "$s"); [[ "$(c_state "$cn")" == running ]] || { info "$s not running — skipped"; continue; }
-        case $(vpn_join "$cn" "$gid" "$gns") in
-            ok)    lt_pass "$s routed through the gluetun tunnel" ;;
-            stale) lt_fail "$s sits in gluetun's old namespace (gluetun restarted under it): no egress at all, not a leak — ./mediastack.sh up re-joins it" ;;
-            other) nm=$(c_netmode "$cn"); lt_fail "$s is NOT joined to gluetun (mode: ${nm:0:40}...) — this IS a leak path" ;;
-            *)     lt_unproven "$s: its network namespace could not be read — attachment unverifiable" ;;
-        esac
-    done
 
     hr "leak-test: the tunnel's namespace"
     # the namespace must hold exactly lo + one LAN-side interface + the tunnel:
@@ -217,6 +199,32 @@ leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2
     hr "leak-test: the firewall and the traffic"
     lt_firewall "$gcn"
     lt_flows "$gcn"
+
+    hr "leak-test: attachment audit"
+    # after gluetun's own checks, never before: a restarted gluetun leaves its
+    # dependents in its old namespace, and re-joining them starts their
+    # traffic — only once nothing above failed (the leak gate)
+    if (( LT_FAIL == 0 )); then
+        vpn_reattach_guard
+        c_inspect_all
+    else
+        info "a check above failed — the dependents are not re-joined to this gluetun"
+    fi
+    # Netns-joined containers report an EMPTY SandboxKey, so key equality can
+    # never verify the join. NetworkMode names the container joined; the
+    # namespace itself (vpn_join) proves it is gluetun's current one.
+    local gid gns s cn nm
+    gid=$(c_id "$gcn"); gns=$(c_netns "$gcn")
+    for s in $(svc_managed_where mediastack.vpn true); do
+        svc_enabled "$s" || continue
+        cn=$(svc_cname "$s"); [[ "$(c_state "$cn")" == running ]] || { info "$s not running — skipped"; continue; }
+        case $(vpn_join "$cn" "$gid" "$gns") in
+            ok)    lt_pass "$s routed through the gluetun tunnel" ;;
+            stale) lt_fail "$s sits in gluetun's old namespace (gluetun restarted under it): no egress at all, not a leak — ./mediastack.sh up re-joins it" ;;
+            other) nm=$(c_netmode "$cn"); lt_fail "$s is NOT joined to gluetun (mode: ${nm:0:40}...) — this IS a leak path" ;;
+            *)     lt_unproven "$s: its network namespace could not be read — attachment unverifiable" ;;
+        esac
+    done
 
     hr "leak-test: kill-switch"
     if (( lonly )); then
@@ -278,6 +286,9 @@ leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2
             lt_pass "$s publishes no ports of its own"
         else lt_fail "$s publishes host ports directly — must go through gluetun"; fi
     done
+    # a full run that found no leak proves this gluetun: until it restarts,
+    # the local checks are enough before a VPN'd service starts (gate.sh)
+    if (( ! lonly && LT_FAIL == 0 )); then leak_proof_record; fi
     return "$(lt_exit_code)"
 }
 
@@ -350,6 +361,7 @@ vpn_gen() {
             stanzas+="  ${s}:"$'\n'"    network_mode: \"service:gluetun\""$'\n'
             stanzas+="    depends_on:"$'\n'"      gluetun:"$'\n'"        condition: service_healthy"$'\n'   # addr-ok: a YAML key, no address
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"true\""$'\n'
+            stanzas+="    restart: \"no\""$'\n'   # the leak gate starts it, not Docker (services/gluetun/gate.sh)
         else
             [[ "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.torrent"] // ""' <<<"$bj")" == true ]] \
                 && warn "vpn: $s (torrent client) is OUTSIDE the VPN — its traffic exits on the host IP"
@@ -360,6 +372,12 @@ vpn_gen() {
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"false\""$'\n'"$(edge_enable_label "      ")"$'\n'
             stanzas+="$(edge_route_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'
         fi
+    done
+    # in gluetun's namespace by their own fragment (no toggle): the gate starts them too
+    for s in $(jq -r '.services | to_entries[]
+            | select(.value.labels["mediastack.vpntoggle"] != "true" and (.value.network_mode // "") == "service:gluetun")
+            | .key' <<<"$bj" | sort); do
+        stanzas+="  ${s}:"$'\n'"    restart: \"no\""$'\n'
     done
     local tmp; tmp=$(mktemp)
     {

@@ -45,7 +45,8 @@ fp_timers() {
     local u
     for u in mediastack-update.timer mediastack-update.service mediastack-backup.timer \
              mediastack-backup.service mediastack-manifest.timer \
-             mediastack-manifest.service mediastack-vpnguard.service; do
+             mediastack-manifest.service mediastack-vpnguard.service \
+             mediastack-leakcheck.timer mediastack-leakcheck.service; do
         printf 'timers\tunit\t%s/%s\tremove\n' "$SYSTEMD_DIR" "$u"
     done
 }

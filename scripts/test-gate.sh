@@ -9,6 +9,12 @@
 #     ops hears each change once (a leak, an unproven check, the recovery)
 #   * up's gate: a pass or an unproven opens it, a FAIL keeps it closed and ends up
 #   * wire and trash-sync, refused for a group member the gate holds, name the gate
+#   * which gluetun is proven: a restart (same container, new start) needs the full run again
+#   * a gated start of members: closed -> held; proven -> local checks; else full; a FAIL starts nothing
+#   * the supervisor (vpn-watch, every 5 min, and the boot): starts members not running through
+#     the gate; skips while an update, backup or up holds the stack, or a backup is mid-copy
+#   * a backup's restart: everything else, gluetun ready, then the group through the gate
+#   * the 5-minute timer and its place in the footprint
 #   * up's two phases: everything but the group, the gate, then the group — and
 #     no second phase when the gate fails
 # Sources the real entrypoint (minus its last line, main "$@"); docker and
@@ -157,5 +163,106 @@ ENABLED="jellyfin"; : > "$UP_LOG"
 # ---- the verb's arguments ----
 out=$( (cmd_leak_test --bogus) 2>&1 ) && fail_ "an unknown argument: refused"; pass
 [[ "$out" == *"usage: leak-test [--killswitch|--local]"* ]] || fail_ "with the usage — $out"; pass
+
+# ---- proven: which gluetun the last full run vouched for ----
+ENABLED="gluetun qbittorrent sonarr jellyfin"
+LEAK_LOG="$T/leak"
+GSTART="2026-11-03T10:00:00Z"
+c_id()  { echo gid1; }
+c_get() { [[ "$2" == ".State.StartedAt" ]] && echo "$GSTART"; }
+state_del "$LEAK_PROVEN"
+gluetun_proven && fail_ "nothing proven yet"; pass
+leak_proof_record; gluetun_proven || fail_ "the same gluetun: proven"; pass
+GSTART="2026-11-03T11:00:00Z"
+gluetun_proven && fail_ "gluetun restarted (same container, new start): no longer proven"; pass
+
+# ---- a gated start of group members ----
+leak_test_run() { echo "test local=$2" >> "$LEAK_LOG"; return "$GATE_RC"; }
+DC() { echo "DC $*" >> "$UP_LOG"; }
+vpn_reattach_guard() { echo "guard" >> "$UP_LOG"; }
+NOTES="$T/notes2"; : > "$NOTES"
+state_set "$LEAK_GATE" "closed earlier"; : > "$UP_LOG"; : > "$LEAK_LOG"
+rc=0; vpn_start_group qbittorrent > /dev/null 2>&1 || rc=$?
+(( rc == 3 )) && [[ ! -s "$LEAK_LOG" && ! -s "$UP_LOG" ]] || fail_ "gate closed: held (3), nothing tested, nothing started (rc $rc)"; pass
+state_del "$LEAK_GATE"; GATE_RC=0; GSTART="2026-11-03T10:00:00Z"; state_set "$LEAK_PROVEN" "gid1 $GSTART"
+rc=0; vpn_start_group qbittorrent sonarr > /dev/null 2>&1 || rc=$?
+(( rc == 0 )) && grep -qx "test local=1" "$LEAK_LOG" || fail_ "gluetun proven since it started: the local checks ($(cat "$LEAK_LOG"))"; pass
+[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d qbittorrent sonarr|guard" ]] || fail_ "then the members, then the attachment verified ($(paste -sd'|' "$UP_LOG"))"; pass
+GSTART="2026-11-03T12:00:00Z"; : > "$LEAK_LOG"; : > "$UP_LOG"
+vpn_start_group qbittorrent > /dev/null 2>&1
+grep -qx "test local=0" "$LEAK_LOG" || fail_ "gluetun restarted since its proof: the full run first ($(cat "$LEAK_LOG"))"; pass
+GATE_RC=1; RUNNING=""; : > "$LEAK_LOG"; : > "$UP_LOG"
+rc=0; vpn_start_group qbittorrent > /dev/null 2>&1 || rc=$?
+(( rc == 3 )) && ! grep -q "DC up" "$UP_LOG" && leak_gate_closed || fail_ "a FAIL: the gate closes, nothing starts (rc $rc; $(paste -sd'|' "$UP_LOG"))"; pass
+state_del "$LEAK_GATE"; GATE_RC=0
+
+# ---- the supervisor ----
+RUNNING="gluetun jellyfin"; : > "$LEAK_LOG"; : > "$UP_LOG"
+vpn_supervise > /dev/null 2>&1
+grep -q "DC up -d qbittorrent sonarr" "$UP_LOG" || fail_ "members not running (a crash, a boot): started through the gate ($(paste -sd'|' "$UP_LOG"))"; pass
+RUNNING="gluetun jellyfin qbittorrent sonarr"; : > "$LEAK_LOG"; : > "$UP_LOG"; state_set "$LEAK_PROVEN" "gid1 $GSTART"
+vpn_supervise > /dev/null 2>&1
+! grep -q "DC up" "$UP_LOG" && grep -qx "test local=1" "$LEAK_LOG" || fail_ "all running, gluetun proven: the local checks only, nothing started ($(paste -sd'|' "$UP_LOG"))"; pass
+RUNNING="jellyfin"; : > "$LEAK_LOG"; : > "$UP_LOG"
+vpn_supervise > /dev/null 2>&1
+[[ ! -s "$LEAK_LOG" ]] && ! grep -q "DC up" "$UP_LOG" || fail_ "gluetun not running: nothing tested, nothing started (Docker restarts it)"; pass
+ENABLED="jellyfin"; RUNNING="gluetun jellyfin"; : > "$LEAK_LOG"
+vpn_supervise > /dev/null 2>&1; [[ ! -s "$LEAK_LOG" ]] || fail_ "no VPN at all: nothing to do"; pass
+ENABLED="gluetun qbittorrent sonarr jellyfin"
+maint_try_lock() { return 1; }; : > "$LEAK_LOG"
+(cmd_vpn_watch) > /dev/null 2>&1 || fail_ "an update or backup holds the stack: the check skips, cleanly"; pass
+[[ ! -s "$LEAK_LOG" ]] || fail_ "and touches nothing"; pass
+maint_try_lock() { return 0; }; STOP_MARKER="$T/stopped"; : > "$STOP_MARKER"
+(cmd_vpn_watch) > /dev/null 2>&1; [[ ! -s "$LEAK_LOG" ]] || fail_ "a backup mid-copy: skipped"; pass
+
+# ---- a backup starts what it stopped: the group last, through the gate ----
+VSG_RC=0
+sudo() { if [[ "$1" == rm ]]; then shift; rm "$@"; fi; return 0; }
+# stubbed past the real one tested above (eval: shellcheck would read a redefinition as a use-before-define)
+eval 'vpn_start_group() { echo "gate $*" >> "$UP_LOG"; return "$VSG_RC"; }'
+printf 'backup\ngluetun jellyfin qbittorrent sonarr\n' > "$STOP_MARKER"; : > "$UP_LOG"
+stopped_start > /dev/null 2>&1 || fail_ "started again — $(cat "$UP_LOG")"; pass
+[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d gluetun jellyfin|wait --recover gluetun|gate qbittorrent sonarr" ]] || fail_ "everything else, gluetun ready, then the group through the gate ($(paste -sd'|' "$UP_LOG"))"; pass
+[[ ! -e "$STOP_MARKER" ]] || fail_ "the marker goes once they are up"; pass
+printf 'backup\n\n' > "$STOP_MARKER"; : > "$UP_LOG"   # a marker a power cut left half-written
+stopped_start > /dev/null 2>&1
+[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d gluetun jellyfin|wait --recover gluetun|gate qbittorrent sonarr" ]] || fail_ "a cut-short marker: everything enabled, the group still through the gate ($(paste -sd'|' "$UP_LOG"))"; pass
+VSG_RC=3; printf 'backup\ngluetun qbittorrent\n' > "$STOP_MARKER"
+stopped_start > /dev/null 2>&1 || fail_ "held by the gate: not a failure (the gate told ops and owns them)"; pass
+[[ ! -e "$STOP_MARKER" ]] || fail_ "and the marker goes (the gate's state holds them now)"; pass
+VSG_RC=1; printf 'backup\ngluetun qbittorrent\n' > "$STOP_MARKER"
+stopped_start > /dev/null 2>&1 && fail_ "a group that failed to start: a failure"; pass
+[[ -e "$STOP_MARKER" ]] || fail_ "and the marker stays for the boot guard"; pass
+
+# ---- leak_test_run: dependents re-joined only once gluetun's own checks passed ----
+# shellcheck source=services/gluetun/vpn.sh
+source services/gluetun/vpn.sh   # the real leak_test_run back (stubbed above)
+for f in lt_dns_config lt_dns_lan_path lt_control_server lt_flows lt_ipv6 lt_tunnel_ip lt_udp_identity lt_dns_host_path lt_dns_resolvers; do eval "$f() { :; }"; done
+hostid_ensure() { return 0; }
+FW_FAIL=0
+lt_firewall() { if (( FW_FAIL )); then lt_fail "firewall: a test leak"; else lt_pass "firewall ok"; fi; }
+c_inspect_all() { :; }; c_netns() { echo "net:[1]"; }; svc_managed_where() { :; }
+sudo() { if [[ "$*" == *"ip -o link"* ]]; then printf '1: lo: x\n2: eth0@if3: x\n3: tun0: x\n'; fi; return 0; }
+eval 'leak_proof_record() { echo proof >> "$UP_LOG"; }'
+eval 'vpn_reattach_guard() { echo guard >> "$UP_LOG"; }'
+RUNNING="gluetun"; FW_FAIL=1; : > "$UP_LOG"
+rc=0; leak_test_run 0 0 > /dev/null 2>&1 || rc=$?
+(( rc == 1 )) && ! grep -q guard "$UP_LOG" || fail_ "gluetun's own check failed: FAIL, the dependents NOT re-joined to it (rc $rc; $(paste -sd'|' "$UP_LOG"))"; pass
+! grep -q proof "$UP_LOG" || fail_ "and a FAIL proves nothing"; pass
+FW_FAIL=0; : > "$UP_LOG"
+rc=0; leak_test_run 0 1 > /dev/null 2>&1 || rc=$?
+(( rc == 0 )) && grep -q guard "$UP_LOG" || fail_ "gluetun's checks passed: the dependents re-joined (rc $rc)"; pass
+! grep -q proof "$UP_LOG" || fail_ "the local checks never record a proof"; pass
+: > "$UP_LOG"; leak_test_run 0 0 > /dev/null 2>&1
+grep -q proof "$UP_LOG" || fail_ "a full run without a FAIL records which gluetun it proved"; pass
+
+# ---- the 5-minute timer ----
+SYSTEMD_DIR="$T/systemd"; mkdir -p "$SYSTEMD_DIR"; SCRIPT_DIR=/opt/ms
+sudo() { case "$1" in cmp) shift; cmp "$@" ;; install) shift; install "$@" ;; *) : ;; esac; }
+leakcheck_ensure > /dev/null 2>&1
+grep -qx 'OnCalendar=\*:0/5' "$SYSTEMD_DIR/mediastack-leakcheck.timer" || fail_ "every 5 minutes ($(cat "$SYSTEMD_DIR/mediastack-leakcheck.timer"))"; pass
+grep -qx 'ExecStart=/opt/ms/mediastack.sh vpn-watch' "$SYSTEMD_DIR/mediastack-leakcheck.service" || fail_ "runs vpn-watch"; pass
+grep -qx "$FAILURE_HOOK" "$SYSTEMD_DIR/mediastack-leakcheck.service" || fail_ "a run that cannot run tells ops (OnFailure)"; pass
+grep -q "mediastack-leakcheck.timer" lib/footprint.sh && grep -q "mediastack-leakcheck.service" lib/footprint.sh || fail_ "both units in the host-footprint registry (uninstall removes them)"; pass
 
 echo "test-gate: $checks checks passed"

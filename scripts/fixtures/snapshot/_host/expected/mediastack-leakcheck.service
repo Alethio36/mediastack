@@ -1,0 +1,7 @@
+[Unit]
+Description=Mediastack leak check and VPN group supervisor
+OnFailure=mediastack-failure@%n.service
+[Service]
+Type=oneshot
+WorkingDirectory=@REPO@
+ExecStart=@REPO@/mediastack.sh vpn-watch

@@ -1,5 +1,5 @@
 [Unit]
-Description=Mediastack boot guard (services a cut-off backup stopped; VPN attachment)
+Description=Mediastack boot guard (services a cut-off backup stopped; the VPN group through the leak gate)
 After=docker.service
 Requires=docker.service
 OnFailure=mediastack-failure@%n.service

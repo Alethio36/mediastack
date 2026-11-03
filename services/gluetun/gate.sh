@@ -97,3 +97,94 @@ leak_gate_up() { # up's gate: the full leak-test before the VPN group starts; a 
         *) die "leak gate: a problem is proven (FAIL above) — the VPN'd services stay stopped, gluetun stays up for inspection. Fix it, then: ./mediastack.sh up" ;;
     esac
 }
+
+# ---- proven: which gluetun the last full run vouched for ----
+# A full leak-test that found no leak records gluetun's container and start
+# time. Until gluetun restarts, a VPN'd service may start after the local
+# checks alone; after a restart (a crash, a backup, a boot) the full run first.
+LEAK_PROVEN=leak-proven   # local/state: "<container id> <started at>" of the gluetun last proven
+gluetun_instance() { local cn; cn=$(svc_cname gluetun); echo "$(c_id "$cn") $(c_get "$cn" '.State.StartedAt')"; }
+leak_proof_record() { INSPECT_JSON=""; state_set "$LEAK_PROVEN" "$(gluetun_instance)"; }
+gluetun_proven() { local p; p=$(state_get "$LEAK_PROVEN"); [[ -n "$p" && "$p" == "$(gluetun_instance)" ]]; }
+
+vpn_start_group() { # vpn_start_group SVC... — start these VPN'd services through the gate: 0 started, 3 held by it, 1 failed
+    # gluetun must be up (the caller waits for it). The gate open, the tier
+    # follows gluetun: proven since its last start -> the local checks, else
+    # the full run. A FAIL closes the gate (leak_verdict) and nothing starts.
+    local rc=0 lonly=0
+    if leak_gate_closed; then
+        warn "leak gate closed ($(state_get "$LEAK_GATE")) — not starting: $*"
+        return 3
+    fi
+    if gluetun_proven; then lonly=1; fi
+    hr "Leak gate: $( (( lonly )) && echo "local checks (gluetun proven since it started)" || echo "full checks (gluetun started since it was last proven)") before starting $*"
+    leak_test_run 0 "$lonly" || rc=$?
+    leak_verdict "$rc"
+    (( rc != 1 )) || return 3
+    DC up -d "$@" >/dev/null || { fail "starting $* failed — see compose's message above"; return 1; }
+    vpn_reattach_guard
+}
+
+# ---- the supervisor: the 5-minute check, and the boot ----
+# The VPN group is off Docker's restart policy (vpn_gen: restart "no") so that
+# nothing starts it before gluetun is proven — at boot, Docker starts gluetun
+# and the rest, never the group. This puts back what that policy did: every
+# enabled member that is not running is started, through the gate, whether it
+# crashed or the host just booted. To keep one stopped: disable it, or down.
+vpn_supervise() { # local or full checks (as gluetun's state needs), then any enabled member that is not running
+    local group=() missing=() s rc=0 lonly=0
+    mapfile -t group < <(vpn_group)
+    (( ${#group[@]} )) || return 0
+    svc_enabled gluetun || return 0
+    # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+    INSPECT_JSON=""
+    if [[ "$(c_state "$(svc_cname gluetun)")" != running ]]; then
+        info "vpn-watch: gluetun is not running — Docker restarts it; checked again in 5 minutes"
+        return 0
+    fi
+    wait_verdict --recover gluetun \
+        || { warn "vpn-watch: gluetun ${VERDICT_WHY[gluetun]} — checked again in 5 minutes"; return 0; }
+    # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+    INSPECT_JSON=""
+    for s in "${group[@]}"; do
+        [[ "$(c_state "$(svc_cname "$s")")" == running ]] || missing+=("$s")
+    done
+    if (( ${#missing[@]} )); then
+        vpn_start_group "${missing[@]}" || rc=$?
+        (( rc != 1 )) || return 1
+        return 0
+    fi
+    if gluetun_proven; then lonly=1; fi
+    leak_test_run 0 "$lonly" || rc=$?
+    leak_verdict "$rc"
+}
+
+cmd_vpn_watch() { # the 5-minute check (mediastack-leakcheck.timer)
+    load_env
+    # a backup, an update or `up` has the stack: they start the group themselves
+    maint_try_lock || { info "vpn-watch: an update, a backup or up has the stack — checked again in 5 minutes"; return 0; }
+    [[ ! -e "$STOP_MARKER" ]] || { info "vpn-watch: a backup is mid-copy — checked again in 5 minutes"; return 0; }
+    # its own news went to ops (leak_verdict, one message per change): a
+    # failed unit would only tell it again, so only a check that could not run fails
+    vpn_supervise || die "vpn-watch: the VPN'd services could not be started — see above"
+}
+
+LEAKCHECK_UNIT=mediastack-leakcheck
+LEAKCHECK_EVERY='*:0/5'   # fixed: the safety cadence is not a setting
+leakcheck_service_render() { timer_service_render "Mediastack leak check and VPN group supervisor" vpn-watch; }
+leakcheck_timer_render()   { timer_timer_render "Mediastack leak check and VPN group supervisor" "$LEAKCHECK_EVERY"; }
+leakcheck_ensure() { # write, enable and start the 5-minute timer; reloads systemd only when a file changed
+    local svc tim changed=0
+    svc=$(mktemp); tim=$(mktemp)
+    leakcheck_service_render > "$svc"
+    leakcheck_timer_render > "$tim"
+    sudo cmp -s "$svc" "$SYSTEMD_DIR/$LEAKCHECK_UNIT.service" 2>/dev/null || { sudo install -m 644 "$svc" "$SYSTEMD_DIR/$LEAKCHECK_UNIT.service"; changed=1; }
+    sudo cmp -s "$tim" "$SYSTEMD_DIR/$LEAKCHECK_UNIT.timer" 2>/dev/null || { sudo install -m 644 "$tim" "$SYSTEMD_DIR/$LEAKCHECK_UNIT.timer"; changed=1; }
+    rm -f "$svc" "$tim"
+    (( changed )) || return 0
+    failure_unit_ensure
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now "$LEAKCHECK_UNIT.timer" >/dev/null 2>&1 \
+        || die "could not enable $LEAKCHECK_UNIT.timer — check: systemctl status $LEAKCHECK_UNIT.timer"
+    info "leak check timer installed: every 5 minutes"
+}

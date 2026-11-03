@@ -82,6 +82,14 @@ maint_lock() { # maint_lock WHAT WAIT-SECONDS — 0: refuse at once when held; r
     MAINT_LOCKED=1
 }
 
+maint_try_lock() { # take the maintenance lock if it is free -> 1 when someone holds it (never waits)
+    (( MAINT_LOCKED )) && return 0
+    [[ -e "$MAINT_LOCK" ]] || : > "$MAINT_LOCK"
+    exec 8<"$MAINT_LOCK"
+    flock -n 8 || return 1
+    MAINT_LOCKED=1
+}
+
 defer_while_streaming() { # defer_while_streaming WHAT — postpone while someone streams (UPDATE_DEFER_*); rc 1 = skip this run
     [[ "$(env_get UPDATE_DEFER_IF_ACTIVE)" == true ]] || return 0
     local waited=0 retry max
@@ -318,21 +326,37 @@ stopped_run() { # stopped_run WHAT "SVC..." CMD [ARG...] — stop SVC ("" = what
     info "$what: stopping $(wc -w <<<"$svcs") service(s) for a consistent copy — they start again when it is done (~20-40s)"
     mkdir -p "$LOCAL_DIR"; repo_owned "$LOCAL_DIR"
     printf '%s\n%s\n' "$what" "$svcs" > "$STOP_MARKER"; repo_owned "$STOP_MARKER"
+    # gluetun stopped on purpose: everything the host tracked from its address
+    # is from before — forgotten, or the leak gate at the start waits it out
+    local gip=""
+    if [[ " $svcs " == *" gluetun "* ]]; then gip=$(gluetun_addr); fi
     (
         trap stopped_restart EXIT
         trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
         # set -e is off in here (the caller tests us with ||): check each step
         # shellcheck disable=SC2086  # a word list
         DC stop $svcs >/dev/null || { fail "$what: could not stop ${svcs:-the stack}"; exit 1; }
+        lt_flows_forget "$gip"
         "$@"
     )
 }
 
-stopped_start() { # start what STOP_MARKER names; the marker goes only once they are up
-    local what svcs
+stopped_start() { # start what STOP_MARKER names; the marker goes only once they are up (or the leak gate holds them)
+    local what svcs s group=() rest=() rc=0 vg
     { read -r what; read -r svcs || true; } < "$STOP_MARKER"
-    # shellcheck disable=SC2086
-    DC up -d $svcs >/dev/null 2>&1 || return 1
+    # a marker cut short (power loss mid-write) names nothing: everything enabled
+    [[ -n "$svcs" ]] || svcs=$(svc_enabled_managed | paste -sd' ')
+    # the VPN group last, through the leak gate (services/gluetun/gate.sh)
+    vg=" $(vpn_group | paste -sd' ') "
+    for s in $svcs; do
+        if [[ "$vg" == *" $s "* ]]; then group+=("$s"); else rest+=("$s"); fi
+    done
+    if (( ${#rest[@]} )); then DC up -d "${rest[@]}" >/dev/null 2>&1 || return 1; fi
+    if (( ${#group[@]} )); then
+        wait_verdict --recover gluetun || { fail "$what: gluetun ${VERDICT_WHY[gluetun]} — the VPN'd services were not started"; return 1; }
+        vpn_start_group "${group[@]}" || rc=$?
+        (( rc != 1 )) || return 1   # 3: held by the gate, which told ops and owns them now
+    fi
     sudo rm -f "$STOP_MARKER"
 }
 

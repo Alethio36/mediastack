@@ -202,6 +202,10 @@ vpn-guard --boot
 vpn-guard --bogus
 vpn-guard --boot --boot
 
+# vpn-watch  (none)
+vpn-watch
+vpn-watch x
+
 # frontdoor-refresh  (none)
 frontdoor-refresh
 frontdoor-refresh x

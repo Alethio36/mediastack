@@ -167,6 +167,21 @@ gluetun is proven (`services/gluetun/gate.sh`):
   proven, and the recovery — not the same news every run.
 - The services that call the group (Cleanuparr, Seerr, Bazarr) keep running
   and log errors while it is stopped; nothing else is stopped.
+- **Docker never starts the group:** its members carry `restart: "no"`
+  (vpn_gen's overlay), so a boot or a Docker restart brings back gluetun and
+  everything else, and the boot guard starts the group through the gate. A
+  backup starts what it stopped the same way: the group last, through the gate.
+- **The 5-minute check supervises it** (`vpn-watch`, `mediastack-leakcheck.timer`):
+  `leak-test --local`, and any enabled member that is not running — crashed,
+  or a boot that came too early — is started through the gate. To keep one
+  stopped, `disable` it or `down` the stack; a `docker stop` is undone.
+- **How much proof a start needs follows gluetun:** a full run that finds no
+  leak records which gluetun it proved (its container and start time). Until
+  gluetun restarts, the local checks are enough before a member starts; after
+  a restart (a crash, a backup, a boot) the full run comes first.
+- **A deliberate stop of gluetun forgets what the host tracked from its
+  address** (all of it from before the stop), so the gate after a nightly
+  backup does not wait out old tunnel sessions.
 
 ### Update cascades the gluetun group
 

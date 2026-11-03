@@ -126,7 +126,8 @@ out=$(run "" work_ok)
 [[ "$out" == "rc=1 | "*"could not stop"*"DC up -d radarr sonarr|"*"marker=no" && "$out" != *WORK* ]] || fail_ "a failed stop: no work on running services: $out"; pass
 DC() { if [[ "$1" == ps ]]; then printf 'radarr\nsonarr\n'; return; fi; echo "DC $*" >> "$T/log"; [[ "$1" != up ]] || return "${DC_UP_RC:-0}"; }
 printf 'backup\n\n' > "$STOP_MARKER"   # what a power cut leaves
-rm -f "$T/log"; stopped_recover; [[ "$(cat "$T/log")" == *"DC up -d"*"NOTIFY Mediastack backup cut off — services started again at boot"* && ! -f "$STOP_MARKER" ]] \
+svc_enabled_managed() { printf 'radarr\nsonarr\n'; }   # what is enabled: the cut-short marker names nothing
+rm -f "$T/log"; stopped_recover; [[ "$(cat "$T/log")" == *"DC up -d radarr sonarr"*"NOTIFY Mediastack backup cut off — services started again at boot"* && ! -f "$STOP_MARKER" ]] \
     || fail_ "at boot, a marker left behind: its services started, alerted, marker gone: $(cat "$T/log")"; pass
 rm -f "$T/log"; stopped_recover; [[ ! -s "$T/log" ]] || fail_ "at boot, no marker: nothing started"; pass
 # the boot unit is 644 like every unit (found live: mktemp's 600 made
