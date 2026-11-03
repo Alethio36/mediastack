@@ -131,9 +131,13 @@ _doctor_permissions() {
         fi
 
         # True invariant: can the app write its config? Probe live, from inside
-        # the container, at its REAL mount path. This decides pass/fail; runs
-        # regardless of ownership tier above (a config FAIL already fired if
-        # warranted, but writability is the definitive check).
+        # the container, at its REAL mount path, AS the app's own uid:gid. This
+        # decides pass/fail; runs regardless of ownership tier above (a config
+        # FAIL already fired if warranted, but writability is the definitive
+        # check). Never as root: root's answer is not the app's, and the Rust
+        # coreutils in Ubuntu 26.04-based images answers `test -w` for root from
+        # the mode bits alone — a folder its app owns read as unwritable
+        # (LazyLibrarian, found by the soak Nov 2026).
         # every writable mount inside the service's config folder, in each of
         # its shard's containers (authentik mounts subfolders: data/, db/, ...)
         local cn dest out rc m probed=0
@@ -143,7 +147,7 @@ _doctor_permissions() {
             while IFS= read -r dest; do
                 [[ -n "$dest" ]] || continue
                 probed=1
-                out=$(sudo docker exec "$cn" test -w "$dest" 2>&1) && rc=0 || rc=$?
+                out=$(sudo docker exec -u "$uid:$gid" "$cn" test -w "$dest" 2>&1) && rc=0 || rc=$?
                 if (( rc == 0 )); then ok "$m config writable from inside the container ($dest)"
                 elif grep -q "executable file not found" <<<"$out"; then
                     info "$m: image has no probe tooling — writability unverified"

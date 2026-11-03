@@ -78,8 +78,12 @@ scripts/soak.sh --test-box --days 7 --known ~/soak.known
   that holds the stack.
 * **Run it in tmux.** A dropped SSH session would otherwise end it; `nohup`
   does not do, because sudo remembers the password per terminal.
-* **About 40–50 minutes for 7 days** — each backup stops the stack for a
-  minute — and a couple of ops notifications per simulated day.
+* **About 1h45 for 7 days** (Nov 2026) — each backup stops the stack and
+  restarts the VPN group through the leak gate's full run, and every day runs
+  `safety-live` — and a couple of ops notifications per simulated day.
+* **Every judge prints its verdict, a pass included** (`doctor: ok`,
+  `wire --verify: no drift`, `safety-live: ok`): a missing line means a check
+  did not run.
 * **The log is `~/soak-<time>.log`.** Copy it off before reverting, or it goes
   with the snapshot. The known file's entries that matched nothing are listed,
   so a stale one surfaces.

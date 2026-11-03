@@ -163,15 +163,20 @@ judge_points() {
 # for sessions and certificate dates alike.
 SOAK_FAKETIME_SKIP=curl
 
+# Every judge says what it found, a pass included: silence would read the
+# same as a check that never ran (the Nov 2026 soak could not show that
+# safety-live and wire --verify had run at all).
 judge_doctor() { # judge_doctor FAKE-TIME
-    local out line
+    local out line n=0 known=0 before=${#DAY_PROBLEMS[@]}
     out=$(FAKETIME_DONT_RESET=1 FAKETIME_SKIP_CMDS=$SOAK_FAKETIME_SKIP faketime -f "@$1" ./mediastack.sh doctor 2>&1 | strip || true)
     while IFS= read -r line; do
         [[ "$line" == "FAIL doctor:"* ]] && continue
-        is_known "$line" || problem "doctor: ${line#FAIL }"
+        n=$((n + 1))
+        if is_known "$line"; then known=$((known + 1)); else problem "doctor: ${line#FAIL }"; fi
     done < <(grep '^FAIL ' <<<"$out" || true)
     grep -q 'the last notification failed' <<<"$out" \
         && problem "doctor: a notification stream's last send failed ($(grep -m1 'the last notification failed' <<<"$out"))"
+    (( ${#DAY_PROBLEMS[@]} > before )) || echo "  doctor: ok ($n FAIL line(s), $known of them known)"
     return 0
 }
 judge_wire() { # at the real time, as it always was (first soak, Oct 2026: under the moved
@@ -179,10 +184,12 @@ judge_wire() { # at the real time, as it always was (first soak, Oct 2026: under
     local out
     if ! out=$(./mediastack.sh wire --verify 2>&1 | strip); then
         problem "wire --verify: $(grep -E '^(FAIL|  would:)' <<<"$out" | head -5 | tr '\n' ' ')"
+    else
+        echo "  wire --verify: no drift"
     fi
 }
 judge_safety() { # at the real time: safety-live's FAIL and UNPROVEN lines (the leak-test's own lines included)
-    local out line
+    local out line before=${#DAY_PROBLEMS[@]}
     out=$(scripts/safety-live.sh 2>&1 | strip || true)
     while IFS= read -r line; do
         line=$(sed -E 's/^\s+//' <<<"$line")
@@ -191,6 +198,7 @@ judge_safety() { # at the real time: safety-live's FAIL and UNPROVEN lines (the 
     done < <(grep -E '^\s*(FAIL |WARN UNPROVEN: )' <<<"$out" || true)
     grep -q '^safety-live: .* FAILED' <<<"$out" && ! grep -qE '^\s*(FAIL |WARN UNPROVEN: )' <<<"$out" \
         && problem "safety-live failed without a FAIL line: $(tail -1 <<<"$out")"
+    (( ${#DAY_PROBLEMS[@]} > before )) || echo "  safety-live: ok ($(grep -c '^PASS ' <<<"$out" || true) passed)"
     return 0
 }
 run_job() { # run_job JOB FAKE-TIME|"" -> the job's unit, under the simulated clock when given
