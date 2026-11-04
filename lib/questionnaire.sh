@@ -40,9 +40,8 @@ questionnaire_run() { # the questions, in order; each section records its own an
     _configure_services
     _configure_download_client
     _configure_vpn
-    _configure_secrets
+    questions_hooks
     _configure_schedule
-    authentik_configure_email
     _configure_panel_offer
 }
 
@@ -358,21 +357,6 @@ sign in (none, Wizarr or authentik) is asked next."
         sel=$(printf '%s\n' $sel | grep -vx "$([[ "$keep" == "$a" ]] && echo "$b" || echo "$a")")
         ok "Keeping $keep"
     done
-    if [[ " $(tr '\n' ' ' <<<"$sel") " == *" authentik "* ]]; then
-        if q_quick && [[ "$(env_get PORTAL_TITLE)" =~ [^[:space:]] ]]; then
-            env_set PORTAL_TITLE "$(env_get PORTAL_TITLE)"; q_took "Portal name" "$(env_get PORTAL_TITLE)"
-        else
-            explain "The portal's name" \
-"authentik is the portal your users sign up and log in at. Its name is shown
-on the login and sign-up pages (\"Join <name>\")."
-            while true; do
-                ask PORTAL_TITLE "Portal name" "$(env_get PORTAL_TITLE)"
-                [[ "$REPLY_VAL" =~ [^[:space:]] ]] && break
-                fail "The portal needs a name."
-            done
-            env_set PORTAL_TITLE "$REPLY_VAL"
-        fi
-    fi
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     ok "Enabled: $(env_get COMPOSE_PROFILES)"
 }
@@ -522,7 +506,7 @@ key, then paste it below. Country selection works the same for all."
     esac
 }
 
-# ---------------------------------------------------------- the rest --
+# --------------------------------------------------------------- the rest --
 _configure_timezone() {
     # -- timezone
     local tz_host tz_cur
@@ -549,11 +533,20 @@ _configure_timezone() {
     done
 }
 
-_configure_secrets() {
-    # -- secrets: each service generates or asks for its own (in its folder)
-    meilisearch_configure_secret
-    cloudflared_configure_secret
-    pihole_configure_secret
+# Each enabled service's own questions: a <name>_questions function in its
+# folder (services/<name>/*.sh), found by name — the core never names an app
+# for its questions (test-questions). The platform's come first, so the
+# domain is known before the portal's name and email; the rest in name order.
+QUESTION_PLATFORM=(traefik authentik)
+questions_hooks() {
+    local s f
+    local -a order
+    mapfile -t order < <(printf '%s\n' "${QUESTION_PLATFORM[@]}"; svc_enabled_managed | grep -vxF -f <(printf '%s\n' "${QUESTION_PLATFORM[@]}") || true)
+    for s in "${order[@]}"; do
+        svc_enabled "$s" || continue
+        f="${s//-/_}_questions"
+        if declare -F "$f" >/dev/null; then "$f"; fi
+    done
 }
 
 _configure_panel_offer() { # with Traefik on and no panel yet: offer it; configure installs it after provisioning

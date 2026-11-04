@@ -45,7 +45,7 @@ keeps it for the rest of that run, so a long step does not stop to ask again.
 
 ### Before you start
 
-`configure` and `up` ask for these, so have them ready:
+`configure` asks for these, so have them ready:
 
 * **A user that can use `sudo`.** A Debian install given a root password
   has no `sudo` at all: as root, `apt install sudo && usermod -aG sudo
@@ -263,7 +263,7 @@ Connect
 | `notify [status\|test [stream]\|set <stream>\|clear <stream>\|send <stream> <title> <message> [--type T]]` | the notification streams (`ops`, `users`): what each is set to (URLs hidden) and whether it delivered, a test, replace or clear a stream's URLs, or send your own message — see "Notifications" |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
 | `trash-sync [--dry-run]` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update. `--dry-run` previews the drift (`recyclarr --preview`) and changes nothing |
-| `traefik-setup` | HTTPS wizard: domain, Cloudflare token, cert environment, dashboard login |
+| `traefik-setup` | ask Traefik's questions again (`configure` asks them first): domain, Cloudflare token — checked with Cloudflare when pasted, with the domain's zone — cert environment, dashboard login |
 | `traefik-setup --hosts` | guided rename of every service's subdomain |
 | `traefik-setup --certs` | switch staging/production certificates (applied end to end) |
 | `credentials` | every login the stack created or stores, and the API keys companion apps ask for (the arrs, Prowlarr, Bazarr, Seerr) with the address to give them |
@@ -603,8 +603,9 @@ own hostname that captures `?searchTerm` requests at a higher priority
 
 `wire jellyfin` performs the minimum first-run only: metadata defaults,
 one admin account (the operator/recovery login, stored in `.env` — view:
-`credentials`), remote access on with UPnP off, a server name you choose
-(the container default is a random ID hash), Traefik's address in Known
+`credentials`), remote access on with UPnP off, the server name `configure` asked
+(`JELLYFIN_SERVER_NAME`; set once, while the name is still the container's
+random ID hash — a name set in Jellyfin stays), Traefik's address in Known
 proxies while Traefik is on (so sessions show each client's own address
 rather than Traefik's; one Jellyfin restart when it changes; any other
 entries stay yours), the transcode path moved
@@ -612,8 +613,8 @@ to `TRANSCODE_ROOT` (Jellyfin's default is inside `/config`, which
 `backup` archives; segments are written at source bitrate for the whole
 session, so give `TRANSCODE_ROOT` a few GB per concurrent stream on local
 disk — a NAS share stutters, a tmpfs flies), and
-libraries derived from the arrs' root folders — you name each library at
-creation. Everything
+libraries derived from the arrs' root folders — created with their default
+names (Movies, Shows, ...), never asked; rename them in Jellyfin. Everything
 else is yours to manage in the GUI, and wire can't undo you: libraries
 are matched by **path, never name**, so renames, merges, and settings
 changes are respected — wire only ever creates what's missing, and the

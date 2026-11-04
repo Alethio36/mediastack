@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # services/jellyfin/jellyfin.sh — Jellyfin's API client, plugins (LDAP
-# sign-in), server name, transcode path and its `wire jellyfin` role.
+# sign-in), its question (the server name), transcode path and its `wire
+# jellyfin` role.
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
 
@@ -138,7 +139,21 @@ jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admi
     jf_admin_sync "$tok"
 }
 
-jf_server_name() { # the name apps/casting show; container default is the ID hash
+jellyfin_questions() { # the questionnaire's hook: the name Jellyfin's apps and casting show (wire sets it once)
+    local cur; cur=$(env_get JELLYFIN_SERVER_NAME)
+    if q_quick; then env_set JELLYFIN_SERVER_NAME "$cur"; q_took "Jellyfin server name" "$cur"; return 0; fi
+    while true; do
+        ask JELLYFIN_SERVER_NAME "Jellyfin server name (shows in its apps and when casting)" "$cur"
+        case "$REPLY_VAL" in
+            *[\$\"\'\`\\]*) fail "Leave out \$, quotes, backslashes and backticks — .env cannot hold them safely." ;;
+            *[![:space:]]*) break ;;
+            *) fail "The server needs a name." ;;
+        esac
+    done
+    env_set JELLYFIN_SERVER_NAME "$REPLY_VAL"
+}
+
+jf_server_name() { # the name apps/casting show, set once: only while it is still the container's ID hash
     local tok="$1" cfg have want
     cfg=$(jf_api GET /System/Configuration "$tok" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
     have=$(jq -r '.ServerName // empty' <<<"$cfg" 2>/dev/null)
@@ -146,10 +161,8 @@ jf_server_name() { # the name apps/casting show; container default is the ID has
         ok "server name '$have'"
         return 0
     fi
-    if (( WIRE_DRY )); then w_would "name the Jellyfin server (asked on the real run)" || true; return 0; fi
-    [[ -t 0 ]] || { info "server name still the container ID — run 'wire jellyfin' interactively to set it"; return 0; }
-    ask JF_SRVNAME "Server name (shows in Jellyfin apps and casting)" "Jellyfin"
-    want="$REPLY_VAL"
+    want=$(env_get JELLYFIN_SERVER_NAME)
+    w_would "name the Jellyfin server '$want'" || return 0
     jf_api POST /System/Configuration "$tok" "$(jq -c --arg n "$want" '.ServerName=$n' <<<"$cfg")" >/dev/null \
         && ok "server name set to '$want'" \
         || wfail "Jellyfin rejected the server name [HTTP $(jf_code)] — set it in Dashboard -> General"
@@ -385,19 +398,16 @@ credentials)."
             fi
             continue
         fi
+        # its default name — rename it in Jellyfin if you like: wire never renames a library
+        lname=$(jf_libname "$s" "$base")
         if (( WIRE_DRY )); then
-            w_would "create jellyfin library for $path (${ctype}; name asked on the real run)" || true
-            continue
-        fi
-        if [[ ! -t 0 ]]; then
-            info "$path has no library yet — creation asks for a name, so it only happens interactively: ./mediastack.sh wire jellyfin"
+            w_would "create jellyfin library '$lname' -> $path (${ctype})" || true
             continue
         fi
         # jellyfin sees /media read-only; the host dir must exist or the
         # library is born broken. Same ownership pattern as configure's tree.
         sudo test -d "$droot/media/$base" \
             || { sudo install -d -m 2775 -g mediacenter "$droot/media/$base" && info "created $droot/media/$base (was missing)"; }
-        ask JF_LN "Library name for $path" "$(jf_libname "$s" "$base")"; lname="$REPLY_VAL"
         if w_would "create jellyfin library '$lname' -> $path"; then
             enc_n=$(jq -rn --arg v "$lname" '$v|@uri'); enc_p=$(jq -rn --arg v "$path" '$v|@uri')
             resp=$(jf_api POST "/Library/VirtualFolders?name=${enc_n}&collectionType=${ctype}&paths=${enc_p}&refreshLibrary=true" "$tok" '{"LibraryOptions":{}}') \

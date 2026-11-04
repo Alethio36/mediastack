@@ -9,6 +9,11 @@
 #     keeps a schedule set to never
 #   * with the portal: email is left as it is, the panel is recorded for
 #     configure to install
+#   * each enabled service's <name>_questions, found by name, the platform's
+#     first; the core never names one, and wire no longer asks Jellyfin's names
+#   * Traefik's: a refused token is said and pasted again, a domain with no
+#     zone for the token asked again, Cloudflare unreachable stops loud; the
+#     token reaches curl on stdin only
 #   * its source names no sudo, Docker, users or folders
 #   * exit codes: 3 without a terminal; configure stops on 130 (Ctrl-C reaches
 #     both processes and configure survives to say so), passes 3 on, and stops
@@ -41,7 +46,18 @@ done
 SHIMS=$T/bin:$PATH
 
 render() { :; }
-curl() { cat >/dev/null; echo '{"nordlynx_private_key":"KEY"}'; }   # NordVPN's API
+# NordVPN's and Cloudflare's APIs: CFTOK is a live token for the zone example.com
+curl() {
+    local in; in=$(cat); printf '%s\n' "$*" >> "$T/curl.args"; printf '%s\n' "$in" >> "$T/curl.stdin"
+    [[ -z "${CURL_DOWN:-}" ]] || return 7
+    case "$*" in
+        *nordvpn*)        echo '{"nordlynx_private_key":"KEY"}' ;;
+        *tokens/verify*)  if [[ "$in" == *"Bearer CFTOK\""* ]]; then echo '{"success":true,"result":{"status":"active"}}'
+                          else echo '{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}]}'; fi ;;
+        *zones?name=example.com*) echo '{"success":true,"result":[{"id":"z1","name":"example.com","status":"active"}]}' ;;
+        *zones?name=*)    echo '{"success":true,"result":[]}' ;;
+    esac
+}
 # shellcheck disable=SC2034  # read by the sourced entrypoint's svc_* helpers
 RENDERED_JSON='{"services":{
   "gluetun":     {"labels":{"mediastack.managed":"true","mediastack.desc":"VPN"}},
@@ -91,7 +107,7 @@ grep -qx 'CONFIG_ROOT=./config' "$T/w/.env" || fail_ "a folder answer is not wri
 quick_env=$(grep -vE '^(MEILI_MASTER_KEY)=' "$T/w/.env")
 
 # ---- full, fresh: Enter through every question gives what quick takes ----
-clean; run '2\n\n\n\n\n\n\n1\n1\n\nTOKEN\n\n\n\n\n\n\n\n' --fresh || fail_ "full on a fresh .env runs"
+clean; run '2\n\n\n\n\n\n\n1\n1\n\nTOKEN\n\n\n\n\n\n\n\n\n' --fresh || fail_ "full on a fresh .env runs"
 [[ ! -s "$T/calls" ]] || fail_ "full ran what it may not: $(cat "$T/calls")"; pass
 [[ "$(grep -vE '^(MEILI_MASTER_KEY)=' "$T/w/.env")" == "$quick_env" ]] \
     || fail_ "Enter through full = quick: $(diff <(echo "$quick_env") <(grep -vE '^MEILI_MASTER_KEY=' "$T/w/.env"))"; pass
@@ -103,13 +119,48 @@ run '1\n' || fail_ "quick re-run asks nothing beyond the mode"
 grep -q 'Services: keep the current' "$T/out" && grep -q 'VPN: keep nordvpn' "$T/out" || fail_ "and says what it kept"; pass
 
 # ---- quick with the portal: email left alone, the panel recorded ----
-clean; run '1\n2\n3\n\nTOKEN\n' --fresh || fail_ "quick, everything, the portal runs"
+clean; run '1\n2\n3\n\nTOKEN\nmedia.example.com\nme@example.com\nCFTOK\n' --fresh || fail_ "quick, everything, the portal runs"
 [[ ! -s "$T/calls" ]] || fail_ "ran what it may not: $(cat "$T/calls")"; pass
 [[ ",$(envv COMPOSE_PROFILES)," == *,traefik,* && ",$(envv COMPOSE_PROFILES)," == *,authentik,* && ",$(envv COMPOSE_PROFILES)," != *,npm,* \
    && ",$(envv COMPOSE_PROFILES)," != *,deluge,* ]] || fail_ "one client, traefik for the portal: $(envv COMPOSE_PROFILES)"; pass
 [[ "$(cat "$T/w/local/state/$PANEL_STATE")" == yes && -z "$(envv SMTP_HOST)" ]] && grep -q 'Email: not set' "$T/out" \
     || fail_ "the panel recorded, email left as it is"; pass
 [[ "$(envv PORTAL_TITLE)" == Mediastack ]] || fail_ "the portal's name taken: $(envv PORTAL_TITLE)"; pass
+[[ "$(envv STACK_DOMAIN)" == media.example.com && "$(envv CF_DNS_API_TOKEN)" == CFTOK && "$(envv ACME_ENV)" == production ]] \
+    || fail_ "Traefik's answers recorded, production certificates taken: $(grep -E '^(STACK_DOMAIN|ACME_ENV)=' "$T/w/.env")"; pass
+grep -q 'the token is live and holds the zone example.com' "$T/out" || fail_ "the token checked with Cloudflare when pasted"; pass
+
+# ---- each enabled service's hook, the platform's first, found by name ----
+order=$( ( ENV_FILE=$T/w/.env
+           traefik_questions() { echo T; }; authentik_questions() { echo A; }; jellyfin_questions() { echo J; }; meilisearch_questions() { echo M; }
+           questions_hooks ) 2>&1 | paste -sd' ' -)
+[[ "$order" == "T A J M" ]] || fail_ "platform first, then by name, enabled only: $order"; pass
+bad=$(grep -nE '\b[a-z0-9_]+_questions\b' mediastack.sh lib/*.sh | grep -vE 'questions_hooks|questionnaire|^lib/questionnaire\.sh:[0-9]+:\s*#' || true)
+[[ -z "$bad" ]] || fail_ "the core calls a service's questions by name: $bad"; pass
+! grep -nE 'ask JF_SRVNAME|ask JF_LN|name asked on the real run' services/jellyfin/jellyfin.sh \
+    || fail_ "wire asks Jellyfin's server or library names again"; pass
+
+# ---- Traefik's questions: the token checked with Cloudflare, never on curl's command line ----
+# shellcheck disable=SC2034  # read by traefik_questions
+tq() { ( ENV_FILE=$T/t.env Q_MODE=${2:-full}; printf '%b' "$1" | traefik_questions ) > "$T/out" 2>&1; }
+tv() { ENV_FILE=$T/t.env env_get "$1"; }
+printf 'COMPOSE_PROFILES=traefik\n' > "$T/t.env"; : > "$T/curl.args"; : > "$T/curl.stdin"
+tq 'media.example.com\nme@example.com\nBAD\n\nCFTOK\n\n\n\n' || fail_ "a refused token, then a live one, runs"
+grep -q 'Cloudflare refused the token (Invalid API Token)' "$T/out" && grep -q 'this value is required' "$T/out" && [[ "$(tv CF_DNS_API_TOKEN)" == CFTOK ]] \
+    || fail_ "a refused token is said, Enter cannot keep it, the next one counts: $(tv CF_DNS_API_TOKEN)"; pass
+! grep -q 'CFTOK\|BAD' "$T/curl.args" && grep -q 'header = "Authorization: Bearer CFTOK"' "$T/curl.stdin" \
+    || fail_ "the token reaches curl on stdin, never its command line: $(cat "$T/curl.args")"; pass
+[[ "$(tv TRAEFIK_DASH_USER)" == admin && -n "$(tv TRAEFIK_DASH_PASSWORD)" ]] || fail_ "no portal: Enter at the dashboard login: admin, generated"; pass
+printf 'COMPOSE_PROFILES=traefik,authentik\n' > "$T/t.env"
+tq 'media.example.om\nme@example.com\nCFTOK\nmedia.example.com\n\n\n' || fail_ "a domain without a zone, then the right one, runs"
+grep -q 'the token sees no Cloudflare zone for media.example.om (looked for: media.example.om, example.om)' "$T/out" && [[ "$(tv STACK_DOMAIN)" == media.example.com ]] \
+    || fail_ "a typo in the domain is caught by its zone and asked again, the token kept: $(tv STACK_DOMAIN)"; pass
+[[ -z "$(tv TRAEFIK_DASH_USER)" ]] || fail_ "with the portal the dashboard login is not asked"; pass
+before=$(cat "$T/t.env"); tq '' quick || fail_ "quick with Traefik answered asks nothing"
+[[ "$(cat "$T/t.env")" == "$before" ]] && grep -q 'HTTPS: keep media.example.com' "$T/out" || fail_ "and keeps it, saying so"; pass
+printf 'COMPOSE_PROFILES=traefik\n' > "$T/t.env"
+( CURL_DOWN=1; tq 'media.example.com\nme@example.com\nCFTOK\n' ) && fail_ "Cloudflare unreachable stops the questions"
+grep -q "Could not reach Cloudflare's API" "$T/out" && [[ -z "$(tv CF_DNS_API_TOKEN)" ]] || fail_ "loud, nothing recorded"; pass
 
 # ---- its source names no sudo, Docker, users or folders ----
 # a command where a command goes (a line's start, after ; & | ( or $( ); the one

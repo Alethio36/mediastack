@@ -3,7 +3,7 @@
 # configure and by `enable cloudflared`. The tunnel never runs without one: it
 # would only crash-loop. Sourced by the entrypoint; relies on lib/common.sh at
 # call time.
-cloudflared_configure_secret() { # configure: the tunnel's token, asked once; none turns the tunnel off
+cloudflared_questions() { # the questionnaire: the tunnel's token, asked once; none turns the tunnel off
     if ! svc_enabled cloudflared || [[ -n "$(env_get CLOUDFLARE_TUNNEL_TOKEN)" ]]; then return 0; fi
     cloudflared_token_ask && return 0
     env_set COMPOSE_PROFILES "$(env_get COMPOSE_PROFILES | tr ',' '\n' | grep -vx cloudflared | paste -sd, -)"

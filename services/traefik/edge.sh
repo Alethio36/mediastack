@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # services/traefik/edge.sh — the Traefik HTTPS edge: traefik_ensure (auto-run
-# by up), traefik_gen (generated static + dynamic config, the gate's
+# by up; its questions are in questions.sh), traefik_gen (generated static + dynamic config, the gate's
 # middleware), each service's route labels (edge_route_labels, written into
 # the VPN overlay by vpn_gen), and hostname and certificate re-setup (the
 # traefik-setup verb). Nothing in lib/ writes Traefik's config or labels. Sourced by the entrypoint; relies on
@@ -13,86 +13,38 @@
 
 traefik_ensure() { # traefik_ensure [--reconfigure]; runs on up/enable; idempotent
     svc_enabled traefik || return 0
-    local force=0; [[ "${1:-}" == --reconfigure ]] && force=1
-    local domain email token acmeenv duser
-    domain=$(env_get STACK_DOMAIN); email=$(env_get ACME_EMAIL)
-    token=$(env_get CF_DNS_API_TOKEN)
-    if [[ -z "$domain" || -z "$email" || -z "$token" ]] || (( force )); then
-        if [[ ! -t 0 ]]; then
-            (( force )) && die "traefik-setup needs a terminal."
-            die "traefik is enabled but not configured (STACK_DOMAIN/ACME_EMAIL/CF_DNS_API_TOKEN) and there is no terminal to ask — run './mediastack.sh traefik-setup' interactively first."
-        fi
-        hr "Traefik setup"
-        (( force )) && info "Enter keeps the value shown in [brackets]."
-        explain "Your domain" \
-"Every service gets its own address under one domain you own:
-https://jellyfin.<domain>, https://requests.<domain>, and so on.
-Before continuing, two things must exist at dash.cloudflare.com:
-  1. the domain's DNS, hosted on Cloudflare
-  2. a wildcard A record  *.<domain> -> this machine's LAN IP,
-     with the proxy toggle OFF (grey cloud, 'DNS only')
-This exposes nothing to the internet — the addresses only resolve
-usefully on your own network."
-        while true; do   # lowercased before the check: ask_valid would judge it as typed
-            ask TD "Base domain (e.g. media.example.com)" "${domain}"
-            env_type_ok domain "${REPLY_VAL,,}" && { domain="${REPLY_VAL,,}"; break; }
-            fail "'$REPLY_VAL' is not a domain name (e.g. media.example.com)."
-        done
-        ask_valid email AE "Email for certificate-expiry notices" "${email}" "an email address"; email="$REPLY_VAL"
-        explain "Cloudflare API token" \
-"Lets the stack prove to Let's Encrypt that you control the domain.
-Create one at dash.cloudflare.com -> My Profile -> API Tokens ->
-Create Token: give it the single permission  Zone / DNS / Edit,
-scoped to just this domain's zone. (Not the Global API Key.)"
-        ask_token "Paste the Cloudflare token (input hidden)" "$token"; token="$REPLY_VAL"
-        explain "Certificates: real or testing?" \
-"  production  real certificates, trusted by every browser. Let's
-              Encrypt allows only 5 identical ones per week, so
-              repeated install testing can lock you out for days.
-  staging     unlimited test certificates. Browsers show a warning
-              you can click through. Pick this while you are still
-              testing; one setting change switches to production
-              later and the stack handles the swap itself.
-              Known limitation: apps that check the portal's
-              certificate themselves refuse a staging one — Kavita's
-              portal sign-in is skipped until production, and
-              Audiobookshelf's is expected to fail."
-        while true; do
-            ask AV "Certificate environment (production/staging)" "$(env_get ACME_ENV)"
-            case "${REPLY_VAL,,}" in production|staging) acmeenv="${REPLY_VAL,,}"; break ;; *) fail "Type production or staging." ;; esac
-        done
-        env_set STACK_DOMAIN "$domain"; env_set ACME_EMAIL "$email"
-        env_set CF_DNS_API_TOKEN "$token"; env_set ACME_ENV "$acmeenv"
-    fi
-    duser=$(env_get TRAEFIK_DASH_USER)
-    if [[ -z "$duser" ]] || (( force )); then
-        # a password is only ever generated or typed — an empty one is never kept
-        local dpass; dpass=$(env_get TRAEFIK_DASH_PASSWORD)
-        [[ -n "$dpass" ]] || dpass=$(head -c12 /dev/urandom | base64 | tr -d '=+/')
-        if signin_is authentik; then
-            # the portal signs admins in to the dashboard (mediastack-gate); this
-            # login is only the fallback should the portal ever be removed
-            [[ -n "$duser" ]] || duser="admin"
-            env_set TRAEFIK_DASH_USER "$duser"; env_set TRAEFIK_DASH_PASSWORD "$dpass"
-            info "Dashboard: admins sign in through the portal (a fallback login is kept: ./mediastack.sh credentials)"
-        else
-            [[ -t 0 ]] || die "traefik dashboard credentials unset and no terminal — run './mediastack.sh traefik-setup'."
-            explain "Dashboard login" \
-"Traefik's dashboard (https://dash.<domain>) shows every route and
-certificate. It cannot change anything, but it still gets a login.
-Enter keeps the name shown and accepts a generated password; see them
-later with: credentials"
-            while true; do
-                ask DU "Dashboard username" "${duser:-admin}"; duser="$REPLY_VAL"
-                # basic auth splits on ':' — letters, digits and ._- only
-                [[ "$duser" =~ ^[A-Za-z0-9._-]+$ ]] && break
-                fail "Use letters, digits and . _ - only."
-            done
-            ask_secret "Dashboard password" "$dpass"
-            env_set TRAEFIK_DASH_USER "$duser"; env_set TRAEFIK_DASH_PASSWORD "$REPLY_VAL"
+    local miss
+    if [[ "${1:-}" == --reconfigure ]]; then
+        [[ -t 0 ]] || die "traefik-setup needs a terminal."
+        hr "Traefik setup"; info "Enter keeps the value shown in [brackets]."
+        # shellcheck disable=SC2034  # read by traefik_questions: every question, the dashboard's too
+        local Q_MODE=full TRAEFIK_FORCE=1
+        traefik_questions
+    else
+        miss=$(traefik_missing)
+        if [[ -n "$miss" ]]; then
+            # configure asks these first; until enable asks a newly enabled
+            # service's questions itself, a terminal asks them here
+            [[ -t 0 ]] || die "$miss is not set — run: ./mediastack.sh configure"
+            hr "Traefik setup"; traefik_questions
         fi
     fi
+    traefik_dash_fallback
     traefik_gen
+}
+
+traefik_missing() { # the first of Traefik's answers not recorded yet ("" when none is missing)
+    local k
+    for k in STACK_DOMAIN ACME_EMAIL CF_DNS_API_TOKEN; do [[ -n "$(env_get "$k")" ]] || { echo "$k"; return 0; }; done
+    if ! signin_is authentik && [[ -z "$(env_get TRAEFIK_DASH_USER)" ]]; then echo TRAEFIK_DASH_USER; fi
+}
+
+traefik_dash_fallback() { # with the portal, admins sign in through it; the dashboard keeps a generated fallback login, never an empty one
+    signin_is authentik || return 0
+    [[ -z "$(env_get TRAEFIK_DASH_USER)" || -z "$(env_get TRAEFIK_DASH_PASSWORD)" ]] || return 0
+    [[ -n "$(env_get TRAEFIK_DASH_USER)" ]] || env_set TRAEFIK_DASH_USER admin
+    [[ -n "$(env_get TRAEFIK_DASH_PASSWORD)" ]] || env_set TRAEFIK_DASH_PASSWORD "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"
+    info "Dashboard: admins sign in through the portal (a fallback login is kept: ./mediastack.sh credentials)"
 }
 
 traefik_gen() {

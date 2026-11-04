@@ -12,7 +12,7 @@ sc_rotate_pihole() { # PASS — env-driven; recreate applies it
             || wfail "Pi-hole recreate failed — apply with: ./mediastack.sh up"
 }
 
-pihole_configure_secret() { # configure: its admin password, generated once
+pihole_questions() { # the questionnaire: its admin password, generated once
     if svc_enabled pihole && [[ -z "$(env_get PIHOLE_PASSWORD)" ]]; then
         env_set PIHOLE_PASSWORD "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"
         ok "Generated Pi-hole admin password (view it any time in .env)."

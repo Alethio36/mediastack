@@ -9,7 +9,8 @@
 #   * "everything" asks for one download client or all of them, and leaves out
 #     a service its own command sets up (the panel) — enable refuses it, up
 #     refuses it half-installed
-#   * a typo is asked again, never fatal; the portal needs a name; input that
+#   * a typo is asked again, never fatal; the portal needs a name (its own
+#     question, authentik_questions); input that
 #     ends mid-question stops configure instead of asking forever
 #   * the VPN is asked about only when something runs in it; secrets are read
 #     hidden; the NordVPN token reaches curl on stdin, never on its command line
@@ -83,10 +84,8 @@ grep -q '0) keep current: 9 enabled' "$T/out" || fail_ "a configured .env offers
 # ---- a typo is asked again; the portal needs a name ----
 services 'x\n1\n1\n' 1 || fail_ "a typo at Services is asked again"
 grep -q 'Pick 1-3' "$T/out" && has sonarr || fail_ "and the next answer counts: $(profiles)"; pass
-printf 'COMPOSE_PROFILES=%s\nPORTAL_TITLE=\n' "$PRESET" > "$ENV_FILE"
-# shellcheck disable=SC2034  # read by _configure_services
-CONFIGURE_FRESH=1
-printf '1\n3\n\n' | _configure_services > "$T/out" 2>&1 || fail_ "an empty portal name line runs"
+printf 'COMPOSE_PROFILES=traefik,authentik\nPORTAL_TITLE=\n' > "$ENV_FILE"
+printf '\n\n' | authentik_questions > "$T/out" 2>&1 || fail_ "an empty portal name line runs"
 [[ "$(env_get PORTAL_TITLE)" == Mediastack ]] && ! grep -q 'The portal needs a name' "$T/out" \
     || fail_ "an empty PORTAL_TITLE= line offers the schema's default: $(env_get PORTAL_TITLE)"; pass
 
@@ -160,11 +159,11 @@ printf 'custom\n\n\n' | _configure_vpn > "$T/out" 2>&1 || fail_ "custom step run
 
 # ---- the tunnel needs its token ----
 printf 'COMPOSE_PROFILES=traefik,cloudflared,jellyfin\nCLOUDFLARE_TUNNEL_TOKEN=\n' > "$ENV_FILE"
-printf '\n' | cloudflared_configure_secret > "$T/out" 2>&1
+printf '\n' | cloudflared_questions > "$T/out" 2>&1
 [[ "$(env_get COMPOSE_PROFILES)" == traefik,jellyfin ]] || fail_ "blank: the tunnel is off: $(env_get COMPOSE_PROFILES)"; pass
 grep -q 'enable cloudflared' "$T/out" && grep -q 'Leave the token blank' "$T/out" || fail_ "and says how to turn it on later"; pass
 printf 'COMPOSE_PROFILES=traefik,cloudflared\nCLOUDFLARE_TUNNEL_TOKEN=\n' > "$ENV_FILE"
-printf 'TUNNEL1\n' | cloudflared_configure_secret > "$T/out" 2>&1
+printf 'TUNNEL1\n' | cloudflared_questions > "$T/out" 2>&1
 [[ "$(env_get CLOUDFLARE_TUNNEL_TOKEN)" == TUNNEL1 ]] && has cloudflared || fail_ "a token is stored, the tunnel stays"; pass
 ! grep -q TUNNEL1 "$T/out" || fail_ "the token is not echoed"; pass
 printf 'CLOUDFLARE_TUNNEL_TOKEN=\n' > "$ENV_FILE"

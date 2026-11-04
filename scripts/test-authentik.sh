@@ -1051,8 +1051,8 @@ has() { [[ ",$(sed -n 's/^P=//p' <<<"$1")," == *",$2,"* ]]; }
 out=$(acc "" '1\n\n'); has "$out" wizarr || has "$out" authentik && fail_ "first run, standard, Enter: none — neither runs: $out"
 [[ "$out" == *"== Accounts"*"1) none"*"2) Wizarr"*"3) authentik"*"OK Accounts: none"* && "$out" != *"0) keep current"* ]] || fail_ "the question, with none as the first run's default: $out"; pass
 [[ "$out" == *"2) everything  every service (sign-in is picked next)"* ]] || fail_ "'everything' states no count (it would count both account models): $out"; pass
-out=$(acc "" '2\n3\n\n'); has "$out" authentik && ! has "$out" wizarr && [[ "$out" == *"== The portal's name"* && "$out" != *"Choose one"* ]] \
-    || fail_ "everything + authentik: no either/or prompt, the portal named: $out"; pass
+out=$(acc "" '2\n3\n'); has "$out" authentik && ! has "$out" wizarr && [[ "$out" != *"Choose one"* && "$out" != *"portal's name"* ]] \
+    || fail_ "everything + authentik: no either/or prompt; its name is the portal's own question (authentik_questions): $out"; pass
 out=$(acc "" '2\n2\n'); has "$out" wizarr && ! has "$out" authentik && has "$out" jellyfin || fail_ "everything + Wizarr (Jellyfin with it): $out"; pass
 out=$(acc "" '2\n1\n'); ! has "$out" wizarr && ! has "$out" authentik || fail_ "everything + none: neither: $out"; pass
 out=$(acc "" '3\ny\ny\ny\n3\n\n'); [[ "$out" != *"wizarr — "* && "$out" != *"authentik — "* ]] && has "$out" authentik && has "$out" sonarr \

@@ -105,6 +105,12 @@ cmd_configure() {
     fi
     chmod 600 "$ENV_FILE" || true
     [[ -z "$(state_get configure-first)" ]] || fresh=(--fresh)
+    # sudo's password now, before the first question: the questionnaire reads
+    # the catalogue through compose (sudo), and it shares this terminal's ticket
+    if (( $(id -u) != 0 )) && [[ -t 0 ]]; then
+        info "configure makes users and folders with sudo — its password is asked once, now"
+        sudo -v
+    fi
     questionnaire_ask "${fresh[@]}"
     state_del configure-first
 
