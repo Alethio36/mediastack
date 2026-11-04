@@ -60,6 +60,57 @@ does nothing else.
   wire phase order for the enabled services (the service contract). A service
   with nothing to ask has no hook.
 
+### Only what applies **agreed**
+
+- **Services first.** The preset (or the custom picks) is asked first and its
+  dependencies resolved (`resolve_deps`); a service's questions are asked only
+  when it is enabled — no Sonarr, no TRaSH profile for it; no Wizarr, nothing
+  about Wizarr.
+- **Shared questions follow the answers before them:** no VPN service, no VPN
+  provider or token; no Traefik, no domain or certificates; no portal, no
+  email; a certificate of your own, no Cloudflare token. The logins question
+  lists only the enabled services' accounts.
+- **A service enabled later asks its questions then** (below): nothing is lost
+  by leaving one out at install.
+
+### Quick or full **agreed**
+
+The first question:
+
+```
+How much should configure ask?
+  1) quick   only what has no sensible default — your VPN token, your
+             domain and its Cloudflare token, the certificate email, the
+             notification URLs; everything else takes the recommended answer
+  2) full    every question, each with its recommended answer as the default
+Choice [1]:
+```
+
+- Every question declares whether it has a safe default. One that does not (a
+  token, a domain) is asked in quick too — quick never guesses.
+- Quick on the standard preset is five or six questions; folders, timezone,
+  schedules, logins (generated), the server name and the TRaSH profiles
+  (1080p) take their recommended answers.
+- The summary shows every answer, the defaulted ones too. Something wrong:
+  answer No to "Start everything now?", run `configure` again in full — the
+  answers so far are the defaults, so Enter carries through the rest.
+
+### A service enabled later **agreed**
+
+`enable <svc>` is the questionnaire and the chain for one service:
+
+1. Its questions: the same `<name>_questions` hook the install runs.
+2. Its login, in the mode chosen at install — recorded in `.env`
+   (`STACK_LOGINS=generated|unified|each`): generated → a random password;
+   each → asked; unified → the shared password. If the shared password fails
+   the new service's own rule, `enable` says so and offers
+   `set-credentials` to change it everywhere, rather than quietly breaking
+   "unified".
+3. Applied as the chain does: `up` (the leak gate first — `enable` already
+   ends with `up`, Nov 2026), then `wire` for it and for what calls it, then
+   trash-sync when it is an arr.
+4. Disabled and enabled again: its answers are still in `.env`, the defaults.
+
 ### What is asked, and where it moves from
 
 | Asked today by | Question | In the design |
