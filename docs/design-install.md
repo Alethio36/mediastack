@@ -77,22 +77,49 @@ does nothing else.
 ### The stack's own logins **agreed**
 
 These are the installer's and the bots' accounts; the household's admin makes
-their own account in the portal (authentik). One question:
+their own account in the portal (authentik). **One username for all of them**,
+asked once (default `admin`); then one question for the passwords:
 
 ```
-The stack's own logins — the download clients, the arrs, Jellyfin's admin,
-Audiobookshelf's and Kavita's roots:
+The stack's own logins — the download clients, the arrs, Jellyfin's admin:
+  username [admin]:
+  passwords:
   1) generated   a random password for each (recommended)
-  2) unified     one username and password for all of them — one leaked
-                 password then opens every one
-  3) each        asked for each, one at a time
+  2) unified     one password for all of them — one leaked password then
+                 opens every one
+  3) each        typed for each, one at a time
 Choice [1]:
 ```
 
 Each account is declared by the service that owns it (`<name>_logins`: its
-username and password keys), so the list is the enabled services', not a
-central one. With sign-in **none** (no portal) the operator signs in with
-these logins directly — the case unified exists for.
+username and password keys, and its password rule), so the list is the
+enabled services', not a central one. With sign-in **none** (no portal) the
+operator signs in with these logins directly — the case unified exists for.
+
+**Two roots keep their own name, `mediastack`:** Audiobookshelf's and
+Kavita's. Both make a person's account on their first portal sign-in, and
+Audiobookshelf never matches it to an existing one — a root named like the
+person's portal username would break that person's sign-in. No one signs in
+as these two; the stack does. *(to confirm)*
+
+### Checking the answers **agreed**
+
+Every question declares its check, and a refused answer is said and asked
+again (`ask_valid`, the one-way-to-ask convention):
+
+- **No accidental blank:** a required answer refuses an empty one — a stray
+  Enter cannot empty it. Where Enter means something (keep the current value,
+  accept a generated one), the prompt says so.
+- **Formats:** domain, email, URL, path (no backslash), time — as configure
+  checks some of them today.
+- **Typed passwords:** entered twice; at least 12 characters; no whitespace
+  and none of `$`, `"`, `'`, `\` or the backtick — they break `.env` and compose's interpolation.
+  On top, each service's own rule from `<name>_logins` (Kavita, for one, has
+  a password policy of its own): a **unified** password must pass every
+  enabled service's rule, so one answer cannot break one app.
+- **Pasted secrets:** terminal escapes and control characters are taken out,
+  and said (shipped, Nov 2026); tokens are verified where the service can be
+  asked (Nord's, Cloudflare's).
 
 ### One-shot answers
 
@@ -208,9 +235,18 @@ joined from another), migrations (history), the panel (its own service).
    `<name>_doctor` for what remains central.
 3. Each piece lands with a test that fails if the core names an app for it.
 
+### How the questionnaire ends
+
+It runs as its own process, so it tells `configure` how it ended by its exit
+code — nothing else:
+
+| Exit | Meaning | `configure` then |
+|---|---|---|
+| 0 | every question answered | carries on: provisioning, the summary, the closing question |
+| 130 | cancelled (Ctrl-C) | stops; nothing is applied, the answers so far are kept as next time's defaults |
+| 3 | no terminal to ask on (the panel, piped input) | stops: "configure asks questions — run it in a terminal" |
+
 ## Open, to decide during the build
 
-- The questionnaire's interface to `configure`: an exit code per outcome
-  (answered / cancelled / no terminal), or a status record in `local/state`.
-- The wording and the order of the shared questions, in one pass with the
-  prompt convention.
+- The order of the shared questions: kept organized, adjusted if something
+  reads wrong in practice.
