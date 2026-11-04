@@ -1,0 +1,216 @@
+# Design: ask once, then install — and services that describe themselves
+
+*Status: proposed (Nov 2026), for review before any code. Decisions already
+agreed are marked **agreed**; everything else is open until this document is.*
+
+## Goals
+
+- **Ask once, at the start.** Every question comes in the first minutes; then
+  the stack installs, starts and wires itself while the operator walks away.
+  Today `up`, `wire` and `trash-sync` stop to ask between long waits.
+- **Safe to re-run, step by step.** A dropped SSH session, a failed step or a
+  second `configure` never leaves a half-built stack: running it again checks
+  what is done and does only what is missing or wrong.
+- **Fail loud, with the next step.** A step that fails stops the run and says
+  exactly what to run next. A missing answer is always the same error:
+  `X is not set — run: ./mediastack.sh configure`.
+- **A new service is a new folder.** What a service is, asks, wires, shows and
+  checks lives in `services/<name>/`; the core finds it there and never names
+  it (the service contract, below).
+
+## The flow
+
+```
+install ──> "Configure now? [Y/n]" ──> configure        (agreed: install carries on into configure)
+                                         │  1. the questionnaire (asks, records — nothing else)
+                                         │  2. provisioning (users, folders, timers, host record)
+                                         │  3. the summary (secrets in outline)
+                                         ▼
+               first run:  "Start everything now? [Y/n]"     re-run on a live stack:  "Apply the changes now? [y/N]"
+                                         │
+                                         ▼
+                     the chain:  up ─> panel ─> wire ─> trash-sync
+                                         │  (stops at the first failure, names what is left)
+                                         ▼
+                     the closing to-do and validation
+```
+
+- **First run** (nothing installed): Enter starts everything. **agreed**
+- **Re-run on a live stack** (to change one thing): every question shows the
+  current answer as its default, secrets keep theirs unless a new one is
+  pasted, and the closing question defaults to **No** — the stack is serving
+  people, and applying restarts things. **agreed**
+- **No separate chain verb.** Answering No (the test box, before dropping a
+  certificate in) leaves the three steps to run by hand: `up`, then `wire`,
+  then `trash-sync`. **agreed**
+
+## The questionnaire
+
+**agreed:** its own script, called by `configure`. It asks and records — and
+does nothing else.
+
+- **Where:** `lib/questionnaire.sh`, run by `configure` as its own process. It
+  shares `lib/common.sh`'s prompt helpers (one way to ask each kind of
+  question) and `lib/env.sh`; it does not copy them.
+- **What it may touch:** `.env`, and `local/state` for the one-shot answers.
+  No sudo, no Docker, no users or folders — `test-questions` fails a question
+  hook that calls any of them.
+- **Who asks what:** the shared questions (below) are the questionnaire's own;
+  every service's questions are its folder's `<name>_questions` hook, asked in
+  wire phase order for the enabled services (the service contract). A service
+  with nothing to ask has no hook.
+
+### What is asked, and where it moves from
+
+| Asked today by | Question | In the design |
+|---|---|---|
+| configure | timezone, folders, services, accounts, VPN, tunnel, schedules, email, panel | stays, the shared part |
+| `up` (traefik-setup) | domain, certificate email, Cloudflare token, production/staging | Traefik's `traefik_questions`; **the token is verified when it is pasted** (Cloudflare's token-verify call), not after the image pulls |
+| `wire` | "take a restore point first?" | **not asked**: the first wire always takes one (it defaulted to Yes) |
+| `wire` | the stack's own logins (download clients, arrs, Jellyfin admin, Audiobookshelf and Kavita roots) | one question, the logins mode (below) |
+| `wire` | Jellyfin server name | Jellyfin's `jellyfin_questions` |
+| `wire` | Jellyfin library names (×5) | **not asked**: the defaults; renamed in Jellyfin if wanted. Also fixes a run without a terminal skipping library creation |
+| `wire` | notification URLs (ops, users) | Apprise's `apprise_questions`, held one-shot (below) |
+| `trash-sync` | the TRaSH profile per instance | Recyclarr's `recyclarr_questions` (already `.env` keys) |
+| `wire wizarr` | the Wizarr API key | **stays interactive** — Wizarr's UI must exist first; it becomes a closing to-do |
+
+### The stack's own logins **agreed**
+
+These are the installer's and the bots' accounts; the household's admin makes
+their own account in the portal (authentik). One question:
+
+```
+The stack's own logins — the download clients, the arrs, Jellyfin's admin,
+Audiobookshelf's and Kavita's roots:
+  1) generated   a random password for each (recommended)
+  2) unified     one username and password for all of them — one leaked
+                 password then opens every one
+  3) each        asked for each, one at a time
+Choice [1]:
+```
+
+Each account is declared by the service that owns it (`<name>_logins`: its
+username and password keys), so the list is the enabled services', not a
+central one. With sign-in **none** (no portal) the operator signs in with
+these logins directly — the case unified exists for.
+
+### One-shot answers
+
+Notification URLs are held in `local/state` (0600), handed to Apprise by
+`wire apprise`, then deleted: a `.env` copy would drift from Apprise, which
+`notify set` edits. **agreed**
+
+### The prompts
+
+The one-way-to-ask convention (`test-prompts`) holds for every hook; the
+TRaSH prompt's missing newline (a `::` line glued to the answer) is fixed on
+the way. **agreed**
+
+## The chain
+
+| Step | Re-run safety (what it checks first) | To prove in the build |
+|---|---|---|
+| `up` | renders, starts what is not running, recreates what changed, the leak gate before the VPN group | already re-run nightly by backups; the gate proven by three soaks |
+| panel install | the `olivetin` user, key, sudo rule and config exist and match | re-run on an installed panel changes nothing |
+| `wire` | every role compares before it writes (`wire --verify` is the same code without the writes) | a second `wire` right after the first reports no changes |
+| `trash-sync` | recyclarr is idempotent; the sentinel banners are created once | a second run reports no changes |
+
+- **A dropped SSH session:** before it starts, the chain checks for an SSH
+  session outside tmux or screen (`SSH_CONNECTION` set, `TMUX` and `STY`
+  not) and says so: the time to expect (~15–20 min) and that running
+  `./mediastack.sh configure` again carries on. **agreed** (a background
+  systemd job was considered and rejected: root context and terminal
+  handling for no gain over re-running)
+- **A failed step** stops the chain; nothing is undone. The message names the
+  failure and every step still to run, in order. **agreed**
+- **The end:** one ops notification when the chain finishes (Apprise was
+  wired in the chain), and the closing to-do.
+
+## The closing to-do and validation **agreed**
+
+After the chain, on the screen:
+
+- **Verified:** `doctor` (its FAIL lines, if any, with their fixes) and
+  `leak-test` (passed, or what is UNPROVEN).
+- **Still yours to do:** create your own admin account in the portal (or
+  invite yourself); the Wizarr API key (`./mediastack.sh wire wizarr`) when
+  Wizarr is on; `./mediastack.sh email test <address>` when email is set; the
+  LAN DNS record (`*.<domain>` → this host) — needed to reach the services by
+  name, not for the certificates.
+- **Where things are:** `./mediastack.sh credentials`, `status`, the panel's
+  address.
+
+## Certificates
+
+The certificate question gets a third answer:
+
+1. **Let's Encrypt through Cloudflare** — as today (DNS-01: nothing is opened
+   to the internet).
+2. **Your own certificate.** Two files you provide:
+   - `config/traefik/certs/fullchain.pem` — the certificate followed by its
+     chain, PEM; it must cover the domain and the wildcard (`<domain>` and
+     `*.<domain>`), since every service has its own name under it;
+   - `config/traefik/certs/privkey.pem` — its private key, PEM, unencrypted
+     (Traefik cannot ask for a passphrase); mode 600.
+   Traefik serves them through its file provider; replace both files to
+   renew (Traefik reloads them on change). **Renewal is yours:** doctor warns
+   30 days before expiry and fails at 7, and `safety-live` already reads the
+   served certificate's dates. `docs/certificates.md` says all of this, with
+   the commands to check a pair before using it (the build writes it).
+3. **Staging** — Let's Encrypt's test certificates, for test installs.
+
+Other DNS providers for Let's Encrypt: after the MVP (roadmap, Portability).
+
+## The service contract
+
+**agreed** in shape. A service's folder describes it completely; the core
+crawls `services/*/` and never names an app.
+
+**Two kinds of service.** *Platform services* — gluetun, Traefik, authentik,
+Apprise — are what the others plug into; the core may know them by name. *App
+services* — the arrs, the download clients, the media apps — are only ever
+found by crawling.
+
+**Labels** (in the service's compose fragment, beside the ones that exist
+today: `mediastack.vpn`, `.auth`, `.port`, `.errors`, …):
+
+| Label | Says | Replaces |
+|---|---|---|
+| `mediastack.wire.phase` | when it is wired: 10 download clients, 20 arrs, 30 Prowlarr, 40 its consumers (Bazarr, Cleanuparr, Seerr), 50 the portal and Jellyfin, 60 the rest | `WIRE_ROLES` (lib/wire.sh) |
+| `mediastack.calls` | the services it holds an address of, e.g. Bazarr's `sonarr radarr` | `WIRE_CALLERS` (lib/addr.sh), inverted by the core |
+| `mediastack.preset` | the presets it is in (`standard`) | the preset list in lib/configure.sh |
+
+**Hooks** (functions in `services/<name>/<name>.sh`, found by name; none is
+required):
+
+| Hook | Does | Replaces |
+|---|---|---|
+| `<name>_questions` | asks its questions, records them | the questions in configure, `up`, `wire`, `trash-sync` |
+| `<name>_logins` | its stack-owned account's username and password keys | the logins list |
+| `<name>_wire` | wires it (today's role functions, renamed) | the dispatch in lib/wire.sh |
+| `<name>_credentials` | prints its rows for `credentials` | the listing in lib/access.sh |
+| `<name>_doctor` | its own checks | the named checks in lib/doctor.sh (some already are: `jellyfin_doctor_*`, `gluetun_doctor`) |
+
+**Already drop-in today:** the compose fragment and its labels, the service's
+`.sh` (sourced automatically), its settings schema (`services/<name>/env.tsv`,
+defaults included, crawled by lib/env.sh), its dependencies (`svc_deps`).
+
+**Stays central, on purpose:** the compose include list (compose cannot glob;
+`new-service` will add the line, and test-render fails when one is missing),
+the internal networks (compose refuses a network defined in one include and
+joined from another), migrations (history), the panel (its own service).
+
+**The order of the work:**
+1. The questionnaire, built on `<name>_questions` and `<name>_logins` — the
+   contract's first use, needed anyway.
+2. After the MVP, one piece at a time: `<name>_credentials`; then the wire
+   phase and calls labels with `<name>_wire`; then the preset label; then
+   `<name>_doctor` for what remains central.
+3. Each piece lands with a test that fails if the core names an app for it.
+
+## Open, to decide during the build
+
+- The questionnaire's interface to `configure`: an exit code per outcome
+  (answered / cancelled / no terminal), or a status record in `local/state`.
+- The wording and the order of the shared questions, in one pass with the
+  prompt convention.

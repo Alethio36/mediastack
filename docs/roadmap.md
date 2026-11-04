@@ -135,7 +135,8 @@ validation, notifications, SSO). Before `migrate` moves the first household:
    forward.
 4. Front-loaded questions *(decided Oct 2026: after the leak gate, the
    internal networks and the small fixes; before the tutorial, which
-   describes this flow)* — today `up` (traefik-setup), `wire` (restore point,
+   describes this flow. The design, for review: docs/design-install.md —
+   it supersedes the notes below where they differ)* — today `up` (traefik-setup), `wire` (restore point,
    Jellyfin admin/server name/library names, arr and download-client logins,
    notification URLs, Wizarr key) and `trash-sync` (TRaSH profiles) still
    ask between long waits. Design:
@@ -590,6 +591,12 @@ all built; what each still leaves open is noted below.
     relative to their open folder are proven live (`audit2.raw`).
 
 ### Portability
+- **More DNS providers for Let's Encrypt** *(after the MVP, Nov 2026)*. Today
+  certificates come only through Cloudflare's DNS (DNS-01): a domain hosted
+  anywhere else has no automatic certificate (a certificate of your own is the
+  way until then — docs/design-install.md). Traefik's ACME client speaks to
+  many DNS providers; the question becomes "which DNS provider, and its API
+  token", each provider's token checked at configure time like Cloudflare's.
 - De-hardcode Debian; open up the OS assumptions.
 - Podman support as an opt-in path (not the default — see the watchlist).
 - Multi-arch / ARM as an explicit target.
