@@ -260,6 +260,10 @@ rm -rf "$T/sk"/*; mkdir -p "$T/sk/$(ago 7)"; [[ "$(sched)" == *"TAKE scheduled"*
 rm -rf "$T/sk"/*; mkdir -p "$T/sk/$(ago 30)" "$T/sk/pre-update/$(ago 1)"
 [[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "a fresh scoped (update <svc>) point never counts: the backup runs"; pass
 rm -rf "$T/sk"/*; [[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "no point at all: runs"; pass
+# the clock moved back: a point dated in the future is not recent (found Nov 2026: -120h "old", skipped)
+rm -rf "$T/sk"/*; mkdir -p "$T/sk/$(date -d '+120 hours' +%Y%m%d-%H%M%S)"; out=$(sched)
+[[ "$out" == *"dated 120h ahead of this host's clock"*"NOTIFY Mediastack: this host's clock moved back"*"TAKE scheduled"* && "$out" != *skipped* ]] \
+    || fail_ "a point dated in the future: said, told to ops, and the backup runs — $out"; pass
 ( exec 8<"$MAINT_LOCK"; flock 8; sleep 4 ) & holder=$!; sleep 0.5
 out=$(sched) || true
 [[ "$out" == *"NOTIFY Mediastack scheduled backup skipped"* && "$out" != *TAKE* ]] || fail_ "the lock held past the wait: skipped, alerted: $out"; pass

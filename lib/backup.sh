@@ -53,7 +53,13 @@ backup_scheduled() {
     }
     local last age
     last=$(latest_restore_point)
-    if [[ -n "$last" ]] && age=$(ts_age_hours "$last") && (( age < BACKUP_SKIP_HOURS )); then
+    # a point dated ahead of this host's clock is not "recent": the clock moved
+    # back (an NTP correction, a reverted VM, a bad RTC), and counting it would
+    # skip every scheduled backup until the clock caught up (found Nov 2026)
+    if [[ -n "$last" ]] && age=$(ts_age_hours "$last") && (( age < 0 )); then
+        warn "Restore point $last is dated $(( -age ))h ahead of this host's clock — the clock moved back. This scheduled backup runs anyway; check: timedatectl"
+        notify ops "Mediastack: this host's clock moved back" "The newest restore point, \`$last\`, is dated $(( -age ))h in the future. Scheduled backups still run. Check: \`timedatectl\`" warning
+    elif [[ -n "$last" ]] && (( age < BACKUP_SKIP_HOURS )); then
         ok "Restore point $last is $( (( age == 0 )) && echo "under an hour" || echo "${age}h" ) old and covers every service — this scheduled backup is skipped."
         return 0
     fi

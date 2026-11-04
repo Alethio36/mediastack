@@ -264,6 +264,8 @@ _doctor_vpn_backups() {
         warn "no restore points yet — run: ./mediastack.sh backup"
     elif ! age=$(ts_age_hours "$last"); then
         d_fail "restore point name '$last' is not a real date" "backup freshness cannot be judged" "inspect $broot/$last — rename or remove it"
+    elif (( age < 0 )); then
+        warn "latest restore point $last is dated $(( -age ))h ahead of this host's clock — the clock moved back (check: timedatectl); scheduled backups still run"
     else
         (( age > 48 )) && warn "latest restore point is ${age}h old — run: ./mediastack.sh backup" || ok "latest restore point ${age}h old"
     fi
