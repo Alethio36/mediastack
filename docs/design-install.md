@@ -81,7 +81,8 @@ their own account in the portal (authentik). **One username for all of them**,
 asked once (default `admin`); then one question for the passwords:
 
 ```
-The stack's own logins — the download clients, the arrs, Jellyfin's admin:
+The stack's own logins — the download clients, the arrs, Jellyfin's admin,
+Audiobookshelf's and Kavita's roots:
   username [admin]:
   passwords:
   1) generated   a random password for each (recommended)
@@ -96,11 +97,20 @@ username and password keys, and its password rule), so the list is the
 enabled services', not a central one. With sign-in **none** (no portal) the
 operator signs in with these logins directly — the case unified exists for.
 
-**Two roots keep their own name, `mediastack`:** Audiobookshelf's and
-Kavita's. Both make a person's account on their first portal sign-in, and
-Audiobookshelf never matches it to an existing one — a root named like the
-person's portal username would break that person's sign-in. No one signs in
-as these two; the stack does. *(to confirm)*
+**The portal reserves the name.** Jellyfin, Audiobookshelf and Kavita keep a
+local account for the stack and make a person's account on their first
+portal sign-in; a person joining under the stack account's name could be
+taken for it ("sign up as its name and you are root", Audiobookshelf). Two
+guards hold already: Audiobookshelf never matches a sign-in to an existing
+account (`authOpenIDMatchExistingBy: null`; wire undoes a root linked
+before), and the portal's join flow refuses a reserved username, any case
+(`mediastack-join-username-free`, fed from `MEDIASTACK_RESERVED_USERNAMES`).
+With one username, that name is reserved, so the two roots use it too — the
+`mediastack` they have today was a habit, not a need. The guard covers the
+join flow; a user an admin makes by hand in authentik's own screens is that
+admin's deliberate act, outside it. In the contract, `<name>_logins` says
+whether its account's name must be reserved, and authentik builds the list
+from those (today: three names in its compose file).
 
 ### Checking the answers **agreed**
 
