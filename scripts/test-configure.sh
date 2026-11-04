@@ -11,11 +11,12 @@
 #     refuses it half-installed
 #   * a typo is asked again, never fatal; the portal needs a name; input that
 #     ends mid-question stops configure instead of asking forever
-#   * secrets are read hidden; the NordVPN token reaches curl on stdin, never
-#     on its command line
+#   * the VPN is asked about only when something runs in it; secrets are read
+#     hidden; the NordVPN token reaches curl on stdin, never on its command line
 #   * a blank tunnel token turns the tunnel off; enable refuses it without one
 #   * with the portal, the Traefik dashboard asks nothing and never keeps an
 #     empty password
+#   * the panel is asked for, not installed: configure installs it after
 # The entrypoint is sourced (minus main "$@"); the rendered catalogue is a
 # small fixture, so no Docker is needed.
 #
@@ -30,6 +31,8 @@ sed '$d' mediastack.sh > "$lib"
 source "$lib"
 set +e +E; trap - ERR   # each check reads its own status
 ENV_FILE=$T/.env
+# shellcheck disable=SC2034  # read by state_set (the panel's answer)
+STATE_DIR=$T/state
 
 checks=0
 pass()  { checks=$((checks+1)); }
@@ -127,7 +130,8 @@ for f in services/traefik/compose.yml services/npm/compose.yml; do
 done
 
 # ---- hardlink check ----
-configure_root() { :; }
+# shellcheck disable=SC2034  # read by _configure_roots
+configure_root() { Q_ROOT[$1]=$(env_get "$1"); }
 mkdir -p "$T/data"; printf 'DATA_ROOT=%s\n' "$T/data" > "$ENV_FILE"
 _configure_roots > "$T/out" 2>&1
 ! grep -q 'different filesystems' "$T/out" || fail_ "a download folder not made yet is no warning"; pass
@@ -139,17 +143,19 @@ grep -q 'different filesystems' "$T/out" || fail_ "an existing one on another fi
 
 # ---- secrets read hidden; the token never on curl's command line ----
 curl() { printf '%s\n' "$*" > "$T/curl.args"; cat > "$T/curl.stdin"; echo '{"nordlynx_private_key":"KEY"}'; }
-: > "$ENV_FILE"
+printf 'COMPOSE_PROFILES=sonarr\n' > "$ENV_FILE"
+_configure_vpn </dev/null > "$T/out" 2>&1 && [[ ! -s "$T/out" ]] || fail_ "nothing in the VPN: no VPN question"; pass
+printf 'COMPOSE_PROFILES=gluetun\n' > "$ENV_FILE"
 printf 'nordvpn\nTOKEN123\n\n' | _configure_vpn > "$T/out" 2>&1 || fail_ "nord step runs"
 [[ "$(env_get WIREGUARD_PRIVATE_KEY)" == KEY ]] || fail_ "the key is fetched: $(cat "$ENV_FILE")"; pass
 ! grep -q TOKEN123 "$T/curl.args" && grep -qx 'user = "token:TOKEN123"' "$T/curl.stdin" \
     || fail_ "the token goes on stdin, not the command line: $(cat "$T/curl.args")"; pass
-printf 'VPN_PROVIDER=custom\nWIREGUARD_PRIVATE_KEY=OLDKEY\n' > "$ENV_FILE"
+printf 'COMPOSE_PROFILES=gluetun\nVPN_PROVIDER=custom\nWIREGUARD_PRIVATE_KEY=OLDKEY\n' > "$ENV_FILE"
 printf 'custom\n\n\n' | _configure_vpn > "$T/out" 2>&1 || fail_ "custom step runs"
 [[ "$(env_get WIREGUARD_PRIVATE_KEY)" == OLDKEY ]] || fail_ "Enter keeps the private key"; pass
 # a prompt is printed only to a terminal, so the echo is checked at the source:
 # no secret is read by a prompt that echoes, or offered as a visible default
-! grep -nE 'ask WIREGUARD_PRIVATE_KEY|read -r -p "(NordVPN|Tunnel)' lib/configure.sh services/cloudflared/cloudflared.sh \
+! grep -nE 'ask WIREGUARD_PRIVATE_KEY|read -r -p "(NordVPN|Tunnel)' lib/questionnaire.sh services/cloudflared/cloudflared.sh \
     || fail_ "a secret is read with an echoing prompt"; pass
 
 # ---- the tunnel needs its token ----
@@ -175,13 +181,12 @@ printf 'COMPOSE_PROFILES=traefik,authentik\nSTACK_DOMAIN=media.example.com\nACME
     || fail_ "a fallback login is generated, not left empty: $(grep TRAEFIK_DASH "$ENV_FILE")"; pass
 grep -q 'admins sign in through the portal' "$T/out" || fail_ "and it says so"; pass
 
-# ---- the panel, offered at the end when Traefik serves it ----
-cmd_frontdoor_install() { echo INSTALLED; }
+# ---- the panel, offered at the end when Traefik serves it; configure installs it ----
 printf 'COMPOSE_PROFILES=traefik,sonarr\n' > "$ENV_FILE"
 printf '\n' | _configure_panel_offer > "$T/out" 2>&1
-grep -q INSTALLED "$T/out" || fail_ "Enter installs the panel (default yes)"; pass
+[[ "$(state_get "$PANEL_STATE")" == yes ]] || fail_ "Enter installs the panel (default yes)"; pass
 printf 'n\n' | _configure_panel_offer > "$T/out" 2>&1
-! grep -q INSTALLED "$T/out" && grep -q 'Later: ./mediastack.sh frontdoor-install' "$T/out" || fail_ "n leaves it, with the command for later"; pass
+[[ -z "$(state_get "$PANEL_STATE")" ]] && grep -q 'Later: ./mediastack.sh frontdoor-install' "$T/out" || fail_ "n leaves it, with the command for later"; pass
 printf 'COMPOSE_PROFILES=sonarr\n' > "$ENV_FILE"
 _configure_panel_offer </dev/null > "$T/out" 2>&1; [[ ! -s "$T/out" ]] || fail_ "without Traefik nothing is offered"; pass
 printf 'COMPOSE_PROFILES=traefik,olivetin\n' > "$ENV_FILE"

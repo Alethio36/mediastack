@@ -79,6 +79,8 @@ source "$SCRIPT_DIR/lib/recycle.sh"
 source "$SCRIPT_DIR/lib/footprint.sh"
 # shellcheck source=lib/notify.sh
 source "$SCRIPT_DIR/lib/notify.sh"
+# shellcheck source=lib/questionnaire.sh
+source "$SCRIPT_DIR/lib/questionnaire.sh"
 # shellcheck source=lib/configure.sh
 source "$SCRIPT_DIR/lib/configure.sh"
 # shellcheck source=lib/lifecycle.sh
@@ -1101,7 +1103,7 @@ cmd_set_user_facing() {
 VERBS=(
     "help~help~~Other~This list."
     "install~install~none~Setup~Install host dependencies (docker, jq, ...). Run once."
-    "configure~configure~none~Setup~Interactive setup wizard: .env, users, folders. Safe to re-run."
+    "configure~configure~none~Setup~Interactive setup wizard, quick or full: .env, users, folders. Safe to re-run."
     "add-mount~add-mount~none~Setup~Guided NFS/SMB mount on this host (fstab automount + poison layer)."
     "up~up~none~Run~Start the stack (everything enabled in COMPOSE_PROFILES)."
 "down~down~none~Run~Stop the stack and pause its scheduled jobs until up. Configs and data are untouched."
@@ -1143,6 +1145,7 @@ VERBS=(
     "vpn-apply~vpn-apply <svc> on|off~max=2~Internal~Set a service's VPN membership AND apply it (panel button)."
     "vpn-guard~vpn-guard [--boot]~allow=--boot~Internal~Start the VPN group through the leak gate (boot/daemon unit)."
     "vpn-watch~vpn-watch [--full]~allow=--full~Internal~The 5-minute leak check; starts any VPN'd service that is not running, through the gate (--full: the hourly run)."
+    "questionnaire~questionnaire [--fresh]~allow=--fresh~Internal~configure's questions, in their own process: they record answers in .env and nothing else (exit 0 done, 130 cancelled, 3 no terminal)."
     "host-identity~host-identity~none~Internal~Refresh the record of this host's own address that leak-test compares against (daily timer)."
     "unit-failed~unit-failed <unit>~max=1~Internal~Tell ops a scheduled or boot run failed (systemd's OnFailure hook)."
     "frontdoor-refresh~frontdoor-refresh~none~Internal~Regenerate the panel's config and entity files."

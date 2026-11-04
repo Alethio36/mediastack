@@ -1,184 +1,11 @@
 #!/usr/bin/env bash
-# lib/configure.sh — the interactive setup wizard (`configure`): timezone,
-# roots (and moving a root's contents when its path changes), services, VPN,
-# secrets and the update schedule. Sourced by the entrypoint; relies on
-# lib/common.sh (prompts, env access) and the entrypoint's service helpers and
-# provision() at call time.
-
-configure_root() { # configure_root VAR title "explanation..." allow_network(yes/no)
-    local var="$1" title="$2" text="$3" allow_net="$4" cur val fs
-    cur=$(env_get "$var")   # not set yet: the folder .env.example suggests
-    [[ -n "$cur" ]] || cur=$(grep -E "^$var=" .env.example | sed -n 1p | cut -d= -f2-)
-    explain "$title" "$text"
-    while true; do
-        ask "$var" "$title path" "$cur"; val=$(abspath "$REPLY_VAL")
-        # a backslash is the key beside Enter: kept, it named a folder "\"
-        # (found live: CACHE_ROOT=.../mediastack/\, and every later use broke)
-        if [[ "$val" == *\\* ]]; then
-            fail "'$REPLY_VAL' has a backslash in it — a slip of the key beside Enter? Paths use '/'. Enter it again."
-            continue
-        fi
-        # Network shares must be mounted BEFORE this wizard runs — we record
-        # the mount identity now and guard it forever after. Catch the trap.
-        # The path is matched as text, never as a pattern: it went into a
-        # regex once, and a path with a backslash broke grep.
-        if awk -v p="$val" '$1 !~ /^#/ && $2 == p { f = 1 } END { exit !f }' "$FSTAB" 2>/dev/null && ! findmnt -rn "$val" >/dev/null 2>&1; then
-            fail "'$val' is listed in /etc/fstab but NOT currently mounted.
-  Continuing would record the wrong disk as this path's home. Fix first:
-  sudo mount '$val'   (then re-enter the path here)"
-            continue
-        fi
-        sudo mkdir -p "$val"
-        fs=$(fstype_of "$val")
-        if [[ "$allow_net" == no && "$fs" =~ ^(nfs|nfs4|cifs|smb3)$ ]]; then
-            fail "'$val' is on a network share ($fs). App databases (SQLite)
-  corrupt on network storage — this path must be a local disk. Your media
-  can still live on the NAS via DATA_ROOT."
-            continue
-        fi
-        [[ "$allow_net" == yes && "$fs" =~ ^(nfs|nfs4|cifs|smb3)$ ]] \
-            && info "Network share detected ($fs) — fine for this root."
-        # a root that moves takes its contents with it (or says why not)
-        [[ -n "$cur" && "$(abspath "$cur")" != "$val" ]] && { move_root_contents "$var" "$(abspath "$cur")" "$val" || continue; }
-        env_set "$var" "$val"
-        env_set "${var}_SOURCE" "$(findmnt -rn -o SOURCE --target "$val")"
-        ok "$var = $val"
-        break
-    done
-}
-
-move_root_contents() { # move_root_contents VAR old new -> 0 proceed with new, 1 keep old
-    # Called when a root's path changes. Anything at the old path is the
-    # user's state: it moves with the root, stays behind on purpose (noted in
-    # .env as <VAR>_PREVIOUS so doctor keeps pointing at it), or the change is
-    # abandoned. DATA_ROOT is never moved by this script — a media library is
-    # a human-sized decision — but it gets the same warning.
-    local var="$1" old="$2" new="$3" size n choice
-    sudo test -d "$old" || return 0
-    n=$(sudo find "$old" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
-    (( n > 0 )) || return 0
-    size=$(sudo du -sh "$old" 2>/dev/null | cut -f1)
-    warn "$var is moving: $old -> $new, and the old path is not empty ($n $( (( n == 1 )) && echo entry || echo entries), $size)."
-    if [[ "$var" == DATA_ROOT ]]; then
-        explain "Media stays where it is" \
-"This script never moves a media library: it is usually huge, often on a
-NAS, and the arrs know it by path. Move or re-mount it yourself first,
-then enter the path here.
-  keep   keep $var = $old (recommended unless the media is already at the new path)
-  new    use $new; the old path is noted in .env and doctor keeps reminding you"
-        ask MV "Choice (keep/new)" "keep"; choice="$REPLY_VAL"
-        case "$choice" in
-            new)  env_set "${var}_PREVIOUS" "$old"; return 0 ;;
-            keep) return 1 ;;
-            *)    die "Unknown choice '$choice' — expected keep or new." ;;
-        esac
-    fi
-    explain "What happens to the existing contents?" \
-"  move   copy everything to $new, verify, remove the old copy
-         (the stack is stopped first if it is running; start it after: up)
-  leave  start empty at the new path; the old path is noted in .env and
-         doctor warns until it is gone
-  keep   keep $var = $old and change nothing"
-    ask MV "Choice (move/leave/keep)" "keep"; choice="$REPLY_VAL"
-    case "$choice" in
-        keep)  return 1 ;;
-        leave) env_set "${var}_PREVIOUS" "$old"; info "$old left in place — see doctor"; return 0 ;;
-        move)  ;;
-        *)     die "Unknown choice '$choice' — expected move, leave or keep." ;;
-    esac
-    # no merge semantics: the new path must be empty, or the move is refused
-    if (( $(sudo find "$new" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l) > 0 )); then
-        fail "$new is not empty — a move needs an empty destination. Empty it (or pick another path) and re-enter; $var stays at $old for now."
-        return 1
-    fi
-    if [[ -n "$(c_inspect_all; jq -r '.[] | select(.State.Status=="running") | .Name' <<<"$INSPECT_JSON")" ]]; then
-        info "stopping the stack for a consistent move..."; DC stop >/dev/null
-    fi
-    if [[ "$(fsdev_of "$old")" == "$(fsdev_of "$new")" ]]; then
-        sudo find "$old" -mindepth 1 -maxdepth 1 -exec mv -t "$new" {} + \
-            || die "move failed — nothing was removed; $var still points at $old"
-    else
-        need_cmd rsync
-        sudo rsync -a "$old"/ "$new"/ || die "copy failed — nothing was removed; $var still points at $old"
-        # verify before deleting: a dry re-sync must have nothing to do
-        if [[ -n "$(sudo rsync -a -n --itemize-changes "$old"/ "$new"/ | grep -v '^\.d\.\.t')" ]]; then
-            die "copy verification failed — the old copy at $old is intact; $var still points at $old. Compare the two by hand before retrying."
-        fi
-        sudo find "$old" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-    fi
-    env_del "${var}_PREVIOUS"
-    ok "$var contents moved to $new ($n $( (( n == 1 )) && echo entry || echo entries), $size)"
-}
-
-# --- configure wizard steps (one helper per `# -- …` block; each persists to
-#     .env via env_set, so the driver's call order is the only sequencing). ---
-_configure_timezone() {
-    # -- timezone
-    local tz_host tz_cur
-    tz_host=$(timedatectl show -p Timezone --value 2>/dev/null || echo Etc/UTC)
-    tz_cur=$(env_get TZ); [[ "$tz_cur" == Etc/UTC ]] && tz_cur="$tz_host"   # the default is no choice: offer the host's
-    explain "Timezone" \
-        "Used for logs, in-app times and the update/backup schedules (they run" \
-        "at their times in this zone, whatever the host's own). IANA format, e.g." \
-        "Europe/Berlin or America/Chicago. Your host reports: $tz_host" \
-        "If unsure, accept the default."
-    while true; do
-        ask TZ "Timezone" "$tz_cur"
-        if [[ -f "/usr/share/zoneinfo/$REPLY_VAL" ]]; then
-            env_set TZ "$REPLY_VAL"
-            ok "TZ=$REPLY_VAL — current time there: $(TZ=$REPLY_VAL date '+%H:%M %Z')"
-            break
-        fi
-        fail "'$REPLY_VAL' is not a valid timezone."
-        info "Close matches:"; find /usr/share/zoneinfo -type f 2>/dev/null \
-            | sed 's|/usr/share/zoneinfo/||' | grep -i "${REPLY_VAL##*/}" | sed -n 1,5p || true
-    done
-
-}
-
-_configure_roots() {
-    # -- roots
-    configure_root CONFIG_ROOT "Config directory" \
-"Where every service keeps its settings and databases. A few GB.
-  * MUST be on a local disk (databases corrupt on network shares).
-  * Default keeps it inside this folder — simple, but note: deleting
-    this repo folder then deletes your configs, and with the default
-    backup folder (also inside it) your backups too." no
-    configure_root DATA_ROOT "Data directory" \
-"Your media library and downloads — usually the largest folder,
-often on a NAS or a big second drive, NOT the system disk.
-  * Network shares are fine here — but this wizard does NOT create mounts.
-    Set one up first with './mediastack.sh add-mount', then enter its path;
-    the wizard records the mount and refuses to start if it ever drops.
-  * Default keeps it inside this folder like everything else — fine to
-    start with; point it at the big disk later and the wizard tells you
-    how the move works.
-  * Keep downloads and media on the SAME drive, or imports become slow
-    full copies instead of instant hardlinks (checked below)." yes
-    configure_root CACHE_ROOT "Cache directory" \
-"Disposable data: image caches, metadata, the search index. Losing it
-costs a regeneration, nothing more. Network storage is fine." yes
-    configure_root TRANSCODE_ROOT "Transcode directory" \
-"Where Jellyfin (and any other transcoding app) writes video segments while
-someone is watching: a few GB per concurrent stream, written and read back
-at the video's bitrate, deleted when the stream ends.
-  * Local SSD is right. A network share here stutters playback — every
-    segment crosses the wire twice.
-  * Nothing here is kept or backed up." yes
-    configure_root BACKUP_ROOT "Backup directory" \
-"Where restore points are written — by the daily backup and before every
-update. A NAS path is ENCOURAGED — backups on the same disk as the configs
-aren't backups.
-(As above: mount the share first; the wizard doesn't create mounts.)" yes
-
-    # hardlink check: a download folder provisioning has yet to make is made
-    # inside DATA_ROOT, on its filesystem — only an existing one can differ
-    local dr; dr=$(env_get DATA_ROOT)
-    if [[ -d "$dr/torrent" && "$(fsdev_of "$dr")" != "$(fsdev_of "$dr/torrent")" ]]; then
-        warn "DATA_ROOT and its download folder (DATA_ROOT/torrent) are on different filesystems — hardlinks will not work: imports fall back to slow, space-doubling copies. Union the drives (e.g. mergerfs) and use the pool as DATA_ROOT (see README)."
-    fi
-
-}
+# lib/configure.sh — the `configure` verb: runs the questionnaire
+# (lib/questionnaire.sh) as its own process, then applies its answers —
+# folders (made, moved as answered, their mounts recorded), users and
+# folders for the services (provision), the timers, the host record, the
+# web panel — and shows the summary. Sourced by the entrypoint; relies on
+# lib/common.sh and the entrypoint's service helpers and provision() at call
+# time.
 
 _configure_selfheal() {
     # -- self-heal FIRST: adopt any *_UID / *_UPDATE vars new fragments
@@ -203,413 +30,85 @@ _configure_selfheal() {
 
 }
 
-svc_own_installer() { # svc_own_installer SVC ",ENABLED," — true (and says so) for a service its own command sets up, not yet enabled
-    local inst; inst=$(svc_label "$1" mediastack.installer)
-    [[ -n "$inst" && "$2" != *",$1,"* ]] || return 1
-    info "$1 — $(svc_label "$1" mediastack.desc): set up by its own command, not here: ./mediastack.sh $inst"
-}
-
-_configure_pick_download_clients() { # "everything": keep one download client, or all of them (edits sel)
-    local -a dls menu; local c i=0 keep
-    # in priority order, as the active-client question lists them: the first is the default
-    mapfile -t dls < <(for c in $(role_all_providers download-client arr); do
-        printf '%s\t%s\n' "$(jq -r '.priority // 50' "services/$c/provides/download-client.arr.json")" "$c"
-    done | sort -n -k1,1 -k2,2 | cut -f2 | while read -r c; do [[ " $sel " == *" $c "* ]] && echo "$c"; done)
-    (( ${#dls[@]} > 1 )) || return 0
-    menu=("\"everything\" includes ${#dls[@]} download clients that do the same job. Most setups run one.")
-    for c in "${dls[@]}"; do i=$((i + 1)); menu+=("  $i) $c only"); done
-    menu+=("  $((i + 1))) all of them — one is the active client (asked next), the others stay ready")
-    explain "Download clients" "${menu[@]}"
-    while true; do
-        ask DL_KEEP "Choice" 1
-        [[ "$REPLY_VAL" =~ ^[0-9]+$ ]] && (( REPLY_VAL >= 1 && REPLY_VAL <= i + 1 )) && break
-        fail "Pick 1-$((i + 1))."
-    done
-    (( REPLY_VAL <= i )) || return 0
-    keep=${dls[REPLY_VAL - 1]}
-    for c in "${dls[@]}"; do
-        [[ "$c" == "$keep" ]] || sel=$(tr ' ' '\n' <<<"$sel" | grep -vx "$c" | paste -sd' ' -)
-    done
-    sel+=" "
-}
-
-ask_countries() { # ask_countries "prompt" -> REPLY_VAL: country names, comma-separated, or empty
-    while true; do
-        ask VPN_SERVER_COUNTRIES "$1" "$(env_get VPN_SERVER_COUNTRIES)"
-        [[ -z "$REPLY_VAL" || "$REPLY_VAL" =~ ^[A-Za-z][A-Za-z\ ,.\'-]*$ ]] && return 0
-        fail "'$REPLY_VAL' is not a country name (e.g. Switzerland, or Netherlands,Sweden)."
-    done
-}
-
-_configure_panel_offer() { # with Traefik on and no panel yet: offer it (its own command does the host-side setup)
-    if ! svc_enabled traefik || svc_enabled olivetin; then return 0; fi
-    explain "Web panel (optional)" \
-"Buttons for the stack's everyday commands — status, restarts, updates,
-backups — in your browser at https://$(svc_subdomain olivetin).<domain>, behind the
-portal when it runs. Installing it adds a host user that may run only this
-script: its own SSH key and a sudo rule for nothing else."
-    confirm_yes "Install the web panel now?" || { info "Later: ./mediastack.sh frontdoor-install"; return 0; }
-    cmd_frontdoor_install
-}
-
-_configure_services() {
-    # -- services (à la carte)
-    render
-    # a curated preset, kept beside its description below — not discovery
-    # (status/backup/doctor/update never need a list edited), so not a label
-    local STD="gluetun qbittorrent sonarr radarr prowlarr jellyfin meilisearch jellysearch seerr"
-    # a re-run keeps what is enabled unless asked otherwise: option 0 exists
-    # (and is the default) only when something is enabled already
-    local cur_list cur_n=0 def=1
-    cur_list=$(env_get COMPOSE_PROFILES)
-    # a .env this run created holds the example's preset, not a choice: nothing to keep
-    if (( ${CONFIGURE_FRESH:-0} )); then cur_list=""; fi
-    [[ -n "$cur_list" ]] && { cur_n=$(tr ',' '\n' <<<"$cur_list" | grep -c .); def=0; }
-    local -a menu=("Pick exactly what runs — anything, à la carte. Dependencies are handled
-for you (picking qBittorrent brings the VPN; JellySearch brings its
-search engine). Change any of this later with enable/disable. How people
-sign in (none, Wizarr or authentik) is asked next."
-"  1) standard    the recommended setup: VPN, qBittorrent, Sonarr, Radarr,"
-"                 Prowlarr, Jellyfin + instant search, request site."
-"                 No proxy: services answer on http://<host>:<port>; add"
-"                 HTTPS names later with: enable traefik + traefik-setup"
-"  2) everything  every service (sign-in is picked next)"
-"  3) custom      yes/no through each service")
-    (( cur_n )) && menu+=("  0) keep current: $cur_n enabled ($(tr ',' ' ' <<<"$cur_list"))")
-    explain "Services" "${menu[@]}"
-    local mode sel="" cur_en s d dp
-    while true; do
-        ask SVC_MODE "Choice" "$def"; mode="$REPLY_VAL"
-        case "$mode" in
-            0) (( cur_n )) && break; fail "Nothing is enabled yet — pick 1, 2 or 3." ;;
-            1|2|3) break ;;
-            *) fail "Pick $( (( cur_n )) && echo 0-3 || echo 1-3 )." ;;
-        esac
-    done
-    cur_en=",$cur_list,"
-    case "$mode" in
-        0) sel=$(tr ',' ' ' <<<"$cur_list") ;;
-        1) sel="$STD" ;;
-        2) for s in $(svc_managed); do
-               svc_own_installer "$s" "$cur_en" || sel+="$s "
-           done
-           _configure_pick_download_clients ;;
-        3) for s in $(svc_managed); do
-               case "$s" in wizarr|authentik) continue ;; esac   # the Accounts question decides these
-               svc_own_installer "$s" "$cur_en" && continue
-               d=$(svc_label "$s" mediastack.desc)
-               # default: current state if configured before, else standard membership
-               local dp def
-               if [[ "$cur_en" == *",$s,"* || ( "$cur_en" == ",," && " $STD " == *" $s "* ) ]]; then
-                   dp="Y/n"; def=y
-               else
-                   dp="y/N"; def=n
-               fi
-               read -r -p "  $s — ${d:-no description} [$dp]: " REPLY_VAL
-               REPLY_VAL="${REPLY_VAL:-$def}"
-               [[ "${REPLY_VAL,,}" == y* ]] && sel+="$s "
-           done ;;
+questionnaire_ask() { # questionnaire_ask [--fresh] — the questions, in their own process; returns only when all were answered
+    local rc=0
+    # Ctrl-C reaches both processes: the questionnaire dies of it (130) and
+    # says so by its exit code; this handler keeps configure alive to read it
+    trap ':' INT
+    bash "$SCRIPT_DIR/mediastack.sh" questionnaire "$@" || rc=$?
+    trap - INT
+    case "$rc" in
+        0)   ;;
+        130) echo; info "Cancelled — nothing was applied. The answers so far are next time's defaults (a folder change is asked again)."; exit 130 ;;
+        3)   exit 3 ;;   # it said why: no terminal to ask on
+        *)   die "the questions stopped (exit $rc, above) — nothing was applied. Run ./mediastack.sh configure again." ;;
     esac
-    [[ -n "$sel" ]] || die "No services selected — nothing to run."
-    # shellcheck disable=SC2086  # a word list of services
-    accounts_choose "$cur_list" $sel; sel=$ACCOUNTS_SEL
-    if [[ "$mode" == 0 ]] && (( ! ACCOUNTS_CHANGED )); then
-        ok "Keeping the current $cur_n service(s): $cur_list"; return 0   # nothing changed: .env untouched
-    fi
-    info "Resolving dependencies..."
-    # the portal is reached through Traefik: choosing it brings Traefik
-    if [[ " $sel " == *" authentik "* && " $sel " != *" traefik "* ]]; then
-        sel+=" traefik"; info "  + traefik (required by authentik: the portal is reached through it)"
-    fi
-    # shellcheck disable=SC2086  # a word list of services
-    sel=$(resolve_deps $sel)
-    # services that do the same job two ways (mediastack.conflicts): keep one
-    # the pairs are read first: a loop fed by the list would hand it to the
-    # question's read too, answering every "Keep" with the next pair
-    local pair a b keep pairs
-    mapfile -t pairs < <(conflicts_in $sel)
-    for pair in "${pairs[@]}"; do
-        [[ -n "$pair" ]] || continue
-        a=${pair% *}; b=${pair#* }
-        if [[ " $a $b " == *" traefik "* && " $(tr '\n' ' ' <<<"$sel") " == *" authentik "* ]]; then
-            keep=traefik; info "$([[ "$a" == traefik ]] && echo "$b" || echo "$a") left out: the portal (authentik) is reached through Traefik"
-        else
-            local kdef=1; [[ "$b" == traefik ]] && kdef=2   # Traefik: the recommended front door
-            explain "Choose one: $a or $b" \
-"These two do the same job in different ways and cannot both run:" \
-"  1) $a — $(svc_label "$a" mediastack.desc)" \
-"  2) $b — $(svc_label "$b" mediastack.desc)" \
-"Switching later is possible (disable one, enable the other)."
-            while true; do
-                ask "PICK_$a" "Keep" "$kdef"
-                case "$REPLY_VAL" in 1) keep=$a; break ;; 2) keep=$b; break ;; *) fail "Pick 1 or 2." ;; esac
-            done
-        fi
-        sel=$(printf '%s\n' $sel | grep -vx "$([[ "$keep" == "$a" ]] && echo "$b" || echo "$a")")
-        ok "Keeping $keep"
-    done
-    if [[ " $(tr '\n' ' ' <<<"$sel") " == *" authentik "* ]]; then
-        explain "The portal's name" \
-"authentik is the portal your users sign up and log in at. Its name is shown
-on the login and sign-up pages (\"Join <name>\")."
-        while true; do
-            ask PORTAL_TITLE "Portal name" "$(env_get PORTAL_TITLE)"
-            [[ "$REPLY_VAL" =~ [^[:space:]] ]] && break
-            fail "The portal needs a name."
-        done
-        env_set PORTAL_TITLE "$REPLY_VAL"
-    fi
-    env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
-    ok "Enabled: $(env_get COMPOSE_PROFILES)"
-
 }
 
-# How people get into the apps: one account model at most (they conflict —
-# two populations, duplicate names). Asked every time, whatever the preset;
-# a re-run defaults to the current one.
-accounts_choose() { # accounts_choose CURRENT-PROFILES SVC... -> ACCOUNTS_SEL: the selection with the chosen model in it (the other out)
-    local cur=",$1," model="" c s; shift
-    [[ "$cur" == *",authentik,"* ]] && model=authentik
-    [[ "$cur" == *",wizarr,"* ]] && model=wizarr
-    [[ -z "$model" && "$cur" != ",," ]] && model=none
-    local -a menu=("How do people get into your media apps?"
-"  1) none       you make each person's accounts yourself, in each app"
-"                (Jellyfin's dashboard and so on). Simplest; nothing extra runs."
-"  2) Wizarr     invite links: a person opens one and gets their Jellyfin"
-"                account. Every app keeps its own login."
-"  3) authentik  one portal: people join by invitation and sign in once for"
-"                every app; admin tools sit behind it. Adds 4 containers.")
-    [[ -z "$model" ]] || menu+=("  0) keep current: $model")
-    explain "Accounts" "${menu[@]}"
-    while true; do
-        ask ACCOUNTS "Choice" "$( [[ -n "$model" ]] && echo 0 || echo 1 )"
-        case "$REPLY_VAL" in
-            0) [[ -n "$model" ]] || { fail "Nothing to keep."; continue; }; c=$model ;;
-            1) c=none ;; 2) c=wizarr ;; 3) c=authentik ;;
-            *) fail "Pick $( [[ -n "$model" ]] && echo 0-3 || echo 1-3 )."; continue ;;
-        esac
-        break
+roots_apply() { # the folders the questionnaire chose: made, their old contents handled as answered, recorded with their mount
+    local -a rows; local row var path choice cur
+    mapfile -t rows < <(state_get "$ROOTS_STATE")
+    for row in "${rows[@]}"; do
+        [[ -n "$row" ]] || continue
+        IFS=$'\t' read -r var path choice <<<"$row"
+        cur=$(env_get "$var"); [[ -z "$cur" ]] || cur=$(abspath "$cur")
+        sudo mkdir -p "$path"
+        [[ -z "$cur" || "$cur" == "$path" ]] || root_move_apply "$var" "$cur" "$path" "$choice"
+        env_set "$var" "$path"
+        env_set "${var}_SOURCE" "$(findmnt -rn -o SOURCE --target "$path")"
     done
-    if [[ "$model" == authentik && "$c" != authentik ]]; then
-        warn "Leaving the portal: people's portal accounts stay in authentik's database, but nobody can sign in"
-        warn "  with them — every app goes back to its own login."
-    elif [[ -n "$model" && "$model" != authentik && "$c" == authentik ]]; then
-        info "Existing app accounts stay; tie each person's to their portal account with: ./mediastack.sh link-account <user>"
-    fi
-    ACCOUNTS_CHANGED=0; [[ "$c" == "${model:-none}" ]] || ACCOUNTS_CHANGED=1
-    ACCOUNTS_SEL=""
-    for s in "$@"; do [[ "$s" == wizarr || "$s" == authentik ]] || ACCOUNTS_SEL+="$s "; done
-    [[ "$c" == none ]] || ACCOUNTS_SEL+="$c"
-    ok "Accounts: $c"
+    state_del "$ROOTS_STATE"
 }
 
-_configure_vpn() {
-    # -- VPN
-    explain "VPN (gluetun)" \
-"All download traffic runs inside a VPN container. Supported: any gluetun
-provider (nordvpn, mullvad, protonvpn, surfshark, ...) or 'custom' to paste
-your own WireGuard details (for fussy/unlisted providers)."
-    while true; do
-        ask VPN_PROVIDER "VPN provider" "$(env_get VPN_PROVIDER)"
-        REPLY_VAL=${REPLY_VAL,,}
-        [[ "$REPLY_VAL" =~ ^[a-z0-9][a-z0-9\ ._-]*$ ]] && break
-        fail "'$REPLY_VAL' is not a provider name (gluetun's names: nordvpn, mullvad, protonvpn, ... or custom)."
-    done
-    env_set VPN_PROVIDER "$REPLY_VAL"
-    local wg_cur; wg_cur=$(env_get WIREGUARD_PRIVATE_KEY)
-    case "$REPLY_VAL" in
-        nordvpn)
-            if [[ -n "$wg_cur" ]] && ! confirm "A WireGuard key is already set. Replace it?"; then
-                ok "Keeping existing key."
-            else
-                explain "NordVPN token" \
-"1. Log in at nordvpn.com -> Services -> NordVPN" \
-"2. 'Set up NordVPN manually' -> generate an access token" \
-"3. Copy it (it is shown only once) and paste it below." \
-"The key is fetched from Nord's API — nothing is installed on this host."
-                local tok key
-                ask_token "NordVPN access token (input hidden)"; tok=$REPLY_VAL
-                # the login goes in on stdin (-K -), never on the command line where ps shows it
-                key=$(curl -fsS -K - "https://api.nordvpn.com/v1/users/services/credentials" \
-                          <<<"user = \"token:${tok}\"" \
-                      | jq -r '.nordlynx_private_key // empty') \
-                    || die "Could not reach Nord's API. Check connectivity and retry."
-                [[ -n "$key" ]] || die "Token rejected by NordVPN — regenerate it and re-run configure."
-                env_set WIREGUARD_PRIVATE_KEY "$key"
-                ok "WireGuard key fetched and verified."
-                local cc
-                ask_countries "Server country (e.g. Switzerland; Enter = auto)"
-                cc="$REPLY_VAL"; env_set VPN_SERVER_COUNTRIES "$cc"
-            fi ;;
-        custom)
-            explain "Manual WireGuard" \
-"Paste values from your provider's WireGuard config file ([Interface]
-PrivateKey and Address). See gluetun's wiki page 'Custom provider' for
-the remaining server-side settings to add to .env / an override file."
-            ask_token "PrivateKey (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
-            while true; do
-                ask WIREGUARD_ADDRESSES "Address" "$(env_get WIREGUARD_ADDRESSES)"
-                # one or more IP/prefix, comma-separated (the [Interface] Address line)
-                [[ "$REPLY_VAL" =~ ^[0-9A-Fa-f:.]+/[0-9]{1,3}(,[[:space:]]*[0-9A-Fa-f:.]+/[0-9]{1,3})*$ ]] && break
-                fail "'$REPLY_VAL' is not an address like 10.5.0.2/32 (copy the Address line of the config file)."
-            done
-            env_set WIREGUARD_ADDRESSES "$REPLY_VAL" ;;
-        *)
-            explain "Provider: $REPLY_VAL" \
-"Follow gluetun's wiki for '$REPLY_VAL' to obtain your WireGuard private
-key, then paste it below. Country selection works the same for all."
-            ask_token "WireGuard private key (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
-            ask_countries "Server country (Enter = auto)"; env_set VPN_SERVER_COUNTRIES "$REPLY_VAL" ;;
+root_move_apply() { # root_move_apply VAR old new CHOICE — the old folder's contents, as the questionnaire's answer says
+    local var="$1" old="$2" new="$3" choice="$4" n size
+    sudo test -d "$old" || return 0
+    n=$(sudo find "$old" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l)
+    (( n > 0 )) || return 0
+    case "$choice" in
+        leave|new) env_set "${var}_PREVIOUS" "$old"; info "$old left in place — see doctor"; return 0 ;;
+        move)      ;;
+        *)         die "$var: $old holds $n entries configure did not see when it asked (it could not read the folder, or something wrote there since).
+  Nothing was changed for $var. Run ./mediastack.sh configure again — it asks what happens to them." ;;
     esac
-
-}
-
-_configure_download_client() { # several download clients enabled: the one the arrs, Prowlarr and Cleanuparr use
-    local enabled cur n i c def=1
-    enabled=$(role_providers download-client "${ROLE_CONSUMERS[0]}")
-    n=$(grep -c . <<<"$enabled" || true)
-    cur=$(env_get DOWNLOAD_CLIENT)
-    if (( n < 2 )); then
-        # nothing to choose; a choice naming a client no longer enabled would stop wire
-        if [[ -n "$cur" ]] && ! grep -qx "$cur" <<<"$enabled"; then
-            env_set DOWNLOAD_CLIENT ""; info "DOWNLOAD_CLIENT cleared: $cur is no longer enabled"
-        fi
-        return 0
+    size=$(sudo du -sh "$old" 2>/dev/null | cut -f1)
+    # no merge semantics: the new path must be empty, or the move is refused
+    if (( $(sudo find "$new" -mindepth 1 -maxdepth 1 2>/dev/null | wc -l) > 0 )); then
+        die "$new is not empty — a move needs an empty destination. Nothing was changed for $var (still $old).
+  Empty it, or run ./mediastack.sh configure again and pick another path."
     fi
-    explain "Download client" \
-"More than one download client is enabled. The arrs, Prowlarr and Cleanuparr
-send to one of them; the others keep running, their entries switched off
-(kept, not deleted). Change it here any time, then: ./mediastack.sh wire"
-    i=0
-    while read -r c; do
-        i=$((i + 1)); echo "  $i) $c"
-        [[ "$c" == "${cur:-$(head -1 <<<"$enabled")}" ]] && def=$i
-    done <<<"$enabled"
-    while true; do
-        ask DL_N "Which one" "$def"
-        [[ "$REPLY_VAL" =~ ^[0-9]+$ ]] && (( REPLY_VAL >= 1 && REPLY_VAL <= n )) && break
-        fail "Pick 1-$n."
-    done
-    c=$(sed -n "${REPLY_VAL}p" <<<"$enabled")
-    env_set DOWNLOAD_CLIENT "$c"
-    ok "download client: $c"
-}
-
-_configure_secrets() {
-    # -- secrets: each service generates or asks for its own (in its folder)
-    meilisearch_configure_secret
-    cloudflared_configure_secret
-    pihole_configure_secret
-}
-
-_configure_schedule() { # updates and backups: two timers, one section — suggested answers, your call
-    explain "Schedules" \
-"Two jobs run on their own, each on its own schedule:
-  Updates  pull new versions of your services. A restore point of every
-           service is taken first, so './mediastack.sh rollback <svc>'
-           can undo one.
-  Backups  take that same kind of restore point: every service's settings
-           and data (never your media). If an update took one within the
-           last 6 hours, the backup skips — its restore point already
-           covers everything.
-Both stop all services briefly (~20-40s for the restore point), and both
-wait while someone is watching in Jellyfin (UPDATE_DEFER_IF_ACTIVE in .env,
-on by default) — other apps aren't asked. Pick quiet times for YOUR household."
-    while true; do
-        sched_choose UPDATE_SCHEDULE Updates 2 04:00 "manual './mediastack.sh update' only"
-        echo
-        sched_choose BACKUP_SCHEDULE Backups 1 "$(sched_time_after "$(env_get UPDATE_SCHEDULE)")" \
-            "only updates and './mediastack.sh backup' take restore points"
-        sched_summary
-        if confirm_yes "Keep these?"; then echo; break; fi
-        echo
-    done
-}
-
-sched_choose() { # sched_choose VAR TITLE DEFAULT-CHOICE DEFAULT-TIME NEVER-TEXT -> VAR set in .env ("" = never)
-    local var=$1 title=$2 defc=$3 deft=$4 never=$5 cur expr day c
-    cur=$(env_get "$var")
-    local -a line=("" "daily       every day at a time you pick" "weekly      one day a week" \
-                   "weekdays    Mon-Fri" "weekends    Sat+Sun" "custom      raw systemd OnCalendar expression" \
-                   "never       $never")
-    echo "$title:"
-    for c in 1 2 3 4 5 6; do
-        printf '  %s) %s%s\n' "$c" "${line[$c]}" "$( [[ "$c" == "$defc" ]] && echo " (recommended)" )"
-    done
-    [[ -n "$cur" ]] && echo "  0) keep current: $(sched_words "$cur")"
-    while true; do
-        ask SCHED_MODE "Choice" "$( [[ -n "$cur" ]] && echo 0 || echo "$defc" )"
-        expr=""
-        case "$REPLY_VAL" in
-            0) [[ -n "$cur" ]] || { fail "Nothing to keep."; continue; }
-               expr=$cur ;;
-            1) ask_time "$deft"; expr="*-*-* $REPLY_VAL" ;;
-            2) while true; do
-                   ask SCHED_DAY "Day (Mon/Tue/Wed/Thu/Fri/Sat/Sun)" "Tue"
-                   day="${REPLY_VAL:0:1}"; day="${day^^}${REPLY_VAL:1:2}"; day="${day:0:3}"
-                   [[ "$day" =~ ^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)$ ]] && break
-                   fail "'$REPLY_VAL' is not a weekday name."
-               done
-               ask_time "$deft"; expr="$day $REPLY_VAL" ;;
-            3) ask_time "$deft"; expr="Mon..Fri $REPLY_VAL" ;;
-            4) ask_time "$deft"; expr="Sat,Sun $REPLY_VAL" ;;
-            5) explain "Custom schedule" \
-"Any systemd OnCalendar expression, e.g.:" \
-"  Tue,Fri 04:00      twice a week      *-*-01 03:00   1st of the month" \
-"  Mon..Fri 03:30     weekday early     (validated before it is saved)"
-               ask SCHED_EXPR "OnCalendar expression" "*-*-* $deft"; expr=$REPLY_VAL ;;
-            6) env_set "$var" ""; return 0 ;;
-            *) fail "Pick 0-6."; continue ;;
-        esac
-        systemd-analyze calendar "$expr" >/dev/null 2>&1 || { fail "'$expr' is not a valid schedule."; continue; }
-        env_set "$var" "$expr"; return 0
-    done
-}
-
-sched_summary() { # both schedules, when they next run, and how they meet
-    local u b ut bt
-    u=$(env_get UPDATE_SCHEDULE); b=$(env_get BACKUP_SCHEDULE)
-    echo; hr "Your schedules"
-    printf '  %-8s  %-16s  %s\n' Updates "$(sched_words "$u")" "$(sched_next "$u")"
-    printf '  %-8s  %-16s  %s\n' Backups "$(sched_words "$b")" "$(sched_next "$b")"
-    if [[ -z "$u" && -z "$b" ]]; then
-        warn "No automatic restore points at all — only './mediastack.sh backup' makes them."
-    elif [[ -z "$b" ]]; then
-        info "Restore points come only from updates and './mediastack.sh backup'."
-    elif [[ -n "$u" ]]; then
-        [[ "$u" =~ ([0-9]{1,2}:[0-9]{2})(:[0-9]{2})?$ ]] && ut=${BASH_REMATCH[1]}
-        [[ "$b" =~ ([0-9]{1,2}:[0-9]{2})(:[0-9]{2})?$ ]] && bt=${BASH_REMATCH[1]}
-        if [[ -n "${ut:-}" && -n "${bt:-}" ]] && (( 10#${bt/:/} <= 10#${ut/:/} )); then
-            info "Note: on update days the backup runs first, so that day gets two restore points."
-            info "  Put the backup after the update ($(sched_time_after "$u") or later) to avoid it."
-        else
-            info "On update days the update's restore point counts; the backup skips."
-        fi
+    if [[ -n "$(c_inspect_all; jq -r '.[] | select(.State.Status=="running") | .Name' <<<"$INSPECT_JSON")" ]]; then
+        info "stopping the stack for a consistent move..."; DC stop >/dev/null
     fi
-}
-
-sched_next() { # sched_next EXPR -> "next: <when>" ("" for never)
-    [[ -n "$1" ]] || return 0
-    local n; n=$(systemd-analyze calendar "$1" 2>/dev/null | sed -n 's/^ *Next elapse: //p' | sed -n 1p)
-    echo "next: ${n:-?}"
+    if [[ "$(fsdev_of "$old")" == "$(fsdev_of "$new")" ]]; then
+        sudo find "$old" -mindepth 1 -maxdepth 1 -exec mv -t "$new" {} + \
+            || die "move failed — nothing was removed; $var still points at $old"
+    else
+        need_cmd rsync
+        sudo rsync -a "$old"/ "$new"/ || die "copy failed — nothing was removed; $var still points at $old"
+        # verify before deleting: a dry re-sync must have nothing to do
+        if [[ -n "$(sudo rsync -a -n --itemize-changes "$old"/ "$new"/ | grep -v '^\.d\.\.t')" ]]; then
+            die "copy verification failed — the old copy at $old is intact; $var still points at $old. Compare the two by hand before retrying."
+        fi
+        sudo find "$old" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+    fi
+    env_del "${var}_PREVIOUS"
+    ok "$var contents moved to $new ($n $( (( n == 1 )) && echo entry || echo entries), $size)"
 }
 
 cmd_configure() {
     need_cmd jq; need_cmd docker
-    CONFIGURE_FRESH=0
-    [[ -f "$ENV_FILE" ]] || { cp .env.example "$ENV_FILE"; chmod 600 "$ENV_FILE"; CONFIGURE_FRESH=1; info "Created .env from .env.example"; }
+    local fresh=()
+    if [[ ! -f "$ENV_FILE" ]]; then
+        cp .env.example "$ENV_FILE"; chmod 600 "$ENV_FILE"; info "Created .env from .env.example"
+        state_set configure-first yes   # until the questions are answered once, the .env holds no choices
+    fi
     chmod 600 "$ENV_FILE" || true
+    [[ -z "$(state_get configure-first)" ]] || fresh=(--fresh)
+    questionnaire_ask "${fresh[@]}"
+    state_del configure-first
 
-    _configure_timezone
-    _configure_roots
-    _configure_selfheal
-    _configure_services
-    _configure_download_client
-    _configure_vpn
-    _configure_secrets
-    _configure_schedule
-    authentik_configure_email
-
+    roots_apply
     # the check `up` makes, made here: a port two services publish fails now, not halfway through a start
     vpn_gen
     # shellcheck disable=SC2034  # render's cache (mediastack.sh): cleared so the check sees this .env
@@ -623,8 +122,11 @@ cmd_configure() {
         if hostid_refresh; then ok "record of this host's own address made (RIPEstat)"
         else warn "record of this host's own address not made — $RIPESTAT_ERR. leak-test reports UNPROVEN until it is: ./mediastack.sh host-identity"; fi
     fi
+    # new email settings: the portal's reset link follows them (none until they pass a test)
+    if [[ -n "$(state_get "$EMAIL_STATE")" ]]; then state_del "$EMAIL_STATE"; authentik_recovery_refresh; fi
+    if [[ -n "$(state_get "$PANEL_STATE")" ]]; then state_del "$PANEL_STATE"; echo; cmd_frontdoor_install; fi
 
-    echo; _configure_panel_offer
+    echo; questionnaire_summary
     hr "Configure complete"
     cat <<EOF
 Next steps:

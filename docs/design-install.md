@@ -1,7 +1,9 @@
 # Design: ask once, then install — and services that describe themselves
 
-*Status: proposed (Nov 2026), for review before any code. Decisions already
-agreed are marked **agreed**; everything else is open until this document is.*
+*Status: agreed (Nov 2026), being built one patch at a time (the order is in
+the session handoff). Built so far: the questionnaire's own process, quick or
+full, its exit codes and test-questions (patch 2a). Sections marked **agreed**
+were settled one by one before the whole was.*
 
 ## Goals
 
@@ -53,8 +55,14 @@ does nothing else.
   shares `lib/common.sh`'s prompt helpers (one way to ask each kind of
   question) and `lib/env.sh`; it does not copy them.
 - **What it may touch:** `.env`, and `local/state` for the one-shot answers.
-  No sudo, no Docker, no users or folders — `test-questions` fails a question
-  hook that calls any of them.
+  No sudo, no Docker (rendering the catalogue aside), no users or folders —
+  `test-questions` runs it with failing shims for each and fails on any call.
+  What used to happen between questions now happens after them, in
+  `configure`: a folder answer is held in `local/state` and applied there
+  (made, its contents moved as answered, its mount recorded) — a cancelled
+  run never leaves `.env` pointing at a half-moved folder; the panel is
+  installed and the portal's reset link follows new email settings after
+  provisioning.
 - **Who asks what:** the shared questions (below) are the questionnaire's own;
   every service's questions are its folder's `<name>_questions` hook, asked in
   wire phase order for the enabled services (the service contract). A service
@@ -87,7 +95,12 @@ Choice [1]:
 ```
 
 - Every question declares whether it has a safe default. One that does not (a
-  token, a domain) is asked in quick too — quick never guesses.
+  token, a domain) is asked in quick too — quick never guesses. The services
+  and the sign-in model are the stack's shape: quick asks them on a first
+  run, and keeps them on a re-run.
+- Quick on a re-run keeps every answer, a schedule set to never included; a
+  first run (a `.env` whose questions were never all answered) takes the
+  recommended ones.
 - Quick on the standard preset is five or six questions; folders, timezone,
   schedules, logins (generated), the server name and the TRaSH profiles
   (1080p) take their recommended answers.
@@ -266,7 +279,7 @@ today: `mediastack.vpn`, `.auth`, `.port`, `.errors`, …):
 |---|---|---|
 | `mediastack.wire.phase` | when it is wired: 10 download clients, 20 arrs, 30 Prowlarr, 40 its consumers (Bazarr, Cleanuparr, Seerr), 50 the portal and Jellyfin, 60 the rest | `WIRE_ROLES` (lib/wire.sh) |
 | `mediastack.calls` | the services it holds an address of, e.g. Bazarr's `sonarr radarr` | `WIRE_CALLERS` (lib/addr.sh), inverted by the core |
-| `mediastack.preset` | the presets it is in (`standard`) | the preset list in lib/configure.sh |
+| `mediastack.preset` | the presets it is in (`standard`) | the preset list in lib/questionnaire.sh |
 
 **Hooks** (functions in `services/<name>/<name>.sh`, found by name; none is
 required):

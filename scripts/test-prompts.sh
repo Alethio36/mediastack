@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # globals set here are read by the sourced libraries
-# test-prompts.sh — answers the wizards refuse (lib/configure.sh, lib/common.sh):
+# test-prompts.sh — answers the wizards refuse (lib/questionnaire.sh, lib/common.sh):
 #   * a folder path with a backslash is refused and asked again — the key
 #     beside Enter (found live: CACHE_ROOT became .../mediastack/\)
 #   * the fstab check matches the path as text: a path with regex characters
@@ -51,16 +51,16 @@ fresh() { ANSWERS=("$@"); N=0; : > "$T/out"; : > "$T/env"; : > "$T/defaults"; }
 # ---- a backslash ----
 fresh '\' ''
 configure_root CACHE_ROOT "Cache directory" "x" yes 2> "$T/err"
-grep -q "has a backslash in it" "$T/out" && grep -qx "CACHE_ROOT=$SCRIPT_DIR/cache" "$T/env" \
-    || fail_ "'\\' refused, then Enter took the default ./cache — out: $(cat "$T/out") env: $(cat "$T/env")"; pass
+grep -q "has a backslash in it" "$T/out" && [[ "${Q_ROOT[CACHE_ROOT]}" == "$SCRIPT_DIR/cache" ]] \
+    || fail_ "'\\' refused, then Enter took the default ./cache — out: $(cat "$T/out") chosen: ${Q_ROOT[CACHE_ROOT]-}"; pass
 [[ ! -s "$T/err" ]] || fail_ "the path went into a pattern again: $(cat "$T/err")"; pass
 
 # ---- the fstab check, as text ----
 printf '# /mnt/a+b  commented out\n192.168.1.5:/media /mnt/a+b nfs defaults 0 0\n' > "$FSTAB"
 fresh '/mnt/a+b' '/mnt/abb'
 configure_root DATA_ROOT "Data directory" "x" yes 2> "$T/err"
-grep -q "'/mnt/a+b' is listed in /etc/fstab but NOT currently mounted" "$T/out" && grep -qx "DATA_ROOT=/mnt/abb" "$T/env" \
-    || fail_ "an unmounted fstab entry is caught; /mnt/abb (what a+b matches as a pattern) is not — out: $(cat "$T/out") env: $(cat "$T/env")"; pass
+grep -q "'/mnt/a+b' is listed in /etc/fstab but NOT currently mounted" "$T/out" && [[ "${Q_ROOT[DATA_ROOT]}" == /mnt/abb ]] \
+    || fail_ "an unmounted fstab entry is caught; /mnt/abb (what a+b matches as a pattern) is not — out: $(cat "$T/out") chosen: ${Q_ROOT[DATA_ROOT]-}"; pass
 [[ ! -s "$T/err" ]] || fail_ "the fstab check printed errors: $(cat "$T/err")"; pass
 
 # ---- ask_valid ----

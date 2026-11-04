@@ -226,7 +226,7 @@ Setup
 | command | what it does |
 |---|---|
 | `install` | host dependencies (Docker, jq, ...) on Debian/Ubuntu |
-| `configure` | interactive wizard: folders, services, how people sign in (none / Wizarr / authentik), VPN, update and backup schedules; safe to re-run, answers become defaults. Changing a root's path offers to move its contents (stack stopped, copy verified before the old copy goes) or to leave them and have `doctor` remind you; `DATA_ROOT` is never moved by the script |
+| `configure` | interactive wizard, **quick** (the default: only what has no recommended answer — the services, how people sign in, your VPN details — the rest takes the recommended answer, and the summary at the end shows every answer) or **full** (every question): folders, services, how people sign in (none / Wizarr / authentik), VPN, update and backup schedules; safe to re-run, answers become defaults. All questions come first; nothing is applied until they are answered, so Ctrl-C leaves the stack as it was. Changing a root's path offers to move its contents (stack stopped, copy verified before the old copy goes) or to leave them and have `doctor` remind you; `DATA_ROOT` is never moved by the script |
 | `add-mount` | guided NFS/SMB mount for media (fstab automount + poison layer) |
 
 Run
@@ -298,6 +298,7 @@ Internal (called by the panel, timers and units — not meant for hand use)
 | `vpn-apply <svc> on\|off` | the one-shot the panel's Toggle VPN button runs (`vpn` is the interactive form) |
 | `vpn-guard [--boot]` | after a host boot / docker restart: start what a cut-off backup stopped, then the VPN'd services through the leak gate — Docker itself never starts them (systemd unit) |
 | `vpn-watch [--full]` | every 5 minutes (`mediastack-leakcheck.timer`): `leak-test --local` — or the full run when gluetun restarted since its last full proof — and any enabled VPN'd service that is not running is started through the gate (a crash, a boot that came too early). To keep one stopped, `disable` it or `down` the stack: a `docker stop` is undone within 5 minutes. `--full`: the hourly run (`mediastack-leaktest.timer`, at a random minute), the full checks whatever gluetun's proof. Its news goes to ops once per change |
+| `questionnaire [--fresh]` | `configure`'s questions, run by it as their own process ([docs/design-install.md](docs/design-install.md)): they record the answers in `.env` and `local/state` and do nothing else. Exit 0: all answered; 130: cancelled; 3: no terminal to ask on |
 | `host-identity` | refresh the record of this host's own address (RIPEstat) that `leak-test` compares the tunnel against — once a day at a random time (`mediastack-hostid.timer`), never inside a leak-test, so no run asks about both of your addresses at once. `configure` makes the first record; by hand when leak-test reports it missing or stale |
 | `unit-failed <unit>` | tell the `ops` stream that a scheduled or boot run failed — its result, exit status and last lines (systemd's OnFailure hook; once per unit per 6 hours) |
 | `audit-extract` | hourly (timer): copy new deletion events from auditd's rotating log into `BACKUP_ROOT/audit/`, prune it to `AUDIT_KEEP_DAYS`, flag a gap if auditd rotated first |

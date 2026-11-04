@@ -1202,7 +1202,9 @@ grep -q 'FAIL authentik rejected the password-reset link on the sign-in-page: {"
 [[ -z "$(rec yes "" "" 1)" ]] || fail_ "a dry run writes nothing"; pass
 grep -q 'wire_authentik_recovery' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik sets the link"; pass
 grep -q 'authentik_recovery_refresh' <(awk '/^cmd_email\(\)/,/^}/' services/authentik/email.sh) \
-    && [[ "$(awk '/^authentik_configure_email\(\)/,/^}/' services/authentik/email.sh | grep -c authentik_recovery_refresh)" == 2 ]] \
+    && [[ "$(awk '/^authentik_configure_email\(\)/,/^}/' services/authentik/email.sh | grep -c 'state_set "$EMAIL_STATE"')" == 2 ]] \
+    && ! awk '/^authentik_configure_email\(\)/,/^}/' services/authentik/email.sh | grep -q authentik_recovery_refresh \
+    && awk '/^cmd_configure\(\)/,/^}/' lib/configure.sh | grep -q 'state_get "$EMAIL_STATE".*authentik_recovery_refresh' \
     || fail_ "a passed test shows the link at once; removing or changing email takes it off at once"; pass
 # ---- invite --email: the portal sends the link, in mediastack's template ----
 grep -q '{% autoescape off %}' services/authentik/templates/mediastack-invitation.txt || fail_ "invitation txt: no HTML escaping in plain text"; pass

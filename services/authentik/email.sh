@@ -105,6 +105,10 @@ $(sed 's/^/  /' <<<"$p")"
 authentik_configure_email() {
     # -- email (optional): what the portal sends with
     svc_enabled authentik || return 0
+    if q_quick; then   # optional, so quick leaves it as it is
+        q_took "Email" "$( [[ -n "$(env_get SMTP_HOST)" ]] && echo "keep $(env_get SMTP_HOST)" || echo "not set — a full configure sets it")"
+        return 0
+    fi
     explain "Email (optional)" \
         "Lets the portal send email. Any SMTP service works: your own mailbox with" \
         "an app password, a sending service, or a relay on your domain or LAN —" \
@@ -118,7 +122,7 @@ authentik_configure_email() {
         case "$choice" in
             r) local k; for k in SMTP_HOST SMTP_PORT SMTP_STARTTLS SMTP_TLS SMTP_USER SMTP_PASSWORD SMTP_FROM; do env_set "$k" ""; done
                ok "Email removed — takes effect at the next: ./mediastack.sh up"
-               authentik_recovery_refresh; return 0 ;;
+               state_set "$EMAIL_STATE" yes; return 0 ;;   # configure takes the reset link off (it asks, not acts)
             c) ;;
             *) return 0 ;;
         esac
@@ -164,5 +168,5 @@ authentik_configure_email() {
         fail "'$REPLY_VAL' is not an email address."
     done
     ok "Email set. authentik reads it when it starts: ./mediastack.sh up, then ./mediastack.sh email test <your address>"
-    authentik_recovery_refresh   # new settings: no reset link until they pass a test
+    state_set "$EMAIL_STATE" yes   # new settings: configure takes the reset link off until they pass a test
 }
