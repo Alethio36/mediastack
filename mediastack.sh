@@ -729,7 +729,11 @@ cmd_enable() {
     traefik_ensure   # wizard + config gen if traefik just came into the set
     authentik_prepare
     network_ensure
-    DC up -d --remove-orphans; ok "'$svc' enabled and started."
+    # started the way up starts everything: the VPN group only through the
+    # leak gate, then the attachment guard (a bare compose up here started a
+    # VPN'd service unproven — found Nov 2026)
+    ok "'$svc' enabled — starting it as up does"
+    cmd_up
 }
 cmd_disable() {
     local svc="${1:?usage: disable <service>}"; load_env
@@ -1101,7 +1105,7 @@ VERBS=(
     "add-mount~add-mount~none~Setup~Guided NFS/SMB mount on this host (fstab automount + poison layer)."
     "up~up~none~Run~Start the stack (everything enabled in COMPOSE_PROFILES)."
 "down~down~none~Run~Stop the stack and pause its scheduled jobs until up. Configs and data are untouched."
-    "enable~enable <svc>~max=1~Run~Turn one service on (dependencies come along) and start it."
+    "enable~enable <svc>~max=1~Run~Turn one service on (dependencies come along) and start it as up does (the leak gate first)."
     "disable~disable <svc>~max=1~Run~Turn one service off (refused while others depend on it)."
     "status~status [svc]~max=1~Run~Overview table of every service, or a deep view of one."
     "logs~logs <svc> [--no-follow]~free~Run~Follow one service's logs (--no-follow: bounded snapshot)."

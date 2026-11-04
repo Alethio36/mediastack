@@ -19,6 +19,7 @@
 #   * update: gluetun unchanged -> the group's targets through the gate; changed ->
 #     stopped, forgotten, recreated, ready, then the whole group; a held group fails it
 #   * doctor during a gated stop: one finding; the held members are not each a problem
+#   * enable starts its service through up (the gate), never with its own compose up
 #   * up's two phases: everything but the group, the gate, then the group — and
 #     no second phase when the gate fails
 # Sources the real entrypoint (minus its last line, main "$@"); docker and
@@ -327,5 +328,15 @@ _doctor_containers > /dev/null 2>&1
 grep -q "DFAIL qbittorrent is exited" "$T/doc" || fail_ "gate open: a stopped member is a problem again ($(cat "$T/doc"))"; pass
 grep -q 'leak_gate_closed; then' <(awk '/^cmd_doctor\(\)/,/^}/' lib/doctor.sh) && grep -q 'd_fail "the leak gate stopped the VPN group' lib/doctor.sh \
     || fail_ "doctor counts a gated stop once, at the top, with the fix"; pass
+
+# ---- enable starts through up (the gate), never a compose up of its own ----
+for f in svc_exists svc_conflicts vpn_gen require_free_ports cloudflared_enable_check require_mounts provision \
+         uid_handover traefik_ensure authentik_prepare network_ensure load_env env_set; do eval "$f() { :; }"; done
+svc_label() { :; }; resolve_deps() { printf '%s\n' "$@"; }
+ENABLED="gluetun jellyfin"; : > "$UP_LOG"
+eval 'cmd_up() { echo "UP" >> "$UP_LOG"; }'
+DC() { echo "DC $*" >> "$UP_LOG"; }
+(cmd_enable lidarr) > /dev/null 2>&1
+[[ "$(paste -sd'|' "$UP_LOG")" == "UP" ]] || fail_ "enable starts through up — the leak gate — and runs no compose up of its own ($(paste -sd'|' "$UP_LOG"))"; pass
 
 echo "test-gate: $checks checks passed"

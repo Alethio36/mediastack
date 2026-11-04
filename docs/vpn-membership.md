@@ -154,7 +154,8 @@ why. Stopped dependents are left to `doctor`/`leak-test` on next start.
 The VPN group — every enabled service in gluetun's namespace — runs only once
 gluetun is proven (`services/gluetun/gate.sh`):
 
-- **`up` starts in two phases:** everything outside the group (gluetun with
+- **`up` starts in two phases** (and `enable` ends with `up`, so a service
+  turned on later goes the same way): everything outside the group (gluetun with
   it), then a full `leak-test`, then the group. A FAIL leaves the group
   stopped and ends `up`; UNPROVEN (a third party down, say) starts it with a
   warning.

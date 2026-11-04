@@ -233,7 +233,7 @@ Run
 | command | what it does |
 |---|---|
 | `up` / `down` | start / stop the stack. A stack stopped with `down` stays down: its scheduled jobs (updates, backups, the media manifest, the panel's refresh, the boot guard) skip until `up`, and doctor says so. `up` starts the VPN'd services last: everything else (gluetun with it) first, then a full `leak-test`, and only on a pass (or nothing failed but something UNPROVEN, with a warning) the VPN'd services — a FAIL leaves them stopped. `up` also finishes any pending one-time step — re-pointing the apps that call a service you moved in or out of the VPN, or a service's file-ownership handover — and retries it until it succeeds |
-| `enable <svc>` / `disable <svc>` | turn one service on/off (dependencies handled) |
+| `enable <svc>` / `disable <svc>` | turn one service on/off (dependencies handled); `enable` then runs `up`, so a VPN'd service starts through the leak gate |
 | `status [svc]` | overview table (ports, VPN, health, versions, URLs) or one-service deep view |
 | `logs <svc> [--no-follow]` | follow one service's logs; `--no-follow` prints a bounded snapshot and returns (used by the web panel) |
 
