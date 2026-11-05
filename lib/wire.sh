@@ -37,8 +37,12 @@ wire_apply_settings() { # wire_apply_settings "PENDING-BEFORE" — recreate what
     # Only what became pending during this run: anything pending before is up's to apply.
     local after s new=()
     after=$(compose_pending)
+    # compose_pending's lines are for reading: "x (stopped)", "x (new)" are not
+    # settings wire changed — only a bare name is (its definition changed).
+    # Found live: "authentik-ldap (stopped)" was handed to compose as a name.
     while read -r s; do
-        [[ -n "$s" ]] && ! grep -qx "$s" <<<"$1" && new+=("$s")
+        [[ "$s" =~ ^[A-Za-z0-9_.-]+$ ]] || continue
+        if ! grep -qx "$s" <<<"$1"; then new+=("$s"); fi
     done <<<"$after"
     (( ${#new[@]} )) || return 0
     info "wire changed settings these read only at start — recreating: ${new[*]}"

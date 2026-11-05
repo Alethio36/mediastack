@@ -258,8 +258,27 @@ authentik_blueprint_why() { # authentik's own reasons for rejecting mediastack's
     echo "${why:-its validator finds nothing wrong now — the apply may have met authentik mid-start: ./mediastack.sh wire authentik again}"
 }
 
+# the defaults mediastack's blueprint applies first (its metaapplyblueprint
+# entries): authentik must have discovered them, or that apply fails
+AUTHENTIK_BLUEPRINT_NEEDS=(default/default-brand.yaml default/flow-default-provider-authorization-implicit-consent.yaml default/flow-default-provider-invalidation.yaml)
+authentik_blueprint_needs_found() { # 0 once authentik knows every blueprint ours builds on (waited for, up to two minutes)
+    local out p t miss
+    for t in $(seq 1 24); do
+        out=$(ak_api GET "/managed/blueprints/?page_size=200") || out='{}'
+        miss=""
+        for p in "${AUTHENTIK_BLUEPRINT_NEEDS[@]}"; do
+            jq -e --arg p "$p" 'any(.results[]?; .path == $p)' <<<"$out" >/dev/null 2>&1 || miss+="$p "
+        done
+        [[ -n "$miss" ]] || return 0
+        sleep 5
+    done
+    echo "${miss% }"; return 1
+}
+
 authentik_blueprint_apply() { # apply the current file now instead of waiting for the worker; -> its status
-    local inst pk st t
+    local inst pk st t miss
+    # an apply before authentik has discovered its own defaults fails on their absence
+    miss=$(authentik_blueprint_needs_found) || { echo "unreadable (authentik has not found its own $miss yet)"; return 0; }
     inst=$(authentik_blueprint_instance 2>&1) || { echo "$inst"; return 0; }
     pk=$(jq -r '.pk // empty' <<<"$inst"); [[ -n "$pk" ]] || { echo ""; return 0; }
     ak_api POST "/managed/blueprints/$pk/apply/" >/dev/null || { echo "unreadable (apply refused)"; return 0; }

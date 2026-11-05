@@ -12,6 +12,27 @@ metadata:
   labels:
     blueprints.goauthentik.io/description: "mediastack: groups, sign-up by invitation, password reset by email, the portal's name"
 entries:
+  # -- what this setup builds on: authentik's own defaults, applied first --
+  # On a first start authentik applies every blueprint in one pass, and ours
+  # came before the defaults it references (the default brand, two provider
+  # flows): it failed until a later pass (found live Nov 2026). These apply
+  # them first, in this blueprint's own run (authentik_blueprints.metaapplyblueprint).
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: default/default-brand.yaml
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: default/flow-default-provider-authorization-implicit-consent.yaml
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: default/flow-default-provider-invalidation.yaml
+      required: true
+
   # -- groups -------------------------------------------------------------
   - model: authentik_core.group
     id: group-media-users

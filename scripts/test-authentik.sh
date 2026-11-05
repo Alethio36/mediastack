@@ -302,7 +302,8 @@ ak_api() { echo "$1 $2" >> "$T/calls"
     case "$1 $2" in
         "GET /managed/blueprints/?page_size=200")
             h=$BP_CUR; [[ "$BP_APPLIED" == old ]] && h=deadbeef
-            jq -cn --arg h "$h" --arg st "${BP_STATUS:-successful}" '{results:[{name:"Mediastack - Portal", status:$st, last_applied_hash:$h, pk:"bp-1"}]}' ;;
+            jq -cn --arg h "$h" --arg st "${BP_STATUS:-successful}" '{results:([{name:"Mediastack - Portal", status:$st, last_applied_hash:$h, pk:"bp-1"}]
+                + ($ARGS.positional | map({path: ., status: "successful"})))}' --args "${AUTHENTIK_BLUEPRINT_NEEDS[@]}" ;;   # authentik's own defaults, listed beside ours
         "POST /managed/blueprints/bp-1/apply/") BP_APPLIED=new; echo '{}' ;;
         *) echo '{}' ;;
     esac; }
@@ -367,6 +368,38 @@ first_pass() { # first_pass STATUS-AFTER-THE-WAIT -> "forced|waited-only fails=N
 }
 [[ "$(first_pass successful)" == "waited-only fails=0 gate" ]] || fail_ "applied by its own first pass: nothing forced, the gate follows: $(first_pass successful)"; pass
 [[ "$(first_pass outdated)" == "waited-only fails=1 nogate" ]] || fail_ "not applied within the wait: a failure, still nothing forced: $(first_pass outdated)"; pass
+# what our blueprint builds on is applied first, in its own run: authentik's
+# first pass applied ours before its defaults (found live Nov 2026)
+bpe=$(python3 - <<'PY'
+import yaml
+class L(yaml.SafeLoader): pass
+L.add_multi_constructor('!', lambda l, s, n: None)
+e=yaml.load(open('services/authentik/blueprints/mediastack-portal.yaml'), Loader=L)['entries']
+n=0
+for x in e:
+    if x['model'] != 'authentik_blueprints.metaapplyblueprint': break
+    print(x['attrs']['identifiers']['path'], x['attrs'].get('required')); n+=1
+print('rest-meta', sum(1 for x in e[n:] if x['model'] == 'authentik_blueprints.metaapplyblueprint'))
+PY
+)
+for p in "${AUTHENTIK_BLUEPRINT_NEEDS[@]}"; do
+    grep -qx "$p True" <<<"$bpe" || fail_ "the blueprint applies $p first, required: $bpe"
+done; pass
+grep -qx 'rest-meta 0' <<<"$bpe" || fail_ "the prerequisites come before every other entry"; pass
+for f in $(grep -oE '!Find \[authentik_flows.flow, \[slug, default-[a-z0-9-]+\]\]' services/authentik/blueprints/mediastack-portal.yaml | grep -oE 'default-[a-z0-9-]+' | sort -u); do
+    case "$f" in
+        default-provider-authorization-implicit-consent) want=default/flow-default-provider-authorization-implicit-consent.yaml ;;
+        default-provider-invalidation-flow) want=default/flow-default-provider-invalidation.yaml ;;
+        *) fail_ "the blueprint references $f: add its default blueprint to the prerequisites" ;;
+    esac
+    [[ " ${AUTHENTIK_BLUEPRINT_NEEDS[*]} " == *" $want "* ]] || fail_ "$f's blueprint is not a prerequisite"
+done; pass
+# a forced apply waits for authentik to know them; never found: no apply, a reason
+r=$( ( ak_api() { if [[ "$1 $2" == "POST /managed/blueprints/"* ]]; then echo APPLIED >> "$T/applied"; fi; echo '{"results":[{"path":"default/default-brand.yaml"}]}'; }
+       sleep() { :; }; rm -f "$T/applied"; authentik_blueprint_apply ) )
+[[ "$r" == "unreadable (authentik has not found its own default/flow-default-provider-authorization-implicit-consent.yaml default/flow-default-provider-invalidation.yaml yet)" && ! -e "$T/applied" ]] \
+    || fail_ "its defaults not found: nothing forced, the missing ones named: $r"; pass
+
 # the reason printer is how a failure is reported: it never fails itself
 r=$( ( set -Ee; trap 'echo TRAPPED; exit 9' ERR   # as wire runs it
        sudo() { echo '{"event": "Imported related module"}'; return 1; }; svc_cname() { echo w; }; authentik_blueprint_why ); echo "rc=$?" )

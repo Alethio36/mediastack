@@ -108,5 +108,10 @@ compose_pending() { printf 'authentik-worker\n'; }; WIRE_FAILS=0; WIRE_FAIL_LIST
   wire_apply_settings "" >/dev/null 2>&1; printf '%s\n' "${WIRE_FAIL_LIST[@]}" ) > "$T/out"
 grep -q 'recreating authentik-worker failed — compose: Error response from daemon: container mediastack-authentik-ldap is restarting — apply with' "$T/out" \
     || fail_ "a failed recreate says compose's own reason: $(cat "$T/out")"; pass
+# only a changed definition is wire's to apply: a stopped or new service is not (found live:
+# "authentik-ldap (stopped)" went to compose as a name)
+: > "$T/dc"; compose_pending() { printf 'authentik-ldap (stopped)\nauthentik-worker\nkavita (new)\n'; }
+wire_apply_settings "" >/dev/null
+[[ "$(grep -E '^DC up' "$T/dc")" == "DC up -d authentik-worker" ]] || fail_ "only the bare names are recreated: $(cat "$T/dc")"; pass
 
 echo "OK wire: $checks checks"
