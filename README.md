@@ -100,7 +100,9 @@ paste it) and the certificates; with authentik, the portal's name and
 email; Jellyfin's server name; **the stack's own logins** — one username
 for the download clients, the arrs, Jellyfin's admin, Audiobookshelf's and
 Kavita's roots and the dashboard, their passwords **generated** (default),
-**unified** (one for all) or typed for **each**; when updates and backups
+**unified** (one for all) or typed for **each**; with Apprise, your
+notification URLs (kept privately until wire hands them to the hub, then
+changed with `notify`); each arr's TRaSH profile; when updates and backups
 run; and, with Traefik, whether to install the web panel now (default yes).
 **Quick** (the default) asks only what has no recommended answer; **full**
 asks everything. Every question
@@ -138,13 +140,15 @@ check on staging.
 `wire` connects the apps to each other — download client and indexers to
 the arrs, libraries to Jellyfin, the request site to the arrs, the portal's
 sign-in to every app — with the logins configure recorded (it asks
-nothing about them) — and asks your notification URLs. With Wizarr, it walks you through
+nothing about them) — and hands the hub the notification URLs configure
+recorded. The first wire on a deployment takes a restore point first. With Wizarr, it walks you through
 Wizarr's one-time first run with the exact values to paste. Safe to re-run;
 `wire --verify` shows what has drifted without changing anything.
 
-`trash-sync` asks which [TRaSH Guides](https://trash-guides.info) quality
-profile each arr should use and applies it (`--dry-run` previews;
-[docs/trash-sync.md](docs/trash-sync.md)).
+`trash-sync` applies the [TRaSH Guides](https://trash-guides.info) quality
+profile configure recorded for each arr (`--dry-run` previews;
+[docs/trash-sync.md](docs/trash-sync.md)). An arr without one — enabled
+after configure — is refused by name until configure asks it.
 
 ### 6. Check it
 

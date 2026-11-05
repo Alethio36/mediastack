@@ -25,10 +25,11 @@ vpn_group() { # the VPN group: the enabled ones, one per line
 }
 
 leak_gate_closed() { [[ -n "$(state_get "$LEAK_GATE")" ]]; }
+leak_gate_reason() { state_get "$LEAK_GATE"; }   # when and why it closed ("" while open)
 
 leak_gate_refuse() { # leak_gate_refuse WHAT — die before WHAT starts a member of the VPN group while the gate is closed
     leak_gate_closed || return 0
-    die "$1: the leak gate stopped the VPN group ($(state_get "$LEAK_GATE")). Find the leak: ./mediastack.sh leak-test — fix it, then: ./mediastack.sh up"
+    die "$1: the leak gate stopped the VPN group ($(leak_gate_reason)). Find the leak: ./mediastack.sh leak-test — fix it, then: ./mediastack.sh up"
 }
 
 leak_gate_guards() { # leak_gate_guards COMPOSE-ARGS... -> 0 when DC may run them (DC's chokepoint)

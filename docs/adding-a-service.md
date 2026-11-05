@@ -180,7 +180,11 @@ with a recommended value takes it and says so (`q_took "Title" "value"`);
 one without (a token) is asked in quick too. A recorded answer is read
 where it is used (`wire`, `up`) with `env_get`, never asked again there.
 `<name>_summary` prints its lines of configure's closing summary
-(`label<TAB>value`).
+(`label<TAB>value`). A service the catalogue always carries — no
+`mediastack.managed` label, nothing switches it (Recyclarr) — has its hooks
+run every time; they decide what applies (Recyclarr asks per enabled arr).
+An answer meant for one hand-over, not for `.env`, is held in
+`local/state` (0600) and deleted once handed over (Apprise's URLs).
 
 **A login the stack makes for itself is declared, not asked.** A service
 with an account the stack owns (the operator's, a root, a web UI's)

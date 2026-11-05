@@ -234,4 +234,27 @@ out=$(notify_urls_ok ops "discord.com/api/webhooks/x" 2>&1) && fail_ "a URL with
 out=$(notify_urls_ok ops "$D,ntfy://ntfy.sh/mytopic" 2>&1) && [[ "$out" == *"2 URL(s)"* ]] || fail_ "two URLs, comma-separated: $out"; pass
 notify_urls_ok users "" >/dev/null 2>&1 || fail_ "empty (no URLs for this stream) is allowed"; pass
 
+# ---- configure's URLs reach the hub once, through wire apprise ----
+ENV_FILE=$T/.env; : > "$ENV_FILE"
+wa() { # wa HUB-GET-CODE — wire apprise's endpoint step, the hub stubbed; the hub's calls in $T/hub
+    ( svc_enabled() { [[ "$1" == apprise ]]; }; wire_gate() { :; }; http_ready() { :; }; wire_arrs_ready() { :; }
+      arr_instances() { :; }; notify() { echo "SENT $1" >> "$T/hub"; }; hub_cfg_get() { :; }; hub_local_url() { echo http://hub; }
+      curl() { local a; for a in "$@"; do [[ "$a" == http://hub/* ]] && echo "$a ${*: -3:1}" >> "$T/hub"; done
+               case "$*" in *"/get/mediastack"*) printf '%s' "$GETCODE" ;; *"/add/mediastack"*) printf 'ok\n200' ;; esac; }
+      GETCODE=$1; wire_apprise ) > "$T/out" 2>&1
+}
+: > "$T/hub"; state_set "$NOTIFY_URLS_STATE" $'ops\tntfy://ntfy.sh/a,ntfy://ntfy.sh/b\nusers\tdiscord://1/x'
+wa 204 || fail_ "wire apprise with configure's URLs runs: $(cat "$T/out")"
+grep -q '/add/mediastack' "$T/hub" && [[ -z "$(state_get "$NOTIFY_URLS_STATE")" && -n "$(state_get "$NOTIFY_STORED_STATE")" ]] \
+    || fail_ "the URLs are stored in the hub, then deleted here: $(cat "$T/hub")"; pass
+state_set "$NOTIFY_URLS_STATE" $'ops\tntfy://ntfy.sh/c'; state_del "$NOTIFY_STORED_STATE"; : > "$T/hub"
+wa 200 || fail_ "a hub that has endpoints already"
+! grep -q '/add/mediastack' "$T/hub" && grep -q 'were not used: the hub already has endpoints' "$T/out" \
+    && [[ -z "$(state_get "$NOTIFY_URLS_STATE")" && -n "$(state_get "$NOTIFY_STORED_STATE")" ]] \
+    || fail_ "the hub's endpoints are never overwritten; configure's are dropped, said: $(cat "$T/out")"; pass
+state_del "$NOTIFY_STORED_STATE"; : > "$T/hub"
+wa 204 </dev/null || fail_ "nothing recorded, no terminal"
+! grep -q '/add/mediastack' "$T/hub" && grep -q 'configure asks them' "$T/out" || fail_ "nothing to store: wire asks nothing, says where they come from"; pass
+! grep -nE 'ask_hidden|ask_token|ask_secret|read -r -[sp]' services/apprise/apprise.sh || fail_ "wire apprise asks nothing"; pass
+
 echo "OK notify: $checks checks"

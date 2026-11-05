@@ -202,6 +202,9 @@ prowlarr_indexers_retest() { # after a stack start: once FlareSolverr is up, Pro
     # indexers unavailable" until the backoff runs out. A test that passes
     # once FlareSolverr answers says what really works now.
     svc_enabled prowlarr && [[ "$(c_state "$(svc_cname prowlarr)")" == running ]] || return 0
+    # held stopped by the leak gate: nothing to wait for (found live: a backup
+    # whose restart closed the gate waited out 90s for a Prowlarr that could not start)
+    if leak_gate_closed; then info "prowlarr: indexers not re-tested — the leak gate holds the VPN group stopped ($(leak_gate_reason))"; return 0; fi
     local key url out
     if svc_enabled flaresolverr; then
         wait_verdict flaresolverr \

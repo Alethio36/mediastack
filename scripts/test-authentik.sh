@@ -743,7 +743,7 @@ abs_root_unlink tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "an unl
 
 # ---- sign-up: a username the apps would confuse is refused ----
 grep -q 'MEDIASTACK_RESERVED_USERNAMES: ${AUTHENTIK_RESERVED_USERNAMES:-} ' services/authentik/compose.yml \
-    && awk '/^authentik_prepare\(\)/,/^}/' services/authentik/authentik.sh | grep -q 'env_set AUTHENTIK_RESERVED_USERNAMES "$(logins_reserved)"' \
+    && grep -q 'env_set AUTHENTIK_RESERVED_USERNAMES "$(logins_reserved)"' <<<"$(awk '/^authentik_prepare\(\)/,/^}/' services/authentik/authentik.sh)" \
     || fail_ "the worker gets the stack's own logins marked reserve (lib/logins.sh), written by up"; pass
 sed -n '/name: mediastack-join-credentials/,/fields:/p' services/authentik/blueprints/mediastack-portal.yaml | grep -q '!KeyOf policy-join-username' \
     || fail_ "the sign-up page validates the username with the policy"; pass
@@ -1212,8 +1212,8 @@ grep -q 'FAIL authentik rejected the password-reset link on the sign-in-page: {"
 grep -q 'wire_authentik_recovery' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik sets the link"; pass
 grep -q 'authentik_recovery_refresh' <(awk '/^cmd_email\(\)/,/^}/' services/authentik/email.sh) \
     && [[ "$(awk '/^authentik_configure_email\(\)/,/^}/' services/authentik/email.sh | grep -c 'state_set "$EMAIL_STATE"')" == 2 ]] \
-    && ! awk '/^authentik_configure_email\(\)/,/^}/' services/authentik/email.sh | grep -q authentik_recovery_refresh \
-    && awk '/^cmd_configure\(\)/,/^}/' lib/configure.sh | grep -q 'state_get "$EMAIL_STATE".*authentik_recovery_refresh' \
+    && ! grep -q authentik_recovery_refresh <<<"$(awk '/^authentik_configure_email\(\)/,/^}/' services/authentik/email.sh)" \
+    && grep -q 'state_get "$EMAIL_STATE".*authentik_recovery_refresh' <<<"$(awk '/^cmd_configure\(\)/,/^}/' lib/configure.sh)" \
     || fail_ "a passed test shows the link at once; removing or changing email takes it off at once"; pass
 # ---- invite --email: the portal sends the link, in mediastack's template ----
 grep -q '{% autoescape off %}' services/authentik/templates/mediastack-invitation.txt || fail_ "invitation txt: no HTML escaping in plain text"; pass

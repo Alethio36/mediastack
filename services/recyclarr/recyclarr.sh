@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # services/recyclarr/recyclarr.sh — `trash-sync`: TRaSH Guides quality
-# profiles via Recyclarr — instance selection, config generation, ownership
-# banners and the sync run.
+# profiles via Recyclarr — the profile question (recyclarr_questions, asked
+# by configure), config generation, ownership banners and the sync run.
 # Sourced by the entrypoint; relies on lib/common.sh, services/_arr/arr.sh (arr
 # API helpers), lib/wire.sh (http_ready, wfail) and the entrypoint's helpers.
 
@@ -25,34 +25,46 @@ trash_preset_words() { # trash_preset_words PROFILE -> what an instance's preset
     esac
 }
 
-# profile menu: stored once in .env; radarr-4k and sonarr-anime pre-answered
-trash_menu() {
-    local s key cur
+TRASH_RECOMMENDED=1080p   # the profile quick takes, and full offers first
+
+recyclarr_questions() { # the questionnaire's hook: the TRaSH profile of each instance trash-sync manages
+    local s key cur pre
     for s in $(trash_instances); do
         key=$(trash_envkey "$s"); cur=$(env_get "$key")
-        [[ -n "$cur" ]] && continue
         # an instance with one obvious job carries it: mediastack.trashprofile
-        local pre; pre=$(svc_label "$s" mediastack.trashprofile)
+        pre=$(svc_label "$s" mediastack.trashprofile)
         if [[ -n "$pre" ]]; then
-            env_set "$key" "$pre"; info "$s: $(trash_preset_words "$pre")"; continue
+            [[ "$cur" == "$pre" ]] || { env_set "$key" "$pre"; info "$s: $(trash_preset_words "$pre")"; }
+            continue
         fi
-        if [[ ! -t 0 ]]; then
-            env_set "$key" skip
-            warn "$s: no TRaSH profile chosen and no terminal to ask — set to 'skip'; run './mediastack.sh trash-sync' interactively to choose"
+        if q_quick; then
+            [[ -n "$cur" ]] || env_set "$key" "$TRASH_RECOMMENDED"
+            q_took "TRaSH profile: $s" "$(env_get "$key")"
             continue
         fi
         explain "TRaSH profile: $s" \
-"Pick the quality profile recyclarr will manage on this instance.
-  1) 1080p   TRaSH guide default (recommended)
-  2) 720p    space saver (ours: smaller grabs, WEB-preferred)
-  3) 4k      TRaSH UHD guide profile
-  4) skip    leave this instance unmanaged"
-        ask TP "Choice for $s (1080p/720p/4k/skip)" "1080p"
-        case "$REPLY_VAL" in
-            1080p|720p|4k|skip) env_set "$key" "$REPLY_VAL" ;;
-            *) die "Unknown choice '$REPLY_VAL' — expected 1080p, 720p, 4k or skip." ;;
-        esac
+"The quality profile trash-sync manages on this instance:
+  1080p   TRaSH guide default (recommended)
+  720p    space saver (ours: smaller grabs, WEB-preferred)
+  4k      TRaSH UHD guide profile
+  skip    leave this instance unmanaged"
+        while true; do
+            ask TP "Profile for $s (1080p/720p/4k/skip)" "${cur:-$TRASH_RECOMMENDED}"
+            case "$REPLY_VAL" in 1080p|720p|4k|skip) env_set "$key" "$REPLY_VAL"; break ;; *) fail "Type 1080p, 720p, 4k or skip." ;; esac
+        done
     done
+}
+
+trash_profiles_ready() { # every managed instance has its profile: a preset from its label, or configure's answer — never asked here
+    local s key pre miss=""
+    for s in $(trash_instances); do
+        key=$(trash_envkey "$s")
+        [[ -z "$(env_get "$key")" ]] || continue
+        pre=$(svc_label "$s" mediastack.trashprofile)
+        if [[ -n "$pre" ]]; then env_set "$key" "$pre"; info "$s: $(trash_preset_words "$pre")"; continue; fi
+        miss+="$s "
+    done
+    [[ -z "$miss" ]] || die "no TRaSH profile chosen for: ${miss% } — ./mediastack.sh configure asks it (or set $(trash_envkey "${miss%% *}")=1080p|720p|4k|skip in .env)"
 }
 
 # our 720p space-saver profile (full custom profile; recyclarr replaces
@@ -337,7 +349,7 @@ cmd_trash_sync() { # trash-sync [--dry-run]
         [[ -t 0 ]] || die "trash-sync --dry-run needs a terminal (recyclarr only renders a preview on a TTY)"
         for s in $insts; do
             [[ -n "$(env_get "$(trash_envkey "$s")")" ]] \
-                || die "$s: no TRaSH profile chosen yet — run './mediastack.sh trash-sync' once to choose, then preview"
+                || die "$s: no TRaSH profile chosen yet — ./mediastack.sh configure asks it, then preview"
         done
         hr "trash-sync: generate config (preview copy)"
         # the generated config goes to a scratch file beside the live one; the
@@ -349,7 +361,7 @@ cmd_trash_sync() { # trash-sync [--dry-run]
             w_would "install the regenerated recyclarr.yml (differs from the live one)" || true
         fi
     else
-        trash_menu
+        trash_profiles_ready
         hr "trash-sync: provision"
         trash_provision || { fail "trash-sync aborted: provisioning failed."; trash_stop; return 1; }
         hr "trash-sync: generate config"

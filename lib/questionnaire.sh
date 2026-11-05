@@ -538,14 +538,26 @@ _configure_timezone() {
 # (services/<name>/*.sh), found by name — the core never names an app for it
 # (test-questions): <name>_questions asks and records, <name>_summary prints
 # its lines of the summary (label TAB value). The platform's come first, so
-# the domain is known before the portal's name and email; the rest in name order.
+# the domain is known before the portal's name and email; then the enabled
+# services, then the companions the catalogue always carries (no
+# mediastack.managed: Recyclarr, run by trash-sync), each in name order.
 QUESTION_PLATFORM=(traefik authentik)
-svc_hooks() { # svc_hooks SUFFIX — each enabled service's <name>_SUFFIX, the platform's first
+svc_companions() { # services that are not switched on and off: always there (their hooks decide what applies)
+    jq -r '.services | to_entries[] | select(.value.labels["mediastack.managed"] != "true" and .value.labels["mediastack.shard"] == null) | .key' <<<"$RENDERED_JSON" | sort
+}
+svc_hooks() { # svc_hooks SUFFIX — each enabled service's <name>_SUFFIX, the platform's first, the companions' last
     local s f
-    local -a order
+    local -a order comp
+    render
     mapfile -t order < <(printf '%s\n' "${QUESTION_PLATFORM[@]}"; svc_enabled_managed | grep -vxF -f <(printf '%s\n' "${QUESTION_PLATFORM[@]}") || true)
+    mapfile -t comp < <(svc_companions)
     for s in "${order[@]}"; do
         svc_enabled "$s" || continue
+        f="${s//-/_}_$1"
+        if declare -F "$f" >/dev/null; then "$f"; fi
+    done
+    for s in "${comp[@]}"; do   # always there: no enabled check
+        [[ -n "$s" ]] || continue
         f="${s//-/_}_$1"
         if declare -F "$f" >/dev/null; then "$f"; fi
     done

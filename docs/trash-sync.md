@@ -7,10 +7,13 @@ scope: recyclarr supports sonarr and radarr only.
 
 ## First run
 
-Per instance you pick one of: `1080p` (TRaSH default), `720p` (our
-space-saver: WEB-preferred, smaller grabs), `4k` (TRaSH UHD), or `skip`.
-radarr-4k and sonarr-anime are pre-answered (`uhd` / `anime`). Choices
-persist in `.env` as `TRASH_PROFILE_*`; edit there to change, then re-run.
+Per instance `configure` asks one of: `1080p` (TRaSH default, what quick
+takes), `720p` (our space-saver: WEB-preferred, smaller grabs), `4k` (TRaSH
+UHD), or `skip`. radarr-4k and sonarr-anime are pre-answered (`uhd` /
+`anime`). Choices persist in `.env` as `TRASH_PROFILE_*`; change one with a
+full `configure`, or in `.env`, then re-run. `trash-sync` itself asks
+nothing: an instance with no profile (enabled after configure) stops it,
+named, rather than being skipped quietly.
 
 ## Ownership model
 

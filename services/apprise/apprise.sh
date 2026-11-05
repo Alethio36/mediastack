@@ -40,6 +40,11 @@ wire_apprise() {
     # an existing config is never touched (edit in apprise's UI or re-add)
     code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$(hub_local_url)/get/mediastack" 2>/dev/null || echo 000)
     if [[ "$code" == 200 ]]; then
+        state_set "$NOTIFY_STORED_STATE" yes   # configure asks no more
+        if [[ -n "$(state_get "$NOTIFY_URLS_STATE")" ]]; then
+            warn "the URLs configure recorded were not used: the hub already has endpoints (change them: ./mediastack.sh notify set)"
+            state_del "$NOTIFY_URLS_STATE"
+        fi
         # the URLs are yours (notify set / Apprise's UI); only the event tags on
         # the lines mediastack wrote are kept current, so Seerr's events route
         local cur want
@@ -51,33 +56,14 @@ wire_apprise() {
             hub_cfg_put "$want"
             ok "notification routing updated"
         fi
-    elif (( WIRE_DRY )); then
-        w_would "store notification endpoints (URLs asked per tag on the real run)" || true
-    elif [[ ! -t 0 ]]; then
-        info "no notification endpoints stored yet — run './mediastack.sh wire apprise' interactively to add them"
+    elif [[ -z "$(state_get "$NOTIFY_URLS_STATE")" ]]; then
+        info "no notification URLs to store — ./mediastack.sh configure asks them (or: ./mediastack.sh notify set)"
     else
-        explain "Notifications (Apprise)" \
-"One hub, two streams — give each one or more Apprise URLs
-(comma-separated), or leave blank to skip a stream:
-  ops    you: errors, update pipeline, backups, doctor, requests
-  users  household: new media, restarts, updates, invites
-Getting a URL:
-  Discord   channel -> gear -> Integrations -> Webhooks -> New Webhook
-            -> Copy Webhook URL, and paste that https://... URL as-is
-  ntfy      pick any unique topic name: ntfy://ntfy.sh/your-topic
-            (subscribe to the topic in the ntfy app — zero signup)
-  anything  else: https://github.com/caronc/apprise/wiki"
-        local ops_u usr_u cfg="" u
-        # a webhook URL is a password: whoever holds it can post — read hidden
-        while true; do ask_hidden "URLs for ops (input hidden; Enter = none)"; notify_urls_ok ops "$REPLY_VAL" && break; done
-        ops_u="$REPLY_VAL"
-        while true; do ask_hidden "URLs for users (input hidden; Enter = none)"; notify_urls_ok users "$REPLY_VAL" && break; done
-        usr_u="$REPLY_VAL"
-        for u in ${ops_u//,/ }; do cfg+="$(notify_tagline ops)=$u"$'\n'; done
-        for u in ${usr_u//,/ }; do cfg+="$(notify_tagline users)=$u"$'\n'; done
-        if [[ -z "$cfg" ]]; then
-            info "no URLs given — notifications stay off until 'wire apprise' stores some"
-        elif w_would "store the notification endpoints under key 'mediastack'"; then
+        # configure's URLs (services/apprise/questions.sh): handed over once, then deleted
+        local cfg="" u
+        for u in $(notify_pending ops | tr ',' ' '); do cfg+="$(notify_tagline ops)=$u"$'\n'; done
+        for u in $(notify_pending users | tr ',' ' '); do cfg+="$(notify_tagline users)=$u"$'\n'; done
+        if w_would "store the notification endpoints configure recorded, under key 'mediastack'"; then
             local resp acode
             resp=$(curl -sS -m 10 -X POST -H "Content-Type: application/json" \
                    -d "$(jq -cn --arg c "$cfg" '{config:$c,format:"text"}')" \
@@ -88,6 +74,7 @@ Getting a URL:
                 || { wfail "apprise rejected the config [HTTP $acode]: $(head -c200 <<<"${resp%$'\n'*}")
      check the URL syntax against https://github.com/caronc/apprise/wiki"; return 0; }
             ok "notification endpoints stored"
+            state_del "$NOTIFY_URLS_STATE"; state_set "$NOTIFY_STORED_STATE" yes
             notify ops "Mediastack" "Notifications are wired up — this is your ops stream." info
             info "a test notification went to the ops stream — check it arrived"
         fi

@@ -194,17 +194,25 @@ cmd_wire() {
     elif (( WIRE_DRY )); then
         hr "wire --dry-run: showing changes, touching nothing"
     fi
-    if (( ! WIRE_DRY )) && [[ ! -f "$WIRED_FILE" && -z "$(state_get wire-restore-asked)" ]]; then
-        state_set wire-restore-asked yes   # asked once, whatever the answer and however the run ends
-        if confirm_yes "First wire on this deployment — take a restore point first?"; then
-            backup_take manual "before the first wire"
-            # the backup bounced every container — let the apps come back
-            # before wiring their APIs
-            info "waiting for Docker's verdict on the wired apps after the restore point (up to ${START_WAIT}s)..."
-            local settle=(); mapfile -t settle < <(wire_services)
-            (( ${#settle[@]} == 0 )) || wait_verdict "${settle[@]}" \
-                || warn "not settled: $VERDICT_BAD — wiring anyway; anything that refuses gets a per-item FAIL and a re-run picks it up"
+    # the first wire on a deployment takes a restore point first, always (it
+    # was a question whose answer was Yes; docs/design-install.md)
+    if (( ! WIRE_DRY )) && [[ ! -f "$WIRED_FILE" && -z "$(state_get wire-restore-taken)" ]]; then
+        info "First wire on this deployment — a restore point first"
+        backup_take manual "before the first wire"
+        state_set wire-restore-taken yes   # once, however the run ends
+        # the backup bounced every container — let the apps come back before
+        # wiring their APIs; the VPN group only if the gate let it start again
+        local settle=() group=" "
+        mapfile -t settle < <(wire_services)
+        if leak_gate_closed; then
+            group=" $(vpn_group | paste -sd' ') "
+            info "the leak gate holds the VPN group stopped ($(leak_gate_reason)) — not waiting for it"
+            local s keep=(); for s in "${settle[@]}"; do [[ "$group" == *" $s "* ]] || keep+=("$s"); done
+            settle=("${keep[@]}")
         fi
+        info "waiting for Docker's verdict on the wired apps after the restore point (up to ${START_WAIT}s)..."
+        (( ${#settle[@]} == 0 )) || wait_verdict "${settle[@]}" \
+            || warn "not settled: $VERDICT_BAD — wiring anyway; anything that refuses gets a per-item FAIL and a re-run picks it up"
     fi
     # dispatch by the WIRE_ROLES registry: `all` runs every role in order,
     # a section runs its one wire_<role>. Both resolve the function by name,

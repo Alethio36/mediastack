@@ -7,7 +7,9 @@ Traefik's questions (the token and the domain's zone checked with Cloudflare
 as it is pasted) and Jellyfin's server name moved in, library names dropped
 (2b); the stack's own logins — `<n>_logins`, `STACK_USER` / `STACK_LOGINS`,
 the reserved names built from them, wire no longer asking or inventing a
-login — and `<n>_summary` (2c). Sections marked **agreed**
+login — and `<n>_summary` (2c); Apprise's one-shot URLs, Recyclarr's
+profiles (a companion service's hooks run whether or not anything enables
+it), the first wire's restore point taken without asking (2d). Sections marked **agreed**
 were settled one by one before the whole was.*
 
 ## Goals

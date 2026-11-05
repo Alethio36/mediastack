@@ -248,7 +248,7 @@ sed -i 's/^STACK_LOGINS=.*/STACK_LOGINS=each/' "$T/w/.env"
 ( ENV_FILE=$T/w/.env; logins_fill ) </dev/null > "$T/out" 2>&1 && fail_ "each: a missing login is never made up"
 grep -q 'STACK_LOGINS=each types every one — run: ./mediastack.sh configure' "$T/out" || fail_ "it says configure asks it"; pass
 ! grep -nE '\bask_secret\b' services/*/*.sh || fail_ "a service asks for a password itself — a login is declared (<name>_logins) and recorded by configure"; pass
-awk '/^provision\(\)/,/^}/' mediastack.sh | grep -q '^ *logins_fill' || fail_ "provision (configure, up, enable) fills a login enabled since configure"; pass
+grep -q '^ *logins_fill' <<<"$(awk '/^provision\(\)/,/^}/' mediastack.sh)" || fail_ "provision (configure, up, enable) fills a login enabled since configure"; pass
 # every password the schema knows is a stack login some service declares — a
 # missing hook would drop its login silently — or one of these, which are not
 NOT_LOGINS="AUTHENTIK_DB_PASSWORD AUTHENTIK_ADMIN_PASSWORD AUTHENTIK_LDAP_BIND_PASSWORD SMTP_PASSWORD"   # a database's, the portal's own admin, its LDAP bind, the mail server's
@@ -258,5 +258,49 @@ for k in $(cut -f1 services/*/env.tsv lib/env.schema.tsv | grep -E '_PASSWORD$')
     grep -qx "$k" <<<"$declared" || [[ " $NOT_LOGINS " == *" $k "* ]] || bad+="$k "
 done
 [[ -z "$bad" ]] || fail_ "a password no service declares as a login (add its <name>_logins, or say why it is not one): $bad"; pass
+
+# ---- Apprise's URLs: asked once, held 0600 for wire, not asked once the hub has them ----
+# shellcheck disable=SC2034  # read by the questions
+aq() { ( ENV_FILE=$T/a.env STATE_DIR=$T/as LOCAL_DIR=$T Q_MODE=${2:-full}; printf '%b' "$1" | apprise_questions ) > "$T/out" 2>&1; }
+pend() { ( STATE_DIR=$T/as; state_get "$NOTIFY_URLS_STATE" ); }
+: > "$T/a.env"; rm -rf "$T/as"
+aq 'ntfy://ntfy.sh/a\n\n' quick || fail_ "quick asks the URLs (no recommended answer)"
+[[ "$(pend)" == $'ops\tntfy://ntfy.sh/a' && "$(stat -c %a "$T/as/$NOTIFY_URLS_STATE")" == 600 ]] || fail_ "ops recorded, users skipped, the file private: $(pend)"; pass
+! grep -q 'ntfy.sh/a' "$T/a.env" || fail_ "never in .env"; pass
+aq '\ndiscord://1/x\n' || fail_ "a re-run before wire"
+[[ "$(pend)" == $'ops\tntfy://ntfy.sh/a\nusers\tdiscord://1/x' ]] || fail_ "Enter keeps the URLs given before: $(pend)"; pass
+aq 'nonsense\nntfy://ntfy.sh/z\n\n' || fail_ "a malformed URL"
+grep -q 'is not a URL' "$T/out" && [[ "$(pend)" == *ntfy.sh/z* ]] || fail_ "a malformed URL is refused and asked again"; pass
+# shellcheck disable=SC2034  # read by the sourced functions
+( STATE_DIR=$T/as LOCAL_DIR=$T; state_set "$NOTIFY_STORED_STATE" yes ); aq '' quick || fail_ "the hub holds endpoints"
+! grep -q 'URLs for ops' "$T/out" && grep -q 'kept in the hub' "$T/out" || fail_ "the hub holds them: not asked again"; pass
+
+# ---- Recyclarr's profiles: a companion's hook (always there), presets from labels ----
+# shellcheck disable=SC2034  # read by the sourced functions
+rq() { ( ENV_FILE=$T/r.env Q_MODE=${2:-full}
+         trash_instances() { echo sonarr radarr radarr-4k; }
+         svc_label() { [[ "$1/$2" == radarr-4k/mediastack.trashprofile ]] && echo uhd; return 0; }
+         printf '%b' "$1" | recyclarr_questions ) > "$T/out" 2>&1; }
+rv() { ENV_FILE=$T/r.env env_get "$1"; }
+: > "$T/r.env"; rq '' quick || fail_ "quick, profiles"
+[[ "$(rv TRASH_PROFILE_SONARR)/$(rv TRASH_PROFILE_RADARR)/$(rv TRASH_PROFILE_RADARR_4K)" == 1080p/1080p/uhd ]] \
+    || fail_ "quick takes 1080p, a preset its label: $(grep TRASH "$T/r.env" | paste -sd' ')"; pass
+rq '4k\nbogus\n720p\n' || fail_ "full, profiles"
+[[ "$(rv TRASH_PROFILE_SONARR)/$(rv TRASH_PROFILE_RADARR)" == 4k/720p ]] && grep -q 'Type 1080p, 720p, 4k or skip' "$T/out" \
+    || fail_ "full asks each (current as default), a bad answer asked again"; pass
+( ENV_FILE=$T/r.env; trash_instances() { echo sonarr lidarrish; }; svc_label() { :; }; trash_profiles_ready ) > "$T/out" 2>&1 \
+    && fail_ "trash-sync with an instance configure never asked about"
+grep -q 'no TRaSH profile chosen for: lidarrish — ./mediastack.sh configure asks it' "$T/out" || fail_ "refused loud, never set to skip quietly: $(cat "$T/out")"; pass
+! grep -nE '\bask\b|read -r -p|\[\[ ! -t 0' <(sed -n '/^trash_profiles_ready()/,/^}/p' services/recyclarr/recyclarr.sh) || fail_ "trash-sync asks nothing"; pass
+# shellcheck disable=SC2034  # read by the sourced functions
+c=$( ( RENDERED_JSON='{"services":{"recyclarr":{"labels":{}},"sonarr":{"labels":{"mediastack.managed":"true"}},"authentik-db":{"labels":{"mediastack.shard":"authentik"}}}}'
+       ENV_FILE=$T/r.env; render() { :; }; recyclarr_questions() { echo R; }; sonarr_questions() { echo S; }
+       svc_hooks questions ) 2>&1 | paste -sd' ' -)
+[[ "$c" == R ]] || fail_ "a companion's hook runs, a disabled service's does not: '$c'"; pass
+
+# ---- wire: the first restore point is taken, not asked; a closed gate is not waited on ----
+! grep -nE 'confirm(_yes)? "First wire' lib/wire.sh || fail_ "wire asks whether to take the first restore point"; pass
+grep -q 'leak_gate_closed' <<<"$(awk '/^prowlarr_indexers_retest\(\)/,/^}/' services/prowlarr/prowlarr.sh)" \
+    || fail_ "the indexer retest does not wait for a Prowlarr the gate holds stopped"; pass
 
 echo "OK questions: $checks checks"
