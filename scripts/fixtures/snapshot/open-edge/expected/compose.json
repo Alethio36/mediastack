@@ -691,6 +691,12 @@
         },
         {
           "read_only": true,
+          "source": "@REPO@/services/traefik/config/traefik/certs",
+          "target": "/certs",
+          "type": "bind"
+        },
+        {
+          "read_only": true,
           "source": "@REPO@/services/traefik/config/traefik/dynamic",
           "target": "/dynamic",
           "type": "bind"

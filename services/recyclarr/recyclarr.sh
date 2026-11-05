@@ -38,6 +38,8 @@ recyclarr_questions() { # the questionnaire's hook: the TRaSH profile of each in
             continue
         fi
         if q_quick; then
+            # enabling something else, an arr's kept profile is not news: said only when recorded
+            if [[ -n "$cur" && -n "${Q_FOR:-}" ]]; then continue; fi
             [[ -n "$cur" ]] || env_set "$key" "$TRASH_RECOMMENDED"
             q_took "TRaSH profile: $s" "$(env_get "$key")"
             continue

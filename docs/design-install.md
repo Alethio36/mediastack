@@ -14,7 +14,12 @@ configure (the panel first, then up, wire, trash-sync — the panel before
 `up`, unlike the first sketch, because it adds a container `up` starts),
 the closing question, the SSH warning, the closing to-do, install carrying
 on into configure, and `enable` asking its services' questions
-(`questionnaire --for`), which retired `up`'s and enable's own asking (2e). Sections marked **agreed**
+(`questionnaire --for`), which retired `up`'s and enable's own asking (2e);
+a certificate of your own (2f): the paths of your two files are recorded
+and checked (it must chain to a public CA — the apps check the portal's
+certificate themselves), and `up` copies them into Traefik's folder when
+they change, so renewal is replacing them and running `up`
+(docs/certificates.md). Sections marked **agreed**
 were settled one by one before the whole was.*
 
 ## Goals

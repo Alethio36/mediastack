@@ -52,10 +52,12 @@ keeps it for the rest of that run, so a long step does not stop to ask again.
   <your-user>`, then log out and back in.
 * **Your VPN:** a NordVPN access token (nordvpn.com → Services → NordVPN →
   *Set up NordVPN manually*), or your provider's WireGuard private key.
-* **For HTTPS names and the authentik portal** (skip otherwise): a domain
-  on Cloudflare; a wildcard A record `*.<domain>` → this machine's LAN IP,
-  proxy **off** (grey cloud); and a Cloudflare API token with the single
-  permission Zone / DNS / Edit, scoped to that zone.
+* **For HTTPS names and the authentik portal** (skip otherwise): a domain;
+  a wildcard A record `*.<domain>` → this machine's LAN IP (on Cloudflare:
+  proxy **off**, grey cloud); and either the domain's DNS on Cloudflare with
+  an API token holding the single permission Zone / DNS / Edit, scoped to
+  that zone (Let's Encrypt), or a certificate of your own from a public CA
+  covering `<domain>` and `*.<domain>` ([docs/certificates.md](docs/certificates.md)).
 * **For notifications** (optional): one URL per stream — `ops` (you) and
   `users` (your household). A Discord channel's webhook URL works as-is;
   any [Apprise URL](https://github.com/caronc/apprise/wiki) does.
@@ -291,7 +293,7 @@ Connect
 | `trash-sync [--dry-run]` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update. `--dry-run` previews the drift (`recyclarr --preview`) and changes nothing |
 | `traefik-setup` | ask Traefik's questions again (`configure` asks them first): domain, Cloudflare token — checked with Cloudflare when pasted, with the domain's zone — and the cert environment (the dashboard's login is one of the stack's own: `set-credentials traefik`) |
 | `traefik-setup --hosts` | guided rename of every service's subdomain |
-| `traefik-setup --certs` | switch staging/production certificates (applied end to end) |
+| `traefik-setup --certs` | where the certificate comes from — Let's Encrypt, your own files, or staging — applied end to end ([docs/certificates.md](docs/certificates.md)) |
 | `credentials` | every login the stack created or stores, and the API keys companion apps ask for (the arrs, Prowlarr, Bazarr, Seerr) with the address to give them |
 
 Check
@@ -877,6 +879,7 @@ what would reopen it, in [docs/watchlist.md](docs/watchlist.md).
 
 * [docs/edge.md](docs/edge.md) — HTTPS, hostnames, certificates, proxying non-stack hosts
 * [docs/email.md](docs/email.md) — adding email (SMTP): picking a sender, the settings, testing, troubleshooting
+* [docs/certificates.md](docs/certificates.md) — where the certificate comes from: Let's Encrypt, your own, staging; renewal
 * [docs/trash-sync.md](docs/trash-sync.md) — quality profiles, overrides, ownership
 * [docs/vpn-membership.md](docs/vpn-membership.md) — moving services in/out of the VPN
 * [docs/privacy.md](docs/privacy.md) — what leaves your box, to whom, from which address

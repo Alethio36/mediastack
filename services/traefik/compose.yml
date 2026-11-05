@@ -28,6 +28,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ${CONFIG_ROOT}/traefik/traefik.yml:/etc/traefik/traefik.yml:ro
       - ${CONFIG_ROOT}/traefik/acme:/letsencrypt
+      # your own certificate (TLS_SOURCE=own), copied in by up: services/traefik/certs.sh
+      - ${CONFIG_ROOT}/traefik/certs:/certs:ro
       # generated dir; custom/proxy.d/*.yml are copied in by traefik-setup/up
       - ${CONFIG_ROOT}/traefik/dynamic:/dynamic:ro
     networks:

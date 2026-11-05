@@ -173,7 +173,7 @@ wire_kavita() {
     ok "kavita: admin login works"
     signin_is authentik || return 0
     kav_admin_email_check "$tok"
-    if [[ "$(env_get ACME_ENV)" != production ]]; then
+    if ! certs_trusted; then
         # Kavita checks the portal's address over TLS and refuses the staging
         # certificate (SslStream handshake in IsValidAuthority, seen live)
         warn "kavita: sign-in through the portal needs real certificates — Kavita refuses the staging one. Skipped; after: ./mediastack.sh traefik-setup --certs, run: ./mediastack.sh wire kavita"

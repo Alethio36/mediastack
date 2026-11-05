@@ -154,20 +154,20 @@ done
 tq() { ( ENV_FILE=$T/t.env Q_MODE=${2:-full}; printf '%b' "$1" | traefik_questions ) > "$T/out" 2>&1; }
 tv() { ENV_FILE=$T/t.env env_get "$1"; }
 printf 'COMPOSE_PROFILES=traefik\n' > "$T/t.env"; : > "$T/curl.args"; : > "$T/curl.stdin"
-tq 'media.example.com\nme@example.com\nBAD\n\nCFTOK\n\n' || fail_ "a refused token, then a live one, runs"
+tq '\nmedia.example.com\nme@example.com\nBAD\n\nCFTOK\n' || fail_ "a refused token, then a live one, runs"
 grep -q 'Cloudflare refused the token (Invalid API Token)' "$T/out" && grep -q 'this value is required' "$T/out" && [[ "$(tv CF_DNS_API_TOKEN)" == CFTOK ]] \
     || fail_ "a refused token is said, Enter cannot keep it, the next one counts: $(tv CF_DNS_API_TOKEN)"; pass
 ! grep -q 'CFTOK\|BAD' "$T/curl.args" && grep -q 'header = "Authorization: Bearer CFTOK"' "$T/curl.stdin" \
     || fail_ "the token reaches curl on stdin, never its command line: $(cat "$T/curl.args")"; pass
 printf 'COMPOSE_PROFILES=traefik,authentik\n' > "$T/t.env"
-tq 'media.example.om\nme@example.com\nCFTOK\nmedia.example.com\n\n\n' || fail_ "a domain without a zone, then the right one, runs"
+tq '\nmedia.example.om\nme@example.com\nCFTOK\nmedia.example.com\n\n' || fail_ "a domain without a zone, then the right one, runs"
 grep -q 'the token sees no Cloudflare zone for media.example.om (looked for: media.example.om, example.om)' "$T/out" && [[ "$(tv STACK_DOMAIN)" == media.example.com ]] \
     || fail_ "a typo in the domain is caught by its zone and asked again, the token kept: $(tv STACK_DOMAIN)"; pass
 [[ -z "$(tv TRAEFIK_DASH_USER)" ]] || fail_ "Traefik's questions leave the dashboard's login to the logins"; pass
 before=$(cat "$T/t.env"); tq '' quick || fail_ "quick with Traefik answered asks nothing"
 [[ "$(cat "$T/t.env")" == "$before" ]] && grep -q 'HTTPS: keep media.example.com' "$T/out" || fail_ "and keeps it, saying so"; pass
 printf 'COMPOSE_PROFILES=traefik\n' > "$T/t.env"
-( CURL_DOWN=1; tq 'media.example.com\nme@example.com\nCFTOK\n' ) && fail_ "Cloudflare unreachable stops the questions"
+( CURL_DOWN=1; tq '\nmedia.example.com\nme@example.com\nCFTOK\n' ) && fail_ "Cloudflare unreachable stops the questions"
 grep -q "Could not reach Cloudflare's API" "$T/out" && [[ -z "$(tv CF_DNS_API_TOKEN)" ]] || fail_ "loud, nothing recorded"; pass
 
 # ---- its source names no sudo, Docker, users or folders ----
@@ -293,6 +293,9 @@ rq '4k\nbogus\n720p\n' || fail_ "full, profiles"
     && fail_ "trash-sync with an instance configure never asked about"
 grep -q 'no TRaSH profile chosen for: lidarrish — ./mediastack.sh configure asks it' "$T/out" || fail_ "refused loud, never set to skip quietly: $(cat "$T/out")"; pass
 ! grep -nE '\bask\b|read -r -p|\[\[ ! -t 0' <(sed -n '/^trash_profiles_ready()/,/^}/p' services/recyclarr/recyclarr.sh) || fail_ "trash-sync asks nothing"; pass
+: > "$T/r.env"; printf 'TRASH_PROFILE_SONARR=720p\n' > "$T/r.env"
+( Q_FOR=" apprise "; rq '' quick ) ; grep -q 'TRaSH profile: sonarr' "$T/out" && fail_ "enabling another service, a kept profile is not news"
+grep -q 'TRaSH profile: radarr: 1080p' "$T/out" || fail_ "a profile recorded by it is: $(cat "$T/out")"; pass
 # shellcheck disable=SC2034  # read by the sourced functions
 c=$( ( RENDERED_JSON='{"services":{"recyclarr":{"labels":{}},"sonarr":{"labels":{"mediastack.managed":"true"}},"authentik-db":{"labels":{"mediastack.shard":"authentik"}}}}'
        ENV_FILE=$T/r.env; render() { :; }; recyclarr_questions() { echo R; }; sonarr_questions() { echo S; }
@@ -325,11 +328,14 @@ rm -rf "$T/cs"; TI="" ; [[ "$(cq)" == "up wire" ]] || fail_ "no panel, no arr: u
 ( STATE_DIR=$T/cs LOCAL_DIR=$T; state_set "$PANEL_STATE" yes ); TI=sonarr
 [[ "$(cq)" == "frontdoor-install up wire trash-sync" ]] || fail_ "the panel first (up starts its container), trash-sync last ($(cq))"; pass
 mkdir -p "$T/fk"; printf '#!/usr/bin/env bash\necho "$1" >> "%s/steps"\n[[ "$1" != wire ]] || exit 4\n' "$T" > "$T/fk/mediastack.sh"; : > "$T/steps"
-( SCRIPT_DIR=$T/fk STATE_DIR=$T/cs LOCAL_DIR=$T; notify() { :; }; chain_run frontdoor-install up wire trash-sync ) > "$T/out" 2>&1; rc=$?
+( SCRIPT_DIR=$T/fk STATE_DIR=$T/cs LOCAL_DIR=$T CMD=configure; notify() { echo "NOTIFY $*" >> "$T/steps"; }; chain_run frontdoor-install up wire trash-sync ) > "$T/out" 2>&1; rc=$?
 [[ "$rc" == 4 && "$(paste -sd' ' "$T/steps")" == "frontdoor-install up wire" ]] && grep -q "'wire' stopped (exit 4, above) — nothing was undone" "$T/out" \
     && grep -q 'Still to run, in this order: ./mediastack.sh wire, ./mediastack.sh trash-sync' "$T/out" \
     || fail_ "a failed step stops the chain, names it and what is left ($rc: $(paste -sd' ' "$T/steps"))"; pass
 [[ -z "$( STATE_DIR=$T/cs; state_get "$PANEL_STATE")" ]] || fail_ "the panel, once installed, is not installed again"; pass
+printf '#!/usr/bin/env bash\n' > "$T/fk/mediastack.sh"; : > "$T/steps"
+( SCRIPT_DIR=$T/fk STATE_DIR=$T/cs LOCAL_DIR=$T CMD=enable; notify() { echo "NOTIFY $*" >> "$T/steps"; }; chain_run up wire ) > /dev/null 2>&1
+grep -q '^NOTIFY ops Mediastack enable finished: up, wire all done' "$T/steps" || fail_ "the closing notification names the verb that ran the chain: $(cat "$T/steps")"; pass
 w() { ( SSH_CONNECTION=${1:-} TMUX=${2:-} STY=${3:-}; chain_ssh_warn ) 2>&1; }
 [[ "$(w '1.2.3.4 5 6.7.8.9 22')" == *"over SSH outside tmux or screen"*"configure again carries on"* && -z "$(w '1.2.3.4 5 6.7.8.9 22' /tmp/tmux-1)" \
    && -z "$(w '1.2.3.4 5 6.7.8.9 22' '' 123.pts)" && -z "$(w)" ]] || fail_ "the SSH warning: only over SSH outside tmux and screen"; pass

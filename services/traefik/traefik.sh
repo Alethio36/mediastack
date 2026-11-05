@@ -14,8 +14,22 @@ sc_rotate_traefik() { # PASS — regenerated into the watched dynamic config
             || wfail "traefik config regeneration failed — inspect: ./mediastack.sh traefik-setup"
 }
 
-traefik_doctor() { # doctor: the certificate store — its mode, staging or production, the wildcard
-    if svc_enabled traefik && [[ -n "$(env_get STACK_DOMAIN)" ]]; then
+traefik_doctor() { # doctor: the certificate — your own (its expiry), or Let's Encrypt's store (its mode, staging or production, the wildcard)
+    if svc_enabled traefik && [[ -n "$(env_get STACK_DOMAIN)" ]] && certs_own; then
+        local cert days why
+        cert=$(env_get TLS_CERT_FILE)
+        why=$(own_cert_problem "$cert" "$(env_get TLS_KEY_FILE)" "$(env_get STACK_DOMAIN)")
+        days=$(own_cert_days_left "$cert")
+        if [[ -n "$why" ]]; then
+            d_fail "your certificate cannot be served: $why" "Traefik serves it for every name under $(env_get STACK_DOMAIN)" "replace the files (TLS_CERT_FILE / TLS_KEY_FILE), then: ./mediastack.sh up"
+        elif (( days < TLS_RENEW_WARN_DAYS )); then
+            warn "your certificate expires in $days days ($(own_cert_until "$cert")) — renewal is yours: replace the files, then ./mediastack.sh up"
+        else
+            ok "your own certificate, until $(own_cert_until "$cert") ($days days)"
+        fi
+        sudo cmp -s "$cert" "$(env_get CONFIG_ROOT)/traefik/certs/fullchain.pem" \
+            || warn "Traefik serves an older copy than your certificate file — apply it: ./mediastack.sh up"
+    elif svc_enabled traefik && [[ -n "$(env_get STACK_DOMAIN)" ]]; then
         local acmef; acmef="$(env_get CONFIG_ROOT)/traefik/acme/acme.json"
         if sudo test -s "$acmef"; then
             [[ "$(sudo stat -c %a "$acmef")" == 600 ]] && ok "acme.json permissions 600" \
