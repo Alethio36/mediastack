@@ -235,11 +235,27 @@ authentik_blueprint_discovered() { # wait for authentik to discover the blueprin
     done
 }
 
+authentik_first_pass_wait() { # a first start: wait for authentik's own first pass to apply the blueprint; -> its status then
+    # Its first pass also creates authentik's default flows, which mediastack's
+    # blueprint references: applied before them, it fails (found live Nov 2026,
+    # when configure's chain reached wire before that pass had run)
+    local st waited=0
+    while :; do
+        st=$(authentik_blueprint_status)
+        [[ "$st" == outdated ]] || { echo "$st"; return 0; }
+        (( waited >= AUTHENTIK_DISCOVER_WAIT )) && { echo outdated; return 0; }
+        sleep 5; waited=$((waited + 5))
+    done
+}
+
 authentik_blueprint_why() { # authentik's own reasons for rejecting mediastack's blueprint (its validator, dry run — nothing applied)
-    # its logs and task records keep no reasons; this command states them
-    sudo docker exec "$(svc_cname authentik-worker)" ak apply_blueprint --dry-run mediastack/mediastack-portal.yaml 2>&1 \
-        | grep -E 'Entry invalid|Error|exception|Traceback|invalid' | grep -v 'Imported related module' \
-        | sed -E 's/^[[:space:]]+//; s/\{.entry.: .*//' | cut -c1-400 | tail -5
+    # its logs and task records keep no reasons; this command states them. Never
+    # fails: it is how a failure is reported (found live: an empty result ended wire)
+    local out why
+    out=$(sudo docker exec "$(svc_cname authentik-worker)" ak apply_blueprint --dry-run mediastack/mediastack-portal.yaml 2>&1) || true
+    why=$(grep -E 'Entry invalid|Error|exception|Traceback|invalid' <<<"$out" | grep -v 'Imported related module' \
+          | sed -E 's/^[[:space:]]+//; s/\{.entry.: .*//; s/[[:space:]]+$//' | cut -c1-400 | tail -5 || true)
+    echo "${why:-its validator finds nothing wrong now — the apply may have met authentik mid-start: ./mediastack.sh wire authentik again}"
 }
 
 authentik_blueprint_apply() { # apply the current file now instead of waiting for the worker; -> its status
@@ -513,11 +529,20 @@ wire_authentik() {
         st=$(authentik_blueprint_discovered)
     fi
     local applied=0
-    # why it is not current: never applied (a first start), a failed apply, or an older file
+    # never applied: a first start — authentik's own first pass applies it,
+    # after the default flows it references; forcing it sooner fails
+    if [[ "$st" == outdated && -z "$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied_hash // ""' 2>/dev/null)" ]]; then
+        if (( WIRE_DRY )); then info "authentik: its own first pass applies mediastack's portal setup (a first start) — the real run waits for it"; return 0; fi
+        info "authentik: waiting for its own first pass to apply mediastack's portal setup (a first start; up to $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes)"
+        st=$(authentik_first_pass_wait)
+        if [[ "$st" == outdated ]]; then
+            wfail "authentik has not applied mediastack's portal setup within $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes of a first start — ./mediastack.sh logs authentik-worker --no-follow | grep -i blueprint"
+            return 0
+        fi
+    fi
+    # why it is not current: a failed apply, or an older file
     local why="an earlier version is in place"
     [[ "$st" == error ]] && why="its last apply failed"
-    [[ "$st" == outdated && -z "$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied_hash // ""' 2>/dev/null)" ]] \
-        && why="authentik has not applied it yet"
     if [[ "$st" == outdated || "$st" == error ]] && w_would "authentik: apply mediastack's current portal setup now ($why)"; then
         st=$(authentik_blueprint_apply); applied=1
     fi

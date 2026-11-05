@@ -350,7 +350,29 @@ why_said() { # why_said STATUS APPLIED-HASH -> the reason wire gives for applyin
       wire_authentik_gate() { :; }
       WIRE_DRY=1 ST=$1 HASH=$2; wire_authentik 2>&1 | sed -n 's/.*portal setup now (\(.*\))$/\1/p' )
 }
-[[ "$(why_said outdated "")" == "authentik has not applied it yet" ]] || fail_ "a first start is not 'an earlier version': $(why_said outdated "")"; pass
+[[ -z "$(why_said outdated "")" ]] || fail_ "a first start is never forced: $(why_said outdated "")"; pass
+# a first start, for real: authentik's own first pass applies it (after its default
+# flows, which the blueprint references — forced sooner it failed, found live Nov 2026)
+first_pass() { # first_pass STATUS-AFTER-THE-WAIT -> "forced|waited-only fails=N gate|nogate"
+    ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
+      authentik_blueprint_status() { echo outdated; }
+      authentik_blueprint_instance() { echo '{"last_applied_hash":""}'; }
+      authentik_first_pass_wait() { echo "$AFTER"; }
+      authentik_blueprint_apply() { echo forced > "$T/forced"; echo successful; }
+      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_lockout_alerts() { :; }
+      wire_authentik_gate() { echo gate > "$T/gated"; }; panel_signin_check() { :; }
+      rm -f "$T/forced" "$T/gated"; WIRE_DRY=0 AFTER=$1 WIRE_FAILS=0
+      wire_authentik >/dev/null 2>&1
+      echo "$(cat "$T/forced" 2>/dev/null || echo waited-only) fails=$WIRE_FAILS $(cat "$T/gated" 2>/dev/null || echo nogate)" )
+}
+[[ "$(first_pass successful)" == "waited-only fails=0 gate" ]] || fail_ "applied by its own first pass: nothing forced, the gate follows: $(first_pass successful)"; pass
+[[ "$(first_pass outdated)" == "waited-only fails=1 nogate" ]] || fail_ "not applied within the wait: a failure, still nothing forced: $(first_pass outdated)"; pass
+# the reason printer is how a failure is reported: it never fails itself
+r=$( ( set -Ee; trap 'echo TRAPPED; exit 9' ERR   # as wire runs it
+       sudo() { echo '{"event": "Imported related module"}'; return 1; }; svc_cname() { echo w; }; authentik_blueprint_why ); echo "rc=$?" )
+[[ "$r" == *"its validator finds nothing wrong now"*"rc=0" ]] || fail_ "the validator says nothing: said, and wire carries on: $r"; pass
+r=$( ( sudo() { printf 'x\n  Entry invalid: flow not found {"entry": 1}\n'; }; svc_cname() { echo w; }; authentik_blueprint_why ) )
+[[ "$r" == "Entry invalid: flow not found" ]] || fail_ "the validator's own words, trimmed: $r"; pass
 [[ "$(why_said outdated abc123)" == "an earlier version is in place" ]] || fail_ "an older file applied: $(why_said outdated abc123)"; pass
 [[ "$(why_said error abc123)" == "its last apply failed" ]] || fail_ "a failed apply: $(why_said error abc123)"; pass
 
