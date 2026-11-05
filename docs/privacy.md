@@ -54,7 +54,7 @@ by your VPN provider.
 | Let's Encrypt and Cloudflare (DNS API) | Traefik | your domain; your public DNS records name the stack's hostnames and their address |
 | Container registries (Docker Hub, GitHub, linuxserver.io) | `install`, `update` | which images you run |
 | GitHub | `upgrade` | that a mediastack is updated |
-| RIPEstat (RIPE NCC) | `leak-test`, once a day | your home address, its network and that network's address blocks — so the tunnel can be compared against them locally |
+| RIPEstat (RIPE NCC) | `leak-test`, once a day | your home address, its network, that network's name (shown so you can tell it is yours) and its address blocks — so the tunnel can be compared against them locally |
 
 **Notifications are outside the VPN on purpose.** An alert that the tunnel is
 down must not need the tunnel, and posting through it would tie the VPN's exit
@@ -71,8 +71,8 @@ lookups through the VPN is on the roadmap (Security & access).
 ## How `leak-test` keeps your two addresses apart
 
 - **Your home side**, from the host: RIPEstat is asked for your address, its
-  network (ASN) and all of that network's IPv4 blocks. The answer is kept in
-  `local/host-identity` (private, never committed) and refreshed once a day at
+  network (ASN), that network's name and all of its IPv4 blocks. The answer is
+  kept in `local/host-identity` (private, never committed) and refreshed once a day at
   a random time (`host-identity`, its own timer) — never inside a leak-test, so
   no run asks about your home address and the VPN's side by side.
 - **The VPN side**, from inside gluetun: Mullvad's checker gives the exit

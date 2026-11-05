@@ -79,6 +79,14 @@ hostid_get() { # hostid_get KIND -> the record's values of that kind, one per li
     [[ -r "$HOSTID_FILE" ]] || return 0
     awk -v k="$1" '$1 == k { print $2 }' "$HOSTID_FILE"
 }
+hostid_holder() { # the name RIPEstat gives the record's network ("" when the record has none)
+    [[ -r "$HOSTID_FILE" ]] || return 0
+    awk '$1 == "holder" { sub(/^holder /, ""); print; exit }' "$HOSTID_FILE"
+}
+hostid_network() { # "AS4739 (INTERNODE-AS Internode Pty Ltd)" — the AS alone when the record names no holder
+    local h; h=$(hostid_holder)
+    echo "AS$(hostid_get asn)${h:+ ($h)}"
+}
 hostid_age() { # seconds since the record was refreshed; "" when there is none
     local u; u=$(hostid_get updated)
     [[ "$u" =~ ^[0-9]+$ ]] && echo $(( $(date +%s) - u )) || true
@@ -103,8 +111,8 @@ hostid_ips_merged() { # hostid_ips_merged IP NOW -> the record's ip lines with I
         | sort -k4,4nr -k2,2 | sed -n "1,${HOSTID_KEEP_IPS}p"
 }
 
-hostid_refresh() { # ask RIPEstat for this host's address, network and IPv4 blocks; rewrite the record. Non-zero with RIPESTAT_ERR
-    local j ip asn own blocks now tmp
+hostid_refresh() { # ask RIPEstat for this host's address, network (its name too) and IPv4 blocks; rewrite the record. Non-zero with RIPESTAT_ERR
+    local j ip asn own blocks holder now tmp
     ripestat "whats-my-ip/data.json" || return 1; j=$RIPESTAT_BODY
     ip=$(jq -r '.data.ip // empty' <<<"$j")
     ip4_valid "$ip" || { RIPESTAT_ERR="RIPEstat whats-my-ip: no IPv4 address in its answer ($(oneline "$j"))"; return 1; }
@@ -115,6 +123,14 @@ hostid_refresh() { # ask RIPEstat for this host's address, network and IPv4 bloc
     blocks=$( { jq -r '.data.prefixes[].prefix' <<<"$j"; echo "$own"; } \
         | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' | sort -u || true)
     [[ -n "$blocks" ]] || { RIPESTAT_ERR="RIPEstat announced-prefixes: no IPv4 block for AS$asn"; return 1; }
+    # the network's name, so you can tell it is yours: only shown, never compared —
+    # a failed lookup is said and the record is made without it
+    holder=""
+    if ripestat "as-overview/data.json?resource=AS$asn"; then
+        holder=$(jq -r '.data.holder // empty' <<<"$RIPESTAT_BODY" | tr -cd '[:print:]' | cut -c1-80)
+    else
+        warn "your network's name not fetched — $RIPESTAT_ERR (the record is complete without it)"
+    fi
     now=$(date +%s); tmp=$(mktemp)
     {
         echo "# mediastack: this host's own internet address, its network and that network's"
@@ -122,6 +138,7 @@ hostid_refresh() { # ask RIPEstat for this host's address, network and IPv4 bloc
         echo "# Private: never commit it, never paste it. Rebuilt once a day (host-identity)."
         echo "updated $now"
         echo "asn $asn"
+        [[ -z "$holder" ]] || echo "holder $holder"
         hostid_ips_merged "$ip" "$now"
         sed 's/^/prefix /' <<<"$blocks"
     } >"$tmp"
@@ -147,7 +164,8 @@ hostid_ensure() { # the record usable? -> 0; 1 with the reason in HOSTID_WHY (no
 cmd_host_identity() { # refresh the record of this host's own address (its daily timer, or by hand)
     load_env
     if hostid_refresh; then
-        ok "record of this host's address refreshed (RIPEstat): your network has $(hostid_get prefix | wc -l) IPv4 blocks"
+        ok "record of this host's address refreshed (RIPEstat): your ISP's network is $(hostid_network), $(hostid_get prefix | wc -l) IPv4 blocks"
+        info "leak-test fails any tunnel exit inside them — kept in local/host-identity, refreshed daily"
         return 0
     fi
     # the timer's failure is not news yet: the record serves two days, then
@@ -169,7 +187,7 @@ lt_tunnel_ip() { # lt_tunnel_ip GLUETUN HOSTID_OK — the exit address (Mullvad'
     elif m=$(hostid_get prefix | ip4_in_prefixes "$ip"); then
         lt_fail "tunnel address $ip is inside your own network's block $m — traffic is leaving outside the VPN"
     else
-        lt_pass "tunnel exits at $ip ($org): not yours, outside your network's $(hostid_get prefix | wc -l) blocks"
+        lt_pass "tunnel exits at $ip ($org): not your ISP's (AS$(hostid_get asn), $(hostid_get prefix | wc -l) blocks)"
     fi
 }
 

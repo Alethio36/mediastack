@@ -62,6 +62,7 @@ curl() { # curl -4 -sS -m 15 -w ... URL: RIPEstat's three answers, then the HTTP
         */whats-my-ip/*)         printf '{"data":{"ip":"%s"}}\n200' "$RIPE_IP" ;;
         */network-info/*)        printf '{"data":{"asns":["%s"],"prefix":"198.51.100.0/24"}}\n200' "$RIPE_ASN" ;;
         */announced-prefixes/*)  printf '{"data":{"prefixes":[{"prefix":"198.51.100.0/22"},{"prefix":"2001:db8::/32"}]}}\n200' ;;
+        */as-overview/*)         if [[ -n "${RIPE_NONAME:-}" ]]; then printf 'busy\n500'; else printf '{"data":{"holder":"EXAMPLE-AS Example\\u0007 Net"}}\n200'; fi ;;
     esac
 }
 hostid_get asn | grep -q . && fail_ "no record yet: nothing to read"; pass
@@ -78,6 +79,13 @@ cmd_host_identity > "$T/out" 2>&1 || fail_ "host-identity: refreshed — $(cat "
 [[ "$(hostid_get asn)" == 64500 ]] || fail_ "the network is recorded"; pass
 [[ "$(hostid_get prefix | sort | paste -sd' ')" == "198.51.100.0/22 198.51.100.0/24" ]] || fail_ "IPv4 blocks only, the host's own included ($(hostid_get prefix | paste -sd' '))"; pass
 [[ "$(stat -c %a "$HOSTID_FILE")" == 600 ]] || fail_ "the record is private (600)"; pass
+[[ "$(hostid_holder)" == "EXAMPLE-AS Example Net" ]] || fail_ "the network's name is recorded, unprintables dropped ($(hostid_holder))"; pass
+grep -q "your ISP's network is AS64500 (EXAMPLE-AS Example Net), 2 IPv4 blocks" "$T/out" && grep -q 'leak-test fails any tunnel exit inside them' "$T/out" \
+    || fail_ "host-identity names the network, not just a count — $(cat "$T/out")"; pass
+RIPE_NONAME=1; cmd_host_identity > "$T/out" 2>&1 || fail_ "no name: still refreshed"
+[[ -z "$(hostid_holder)" && "$(hostid_get asn)" == 64500 ]] && grep -q "your network's name not fetched — RIPEstat as-overview: HTTP 500" "$T/out" \
+    && grep -q "your ISP's network is AS64500, 2 IPv4 blocks" "$T/out" || fail_ "a failed name lookup is said; the record is made without it — $(cat "$T/out")"; pass
+RIPE_NONAME=""
 : > "$T/curl"; NOW=$((NOW + 86400 + 3600))
 hostid_ensure || fail_ "a day and an hour old: still usable"; pass
 (( $(curl_calls) == 0 )) || fail_ "and not refreshed by being judged"; pass
