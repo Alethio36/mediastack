@@ -187,6 +187,12 @@ gluetun is proven (`services/gluetun/gate.sh`):
 - **A deliberate stop of gluetun forgets what the host tracked from its
   address** (all of it from before the stop), so the gate after a nightly
   backup does not wait out old tunnel sessions.
+- **gluetun keeps one address** (`GLUETUN_ADDRESS`, default `172.31.250.3`),
+  outside the pool the other containers draw from. On a dynamic one, a
+  restarted gluetun could be handed the address another container had just
+  left — and the host still tracked that container's connections, which the
+  traffic check then took for gluetun's (Seerr's, found live Nov 2026: a
+  false FAIL that closed the gate).
 
 ### Update goes through the gate
 

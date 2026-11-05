@@ -408,7 +408,7 @@ authentik_set_email() { # authentik_set_email USER ADDRESS YES — an admin chan
 _doctor_accounts() { # the account model: one of the services that conflict, and authentik's release mark
     hr "doctor: accounts"
     local np; np=$(network_problems)
-    [[ -z "$np" ]] || d_fail "the stack network's addressing: $np" "Traefik's fixed address would clash or fall outside the network" "fix MEDIASTACK_SUBNET / MEDIASTACK_IP_RANGE / TRAEFIK_ADDRESS in .env, then: ./mediastack.sh up"
+    [[ -z "$np" ]] || d_fail "the stack network's addressing: $np" "a fixed address (Traefik's, gluetun's) would clash or fall outside the network" "fix MEDIASTACK_SUBNET / MEDIASTACK_IP_RANGE / TRAEFIK_ADDRESS in .env, then: ./mediastack.sh up"
     local s c seen=""
     for s in $(svc_enabled_managed); do
         for c in $(svc_conflicts "$s"); do

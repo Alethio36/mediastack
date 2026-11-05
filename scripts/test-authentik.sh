@@ -421,6 +421,11 @@ printf 'TRAEFIK_ADDRESS=172.31.250.200\n' > "$ENV_FILE"
 [[ "$(network_problems)" == *"inside MEDIASTACK_IP_RANGE"* ]] || fail_ "Traefik inside the pool is a problem"; pass
 printf 'TRAEFIK_ADDRESS=10.9.9.9\n' > "$ENV_FILE"
 [[ "$(network_problems)" == *"not inside MEDIASTACK_SUBNET"* ]] || fail_ "Traefik outside the network is a problem"; pass
+# gluetun's too: in the pool, another container's tracked connections are taken for its own
+printf 'GLUETUN_ADDRESS=172.31.250.131\n' > "$ENV_FILE"
+[[ "$(network_problems)" == *"GLUETUN_ADDRESS (172.31.250.131) is inside MEDIASTACK_IP_RANGE"* ]] || fail_ "gluetun inside the pool is a problem"; pass
+printf 'GLUETUN_ADDRESS=172.31.250.2\n' > "$ENV_FILE"
+[[ "$(network_problems)" == *"the same address"* ]] || fail_ "gluetun on Traefik's address is a problem"; pass
 
 # ---- who may name the user: Traefik's address while the portal runs, nobody otherwise ----
 printf 'TRAEFIK_ADDRESS=172.31.250.2\n' > "$ENV_FILE"

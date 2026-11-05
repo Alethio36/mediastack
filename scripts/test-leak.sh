@@ -315,4 +315,8 @@ printf 'VPN_DNS_ADDRESS=\nVPN_DNS_RESOLVERS=quad9\n' > "$ENV_FILE"
 migrate_env_36_to_37 > "$T/out" 2>&1
 [[ ! -s "$T/out" ]] && grep -qx 'VPN_DNS_RESOLVERS=quad9' "$ENV_FILE" || fail_ "empty: removed quietly; a choice already made is kept"; pass
 
+# gluetun keeps one address outside the pool: a dynamic one was another container's
+# moments before, and the host still tracked that container's connections (found live Nov 2026)
+grep -q 'ipv4_address: ${GLUETUN_ADDRESS:-172.31.250.3}' services/gluetun/compose.yml \
+    || fail_ "gluetun's address is fixed outside the pool (GLUETUN_ADDRESS)"; pass
 echo "test-leak: $checks checks passed"

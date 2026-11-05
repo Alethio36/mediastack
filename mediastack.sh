@@ -283,11 +283,15 @@ cidr_has() { # cidr_has CIDR IP -> 0 when IP is inside CIDR
     (( ($(ip_int "$2") & mask) == ($(ip_int "$net") & mask) ))
 }
 network_problems() { # the stack network's addressing, as .env sets it — one line per problem
-    local sub rng tr
-    sub=$(env_get MEDIASTACK_SUBNET); rng=$(env_get MEDIASTACK_IP_RANGE); tr=$(env_get TRAEFIK_ADDRESS)
+    local sub rng k a
+    sub=$(env_get MEDIASTACK_SUBNET); rng=$(env_get MEDIASTACK_IP_RANGE)
     cidr_has "$sub" "${rng%/*}" || echo "MEDIASTACK_IP_RANGE ($rng) is not inside MEDIASTACK_SUBNET ($sub)"
-    cidr_has "$sub" "$tr" || echo "TRAEFIK_ADDRESS ($tr) is not inside MEDIASTACK_SUBNET ($sub)"
-    ! cidr_has "$rng" "$tr" || echo "TRAEFIK_ADDRESS ($tr) is inside MEDIASTACK_IP_RANGE ($rng) — a container could take it first"
+    for k in TRAEFIK_ADDRESS GLUETUN_ADDRESS; do   # the fixed addresses: in the network, never in the pool
+        a=$(env_get "$k")
+        cidr_has "$sub" "$a" || echo "$k ($a) is not inside MEDIASTACK_SUBNET ($sub)"
+        ! cidr_has "$rng" "$a" || echo "$k ($a) is inside MEDIASTACK_IP_RANGE ($rng) — a container could take it first"
+    done
+    [[ "$(env_get TRAEFIK_ADDRESS)" != "$(env_get GLUETUN_ADDRESS)" ]] || echo "TRAEFIK_ADDRESS and GLUETUN_ADDRESS are the same address ($(env_get GLUETUN_ADDRESS))"
     return 0
 }
 network_ensure() { # an older stack network (no fixed range) is recreated once, before anything starts on it

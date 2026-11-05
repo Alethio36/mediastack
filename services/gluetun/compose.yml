@@ -68,8 +68,13 @@ services:
       timeout: 10s
       retries: 5
       start_period: 90s
-    networks: [mediastack]   # explicit: without this compose isolates gluetun
-                             # on an implicit second network (mediastack_default)
+    networks:   # explicit: without this compose isolates gluetun on an implicit second network (mediastack_default)
+      mediastack:
+        # fixed, outside the pool the other containers draw from: a gluetun
+        # restarted on a dynamic address inherited the connections the host
+        # still tracked for that address's last owner (Seerr's, found live
+        # Nov 2026), and leak-test's traffic check blamed gluetun for them
+        ipv4_address: ${GLUETUN_ADDRESS:-172.31.250.3}
     logging: *logging
     dns_search: ["."]   # no host search domain (the VPN group shares this resolv.conf): docs/adding-a-service.md
     # Docker's resolver answers the namespace's container names and forwards

@@ -676,7 +676,9 @@
         "traefik.http.services.transmission.loadbalancer.server.port": "9091"
       },
       "networks": {
-        "mediastack": {}
+        "mediastack": {
+          "ipv4_address": "172.31.250.3"
+        }
       },
       "ports": [
         {
