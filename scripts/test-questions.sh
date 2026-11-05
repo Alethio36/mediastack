@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # globals set here are read by the sourced libraries
 # test-questions.sh — the questionnaire (lib/questionnaire.sh) asks and
 # records, and does nothing else (docs/design-install.md):
 #   * whole runs, quick and full, with sudo, docker, useradd, groupadd,
@@ -302,5 +303,49 @@ c=$( ( RENDERED_JSON='{"services":{"recyclarr":{"labels":{}},"sonarr":{"labels":
 ! grep -nE 'confirm(_yes)? "First wire' lib/wire.sh || fail_ "wire asks whether to take the first restore point"; pass
 grep -q 'leak_gate_closed' <<<"$(awk '/^prowlarr_indexers_retest\(\)/,/^}/' services/prowlarr/prowlarr.sh)" \
     || fail_ "the indexer retest does not wait for a Prowlarr the gate holds stopped"; pass
+
+# ---- enable's questions (--for): only what it brings, quick, its login too ----
+clean; run '1\n1\n1\n\nTOKEN\n' --fresh || fail_ "a configured stack, for enable"
+sed -i 's/^COMPOSE_PROFILES=.*/&,traefik/' "$T/w/.env"
+( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local PATH=$SHIMS
+  jellyfin_questions() { echo "ASKED jellyfin"; }
+  printf 'media.example.com\nme@example.com\nCFTOK\n' | questionnaire_run --for traefik ) > "$T/out" 2>&1 || fail_ "enable traefik's questions"
+[[ "$(envv STACK_DOMAIN)" == media.example.com && -n "$(envv TRAEFIK_DASH_PASSWORD)" ]] && ! grep -q 'ASKED jellyfin' "$T/out" \
+    && ! grep -q 'How much should configure ask' "$T/out" || fail_ "only Traefik's questions and its login, no mode question: $(grep -E 'ASKED|How much' "$T/out")"; pass
+[[ ! -s "$T/calls" ]] || fail_ "enable's questions ran what they may not: $(cat "$T/calls")"; pass
+# unified: a shared password that a new login's own rule refuses stops, named — never a quiet second password
+printf 'COMPOSE_PROFILES=sonarr,kavita\nSTACK_LOGINS=unified\nARR_USER=ops\nARR_PASSWORD=%s\n' "$(printf 'A%.0s' {1..300})" > "$T/k.env"
+( ENV_FILE=$T/k.env; Q_MODE=quick; _configure_logins ) > "$T/out" 2>&1 && fail_ "a shared password Kavita refuses"
+grep -q "the shared password does not suit Kavita's admin (Kavita's admin takes at most 256 characters) — make one that suits every login: ./mediastack.sh set-credentials all" "$T/out" \
+    && [[ -z "$(ENV_FILE=$T/k.env env_get KAVITA_ADMIN_PASSWORD)" ]] || fail_ "said, with the fix; nothing recorded: $(cat "$T/out")"; pass
+
+# ---- the chain: its steps, a stop that names what is left, the SSH warning, the closing question ----
+cq() { ( STATE_DIR=$T/cs LOCAL_DIR=$T; trash_instances() { echo "${TI:-}"; }; chain_steps ) | paste -sd' ' -; }
+rm -rf "$T/cs"; TI="" ; [[ "$(cq)" == "up wire" ]] || fail_ "no panel, no arr: up, wire ($(cq))"; pass
+( STATE_DIR=$T/cs LOCAL_DIR=$T; state_set "$PANEL_STATE" yes ); TI=sonarr
+[[ "$(cq)" == "frontdoor-install up wire trash-sync" ]] || fail_ "the panel first (up starts its container), trash-sync last ($(cq))"; pass
+mkdir -p "$T/fk"; printf '#!/usr/bin/env bash\necho "$1" >> "%s/steps"\n[[ "$1" != wire ]] || exit 4\n' "$T" > "$T/fk/mediastack.sh"; : > "$T/steps"
+( SCRIPT_DIR=$T/fk STATE_DIR=$T/cs LOCAL_DIR=$T; notify() { :; }; chain_run frontdoor-install up wire trash-sync ) > "$T/out" 2>&1; rc=$?
+[[ "$rc" == 4 && "$(paste -sd' ' "$T/steps")" == "frontdoor-install up wire" ]] && grep -q "'wire' stopped (exit 4, above) — nothing was undone" "$T/out" \
+    && grep -q 'Still to run, in this order: ./mediastack.sh wire, ./mediastack.sh trash-sync' "$T/out" \
+    || fail_ "a failed step stops the chain, names it and what is left ($rc: $(paste -sd' ' "$T/steps"))"; pass
+[[ -z "$( STATE_DIR=$T/cs; state_get "$PANEL_STATE")" ]] || fail_ "the panel, once installed, is not installed again"; pass
+w() { ( SSH_CONNECTION=${1:-} TMUX=${2:-} STY=${3:-}; chain_ssh_warn ) 2>&1; }
+[[ "$(w '1.2.3.4 5 6.7.8.9 22')" == *"over SSH outside tmux or screen"*"configure again carries on"* && -z "$(w '1.2.3.4 5 6.7.8.9 22' /tmp/tmux-1)" \
+   && -z "$(w '1.2.3.4 5 6.7.8.9 22' '' 123.pts)" && -z "$(w)" ]] || fail_ "the SSH warning: only over SSH outside tmux and screen"; pass
+cw() { ( WIRED_FILE=$1; printf '%b' "$2" | chain_wanted ) >/dev/null 2>&1; }
+cw "$T/never-wired" '\n' || fail_ "a first run: Enter starts everything"; pass
+touch "$T/wired"; cw "$T/wired" '\n' && fail_ "a live stack: Enter applies nothing"; pass
+cw "$T/wired" 'y\n' || fail_ "a live stack: y applies"; pass
+# the closing to-do: doctor's FAIL lines with their fixes, leak-test's verdict, nothing else of theirs
+printf '#!/usr/bin/env bash\ncase "$1" in\n doctor) printf "OK fine\\nFAIL prowlarr: no indexers\\n     why : its health check\\n     fix : add some\\nWARN noise\\nFAIL doctor: 1 problem(s)\\n"; exit 1 ;;\n leak-test) printf "OK a\\nOK leak-test passed: every check proven.\\n" ;;\nesac\n' > "$T/fk/mediastack.sh"
+out=$( ( SCRIPT_DIR=$T/fk ENV_FILE=$T/w/.env; svc_enabled() { [[ "$1" == prowlarr ]]; }; signin_is() { false; }; closing_todo ) 2>&1 )
+[[ "$out" == *"FAIL prowlarr: no indexers"*"why : its health check"*"fix : add some"*"OK leak-test passed"*"add your indexers in Prowlarr"*"credentials"* ]] \
+    && [[ "$out" != *"OK fine"* && "$out" != *"WARN noise"* && "$out" != *"FAIL doctor:"* ]] || fail_ "the closing to-do: $out"; pass
+
+# ---- up asks nothing any more; install carries on into configure ----
+! grep -q 'traefik_questions' <<<"$(awk '/^traefik_ensure\(\)/,/^}/' services/traefik/edge.sh | sed -n '/^    else/,$p')" || fail_ "up asks Traefik's questions"; pass
+! grep -rn 'cloudflared_enable_check' mediastack.sh lib services >/dev/null || fail_ "enable's own tunnel question is back"; pass
+grep -q 'confirm_yes "Configure now?"' <<<"$(awk '/^cmd_install\(\)/,/^}/' lib/lifecycle.sh)" || fail_ "install offers to carry on into configure"; pass
 
 echo "OK questions: $checks checks"

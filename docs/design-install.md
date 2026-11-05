@@ -9,7 +9,12 @@ as it is pasted) and Jellyfin's server name moved in, library names dropped
 the reserved names built from them, wire no longer asking or inventing a
 login — and `<n>_summary` (2c); Apprise's one-shot URLs, Recyclarr's
 profiles (a companion service's hooks run whether or not anything enables
-it), the first wire's restore point taken without asking (2d). Sections marked **agreed**
+it), the first wire's restore point taken without asking (2d); the chain after
+configure (the panel first, then up, wire, trash-sync — the panel before
+`up`, unlike the first sketch, because it adds a container `up` starts),
+the closing question, the SSH warning, the closing to-do, install carrying
+on into configure, and `enable` asking its services' questions
+(`questionnaire --for`), which retired `up`'s and enable's own asking (2e). Sections marked **agreed**
 were settled one by one before the whole was.*
 
 ## Goals

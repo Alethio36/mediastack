@@ -56,21 +56,17 @@ https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" \
         || warn "compose $cv < $min — 'include:'/wildcard profiles need $min+. Upgrade the compose plugin."
     echo; hr "Dependencies ready"
     cat <<'EOT'
-Next step:   ./mediastack.sh configure
-
-That's the guided setup. Every question explains itself and offers a
-sensible default — pressing Enter through it gives a working stack.
-It will ask about:
-  * where configs, media, cache, transcodes and backups live (defaults are fine)
-  * which services to run (a recommended set is offered)
-  * your VPN — HAVE THIS READY: a NordVPN access token
-    (nordvpn.com -> Services -> NordVPN -> "Set up NordVPN manually"),
-    or your provider's WireGuard private key if not using Nord
-  * when automatic updates should run
-
-Takes about 5 minutes. Safe to re-run any time — your answers become
-the new defaults.
+Next: ./mediastack.sh configure — the guided setup. Quick (the default) asks
+only what has no sensible default: which services, how people sign in, and
+your VPN — HAVE THIS READY: a NordVPN access token (nordvpn.com -> Services
+-> NordVPN -> "Set up NordVPN manually"), or your provider's WireGuard key.
+With HTTPS: your domain and its Cloudflare token. Then it starts everything,
+connects the apps and checks the result (~15-20 min on a first run).
 EOT
+    # install carries on into configure (docs/design-install.md, "The flow")
+    if [[ -t 0 ]] && confirm_yes "Configure now?"; then
+        echo; exec bash "$SCRIPT_DIR/mediastack.sh" configure
+    fi
 }
 
 # ----------------------------------------------------- upgrade/uninstall --

@@ -726,23 +726,38 @@ cmd_enable() {
     $c — $(svc_label "$c" mediastack.desc)
   Disable '$c' first (./mediastack.sh disable $c), then enable '$svc'."
     done
-    local sel cur; cur=$(env_get COMPOSE_PROFILES | tr ',' ' ')
+    local sel cur old new=() s rc=0; old=$(env_get COMPOSE_PROFILES); cur=$(tr ',' ' ' <<<"$old")
     # shellcheck disable=SC2086  # word splitting intended: service list
     sel=$(resolve_deps "$svc" $cur)
     vpn_gen   # a toggle service enabled for the first time needs its overlay stanza before compose sees it
     RENDERED_JSON=""; require_free_ports "$(echo "$sel" | paste -sd, -)"   # refuse before .env changes
-    cloudflared_enable_check "$sel"   # the tunnel's token, asked before .env changes
+    for s in $sel; do [[ ",$old," == *",$s,"* ]] || new+=("$s"); done
+    # its questions and its login, the way configure asks them (docs/design-install.md,
+    # "A service enabled later") — asked with the new set enabled, so each hook
+    # sees what it applies to; cancelled or refused, the set goes back as it was
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
+    trap ':' INT   # Ctrl-C ends the questions; this process restores the set and says so
+    bash "$SCRIPT_DIR/mediastack.sh" questionnaire --for "${new[@]}" || rc=$?
+    trap - INT
+    if (( rc )); then
+        env_set COMPOSE_PROFILES "$old"
+        (( rc == 3 )) && exit 3   # it said why: no terminal to ask on
+        die "'$svc' not enabled: its questions did not finish (exit $rc) — nothing changed"
+    fi
+    # a question can turn its own service off (no tunnel token: no tunnel)
+    svc_enabled "$svc" || die "'$svc' not enabled: its questions turned it off (see above)"
     require_mounts; provision >/dev/null   # users/dirs for the new services
     uid_handover
-    traefik_ensure   # wizard + config gen if traefik just came into the set
+    traefik_ensure
     authentik_prepare
     network_ensure
-    # started the way up starts everything: the VPN group only through the
-    # leak gate, then the attachment guard (a bare compose up here started a
-    # VPN'd service unproven — found Nov 2026)
-    ok "'$svc' enabled — starting it as up does"
-    cmd_up
+    ok "'$svc' enabled — starting it and wiring it, as configure's last steps do"
+    # up starts it the way up starts everything (the VPN group only through
+    # the leak gate); wire then connects it and everything that calls it
+    # (each role compares before it writes); trash-sync when it is an arr
+    local steps=(up wire)
+    if [[ " $(trash_instances | tr '\n' ' ') " == *" $svc "* ]]; then steps+=(trash-sync); fi
+    chain_run "${steps[@]}"
 }
 cmd_disable() {
     local svc="${1:?usage: disable <service>}"; load_env
@@ -1152,7 +1167,7 @@ VERBS=(
     "vpn-apply~vpn-apply <svc> on|off~max=2~Internal~Set a service's VPN membership AND apply it (panel button)."
     "vpn-guard~vpn-guard [--boot]~allow=--boot~Internal~Start the VPN group through the leak gate (boot/daemon unit)."
     "vpn-watch~vpn-watch [--full]~allow=--full~Internal~The 5-minute leak check; starts any VPN'd service that is not running, through the gate (--full: the hourly run)."
-    "questionnaire~questionnaire [--fresh]~allow=--fresh~Internal~configure's questions, in their own process: they record answers in .env and nothing else (exit 0 done, 130 cancelled, 3 no terminal)."
+    "questionnaire~questionnaire [--fresh|--for SVC...]~free~Internal~configure's questions (--for: those of the services enable brings), in their own process: they record answers in .env and nothing else (exit 0 done, 130 cancelled, 3 no terminal)."
     "host-identity~host-identity~none~Internal~Refresh the record of this host's own address that leak-test compares against (daily timer)."
     "unit-failed~unit-failed <unit>~max=1~Internal~Tell ops a scheduled or boot run failed (systemd's OnFailure hook)."
     "frontdoor-refresh~frontdoor-refresh~none~Internal~Regenerate the panel's config and entity files."

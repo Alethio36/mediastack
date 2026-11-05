@@ -130,17 +130,77 @@ cmd_configure() {
     fi
     # new email settings: the portal's reset link follows them (none until they pass a test)
     if [[ -n "$(state_get "$EMAIL_STATE")" ]]; then state_del "$EMAIL_STATE"; authentik_recovery_refresh; fi
-    if [[ -n "$(state_get "$PANEL_STATE")" ]]; then state_del "$PANEL_STATE"; echo; cmd_frontdoor_install; fi
 
     echo; questionnaire_summary
-    hr "Configure complete"
-    cat <<EOF
-Next steps:
-  1. ./mediastack.sh up          start everything
-  2. ./mediastack.sh wire        connect the apps to each other (safe to re-run)
-  3. ./mediastack.sh trash-sync  quality profiles from the TRaSH Guides
-  4. ./mediastack.sh doctor      verify the deployment
-  5. ./mediastack.sh leak-test   prove the VPN cannot leak
-Addresses and ports: ./mediastack.sh status — passwords the stack made: credentials
-EOF
+    local steps=(); mapfile -t steps < <(chain_steps)
+    echo
+    if chain_wanted; then chain_run "${steps[@]}"; closing_todo; else chain_left "${steps[@]}"; fi
+}
+
+chain_wanted() { # a first run (never wired) starts everything on Enter; a live stack serves people and applying restarts things: No unless asked
+    if [[ ! -f "$WIRED_FILE" ]]; then confirm_yes "Start everything now?"; else confirm "Apply the changes now?"; fi
+}
+
+# ------------------------------------------------------------ the chain --
+# configure's (and enable's) last part: each step is the verb itself, run as
+# its own process, so a step that stops (die) stops the chain, not configure —
+# and the message names every step still to run. Every step is safe to run
+# again, which is how a chain that stopped carries on: run configure again.
+chain_steps() { # the steps this stack needs, in order: the panel first (it adds a container up starts)
+    if [[ -n "$(state_get "$PANEL_STATE")" ]]; then echo frontdoor-install; fi
+    echo up; echo wire
+    if [[ -n "$(trash_instances)" ]]; then echo trash-sync; fi
+}
+
+chain_left() { # chain_left STEP... — what is left to run by hand, in order
+    (( $# )) || return 0
+    info "Still to run, in this order: $(printf './mediastack.sh %s, ' "$@" | sed 's/, $//')"
+}
+
+chain_ssh_warn() { # over SSH outside tmux or screen, a dropped session stops the chain
+    [[ -n "${SSH_CONNECTION:-}" && -z "${TMUX:-}" && -z "${STY:-}" ]] || return 0
+    warn "you are connected over SSH outside tmux or screen: if the connection drops, the steps stop where they are (expect ~15-20 min on a first run)."
+    warn "  Running ./mediastack.sh configure again carries on — every step is safe to repeat."
+}
+
+chain_run() { # chain_run STEP... — each in turn, stopping at the first that fails
+    local i rc
+    chain_ssh_warn
+    for (( i = 1; i <= $#; i++ )); do
+        hr "Step $i of $#: ${!i}"
+        rc=0; bash "$SCRIPT_DIR/mediastack.sh" "${!i}" || rc=$?
+        if (( rc )); then
+            fail "'${!i}' stopped (exit $rc, above) — nothing was undone."
+            chain_left "${@:i}"
+            exit "$rc"
+        fi
+        [[ "${!i}" != frontdoor-install ]] || state_del "$PANEL_STATE"
+    done
+    ok "All $# steps done."
+    notify ops "Mediastack" "configure finished: $(printf '%s, ' "$@" | sed 's/, $//') all done." info
+}
+
+closing_todo() { # what is proven, what is still yours to do, where things are
+    local out d=0 l
+    hr "Verified"
+    out=$(bash "$SCRIPT_DIR/mediastack.sh" doctor 2>&1) || d=1
+    if (( d )); then
+        # doctor's FAIL lines, each with its why/fix lines
+        sed 's/\x1b\[[0-9;]*m//g' <<<"$out" | awk '/^FAIL doctor:/ { next } /^FAIL / { p = 1; print; next } p && /^     (why|fix) :/ { print; next } { p = 0 }'
+    else
+        ok "doctor: no problems"
+    fi
+    out=$(bash "$SCRIPT_DIR/mediastack.sh" leak-test 2>&1) || true
+    l=$(sed 's/\x1b\[[0-9;]*m//g' <<<"$out" | grep -E '^(FAIL|WARN UNPROVEN|OK leak-test)' || true)
+    printf '%s\n' "${l:-leak-test: no verdict line — run ./mediastack.sh leak-test}"
+    hr "Still yours to do"
+    if signin_is authentik; then echo "  * make your own account in the portal: invite yourself (./mediastack.sh invite) — the stack's logins are not for people"; fi
+    if svc_enabled prowlarr; then echo "  * add your indexers in Prowlarr: doctor reports the arrs without them until you do"; fi
+    if signin_is wizarr; then echo "  * Wizarr's API key: ./mediastack.sh wire wizarr (its UI must exist first)"; fi
+    if signin_is authentik && [[ -n "$(env_get SMTP_HOST)" ]]; then echo "  * prove the portal's email: ./mediastack.sh email test <your address>"; fi
+    if svc_enabled traefik; then echo "  * the LAN DNS record *.$(env_get STACK_DOMAIN) -> this host — to reach the services by name"; fi
+    hr "Where things are"
+    echo "  * logins and passwords: ./mediastack.sh credentials"
+    echo "  * what runs, and where: ./mediastack.sh status"
+    if svc_enabled olivetin; then echo "  * the panel: https://$(svc_subdomain olivetin).$(env_get STACK_DOMAIN)"; fi
 }

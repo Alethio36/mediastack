@@ -21,13 +21,9 @@ traefik_ensure() { # traefik_ensure [--reconfigure]; runs on up/enable; idempote
         local Q_MODE=full
         traefik_questions
     else
+        # configure (or enable traefik) asks them: up never does
         miss=$(traefik_missing)
-        if [[ -n "$miss" ]]; then
-            # configure asks these first; until enable asks a newly enabled
-            # service's questions itself, a terminal asks them here
-            [[ -t 0 ]] || die "$miss is not set — run: ./mediastack.sh configure"
-            hr "Traefik setup"; traefik_questions
-        fi
+        [[ -z "$miss" ]] || die "$miss is not set — ./mediastack.sh configure asks it (or: ./mediastack.sh traefik-setup)"
     fi
     traefik_gen
 }

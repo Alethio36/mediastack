@@ -330,13 +330,22 @@ grep -q 'leak_gate_closed; then' <(awk '/^cmd_doctor\(\)/,/^}/' lib/doctor.sh) &
     || fail_ "doctor counts a gated stop once, at the top, with the fix"; pass
 
 # ---- enable starts through up (the gate), never a compose up of its own ----
-for f in svc_exists svc_conflicts vpn_gen require_free_ports cloudflared_enable_check require_mounts provision \
-         uid_handover traefik_ensure authentik_prepare network_ensure load_env env_set; do eval "$f() { :; }"; done
-svc_label() { :; }; resolve_deps() { printf '%s\n' "$@"; }
+for f in svc_exists svc_conflicts vpn_gen require_free_ports require_mounts provision \
+         uid_handover traefik_ensure authentik_prepare network_ensure load_env notify; do eval "$f() { :; }"; done
+env_set() { if [[ "$1" == COMPOSE_PROFILES ]]; then ENABLED=${2//,/ }; echo "$2" >> "$T/sets"; fi; }   # what svc_enabled reads here
+svc_label() { :; }; resolve_deps() { printf '%s\n' "$@"; }; trash_instances() { :; }
 ENABLED="gluetun jellyfin"; : > "$UP_LOG"
-eval 'cmd_up() { echo "UP" >> "$UP_LOG"; }'
+mkdir -p "$T/fake"; printf '#!/usr/bin/env bash\necho "$*" >> "%s"\n' "$UP_LOG" > "$T/fake/mediastack.sh"
 DC() { echo "DC $*" >> "$UP_LOG"; }
-(cmd_enable lidarr) > /dev/null 2>&1
-[[ "$(paste -sd'|' "$UP_LOG")" == "UP" ]] || fail_ "enable starts through up — the leak gate — and runs no compose up of its own ($(paste -sd'|' "$UP_LOG"))"; pass
+( SCRIPT_DIR=$T/fake; cmd_enable lidarr ) > /dev/null 2>&1
+[[ "$(paste -sd'|' "$UP_LOG")" == "questionnaire --for lidarr|up|wire" ]] \
+    || fail_ "enable asks its questions, then starts through up — the leak gate — and wires; no compose up of its own ($(paste -sd'|' "$UP_LOG"))"; pass
+# its questions cancelled: the set goes back as it was, nothing starts
+ENABLED="gluetun jellyfin"; : > "$UP_LOG"; : > "$T/sets"; env_get() { [[ "$1" == COMPOSE_PROFILES ]] && echo gluetun,jellyfin; return 0; }
+printf '#!/usr/bin/env bash\necho "$*" >> "%s"\n[[ "$1" != questionnaire ]] || exit 130\n' "$UP_LOG" > "$T/fake/mediastack.sh"
+( SCRIPT_DIR=$T/fake; cmd_enable lidarr; echo "ENABLED=$ENABLED" ) > "$T/out" 2>&1 && fail_ "enable with its questions cancelled"
+[[ "$(paste -sd'|' "$UP_LOG")" == "questionnaire --for lidarr" ]] && grep -q "'lidarr' not enabled: its questions did not finish" "$T/out" \
+    || fail_ "cancelled: nothing starts, it says so: $(paste -sd'|' "$UP_LOG") / $(cat "$T/out")"; pass
+[[ "$(tail -1 "$T/sets")" == gluetun,jellyfin ]] || fail_ "and the set goes back as it was: $(paste -sd'|' "$T/sets")"; pass
 
 echo "test-gate: $checks checks passed"

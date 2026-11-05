@@ -165,12 +165,8 @@ printf 'COMPOSE_PROFILES=traefik,cloudflared\nCLOUDFLARE_TUNNEL_TOKEN=\n' > "$EN
 printf 'TUNNEL1\n' | cloudflared_questions > "$T/out" 2>&1
 [[ "$(env_get CLOUDFLARE_TUNNEL_TOKEN)" == TUNNEL1 ]] && has cloudflared || fail_ "a token is stored, the tunnel stays"; pass
 ! grep -q TUNNEL1 "$T/out" || fail_ "the token is not echoed"; pass
-printf 'CLOUDFLARE_TUNNEL_TOKEN=\n' > "$ENV_FILE"
-( cloudflared_enable_check jellyfin ) > "$T/out" 2>&1 || fail_ "a set without the tunnel needs no token"; pass
-( cloudflared_enable_check $'jellyfin\ncloudflared' </dev/null ) > "$T/out" 2>&1 && fail_ "no token, no terminal: enable refuses"
-grep -q 'needs its tunnel token' "$T/out" || fail_ "and says how"; pass
-printf 'CLOUDFLARE_TUNNEL_TOKEN=T\n' > "$ENV_FILE"
-( cloudflared_enable_check cloudflared </dev/null ) > "$T/out" 2>&1 || fail_ "a stored token is enough"; pass
+printf 'COMPOSE_PROFILES=cloudflared\nCLOUDFLARE_TUNNEL_TOKEN=T\n' > "$ENV_FILE"
+cloudflared_questions </dev/null > "$T/out" 2>&1 && [[ ! -s "$T/out" ]] || fail_ "a stored token is enough: nothing asked"; pass
 
 # ---- the dashboard's login is one of the stack's own: up asks nothing for it ----
 printf 'COMPOSE_PROFILES=traefik\nSTACK_DOMAIN=media.example.com\nACME_EMAIL=me@example.com\nCF_DNS_API_TOKEN=t\nACME_ENV=staging\nTRAEFIK_DASH_USER=\nTRAEFIK_DASH_PASSWORD=\n' > "$ENV_FILE"

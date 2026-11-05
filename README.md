@@ -83,7 +83,8 @@ Installs curl, git, jq, ca-certificates, argon2 and rsync, leak-test's tools
 (conntrack and tcpdump — uninstall removes them again unless they were
 already there), and Docker with its compose plugin from Docker's own
 repository (skipped when Docker is already there). Debian 12+ or Ubuntu
-22.04+. Safe to re-run: an existing install gets the tools that way.
+22.04+. Safe to re-run: an existing install gets the tools that way. At the
+end it offers to carry straight on into `configure` (Enter).
 
 ### 3. Set it up
 
@@ -113,16 +114,30 @@ answers become the new defaults.
 authentik portal needs Traefik and a domain: pick **everything**, or
 **custom** with `traefik`, if you want it.
 
-### 4. Start it
+### 4. Start it, connect it, check it — configure's last steps
+
+After the summary of your answers, configure asks **"Start everything
+now?"** — Enter runs, in order: the web panel's install (when you chose
+it), `up`, `wire` and `trash-sync`, then `doctor` and `leak-test`, and
+lists what is still yours to do. Expect ~15-20 minutes on a first run.
+Over SSH, run it in tmux or screen: configure warns when you are not, and
+if the connection drops, running `./mediastack.sh configure` again carries
+on — every step is safe to repeat. A step that fails stops the rest, and
+the message names every step still to run. Answering **No** (to drop in a
+saved certificate first, say) leaves those steps to run by hand, in the
+order it prints. On a stack that is already running, the question is
+**"Apply the changes now?"** and defaults to No.
+
+Each step on its own, for reference:
 
 ```
 ./mediastack.sh up
 ```
 
-The first start downloads every image, which takes several minutes. With
-Traefik on, the first `up` asks for your domain, your email, the
-Cloudflare token, real or test certificates, and the Traefik dashboard
-login. Pick **staging** while you are still trying things out: Let's
+The first start downloads every image, which takes several minutes.
+Traefik's answers (domain, email, Cloudflare token, real or test
+certificates) come from configure; `up` asks nothing. Pick **staging**
+while you are still trying things out: Let's
 Encrypt allows only 5 identical real certificates a week, and switching to
 production later is one setting (`traefik-setup --certs`). Known limitation:
 apps that check the portal's certificate themselves refuse a staging one,
@@ -130,7 +145,7 @@ so Kavita's portal sign-in is skipped until production (wire says so) and
 Audiobookshelf's is expected to fail; Jellyfin's LDAP sign-in skips the
 check on staging.
 
-### 5. Connect the apps
+### 5. Connect the apps (configure runs these)
 
 ```
 ./mediastack.sh wire
@@ -150,7 +165,7 @@ profile configure recorded for each arr (`--dry-run` previews;
 [docs/trash-sync.md](docs/trash-sync.md)). An arr without one — enabled
 after configure — is refused by name until configure asks it.
 
-### 6. Check it
+### 6. Check it (configure runs these too)
 
 ```
 ./mediastack.sh doctor
@@ -244,7 +259,7 @@ Run
 | command | what it does |
 |---|---|
 | `up` / `down` | start / stop the stack. A stack stopped with `down` stays down: its scheduled jobs (updates, backups, the media manifest, the panel's refresh, the boot guard) skip until `up`, and doctor says so. `up` starts the VPN'd services last: everything else (gluetun with it) first, then a full `leak-test`, and only on a pass (or nothing failed but something UNPROVEN, with a warning) the VPN'd services — a FAIL leaves them stopped. `up` also finishes any pending one-time step — re-pointing the apps that call a service you moved in or out of the VPN, or a service's file-ownership handover — and retries it until it succeeds |
-| `enable <svc>` / `disable <svc>` | turn one service on/off (dependencies handled); `enable` then runs `up`, so a VPN'd service starts through the leak gate |
+| `enable <svc>` / `disable <svc>` | turn one service on/off (dependencies handled). `enable` asks what the services it brings need, the way configure does (quick: a token, a domain, a login under the stack's mode — a unified password one of them refuses is stopped, named, with `set-credentials all` as the fix), then runs `up` (a VPN'd service starts through the leak gate), `wire`, and `trash-sync` for an arr; cancelled, nothing changes |
 | `status [svc]` | overview table (ports, VPN, health, versions, URLs) or one-service deep view |
 | `logs <svc> [--no-follow]` | follow one service's logs; `--no-follow` prints a bounded snapshot and returns (used by the web panel) |
 
@@ -309,7 +324,7 @@ Internal (called by the panel, timers and units — not meant for hand use)
 | `vpn-apply <svc> on\|off` | the one-shot the panel's Toggle VPN button runs (`vpn` is the interactive form) |
 | `vpn-guard [--boot]` | after a host boot / docker restart: start what a cut-off backup stopped, then the VPN'd services through the leak gate — Docker itself never starts them (systemd unit) |
 | `vpn-watch [--full]` | every 5 minutes (`mediastack-leakcheck.timer`): `leak-test --local` — or the full run when gluetun restarted since its last full proof — and any enabled VPN'd service that is not running is started through the gate (a crash, a boot that came too early). To keep one stopped, `disable` it or `down` the stack: a `docker stop` is undone within 5 minutes. `--full`: the hourly run (`mediastack-leaktest.timer`, at a random minute), the full checks whatever gluetun's proof. Its news goes to ops once per change |
-| `questionnaire [--fresh]` | `configure`'s questions, run by it as their own process ([docs/design-install.md](docs/design-install.md)): they record the answers in `.env` and `local/state` and do nothing else. Exit 0: all answered; 130: cancelled; 3: no terminal to ask on |
+| `questionnaire [--fresh\|--for SVC...]` | `configure`'s questions (`--for`: those of the services `enable` brings), run as their own process ([docs/design-install.md](docs/design-install.md)): they record the answers in `.env` and `local/state` and do nothing else. Exit 0: all answered; 130: cancelled; 3: no terminal to ask on |
 | `host-identity` | refresh the record of this host's own address (RIPEstat) that `leak-test` compares the tunnel against — once a day at a random time (`mediastack-hostid.timer`), never inside a leak-test, so no run asks about both of your addresses at once. `configure` makes the first record; by hand when leak-test reports it missing or stale |
 | `unit-failed <unit>` | tell the `ops` stream that a scheduled or boot run failed — its result, exit status and last lines (systemd's OnFailure hook; once per unit per 6 hours) |
 | `audit-extract` | hourly (timer): copy new deletion events from auditd's rotating log into `BACKUP_ROOT/audit/`, prune it to `AUDIT_KEEP_DAYS`, flag a gap if auditd rotated first |

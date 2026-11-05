@@ -15,6 +15,7 @@
 # helpers at call time.
 
 Q_MODE=full                      # quick | full — the first question
+Q_FOR=""                         # enable: only these services' questions (space-separated), quick
 declare -gA Q_ROOT=()            # VAR -> the folder chosen for it
 declare -gA Q_ROOT_MOVE=()       # VAR -> what happens to the old folder's contents: "" (nothing there) | move | leave | new
 ROOTS_STATE=roots                # state key: the folders chosen, applied by configure (roots_apply)
@@ -25,14 +26,20 @@ EMAIL_STATE=email-changed        # state key: email settings changed — the por
 q_quick() { [[ "$Q_MODE" == quick ]]; }
 q_took() { info "$1: $2 (recommended)"; }   # q_took TITLE ANSWER — quick took the recommended answer, and says so
 
-cmd_questionnaire() { # questionnaire [--fresh] — configure's questions; --fresh: a .env this run made holds no choices yet
+cmd_questionnaire() { # questionnaire [--fresh | --for SVC...] — configure's questions, or (--for) those of services enable brings
     [[ -t 0 ]] || { echo "${C_RED}ERROR${C_RST} configure asks questions — run it in a terminal" >&2; exit 3; }
     questionnaire_run "$@"
 }
 
 questionnaire_run() { # the questions, in order; each section records its own answers
     # shellcheck disable=SC2034  # read by _configure_services and _configure_schedule
-    CONFIGURE_FRESH=0; [[ "${1:-}" == --fresh ]] && CONFIGURE_FRESH=1
+    CONFIGURE_FRESH=0
+    case "${1:-}" in
+        "")      ;;
+        --fresh) CONFIGURE_FRESH=1 ;;
+        --for)   shift; [[ $# -gt 0 ]] || die "questionnaire --for: name the services"; Q_FOR=" $* "; questionnaire_for; return 0 ;;
+        *)       die "unknown argument '$1' for 'questionnaire' (accepts: --fresh, --for SVC...)" ;;
+    esac
     _configure_mode
     _configure_timezone
     _configure_roots
@@ -44,6 +51,15 @@ questionnaire_run() { # the questions, in order; each section records its own an
     _configure_logins
     _configure_schedule
     _configure_panel_offer
+}
+
+questionnaire_for() { # enable's questions: what the services it brings need, quick — the rest of the stack is answered
+    # shellcheck disable=SC2034  # read by every section's q_quick
+    Q_MODE=quick
+    if [[ "$Q_FOR" == *" gluetun "* ]]; then _configure_vpn; fi
+    _configure_download_client
+    svc_hooks questions
+    _configure_logins
 }
 
 _configure_mode() {
@@ -553,6 +569,7 @@ svc_hooks() { # svc_hooks SUFFIX — each enabled service's <name>_SUFFIX, the p
     mapfile -t comp < <(svc_companions)
     for s in "${order[@]}"; do
         svc_enabled "$s" || continue
+        [[ -z "$Q_FOR" || "$Q_FOR" == *" $s "* ]] || continue   # enable: only what it brings
         f="${s//-/_}_$1"
         if declare -F "$f" >/dev/null; then "$f"; fi
     done
@@ -605,7 +622,12 @@ stack's. A login made already keeps its name and password (change one:
                 pw=""
             fi
             if [[ -z "$pw" ]]; then login_pass_ask "The one password"; pw=$REPLY_VAL; fi
-            for l in "${miss[@]}"; do login_record "$l" "$pw"; done ;;
+            for l in "${miss[@]}"; do
+                local why; why=$(login_pass_problem "$pw" "$(cut -f3 <<<"$l")")
+                # never a quietly different password: "unified" would no longer be true
+                [[ -z "$why" ]] || die "the shared password does not suit $(cut -f1 <<<"$l") ($why) — make one that suits every login: ./mediastack.sh set-credentials all, then run this again"
+                login_record "$l" "$pw"
+            done ;;
         each)
             for l in "${miss[@]}"; do
                 login_pass_ask "Password for $(cut -f1 <<<"$l")" "$(cut -f3 <<<"$l")"
