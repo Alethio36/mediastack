@@ -47,8 +47,16 @@ services:
       # gluetun's HTTP control server: off its :8000 default (it collided with
       # apprise-api in the shared namespace) and bound to gluetun's own
       # localhost — nothing in the stack uses it, and on every address it
-      # answered the whole stack network (behind a password; leak-test checks both)
+      # answered the whole stack network (leak-test checks both)
       - HTTP_CONTROL_SERVER_ADDRESS=127.0.0.1:8008
+      # ...and every route needs a key nothing holds, set here rather than
+      # left to the image: v3.41.3's default still left /v1/vpn/status and
+      # others open, :latest's does not (found live Nov 2026, when an update
+      # moved off :latest and leak-test caught it). One role with no routes
+      # listed covers all of them, and replaces the open default. The key is
+      # made before gluetun is ever rendered to start (vpn_gen, a migration);
+      # empty, gluetun refuses to start ("api key is empty") — never open.
+      - 'HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE={"name":"mediastack","auth":"apikey","apikey":"${GLUETUN_CONTROL_APIKEY:-}"}'
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"

@@ -288,13 +288,18 @@ INSPECT_JSON='[{"Name":"/g","Id":"aaaa1111","State":{"Pid":100}},
   {"Name":"/live","HostConfig":{"NetworkMode":"container:aaaa1111"},"State":{"Pid":200}},
   {"Name":"/old","HostConfig":{"NetworkMode":"container:aaaa1111"},"State":{"Pid":300}},
   {"Name":"/elsewhere","HostConfig":{"NetworkMode":"container:bbbb2222"},"State":{"Pid":200}},
+  {"Name":"/orphan","HostConfig":{"NetworkMode":"container:cccc3333"},"State":{"Pid":500}},
   {"Name":"/unreadable","HostConfig":{"NetworkMode":"container:aaaa1111"},"State":{"Pid":400}},
   {"Name":"/stopped","HostConfig":{"NetworkMode":"container:aaaa1111"},"State":{"Pid":0}}]'
 GNS=$(c_netns g)
 [[ "$GNS" == "net:[4026533156]" ]] || fail_ "gluetun's namespace read from its pid ($GNS)"; pass
 [[ $(vpn_join live "$GID" "$GNS") == ok ]] || fail_ "same container, same namespace: ok"; pass
 [[ $(vpn_join old "$GID" "$GNS") == stale ]] || fail_ "same container ID, gluetun's old namespace: stale, never ok"; pass
-[[ $(vpn_join elsewhere "$GID" "$GNS") == other ]] || fail_ "joined to another container: other"; pass
+# what a container a dependent names is doing: bbbb2222 runs; cccc3333 was a gluetun, recreated away
+sudo() { if [[ "$*" == "docker inspect -f {{.State.Running}} bbbb2222" ]]; then echo true; else return 1; fi; }
+[[ $(vpn_join elsewhere "$GID" "$GNS") == other ]] || fail_ "joined to another running container: other"; pass
+[[ $(vpn_join orphan "$GID" "$GNS") == stale ]] || fail_ "joined to a container that is gone (gluetun recreated under it): stale, no way out — not a leak path"; pass
+unset -f sudo
 [[ $(vpn_join unreadable "$GID" "$GNS") == unknown ]] || fail_ "namespace unreadable: unknown, never ok"; pass
 [[ $(vpn_join stopped "$GID" "$GNS") == unknown ]] || fail_ "no pid: unknown, never ok"; pass
 [[ $(vpn_join live "$GID" "") == unknown ]] || fail_ "gluetun's namespace unknown: unknown, never ok"; pass
@@ -314,6 +319,16 @@ grep -q "VPN_DNS_ADDRESS=10.64.0.1 removed" "$T/out" || fail_ "a value that was 
 printf 'VPN_DNS_ADDRESS=\nVPN_DNS_RESOLVERS=quad9\n' > "$ENV_FILE"
 migrate_env_36_to_37 > "$T/out" 2>&1
 [[ ! -s "$T/out" ]] && grep -qx 'VPN_DNS_RESOLVERS=quad9' "$ENV_FILE" || fail_ "empty: removed quietly; a choice already made is kept"; pass
+
+# gluetun's control server is closed by the stack, not left to the image's
+# default (v3.41.3's left /v1/vpn/status open — found live Nov 2026)
+grep -qF "HTTP_CONTROL_SERVER_AUTH_DEFAULT_ROLE={\"name\":\"mediastack\",\"auth\":\"apikey\",\"apikey\":\"\${GLUETUN_CONTROL_APIKEY:-}\"}" services/gluetun/compose.yml \
+    || fail_ "every control-server route needs the stack's key"; pass
+printf 'X=1\n' > "$ENV_FILE"; gluetun_control_key; k=$(env_get GLUETUN_CONTROL_APIKEY)
+[[ "$k" =~ ^[A-Za-z0-9]{32}$ ]] || fail_ "the key is made when missing: $k"; pass
+gluetun_control_key; [[ "$(env_get GLUETUN_CONTROL_APIKEY)" == "$k" ]] || fail_ "and kept once made"; pass
+grep -q '^    gluetun_control_key' <<<"$(awk '/^vpn_gen\(\)/,/^}/' services/gluetun/vpn.sh)" && grep -q 'gluetun_control_key' <<<"$(awk '/^migrate_env_40_to_41\(\)/,/^}/' lib/migrations.sh)" \
+    || fail_ "made before gluetun renders: a fresh install (vpn_gen) and an existing one, before any command (the migration)"; pass
 
 # gluetun keeps one address outside the pool: a dynamic one was another container's
 # moments before, and the host still tracked that container's connections (found live Nov 2026)

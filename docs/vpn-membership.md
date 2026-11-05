@@ -187,6 +187,12 @@ gluetun is proven (`services/gluetun/gate.sh`):
 - **A deliberate stop of gluetun forgets what the host tracked from its
   address** (all of it from before the stop), so the gate after a nightly
   backup does not wait out old tunnel sessions.
+- **gluetun's control server is closed by the stack**, not by the image's
+  default: it listens on gluetun's own localhost, and every route needs a key
+  nothing in the stack holds (`GLUETUN_CONTROL_APIKEY`, generated). The
+  image's default differs by version — v3.41.3's still left `/v1/vpn/status`
+  open to anything in the namespace — and leak-test checks both (found live
+  Nov 2026, when an update moved off `:latest`).
 - **gluetun keeps one address** (`GLUETUN_ADDRESS`, default `172.31.250.3`),
   outside the pool the other containers draw from. On a dynamic one, a
   restarted gluetun could be handed the address another container had just

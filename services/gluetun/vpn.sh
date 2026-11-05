@@ -21,11 +21,18 @@
 # catch them when started. Called from cmd_up and cmd_update so neither path
 # can leave a ghost behind.
 vpn_join() { # vpn_join CNAME GLUETUN_ID GLUETUN_NETNS -> ok | other | stale | unknown
-    # other: joined to some other container (a leak path); stale: joined to
-    # gluetun but in a namespace it no longer has (restarted under it: no
-    # egress at all); unknown: its namespace could not be read
-    local ns
-    [[ "$(c_netmode "$1")" == "container:$2" ]] || { echo other; return; }
+    # other: joined to some other running container (a leak path); stale:
+    # in a namespace no running container has any more — gluetun restarted or
+    # was recreated under it: no egress at all; unknown: its namespace could
+    # not be read
+    local ns nm
+    nm=$(c_netmode "$1")
+    if [[ "$nm" != "container:$2" ]]; then
+        # a recreated gluetun has a new ID: its dependents still name the old,
+        # removed one (found live Nov 2026: called a leak path, it had no way out)
+        if [[ "$nm" == container:* && "$(sudo docker inspect -f '{{.State.Running}}' "${nm#container:}" 2>/dev/null)" != true ]]; then echo stale; else echo other; fi
+        return
+    fi
     ns=$(c_netns "$1")
     if [[ -z "$ns" || -z "$3" ]]; then echo unknown
     elif [[ "$ns" == "$3" ]]; then echo ok
@@ -220,7 +227,7 @@ leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2
         cn=$(svc_cname "$s"); [[ "$(c_state "$cn")" == running ]] || { info "$s not running — skipped"; continue; }
         case $(vpn_join "$cn" "$gid" "$gns") in
             ok)    lt_pass "$s routed through the gluetun tunnel" ;;
-            stale) lt_fail "$s sits in gluetun's old namespace (gluetun restarted under it): no egress at all, not a leak — ./mediastack.sh up re-joins it" ;;
+            stale) lt_fail "$s sits in gluetun's old namespace (gluetun restarted or was recreated under it): no egress at all, not a leak — ./mediastack.sh up re-joins it" ;;
             other) nm=$(c_netmode "$cn"); lt_fail "$s is NOT joined to gluetun (mode: ${nm:0:40}...) — this IS a leak path" ;;
             *)     lt_unproven "$s: its network namespace could not be read — attachment unverifiable" ;;
         esac
@@ -331,7 +338,12 @@ vpn_port_line() {   # <stem> <cport> <auth> [local] -> one published port (a gat
     echo "      - \"${bind}\${${1}_PORT:-${2}}:${2}\""
 }
 
+gluetun_control_key() { # the control server's closing key: made once (its compose line refuses an empty one)
+    [[ -n "$(env_get GLUETUN_CONTROL_APIKEY)" ]] || env_set GLUETUN_CONTROL_APIKEY "$(gen_secret 32)"
+}
+
 vpn_gen() {
+    gluetun_control_key   # a fresh install: before its first up renders gluetun
     install -d -m 755 "$LOCAL_DIR"; repo_owned "$LOCAL_DIR"
     local bj; bj=$(vpn_base_json) || die "vpn: could not read base compose config"
     local svcs
