@@ -1,7 +1,7 @@
 # Design: ask once, then install — and services that describe themselves
 
-*Status: agreed (Nov 2026), being built one patch at a time (the order is in
-the session handoff). Built so far: the questionnaire's own process, quick or
+*Status: built and proven live on fresh installs (Nov 2026). What each patch
+brought: the questionnaire's own process, quick or
 full, its exit codes and test-questions (2a); the `<n>_questions` hook, with
 Traefik's questions (the token and the domain's zone checked with Cloudflare
 as it is pasted) and Jellyfin's server name moved in, library names dropped

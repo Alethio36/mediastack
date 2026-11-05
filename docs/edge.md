@@ -14,15 +14,21 @@ on — pick one edge.
 
 ## Setup
 
-Prerequisites: the domain's DNS on Cloudflare; a wildcard A record
-(`*.<domain>`) pointing at this host; an API token scoped Zone/DNS/Edit for
-that one zone (dash.cloudflare.com -> My Profile -> API Tokens — not the
-Global API Key).
+Prerequisites: a wildcard A record (`*.<domain>`) pointing at this host,
+and a certificate source — either the domain's DNS on Cloudflare with an
+API token scoped Zone/DNS/Edit for that one zone (dash.cloudflare.com -> My
+Profile -> API Tokens — not the Global API Key), or a certificate of your
+own from a public CA covering `<domain>` and `*.<domain>`
+([certificates.md](certificates.md)).
 
-`./mediastack.sh enable traefik` then `up` runs the wizard: domain, email,
-token, certificate environment, dashboard login (view later:
-`credentials`). Re-run any time with `traefik-setup`; answers live in
-`.env` (`STACK_DOMAIN`, `ACME_EMAIL`, `CF_DNS_API_TOKEN`, `ACME_ENV`).
+`configure` asks Traefik's questions (so does `enable traefik`; `up` never
+does): the domain, then where the certificate comes from — Let's Encrypt
+(the expiry email and the token, checked with Cloudflare as you paste it,
+together with the domain's zone), your own files (checked when given), or
+staging. The dashboard's login is one of the stack's own logins (view it:
+`credentials`). Ask them again with `traefik-setup`; answers live in `.env`
+(`STACK_DOMAIN`, `TLS_SOURCE`, `ACME_EMAIL`, `CF_DNS_API_TOKEN`,
+`ACME_ENV`, `TLS_CERT_FILE`, `TLS_KEY_FILE`).
 
 ## Testing vs production certificates
 
@@ -33,10 +39,11 @@ per week and a burned week is a burned week. Switching is one command:
 
     ./mediastack.sh traefik-setup --certs
 
-It asks the single question, resets the certificate store, restarts
-traefik, and the new environment reissues automatically — nothing else to
-touch. `doctor`
-warns persistently while staging certificates are live.
+It asks the certificate question (Let's Encrypt, your own, staging); a Let's
+Encrypt switch resets the certificate store, restarts traefik, and the new
+environment reissues automatically — nothing else to touch. `doctor` warns
+persistently while staging certificates are live, and 30 days before your
+own certificate expires.
 
 ## Hostnames
 

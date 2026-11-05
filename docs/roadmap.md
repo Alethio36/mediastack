@@ -133,13 +133,13 @@ validation, notifications, SSO). Before `migrate` moves the first household:
    Deluge-only, Jellyfin-only, Wizarr, no Traefik). Watch there whether the household's files
    direct-play; frequent transcodes would pull the transcoding evaluation
    forward.
-4. Front-loaded questions *(decided Oct 2026: after the leak gate, the
-   internal networks and the small fixes; before the tutorial, which
-   describes this flow. The design, for review: docs/design-install.md —
-   it supersedes the notes below where they differ)* — today `up` (traefik-setup), `wire` (restore point,
-   Jellyfin admin/server name/library names, arr and download-client logins,
-   notification URLs, Wizarr key) and `trash-sync` (TRaSH profiles) still
-   ask between long waits. Design:
+4. Front-loaded questions — **built and proven live (Nov 2026)**, as
+   docs/design-install.md describes: configure asks everything first (quick
+   or full) in its own process, each service's questions and logins are
+   hooks in its folder, configure carries on into up, wire and trash-sync,
+   and `up`, `wire`, `trash-sync` and `enable` ask nothing a terminal must
+   answer (the Wizarr key aside). The certificate question gained "your
+   own". The notes below were the plan:
    * `configure` asks everything; settings go to `.env` (most are already
      `.env` keys asked only when empty); the later steps stop prompting and
      a missing answer is one error shape: "X is not set — run configure";
@@ -158,10 +158,9 @@ validation, notifications, SSO). Before `migrate` moves the first household:
    * the Cloudflare token is verified at configure time, not after the pulls.
 
    The sudo refresher this needed shipped on its own (Oct 2026,
-   `sudo_keepalive`): every run keeps the password it was given. Suggested,
-   not agreed:
-   one operator login for the arrs, the download client and the Jellyfin
-   admin (six questions to two; one leaked password opens all three).
+   `sudo_keepalive`): every run keeps the password it was given. The one
+   operator login became the stack's own logins: one username, the
+   passwords generated (default), unified or typed for each (`STACK_LOGINS`).
 5. A restore drill — a disaster test: `backup`, `restore --service
    authentik`, `restore --all`, the portal's database, Kavita and
    Audiobookshelf included.
