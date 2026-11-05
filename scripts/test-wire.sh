@@ -94,7 +94,8 @@ WIRE_STEP=kavita; wfail "kavita refused" >/dev/null; WIRE_STEP=""
 [[ "$(wire_fail_summary)" == $'  - seerr: library sync failed [HTTP 400]\n  - kavita: kavita refused' ]] \
     || fail_ "one line per failure, its step first: $(wire_fail_summary)"; pass
 
-# ---- what wire wrote to .env reaches the containers that read it at start ----
+# ---- what wire wrote to .env reaches the containers that read it at start;
+# a failed recreate says compose's reason ----
 : > "$T/dc"
 compose_pending() { printf 'traefik\nauthentik-worker\n'; }
 wire_apply_settings "traefik" >/dev/null
@@ -102,5 +103,10 @@ wire_apply_settings "traefik" >/dev/null
 : > "$T/dc"; compose_pending() { echo traefik; }
 wire_apply_settings "traefik" >/dev/null
 ! grep -q '^DC up' "$T/dc" || fail_ "nothing new pending: nothing recreated"; pass
+compose_pending() { printf 'authentik-worker\n'; }; WIRE_FAILS=0; WIRE_FAIL_LIST=()
+( DC() { echo "Error response from daemon: container mediastack-authentik-ldap is restarting" >&2; return 1; }
+  wire_apply_settings "" >/dev/null 2>&1; printf '%s\n' "${WIRE_FAIL_LIST[@]}" ) > "$T/out"
+grep -q 'recreating authentik-worker failed — compose: Error response from daemon: container mediastack-authentik-ldap is restarting — apply with' "$T/out" \
+    || fail_ "a failed recreate says compose's own reason: $(cat "$T/out")"; pass
 
 echo "OK wire: $checks checks"

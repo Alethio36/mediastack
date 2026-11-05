@@ -42,7 +42,8 @@ wire_apply_settings() { # wire_apply_settings "PENDING-BEFORE" — recreate what
     done <<<"$after"
     (( ${#new[@]} )) || return 0
     info "wire changed settings these read only at start — recreating: ${new[*]}"
-    DC up -d "${new[@]}" >/dev/null 2>&1 || wfail "recreating ${new[*]} failed — apply with: ./mediastack.sh up"
+    local out
+    out=$(DC up -d "${new[@]}" 2>&1) || wfail "recreating ${new[*]} failed — compose: $(oneline "$out") — apply with: ./mediastack.sh up"
 }
 wire_fail_summary() { # the failures again, together, after everything else scrolled past
     local f
