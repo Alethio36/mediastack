@@ -29,6 +29,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.logins: "arr"   # the one login the arrs share (arr_logins, services/_arr/arr.sh)
       mediastack.port: "11011"
       traefik.enable: "true"
       traefik.http.routers.cleanuparr.rule: "Host(`${CLEANUPARR_HOST:-cleanup}.${STACK_DOMAIN:-unset.invalid}`)"

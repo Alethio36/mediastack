@@ -24,6 +24,7 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      mediastack.logins: "arr"   # the one login the arrs share (arr_logins, services/_arr/arr.sh)
       mediastack.desc: "indexer manager feeding the arrs"
       mediastack.vpn: "true"
       mediastack.vpntoggle: "true"

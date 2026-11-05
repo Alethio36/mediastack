@@ -94,9 +94,16 @@ repository (skipped when Docker is already there). Debian 12+ or Ubuntu
 In order: your timezone; where configs, media, cache, transcodes and
 backups live; which services run — **standard**, **everything** or
 **custom**; how people sign in — **none**, **Wizarr** or **authentik**;
-the download client, when you picked more than one; your VPN; when updates
-and backups run; with authentik, the portal's email; and, with Traefik,
-whether to install the web panel now (default yes). Every question
+the download client, when you picked more than one; your VPN; with
+Traefik, your domain and Cloudflare token (checked with Cloudflare as you
+paste it) and the certificates; with authentik, the portal's name and
+email; Jellyfin's server name; **the stack's own logins** — one username
+for the download clients, the arrs, Jellyfin's admin, Audiobookshelf's and
+Kavita's roots and the dashboard, their passwords **generated** (default),
+**unified** (one for all) or typed for **each**; when updates and backups
+run; and, with Traefik, whether to install the web panel now (default yes).
+**Quick** (the default) asks only what has no recommended answer; **full**
+asks everything. Every question
 explains itself, and Enter takes the default. Re-run it any time: your
 answers become the new defaults.
 
@@ -130,8 +137,8 @@ check on staging.
 
 `wire` connects the apps to each other — download client and indexers to
 the arrs, libraries to Jellyfin, the request site to the arrs, the portal's
-sign-in to every app — asking for each app's admin login (Enter generates
-one) and your notification URLs. With Wizarr, it walks you through
+sign-in to every app — with the logins configure recorded (it asks
+nothing about them) — and asks your notification URLs. With Wizarr, it walks you through
 Wizarr's one-time first run with the exact values to paste. Safe to re-run;
 `wire --verify` shows what has drifted without changing anything.
 
@@ -263,7 +270,7 @@ Connect
 | `notify [status\|test [stream]\|set <stream>\|clear <stream>\|send <stream> <title> <message> [--type T]]` | the notification streams (`ops`, `users`): what each is set to (URLs hidden) and whether it delivered, a test, replace or clear a stream's URLs, or send your own message — see "Notifications" |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
 | `trash-sync [--dry-run]` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update. `--dry-run` previews the drift (`recyclarr --preview`) and changes nothing |
-| `traefik-setup` | ask Traefik's questions again (`configure` asks them first): domain, Cloudflare token — checked with Cloudflare when pasted, with the domain's zone — cert environment, dashboard login |
+| `traefik-setup` | ask Traefik's questions again (`configure` asks them first): domain, Cloudflare token — checked with Cloudflare when pasted, with the domain's zone — and the cert environment (the dashboard's login is one of the stack's own: `set-credentials traefik`) |
 | `traefik-setup --hosts` | guided rename of every service's subdomain |
 | `traefik-setup --certs` | switch staging/production certificates (applied end to end) |
 | `credentials` | every login the stack created or stores, and the API keys companion apps ask for (the arrs, Prowlarr, Bazarr, Seerr) with the address to give them |
@@ -774,7 +781,8 @@ the root account's password form is behind
 signs up as the root account's name sign in as root), and the
 Audiobookshelf app signs in the same way. `wire audiobookshelf` does its first
 run itself — the root account it creates is the stack's own (in `credentials`,
-also the way in if the portal is down) — sets up the sign-in, and keeps admin
+also the way in if the portal is down; its name is the stack's username,
+which the portal refuses to anyone joining) — sets up the sign-in, and keeps admin
 rights in step with the portal's `admins` group. An Audiobookshelf set up by
 hand is never taken over: put its root login in `.env`, or start it fresh
 (wire prints how). Its libraries are yours to add in its UI.

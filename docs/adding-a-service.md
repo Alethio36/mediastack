@@ -179,6 +179,22 @@ failing shims for them. Quick mode is honoured with `q_quick`: an answer
 with a recommended value takes it and says so (`q_took "Title" "value"`);
 one without (a token) is asked in quick too. A recorded answer is read
 where it is used (`wire`, `up`) with `env_get`, never asked again there.
+`<name>_summary` prints its lines of configure's closing summary
+(`label<TAB>value`).
+
+**A login the stack makes for itself is declared, not asked.** A service
+with an account the stack owns (the operator's, a root, a web UI's)
+defines `<name>_logins`, printing one line per login:
+`title<TAB>USER_KEY<TAB>PASS_KEY[<TAB>options]` (`-` for a login with no
+name). Options: `reserve` (nobody may join the portal under its name),
+`pw_max=N`, `user_min=N`, `user_re=ERE` — the app's own limits, from its
+source. Several services sharing one login name it with the
+`mediastack.logins` label (the arrs: `arr`, so `arr_logins`). configure
+records it under the one stack username, its password generated, unified
+or typed (`lib/logins.sh`); `up` and `enable` fill one enabled later the
+same way. Its `wire` reads the keys and refuses loud when they are empty —
+it never asks, never invents one. CI fails a `*_PASSWORD` setting no
+service declares.
 `scripts/check-registries.sh` fails a listed name without exactly one
 function under `services/`, and a `<service>_*` call that nothing defines.
 

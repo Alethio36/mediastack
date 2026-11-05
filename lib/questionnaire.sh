@@ -40,7 +40,8 @@ questionnaire_run() { # the questions, in order; each section records its own an
     _configure_services
     _configure_download_client
     _configure_vpn
-    questions_hooks
+    svc_hooks questions
+    _configure_logins
     _configure_schedule
     _configure_panel_offer
 }
@@ -533,20 +534,73 @@ _configure_timezone() {
     done
 }
 
-# Each enabled service's own questions: a <name>_questions function in its
-# folder (services/<name>/*.sh), found by name — the core never names an app
-# for its questions (test-questions). The platform's come first, so the
-# domain is known before the portal's name and email; the rest in name order.
+# A service's part in the questionnaire is a function in its folder
+# (services/<name>/*.sh), found by name — the core never names an app for it
+# (test-questions): <name>_questions asks and records, <name>_summary prints
+# its lines of the summary (label TAB value). The platform's come first, so
+# the domain is known before the portal's name and email; the rest in name order.
 QUESTION_PLATFORM=(traefik authentik)
-questions_hooks() {
+svc_hooks() { # svc_hooks SUFFIX — each enabled service's <name>_SUFFIX, the platform's first
     local s f
     local -a order
     mapfile -t order < <(printf '%s\n' "${QUESTION_PLATFORM[@]}"; svc_enabled_managed | grep -vxF -f <(printf '%s\n' "${QUESTION_PLATFORM[@]}") || true)
     for s in "${order[@]}"; do
         svc_enabled "$s" || continue
-        f="${s//-/_}_questions"
+        f="${s//-/_}_$1"
         if declare -F "$f" >/dev/null; then "$f"; fi
     done
+}
+
+_configure_logins() { # the stack's own logins (lib/logins.sh): one username, the passwords generated, unified or typed for each
+    local -a miss; local l user mode pw
+    mapfile -t miss < <(login_missing)
+    (( ${#miss[@]} )) || return 0   # every login is made: set-credentials changes one
+    user=$(env_get STACK_USER); mode=$(env_get STACK_LOGINS)
+    if q_quick && [[ "$mode" != each && -z "$(login_user_problem "$user")" ]]; then
+        q_took "Logins" "$user, passwords $mode"
+    else
+        local -a menu=("The stack's own logins — the ones the stack makes and uses itself:")
+        for l in "${miss[@]}"; do menu+=("  * $(cut -f1 <<<"$l")"); done
+        menu+=("People sign in with their own accounts; these are the operator's and the
+stack's. A login made already keeps its name and password (change one:
+./mediastack.sh set-credentials).")
+        explain "Logins" "${menu[@]}"
+        while true; do
+            ask STACK_USER "Username for all of them" "$user"
+            pw=$(login_user_problem "$REPLY_VAL")
+            [[ -n "$pw" ]] || break
+            fail "'$REPLY_VAL' won't do: $pw."
+        done
+        user=$REPLY_VAL
+        explain "Their passwords" \
+"  1) generated   a random password for each (recommended)
+  2) unified     one password for all of them — one leaked password then
+                 opens every one
+  3) each        typed for each, one at a time"
+        while true; do
+            ask LOGINS_MODE "Choice" "$(case "$mode" in unified) echo 2 ;; each) echo 3 ;; *) echo 1 ;; esac)"
+            case "$REPLY_VAL" in 1) mode=generated; break ;; 2) mode=unified; break ;; 3) mode=each; break ;; *) fail "Pick 1, 2 or 3." ;; esac
+        done
+    fi
+    env_set STACK_USER "$user"; env_set STACK_LOGINS "$mode"
+    case "$mode" in
+        generated)
+            for l in "${miss[@]}"; do login_record "$l" "$(login_generate)"; done ;;
+        unified)
+            local rc=0; pw=$(login_unified_password) || rc=$?
+            if (( rc )); then
+                warn "the logins made already have different passwords: the new ones share this one; make them all one with: ./mediastack.sh set-credentials all"
+                pw=""
+            fi
+            if [[ -z "$pw" ]]; then login_pass_ask "The one password"; pw=$REPLY_VAL; fi
+            for l in "${miss[@]}"; do login_record "$l" "$pw"; done ;;
+        each)
+            for l in "${miss[@]}"; do
+                login_pass_ask "Password for $(cut -f1 <<<"$l")" "$(cut -f3 <<<"$l")"
+                login_record "$l" "$REPLY_VAL"
+            done ;;
+    esac
+    ok "Logins: ${#miss[@]} recorded for '$user' (see them: ./mediastack.sh credentials)"
 }
 
 _configure_panel_offer() { # with Traefik on and no panel yet: offer it; configure installs it after provisioning
@@ -670,7 +724,7 @@ sched_next() { # sched_next EXPR -> "next: <when>" ("" for never)
 q_row() { printf '  %-16s %s\n' "$1" "$2"; }   # q_row LABEL VALUE — one line of the summary
 
 questionnaire_summary() { # configure's last screen: every answer, the defaulted ones too; secrets in outline
-    local r model
+    local r model l v
     hr "Your answers"
     q_row timezone "$(env_get TZ)"
     for r in "${ROOTS[@]}"; do r=${r%_ROOT}; q_row "${r,,} folder" "$(env_get "${r}_ROOT")"; done
@@ -682,6 +736,8 @@ questionnaire_summary() { # configure's last screen: every answer, the defaulted
         q_row VPN "$(env_get VPN_PROVIDER), key $( [[ -n "$(env_get WIREGUARD_PRIVATE_KEY)" ]] && echo set || echo MISSING), servers: $(env_or_note VPN_SERVER_COUNTRIES auto)"
     fi
     svc_enabled cloudflared && q_row tunnel "token set"
+    [[ -z "$(logins_list)" ]] || q_row logins "$(env_get STACK_USER), passwords $(env_get STACK_LOGINS) (see: credentials)"
+    svc_hooks summary | while IFS=$'\t' read -r l v; do q_row "$l" "$v"; done
     q_row updates "$(sched_words "$(env_get UPDATE_SCHEDULE)")"
     q_row backups "$(sched_words "$(env_get BACKUP_SCHEDULE)")"
     signin_is authentik && q_row email "$( [[ -n "$(env_get SMTP_HOST)" ]] && echo "$(env_get SMTP_HOST), from $(env_get SMTP_FROM)" || echo "not set")"

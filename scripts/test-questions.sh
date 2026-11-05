@@ -64,9 +64,10 @@ RENDERED_JSON='{"services":{
   "qbittorrent": {"labels":{"mediastack.managed":"true","mediastack.desc":"torrents"},"depends_on":{"gluetun":{}}},
   "deluge":      {"labels":{"mediastack.managed":"true","mediastack.desc":"torrents"},"depends_on":{"gluetun":{}}},
   "olivetin":    {"labels":{"mediastack.managed":"true","mediastack.desc":"web panel","mediastack.installer":"frontdoor-install"}},
-  "sonarr":      {"labels":{"mediastack.managed":"true","mediastack.desc":"series"}},
-  "radarr":      {"labels":{"mediastack.managed":"true","mediastack.desc":"films"}},
-  "prowlarr":    {"labels":{"mediastack.managed":"true","mediastack.desc":"indexers"}},
+  "sonarr":      {"labels":{"mediastack.managed":"true","mediastack.desc":"series","mediastack.logins":"arr"}},
+  "radarr":      {"labels":{"mediastack.managed":"true","mediastack.desc":"films","mediastack.logins":"arr"}},
+  "prowlarr":    {"labels":{"mediastack.managed":"true","mediastack.desc":"indexers","mediastack.logins":"arr"}},
+  "kavita":      {"labels":{"mediastack.managed":"true","mediastack.desc":"books"}},
   "jellyfin":    {"labels":{"mediastack.managed":"true","mediastack.desc":"media"}},
   "meilisearch": {"labels":{"mediastack.managed":"true","mediastack.desc":"index"}},
   "jellysearch": {"labels":{"mediastack.managed":"true","mediastack.desc":"search"},"depends_on":{"meilisearch":{}}},
@@ -104,13 +105,15 @@ grep -q 'Timezone: .* (recommended)' "$T/out" && grep -q 'Updates: .* (recommend
 [[ "$(grep -c "^[A-Z_]*_ROOT	$SCRIPT_DIR/[a-z]*	$" "$T/w/local/state/roots")" == 5 ]] \
     || fail_ "every folder recorded for configure, none in .env yet: $(cat "$T/w/local/state/roots")"; pass
 grep -qx 'CONFIG_ROOT=./config' "$T/w/.env" || fail_ "a folder answer is not written to .env by the questions"; pass
-quick_env=$(grep -vE '^(MEILI_MASTER_KEY)=' "$T/w/.env")
+# generated values differ run to run: compared by their presence
+gen_keys='^(MEILI_MASTER_KEY|[A-Z_]*_PASSWORD)='
+quick_env=$(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env")
 
 # ---- full, fresh: Enter through every question gives what quick takes ----
-clean; run '2\n\n\n\n\n\n\n1\n1\n\nTOKEN\n\n\n\n\n\n\n\n\n' --fresh || fail_ "full on a fresh .env runs"
+clean; run '2\n\n\n\n\n\n\n1\n1\n\nTOKEN\n\n\n\n\n\n\n\n\n\n\n' --fresh || fail_ "full on a fresh .env runs"
 [[ ! -s "$T/calls" ]] || fail_ "full ran what it may not: $(cat "$T/calls")"; pass
-[[ "$(grep -vE '^(MEILI_MASTER_KEY)=' "$T/w/.env")" == "$quick_env" ]] \
-    || fail_ "Enter through full = quick: $(diff <(echo "$quick_env") <(grep -vE '^MEILI_MASTER_KEY=' "$T/w/.env"))"; pass
+[[ "$(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env")" == "$quick_env" ]] \
+    || fail_ "Enter through full = quick: $(diff <(echo "$quick_env") <(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env"))"; pass
 
 # ---- quick on a configured stack: nothing asked, a "never" kept ----
 sed -i 's/^UPDATE_SCHEDULE=.*/UPDATE_SCHEDULE=/' "$T/w/.env"; before=$(cat "$T/w/.env")
@@ -133,10 +136,15 @@ grep -q 'the token is live and holds the zone example.com' "$T/out" || fail_ "th
 # ---- each enabled service's hook, the platform's first, found by name ----
 order=$( ( ENV_FILE=$T/w/.env
            traefik_questions() { echo T; }; authentik_questions() { echo A; }; jellyfin_questions() { echo J; }; meilisearch_questions() { echo M; }
-           questions_hooks ) 2>&1 | paste -sd' ' -)
+           svc_hooks questions ) 2>&1 | paste -sd' ' -)
 [[ "$order" == "T A J M" ]] || fail_ "platform first, then by name, enabled only: $order"; pass
-bad=$(grep -nE '\b[a-z0-9_]+_questions\b' mediastack.sh lib/*.sh | grep -vE 'questions_hooks|questionnaire|^lib/questionnaire\.sh:[0-9]+:\s*#' || true)
-[[ -z "$bad" ]] || fail_ "the core calls a service's questions by name: $bad"; pass
+# a <service>_questions / _logins / _summary named anywhere in the core (comments aside)
+bad=""
+for f in $(grep -hvE '^\s*#' mediastack.sh lib/*.sh | grep -oE '\b[a-z0-9_]+_(questions|logins|summary)\b' | sort -u); do
+    stem=${f%_*}
+    if [[ -d "services/${stem//_/-}" || -d "services/_$stem" ]]; then bad+="$f "; fi
+done
+[[ -z "$bad" ]] || fail_ "the core calls a service's questions, logins or summary by name: $bad"; pass
 ! grep -nE 'ask JF_SRVNAME|ask JF_LN|name asked on the real run' services/jellyfin/jellyfin.sh \
     || fail_ "wire asks Jellyfin's server or library names again"; pass
 
@@ -145,17 +153,16 @@ bad=$(grep -nE '\b[a-z0-9_]+_questions\b' mediastack.sh lib/*.sh | grep -vE 'que
 tq() { ( ENV_FILE=$T/t.env Q_MODE=${2:-full}; printf '%b' "$1" | traefik_questions ) > "$T/out" 2>&1; }
 tv() { ENV_FILE=$T/t.env env_get "$1"; }
 printf 'COMPOSE_PROFILES=traefik\n' > "$T/t.env"; : > "$T/curl.args"; : > "$T/curl.stdin"
-tq 'media.example.com\nme@example.com\nBAD\n\nCFTOK\n\n\n\n' || fail_ "a refused token, then a live one, runs"
+tq 'media.example.com\nme@example.com\nBAD\n\nCFTOK\n\n' || fail_ "a refused token, then a live one, runs"
 grep -q 'Cloudflare refused the token (Invalid API Token)' "$T/out" && grep -q 'this value is required' "$T/out" && [[ "$(tv CF_DNS_API_TOKEN)" == CFTOK ]] \
     || fail_ "a refused token is said, Enter cannot keep it, the next one counts: $(tv CF_DNS_API_TOKEN)"; pass
 ! grep -q 'CFTOK\|BAD' "$T/curl.args" && grep -q 'header = "Authorization: Bearer CFTOK"' "$T/curl.stdin" \
     || fail_ "the token reaches curl on stdin, never its command line: $(cat "$T/curl.args")"; pass
-[[ "$(tv TRAEFIK_DASH_USER)" == admin && -n "$(tv TRAEFIK_DASH_PASSWORD)" ]] || fail_ "no portal: Enter at the dashboard login: admin, generated"; pass
 printf 'COMPOSE_PROFILES=traefik,authentik\n' > "$T/t.env"
 tq 'media.example.om\nme@example.com\nCFTOK\nmedia.example.com\n\n\n' || fail_ "a domain without a zone, then the right one, runs"
 grep -q 'the token sees no Cloudflare zone for media.example.om (looked for: media.example.om, example.om)' "$T/out" && [[ "$(tv STACK_DOMAIN)" == media.example.com ]] \
     || fail_ "a typo in the domain is caught by its zone and asked again, the token kept: $(tv STACK_DOMAIN)"; pass
-[[ -z "$(tv TRAEFIK_DASH_USER)" ]] || fail_ "with the portal the dashboard login is not asked"; pass
+[[ -z "$(tv TRAEFIK_DASH_USER)" ]] || fail_ "Traefik's questions leave the dashboard's login to the logins"; pass
 before=$(cat "$T/t.env"); tq '' quick || fail_ "quick with Traefik answered asks nothing"
 [[ "$(cat "$T/t.env")" == "$before" ]] && grep -q 'HTTPS: keep media.example.com' "$T/out" || fail_ "and keeps it, saying so"; pass
 printf 'COMPOSE_PROFILES=traefik\n' > "$T/t.env"
@@ -205,5 +212,51 @@ grep -qx "CACHE_ROOT=$T/a/keep" "$T/a/.env" && grep -q 'configure did not see wh
 apply "CACHE_ROOT	$T/a/other	leave" || fail_ "leave applies"
 grep -qx "CACHE_ROOT=$T/a/other" "$T/a/.env" && grep -qx "CACHE_ROOT_PREVIOUS=$T/a/keep" "$T/a/.env" && [[ -f "$T/a/keep/file" ]] \
     || fail_ "leave: the new folder, the old one noted for doctor: $(cat "$T/a/.env")"; pass
+
+# ---- the stack's own logins (lib/logins.sh) ----
+# quick, standard (the first run above): every login of the enabled services, generated, one username
+clean; run '1\n1\n1\n\nTOKEN\n' --fresh || fail_ "quick, fresh, for the logins"
+for k in ARR JELLYFIN_ADMIN QBITTORRENT; do
+    [[ "$(envv "${k}_USER")" == admin && "$(envv "${k}_PASSWORD")" =~ ^[A-Za-z0-9]{16}$ ]] || fail_ "$k: admin and a generated password ($(envv "${k}_USER"))"
+done; pass
+[[ "$(printf '%s\n' "$(envv ARR_PASSWORD)" "$(envv JELLYFIN_ADMIN_PASSWORD)" "$(envv QBITTORRENT_PASSWORD)" | sort -u | wc -l)" == 3 ]] \
+    || fail_ "generated: a different password for each"; pass
+grep -q 'Logins: admin, passwords generated (recommended)' "$T/out" || fail_ "quick says what it took"; pass
+before=$(cat "$T/w/.env"); run '2\n\n\n\n\n\n\n0\n0\n\nn\n\n\n\n\n\n\n\n' || fail_ "full re-run, everything kept"
+[[ "$(cat "$T/w/.env")" == "$before" ]] && ! grep -q 'Username for all of them' "$T/out" || fail_ "every login made: no logins question, nothing changed"; pass
+# full, unified: one typed password for all; a short one and a mismatch refused first
+clean; run '2\n\n\n\n\n\n\n1\n1\n\nTOKEN\n\n\nab\nops\n2\nshort\nshort\nAbcdefghijkl1\nAbcdefghijkX\nAbcdefghijkl1\nAbcdefghijkl1\n\n\n\n\n\n\n' --fresh || fail_ "full, unified"
+grep -q "'ab' won't do: qBittorrent's WebUI needs at least 3 characters" "$T/out" && grep -q "That password won't do: at least 12 characters" "$T/out" \
+    && grep -q 'Passwords do not match' "$T/out" || fail_ "a name and a password the logins refuse are said, and asked again"; pass
+[[ "$(envv ARR_USER)/$(envv QBITTORRENT_USER)/$(envv JELLYFIN_ADMIN_USER)" == ops/ops/ops && "$(envv STACK_LOGINS)" == unified ]] \
+    && [[ "$(envv ARR_PASSWORD)$(envv QBITTORRENT_PASSWORD)$(envv JELLYFIN_ADMIN_PASSWORD)" == Abcdefghijkl1Abcdefghijkl1Abcdefghijkl1 ]] \
+    || fail_ "unified: one name, one password: $(grep -E '_(USER|PASSWORD)=' "$T/w/.env" | paste -sd' ')"; pass
+login_problem() { ( ENV_FILE=$T/w/.env; login_pass_problem "$@" ); }
+[[ -n "$(login_problem 'Abc defghijkl1')" && -n "$(login_problem 'Abcdefghij$kl1')" && -z "$(login_problem 'Abcdefghijkl1')" ]] \
+    || fail_ "a typed password: no whitespace, no \$"; pass
+# a service enabled later is filled the way configure made the others, without asking
+sed -i 's/^COMPOSE_PROFILES=.*/&,kavita/' "$T/w/.env"
+( ENV_FILE=$T/w/.env; logins_fill ) </dev/null > "$T/out" 2>&1 || fail_ "unified: a later login filled without asking"
+[[ "$(envv KAVITA_ADMIN_USER)/$(envv KAVITA_ADMIN_PASSWORD)" == ops/Abcdefghijkl1 ]] || fail_ "with the shared name and password"; pass
+[[ -n "$(login_problem "$(printf 'A%.0s' {1..300})" KAVITA_ADMIN_PASSWORD)" ]] || fail_ "Kavita's own limit (256) holds"; pass
+[[ "$( ENV_FILE=$T/w/.env; logins_reserved )" == ops ]] || fail_ "the names marked reserve, once: $( ENV_FILE=$T/w/.env; logins_reserved )"; pass
+sed -i 's/^KAVITA_ADMIN_PASSWORD=.*/KAVITA_ADMIN_PASSWORD=/; s/^ARR_PASSWORD=.*/ARR_PASSWORD=Different12345/' "$T/w/.env"
+( ENV_FILE=$T/w/.env; logins_fill ) </dev/null > "$T/out" 2>&1 && fail_ "unified, passwords that differ: no one password to share"
+grep -q 'set-credentials all' "$T/out" || fail_ "and it says how to make them one"; pass
+sed -i 's/^STACK_LOGINS=.*/STACK_LOGINS=each/' "$T/w/.env"
+# shellcheck disable=SC2034  # read by logins_fill
+( ENV_FILE=$T/w/.env; logins_fill ) </dev/null > "$T/out" 2>&1 && fail_ "each: a missing login is never made up"
+grep -q 'STACK_LOGINS=each types every one — run: ./mediastack.sh configure' "$T/out" || fail_ "it says configure asks it"; pass
+! grep -nE '\bask_secret\b' services/*/*.sh || fail_ "a service asks for a password itself — a login is declared (<name>_logins) and recorded by configure"; pass
+awk '/^provision\(\)/,/^}/' mediastack.sh | grep -q '^ *logins_fill' || fail_ "provision (configure, up, enable) fills a login enabled since configure"; pass
+# every password the schema knows is a stack login some service declares — a
+# missing hook would drop its login silently — or one of these, which are not
+NOT_LOGINS="AUTHENTIK_DB_PASSWORD AUTHENTIK_ADMIN_PASSWORD AUTHENTIK_LDAP_BIND_PASSWORD SMTP_PASSWORD"   # a database's, the portal's own admin, its LDAP bind, the mail server's
+declared=$(for f in $(declare -F | awk '{print $3}' | grep '_logins$'); do "$f"; done | cut -f3)
+bad=""
+for k in $(cut -f1 services/*/env.tsv lib/env.schema.tsv | grep -E '_PASSWORD$'); do
+    grep -qx "$k" <<<"$declared" || [[ " $NOT_LOGINS " == *" $k "* ]] || bad+="$k "
+done
+[[ -z "$bad" ]] || fail_ "a password no service declares as a login (add its <name>_logins, or say why it is not one): $bad"; pass
 
 echo "OK questions: $checks checks"

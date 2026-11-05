@@ -3,7 +3,8 @@
 # traefik_questions hook (docs/design-install.md), asked again by
 # traefik-setup. The domain, the certificate email, the Cloudflare token —
 # checked with Cloudflare when it is pasted, together with the domain's zone —
-# the certificates, and the dashboard's login. They ask and record only.
+# and the certificates; the dashboard's login is one of the stack's own
+# (traefik_logins, lib/logins.sh). They ask and record only.
 # Sourced by the entrypoint; relies on lib/common.sh and lib/questionnaire.sh
 # at call time.
 
@@ -35,7 +36,7 @@ cf_check() { # cf_check TOKEN DOMAIN -> the zone it found (rc 0); why not: rc 3 
     return 4
 }
 
-traefik_questions() { # the questionnaire's hook; traefik-setup asks them again (TRAEFIK_FORCE=1)
+traefik_questions() { # the questionnaire's hook; traefik-setup asks them again
     local domain email token why rc
     domain=$(env_get STACK_DOMAIN); email=$(env_get ACME_EMAIL); token=$(env_get CF_DNS_API_TOKEN)
     if q_quick && [[ -n "$domain" && -n "$email" && -n "$token" ]]; then
@@ -81,8 +82,10 @@ It is checked with Cloudflare as soon as it is pasted."
         env_set STACK_DOMAIN "$domain"; env_set ACME_EMAIL "$email"; env_set CF_DNS_API_TOKEN "$token"
     fi
     traefik_cert_question
-    traefik_dash_questions
 }
+
+traefik_logins() { printf "the Traefik dashboard\tTRAEFIK_DASH_USER\tTRAEFIK_DASH_PASSWORD\n"; }   # lib/logins.sh — with the portal, admins sign in through it and this is the fallback
+traefik_summary() { printf 'HTTPS\t%s, %s certificates\n' "$(env_get STACK_DOMAIN)" "$(env_get ACME_ENV)"; }   # its line of configure's summary
 
 traefik_cert_question() { # real certificates or Let's Encrypt's test ones
     if q_quick; then env_set ACME_ENV "$(env_get ACME_ENV)"; q_took "Certificates" "$(env_get ACME_ENV)"; return 0; fi
@@ -102,33 +105,4 @@ traefik_cert_question() { # real certificates or Let's Encrypt's test ones
         ask AV "Certificate environment (production/staging)" "$(env_get ACME_ENV)"
         case "${REPLY_VAL,,}" in production|staging) env_set ACME_ENV "${REPLY_VAL,,}"; return 0 ;; *) fail "Type production or staging." ;; esac
     done
-}
-
-traefik_dash_questions() { # the dashboard's login — none to ask with the portal (traefik_dash_fallback makes one)
-    signin_is authentik && return 0
-    local duser dpass
-    duser=$(env_get TRAEFIK_DASH_USER); dpass=$(env_get TRAEFIK_DASH_PASSWORD)
-    if [[ -n "$duser" && -n "$dpass" ]] && (( ! ${TRAEFIK_FORCE:-0} )); then
-        q_quick && q_took "Dashboard login" "keep $duser"
-        return 0
-    fi
-    # a password is only ever generated or typed — an empty one is never kept
-    [[ -n "$dpass" ]] || dpass=$(head -c12 /dev/urandom | base64 | tr -d '=+/')
-    if q_quick; then
-        env_set TRAEFIK_DASH_USER "${duser:-admin}"; env_set TRAEFIK_DASH_PASSWORD "$dpass"
-        q_took "Dashboard login" "${duser:-admin}, password generated (see: credentials)"; return 0
-    fi
-    explain "Dashboard login" \
-"Traefik's dashboard (https://dash.<domain>) shows every route and
-certificate. It cannot change anything, but it still gets a login.
-Enter keeps the name shown and accepts a generated password; see them
-later with: credentials"
-    while true; do
-        ask DU "Dashboard username" "${duser:-admin}"; duser="$REPLY_VAL"
-        # basic auth splits on ':' — letters, digits and ._- only
-        [[ "$duser" =~ ^[A-Za-z0-9._-]+$ ]] && break
-        fail "Use letters, digits and . _ - only."
-    done
-    ask_secret "Dashboard password" "$dpass"
-    env_set TRAEFIK_DASH_USER "$duser"; env_set TRAEFIK_DASH_PASSWORD "$REPLY_VAL"
 }

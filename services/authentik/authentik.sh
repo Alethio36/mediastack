@@ -195,6 +195,8 @@ authentik_prepare() { # before `up`/`enable` start it: the edge, secrets, the re
         || die "authentik (the portal) is reached at https://portal.<your domain>, through Traefik — enable and set it up first:
   ./mediastack.sh enable traefik   (then: ./mediastack.sh traefik-setup)"
     authentik_secrets
+    # nobody may join the portal under a name one of the stack's own logins uses (lib/logins.sh)
+    env_set AUTHENTIK_RESERVED_USERNAMES "$(logins_reserved)"
     authentik_release_check
     authentik_blueprints_sync
     authentik_templates_sync

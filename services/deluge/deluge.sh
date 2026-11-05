@@ -7,6 +7,8 @@
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/roles.sh and the
 # entrypoint's helpers at call time.
 
+deluge_logins() { printf "Deluge's web UI (a password, no name)\t-\tDELUGE_PASSWORD\n"; }   # lib/logins.sh
+
 DELUGE_FIRST_PASSWORD=deluge                  # the image's first-run web password
 DELUGE_SAVE=/data/torrent                     # the data tree's torrent folder, as every app mounts it
 DELUGE_JAR="${TMPDIR:-/tmp}/.mediastack-deluge.$$"
@@ -40,15 +42,14 @@ wire_deluge() {
     local pass out hosts hid dd cur k want plugins
     # --- its password: the image's first-run one is replaced, the new one kept in .env
     pass=$(env_get DELUGE_PASSWORD)
-    if [[ -n "$pass" ]] && deluge_login "$pass"; then
+    [[ -n "$pass" ]] || { wfail "deluge's password is not in .env (DELUGE_PASSWORD) — ./mediastack.sh up records one, then re-run wire"; return 0; }
+    if deluge_login "$pass"; then
         ok "deluge: password from .env works"
     elif deluge_login "$DELUGE_FIRST_PASSWORD"; then
         w_would "deluge: replace its first-run password (stored in .env — view: credentials)" || return 0
-        [[ -n "$pass" ]] || pass=$(head -c12 /dev/urandom | base64 | tr -d '=+/')
         out=$(deluge_rpc auth.change_password "$(jq -cn --arg o "$DELUGE_FIRST_PASSWORD" --arg n "$pass" '[$o, $n]')") \
             || { wfail "deluge refused the new password — $out"; return 0; }
         deluge_login "$pass" || { wfail "deluge did not accept its new password — inspect: logs deluge"; return 0; }
-        env_set DELUGE_PASSWORD "$pass"
         ok "deluge: password set and verified (view: credentials)"
     else
         wfail "deluge rejects DELUGE_PASSWORD and its first-run password — put its current web password in .env (DELUGE_PASSWORD), then re-run"

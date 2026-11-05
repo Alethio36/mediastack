@@ -7,6 +7,8 @@
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/roles.sh and the
 # entrypoint's helpers at call time.
 
+transmission_logins() { printf "Transmission's web UI\tTRANSMISSION_USER\tTRANSMISSION_PASSWORD\n"; }   # lib/logins.sh
+
 TRANSMISSION_SAVE=/data/torrent               # the data tree's torrent folder, as every app mounts it
 TRANSMISSION_SID=""                           # the RPC's X-Transmission-Session-Id (its CSRF guard)
 
@@ -42,11 +44,9 @@ wire_transmission() {
     wire_gate transmission
     http_ready transmission "$(transmission_url)" '^(401|409)$' || return 0
     local cur out k want
-    # --- its login: in .env, carried by the container's environment (USER/PASS)
+    # --- its login: recorded by configure (lib/logins.sh), carried by the container's environment (USER/PASS)
     if [[ -z "$(env_get TRANSMISSION_USER)" || -z "$(env_get TRANSMISSION_PASSWORD)" ]]; then
-        w_would "transmission: give it a login (stored in .env — view: credentials) and recreate it to take it" || return 0
-        [[ -n "$(env_get TRANSMISSION_USER)" ]] || env_set TRANSMISSION_USER admin
-        env_set TRANSMISSION_PASSWORD "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"
+        wfail "transmission's login is not in .env (TRANSMISSION_USER / TRANSMISSION_PASSWORD) — ./mediastack.sh up records one, then re-run wire"; return 0
     fi
     if transmission_login_live; then
         ok "transmission: login from .env works"

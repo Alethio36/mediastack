@@ -5,7 +5,9 @@ the session handoff). Built so far: the questionnaire's own process, quick or
 full, its exit codes and test-questions (2a); the `<n>_questions` hook, with
 Traefik's questions (the token and the domain's zone checked with Cloudflare
 as it is pasted) and Jellyfin's server name moved in, library names dropped
-(2b). Sections marked **agreed**
+(2b); the stack's own logins — `<n>_logins`, `STACK_USER` / `STACK_LOGINS`,
+the reserved names built from them, wire no longer asking or inventing a
+login — and `<n>_summary` (2c). Sections marked **agreed**
 were settled one by one before the whole was.*
 
 ## Goals

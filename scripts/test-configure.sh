@@ -15,8 +15,7 @@
 #   * the VPN is asked about only when something runs in it; secrets are read
 #     hidden; the NordVPN token reaches curl on stdin, never on its command line
 #   * a blank tunnel token turns the tunnel off; enable refuses it without one
-#   * with the portal, the Traefik dashboard asks nothing and never keeps an
-#     empty password
+#   * the Traefik dashboard's login asks nothing at up (it is a stack login)
 #   * the panel is asked for, not installed: configure installs it after
 # The entrypoint is sourced (minus main "$@"); the rendered catalogue is a
 # small fixture, so no Docker is needed.
@@ -173,12 +172,9 @@ grep -q 'needs its tunnel token' "$T/out" || fail_ "and says how"; pass
 printf 'CLOUDFLARE_TUNNEL_TOKEN=T\n' > "$ENV_FILE"
 ( cloudflared_enable_check cloudflared </dev/null ) > "$T/out" 2>&1 || fail_ "a stored token is enough"; pass
 
-# ---- the dashboard behind the portal: no question, never an empty password ----
-printf 'COMPOSE_PROFILES=traefik,authentik\nSTACK_DOMAIN=media.example.com\nACME_EMAIL=me@example.com\nCF_DNS_API_TOKEN=t\nACME_ENV=staging\nTRAEFIK_DASH_USER=\nTRAEFIK_DASH_PASSWORD=\n' > "$ENV_FILE"
-( traefik_gen() { :; }; traefik_ensure </dev/null ) > "$T/out" 2>&1 || fail_ "with the portal the dashboard needs no terminal"
-[[ "$(env_get TRAEFIK_DASH_USER)" == admin && -n "$(env_get TRAEFIK_DASH_PASSWORD)" ]] \
-    || fail_ "a fallback login is generated, not left empty: $(grep TRAEFIK_DASH "$ENV_FILE")"; pass
-grep -q 'admins sign in through the portal' "$T/out" || fail_ "and it says so"; pass
+# ---- the dashboard's login is one of the stack's own: up asks nothing for it ----
+printf 'COMPOSE_PROFILES=traefik\nSTACK_DOMAIN=media.example.com\nACME_EMAIL=me@example.com\nCF_DNS_API_TOKEN=t\nACME_ENV=staging\nTRAEFIK_DASH_USER=\nTRAEFIK_DASH_PASSWORD=\n' > "$ENV_FILE"
+( traefik_gen() { :; }; traefik_ensure </dev/null ) > "$T/out" 2>&1 || fail_ "Traefik answered: the dashboard's login needs no terminal (logins_fill records it)"; pass
 
 # ---- the panel, offered at the end when Traefik serves it; configure installs it ----
 printf 'COMPOSE_PROFILES=traefik,sonarr\n' > "$ENV_FILE"

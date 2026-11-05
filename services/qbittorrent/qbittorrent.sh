@@ -5,6 +5,8 @@
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
 
+qbittorrent_logins() { printf "qBittorrent's WebUI\tQBITTORRENT_USER\tQBITTORRENT_PASSWORD\tuser_min=3\n"; }   # lib/logins.sh; its WebUI refuses a shorter name
+
 # ---- qbit ----
 QB_COOKIE=""
 QB_LOGIN_BODY=""
@@ -61,13 +63,16 @@ wire_qbit() {
     # avoids misreading a boot gap as bad credentials on re-runs
     http_ready qbittorrent "$(qb_url)/api/v2/app/webapiVersion" '^[1-9]' \
         || die "cannot wire qBittorrent without its WebUI (see above)"
-    local user pass gen
+    local user pass
     user=$(env_get QBITTORRENT_USER)
     pass=$(env_get QBITTORRENT_PASSWORD)
-    if [[ -n "$user" && -n "$pass" ]] && qb_login "$user" "$pass"; then
+    # configure records the login (lib/logins.sh); a fresh qBittorrent takes it below
+    [[ -n "$user" && -n "$pass" ]] \
+        || { wfail "qBittorrent's login is not in .env (QBITTORRENT_USER / QBITTORRENT_PASSWORD) — ./mediastack.sh up records one, then re-run wire"; return 0; }
+    if qb_login "$user" "$pass"; then
         ok "credentials from .env work"
     elif (( WIRE_DRY )); then
-        w_would "harvest qBittorrent's boot password and set permanent credentials (you pick or accept generated)" || true
+        w_would "harvest qBittorrent's boot password and set the login from .env" || true
         info "category preview needs credentials — computed on the real run"
         return 0
     else
@@ -112,16 +117,9 @@ wire_qbit() {
   (restart clears auth bans, so that isn't it). Server said: $QB_LOGIN_BODY
   Inspect: ./mediastack.sh logs qbittorrent" ;;
         esac
-        gen=$(head -c12 /dev/urandom | base64 | tr -d '=+/')
-        explain "qBittorrent credentials" \
-"Pick the permanent WebUI login. Enter accepts a generated password;
-type your own to use it instead. Stored in .env (view: credentials)."
-        ask QB_USER "Username" "${user:-admin}"; user="$REPLY_VAL"
-        ask_secret "Password" "$gen"; pass="$REPLY_VAL"
-        if w_would "set permanent qBittorrent credentials"; then
+        if w_would "set qBittorrent's login from .env (view: credentials)"; then
             qb_api /app/setPreferences \
                 "json={\"web_ui_username\":\"$user\",\"web_ui_password\":\"$pass\"}" >/dev/null || true  # re-login below is the verdict
-            env_set QBITTORRENT_USER "$user"; env_set QBITTORRENT_PASSWORD "$pass"
             sleep 2   # let the preference write settle
             local vrc=0; qb_login "$user" "$pass" || vrc=$?
             (( vrc == 0 )) \

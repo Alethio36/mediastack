@@ -17,8 +17,8 @@ traefik_ensure() { # traefik_ensure [--reconfigure]; runs on up/enable; idempote
     if [[ "${1:-}" == --reconfigure ]]; then
         [[ -t 0 ]] || die "traefik-setup needs a terminal."
         hr "Traefik setup"; info "Enter keeps the value shown in [brackets]."
-        # shellcheck disable=SC2034  # read by traefik_questions: every question, the dashboard's too
-        local Q_MODE=full TRAEFIK_FORCE=1
+        # shellcheck disable=SC2034  # read by traefik_questions: every question asked
+        local Q_MODE=full
         traefik_questions
     else
         miss=$(traefik_missing)
@@ -29,22 +29,12 @@ traefik_ensure() { # traefik_ensure [--reconfigure]; runs on up/enable; idempote
             hr "Traefik setup"; traefik_questions
         fi
     fi
-    traefik_dash_fallback
     traefik_gen
 }
 
 traefik_missing() { # the first of Traefik's answers not recorded yet ("" when none is missing)
     local k
     for k in STACK_DOMAIN ACME_EMAIL CF_DNS_API_TOKEN; do [[ -n "$(env_get "$k")" ]] || { echo "$k"; return 0; }; done
-    if ! signin_is authentik && [[ -z "$(env_get TRAEFIK_DASH_USER)" ]]; then echo TRAEFIK_DASH_USER; fi
-}
-
-traefik_dash_fallback() { # with the portal, admins sign in through it; the dashboard keeps a generated fallback login, never an empty one
-    signin_is authentik || return 0
-    [[ -z "$(env_get TRAEFIK_DASH_USER)" || -z "$(env_get TRAEFIK_DASH_PASSWORD)" ]] || return 0
-    [[ -n "$(env_get TRAEFIK_DASH_USER)" ]] || env_set TRAEFIK_DASH_USER admin
-    [[ -n "$(env_get TRAEFIK_DASH_PASSWORD)" ]] || env_set TRAEFIK_DASH_PASSWORD "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"
-    info "Dashboard: admins sign in through the portal (a fallback login is kept: ./mediastack.sh credentials)"
 }
 
 traefik_gen() {

@@ -6,6 +6,8 @@
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
 
+arr_logins() { printf 'the arrs (one login for every one of them)\tARR_USER\tARR_PASSWORD\n'; }   # lib/logins.sh: every arr-family fragment names it (mediastack.logins)
+
 arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialising)
     sudo grep -oP '<ApiKey>\K[^<]+' "$(env_get CONFIG_ROOT)/$1/config.xml" 2>/dev/null | sed -n 1p || true
 }
@@ -194,21 +196,11 @@ wire_arr() {
     wire_arrs_ready || true
     local recycle_ok=1   # the bin's placement is checked once, before any arr
     if recycle_on; then recycle_prepare || recycle_ok=0; fi
-    # --- arr login (the first-run "authentication required" gate) ---
+    # --- arr login (the first-run "authentication required" gate): configure records it
     local auser apass
     auser=$(env_get ARR_USER); apass=$(env_get ARR_PASSWORD)
     if [[ -z "$auser" || -z "$apass" ]]; then
-        if (( WIRE_DRY )); then
-            w_would "set one shared login on every arr instance (the first-run auth gate)" || true
-        else
-            explain "Arr login" \
-"The arrs refuse to serve their UI until an authentication method and
-login are set. One login is used for ALL instances (they share one
-operator). Stored in .env (view: credentials)."
-            ask ARR_U "Username" "${auser:-admin}"; auser="$REPLY_VAL"
-            ask_secret "Password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; apass="$REPLY_VAL"
-            env_set ARR_USER "$auser"; env_set ARR_PASSWORD "$apass"
-        fi
+        wfail "the arrs' login is not in .env (ARR_USER / ARR_PASSWORD) — ./mediastack.sh up records one, then re-run wire"; return 0
     fi
     # the download client: the one the role picks (DOWNLOAD_CLIENT, else the
     # first enabled in priority order — lib/roles.sh); the others' entries

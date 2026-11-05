@@ -4,6 +4,8 @@
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
 
+kavita_logins() { printf "Kavita's admin\tKAVITA_ADMIN_USER\tKAVITA_ADMIN_PASSWORD\treserve pw_max=256 user_re=^[A-Za-z0-9._@+/-]+$\n"; }   # lib/logins.sh; Kavita's own limits
+
 # ---- Kavita: the stack's own admin, then sign-in through the portal ----
 # Its OIDC is set up once at start-up (from its appsettings.json): a change to
 # the authority, client or secret needs one restart; the rest (defaults,
@@ -150,13 +152,13 @@ wire_kavita() {
     user=$(env_get KAVITA_ADMIN_USER); pass=$(env_get KAVITA_ADMIN_PASSWORD)
     if [[ "$exists" != true ]]; then
         w_would "create Kavita's admin — the stack's own (see: credentials)" || return 0
-        [[ -n "$user" ]] || user=mediastack
-        [[ -n "$pass" ]] || pass=$(gen_secret 24)
+        [[ -n "$user" && -n "$pass" ]] \
+            || { wfail "kavita's admin login is not in .env (KAVITA_ADMIN_USER / KAVITA_ADMIN_PASSWORD) — ./mediastack.sh up records one, then re-run wire"; return 0; }
         # never the username (its default): Kavita matches a portal sign-in by email
         email=$(env_get KAVITA_ADMIN_EMAIL); [[ -n "$email" ]] || email="$user@$(gen_secret 12 | tr '[:upper:]' '[:lower:]').invalid"
         out=$(kav_api POST /api/account/register "" "$(jq -cn --arg u "$user" --arg p "$pass" --arg e "$email" '{username:$u, password:$p, email:$e}')") \
             || { wfail "kavita refused its first-run setup: $(oneline "$out")"; return 0; }
-        env_set KAVITA_ADMIN_USER "$user"; env_set KAVITA_ADMIN_PASSWORD "$pass"; env_set KAVITA_ADMIN_EMAIL "$email"
+        env_set KAVITA_ADMIN_EMAIL "$email"
         ok "kavita: admin '$user' created (the stack's own — people sign in with their own accounts)"
     elif [[ -z "$user" || -z "$pass" ]]; then
         wfail "kavita was set up by hand and its admin login is not in .env. Either put it there (KAVITA_ADMIN_USER / KAVITA_ADMIN_PASSWORD), or start it fresh — this deletes its users, libraries and reading progress:
@@ -165,7 +167,7 @@ wire_kavita() {
     fi
     (( WIRE_DRY )) && [[ -z "$(env_get KAVITA_ADMIN_PASSWORD)" ]] && return 0
     out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { wfail "kavita rejected the admin login from .env: $(oneline "$out")"; return 0; }
+        || { wfail "kavita rejected the admin login from .env: $(oneline "$out") — set up by hand? Put its admin login there (KAVITA_ADMIN_USER / KAVITA_ADMIN_PASSWORD)"; return 0; }
     tok=$(jq -r '.token // empty' <<<"$out")
     [[ -n "$tok" ]] || { wfail "kavita login returned no token"; return 0; }
     ok "kavita: admin login works"

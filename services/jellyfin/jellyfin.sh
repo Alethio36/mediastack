@@ -139,6 +139,9 @@ jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admi
     jf_admin_sync "$tok"
 }
 
+jellyfin_logins() { printf "Jellyfin's admin (the operator's, and Seerr's owner)\tJELLYFIN_ADMIN_USER\tJELLYFIN_ADMIN_PASSWORD\treserve\n"; }   # lib/logins.sh
+jellyfin_summary() { printf 'jellyfin name\t%s\n' "$(env_get JELLYFIN_SERVER_NAME)"; }   # its line of configure's summary
+
 jellyfin_questions() { # the questionnaire's hook: the name Jellyfin's apps and casting show (wire sets it once)
     local cur; cur=$(env_get JELLYFIN_SERVER_NAME)
     if q_quick; then env_set JELLYFIN_SERVER_NAME "$cur"; q_took "Jellyfin server name" "$cur"; return 0; fi
@@ -306,24 +309,11 @@ wire_jellyfin() {
     # This also closes a real hole: an unconfigured jellyfin lets ANY visitor
     # create the admin account.
     if [[ "$completed" == false ]]; then
+        # the admin — the operator's and recovery login, Seerr's owner — is one
+        # of the stack's own logins: configure records it (lib/logins.sh)
         if [[ -z "$juser" || -z "$jpass" ]]; then
-            if (( WIRE_DRY )); then
-                w_would "complete jellyfin's first-run wizard (admin login asked on the real run)" || true
-            elif [[ ! -t 0 ]]; then
-                wfail "jellyfin's first-run wizard is incomplete and there is no terminal to ask for the admin login — run './mediastack.sh wire jellyfin' interactively"
-                return 0
-            else
-                explain "Jellyfin admin" \
-"Jellyfin needs one administrator account. This is the operator/recovery
-login (it also signs in to Seerr as its owner) — your household gets
-their own accounts later via invites. Everything else about Jellyfin
-(look, libraries' settings, users) stays yours to manage in its GUI;
-wire only performs this minimum first-run. Stored in .env (view:
-credentials)."
-                ask JF_U "Admin username" "${juser:-admin}"; juser="$REPLY_VAL"
-                ask_secret "Admin password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; jpass="$REPLY_VAL"
-                env_set JELLYFIN_ADMIN_USER "$juser"; env_set JELLYFIN_ADMIN_PASSWORD "$jpass"
-            fi
+            wfail "jellyfin's admin login is not in .env (JELLYFIN_ADMIN_USER / JELLYFIN_ADMIN_PASSWORD) — ./mediastack.sh up records one, then re-run wire"
+            return 0
         fi
         if [[ -n "$juser" && -n "$jpass" ]] && w_would "complete jellyfin's first-run wizard (admin '$juser', remote access on, UPnP off)"; then
             local step out

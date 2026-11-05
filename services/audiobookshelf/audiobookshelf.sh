@@ -4,6 +4,8 @@
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
 
+audiobookshelf_logins() { printf "Audiobookshelf's root\tABS_ADMIN_USER\tABS_ADMIN_PASSWORD\treserve\n"; }   # lib/logins.sh
+
 # ---- Audiobookshelf: the stack's own root account, then sign-in through the portal ----
 abs_url() { local p; p=$(svc_hostport audiobookshelf) || return 1; echo "http://127.0.0.1:$p"; }
 abs_api() { # abs_api METHOD PATH TOKEN [json] -> body; rc from HTTP
@@ -127,11 +129,10 @@ wire_audiobookshelf() {
     user=$(env_get ABS_ADMIN_USER); pass=$(env_get ABS_ADMIN_PASSWORD)
     if [[ "$(jq -r '.isInit' <<<"$st")" != true ]]; then
         w_would "create Audiobookshelf's root account — the stack's own (see: credentials)" || return 0
-        [[ -n "$user" ]] || user=mediastack
-        [[ -n "$pass" ]] || pass=$(gen_secret 24)
+        [[ -n "$user" && -n "$pass" ]] \
+            || { wfail "audiobookshelf's root login is not in .env (ABS_ADMIN_USER / ABS_ADMIN_PASSWORD) — ./mediastack.sh up records one, then re-run wire"; return 0; }
         abs_api POST /init "" "$(jq -cn --arg u "$user" --arg p "$pass" '{newRoot:{username:$u, password:$p}}')" >/dev/null \
             || { wfail "audiobookshelf refused its first-run setup"; return 0; }
-        env_set ABS_ADMIN_USER "$user"; env_set ABS_ADMIN_PASSWORD "$pass"
         ok "audiobookshelf: root account '$user' created (the stack's own — people sign in with their own accounts)"
     elif [[ -z "$user" || -z "$pass" ]]; then
         wfail "audiobookshelf was set up by hand and its root login is not in .env. Either put it there (ABS_ADMIN_USER / ABS_ADMIN_PASSWORD), or start it fresh — this deletes its users, libraries and progress:
@@ -140,7 +141,7 @@ wire_audiobookshelf() {
     fi
     (( WIRE_DRY )) && [[ -z "$(env_get ABS_ADMIN_PASSWORD)" ]] && return 0
     out=$(abs_api POST /login "" "$(jq -cn --arg u "$(env_get ABS_ADMIN_USER)" --arg p "$(env_get ABS_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { wfail "audiobookshelf rejected the root login from .env"; return 0; }
+        || { wfail "audiobookshelf rejected the root login from .env — set up by hand? Put its root login there (ABS_ADMIN_USER / ABS_ADMIN_PASSWORD)"; return 0; }
     tok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
     [[ -n "$tok" ]] || { wfail "audiobookshelf login returned no token"; return 0; }
     ok "audiobookshelf: root login works"

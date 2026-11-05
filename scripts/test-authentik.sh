@@ -647,7 +647,7 @@ w=$(abs_oidc_want)
 [[ "$(jq -r '.authOpenIDSubfolderForRedirectURLs | type + ":" + .' <<<"$w")" == "string:" ]] \
     || fail_ "no subfolder, set explicitly — unset, its callback reads undefined/auth/openid/callback (found live)"; pass
 # first run: a fresh Audiobookshelf gets the stack's root; a hand-made one is not taken over
-rm -f "$T/calls"; printf 'STACK_DOMAIN=media.example.com\n' > "$ENV_FILE"
+rm -f "$T/calls"; printf 'STACK_DOMAIN=media.example.com\nABS_ADMIN_USER=admin\nABS_ADMIN_PASSWORD=Pw0123456789ab\n' > "$ENV_FILE"
 svc_enabled() { [[ "$1" == audiobookshelf ]]; }; wire_gate() { :; }; http_ready() { :; }; abs_url() { echo http://abs; }
 ABS_INIT=false
 abs_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
@@ -658,9 +658,12 @@ abs_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
         *) echo '{}' ;;
     esac; }
 wire_audiobookshelf >/dev/null
-grep -q '^POST /init {"newRoot":{"username":"mediastack","password":"' "$T/calls" && [[ "$(env_get ABS_ADMIN_USER)" == mediastack && -n "$(env_get ABS_ADMIN_PASSWORD)" ]] \
-    || fail_ "a fresh Audiobookshelf: the stack's root account, stored"; pass
+grep -q '^POST /init {"newRoot":{"username":"admin","password":"Pw0123456789ab"}}' "$T/calls" \
+    || fail_ "a fresh Audiobookshelf: the stack's root account, as configure recorded it"; pass
 grep -q '^POST /login' "$T/calls" || fail_ "then it logs in with it"; pass
+rm -f "$T/calls"; printf 'STACK_DOMAIN=media.example.com\n' > "$ENV_FILE"; WIRE_FAILS=0
+out=$(wire_audiobookshelf 2>&1) || true
+! grep -q '^POST /init' "$T/calls" && [[ "$out" == *"root login is not in .env"* ]] || fail_ "no recorded login: wire makes none — it says so"; pass
 rm -f "$T/calls"; printf '' > "$ENV_FILE"; ABS_INIT=true; WIRE_FAILS=0
 out=$(wire_audiobookshelf 2>&1) || true
 ! grep -q '^POST /init' "$T/calls" && [[ "$out" == *"set up by hand"*"ABS_ADMIN_USER"* ]] || fail_ "one set up by hand is never taken over — it says what to do"; pass
@@ -734,8 +737,9 @@ ABS_PW_REFUSE=false; ABS_ROOT_LINK=false; rm -f "$T/calls"
 abs_root_unlink tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "an unlinked root: nothing to do"; pass
 
 # ---- sign-up: a username the apps would confuse is refused ----
-grep -q 'MEDIASTACK_RESERVED_USERNAMES: ${ABS_ADMIN_USER:-},${JELLYFIN_ADMIN_USER:-},${KAVITA_ADMIN_USER:-}$' services/authentik/compose.yml \
-    || fail_ "the worker gets the stack's own app accounts to reserve"; pass
+grep -q 'MEDIASTACK_RESERVED_USERNAMES: ${AUTHENTIK_RESERVED_USERNAMES:-} ' services/authentik/compose.yml \
+    && awk '/^authentik_prepare\(\)/,/^}/' services/authentik/authentik.sh | grep -q 'env_set AUTHENTIK_RESERVED_USERNAMES "$(logins_reserved)"' \
+    || fail_ "the worker gets the stack's own logins marked reserve (lib/logins.sh), written by up"; pass
 sed -n '/name: mediastack-join-credentials/,/fields:/p' services/authentik/blueprints/mediastack-portal.yaml | grep -q '!KeyOf policy-join-username' \
     || fail_ "the sign-up page validates the username with the policy"; pass
 # the policy's own expression, run with authentik's context stubbed: reserved names
@@ -801,11 +805,11 @@ kav_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
         *) echo '{}' ;;
     esac; }
 kav_stubbed() { ( kav_admin_email_check() { :; }; kav_oidc() { echo "KAV_OIDC" >> "$T/calls"; }; kav_admin_sync() { :; }; wire_kavita ); }
-rm -f "$T/calls"; printf 'STACK_DOMAIN=media.example.com\n' > "$ENV_FILE"
+rm -f "$T/calls"; printf 'STACK_DOMAIN=media.example.com\nKAVITA_ADMIN_USER=admin\nKAVITA_ADMIN_PASSWORD=Pw0123456789ab\n' > "$ENV_FILE"
 kav_stubbed >/dev/null
-grep -q '^POST /api/account/register {"username":"mediastack","password":"[A-Za-z0-9]*","email":"mediastack@[a-z0-9]*\.invalid"}' "$T/calls" \
-    && [[ "$(env_get KAVITA_ADMIN_USER)" == mediastack && -n "$(env_get KAVITA_ADMIN_PASSWORD)" && "$(env_get KAVITA_ADMIN_EMAIL)" == mediastack@*.invalid ]] \
-    || fail_ "a fresh Kavita: the stack's admin, stored, with an unclaimable email (Kavita's default is the username)"; pass
+grep -q '^POST /api/account/register {"username":"admin","password":"Pw0123456789ab","email":"admin@[a-z0-9]*\.invalid"}' "$T/calls" \
+    && [[ "$(env_get KAVITA_ADMIN_EMAIL)" == admin@*.invalid ]] \
+    || fail_ "a fresh Kavita: the stack's admin as configure recorded it, with an unclaimable email (Kavita's default is the username)"; pass
 grep -q '^KAV_OIDC' "$T/calls" || fail_ "then sign-in through the portal"; pass
 rm -f "$T/calls"; printf '' > "$ENV_FILE"; KAV_EXISTS=true; WIRE_FAILS=0
 out=$(kav_stubbed 2>&1) || true

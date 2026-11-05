@@ -34,7 +34,7 @@ CGROUP_FILE=/proc/self/cgroup                     # scheduled_run reads it (a te
 STATE_DIR="$LOCAL_DIR/state"                      # pending work: one file per marker (state_get/state_set)
 ENV_BACKUP_DIR="$LOCAL_DIR/env-backups"           # .env before each schema migration
 ENV_BACKUP_KEEP=10                                # the oldest (your original) + the newest 9
-SCRIPT_SCHEMA=38
+SCRIPT_SCHEMA=39
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -79,6 +79,8 @@ source "$SCRIPT_DIR/lib/recycle.sh"
 source "$SCRIPT_DIR/lib/footprint.sh"
 # shellcheck source=lib/notify.sh
 source "$SCRIPT_DIR/lib/notify.sh"
+# shellcheck source=lib/logins.sh
+source "$SCRIPT_DIR/lib/logins.sh"
 # shellcheck source=lib/questionnaire.sh
 source "$SCRIPT_DIR/lib/questionnaire.sh"
 # shellcheck source=lib/configure.sh
@@ -472,6 +474,7 @@ provision() {
     _configure_selfheal   # a service new since the last configure gets its UID before anything starts it
     gate_bind_sync        # gated tools listen on 127.0.0.1 while the portal guards them
     RENDERED_JSON=""; render
+    logins_fill           # a service enabled since configure gets its login the way configure made the others
     local gid; gid=$(env_get MEDIA_GROUP_GID)
     getent group mediacenter >/dev/null || { sudo groupadd -g "$gid" mediacenter; ok "group mediacenter ($gid)"; }
     local s v uid croot droot cache tcode
