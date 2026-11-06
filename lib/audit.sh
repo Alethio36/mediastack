@@ -361,7 +361,7 @@ audit_parse() { # stdin: `ausearch --raw` output; $1 $2: the last event already 
                 rn[id, j] = resolve(dn[id, j], pk[id, 1], a0[id], cwd[id])
                 if (dm[id, j] ~ /^04/ && rn[id, j] ~ /^\//) dirpath[dk[id, j]] = rn[id, j]
             }
-            rc[id] = resolve(cr[id], pk[id, np[id] > 1 ? 2 : 1], a2[id], cwd[id])
+            rc[id] = resolve(cr[id] "", pk[id, np[id] > 1 ? 2 : 1] "", a2[id] "", cwd[id] "")   # copies, not the elements: gawk 5.3 crashes on a missing element passed to a function and read again (fixtype: Node_var)
         }
         for (i = 1; i <= n; i++) {
             id = order[i]
