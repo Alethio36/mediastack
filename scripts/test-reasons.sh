@@ -5,6 +5,8 @@
 #     smtp_live_stale), given empty input with docker, curl and the apps unreachable,
 #     returns 0 under set -Eeuo pipefail with an ERR trap — as the stack runs it
 #     (found live Nov 2026: a reason printer's empty grep ended wire)
+#   * every function whose header promises "" when there is nothing (and names
+#     no rc of its own) answers "" with rc 0 when nothing is reachable
 #   * the paths found by the audit: an update night with GitHub unreachable, a
 #     sign-in link authentik did not print, a setting the running worker lacks
 # Sources the real entrypoint (minus its last line, main "$@").
@@ -43,6 +45,21 @@ for f in "${reasons[@]}"; do
     out=$(as_stack "$f" "${args[@]}"); rc=$?
     (( rc == 0 )) || fail_ "$f, given nothing, fails instead of explaining (rc=$rc): $out"; pass
 done
+
+# ---- every getter that promises "" when there is nothing, with everything unreachable ----
+# (found live Nov 2026: gluetun_addr on a stopped gluetun ended restore and update)
+# a header naming an rc, or that it dies, documents its failure instead
+mapfile -t getters < <(grep -hE '^[a-z_][a-z0-9_]*\(\) *\{ *#.*"" when' mediastack.sh lib/*.sh services/*/*.sh \
+    | grep -vE '#.*(\brc [0-9]|dies)' | sed 's/().*//' || true)
+(( ${#getters[@]} >= 10 )) || fail_ "the getters are found by their header (${#getters[@]}: ${getters[*]})"; pass
+for f in "${getters[@]}"; do
+    n=$(declare -f "$f" | grep -oE '\$\{?[1-9]' | grep -oE '[1-9]' | sort -n | tail -1 || true)
+    args=(); for (( i = 0; i < ${n:-0}; i++ )); do args+=(""); done
+    [[ "$f" == c_get ]] && args=(mediastack-x .State.Status)   # a jq path is the caller's
+    out=$(as_stack "$f" "${args[@]}"); rc=$?
+    (( rc == 0 )) || fail_ "$f, with nothing to find, fails instead of answering \"\" (rc=$rc): $out"; pass
+done
+[[ "$(as_stack gluetun_addr)" == "" ]] || fail_ "a stopped gluetun has no address: \"\""; pass
 
 # ---- the update night, GitHub unreachable: no notice, the run goes on ----
 out=$(as_stack recyclarr_pin_notice; echo "rc=$?")

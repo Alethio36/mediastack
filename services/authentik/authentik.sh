@@ -205,7 +205,7 @@ authentik_prepare() { # before `up`/`enable` start it: the edge, secrets, the re
     authentik_templates_sync
 }
 
-authentik_blueprint_instance() { # -> the blueprint's instance JSON ("" when authentik has not discovered it yet)
+authentik_blueprint_instance() { # -> the blueprint's instance JSON ("" when authentik has not discovered it yet); rc 1 + reason on stderr when unreadable
     local out
     out=$(ak_api GET "/managed/blueprints/?page_size=200") || { echo "unreadable ($(head -c120 <<<"$out"))" >&2; return 1; }
     jq -c --arg n "$AUTHENTIK_BLUEPRINT" '[.results[] | select(.name == $n)][0] // empty' <<<"$out"

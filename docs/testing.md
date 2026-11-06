@@ -39,7 +39,8 @@ Rules these taught, Nov 2026:
   since that is where an empty `grep` once ended a whole `wire`.
   `test-reasons` holds every reason function (`*_why`, `*_reason`,
   `*_problem(s)`, `*_hint`) to that: empty input, everything unreachable,
-  return 0. A new one is picked up by its name.
+  return 0. A new one is picked up by its name — and so is every getter whose
+  header promises `""` when there is nothing (unless it names an rc of its own).
 - **New checks are mutation-checked** before they count: break the code they
   guard, see them fail, restore it.
 

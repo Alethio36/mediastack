@@ -334,7 +334,8 @@ lt_flows_read() { # lt_flows_read GIP -> "proto dst dport timeout" per destinati
          END { for (k in m) print k, m[k] }' <<<"$out" | sort
 }
 gluetun_addr() { # gluetun's address on the stack network, "" when it is not running
-    sudo docker exec "$(svc_cname gluetun)" ip -o -4 addr show dev eth0 2>/dev/null | awk 'NR == 1 { split($4, a, "/"); print a[1] }'
+    # the exec fails on a stopped gluetun: under pipefail that ended restore and update (found live Nov 2026)
+    sudo docker exec "$(svc_cname gluetun)" ip -o -4 addr show dev eth0 2>/dev/null | awk 'NR == 1 { split($4, a, "/"); print a[1] }' || true
 }
 lt_flows_forget() { # lt_flows_forget GIP — gluetun was stopped on purpose, so forget what the host tracked from its address
     # all of it is from before the stop; kept, the next run would wait each
