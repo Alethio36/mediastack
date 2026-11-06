@@ -154,6 +154,10 @@ arr_recycle() { # arr_recycle <svc> <url> <key> — that arr's recycle bin, per 
     if ! sudo test -d "$(recycle_root)/$s" && w_would "$s: recycle bin folder $(recycle_root)/$s (missing)"; then
         sudo mkdir -p "$(recycle_root)/$s"
         sudo chown ":mediacenter" "$(recycle_root)/$s"; sudo chmod 2775 "$(recycle_root)/$s"
+        # the arr checked before the folder existed and says so until its next
+        # scheduled check (hours): it checks again now (found live Nov 2026)
+        api POST "$2/api/$(arr_apiver "$s")/command" "$3" '{"name":"CheckHealth"}' >/dev/null \
+            || warn "$s: could not ask it to re-check its health — its recycle-bin warning clears at its next scheduled check"
     fi
     [[ "$have" == "$want" && "$hdays" == "$days" ]] && { ok "$s: recycle bin $want (emptied after $days days)"; return 0; }
     [[ -n "$have" ]] || recycle_warn_once

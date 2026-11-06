@@ -60,7 +60,7 @@ if recycle_cpath other >/dev/null; then fail_ "an arr without a DATA_ROOT mount 
 
 # ---- wire: only a bin it set is changed ----
 api() { # a fake arr: GET returns $CUR, PUT is logged
-    case "$1" in GET) echo "$CUR" ;; PUT) echo "$4" >> "$T/put" ;; esac
+    case "$1" in GET) echo "$CUR" ;; PUT) echo "$4" >> "$T/put" ;; POST) echo "$2 $4" >> "$T/post" ;; esac
 }
 arr_apiver() { echo v3; }
 WIRE_DRY=0; WIRE_CHANGES=0; WIRE_FAILS=0
@@ -82,6 +82,10 @@ run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":7}'
 rm -rf "$T/data/recycle/radarr"
 run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":7}'
 [[ -d "$T/data/recycle/radarr" && "$PUT" == none ]] || fail_ "the setting already right, its folder missing: the folder made, nothing written ($PUT)"; pass
+grep -qx 'http://x/api/v3/command {"name":"CheckHealth"}' "$T/post" \
+    || fail_ "a folder made: the arr re-checks its health, or it reports the bin unwritable until its next scheduled check (found live Nov 2026): $(cat "$T/post" 2>/dev/null)"; pass
+rm -f "$T/post"; run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":7}'
+[[ ! -e "$T/post" ]] || fail_ "nothing made: no re-check asked"; pass
 rm -rf "$T/data/recycle/radarr"; WIRE_CHANGES=0
 WIRE_DRY=1; run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":7}'; WIRE_DRY=0
 [[ ! -d "$T/data/recycle/radarr" ]] && (( WIRE_CHANGES == 1 )) || fail_ "--verify: a missing folder is drift, and nothing is made ($WIRE_CHANGES)"; pass
