@@ -65,7 +65,11 @@ VPN'd service recreates gluetun (brief tunnel bounce).
 
 Routers for VPN'd services live as labels on gluetun (they share its
 network namespace and have no IP of their own); standalone services carry
-their own labels. Proxy config is therefore code: reproduced by `up`,
+their own labels. A container's labels change only with the container, so
+anything that changes those routes — enabling Traefik (the domain fills in
+`Host(...)`), a new domain, a renamed VPN'd service, the portal's gate —
+recreates gluetun: a brief tunnel bounce, after which the VPN'd services
+re-join it through the leak gate's full checks. Proxy config is therefore code: reproduced by `up`,
 versioned in git, nothing to re-click after a reinstall.
 
 ## Proxying something that isn't in the stack
