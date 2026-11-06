@@ -97,6 +97,10 @@ sed -i "s|^TLS_CERT_FILE=.*|TLS_CERT_FILE=$c/month.full|; s|^TLS_KEY_FILE=.*|TLS
 [[ "$(dr)" == *"older copy than your certificate file"* ]] || fail_ "a file newer than the served copy is named: $(dr)"; pass
 sed -i "s|^TLS_CERT_FILE=.*|TLS_CERT_FILE=$c/soon.full|; s|^TLS_KEY_FILE=.*|TLS_KEY_FILE=$c/soon.key|" "$ENV_FILE"
 [[ "$(dr)" == *"DFAIL your certificate cannot be served: the certificate expires within 7 days"* ]] || fail_ "3 days left: a failure: $(dr)"; pass
+[[ "$(dr)" != *"older copy"* ]] || fail_ "a pair that cannot serve is one finding, not also a copy to apply: $(dr)"; pass
+sed -i "s|^TLS_CERT_FILE=.*|TLS_CERT_FILE=$T/gone.full|" "$ENV_FILE"
+[[ "$(dr)" == *"DFAIL your certificate cannot be served: $T/gone.full cannot be read"* && "$(dr)" != *"older copy"* ]] \
+    || fail_ "a missing file: one failure, no copy to apply (found live Nov 2026): $(dr)"; pass
 
 # ---- configure: the choice, the paths; another domain's certificate sends the domain back ----
 printf 'COMPOSE_PROFILES=traefik\n' > "$ENV_FILE"; rm -rf "$T/cfg"

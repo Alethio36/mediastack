@@ -27,7 +27,8 @@ traefik_doctor() { # doctor: the certificate — your own (its expiry), or Let's
         else
             ok "your own certificate, until $(own_cert_until "$cert") ($days days)"
         fi
-        sudo cmp -s "$cert" "$(env_get CONFIG_ROOT)/traefik/certs/fullchain.pem" \
+        # a pair that cannot serve is the finding above, not a copy to apply
+        [[ -n "$why" ]] || sudo cmp -s "$cert" "$(env_get CONFIG_ROOT)/traefik/certs/fullchain.pem" \
             || warn "Traefik serves an older copy than your certificate file — apply it: ./mediastack.sh up"
     elif svc_enabled traefik && [[ -n "$(env_get STACK_DOMAIN)" ]]; then
         local acmef; acmef="$(env_get CONFIG_ROOT)/traefik/acme/acme.json"
