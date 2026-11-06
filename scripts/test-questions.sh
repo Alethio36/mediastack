@@ -336,6 +336,10 @@ mkdir -p "$T/pcfg/olivetin"; : > "$T/pcfg/olivetin/passwd"
 rm -f "$T/pcfg/olivetin/passwd"
 grep -q 'not installed yet — frontdoor-install runs first' <<<"$( (ENV_FILE=$T/p.env; svc_hooks() { :; }; logins_list() { :; }; signin_is() { return 1; }; sched_words() { echo x; }; q_row() { printf '%s\t%s\n' "$1" "$2"; }; questionnaire_summary ) 2>&1)" \
     || fail_ "the summary says the panel is not installed yet"; pass
+# asked for in this run, not enabled yet (frontdoor-install enables it): the summary still says so (found live Nov 2026)
+printf 'COMPOSE_PROFILES=traefik\nCONFIG_ROOT=%s/pcfg\n' "$T" > "$T/p2.env"; mkdir -p "$T/ps"; ( STATE_DIR=$T/ps LOCAL_DIR=$T; state_set "$PANEL_STATE" yes )
+grep -q 'not installed yet — frontdoor-install runs first' <<<"$( (ENV_FILE=$T/p2.env STATE_DIR=$T/ps LOCAL_DIR=$T; svc_hooks() { :; }; logins_list() { :; }; signin_is() { return 1; }; sched_words() { echo x; }; q_row() { printf "%s\t%s\n" "$1" "$2"; }; questionnaire_summary ) 2>&1)" \
+    || fail_ "the panel asked for now: the summary names it"; pass
 ( STATE_DIR=$T/cs LOCAL_DIR=$T; state_set "$PANEL_STATE" yes )
 mkdir -p "$T/fk"; printf '#!/usr/bin/env bash\necho "$1" >> "%s/steps"\n[[ "$1" != wire ]] || exit 4\n' "$T" > "$T/fk/mediastack.sh"; : > "$T/steps"
 ( SCRIPT_DIR=$T/fk STATE_DIR=$T/cs LOCAL_DIR=$T CMD=configure; notify() { echo "NOTIFY $*" >> "$T/steps"; }; chain_run frontdoor-install up wire trash-sync ) > "$T/out" 2>&1; rc=$?
