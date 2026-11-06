@@ -334,4 +334,9 @@ grep -q '^    gluetun_control_key' <<<"$(awk '/^vpn_gen\(\)/,/^}/' services/glue
 # moments before, and the host still tracked that container's connections (found live Nov 2026)
 grep -q 'ipv4_address: ${GLUETUN_ADDRESS:-172.31.250.3}' services/gluetun/compose.yml \
     || fail_ "gluetun's address is fixed outside the pool (GLUETUN_ADDRESS)"; pass
+# the tunnel-drop proof leaves the tunnel to gluetun's restart: setting tun0 up by
+# hand raced it (RTNETLINK "Address in use", seen live Nov 2026)
+! grep -q 'ip link set dev tun0 up' services/gluetun/vpn.sh || fail_ "the tunnel-drop proof sets tun0 up itself"; pass
+grep -q "ip link set dev tun0 down" services/gluetun/vpn.sh && grep -q 'DC restart gluetun' services/gluetun/vpn.sh \
+    || fail_ "the tunnel-drop proof drops tun0, then restarts gluetun"; pass
 echo "test-leak: $checks checks passed"

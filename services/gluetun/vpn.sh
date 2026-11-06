@@ -245,7 +245,8 @@ leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2
              -fsS --max-time 6 https://github.com -o /dev/null >/dev/null 2>&1; then
             lt_fail "egress SUCCEEDED with the tunnel down — kill-switch NOT working"
         else lt_pass "egress blocked with tunnel down — kill-switch works"; fi
-        sudo docker exec "$gcn" sh -c 'ip link set dev tun0 up' || true
+        # no `ip link ... up`: the restart below brings a clean tunnel back
+        # (setting it up by hand only raised RTNETLINK "Address in use")
         info "Restarting gluetun to restore a clean tunnel..."
         DC restart gluetun >/dev/null
         # the restart left every dependent in the old namespace: re-join them,
