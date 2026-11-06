@@ -78,6 +78,14 @@ RECYCLE_WARNED=1; CUR='{"id":1,"recycleBin":"","recycleBinCleanupDays":7}'; rm -
 [[ "$(cat "$T/out")" != *EXPLAIN* ]] || fail_ "the warning must show once per run"; pass
 run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":7}'
 [[ "$PUT" == none ]] || fail_ "already right: nothing to write"; pass
+# already set, its folder gone (restored onto a host without the old data, found live Nov 2026)
+rm -rf "$T/data/recycle/radarr"
+run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":7}'
+[[ -d "$T/data/recycle/radarr" && "$PUT" == none ]] || fail_ "the setting already right, its folder missing: the folder made, nothing written ($PUT)"; pass
+rm -rf "$T/data/recycle/radarr"; WIRE_CHANGES=0
+WIRE_DRY=1; run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":7}'; WIRE_DRY=0
+[[ ! -d "$T/data/recycle/radarr" ]] && (( WIRE_CHANGES == 1 )) || fail_ "--verify: a missing folder is drift, and nothing is made ($WIRE_CHANGES)"; pass
+mkdir -p "$T/data/recycle/radarr"
 run '{"id":1,"recycleBin":"/data/recycle/radarr","recycleBinCleanupDays":30}'
 [[ "$(jq -c '.recycleBinCleanupDays' <<<"$PUT")" == 7 ]] || fail_ "ours with other days: days corrected: $PUT"; pass
 run '{"id":1,"recycleBin":"/data/my-bin","recycleBinCleanupDays":3}'

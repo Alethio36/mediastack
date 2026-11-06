@@ -149,12 +149,14 @@ arr_recycle() { # arr_recycle <svc> <url> <key> — that arr's recycle bin, per 
         return 0
     fi
     days=$(recycle_days)
-    [[ "$have" == "$want" && "$hdays" == "$days" ]] && { ok "$s: recycle bin $want (emptied after $days days)"; return 0; }
-    [[ -n "$have" ]] || recycle_warn_once
-    if (( ! WIRE_DRY )); then
+    # its folder whenever the bin is ours, set now or before: a restored
+    # config names a bin the new host never had (found live Nov 2026)
+    if ! sudo test -d "$(recycle_root)/$s" && w_would "$s: recycle bin folder $(recycle_root)/$s (missing)"; then
         sudo mkdir -p "$(recycle_root)/$s"
         sudo chown ":mediacenter" "$(recycle_root)/$s"; sudo chmod 2775 "$(recycle_root)/$s"
     fi
+    [[ "$have" == "$want" && "$hdays" == "$days" ]] && { ok "$s: recycle bin $want (emptied after $days days)"; return 0; }
+    [[ -n "$have" ]] || recycle_warn_once
     w_would "$s: recycle bin -> $want, emptied after $days days" || return 0
     recycle_put "$s" "$ep" "$3" "$cur" "$want" "$days"
 }
