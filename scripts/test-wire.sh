@@ -114,4 +114,9 @@ grep -q 'recreating authentik-worker failed — compose: Error response from dae
 wire_apply_settings "" >/dev/null
 [[ "$(grep -E '^DC up' "$T/dc")" == "DC up -d authentik-worker" ]] || fail_ "only the bare names are recreated: $(cat "$T/dc")"; pass
 
+# ensure_resource prints its success text after it already existed AND after it wrote it:
+# that text must be true both ways (found live Nov 2026: "enable forms login", then "already set")
+bad=$(grep -rn -A2 'ensure_resource "' lib services | grep -iE '^[^:]+-[0-9]+-.*"[^"]*already[^"]*"' || true)
+[[ -z "$bad" ]] || fail_ "an ensure_resource success text says 'already' — it is also printed after a write: $bad"; pass
+
 echo "OK wire: $checks checks"

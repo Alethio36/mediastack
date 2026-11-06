@@ -126,7 +126,7 @@ arr_forms_login() { # shared operator login on an arr-family UI; idempotent
         '.authenticationMethod="forms" | .authenticationRequired="enabled"
          | .username=$u | .password=$p | .passwordConfirmation=$p' <<<"$cur")
     ensure_resource "$match" "$s: $verb forms login for '$auser'" \
-        "$s: forms login already set for '$auser'" "$s: auth setup rejected by the API — set it once in its UI; check: logs $s" \
+        "$s: forms login for '$auser'" "$s: auth setup rejected by the API — set it once in its UI; check: logs $s" \
         -- api PUT "$url/api/$(arr_apiver "$s")/config/host" "$key" "$body"
 }
 
