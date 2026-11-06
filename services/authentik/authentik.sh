@@ -73,9 +73,20 @@ authentik_step() { # authentik_step FROM TO -> ok | <why not>, against AUTHENTIK
     else echo ok; fi
 }
 
+authentik_image_release() { # authentik_image_release IMAGE -> its YYYY.N: from its tag, or (a digest pin) its own version label
+    # restore and rollback pin by digest, which names no release; the image
+    # says which it is — pulled first on a host that has not got it (a rebuild)
+    local ref=$1 v
+    if authentik_release_of "$ref"; then return 0; fi
+    sudo docker image inspect "$ref" >/dev/null 2>&1 || sudo docker pull -q "$ref" >/dev/null || return 1
+    v=$(sudo docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.version"}}' "$ref" 2>/dev/null) || return 1
+    authentik_release_of "$v"
+}
+
 authentik_release_check() { # before anything starts authentik: the step from its database's release to the target is allowed
     local target from why
-    target=$(authentik_release_of "$(svc_image authentik)") || die "authentik: cannot read a release from its image '$(svc_image authentik)'"
+    target=$(authentik_image_release "$(svc_image authentik)") \
+        || die "authentik: cannot read a release from its image '$(svc_image authentik)' (no release tag, and the image's version label could not be read)"
     from=$(sudo cat "$(authentik_dir)/$AUTHENTIK_MARK" 2>/dev/null || true)   # no mark: a new database
     why=$(authentik_step "$from" "$target")
     [[ "$why" == ok ]] || die "authentik: $why

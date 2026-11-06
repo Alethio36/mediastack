@@ -95,6 +95,16 @@ got=$(authentik_step 2026.8 2026.5)
 [[ "$(authentik_release_of ghcr.io/goauthentik/server:2026.8)" == 2026.8 ]] || fail_ "release from an image tag"; pass
 [[ "$(authentik_release_of 2026.8.3)" == 2026.8 ]] || fail_ "release from a version"; pass
 if authentik_release_of ghcr.io/goauthentik/server:latest >/dev/null; then fail_ "'latest' names no release"; fi; pass
+# a digest pin (restore, rollback) names no release: the image's own version label does
+# (found live Nov 2026: up after restore --all died on 'server@sha256:…')
+dig=ghcr.io/goauthentik/server@sha256:6b924afb97053a27ca3f42f006c920464fb77763558c72219019365db191827b
+ri() { ( sudo() { case "$*" in "docker image inspect -f"*) echo "$LABEL" ;; "docker image inspect "*) [[ -n "$HAVE" ]] ;; "docker pull"*) echo pulled >> "$T/pull"; HAVE=1; [[ -z "$PULLFAIL" ]] ;; esac; }
+       authentik_image_release "$1" ) 2>/dev/null; }
+LABEL=2026.8.2 HAVE=1 PULLFAIL=""; : > "$T/pull"
+[[ "$(ri "$dig")" == 2026.8 && ! -s "$T/pull" ]] || fail_ "a digest pin: the release from the image's label ($(ri "$dig"))"; pass
+HAVE="" ; [[ "$(ri "$dig")" == 2026.8 && -s "$T/pull" ]] || fail_ "a digest pin not on this host yet (a rebuild): pulled, then read"; pass
+HAVE="" PULLFAIL=1; ri "$dig" >/dev/null && fail_ "a pull that fails: no release, never a guess"; pass
+PULLFAIL=""; HAVE=1; [[ "$(ri ghcr.io/goauthentik/server:2026.5)" == 2026.5 ]] || fail_ "a tag still reads as before"; pass
 # the fragment's tag is a release the list knows (so a fresh install can start)
 tag=$(awk '/image: ghcr.io\/goauthentik\/server:/ { sub(/.*:/, ""); print; exit }' services/authentik/compose.yml)
 [[ " ${AUTHENTIK_RELEASES[*]} " == *" $(authentik_release_of "$tag") "* ]] || fail_ "the fragment's tag $tag is not in AUTHENTIK_RELEASES"; pass
