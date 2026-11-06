@@ -234,6 +234,15 @@ cmd_frontdoor_install() {
     #    an interactive session; its ONLY reachable path is the forced-command
     #    key below. Distinct from the repo owner so mode-755 on the script is a
     #    real barrier (verified in step 3).
+    # what an earlier, wrong start left behind is named with its fix, never
+    # worked around: a user this verb did not make, a file mount made a directory
+    local f
+    for f in "$otdir/config.yaml" "$otdir/passwd" "$keydir/id_ed25519" "$keydir/known_hosts"; do
+        sudo test -d "$f" && die "$f is a directory, where the panel needs a file (made by an older provisioning or a failed start) — remove it: sudo rmdir '$f', then run this again"
+    done
+    if id -u "$FRONTDOOR_USER" >/dev/null 2>&1 && ! getent group "$FRONTDOOR_USER" >/dev/null; then
+        die "host user '$FRONTDOOR_USER' exists but was not made by frontdoor-install (no group of its own) — remove it: sudo userdel $FRONTDOOR_USER, then run this again"
+    fi
     if id -u "$FRONTDOOR_USER" >/dev/null 2>&1; then
         ok "host user '$FRONTDOOR_USER' already present"
     else
@@ -280,7 +289,7 @@ cmd_frontdoor_install() {
     if sudo test -f "$keydir/id_ed25519"; then
         ok "ssh keypair already present"
     else
-        sudo ssh-keygen -t ed25519 -N '' -C 'olivetin-frontdoor' -f "$keydir/id_ed25519" >/dev/null
+        sudo ssh-keygen -t ed25519 -N '' -C 'olivetin-frontdoor' -f "$keydir/id_ed25519" >/dev/null </dev/null   # never a prompt nobody sees
         ok "generated ed25519 keypair"
     fi
     # Install the wrapper (embedded below as a literal heredoc — kept in this

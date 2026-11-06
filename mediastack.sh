@@ -484,6 +484,11 @@ provision() {
     local s v uid croot droot cache tcode
     croot=$(env_get CONFIG_ROOT); droot=$(env_get DATA_ROOT); cache=$(env_get CACHE_ROOT); tcode=$(env_get TRANSCODE_ROOT)
     for s in $(svc_enabled_managed); do
+        # a service with its own installer (the panel: frontdoor-install) makes
+        # its user and its files itself — made here, the user had the wrong
+        # shape and its file mounts became directories (found live Nov 2026,
+        # restoring onto a rebuilt host, where the restored .env enables it first)
+        [[ -z "$(svc_label "$s" mediastack.installer)" ]] || continue
         v="$(uvar "$s")_UID"; uid=$(env_get "$v")
         if [[ -n "$uid" ]] && ! getent passwd "$s" >/dev/null; then
             # no -r: it only warns about our (deliberate) high UIDs; with an
@@ -518,10 +523,8 @@ provision() {
         fi
         # Nested bind mounts (e.g. cache inside config): docker creates the
         # inner mountpoint stub as root if missing — pre-create it owned right.
-        # Only when MISSING: some services (olivetin) nest *file* mounts under a
-        # dir mount, already written by their own installer; mkdir -p there would
-        # error ("File exists") or, if the file were absent, create a directory
-        # over it and break the mount.
+        # Only when MISSING (a service with its own installer, whose nested
+        # mounts are files, never reaches here: see the top of this loop).
         local stub
         while read -r stub; do
             [[ -z "$stub" ]] && continue

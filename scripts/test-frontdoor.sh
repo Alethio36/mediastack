@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # globals set here are read by the sourced entrypoint
 # test-frontdoor.sh — the web panel's security boundary, tested by BEHAVIOUR.
 # Renders the real SSH forced-command wrapper from the PANEL table (exactly as
 # frontdoor-install does), swaps mediastack.sh for a stub that prints its argv
@@ -8,7 +9,9 @@
 #   2. the CLI-only verbs (docs/frontdoor-safety.md: secrets + blast radius)
 #      are refused — adding one to PANEL fails here, not silently in prod
 #   3. shell metacharacters and extra arguments are refused
-# plus the table's own integrity (verbs exist, entities exist, groups named).
+# plus the table's own integrity (verbs exist, entities exist, groups named),
+# and what a rebuild leaves behind: provision makes nothing of the panel, and
+# frontdoor-install refuses a wrong-shaped user or a file mount made a directory.
 #
 #   scripts/test-frontdoor.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -94,5 +97,34 @@ for f in panel_config_render panel_theme_render panel_passwd_render; do
 done
 ! grep -nE "^(FD_SSH=|_fd_otcfg_(head|tail)\(\))|<<'(OTCFG_|THEME_CSS)" lib/frontdoor.sh || fail_ "OliveTin's rendering is back in lib/frontdoor.sh — it belongs to the provider"; pass
 ! grep -nE '^(PANEL=|_fd_wrapper|_fd_sudoers|_fd_authkeys)' services/olivetin/olivetin.sh || fail_ "the security boundary leaked into the provider"; pass
+
+# ---- what a rebuild left behind (found live Nov 2026, restoring onto a new host) ----
+set +eE; trap - ERR
+# provision leaves a service with its own installer to it: no user, no file mounts made directories
+PR=$T/prov; mkdir -p "$PR/cfg"; : > "$PR/log"
+( load_env() { :; }; _configure_selfheal() { :; }; gate_bind_sync() { :; }; logins_fill() { :; }; render() { RENDERED_JSON=$PJ; }
+  svc_enabled_managed() { printf '%s\n' olivetin sonarr; }
+  env_get() { case $1 in CONFIG_ROOT) echo "$PR/cfg" ;; OLIVETIN_UID) echo 999 ;; SONARR_UID) echo 13001 ;; MEDIA_GROUP_GID) echo 13000 ;; *) echo "$PR/x" ;; esac; }
+  getent() { [[ "$1" == group ]]; }
+  sudo() { echo "$*" >> "$PR/log"; }
+  PJ=$(jq -n --arg c "$PR/cfg" '{services:{
+    olivetin:{labels:{"mediastack.managed":"true","mediastack.config":"true","mediastack.installer":"frontdoor-install"},
+              volumes:[{type:"bind",source:($c+"/olivetin"),target:"/config"},{type:"bind",source:($c+"/olivetin/config.yaml"),target:"/config/config.yaml"}]},
+    sonarr:{labels:{"mediastack.managed":"true","mediastack.config":"true"},volumes:[{type:"bind",source:($c+"/sonarr"),target:"/config"}]}}}')
+  provision ) > /dev/null 2>&1
+grep -q 'useradd .* sonarr' "$PR/log" || fail_ "provision still makes an ordinary service's user ($(paste -sd'|' "$PR/log"))"; pass
+! grep -q 'olivetin' "$PR/log" || fail_ "provision makes nothing of a service with its own installer ($(grep olivetin "$PR/log" | paste -sd'|'))"; pass
+# frontdoor-install names a leftover with its fix, before it changes anything
+fi_run() { ( load_env() { :; }; need_cmd() { :; }; env_get() { echo "$PR/cfg"; }; hr() { :; }
+             sudo() { if [[ "$1 $2" == "test -d" ]]; then [[ "$3" == "$DIRPATH" ]]; else echo "SUDO $*"; fi; }
+             id() { [[ -n "$HAS_USER" ]]; }; getent() { [[ -n "$HAS_GROUP" ]]; }
+             cmd_frontdoor_install ) 2>&1; }
+DIRPATH=$PR/cfg/olivetin/ssh/id_ed25519 HAS_USER="" HAS_GROUP=""; out=$(fi_run)
+[[ "$out" == *"$DIRPATH is a directory, where the panel needs a file"*"sudo rmdir"* && "$out" != *SUDO* ]] \
+    || fail_ "a file mount made a directory: refused with the fix, nothing done — $out"; pass
+DIRPATH="" HAS_USER=1 HAS_GROUP=""; out=$(fi_run)
+[[ "$out" == *"was not made by frontdoor-install (no group of its own)"*"sudo userdel olivetin"* && "$out" != *SUDO* ]] \
+    || fail_ "a user of the wrong shape: refused with the fix — $out"; pass
+grep -q "ssh-keygen .*>/dev/null </dev/null" lib/frontdoor.sh || fail_ "ssh-keygen can never wait on a prompt its hidden output would hide"; pass
 
 echo "OK frontdoor: $checks checks (${#PANEL[@]} buttons)"
