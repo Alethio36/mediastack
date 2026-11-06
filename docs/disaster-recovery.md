@@ -23,7 +23,8 @@ rebuilds like this:
    `./mediastack.sh restore --all --from <TIMESTAMP>` — restores every
    config and pins every service to the exact image digest it ran before.
 5. `./mediastack.sh doctor && ./mediastack.sh leak-test` — both must pass.
-6. When satisfied, `unpin` services to resume normal updates.
+6. When satisfied, `unpin` services to resume normal updates (unpin only
+   records the release; the next `update` applies the newer image).
 
 Practice this once on a scratch VM before you need it. The restore drill is
 the only real proof your backups work.
@@ -134,7 +135,10 @@ the newest point, losing the least. To move to a chosen version instead, use
 a newer version upgraded; if it fails, `rollback` returns to the point that
 update takes first. A full
 `restore --all` only ever draws from the top-level GFS pool, never a partial
-pre-update point. Full `update` (all services) and `update gluetun` still take
+pre-update point. A restore starts what it restored as `update` applies
+images — the VPN group through the leak gate, a restored gluetun proven
+before its group re-joins; a service that is not enabled is restored, not
+started. Full `update` (all services) and `update gluetun` still take
 the full stop-the-world restore point into the GFS pool as before.
 
 ### A backup that is cut off

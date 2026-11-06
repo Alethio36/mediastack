@@ -20,6 +20,8 @@
 #     stopped, forgotten, recreated, ready, then the whole group; a held group fails it
 #   * doctor during a gated stop: one finding; the held members are not each a problem
 #   * enable starts its service through up (the gate), never with its own compose up
+#   * restore (and so rollback) starts what it restored as update applies: enabled
+#     targets only, the VPN group through the gate, a restored gluetun as a changed one
 #   * up's two phases: everything but the group, the gate, then the group — and
 #     no second phase when the gate fails
 # Sources the real entrypoint (minus its last line, main "$@"); docker and
@@ -347,5 +349,46 @@ printf '#!/usr/bin/env bash\necho "$*" >> "%s"\n[[ "$1" != questionnaire ]] || e
 [[ "$(paste -sd'|' "$UP_LOG")" == "questionnaire --for lidarr" ]] && grep -q "'lidarr' not enabled: its questions did not finish" "$T/out" \
     || fail_ "cancelled: nothing starts, it says so: $(paste -sd'|' "$UP_LOG") / $(cat "$T/out")"; pass
 [[ "$(tail -1 "$T/sets")" == gluetun,jellyfin ]] || fail_ "and the set goes back as it was: $(paste -sd'|' "$T/sets")"; pass
+
+# ---- restore starts what it restored as update applies (repro Nov 2026: ----
+# ---- a bare compose up per service — no gate, a restored gluetun unproven,  ----
+# ---- and restore --all named every catalogued service to compose)            ----
+R=$T/restore; mkdir -p "$R/b/20261101-030000" "$R/c"; : > "$R/log"
+for s_ in gluetun qbittorrent jellyfin deluge; do
+    mkdir -p "$R/src/$s_"; tar -C "$R/src" -czf "$R/b/20261101-030000/$s_.tar.gz" "$s_"
+done
+printf 'gluetun g:1\nqbittorrent q:1\njellyfin j:1\ndeluge d:1\n' > "$R/b/20261101-030000/images.lock"
+for f in load_env require_mounts point_check point_shard_check shard_member_refuse maint_lock svc_exists; do eval "$f() { :; }"; done
+env_get() { case $1 in BACKUP_ROOT) echo "$R/b" ;; CONFIG_ROOT) echo "$R/c" ;; esac; }
+svc_shard() { printf '%s\n' "$@"; }
+svc_managed() { printf '%s\n' deluge gluetun jellyfin qbittorrent; }
+gluetun_addr() { echo 172.31.250.3; }
+DC() { echo "DC $*" >> "$R/log"; }
+pin_service() { :; }
+lt_flows_forget() { echo "forget $1" >> "$R/log"; }
+eval 'update_apply() { echo "apply $*" >> "$R/log"; }'
+ENABLED="gluetun qbittorrent jellyfin"
+: > "$R/log"; ( cmd_restore --service qbittorrent --from 20261101-030000 ) > /dev/null 2>&1
+[[ "$(paste -sd'|' "$R/log")" == "DC stop qbittorrent|apply qbittorrent" ]] \
+    || fail_ "restore a VPN'd service: stopped, restored, started as update applies (the gate) — no compose up of its own ($(paste -sd'|' "$R/log"))"; pass
+: > "$R/log"; ( cmd_restore --service gluetun --from 20261101-030000 ) > /dev/null 2>&1
+[[ "$(paste -sd'|' "$R/log")" == "DC stop gluetun|forget 172.31.250.3|apply --restore gluetun" ]] \
+    || fail_ "restore gluetun: its tracked connections forgotten, then applied as a changed gluetun ($(paste -sd'|' "$R/log"))"; pass
+: > "$R/log"; ( cmd_restore --all --from 20261101-030000 ) > /dev/null 2>&1
+[[ "$(paste -sd'|' "$R/log")" == "DC stop deluge|DC stop gluetun|forget 172.31.250.3|DC stop jellyfin|DC stop qbittorrent|apply --restore gluetun jellyfin qbittorrent" ]] \
+    || fail_ "restore --all: every point restored, only the enabled started, once ($(paste -sd'|' "$R/log"))"; pass
+: > "$R/log"; out=$( ( cmd_restore --service deluge --from 20261101-030000 ) 2>&1 )
+[[ "$(paste -sd'|' "$R/log")" == "DC stop deluge" && "$out" == *"deluge not enabled — restored, not started"* ]] \
+    || fail_ "a disabled service is restored, not started, and says so ($(paste -sd'|' "$R/log") / $out)"; pass
+# update_apply --restore: a restored gluetun takes the changed path whatever compose would do; messages name restore
+unset -f update_apply; eval "$(awk '/^update_apply\(\)/,/^}/' lib/backup.sh)"
+apply_up() { echo "apply $*" >> "$APPLY_LOG"; }; DC() { echo "DC $*" >> "$APPLY_LOG"; }
+lt_flows_forget() { echo "forget $1" >> "$APPLY_LOG"; }; ENABLED="gluetun qbittorrent sonarr jellyfin"
+GREC=1; VSG_RC=0; : > "$APPLY_LOG"; update_apply --restore gluetun > /dev/null 2>&1
+[[ "$(paste -sd'|' "$APPLY_LOG")" == "DC stop gluetun|forget 172.31.250.3|apply --remove-orphans gluetun|wait --recover gluetun|gate qbittorrent sonarr" ]] \
+    || fail_ "restore: gluetun unchanged to compose, still the changed path — the full run, the whole group ($(paste -sd'|' "$APPLY_LOG"))"; pass
+VSG_RC=3; out=$( (update_apply --restore gluetun) 2>&1 ) && fail_ "the gate held the group: the restore fails"; pass
+[[ "$out" == *"restore: the leak gate stopped the VPN group"* && "$out" != *"rollback gluetun"* ]] || fail_ "named restore, no rollback advice — $out"; pass
+VSG_RC=0
 
 echo "test-gate: $checks checks passed"

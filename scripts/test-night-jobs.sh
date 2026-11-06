@@ -47,8 +47,8 @@ WANT_IMG="sha256:bbb"; gluetun_recreates || fail_ "a new image: recreate"; pass
 WANT_IMG="sha256:aaa" WANT_HASH="hash2"; gluetun_recreates || fail_ "a changed config: recreate"; pass
 WANT_HASH="hash1" HAVE=""; gluetun_recreates || fail_ "no container: recreate (it will be created)"; pass
 HAVE="sha256:aaa hash1" WANT_HASH=""; gluetun_recreates || fail_ "config hash unreadable: counts as a change"; pass
-grep -q 'if \[\[ "$t" == gluetun \]\] && gluetun_recreates; then gchg=1; fi' lib/backup.sh \
-    || fail_ "update re-proves gluetun before its VPN group only when gluetun_recreates says so (lib/backup.sh)"; pass
+grep -q 'if \[\[ "$t" == gluetun \]\] && { (( restored )) || gluetun_recreates; }; then gchg=1; fi' lib/backup.sh \
+    || fail_ "update re-proves gluetun before its VPN group only when gluetun_recreates says so — a restore always (lib/backup.sh)"; pass
 
 # ---- vpn_egress_ready ----
 unset -f sudo

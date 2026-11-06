@@ -578,7 +578,8 @@ cmd_unpin() { # a shard is unpinned whole (named by its primary or any member)
         printf '%s\n' "$saved" > "$PINS_FILE"; repo_owned "$PINS_FILE"
         die "authentik stays pinned — nothing changed."
     fi
-    DC up -d "$p"
+    # recorded only: the next update applies it — its restore point, the gate,
+    # a changed gluetun's proofs (a compose up here skipped all of them)
     ok "Unpinned ${removed[*]} — back on the floating tags. Next 'update' includes them."
 }
 
@@ -622,13 +623,16 @@ cmd_restore() {
     local s; for s in $targets; do point_shard_check "$broot/$from" "$s"; done
     maint_lock restore 0   # never while a timer's update or backup has the stack
     info "Restoring from $from"
-    local croot ts s ref
+    local croot ts s ref gip start=() idle=() rflag=()
     croot=$(env_get CONFIG_ROOT); ts=$(ts_now)
     local m
     for s in $targets; do
         svc_exists "$s" || die "No service '$s'."
+        # gluetun stopped on purpose: what the host tracked from its address is from before
+        if [[ "$s" == gluetun ]]; then gip=$(gluetun_addr); rflag=(--restore); fi
         # shellcheck disable=SC2046  # the shard stops together (its data is one folder)
         DC stop $(svc_shard "$s") >/dev/null
+        [[ "$s" != gluetun ]] || lt_flows_forget "$gip"
         if [[ -f "$broot/$from/$s.tar.gz" ]]; then
             [[ -d "$croot/$s" ]] && sudo mv "$croot/$s" "$croot/$s.pre-restore.$ts"
             sudo tar -C "$croot" -xzf "$broot/$from/$s.tar.gz"
@@ -638,9 +642,13 @@ cmd_restore() {
             ref=$(awk -v s="$m" '$1==s{print $2}' "$broot/$from/images.lock" 2>/dev/null || true)
             [[ -n "$ref" ]] && pin_service "$m" "$ref"
         done
-        RENDERED_JSON=""
-        DC up -d "$s"
+        if svc_enabled "$s"; then start+=("$s"); else idle+=("$s"); fi
     done
+    RENDERED_JSON=""
+    (( ${#idle[@]} == 0 )) || info "${idle[*]} not enabled — restored, not started (./mediastack.sh enable <service> starts one)"
+    # started as update applies pulled images: the VPN group through the leak
+    # gate, a restored gluetun proven by the full run before its group re-joins
+    (( ${#start[@]} == 0 )) || update_apply "${rflag[@]}" "${start[@]}"
     ok "Restore done. Verify with: ./mediastack.sh status"
 }
 
@@ -785,41 +793,48 @@ apply_up() {
         rm -f "$rerr"; return 0
     fi
     rm -f "$rerr"
-    die "update: 'up' failed for a non-health reason (rc=$rc) — see compose's message above. Nothing further was applied."
+    die "$APPLY_VERB: 'up' failed for a non-health reason (rc=$rc) — see compose's message above. Nothing further was applied."
 }
 
 UPDATE_GCHG=0   # update_apply's verdict: 1 when gluetun was recreated (its kill-switch is proven after the health gate)
-update_apply() { # update_apply TARGET... — apply the pulled images; the VPN group through the leak gate
+APPLY_VERB=update   # what update_apply's and apply_up's messages call the run: update, or restore
+update_apply() { # update_apply [--restore] TARGET... — apply the pulled images; the VPN group through the leak gate
     # The leak gate (services/gluetun/gate.sh): the VPN group starts last,
     # after gluetun is proven. gluetun changed -> it is stopped (what the host
     # tracked from its address is from before: forgotten), recreated with the
     # rest, proven by the full run, then the whole group re-joins it (the
     # members still in its old namespace have had no network meanwhile).
     # gluetun unchanged -> the local checks before the group's targets.
-    local gchg=0 vgrp rest=() mine=() t gip vrc=0 targets=("$@")
+    # --restore: restore stopped gluetun and put its config back itself, so a
+    # restored gluetun is a changed one whatever compose would recreate.
+    local gchg=0 vgrp rest=() mine=() t gip vrc=0 restored=0 targets
+    APPLY_VERB=update
+    if [[ "${1:-}" == --restore ]]; then restored=1; APPLY_VERB=restore; shift; fi
+    targets=("$@")
     vgrp=" $(vpn_group | paste -sd' ') "
     for t in "${targets[@]}"; do
-        if [[ "$t" == gluetun ]] && gluetun_recreates; then gchg=1; fi
+        if [[ "$t" == gluetun ]] && { (( restored )) || gluetun_recreates; }; then gchg=1; fi
         if [[ "$vgrp" == *" $t "* ]]; then mine+=("$t"); else rest+=("$t"); fi
     done
     if (( gchg )); then
         info "gluetun changed — recreated first and proven by the full leak-test, then its VPN group"
         gip=$(gluetun_addr)
-        DC stop gluetun >/dev/null || die "update: could not stop gluetun for its recreate — nothing was applied"
+        DC stop gluetun >/dev/null || die "$APPLY_VERB: could not stop gluetun for its recreate — nothing was applied"
         lt_flows_forget "$gip"
     fi
     if (( ${#rest[@]} )); then apply_up --remove-orphans "${rest[@]}"; fi
     if (( gchg )); then
         wait_verdict --recover gluetun \
-            || die "gluetun ${VERDICT_WHY[gluetun]} after its update — the VPN'd services stay off. Roll back: ./mediastack.sh rollback gluetun"
+            || die "gluetun ${VERDICT_WHY[gluetun]} after its $APPLY_VERB — the VPN'd services stay off. $( (( restored )) && echo "Inspect: ./mediastack.sh logs gluetun" || echo "Roll back: ./mediastack.sh rollback gluetun")"
         read -ra mine <<<"$vgrp"   # every member: all of them sit in the old namespace
     fi
     if (( ${#mine[@]} )); then
         vpn_start_group "${mine[@]}" || vrc=$?
         case $vrc in
             0) ;;
-            3) die "update: the leak gate stopped the VPN group (FAIL above; ops was told) — the VPN'd services stay off. Roll back what changed (./mediastack.sh rollback gluetun), then: ./mediastack.sh up" ;;
-            *) die "update: the VPN'd services did not start — see above" ;;
+            3) if (( restored )); then die "restore: the leak gate stopped the VPN group (FAIL above; ops was told) — the VPN'd services stay off. Fix what the FAIL names, then: ./mediastack.sh up"; fi
+               die "update: the leak gate stopped the VPN group (FAIL above; ops was told) — the VPN'd services stay off. Roll back what changed (./mediastack.sh rollback gluetun), then: ./mediastack.sh up" ;;
+            *) die "$APPLY_VERB: the VPN'd services did not start — see above" ;;
         esac
     fi
     UPDATE_GCHG=$gchg

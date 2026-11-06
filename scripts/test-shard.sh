@@ -93,7 +93,8 @@ PINS_FILE=$P/pins.yml
 printf 'services:\n  idp:\n    image: x:1\n  idp-worker:\n    image: x:1\n  idp-db:\n    image: y:1\n  radarr:\n    image: r:1\n' > "$PINS_FILE"
 out=$(cmd_unpin idp-worker)
 [[ "$(cat "$PINS_FILE")" == $'services:\n  radarr:\n    image: r:1' ]] || fail_ "unpin by a member releases the whole shard, nothing else: $(cat "$PINS_FILE")"; pass
-[[ "$(cat "$P/log")" == "DC up -d idp" && "$out" == *"Unpinned idp idp-db idp-worker"* ]] || fail_ "the shard starts by its primary, every pin named: $out / $(cat "$P/log")"; pass
+[[ ! -e "$P/log" && "$out" == *"Unpinned idp idp-db idp-worker"*"Next 'update'"* ]] \
+    || fail_ "unpin only records — no compose call (the next update applies it, through its restore point and gates); every pin named: $out / $(cat "$P/log" 2>/dev/null)"; pass
 
 # ---- the update summary sees an image change without a version label ----
 [[ -z "$(update_change db "" r@sha256:aaaa "" r@sha256:aaaa)" ]] || fail_ "same digest: no change"; pass
