@@ -787,9 +787,9 @@ pin_shard_to() { # pin_shard_to <primary> <tag> — the primary, and every membe
 # (non-zero, fatal under set -e) the moment a service is briefly unhealthy on
 # recreate — e.g. a new image mid first-run migration — aborting the update
 # before vpn_reattach_guard and the tolerant 300s health gate ever run. We
-# therefore treat ONLY a health-gate abort as non-fatal and let the gate
-# adjudicate; every other up failure (broken config, image pull, etc.) still
-# dies loudly with compose's message. Never swallow a non-health failure.
+# therefore treat ONLY an unhealthy dependency as non-fatal and let the gate
+# adjudicate; every other up failure (a daemon error, broken config, image
+# pull) still dies loudly with compose's message. Never swallow one.
 apply_up() {
     local rerr rc
     rerr=$(mktemp)
@@ -798,7 +798,12 @@ apply_up() {
     fi
     rc=$?
     cat "$rerr" >&2   # always surface compose's output
-    if grep -qE 'dependency failed to start|is unhealthy|health' "$rerr"; then
+    # a health wait is the gate's to judge; a daemon error, or a container that
+    # failed and interrupted the rest, is the failure even when the lines it
+    # interrupted mention "service_healthy" (found live Nov 2026: a failed
+    # mount read as a health race)
+    if grep -E 'is unhealthy|service_healthy' "$rerr" >/dev/null \
+       && ! grep -E 'Error response from daemon|interrupted by the failure of' "$rerr" >/dev/null; then
         warn "compose aborted the apply on a transient health check — deferring the verdict to the health gate below"
         rm -f "$rerr"; return 0
     fi
