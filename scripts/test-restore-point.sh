@@ -121,6 +121,16 @@ sudo() { "$@"; }
 out=$(run "" "backup_snapshot $T/cfg $T/pt")
 [[ "$out" == "rc=0 | "*"DC up -d --no-recreate radarr sonarr|"*"marker=no" && -s "$T/pt/sonarr.tar.gz" && -s "$T/pt/env" && -s "$T/pt/SHA256SUMS" ]] \
     || fail_ "a whole snapshot: archive, env, checksums, services started again: $out"; pass
+# a folder backed up without being provisioned (mediastack.backup): Traefik's, so Let's Encrypt's
+# certificates come back with a rebuild instead of being issued again (Nov 2026)
+mkdir -p "$T/cfg/traefik/acme" "$T/cfg/plain"; echo '{}' > "$T/cfg/traefik/acme/acme.json"; rm -rf "$T/pt"; mkdir -p "$T/pt"
+svc_managed_where() { case "$1 $2" in "mediastack.config true") echo sonarr ;; "mediastack.backup true") echo traefik ;; esac; }
+out=$(run "" "backup_snapshot $T/cfg $T/pt")
+[[ "$out" == "rc=0 | "* && -s "$T/pt/sonarr.tar.gz" && -s "$T/pt/traefik.tar.gz" && ! -e "$T/pt/plain.tar.gz" ]] \
+    || fail_ "a whole snapshot holds the config folders and the backed-up ones, nothing else: $out / $(ls "$T/pt")"; pass
+grep -qx 'traefik/acme/acme.json' <<<"$(tar -tzf "$T/pt/traefik.tar.gz")" || fail_ "Traefik's certificates are in it"; pass
+grep -q 'mediastack.backup: "true"' services/traefik/compose.yml || fail_ "Traefik's folder is backed up (mediastack.backup)"; pass
+svc_managed_where() { echo sonarr; }
 DC() { if [[ "$1" == ps ]]; then printf 'radarr\nsonarr\n'; return; fi; echo "DC $*" >> "$T/log"; [[ "$1" != stop ]]; }
 out=$(run "" work_ok)
 [[ "$out" == "rc=1 | "*"could not stop"*"DC up -d --no-recreate radarr sonarr|"*"marker=no" && "$out" != *WORK* ]] || fail_ "a failed stop: no work on running services: $out"; pass

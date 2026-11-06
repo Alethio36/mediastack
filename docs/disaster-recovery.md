@@ -44,10 +44,11 @@ rebuilds like this:
 Practice this once on a scratch VM before you need it. The restore drill is
 the only real proof your backups work.
 
-**Let's Encrypt certificates are issued again.** Traefik's folder is not in a
-restore point, so a rebuilt host asks Let's Encrypt for its certificate anew.
-That works, but Let's Encrypt allows only 5 identical certificates a week —
-several rebuilds of the same domain in one week run into it.
+**Let's Encrypt certificates come back with the point.** Traefik's folder is
+in every restore point, so a rebuilt host serves the certificate it had
+instead of asking Let's Encrypt anew (it allows only 5 identical certificates
+a week). Restore points made before Nov 2026 lack it: the certificate is then
+issued again.
 
 **Where restore points live.** All of this assumes the restore points outlived
 the host. Keep `BACKUP_ROOT` on another disk or a NAS — `doctor` warns when it

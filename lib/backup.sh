@@ -298,7 +298,9 @@ backup_snapshot() { # backup_snapshot CROOT DEST — runs with the stack stopped
     # stopped_run's caller tests it with ||, and there bash ignores set -e:
     # every step here checks itself
     local croot=$1 dest=$2 s rc=0
-    for s in $(svc_managed_where mediastack.config true); do
+    # the services' config folders, and the folders backed up without being
+    # provisioned (mediastack.backup: Traefik's certificates, Nov 2026)
+    for s in $( { svc_managed_where mediastack.config true; svc_managed_where mediastack.backup true; } | sort -u); do
         [[ -d "$croot/$s" ]] || continue
         # jellyfin's default transcode dir is inside /config; in-flight or
         # orphaned HLS segments are not config (wire moves them to /cache)

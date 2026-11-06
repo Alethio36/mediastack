@@ -1590,6 +1590,7 @@
       "image": "traefik:v3",
       "labels": {
         "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.backup": "true",
         "mediastack.conflicts": "npm",
         "mediastack.desc": "HTTPS names for every service, one certificate through Cloudflare DNS (recommended)",
         "mediastack.managed": "true",

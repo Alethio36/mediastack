@@ -62,6 +62,7 @@ backups and the update pipeline like any shipped service.
 | `mediastack.vpntoggle: "true"` | opt into operator-selectable VPN membership: `vpn_gen` generates this service's network, host port and Traefik route from its metadata, so the fragment carries none of those directly. See docs/vpn-membership.md |
 | `mediastack.hostport: "false"` | (toggle services only) Traefik-only — publish no host port in either VPN state, for serving apps whose container port would collide on the host (e.g. `:80`). Default `"true"` |
 | `mediastack.config: "true"` | owns `${CONFIG_ROOT}/<service>` (provisioned, audited, backed up) |
+| `mediastack.backup: "true"` | its `${CONFIG_ROOT}/<service>` is in every restore point, but neither provisioned nor audited — for a folder whose files the stack writes itself (Traefik) |
 | `mediastack.cache: "true"` | owns `${CACHE_ROOT}/<service>` (provisioned, never backed up) |
 | `mediastack.transcode: "true"` | owns `${TRANSCODE_ROOT}/<service>` (provisioned, never backed up) — for apps that write video segments while streaming; the root is local disk by design (tmpfs: docs/roadmap.md, look at later) |
 | `mediastack.internal: "true"` | reachable on the LAN only — status marks it instead of printing a URL |

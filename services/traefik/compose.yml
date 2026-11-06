@@ -50,6 +50,11 @@ services:
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
+      # its folder is in every restore point (Let's Encrypt's certificates come
+      # back with a rebuild, instead of counting against its 5-a-week limit)
+      # but never provisioned: up writes its files (mediastack.config would make
+      # its file mounts directories first)
+      mediastack.backup: "true"
       mediastack.desc: "HTTPS names for every service, one certificate through Cloudflare DNS (recommended)"
       mediastack.conflicts: "npm"   # two front doors on 80/443: one of them, never both
       mediastack.port: "443"
