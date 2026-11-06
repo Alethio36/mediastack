@@ -107,4 +107,19 @@ grep -q 'does not cover other.example.com' "$T/out" && [[ "$(env_get STACK_DOMAI
 ! grep -qE 'Paste the Cloudflare token|Email for certificate-expiry' "$T/out" || fail_ "own: no Cloudflare token or Let's Encrypt email asked"; pass
 [[ ! -e "$T/cfg" ]] || fail_ "the questions copy nothing: up does"; pass
 
+# ---- quick configure keeps your certificate only while its files can serve ----
+# (found live Nov 2026: a rebuilt host's quick configure kept a certificate whose
+#  files were not there — "until )" — and up failed on it later)
+own_env() { printf 'COMPOSE_PROFILES=traefik\nSTACK_DOMAIN=%s\nTLS_SOURCE=own\nTLS_CERT_FILE=%s\nTLS_KEY_FILE=%s\n' "$D" "$1" "$2" > "$ENV_FILE"; }
+own_env "$c/good.full" "$c/good.key"
+: | ( Q_MODE=quick; traefik_questions ) > "$T/out" 2>&1 || fail_ "quick, a usable certificate: kept — $(cat "$T/out")"
+grep -q "HTTPS: keep $D, your own certificate (until " "$T/out" && ! grep -q 'Your certificate' "$T/out" || fail_ "kept without a question: $(cat "$T/out")"; pass
+own_env "$T/gone/fullchain.pem" "$T/gone/privkey.pem"
+printf '\n%s\n%s\n' "$c/good.full" "$c/good.key" | ( Q_MODE=quick; traefik_questions ) > "$T/out" 2>&1 || fail_ "quick, missing files: asked — $(cat "$T/out")"
+grep -q "your certificate cannot be kept — $T/gone/fullchain.pem cannot be read" "$T/out" && grep -q 'Your certificate' "$T/out" \
+    && [[ "$(env_get TLS_CERT_FILE)" == "$c/good.full" ]] || fail_ "missing files: said why, the files asked, the new paths recorded — $(cat "$T/out")"; pass
+! grep -q 'until )' "$T/out" || fail_ "a certificate whose files are gone has no empty expiry — $(cat "$T/out")"; pass
+printf 'COMPOSE_PROFILES=traefik\nSTACK_DOMAIN=%s\nTLS_SOURCE=letsencrypt\nACME_EMAIL=a@b.c\nCF_DNS_API_TOKEN=x\n' "$D" > "$ENV_FILE"
+[[ -z "$(traefik_cert_why)" ]] || fail_ "Let's Encrypt: nothing of yours to check"; pass
+
 echo "OK certs: $checks checks"

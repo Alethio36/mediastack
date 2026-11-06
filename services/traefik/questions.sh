@@ -38,9 +38,15 @@ cf_check() { # cf_check TOKEN DOMAIN -> the zone it found (rc 0); why not: rc 3 
 }
 
 traefik_questions() { # the questionnaire's hook; traefik-setup asks them again
-    local domain rc
+    local domain rc why
     domain=$(env_get STACK_DOMAIN)
-    if q_quick && [[ -z "$(traefik_missing)" ]]; then q_took "HTTPS" "keep $domain, $(traefik_cert_words)"; return 0; fi
+    if q_quick && [[ -z "$(traefik_missing)" ]]; then
+        # an answer is kept only while it still works: your certificate's files
+        # can go missing (a rebuilt host, found live Nov 2026)
+        why=$(traefik_cert_why)
+        if [[ -z "$why" ]]; then q_took "HTTPS" "keep $domain, $(traefik_cert_words)"; return 0; fi
+        warn "HTTPS: your certificate cannot be kept — $why. Asked again below."
+    fi
     explain "Your domain" \
 "Every service gets its own address under one domain you own:
 https://jellyfin.<domain>, https://requests.<domain>, and so on.
@@ -61,8 +67,14 @@ your own network."
     env_set STACK_DOMAIN "$domain"
 }
 
+traefik_cert_why() { # why the recorded certificate cannot serve now ("" when it can, or Let's Encrypt issues it)
+    certs_own || return 0
+    own_cert_problem "$(env_get TLS_CERT_FILE)" "$(env_get TLS_KEY_FILE)" "$(env_get STACK_DOMAIN)"
+}
+
 traefik_cert_words() { # what the certificate is, in the summary's words
-    if certs_own; then echo "your own certificate (until $(own_cert_until "$(env_get TLS_CERT_FILE)"))"
+    local until
+    if certs_own; then until=$(own_cert_until "$(env_get TLS_CERT_FILE)"); echo "your own certificate${until:+ (until $until)}"
     else echo "Let's Encrypt $(env_get ACME_ENV) certificates"; fi
 }
 
