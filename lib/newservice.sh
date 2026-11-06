@@ -23,7 +23,7 @@ cmd_new_service() {
     local stem; stem=$(uvar "$name")
 
     # ---- questions (configure-style: explain, then ask; Enter = default) ----
-    _ns_ask() { local hint=""; [[ -n "$2" ]] && hint=" [$2]"; read -r -p "$1$hint: " REPLY_VAL; REPLY_VAL="${REPLY_VAL:-$2}"; }
+    _ns_ask() { local hint=""; [[ -n "$2" ]] && hint=" [$2]"; read -e -r -p "$1$hint: " REPLY_VAL; REPLY_VAL="${REPLY_VAL:-$2}"; }
     local image cport host desc vpn cfg data ident
     explain "New service: $name" \
 "A few questions produce a complete, working service definition in

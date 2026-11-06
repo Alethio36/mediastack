@@ -10,6 +10,8 @@
 #     the default (found live: a refused email came back as the default)
 #   * hidden input: terminal escape sequences and control characters are taken
 #     out of a pasted value, and said (found live: ^[[B glued onto a webhook URL)
+#   * a typed answer can be edited: the arrow keys move the cursor, they are
+#     not typed in (found live Nov 2026: Left gave ^[[D in a certificate path)
 #   * one way to ask each kind of question: yes/no only through confirm and
 #     confirm_yes, choices in ( ), a default in [ ] and no empty [ ], "(input
 #     hidden)" and "Enter = ..." — the convention written at ask
@@ -96,5 +98,36 @@ ask_token "Token" "" <<<$'secret\e[A' >/dev/null 2>&1
 [[ "$REPLY_VAL" == secret ]] || fail_ "ask_token: the pasted value cleaned ($REPLY_VAL)"; pass
 ask_hidden "URLs" <<<$'json://hub\e[D' >/dev/null 2>&1
 [[ "$REPLY_VAL" == json://hub ]] || fail_ "ask_hidden: the pasted value cleaned ($REPLY_VAL)"; pass
+
+# ---- a typed answer is edited in a real terminal: Left moves the cursor ----
+if command -v python3 >/dev/null; then
+    got=$(python3 - "$PWD" <<'PY'
+import os, pty, sys, time
+pid, fd = pty.fork()
+if pid == 0:
+    os.chdir(sys.argv[1])
+    os.execvp("bash", ["bash", "--norc", "-c", 'source lib/common.sh; ask V "Certificate file" ""; printf "GOT[%s]\\n" "$REPLY_VAL"'])
+time.sleep(0.5)
+os.write(fd, b"/hme/certs")                    # a typo near the front
+os.write(fd, b"\x1b[D" * 8)                   # back to just after "/h"
+os.write(fd, b"o\r")                          # fix it, Enter
+out = b""; end = time.time() + 5
+while time.time() < end:
+    try:
+        d = os.read(fd, 1024)
+    except OSError:
+        break
+    if not d:
+        break
+    out += d
+    if b"GOT[" in out and out.rstrip().endswith(b"]"):
+        break
+print([l for l in out.decode(errors="replace").splitlines() if "GOT[" in l][-1:])
+PY
+)
+    [[ "$got" == "['GOT[/home/certs]']" ]] || fail_ "ask: the arrow keys edit the answer, not typed into it ($got)"; pass
+else
+    grep -q 'read -e -r -p "$2$hint: "' lib/common.sh || fail_ "ask reads with line editing (read -e)"; pass
+fi
 
 echo "test-prompts: $checks checks passed"

@@ -183,8 +183,9 @@ ask_valid() { # ask_valid TYPE VAR "prompt" "default" "what it must be" -> REPLY
 ask() { # ask VAR "prompt" "default" -> sets REPLY_VAL
     local def="$3" ans hint=""
     [[ -n "$def" ]] && hint=" [$def]"
-    # input that has ended is no answer: a question asked again would spin forever
-    read -r -p "$2$hint: " ans || [[ -n "$ans" ]] || die "no answer to '$2': the input ended"
+    # input that has ended is no answer: a question asked again would spin forever.
+    # -e: line editing in a terminal (arrows move the cursor, Tab completes a path)
+    read -e -r -p "$2$hint: " ans || [[ -n "$ans" ]] || die "no answer to '$2': the input ended"
     REPLY_VAL="${ans:-$def}"
 }
 
