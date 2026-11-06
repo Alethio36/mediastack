@@ -61,12 +61,25 @@ vpn_reattach_guard() {
     if (( ${#stale[@]} )); then
         warn "dependents not in the live gluetun's namespace (gluetun recreated or restarted under them — no egress): ${stale[*]}"
         info "re-pinning them onto the live gluetun..."
-        DC up -d --force-recreate --no-deps "${stale[@]}"
+        # each as it is: one naming the live gluetun (restarted in place) only
+        # needs a restart to join its new namespace; a recreate would also apply
+        # a pending change (a released pin, a new image), here unproven (found
+        # Nov 2026). One naming a removed gluetun is recreated onto the new one.
+        local rejoin=() recreate=()
+        for vd in "${stale[@]}"; do
+            if [[ "$(c_netmode "$(svc_cname "$vd")")" == "container:$gid" ]]; then rejoin+=("$(svc_cname "$vd")"); else recreate+=("$vd"); fi
+        done
+        if (( ${#rejoin[@]} )); then
+            # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+            INSPECT_JSON=""
+            sudo docker restart "${rejoin[@]}" >/dev/null || die "vpn guard: restarting ${rejoin[*]} into the live gluetun failed — VPN egress is broken. Inspect: ./mediastack.sh status"
+        fi
+        if (( ${#recreate[@]} )); then DC up -d --force-recreate --no-deps "${recreate[@]}"; fi
         for vd in "${stale[@]}"; do
             nm=$(vpn_join "$(svc_cname "$vd")" "$gid" "$gns")
             [[ "$nm" == ok ]] && continue
             notify ops "Mediastack VPN re-pin FAILED" "VPN dependents detached from gluetun and re-pin FAILED: **${stale[*]}**"$'\n'"Fix now: \`./mediastack.sh up\` then \`./mediastack.sh leak-test\`" failure
-            die "vpn guard: $vd is still not joined to the live gluetun after recreate — VPN egress is broken. Fix this before anything else."
+            die "vpn guard: $vd is still not joined to the live gluetun after its re-join — VPN egress is broken. Fix this before anything else."
         done
         ok "re-pinned ${#stale[@]} dependent(s) onto the live gluetun"
     fi

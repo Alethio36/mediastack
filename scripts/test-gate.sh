@@ -24,6 +24,8 @@
 #   * restore --service (and so rollback) starts what it restored as update applies:
 #     the VPN group through the gate, a restored gluetun as a changed one;
 #     restore --all starts the whole stack as up does
+#   * a stale member re-joins as it is: gluetun restarted in place -> docker restart
+#     (no pending change applied); gluetun recreated (a new ID) -> recreated onto it
 #   * up's two phases: everything but the group, the gate, then the group — and
 #     no second phase when the gate fails
 # Sources the real entrypoint (minus its last line, main "$@"); docker and
@@ -405,5 +407,21 @@ GREC=1; VSG_RC=0; : > "$APPLY_LOG"; update_apply --restore gluetun > /dev/null 2
 VSG_RC=3; out=$( (update_apply --restore gluetun) 2>&1 ) && fail_ "the gate held the group: the restore fails"; pass
 [[ "$out" == *"restore: the leak gate stopped the VPN group"* && "$out" != *"rollback gluetun"* ]] || fail_ "named restore, no rollback advice — $out"; pass
 VSG_RC=0
+
+# ---- a stale member re-joins as it is (found Nov 2026: a force-recreate applied a pending change) ----
+# qbittorrent names the live gluetun (restarted in place, new namespace); sonarr a removed one (recreated)
+RJ=$T/rejoin; : > "$RJ"; rm -f "$T"/joined.*
+( unset -f vpn_reattach_guard; eval "$(awk '/^vpn_reattach_guard\(\)/,/^}/' services/gluetun/vpn.sh)"
+  render() { :; }; c_inspect_all() { :; }; notify() { :; }
+  RENDERED_JSON='{"services":{"gluetun":{},"qbittorrent":{"network_mode":"service:gluetun"},"sonarr":{"network_mode":"service:gluetun"}}}'
+  c_id() { echo gid-live; }; c_netns() { echo "net:[1]"; }; c_state() { echo running; }
+  c_netmode() { case $1 in *qbittorrent) echo container:gid-live ;; *sonarr) echo container:gid-gone ;; esac; }
+  vpn_join() { [[ -e "$T/joined.$1" ]] && echo ok || echo stale; }
+  vpn_group() { printf '%s\n' qbittorrent sonarr; }
+  sudo() { if [[ "$1 $2" == "docker restart" ]]; then shift 2; echo "RESTART $*" >> "$RJ"; for c in "$@"; do : > "$T/joined.$c"; done; else "$@"; fi; }
+  DC() { echo "DC $*" >> "$RJ"; local c; for c in "${@: -1}"; do : > "$T/joined.mediastack-$c"; done; }
+  vpn_reattach_guard ) > "$T/rj.out" 2>&1 || fail_ "re-join: $(cat "$T/rj.out")"
+[[ "$(paste -sd'|' "$RJ")" == "RESTART mediastack-qbittorrent|DC up -d --force-recreate --no-deps sonarr" ]] \
+    || fail_ "restarted in place: restarted as it is; a removed gluetun: recreated onto the new one ($(paste -sd'|' "$RJ"))"; pass
 
 echo "test-gate: $checks checks passed"
