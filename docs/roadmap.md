@@ -114,20 +114,24 @@ validation, notifications, SSO). Before `migrate` moves the first household:
    `jellyfin` in the role order (Jellyfin's portal sign-in needs the LDAP
    token), and `wire authentik` waits up to five minutes for the blueprint to
    be discovered after authentik's first start — a timeout is a wire failure,
-   not a skip. To prove on the rebuild (3).
+   not a skip. *Proven live (Nov 2026)* on a clean install from stable: the
+   blueprint was applied inside the wait; the one failure that run found (a
+   slow save, past wire's 20s) is fixed.
 2. *Done:* the account model stays the user's choice — none, Wizarr or
    authentik: `configure` asks it on its own, whatever the preset (before,
    "standard" chose none silently and "everything" hit a generic either/or
    prompt with no "neither"); leaving the portal warns first. Without a
-   portal, every verb that needs one refuses with a way forward (read in
-   code; to prove on the rebuild).
+   portal, every verb that needs one refuses with a way forward. *Proven live
+   (Nov 2026) for none:* each arr's own login form and the dashboard's basic
+   auth accept the stack's login and refuse a wrong one. Wizarr: not yet.
 3. testhost rebuilt from zero: install, configure, snapshot, then a close look
    at installing and everyday use. Everyday use is simulated by the soak
    harness (`scripts/soak.sh`, [testing.md](testing.md)): stages 1 and 4
    (simulated nights, a verdict per day) built Oct 2026 — the first run found
    the VPN group recreated on every update, trash-sync failing on the
-   restarted tunnel and Prowlarr's stale proxy health, all fixed. Next: a
-   second, clean run; then synthetic media through the arrs (stage 2), a
+   restarted tunnel and Prowlarr's stale proxy health, all fixed. *Second run
+   (Nov 2026):* clean — seven simulated days on a fresh install (standard,
+   sign-in none, Traefik). Next: synthetic media through the arrs (stage 2), a
    daily mishap — gluetun killed, a full disk, drift, a reboot (stage 3) —
    and the presets live from a fresh install each (stage 5: standard,
    Deluge-only, Jellyfin-only, Wizarr, no Traefik). Watch there whether the household's files
@@ -163,10 +167,26 @@ validation, notifications, SSO). Before `migrate` moves the first household:
    passwords generated (default), unified or typed for each (`STACK_LOGINS`).
 5. A restore drill — a disaster test: `backup`, `restore --service
    authentik`, `restore --all`, the portal's database, Kavita and
-   Audiobookshelf included.
+   Audiobookshelf included. *Done (Nov 2026) for standard with authentik,
+   Traefik and the panel:* a host rebuilt from a restore point alone, by
+   [disaster-recovery.md](disaster-recovery.md) (rewritten from the drill);
+   the portal, its accounts and every app's settings came back, and the drill's
+   13 findings are fixed. Not yet live: `restore --service authentik` on its
+   own, Kavita and Audiobookshelf.
 6. The README as a chapter-style tutorial for every technical level, and a
    small built-in page with local how-tos and a household quick-start.
 7. Then `migrate` (below, under Project health).
+
+Decided (Nov 2026), before the rollout, in this order: an unattended install
+from an answers file (a partial `.env`, every question's check shared with
+the interactive path, a missing answer one loud error, secrets from files —
+design first); a record of every run (`local/runs/`) and a support bundle
+built from it, redacted by allowlist and shown before it is shared; `wire`
+reading a setting back after a write that timed out before calling it
+failed (today only the sign-in page's show-password write does). After MVP:
+an install without a VPN provider — the leak gate, the boot guard, the
+timers, qBittorrent's tun0 binding and doctor all assume gluetun, so it is an
+overhaul, not a flag.
 Lower priority: RAM and system requirements, measured on the rebuilt box.
 
 ### Organised by service — phases 1–2 done (Oct 2026), phase 3 under way

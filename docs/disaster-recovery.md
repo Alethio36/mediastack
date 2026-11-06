@@ -20,7 +20,9 @@ rebuilds like this:
    ```
    Edit `.env` if paths differ on the new host. With your own certificate,
    put its two files back where `TLS_CERT_FILE` and `TLS_KEY_FILE` point —
-   they live outside the stack, so no restore point holds them.
+   they live outside the stack. Lost them? Points from Nov 2026 hold Traefik's
+   copy: `sudo tar -xzf <TIMESTAMP>/traefik.tar.gz traefik/certs` gives
+   `traefik/certs/fullchain.pem` and `privkey.pem`.
 3. `./mediastack.sh install`, and at "Configure now?" answer yes: configure
    takes the restored answers and asks only what no longer works here (a
    certificate whose files are missing, say). It recreates users, group and

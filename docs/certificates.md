@@ -22,7 +22,9 @@ Jellyfin's LDAP sign-in skips the check while it is staging.
 ## Your own certificate
 
 `configure` (full mode) or `traefik-setup --certs`, answer **2**, then give
-the two files' paths. They may live anywhere on the host; they must be
+the two files' paths (Tab completes a path). Quick mode, and `enable
+traefik`, take the recommended answer, Let's Encrypt — choose your own there
+with `traefik-setup --certs` afterwards. They may live anywhere on the host; they must be
 readable by you. The pair is checked when you give it and again on every
 `up`, and refused — with the reason — unless:
 

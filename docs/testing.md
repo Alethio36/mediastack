@@ -43,9 +43,18 @@ Rules these taught, Nov 2026:
   header promises `""` when there is nothing (unless it names an rc of its own).
 - **New checks are mutation-checked** before they count: break the code they
   guard, see them fail, restore it.
+- **CI's runner is not your machine.** It runs gawk 5.3 (a gawk bug there
+  crashed the audit parser that passed on mawk), it has a real `sudo` and
+  real processes (a check that fell through to the host's `sudo readlink` on a
+  made-up pid failed when that pid existed), and it is slower (a check made a
+  restore point exactly 120 hours ahead and read 119h a second later). So: a
+  test's stubs stay in place until its last check, and a time-based check sits
+  well inside a boundary, never on it. `test-audit` runs every awk installed:
+  install gawk to run it the way CI does.
 
 `stable` moves only through `scripts/promote.sh`: it waits for CI to be green
-on exactly the commit it fast-forwards to.
+on exactly the commit it fast-forwards to. If the push of `stable` fails, it
+puts you back on `unstable` and GitHub's `stable` is unchanged: run it again.
 
 ## The config matrix
 

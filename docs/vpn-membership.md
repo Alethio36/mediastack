@@ -116,8 +116,8 @@ recreate `network_mode` dependents whose own config is unchanged — they stay
 joined to the dead namespace and silently lose egress (health checks keep
 passing; the apps run fine offline). `update` therefore verifies, after
 applying, that every rendered `service:gluetun` dependent sits in the *live*
-gluetun's network namespace. Any that don't are force-recreated in
-the same run; if a dependent still isn't joined afterwards, the update fails
+gluetun's network namespace. Any that don't are re-joined in the same run
+(the reattach guard, below); if a dependent still isn't joined afterwards, the update fails
 loudly and notifies. Stopped containers are left alone — they are caught by
 `doctor`/`leak-test` when started.
 
@@ -139,9 +139,13 @@ case, on a bridge with real egress. The stack closes this with a single guard,
 `vpn_reattach_guard`, run at the end of both `up` and `update`. It enumerates
 every `service:gluetun` dependent from the rendered config, checks each running
 one's live `NetworkMode` against gluetun's current full ID **and** its network
-namespace against gluetun's (`/proc/<pid>/ns/net`), force-recreates any that
-drifted, and fails loudly (with an ops notification) if a re-pin does not
-take. The ID alone is not enough: a gluetun restarted in place — Docker
+namespace against gluetun's (`/proc/<pid>/ns/net`), re-joins any that
+drifted, and fails loudly (with an ops notification) if a re-join does not
+take. Each re-joins as it is: one that names the live gluetun (restarted in
+place) is restarted into its new namespace; only one that names a removed
+gluetun is recreated onto the new one — a recreate would also apply a pending
+change (a released pin, a new image) that nothing had proven yet (Nov 2026).
+The ID alone is not enough: a gluetun restarted in place — Docker
 restarting it after a crash, a `docker restart` — keeps its ID but builds a
 new namespace, and its dependents stay in the old one with no network at all
 (found live, Nov 2026; fail-safe, but downloads stop silently). A ghost

@@ -86,4 +86,5 @@ at a terminal.
 Sonarr 4.0.20 has a custom-format cache bug (Nov 2026, upstream): recyclarr's
 create can fail with HTTP 500 (KeyNotFound), and the retry then with 409
 (UNIQUE constraint) — the format was half-written. One restart of that Sonarr
-instance clears it: `./mediastack.sh restart sonarr`, then `trash-sync` again.
+instance clears it: `sudo docker restart mediastack-sonarr`, then `trash-sync`
+again (mediastack has no restart command of its own).
