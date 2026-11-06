@@ -224,10 +224,11 @@ Anything it cannot read counts as a change.
 - **While the gate is closed** `update` refuses before anything is touched:
   `up` re-proves gluetun first.
 
-`restore` (and so `rollback`) starts what it restored the same way, enabled
-services only: the VPN group through the gate, and a restored gluetun as a
-changed one — the full leak-test before its group re-joins. `unpin` only
-records the release; the next `update` applies it.
+`restore --service` (and so `rollback`) starts what it restored the same
+way: the VPN group through the gate, and a restored gluetun as a changed one —
+the full leak-test before its group re-joins. `restore --all` starts the whole
+stack as `up` does, its checks included. `unpin` only records the release; the
+next `update` applies it.
 
 After the tunnel restarts, gluetun reports healthy before its DNS serves.
 `trash-sync` therefore waits until HTTPS by name works through the tunnel

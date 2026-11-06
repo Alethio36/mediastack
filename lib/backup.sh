@@ -633,7 +633,7 @@ cmd_restore() {
     local s; for s in $targets; do point_shard_check "$broot/$from" "$s"; done
     maint_lock restore 0   # never while a timer's update or backup has the stack
     info "Restoring from $from"
-    local croot ts s ref gip start=() idle=() rflag=()
+    local croot ts s ref gip start=() idle=() rflag=() got
     croot=$(env_get CONFIG_ROOT); ts=$(ts_now)
     local m
     for s in $targets; do
@@ -643,7 +643,9 @@ cmd_restore() {
         # shellcheck disable=SC2046  # the shard stops together (its data is one folder)
         DC stop $(svc_shard "$s") >/dev/null
         [[ "$s" != gluetun ]] || lt_flows_forget "$gip"
+        got=0
         if [[ -f "$broot/$from/$s.tar.gz" ]]; then
+            got=1
             [[ -d "$croot/$s" ]] && sudo mv "$croot/$s" "$croot/$s.pre-restore.$ts"
             sudo tar -C "$croot" -xzf "$broot/$from/$s.tar.gz"
             ok "$s config restored (previous kept at $s.pre-restore.$ts)"
@@ -652,13 +654,22 @@ cmd_restore() {
             ref=$(awk -v s="$m" '$1==s{print $2}' "$broot/$from/images.lock" 2>/dev/null || true)
             [[ -n "$ref" ]] && pin_service "$m" "$ref"
         done
-        if svc_enabled "$s"; then start+=("$s"); else idle+=("$s"); fi
+        if svc_enabled "$s"; then start+=("$s"); elif (( got )); then idle+=("$s"); fi
     done
     RENDERED_JSON=""
     (( ${#idle[@]} == 0 )) || info "${idle[*]} not enabled — restored, not started (./mediastack.sh enable <service> starts one)"
-    # started as update applies pulled images: the VPN group through the leak
-    # gate, a restored gluetun proven by the full run before its group re-joins
-    (( ${#start[@]} == 0 )) || update_apply "${rflag[@]}" "${start[@]}"
+    if (( all_svcs )); then
+        # the whole stack starts as up starts it: its checks first (the panel,
+        # your certificate, ports, folders), gluetun proven, then the VPN group
+        # (found live Nov 2026: on a rebuilt host, restore started what up
+        # would have refused — the panel's mounts were never written)
+        ok "configs restored — starting the stack as up does"
+        cmd_up
+    elif (( ${#start[@]} )); then
+        # one service: as update applies an image — the VPN group through the
+        # leak gate, a restored gluetun proven by the full run before its group re-joins
+        update_apply "${rflag[@]}" "${start[@]}"
+    fi
     ok "Restore done. Verify with: ./mediastack.sh status"
 }
 

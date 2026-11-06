@@ -21,8 +21,9 @@
 #     stopped, forgotten, recreated, ready, then the whole group; a held group fails it
 #   * doctor during a gated stop: one finding; the held members are not each a problem
 #   * enable starts its service through up (the gate), never with its own compose up
-#   * restore (and so rollback) starts what it restored as update applies: enabled
-#     targets only, the VPN group through the gate, a restored gluetun as a changed one
+#   * restore --service (and so rollback) starts what it restored as update applies:
+#     the VPN group through the gate, a restored gluetun as a changed one;
+#     restore --all starts the whole stack as up does
 #   * up's two phases: everything but the group, the gate, then the group — and
 #     no second phase when the gate fails
 # Sources the real entrypoint (minus its last line, main "$@"); docker and
@@ -378,9 +379,15 @@ ENABLED="gluetun qbittorrent jellyfin"
 : > "$R/log"; ( cmd_restore --service gluetun --from 20261101-030000 ) > /dev/null 2>&1
 [[ "$(paste -sd'|' "$R/log")" == "DC stop gluetun|forget 172.31.250.3|apply --restore gluetun" ]] \
     || fail_ "restore gluetun: its tracked connections forgotten, then applied as a changed gluetun ($(paste -sd'|' "$R/log"))"; pass
-: > "$R/log"; ( cmd_restore --all --from 20261101-030000 ) > /dev/null 2>&1
-[[ "$(paste -sd'|' "$R/log")" == "DC stop deluge|DC stop gluetun|forget 172.31.250.3|DC stop jellyfin|DC stop qbittorrent|apply --restore gluetun jellyfin qbittorrent" ]] \
-    || fail_ "restore --all: every point restored, only the enabled started, once ($(paste -sd'|' "$R/log"))"; pass
+eval 'cmd_up() { echo "UP" >> "$R/log"; }'
+: > "$R/log"; out=$( ( cmd_restore --all --from 20261101-030000 ) 2>&1 )
+[[ "$(paste -sd'|' "$R/log")" == "DC stop deluge|DC stop gluetun|forget 172.31.250.3|DC stop jellyfin|DC stop qbittorrent|UP" ]] \
+    || fail_ "restore --all: every point restored, then the stack started as up starts it — its checks, the gate (found live Nov 2026) ($(paste -sd'|' "$R/log"))"; pass
+[[ "$out" == *"deluge not enabled — restored, not started"* ]] || fail_ "a disabled service with an archive: restored, not started, and said — $out"; pass
+printf 'gluetun g:1\n' > "$R/b/20261101-030000/images.lock"; svc_managed() { printf '%s\n' gluetun lidarr; }
+out=$( ( cmd_restore --all --from 20261101-030000 ) 2>&1 )
+[[ "$out" != *"lidarr"* ]] || fail_ "a disabled service with nothing in the point is not called restored — $out"; pass
+svc_managed() { printf '%s\n' deluge gluetun jellyfin qbittorrent; }
 : > "$R/log"; out=$( ( cmd_restore --service deluge --from 20261101-030000 ) 2>&1 )
 [[ "$(paste -sd'|' "$R/log")" == "DC stop deluge" && "$out" == *"deluge not enabled — restored, not started"* ]] \
     || fail_ "a disabled service is restored, not started, and says so ($(paste -sd'|' "$R/log") / $out)"; pass
