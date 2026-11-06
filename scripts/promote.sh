@@ -9,7 +9,7 @@ set -euo pipefail
 die() { echo "promote: $*" >&2; exit 1; }
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-repo=$(git remote get-url origin | sed -E 's#.*github\.com[:/]##; s#\.git$##')
+repo=$(git config --get remote.origin.url | sed -E 's#.*github\.com[:/]##; s#\.git$##')   # as configured (insteadOf not applied)
 [[ "$repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] || die "origin is not a GitHub repo: $repo"
 git fetch -q origin
 sha=$(git rev-parse origin/unstable)
@@ -36,7 +36,11 @@ for (( i = 0; i < 40; i++ )); do   # up to 20 minutes, one call per 30s
         echo "CI green: $good/$total check(s) on ${sha:0:7}"
         git checkout -q -B stable origin/stable
         git merge -q --ff-only "$sha"
-        git push origin stable
+        # a failed push (a dropped SSH session) leaves you on unstable, as you started
+        if ! git push origin stable; then
+            git checkout -q unstable
+            die "pushing stable failed (above) — GitHub's stable is unchanged; you are back on unstable. Run this again."
+        fi
         git checkout -q unstable
         echo "stable -> ${sha:0:7}"
         exit 0
