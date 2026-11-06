@@ -8,26 +8,46 @@ migrate, with an optional note (`backup --note "why"`) — and each service's
 version; `backup list [svc]` shows them all, newest first. A dead host
 rebuilds like this:
 
-1. Fresh Debian/Ubuntu host. Mount/attach the disk or share holding your
-   old `BACKUP_ROOT` (and your media).
-2. ```
+1. Fresh Debian/Ubuntu host with `git` (`sudo apt-get install -y git`).
+   Mount/attach the disk or share holding your old `BACKUP_ROOT` (and your
+   media).
+2. Put the old answers back *before* installing — install offers to run
+   configure, and configure should start from them:
+   ```
    git clone <your-mediastack-repo> && cd mediastack
-   ./mediastack.sh install
    cp /path/to/backups/<TIMESTAMP>/env .env && chmod 600 .env
    tar -xzf /path/to/backups/<TIMESTAMP>/custom.tar.gz   # if the point has one
    ```
-   Edit `.env` if paths differ on the new host.
-3. `./mediastack.sh configure` — existing answers become the defaults;
-   recreates users, group and folders from the UID map.
-4. `./mediastack.sh up` once (creates containers), then
-   `./mediastack.sh restore --all --from <TIMESTAMP>` — restores every
-   config and pins every service to the exact image digest it ran before.
-5. `./mediastack.sh doctor && ./mediastack.sh leak-test` — both must pass.
-6. When satisfied, `unpin` services to resume normal updates (unpin only
+   Edit `.env` if paths differ on the new host. With your own certificate,
+   put its two files back where `TLS_CERT_FILE` and `TLS_KEY_FILE` point —
+   they live outside the stack, so no restore point holds them.
+3. `./mediastack.sh install`, and at "Configure now?" answer yes: configure
+   takes the restored answers and asks only what no longer works here (a
+   certificate whose files are missing, say). It recreates users, group and
+   folders from the UID map. At "Start everything now?" answer **no** — the
+   restore starts it.
+4. If the point is not already inside the new `BACKUP_ROOT`, copy it there
+   (configure made that folder root-owned):
+   `sudo cp -a /path/to/backups/<TIMESTAMP> <BACKUP_ROOT>/`
+5. With the web panel on (the summary says "not installed yet"):
+   `./mediastack.sh frontdoor-install`.
+6. `./mediastack.sh restore --all --from <TIMESTAMP>` — restores every
+   config, pins every service to the exact image digest it ran before, and
+   starts the stack as `up` does (its checks, gluetun proven, then the VPN
+   group).
+7. `./mediastack.sh wire`, then `./mediastack.sh trash-sync` if you use TRaSH
+   profiles — the steps configure would have run after `up`.
+8. `./mediastack.sh doctor && ./mediastack.sh leak-test` — both must pass.
+9. When satisfied, `unpin` services to resume normal updates (unpin only
    records the release; the next `update` applies the newer image).
 
 Practice this once on a scratch VM before you need it. The restore drill is
 the only real proof your backups work.
+
+**Let's Encrypt certificates are issued again.** Traefik's folder is not in a
+restore point, so a rebuilt host asks Let's Encrypt for its certificate anew.
+That works, but Let's Encrypt allows only 5 identical certificates a week —
+several rebuilds of the same domain in one week run into it.
 
 **Where restore points live.** All of this assumes the restore points outlived
 the host. Keep `BACKUP_ROOT` on another disk or a NAS — `doctor` warns when it
