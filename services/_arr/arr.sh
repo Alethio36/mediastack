@@ -163,12 +163,30 @@ arr_instances() { # arr_instances [type] -> enabled arr services (optionally by 
     done
 }
 
+ARR_HEALTH_WAIT=30   # seconds an arr may take to re-check its health before doctor reads its list
+arr_health_recheck() { # arr_health_recheck SVC KEY -> 0 once the app has re-checked its health; 1 when it could not be asked or did not finish
+    # an app checks its health on its own schedule: after a restart its list
+    # can hold only some findings, or old ones (found live Nov 2026)
+    local base out id st i
+    base="$(arr_url "$1")/api/$(arr_apiver "$1")"
+    out=$(api POST "$base/command" "$2" '{"name":"CheckHealth"}') || return 1
+    id=$(jq -r '.id // empty' <<<"$out" 2>/dev/null || true); [[ -n "$id" ]] || return 1
+    for (( i = 0; i < ARR_HEALTH_WAIT; i++ )); do
+        out=$(api GET "$base/command/$id" "$2") || return 1
+        st=$(jq -r '.status // empty' <<<"$out" 2>/dev/null || true)
+        case "$st" in completed) return 0 ;; failed|aborted|cancelled) return 1 ;; esac
+        sleep 1
+    done
+    return 1
+}
+
 arr_doctor() { # doctor: apps — each arr's and Prowlarr's own health list (indexers, download client, root folders, its notification connection to the hub)
     local s key out n
     for s in $(arr_instances) $(svc_enabled prowlarr && echo prowlarr); do
         [[ "$(c_state "$(svc_cname "$s")")" == running ]] || continue
         key=$(arr_key "$s")
         [[ -n "$key" ]] || { warn "$s: no API key yet — still initialising?"; continue; }
+        arr_health_recheck "$s" "$key" || info "$s: could not have it re-check its health — its list may be from before its last restart"
         if ! out=$(api GET "$(arr_url "$s")/api/$(arr_apiver "$s")/health" "$key"); then
             warn "$s: its health list is unreadable: $(oneline "$out")"; continue
         fi

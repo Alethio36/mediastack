@@ -5,6 +5,8 @@
 #   * a warning is a WARN, a notice is information; neither is counted
 #   * an empty list is OK; an unreadable or non-list reply is a WARN, never "clear"
 #   * an app not running, or without its API key yet, is skipped or warned
+#   * each app re-checks its health first, and the list is read once that is done
+#     (found live Nov 2026: after a restart a list held 1 of its 3 findings)
 # Sources the real entrypoint (minus its last line, main "$@"); the service
 # lookups and the API are stubs answering from $T.
 #
@@ -30,11 +32,17 @@ c_state()       { cat "$T/state.${1#mediastack-}" 2>/dev/null || echo running; }
 arr_key()       { [[ -e "$T/nokey.$1" ]] || echo "key-$1"; }
 arr_url()       { echo "http://stub/$1"; }
 arr_apiver()    { echo v3; }
-api() { # api METHOD URL KEY — answers $T/<app>.json; $T/<app>.down fails the call
+api() { # api METHOD URL KEY — answers $T/<app>.json; $T/<app>.down fails the call; its re-check command is logged
     local app; app=$(cut -d/ -f4 <<<"$2")
     [[ -e "$T/$app.down" ]] && { echo "connection refused"; return 1; }
-    cat "$T/$app.json"
+    echo "$1 ${2#http://stub/}" >> "$T/calls"
+    case "$1 $2" in
+        "POST "*/command) echo '{"id": 7, "status": "queued"}' ;;
+        "GET "*/command/7) if [[ -e "$T/$app.polled" ]]; then echo '{"id": 7, "status": "completed"}'; else : > "$T/$app.polled"; echo '{"id": 7, "status": "started"}'; fi ;;
+        *) cat "$T/$app.json" ;;
+    esac
 }
+sleep() { :; }
 reset() { rm -f "$T"/*; D_FAILS=0; }
 doc() { arr_doctor > "$T/out" 2>&1; }
 
@@ -50,6 +58,8 @@ grep -q 'wiki.servarr.com/radarr/system#no-indexers' "$T/out" || fail_ "its fix 
 grep -q 'FAIL.*sonarr: Notifications unavailable due to failures' "$T/out" || fail_ "a dead connection to the hub is a problem"; pass
 grep -q 'WARN.*radarr: No indexers available with Automatic Search' "$T/out" || fail_ "a warning is a WARN, not counted"; pass
 grep -q 'OK.*prowlarr: its health list is clear' "$T/out" || fail_ "Prowlarr is checked too; an empty list is OK"; pass
+[[ "$(grep '^[A-Z]* radarr/' "$T/calls" | paste -sd'|' -)" == "POST radarr/api/v3/command|GET radarr/api/v3/command/7|GET radarr/api/v3/command/7|GET radarr/api/v3/health" ]] \
+    || fail_ "radarr re-checks first, its list is read once the re-check completed: $(grep radarr/ "$T/calls" | paste -sd'|' -)"; pass
 
 reset; echo '[]' > "$T/sonarr.json"; echo '[]' > "$T/prowlarr.json"; : > "$T/radarr.down"
 doc
