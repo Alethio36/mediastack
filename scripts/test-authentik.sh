@@ -1311,7 +1311,7 @@ showpw() { # showpw CURRENT SEEDED -> the PATCH calls made, then the state
     ( state_get() { cat "$T/st-$1" 2>/dev/null || true; }; state_set() { echo "$2" > "$T/st-$1"; }
       if [[ -n "$2" ]]; then echo 1 > "$T/st-AUTHENTIK_SHOW_PASSWORD"; else rm -f "$T/st-AUTHENTIK_SHOW_PASSWORD"; fi
       CUR=$1; WIRE_DRY=0; rm -f "$T/calls"
-      ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+      ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"; [[ "$1" != PATCH ]] || echo "${API_TIMEOUT:-20}" > "$T/patch-wait"
           case "$1 $2" in
               "GET /stages/password/?name=default-authentication-password") jq -cn --argjson c "$CUR" '{results:[{pk:"P1", name:"default-authentication-password", allow_show_password:$c}]}' ;;
               PATCH*) echo '{}' ;;
@@ -1322,6 +1322,15 @@ showpw() { # showpw CURRENT SEEDED -> the PATCH calls made, then the state
 [[ "$(showpw false 1)" == "seeded=1" ]] || fail_ "show password: turned off in authentik's UI after we set it — never set again"; pass
 [[ "$(showpw true "")" == "seeded=1" ]] || fail_ "show password: already on — no write, remembered (so a later 'off' stays off)"; pass
 grep -q 'wire_authentik_show_password' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik sets the show-password button"; pass
+# authentik took 22s to save the stage on a first start (found live Nov 2026): the write waits longer than a read
+showpw false "" >/dev/null; [[ "$(cat "$T/patch-wait")" == "$AUTHENTIK_STAGE_WAIT" ]] && (( AUTHENTIK_STAGE_WAIT >= 60 )) \
+    || fail_ "show password: its write waits AUTHENTIK_STAGE_WAIT ($(cat "$T/patch-wait"))"; pass
+: > "$T/mt"
+( curl() { local a prev=""; for a in "$@"; do [[ "$prev" == -m ]] && echo "$a" >> "$T/mt"; prev=$a; done; printf '{}\n200'; }
+  eval "$(awk '/^ak_api\(\)/,/^}/' services/authentik/authentik.sh)"   # the real one: earlier checks stub it
+  env_get() { :; }; authentik_url() { echo http://x; }; API_TIMEOUT=77 ak_api GET /x >/dev/null; ak_api GET /y >/dev/null )
+mt=$(paste -sd' ' "$T/mt")
+[[ "$mt" == "77 20" ]] || fail_ "ak_api waits API_TIMEOUT for one call, 20s otherwise ($mt)"; pass
 
 # doctor: a link without working email is a failure (people get no email)
 ( printf 'SMTP_HOST=\n' > "$T/denv"; ENV_FILE=$T/denv; D_FAILS=0; fail() { echo "FAIL $*"; }

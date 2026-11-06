@@ -109,9 +109,10 @@ AUTHENTIK_JOIN_FLOW=mediastack-join          # its sign-up flow's slug (the invi
 authentik_portal() { echo "https://$(svc_subdomain authentik).$(env_get STACK_DOMAIN)"; }   # where people go
 authentik_url()    { echo "http://127.0.0.1:$(svc_hostport authentik)"; }                             # where the script goes
 
-ak_api() { # ak_api METHOD PATH [json] -> body on stdout; rc from HTTP (authentik's API, as the script's token)
+AUTHENTIK_STAGE_WAIT=90   # seconds: saving a stage took 22s on a first start (Nov 2026), past ak_api's 20
+ak_api() { # ak_api METHOD PATH [json] -> body on stdout; rc from HTTP (authentik's API, as the script's token); API_TIMEOUT=N for one slow call
     local m="$1" p="$2" b="${3:-}" out code
-    out=$(curl -sS -m 20 -X "$m" -H "Authorization: Bearer $(env_get AUTHENTIK_API_TOKEN)" \
+    out=$(curl -sS -m "${API_TIMEOUT:-20}" -X "$m" -H "Authorization: Bearer $(env_get AUTHENTIK_API_TOKEN)" \
           -H "Content-Type: application/json" ${b:+-d "$b"} -w '\n%{http_code}' "$(authentik_url)/api/v3$p" 2>&1) \
         || { echo "$out"; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
@@ -678,7 +679,7 @@ wire_authentik_show_password() { # a show-password button at sign-in, set once: 
         ok "authentik: the sign-in page's show-password button was turned off in its UI — untouched"; return 0
     fi
     w_would "authentik: add a show-password button at sign-in (see a mistyped password before sending it)" || return 0
-    if out=$(ak_api PATCH "/stages/password/$pk/" '{"allow_show_password":true}'); then
+    if out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api PATCH "/stages/password/$pk/" '{"allow_show_password":true}'); then
         state_set AUTHENTIK_SHOW_PASSWORD 1; ok "authentik: show-password button added at sign-in"
     else wfail "authentik rejected the show-password button: $(oneline "$out")"; fi
 }
