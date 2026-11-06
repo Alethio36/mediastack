@@ -109,6 +109,9 @@ printf '2\nother.example.com\n%s\n%s\nmedia.example.com\n\n\n' "$c/good.full" "$
 grep -q 'does not cover other.example.com' "$T/out" && [[ "$(env_get STACK_DOMAIN)/$(env_get TLS_SOURCE)/$(env_get TLS_CERT_FILE)" == "$D/own/$c/good.full" ]] \
     || fail_ "the domain asked again, the paths kept: $(grep -E '^(STACK_DOMAIN|TLS_)' "$ENV_FILE" | paste -sd' ')"; pass
 ! grep -qE 'Paste the Cloudflare token|Email for certificate-expiry' "$T/out" || fail_ "own: no Cloudflare token or Let's Encrypt email asked"; pass
+# the domain is explained right before it is asked: after the certificate's choice (found live Nov 2026)
+[[ "$(grep -nE '── (Certificates|Your domain) ' "$T/out" | cut -d: -f2- | tr -d '─' | xargs)" == "Certificates Your domain" ]] \
+    || fail_ "full: Certificates, then Your domain — $(grep -nE '── (Certificates|Your domain) ' "$T/out")"; pass
 [[ ! -e "$T/cfg" ]] || fail_ "the questions copy nothing: up does"; pass
 
 # ---- quick configure keeps your certificate only while its files can serve ----

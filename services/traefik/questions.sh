@@ -47,6 +47,8 @@ traefik_questions() { # the questionnaire's hook; traefik-setup asks them again
         if [[ -z "$why" ]]; then q_took "HTTPS" "keep $domain, $(traefik_cert_words)"; return 0; fi
         warn "HTTPS: your certificate cannot be kept — $why. Asked again below."
     fi
+    traefik_cert_question
+    # explained right before it is asked, after the certificate's choice
     explain "Your domain" \
 "Every service gets its own address under one domain you own:
 https://jellyfin.<domain>, https://requests.<domain>, and so on.
@@ -54,7 +56,6 @@ Your network needs a wildcard DNS record  *.<domain> -> this machine's
 LAN IP (on Cloudflare: proxy toggle OFF, grey cloud, 'DNS only'). This
 exposes nothing to the internet — the addresses only resolve usefully on
 your own network."
-    traefik_cert_question
     while true; do
         while true; do   # lowercased before the check: ask_valid would judge it as typed
             ask TD "Base domain (e.g. media.example.com)" "$domain"
