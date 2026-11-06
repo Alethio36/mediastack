@@ -92,7 +92,7 @@ reset; printf 'radarr\nsonarr\n' > "$T/ps"
 run "$job; stopped_run backup '' job"
 [[ $rc == 0 && -e "$T/ran" ]] || fail_ "the backup runs (rc=$rc)"; pass
 grep -qx 'DC stop radarr sonarr' "$T/dc" || fail_ "what is running is stopped: $(cat "$T/dc")"; pass
-grep -qx 'DC up -d radarr sonarr' "$T/dc" || fail_ "and only that starts again: $(cat "$T/dc")"; pass
+grep -qx 'DC up -d --no-recreate radarr sonarr' "$T/dc" || fail_ "and only that starts again: $(cat "$T/dc")"; pass
 grep -q 'backup: stopping 2 service(s)' "$T/out" && grep -q 'backup: starting again' "$T/out" \
     || fail_ "a warm backup says what it stops and that it starts them again: $(cat "$T/out")"; pass
 
@@ -103,7 +103,7 @@ grep -q 'could not list the running services' "$T/out" || fail_ "and says why"; 
 
 reset; printf 'radarr\n' > "$T/ps"
 run "$job; stopped_run 'pre-update restore point (sonarr)' sonarr job"
-grep -qx 'DC stop sonarr' "$T/dc" && grep -qx 'DC up -d sonarr' "$T/dc" || fail_ "named services are used as given: $(cat "$T/dc")"; pass
+grep -qx 'DC stop sonarr' "$T/dc" && grep -qx 'DC up -d --no-recreate sonarr' "$T/dc" || fail_ "named services are used as given: $(cat "$T/dc")"; pass
 
 # ---- a start other than up says the jobs stay paused, once ----
 reset; mark

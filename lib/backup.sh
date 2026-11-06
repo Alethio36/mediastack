@@ -369,10 +369,14 @@ stopped_start() { # start what STOP_MARKER names; the marker goes only once they
     for s in $svcs; do
         if [[ "$vg" == *" $s "* ]]; then group+=("$s"); else rest+=("$s"); fi
     done
-    if (( ${#rest[@]} )); then DC up -d "${rest[@]}" >/dev/null 2>&1 || return 1; fi
+    # each as it was: a change made meanwhile (a released pin, a new image
+    # pulled) is update's to apply, with its restore point and its proofs
+    # (found live Nov 2026: this restart moved gluetun to a new image, and the
+    # update after it saw nothing to prove)
+    if (( ${#rest[@]} )); then DC up -d --no-recreate "${rest[@]}" >/dev/null 2>&1 || return 1; fi
     if (( ${#group[@]} )); then
         wait_verdict --recover gluetun || { fail "$what: gluetun ${VERDICT_WHY[gluetun]} — the VPN'd services were not started"; return 1; }
-        vpn_start_group "${group[@]}" || rc=$?
+        vpn_start_group --no-recreate "${group[@]}" || rc=$?
         (( rc != 1 )) || return 1   # 3: held by the gate, which told ops and owns them now
     fi
     sudo rm -f "$STOP_MARKER"

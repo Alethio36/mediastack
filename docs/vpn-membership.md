@@ -172,6 +172,10 @@ gluetun is proven (`services/gluetun/gate.sh`):
   (vpn_gen's overlay), so a boot or a Docker restart brings back gluetun and
   everything else, and the boot guard starts the group through the gate. A
   backup starts what it stopped the same way: the group last, through the gate.
+  Both start each container as it was (`--no-recreate`): a change made
+  meanwhile — a released pin, a newly pulled image — waits for `update`, which
+  applies it with its restore point, the gate and a new gluetun's kill-switch
+  proof.
 - **The 5-minute check supervises it** (`vpn-watch`, `mediastack-leakcheck.timer`):
   `leak-test --local`, and any enabled member that is not running — crashed,
   or a boot that came too early — is started through the gate. To keep one

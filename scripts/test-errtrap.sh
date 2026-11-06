@@ -136,12 +136,12 @@ stops=$(awk '/^cmd_trash_sync\(\)/{f=1} f&&/^}/{exit} f&&/return 1/&&!/trash_sto
 
 # ---- stopped_run's EXIT guard still restarts ----
 run 'rc2=0; stopped_run backup "" false || rc2=$?; echo "rc=$rc2"'
-grep -qx 'rc=1' "$T/out" && grep -qx 'DC up -d radarr' "$T/dc" && [[ ! -e "$T/local/marker" ]] \
+grep -qx 'rc=1' "$T/out" && grep -qx 'DC up -d --no-recreate radarr' "$T/dc" && [[ ! -e "$T/local/marker" ]] \
     || fail_ "guarded stopped_run: services not restarted or rc lost"; pass
 (( $(trap_lines) == 0 )) || fail_ "guarded stopped_run: the trap spoke"; pass
 rm -f "$T/dc"
 run 'stopped_run backup "" false; echo after'
-(( rc == 1 )) && grep -qx 'DC up -d radarr' "$T/dc" && ! grep -q after "$T/out" \
+(( rc == 1 )) && grep -qx 'DC up -d --no-recreate radarr' "$T/dc" && ! grep -q after "$T/out" \
     || fail_ "unguarded stopped_run: services not restarted, or the run went on"; pass
 (( $(trap_lines) == 1 )) || fail_ "unguarded stopped_run: $(trap_lines) line(s), expected 1"; pass
 

@@ -95,17 +95,17 @@ run() { # run SVCS "WORK [ARG...]" -> "rc=N | log lines | marker=yes/no"
     echo "rc=$rc | $(tr '\n' '|' < "$T/log") marker=$([[ -f "$STOP_MARKER" ]] && echo yes || echo no)"
 }
 out=$(run "" work_ok)
-[[ "$out" == "rc=0 | DC stop radarr sonarr|WORK marker=backup|radarr sonarr|"*"DC up -d radarr sonarr|"*"marker=no" && "$out" != *NOTIFY* ]] \
+[[ "$out" == "rc=0 | DC stop radarr sonarr|WORK marker=backup|radarr sonarr|"*"DC up -d --no-recreate radarr sonarr|"*"marker=no" && "$out" != *NOTIFY* ]] \
     || fail_ "success: stop, work (marker naming it), start, marker gone, no alert: $out"; pass
 out=$(run "" work_error)
-[[ "$out" == "rc=1 | "*"DC up -d radarr sonarr|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "an error: started again and alerted: $out"; pass
+[[ "$out" == "rc=1 | "*"DC up -d --no-recreate radarr sonarr|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "an error: started again and alerted: $out"; pass
 out=$(run "" work_signal)
-[[ "$out" == "rc=143 | "*"DC up -d radarr sonarr|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "a signal: started again and alerted: $out"; pass
+[[ "$out" == "rc=143 | "*"DC up -d --no-recreate radarr sonarr|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "a signal: started again and alerted: $out"; pass
 out=$(run "" work_partial)
-[[ "$out" == "rc=$BACKUP_PARTIAL | "*"DC up -d radarr sonarr|"*"marker=no" && "$out" != *"stopped early"* ]] \
+[[ "$out" == "rc=$BACKUP_PARTIAL | "*"DC up -d --no-recreate radarr sonarr|"*"marker=no" && "$out" != *"stopped early"* ]] \
     || fail_ "a failed archive: started again, left to the caller's FAILED alert: $out"; pass
 out=$(run "sonarr " work_ok)
-[[ "$out" == *"DC stop sonarr|"*"DC up -d sonarr|"* ]] || fail_ "a scoped stop starts exactly what it stopped: $out"; pass
+[[ "$out" == *"DC stop sonarr|"*"DC up -d --no-recreate sonarr|"* ]] || fail_ "a scoped stop starts exactly what it stopped: $out"; pass
 out=$(DC_UP_RC=1 run "" work_ok)
 [[ "$out" == "rc=1 | "*"FAIL"*"did not start again"*"NOTIFY Mediastack is DOWN"*"marker=yes" ]] \
     || fail_ "services that will not start: a failure, an alert, the marker kept for boot: $out"; pass
@@ -116,18 +116,18 @@ svc_managed_where() { echo sonarr; }
 PINS_FILE=$T/nopins CUSTOM_DIR=$T/nocustom
 sudo() { [[ "$1" == cp && "$*" == *"/env" ]] && return 1; "$@"; }
 out=$(run "" "backup_snapshot $T/cfg $T/pt")
-[[ "$out" == "rc=1 | "*"could not copy .env"*"DC up -d radarr sonarr|"*"stopped early"*"marker=no" ]] || fail_ "a failed .env copy: a failure, services started again: $out"; pass
+[[ "$out" == "rc=1 | "*"could not copy .env"*"DC up -d --no-recreate radarr sonarr|"*"stopped early"*"marker=no" ]] || fail_ "a failed .env copy: a failure, services started again: $out"; pass
 sudo() { "$@"; }
 out=$(run "" "backup_snapshot $T/cfg $T/pt")
-[[ "$out" == "rc=0 | "*"DC up -d radarr sonarr|"*"marker=no" && -s "$T/pt/sonarr.tar.gz" && -s "$T/pt/env" && -s "$T/pt/SHA256SUMS" ]] \
+[[ "$out" == "rc=0 | "*"DC up -d --no-recreate radarr sonarr|"*"marker=no" && -s "$T/pt/sonarr.tar.gz" && -s "$T/pt/env" && -s "$T/pt/SHA256SUMS" ]] \
     || fail_ "a whole snapshot: archive, env, checksums, services started again: $out"; pass
 DC() { if [[ "$1" == ps ]]; then printf 'radarr\nsonarr\n'; return; fi; echo "DC $*" >> "$T/log"; [[ "$1" != stop ]]; }
 out=$(run "" work_ok)
-[[ "$out" == "rc=1 | "*"could not stop"*"DC up -d radarr sonarr|"*"marker=no" && "$out" != *WORK* ]] || fail_ "a failed stop: no work on running services: $out"; pass
+[[ "$out" == "rc=1 | "*"could not stop"*"DC up -d --no-recreate radarr sonarr|"*"marker=no" && "$out" != *WORK* ]] || fail_ "a failed stop: no work on running services: $out"; pass
 DC() { if [[ "$1" == ps ]]; then printf 'radarr\nsonarr\n'; return; fi; echo "DC $*" >> "$T/log"; [[ "$1" != up ]] || return "${DC_UP_RC:-0}"; }
 printf 'backup\n\n' > "$STOP_MARKER"   # what a power cut leaves
 svc_enabled_managed() { printf 'radarr\nsonarr\n'; }   # what is enabled: the cut-short marker names nothing
-rm -f "$T/log"; stopped_recover; [[ "$(cat "$T/log")" == *"DC up -d radarr sonarr"*"NOTIFY Mediastack backup cut off — services started again at boot"* && ! -f "$STOP_MARKER" ]] \
+rm -f "$T/log"; stopped_recover; [[ "$(cat "$T/log")" == *"DC up -d --no-recreate radarr sonarr"*"NOTIFY Mediastack backup cut off — services started again at boot"* && ! -f "$STOP_MARKER" ]] \
     || fail_ "at boot, a marker left behind: its services started, alerted, marker gone: $(cat "$T/log")"; pass
 rm -f "$T/log"; stopped_recover; [[ ! -s "$T/log" ]] || fail_ "at boot, no marker: nothing started"; pass
 # the boot unit is 644 like every unit (found live: mktemp's 600 made

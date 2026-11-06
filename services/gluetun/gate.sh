@@ -108,11 +108,14 @@ gluetun_instance() { local cn; cn=$(svc_cname gluetun); echo "$(c_id "$cn") $(c_
 leak_proof_record() { INSPECT_JSON=""; state_set "$LEAK_PROVEN" "$(gluetun_instance)"; }
 gluetun_proven() { local p; p=$(state_get "$LEAK_PROVEN"); [[ -n "$p" && "$p" == "$(gluetun_instance)" ]]; }
 
-vpn_start_group() { # vpn_start_group SVC... — start these VPN'd services through the gate: 0 started, 3 held by it, 1 failed
+vpn_start_group() { # vpn_start_group [--no-recreate] SVC... — start these VPN'd services through the gate: 0 started, 3 held by it, 1 failed
     # gluetun must be up (the caller waits for it). The gate open, the tier
     # follows gluetun: proven since its last start -> the local checks, else
     # the full run. A FAIL closes the gate (leak_verdict) and nothing starts.
-    local rc=0 lonly=0
+    # --no-recreate: a restart (a backup's, the supervisor's) starts them as
+    # they were; a pending change (a released pin, a new image) is update's.
+    local rc=0 lonly=0 how=()
+    if [[ "${1:-}" == --no-recreate ]]; then how=(--no-recreate); shift; fi
     if leak_gate_closed; then
         warn "leak gate closed ($(state_get "$LEAK_GATE")) — not starting: $*"
         return 3
@@ -122,7 +125,7 @@ vpn_start_group() { # vpn_start_group SVC... — start these VPN'd services thro
     leak_test_run 0 "$lonly" || rc=$?
     leak_verdict "$rc"
     (( rc != 1 )) || return 3
-    DC up -d "$@" >/dev/null || { fail "starting $* failed — see compose's message above"; return 1; }
+    DC up -d "${how[@]}" "$@" >/dev/null || { fail "starting $* failed — see compose's message above"; return 1; }
     vpn_reattach_guard
 }
 
@@ -151,7 +154,7 @@ vpn_supervise() { # vpn_supervise [full] — local or full checks (as gluetun's 
         [[ "$(c_state "$(svc_cname "$s")")" == running ]] || missing+=("$s")
     done
     if (( ${#missing[@]} )); then
-        vpn_start_group "${missing[@]}" || rc=$?
+        vpn_start_group --no-recreate "${missing[@]}" || rc=$?
         (( rc != 1 )) || return 1
         return 0
     fi

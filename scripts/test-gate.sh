@@ -13,7 +13,8 @@
 #   * a gated start of members: closed -> held; proven -> local checks; else full; a FAIL starts nothing
 #   * the supervisor (vpn-watch, every 5 min, and the boot): starts members not running through
 #     the gate; skips while an update, backup or up holds the stack, or a backup is mid-copy
-#   * a backup's restart: everything else, gluetun ready, then the group through the gate
+#   * a backup's restart: everything else, gluetun ready, then the group through the gate —
+#     each as it was (--no-recreate): a pending change is update's to apply, with its proofs
 #   * the gate's timers: local every 5 minutes; the full run hourly, at a random
 #     minute; this host's own address daily, at a random time — and in the footprint
 #   * update: gluetun unchanged -> the group's targets through the gate; changed ->
@@ -195,6 +196,8 @@ state_del "$LEAK_GATE"; GATE_RC=0; GSTART="2026-11-03T10:00:00Z"; state_set "$LE
 rc=0; vpn_start_group qbittorrent sonarr > /dev/null 2>&1 || rc=$?
 (( rc == 0 )) && grep -qx "test local=1" "$LEAK_LOG" || fail_ "gluetun proven since it started: the local checks ($(cat "$LEAK_LOG"))"; pass
 [[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d qbittorrent sonarr|guard" ]] || fail_ "then the members, then the attachment verified ($(paste -sd'|' "$UP_LOG"))"; pass
+: > "$UP_LOG"; vpn_start_group --no-recreate qbittorrent > /dev/null 2>&1
+[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d --no-recreate qbittorrent|guard" ]] || fail_ "--no-recreate: started as they were ($(paste -sd'|' "$UP_LOG"))"; pass
 GSTART="2026-11-03T12:00:00Z"; : > "$LEAK_LOG"; : > "$UP_LOG"
 vpn_start_group qbittorrent > /dev/null 2>&1
 grep -qx "test local=0" "$LEAK_LOG" || fail_ "gluetun restarted since its proof: the full run first ($(cat "$LEAK_LOG"))"; pass
@@ -206,7 +209,7 @@ state_del "$LEAK_GATE"; GATE_RC=0
 # ---- the supervisor ----
 RUNNING="gluetun jellyfin"; : > "$LEAK_LOG"; : > "$UP_LOG"
 vpn_supervise > /dev/null 2>&1
-grep -q "DC up -d qbittorrent sonarr" "$UP_LOG" || fail_ "members not running (a crash, a boot): started through the gate ($(paste -sd'|' "$UP_LOG"))"; pass
+grep -q "DC up -d --no-recreate qbittorrent sonarr" "$UP_LOG" || fail_ "members not running (a crash, a boot): started as they were, through the gate — a change waits for update ($(paste -sd'|' "$UP_LOG"))"; pass
 RUNNING="gluetun jellyfin qbittorrent sonarr"; : > "$LEAK_LOG"; : > "$UP_LOG"; state_set "$LEAK_PROVEN" "gid1 $GSTART"
 vpn_supervise > /dev/null 2>&1
 ! grep -q "DC up" "$UP_LOG" && grep -qx "test local=1" "$LEAK_LOG" || fail_ "all running, gluetun proven: the local checks only, nothing started ($(paste -sd'|' "$UP_LOG"))"; pass
@@ -229,11 +232,12 @@ sudo() { if [[ "$1" == rm ]]; then shift; rm "$@"; fi; return 0; }
 eval 'vpn_start_group() { echo "gate $*" >> "$UP_LOG"; return "$VSG_RC"; }'
 printf 'backup\ngluetun jellyfin qbittorrent sonarr\n' > "$STOP_MARKER"; : > "$UP_LOG"
 stopped_start > /dev/null 2>&1 || fail_ "started again — $(cat "$UP_LOG")"; pass
-[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d gluetun jellyfin|wait --recover gluetun|gate qbittorrent sonarr" ]] || fail_ "everything else, gluetun ready, then the group through the gate ($(paste -sd'|' "$UP_LOG"))"; pass
+[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d --no-recreate gluetun jellyfin|wait --recover gluetun|gate --no-recreate qbittorrent sonarr" ]] \
+    || fail_ "everything else, gluetun ready, then the group through the gate — all as they were: a released pin waits for update (found live Nov 2026: a backup's restart moved gluetun to a new image unproven) ($(paste -sd'|' "$UP_LOG"))"; pass
 [[ ! -e "$STOP_MARKER" ]] || fail_ "the marker goes once they are up"; pass
 printf 'backup\n\n' > "$STOP_MARKER"; : > "$UP_LOG"   # a marker a power cut left half-written
 stopped_start > /dev/null 2>&1
-[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d gluetun jellyfin|wait --recover gluetun|gate qbittorrent sonarr" ]] || fail_ "a cut-short marker: everything enabled, the group still through the gate ($(paste -sd'|' "$UP_LOG"))"; pass
+[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d --no-recreate gluetun jellyfin|wait --recover gluetun|gate --no-recreate qbittorrent sonarr" ]] || fail_ "a cut-short marker: everything enabled, the group still through the gate ($(paste -sd'|' "$UP_LOG"))"; pass
 VSG_RC=3; printf 'backup\ngluetun qbittorrent\n' > "$STOP_MARKER"
 stopped_start > /dev/null 2>&1 || fail_ "held by the gate: not a failure (the gate told ops and owns them)"; pass
 [[ ! -e "$STOP_MARKER" ]] || fail_ "and the marker goes (the gate's state holds them now)"; pass
