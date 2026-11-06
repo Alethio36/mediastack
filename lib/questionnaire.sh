@@ -775,6 +775,8 @@ questionnaire_summary() { # configure's last screen: every answer, the defaulted
     q_row updates "$(sched_words "$(env_get UPDATE_SCHEDULE)")"
     q_row backups "$(sched_words "$(env_get BACKUP_SCHEDULE)")"
     signin_is authentik && q_row email "$( [[ -n "$(env_get SMTP_HOST)" ]] && echo "$(env_get SMTP_HOST), from $(env_get SMTP_FROM)" || echo "not set")"
-    svc_enabled olivetin && q_row "web panel" installed
+    if svc_enabled olivetin; then
+        if frontdoor_installed; then q_row "web panel" installed; else q_row "web panel" "not installed yet — frontdoor-install runs first"; fi
+    fi
     echo "Something to change? ./mediastack.sh configure again, in full: these answers are its defaults."
 }

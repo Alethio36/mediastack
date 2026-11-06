@@ -147,7 +147,8 @@ chain_wanted() { # a first run (never wired) starts everything on Enter; a live 
 # and the message names every step still to run. Every step is safe to run
 # again, which is how a chain that stopped carries on: run configure again.
 chain_steps() { # the steps this stack needs, in order: the panel first (it adds a container up starts)
-    if [[ -n "$(state_get "$PANEL_STATE")" ]]; then echo frontdoor-install; fi
+    # asked for now, or enabled on a host it was never installed on (a restored .env, found live Nov 2026)
+    if [[ -n "$(state_get "$PANEL_STATE")" ]] || { svc_enabled olivetin && ! frontdoor_installed; }; then echo frontdoor-install; fi
     echo up; echo wire
     if [[ -n "$(trash_instances)" ]]; then echo trash-sync; fi
 }

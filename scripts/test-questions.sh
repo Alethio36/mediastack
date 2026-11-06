@@ -327,6 +327,16 @@ cq() { ( STATE_DIR=$T/cs LOCAL_DIR=$T; trash_instances() { echo "${TI:-}"; }; ch
 rm -rf "$T/cs"; TI="" ; [[ "$(cq)" == "up wire" ]] || fail_ "no panel, no arr: up, wire ($(cq))"; pass
 ( STATE_DIR=$T/cs LOCAL_DIR=$T; state_set "$PANEL_STATE" yes ); TI=sonarr
 [[ "$(cq)" == "frontdoor-install up wire trash-sync" ]] || fail_ "the panel first (up starts its container), trash-sync last ($(cq))"; pass
+# a restored .env enables the panel on a host it was never installed on (found live Nov 2026)
+rm -rf "$T/cs"; TI=""
+printf 'COMPOSE_PROFILES=olivetin,traefik\nCONFIG_ROOT=%s/pcfg\n' "$T" > "$T/p.env"
+[[ "$(ENV_FILE=$T/p.env cq)" == "frontdoor-install up wire" ]] || fail_ "the panel enabled, not installed: frontdoor-install first ($(ENV_FILE=$T/p.env cq))"; pass
+mkdir -p "$T/pcfg/olivetin"; : > "$T/pcfg/olivetin/passwd"
+[[ "$(ENV_FILE=$T/p.env cq)" == "up wire" ]] || fail_ "the panel installed: not installed again ($(ENV_FILE=$T/p.env cq))"; pass
+rm -f "$T/pcfg/olivetin/passwd"
+grep -q 'not installed yet — frontdoor-install runs first' <<<"$( (ENV_FILE=$T/p.env; svc_hooks() { :; }; logins_list() { :; }; signin_is() { return 1; }; sched_words() { echo x; }; q_row() { printf '%s\t%s\n' "$1" "$2"; }; questionnaire_summary ) 2>&1)" \
+    || fail_ "the summary says the panel is not installed yet"; pass
+( STATE_DIR=$T/cs LOCAL_DIR=$T; state_set "$PANEL_STATE" yes )
 mkdir -p "$T/fk"; printf '#!/usr/bin/env bash\necho "$1" >> "%s/steps"\n[[ "$1" != wire ]] || exit 4\n' "$T" > "$T/fk/mediastack.sh"; : > "$T/steps"
 ( SCRIPT_DIR=$T/fk STATE_DIR=$T/cs LOCAL_DIR=$T CMD=configure; notify() { echo "NOTIFY $*" >> "$T/steps"; }; chain_run frontdoor-install up wire trash-sync ) > "$T/out" 2>&1; rc=$?
 [[ "$rc" == 4 && "$(paste -sd' ' "$T/steps")" == "frontdoor-install up wire" ]] && grep -q "'wire' stopped (exit 4, above) — nothing was undone" "$T/out" \
