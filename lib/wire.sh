@@ -64,12 +64,18 @@ w_would() { # w_would "description" -> 0 if execution should proceed
     info "$1"
 }
 
+api_unanswered() { # api_unanswered METHOD SECONDS -> why a call that timed out failed: unanswered, which a write may survive
+    if [[ "$1" == GET ]]; then echo "no answer within ${2}s"
+    else echo "no answer within ${2}s — the change may still have been made: ./mediastack.sh wire --verify shows whether it was"; fi
+}
+
 api() { # api METHOD URL APIKEY [json-body] -> body on stdout, rc from http
     # API_TIMEOUT (seconds, default 20): a call the app answers only after
     # slow work of its own sets it for that one call (API_TIMEOUT=180 api ...)
     local m="$1" u="$2" k="$3" b="${4:-}" out code
     out=$(curl -sS -m "${API_TIMEOUT:-20}" -X "$m" -H "X-Api-Key: $k" -H "Content-Type: application/json" \
-          ${b:+-d "$b"} -w '\n%{http_code}' "$u" 2>&1) || { echo "$out"; return 1; }
+          ${b:+-d "$b"} -w '\n%{http_code}' "$u" 2>&1) \
+        || { local rc=$?; if (( rc == 28 )); then api_unanswered "$m" "${API_TIMEOUT:-20}"; else echo "$out"; fi; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
 }

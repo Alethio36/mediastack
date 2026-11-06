@@ -1310,17 +1310,24 @@ SVCS=wizarr; out=$(inv --email milo@example.com) && fail_ "Wizarr cannot send"; 
 showpw() { # showpw CURRENT SEEDED -> the PATCH calls made, then the state
     ( state_get() { cat "$T/st-$1" 2>/dev/null || true; }; state_set() { echo "$2" > "$T/st-$1"; }
       if [[ -n "$2" ]]; then echo 1 > "$T/st-AUTHENTIK_SHOW_PASSWORD"; else rm -f "$T/st-AUTHENTIK_SHOW_PASSWORD"; fi
-      CUR=$1; WIRE_DRY=0; rm -f "$T/calls"
+      CUR=$1; WIRE_DRY=0; rm -f "$T/calls" "$T/late"
       ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"; [[ "$1" != PATCH ]] || echo "${API_TIMEOUT:-20}" > "$T/patch-wait"
           case "$1 $2" in
-              "GET /stages/password/?name=default-authentication-password") jq -cn --argjson c "$CUR" '{results:[{pk:"P1", name:"default-authentication-password", allow_show_password:$c}]}' ;;
-              PATCH*) echo '{}' ;;
+              "GET /stages/password/?name=default-authentication-password") [[ -e "$T/late" ]] && CUR=$(cat "$T/late")
+                  jq -cn --argjson c "$CUR" '{results:[{pk:"P1", name:"default-authentication-password", allow_show_password:$c}]}' ;;
+              PATCH*) if [[ -n "${PATCH_LATE:-}" ]]; then echo "$PATCH_LATE" > "$T/late"; echo "no answer within 90s"; return 1; fi; echo '{}' ;;
           esac; }
-      wire_authentik_show_password >/dev/null; grep '^PATCH' "$T/calls" || true; echo "seeded=$(state_get AUTHENTIK_SHOW_PASSWORD)" )
+      wfail() { echo "WFAIL $*" >> "$T/calls"; }
+      wire_authentik_show_password >/dev/null; grep -E '^(PATCH|WFAIL)' "$T/calls" || true; echo "seeded=$(state_get AUTHENTIK_SHOW_PASSWORD)" )
 }
 [[ "$(showpw false "")" == $'PATCH /stages/password/P1/ {"allow_show_password":true}\nseeded=1' ]] || fail_ "show password: set once, remembered: $(showpw false "")"; pass
 [[ "$(showpw false 1)" == "seeded=1" ]] || fail_ "show password: turned off in authentik's UI after we set it — never set again"; pass
 [[ "$(showpw true "")" == "seeded=1" ]] || fail_ "show password: already on — no write, remembered (so a later 'off' stays off)"; pass
+# the write timed out: unknown, so read back (found live Nov 2026: made, but reported "rejected")
+[[ "$(PATCH_LATE=true showpw false "")" == $'PATCH /stages/password/P1/ {"allow_show_password":true}\nseeded=1' ]] \
+    || fail_ "show password: no answer, read back as made — no failure, remembered: $(PATCH_LATE=true showpw false "")"; pass
+[[ "$(PATCH_LATE=false showpw false "")" == *"WFAIL authentik did not take the show-password button: no answer within 90s"*"seeded=" ]] \
+    || fail_ "show password: no answer, read back as not made — a failure, not called rejected: $(PATCH_LATE=false showpw false "")"; pass
 grep -q 'wire_authentik_show_password' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik sets the show-password button"; pass
 # authentik took 22s to save the stage on a first start (found live Nov 2026): the write waits longer than a read
 showpw false "" >/dev/null; [[ "$(cat "$T/patch-wait")" == "$AUTHENTIK_STAGE_WAIT" ]] && (( AUTHENTIK_STAGE_WAIT >= 60 )) \

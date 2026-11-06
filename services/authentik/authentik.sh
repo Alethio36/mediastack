@@ -114,7 +114,7 @@ ak_api() { # ak_api METHOD PATH [json] -> body on stdout; rc from HTTP (authenti
     local m="$1" p="$2" b="${3:-}" out code
     out=$(curl -sS -m "${API_TIMEOUT:-20}" -X "$m" -H "Authorization: Bearer $(env_get AUTHENTIK_API_TOKEN)" \
           -H "Content-Type: application/json" ${b:+-d "$b"} -w '\n%{http_code}' "$(authentik_url)/api/v3$p" 2>&1) \
-        || { echo "$out"; return 1; }
+        || { local rc=$?; if (( rc == 28 )); then api_unanswered "$m" "${API_TIMEOUT:-20}"; else echo "$out"; fi; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
 }
@@ -681,7 +681,10 @@ wire_authentik_show_password() { # a show-password button at sign-in, set once: 
     w_would "authentik: add a show-password button at sign-in (see a mistyped password before sending it)" || return 0
     if out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api PATCH "/stages/password/$pk/" '{"allow_show_password":true}'); then
         state_set AUTHENTIK_SHOW_PASSWORD 1; ok "authentik: show-password button added at sign-in"
-    else wfail "authentik rejected the show-password button: $(oneline "$out")"; fi
+    # a write with no answer may still have been made (found live Nov 2026): read it back before calling it failed
+    elif [[ "$(ak_api GET "/stages/password/?name=$AUTHENTIK_SIGNIN_PASSWORD" 2>/dev/null | jq -r --arg n "$AUTHENTIK_SIGNIN_PASSWORD" '[.results[] | select(.name == $n)][0].allow_show_password' 2>/dev/null || true)" == true ]]; then
+        state_set AUTHENTIK_SHOW_PASSWORD 1; ok "authentik: show-password button added at sign-in (its answer came late — read back)"
+    else wfail "authentik did not take the show-password button: $(oneline "$out")"; fi
 }
 
 authentik_email_ready() { smtp_configured && [[ "$(state_get SMTP_TESTED)" == "$(smtp_fingerprint)" ]]; }   # the current settings passed `email test`

@@ -119,4 +119,12 @@ wire_apply_settings "" >/dev/null
 bad=$(grep -rn -A2 'ensure_resource "' lib services | grep -iE '^[^:]+-[0-9]+-.*"[^"]*already[^"]*"' || true)
 [[ -z "$bad" ]] || fail_ "an ensure_resource success text says 'already' — it is also printed after a write: $bad"; pass
 
+# a call that times out is unanswered, not refused: a write may still have been made (found live Nov 2026)
+tmo() { ( curl() { echo "curl: (28) Operation timed out after 20002 milliseconds"; return 28; }; api "$1" http://x k ) 2>&1; }
+[[ "$(tmo PUT)" == "no answer within 20s — the change may still have been made: ./mediastack.sh wire --verify shows whether it was" ]] \
+    || fail_ "a write that timed out: unanswered, maybe made ($(tmo PUT))"; pass
+[[ "$(tmo GET)" == "no answer within 20s" ]] || fail_ "a read that timed out: unanswered ($(tmo GET))"; pass
+[[ "$( ( curl() { echo "curl: (7) Failed to connect"; return 7; }; api GET http://x k ) 2>&1)" == *"Failed to connect"* ]] \
+    || fail_ "any other failure: curl's own words"; pass
+
 echo "OK wire: $checks checks"
