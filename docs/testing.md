@@ -36,6 +36,9 @@ Rules these taught, Nov 2026:
 - **A check of a fail-safe path runs the code the way it runs live**: a
   function that reports a failure is tested under `set -Ee` with an ERR trap,
   since that is where an empty `grep` once ended a whole `wire`.
+  `test-reasons` holds every reason function (`*_why`, `*_reason`,
+  `*_problem(s)`, `*_hint`) to that: empty input, everything unreachable,
+  return 0. A new one is picked up by its name.
 - **New checks are mutation-checked** before they count: break the code they
   guard, see them fail, restore it.
 

@@ -61,6 +61,8 @@ jobs:
         run: scripts/test-leak.sh
       - name: no pipeline ends in a reader that stops early (SIGPIPE under pipefail) (scripts/test-pipes.sh)
         run: scripts/test-pipes.sh
+      - name: a function that explains a failure never fails itself (scripts/test-reasons.sh)
+        run: scripts/test-reasons.sh
       - name: doctor's config write probe asks as the app, not as root (scripts/test-doctor-perms.sh)
         run: scripts/test-doctor-perms.sh
       - name: the leak gate — the VPN group starts only after gluetun is proven, a leak stops it (scripts/test-gate.sh)

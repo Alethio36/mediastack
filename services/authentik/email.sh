@@ -36,7 +36,7 @@ smtp_live_stale() { # -> the settings the running authentik does not have yet (n
         want=$(env_get "$k")
         case "$k" in SMTP_HOST) want=${want:-localhost} ;; SMTP_PORT) want=${want:-25} ;;   # addr-ok: authentik's own defaults, not app-to-app
                      SMTP_STARTTLS|SMTP_TLS) want=${want:-false} ;; SMTP_FROM) want=${want:-authentik@localhost} ;; esac   # addr-ok: authentik's own defaults, not app-to-app
-        have=$(grep -m1 "^${SMTP_AK[$k]}=" <<<"$envs" | cut -d= -f2-)
+        have=$(grep -m1 "^${SMTP_AK[$k]}=" <<<"$envs" | cut -d= -f2- || true)   # absent from the running worker: stale
         [[ "$have" == "$want" ]] || echo "$k"
     done
 }
