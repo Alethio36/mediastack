@@ -141,7 +141,7 @@ rule_secrets() {
         [[ -z "$line" || "$line" == \#* ]] && continue
         k=${line%%=*}; v=${line#*=}
         [[ -n "$v" && "$(schema_type "$k")" == secret ]] || continue
-        jq -c 'del(.services[].environment)' "$(cj "$1")" | grep -qF -- "$v" && echo "$k: its value is in a label, command or name"
+        grep -qF -- "$v" <<<"$(jq -c 'del(.services[].environment)' "$(cj "$1")")" && echo "$k: its value is in a label, command or name"
         { grep -rlF --exclude=compose.json -- "$v" "$1/expected" "$fixtures/_host/expected" || true; } | sed "s|^|$k: its value is in |"
     done < "$1/env.set"
     return 0

@@ -120,7 +120,7 @@ real='{"event": "Task failed", "level": "error", "logger": "authentik.tasks"}'
 [[ "$(log_errors plain <<<"$boot")" == 3 ]] || fail_ "a service with no pattern keeps the default (any line naming an error)"; pass
 # every container in the shard counts by its own pattern; doctor reads the members too
 for m in authentik-worker authentik-ldap authentik-db; do
-    sed -n "/^  $m:/,/^  [a-z-]*:\$/p" services/authentik/compose.yml | grep -q 'mediastack.errors:' || fail_ "$m declares no mediastack.errors"; pass
+    grep -q 'mediastack.errors:' <<<"$(sed -n "/^  $m:/,/^  [a-z-]*:\$/p" services/authentik/compose.yml)" || fail_ "$m declares no mediastack.errors"; pass
 done
 grep -q 'for s in $(svc_shard $(svc_enabled_managed)); do' <(awk '/^_doctor_runtime_audit\(\)/,/^}/' lib/doctor.sh) \
     || fail_ "doctor's log-noise check covers shard members"; pass
@@ -191,15 +191,15 @@ bp=services/authentik/blueprints/mediastack-portal.yaml
 grep -q "^  name: $AUTHENTIK_BLUEPRINT\$" "$bp" || fail_ "the blueprint's name must be AUTHENTIK_BLUEPRINT ($AUTHENTIK_BLUEPRINT)"; pass
 grep -q "^      slug: $AUTHENTIK_JOIN_FLOW\$" "$bp" || fail_ "the sign-up flow's slug must be AUTHENTIK_JOIN_FLOW"; pass
 # household members are internal (external users never see the app dashboard), in media-users
-grep -A4 'model: authentik_stages_user_write.userwritestage' "$bp" | grep -q 'name: mediastack-join-write' \
-    && sed -n '/name: mediastack-join-write/,/^  - /p' "$bp" | grep -q 'user_type: internal' \
-    && sed -n '/name: mediastack-join-write/,/^  - /p' "$bp" | grep -q 'create_users_group: !KeyOf group-media-users' \
+grep -q 'name: mediastack-join-write' <<<"$(grep -A4 'model: authentik_stages_user_write.userwritestage' "$bp")" \
+    && grep -q 'user_type: internal' <<<"$(sed -n '/name: mediastack-join-write/,/^  - /p' "$bp")" \
+    && grep -q 'create_users_group: !KeyOf group-media-users' <<<"$(sed -n '/name: mediastack-join-write/,/^  - /p' "$bp")" \
     || fail_ "sign-up must create internal users in media-users"; pass
-sed -n '/name: mediastack-join-invitation/,/^  - /p' "$bp" | grep -q 'continue_flow_without_invitation: false' \
+grep -q 'continue_flow_without_invitation: false' <<<"$(sed -n '/name: mediastack-join-invitation/,/^  - /p' "$bp")" \
     || fail_ "sign-up must need an invitation"; pass
-sed -n '/name: mediastack-join-email/,/^  - /p' "$bp" | grep -q 'required: true' || fail_ "email is required at sign-up"; pass
+grep -q 'required: true' <<<"$(sed -n '/name: mediastack-join-email/,/^  - /p' "$bp")" || fail_ "email is required at sign-up"; pass
 # one page: every field on the credentials stage, and only one prompt stage bound
-sed -n '/name: mediastack-join-credentials/,/^  - /p' "$bp" | grep -c '!KeyOf field-' | grep -qx 6 \
+[[ $(grep -c '!KeyOf field-' <<<"$(sed -n '/name: mediastack-join-credentials/,/^  - /p' "$bp")") == 6 ]] \
     || fail_ "sign-up is one page: all six fields on one stage"; pass
 [[ "$(grep -A1 'target: !KeyOf flow-join' "$bp" | grep -c 'stage: !KeyOf stage-')" == 4 ]] || fail_ "four stages bound to sign-up: invitation, the page, write, login"; pass
 sed -n '/^  authentik-worker:/,/^  authentik-db:/p' services/authentik/compose.yml > "$T/worker"
@@ -442,16 +442,16 @@ AK_ON=1; grep -q 'middlewares: \[$(signin_is authentik && echo mediastack-gate |
 # disabling the portal: every arr's own login is verified BEFORE the profile
 # changes and the ports reopen (never open to the LAN without a login)
 body=$(sed -n '/^cmd_disable() {/,/^}/p' mediastack.sh)
-v=$(grep -n 'still trusts the portal' <<<"$body" | head -1 | cut -d: -f1)
-e=$(grep -n 'env_set COMPOSE_PROFILES' <<<"$body" | head -1 | cut -d: -f1)
-g=$(grep -n 'gate_bind_sync' <<<"$body" | head -1 | cut -d: -f1)
+v=$(grep -n 'still trusts the portal' <<<"$body" | sed -n 1p | cut -d: -f1)
+e=$(grep -n 'env_set COMPOSE_PROFILES' <<<"$body" | sed -n 1p | cut -d: -f1)
+g=$(grep -n 'gate_bind_sync' <<<"$body" | sed -n 1p | cut -d: -f1)
 [[ -n "$v" && -n "$e" && -n "$g" ]] && (( v < e && e < g )) || fail_ "disable authentik: logins verified, then the profile, then the ports"; pass
 
 # every arr-family login goes through arr_login — Prowlarr and a credential
 # rotation included (found live: Prowlarr kept asking twice)
 grep -q '^    arr_login prowlarr' services/prowlarr/prowlarr.sh || fail_ "wire prowlarr: its login follows the trust rule"; pass
-sed -n '/^sc_rotate_arr() {/,/^}/p' services/_arr/arr.sh | grep -q 'arr_login "\$s"' || fail_ "set-credentials arr: back to trusting the portal after the rotation"; pass
-sed -n '/^cmd_disable() {/,/^}/p' mediastack.sh | grep -q 'for a in $(arr_instances) $(svc_enabled prowlarr && echo prowlarr)' \
+grep -q 'arr_login "\$s"' <<<"$(sed -n '/^sc_rotate_arr() {/,/^}/p' services/_arr/arr.sh)" || fail_ "set-credentials arr: back to trusting the portal after the rotation"; pass
+grep -q 'for a in $(arr_instances) $(svc_enabled prowlarr && echo prowlarr)' <<<"$(sed -n '/^cmd_disable() {/,/^}/p' mediastack.sh)" \
     || fail_ "disable authentik restores Prowlarr's login too"; pass
 
 # ---- credentials: the API keys companion apps need, with their addresses ----
@@ -549,22 +549,22 @@ grep -q 'mediastack-ldap-allow:' services/traefik/edge.sh && grep -q 'sourceRang
     || fail_ "the LDAP route answers the stack network only"; pass
 grep -q 'traefik.tcp.routers.authentik-ldap.middlewares: "mediastack-ldap-allow@file"' services/authentik/compose.yml || fail_ "the LDAP route carries the allow-list"; pass
 bp=services/authentik/blueprints/mediastack-portal.yaml
-sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'mfa_support: false' || fail_ "LDAP binds: no MFA prompt (TV apps cannot answer one)"; pass
-sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'search_mode: direct' \
+grep -q 'mfa_support: false' <<<"$(sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp")" || fail_ "LDAP binds: no MFA prompt (TV apps cannot answer one)"; pass
+grep -q 'search_mode: direct' <<<"$(sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp")" \
     || fail_ "LDAP searches ask authentik live (cached: a new sign-up waited up to 5 minutes for Jellyfin, found live)"; pass
-sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'bind_mode: direct' \
+grep -q 'bind_mode: direct' <<<"$(sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp")" \
     || fail_ "LDAP binds run authentik's sign-in every time (cached: a correct guess got past the throttle, found live)"; pass
-sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp" | grep -q 'authorization_flow: !KeyOf flow-ldap' \
+grep -q 'authorization_flow: !KeyOf flow-ldap' <<<"$(sed -n '/name: mediastack-ldap$/,/^  - /p' "$bp")" \
     || fail_ "the outpost binds through authorization_flow — it must be the LDAP bind flow (found live)"; pass
-sed -n '/model: authentik_outposts.outpost/,/^  - /p' "$bp" | grep -q '^      config:' || fail_ "an outpost needs its config block (authentik requires it; found live)"; pass
-grep -A3 'permissions:' "$bp" | grep -q 'permission: authentik_providers_ldap.search_full_directory' \
+grep -q '^      config:' <<<"$(sed -n '/model: authentik_outposts.outpost/,/^  - /p' "$bp")" || fail_ "an outpost needs its config block (authentik requires it; found live)"; pass
+grep -q 'permission: authentik_providers_ldap.search_full_directory' <<<"$(grep -A3 'permissions:' "$bp")" \
     || fail_ "only the search account may list the directory — by the full permission name (the dry run rejects the short form)"; pass
 # the throttle: at the login step (the user is known there), counting only the
 # person's score at Traefik's address — the Jellyfin path (found live: authentik's
 # reputation policy summed every address, and web sign-ins hid the guessing)
-sed -n '/target: !KeyOf binding-ldap-login/,/^  - /p' "$bp" | grep -q 'policy: !KeyOf policy-ldap-throttle' \
-    && ! sed -n '/target: !KeyOf binding-ldap-login/,/^  - /p' "$bp" | grep -q 'negate: true' || fail_ "throttle: at the login step, not negated (True = let in)"; pass
-sed -n '/name: mediastack-ldap-reputation$/,/^  - /p' "$bp" | grep -q 'state: absent' || grep -B2 'name: mediastack-ldap-reputation$' "$bp" | grep -q 'state: absent' \
+grep -q 'policy: !KeyOf policy-ldap-throttle' <<<"$(sed -n '/target: !KeyOf binding-ldap-login/,/^  - /p' "$bp")" \
+    && ! grep -q 'negate: true' <<<"$(sed -n '/target: !KeyOf binding-ldap-login/,/^  - /p' "$bp")" || fail_ "throttle: at the login step, not negated (True = let in)"; pass
+grep -q 'state: absent' <<<"$(sed -n '/name: mediastack-ldap-reputation$/,/^  - /p' "$bp")" || grep -q 'state: absent' <<<"$(grep -B2 'name: mediastack-ldap-reputation$' "$bp")" \
     || fail_ "the summing reputation policy is removed (its bindings with it)"; pass
 grep -q 'MEDIASTACK_TRAEFIK_ADDRESS: ${TRAEFIK_ADDRESS:-172.31.250.2}' "$T/worker" || fail_ "the worker passes Traefik's address to the throttle"; pass
 # run the expression itself against scores: per person, only the Jellyfin path, floor -5
@@ -625,7 +625,7 @@ PY
 [[ "$(throttle_says milo 'jo,172.31.250.2,-5')" == allow ]] || fail_ "another person's failures never lock this one out"; pass
 [[ "$(throttle_says milo '')" == allow ]] || fail_ "no score at all: let in"; pass
 ! grep -q 'ak_message' <<<"$expr" || fail_ "throttle: no ak_message — on a stage binding it is shown nowhere (found live); the server log tells the admin"; pass
-sed -n '/stage: !KeyOf stage-ldap-login/,/^  - /p' "$bp" | grep -q 're_evaluate_policies: true' || fail_ "the login step re-checks once the user is known"; pass
+grep -q 're_evaluate_policies: true' <<<"$(sed -n '/stage: !KeyOf stage-ldap-login/,/^  - /p' "$bp")" || fail_ "the login step re-checks once the user is known"; pass
 [[ "$(grep -c 'target: !KeyOf app-ldap' "$bp")" == 3 ]] || fail_ "binds: media-users, admins, the search account — nobody else"; pass
 
 # ---- update --to: the outpost and worker move with the server, the database stays ----
@@ -800,7 +800,7 @@ abs_root_unlink tok >/dev/null && ! grep -q '^PATCH' "$T/calls" || fail_ "an unl
 grep -q 'MEDIASTACK_RESERVED_USERNAMES: ${AUTHENTIK_RESERVED_USERNAMES:-} ' services/authentik/compose.yml \
     && grep -q 'env_set AUTHENTIK_RESERVED_USERNAMES "$(logins_reserved)"' <<<"$(awk '/^authentik_prepare\(\)/,/^}/' services/authentik/authentik.sh)" \
     || fail_ "the worker gets the stack's own logins marked reserve (lib/logins.sh), written by up"; pass
-sed -n '/name: mediastack-join-credentials/,/fields:/p' services/authentik/blueprints/mediastack-portal.yaml | grep -q '!KeyOf policy-join-username' \
+grep -q '!KeyOf policy-join-username' <<<"$(sed -n '/name: mediastack-join-credentials/,/fields:/p' services/authentik/blueprints/mediastack-portal.yaml)" \
     || fail_ "the sign-up page validates the username with the policy"; pass
 # the policy's own expression, run with authentik's context stubbed: reserved names
 # (any case, padded), and another person's name in another case
@@ -1185,22 +1185,22 @@ rm -f "$T/calls"; out=$(kav_email_move gone@b.c x@b.c 2>&1)
 
 # ---- password reset by email: the flow, its email, and a link only while email works ----
 bp=services/authentik/blueprints/mediastack-portal.yaml
-grep -q "^      slug: $AUTHENTIK_RECOVERY_FLOW\$" "$bp" && sed -n '/slug: mediastack-recovery$/,/^  - /p' "$bp" | grep -q 'designation: recovery' \
+grep -q "^      slug: $AUTHENTIK_RECOVERY_FLOW\$" "$bp" && grep -q 'designation: recovery' <<<"$(sed -n '/slug: mediastack-recovery$/,/^  - /p' "$bp")" \
     || fail_ "the blueprint's recovery flow is AUTHENTIK_RECOVERY_FLOW, designated recovery"; pass
 sed -n '/name: mediastack-recovery-identification$/,/^  - /p' "$bp" > "$T/rid"
 grep -q 'pretend_user_exists: true' "$T/rid" && grep -q 'show_matched_user: false' "$T/rid" \
     || fail_ "an unknown name gets the same answer: no account revealed"; pass
-sed -n '/name: mediastack-recovery-write$/,/^  - /p' "$bp" | grep -q 'user_creation_mode: never_create' || fail_ "a reset never creates an account"; pass
-sed -n '/slug: mediastack-recovery$/,/^  - /p' "$bp" | grep -q 'denied_action: continue' \
+grep -q 'user_creation_mode: never_create' <<<"$(sed -n '/name: mediastack-recovery-write$/,/^  - /p' "$bp")" || fail_ "a reset never creates an account"; pass
+grep -q 'denied_action: continue' <<<"$(sed -n '/slug: mediastack-recovery$/,/^  - /p' "$bp")" \
     || fail_ "someone signed in who opens a reset link lands on the dashboard, not an error (found live)"; pass
 sed -n '/name: mediastack-recovery-email$/,/^  - /p' "$bp" > "$T/rem"
 grep -q 'activate_user_on_success: false' "$T/rem" || fail_ "a deactivated account stays deactivated"; pass
 tpl=$(sed -n 's/^ *template: //p' "$T/rem")
 [[ -f "services/authentik/templates/$tpl" && -f "services/authentik/templates/${tpl%.html}.txt" ]] \
     || fail_ "the email stage's template ($tpl) and its text part ship in services/authentik/templates/"; pass
-sed -n '/id: binding-recovery-login$/,/^  - /p' "$bp" | grep -q 'evaluate_on_plan: false' \
-    && grep -B1 -A2 'target: !KeyOf binding-recovery-login' "$bp" | grep -q 'policy: !KeyOf policy-recovery-clear-throttle' \
-    && sed -n '/name: mediastack-recovery-clear-throttle$/,/^  - /p' "$bp" | grep -q 'Reputation.objects.filter(identifier=user.username).delete()' \
+grep -q 'evaluate_on_plan: false' <<<"$(sed -n '/id: binding-recovery-login$/,/^  - /p' "$bp")" \
+    && grep -q 'policy: !KeyOf policy-recovery-clear-throttle' <<<"$(grep -B1 -A2 'target: !KeyOf binding-recovery-login' "$bp")" \
+    && grep -q 'Reputation.objects.filter(identifier=user.username).delete()' <<<"$(sed -n '/name: mediastack-recovery-clear-throttle$/,/^  - /p' "$bp")" \
     || fail_ "the login throttle is cleared at the sign-in, after the new password (as reset-password does)"; pass
 # the email: no inline logo (Gmail: a broken image and a file), the name as data
 ! grep -rq 'cid:' services/authentik/templates/ || fail_ "a template must not use an inline (cid:) image"; pass

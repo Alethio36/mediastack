@@ -32,7 +32,8 @@ Rules these taught, Nov 2026:
 - **The pipe rule holds in tests too**: never `producer | grep -q` — `grep -q`
   exits early, the producer can die of SIGPIPE, and under `pipefail` the
   check fails by timing (a function body over 4 KB did, in a fresh clone).
-  Write `grep -q PATTERN <<<"$(producer)"`.
+  Write `grep -q PATTERN <<<"$(producer)"`. `test-pipes` holds `scripts/` to
+  it as well as the stack.
 - **A check of a fail-safe path runs the code the way it runs live**: a
   function that reports a failure is tested under `set -Ee` with an ERR trap,
   since that is where an empty `grep` once ended a whole `wire`.

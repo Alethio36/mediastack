@@ -81,8 +81,8 @@ printf '%s\tradarr\tdelete\t%s\t\n' "$(date +%s)" "$(realpath "$M")/movies/Movie
     > "$T/bk/audit/$(date +%F).tsv"
 rm -r "$M/movies/Movie 19 (2000)" "$M/movies/Movie 18 (2000)"; : > "$T/bodies"
 snap
-grep -A2 -- '-1  movies/Movie 19 (2000)' <<<"$OUT" | grep -q 'removed by: radarr ×1' || fail_ "report must name who removed Movie 19: $OUT"; pass
-grep -A2 -- '-1  movies/Movie 18 (2000)' <<<"$OUT" | grep -q 'no deletion recorded here' || fail_ "report must say nothing was recorded for Movie 18: $OUT"; pass
+grep -q 'removed by: radarr ×1' <<<"$(grep -A2 -- '-1  movies/Movie 19 (2000)' <<<"$OUT")" || fail_ "report must name who removed Movie 19: $OUT"; pass
+grep -q 'no deletion recorded here' <<<"$(grep -A2 -- '-1  movies/Movie 18 (2000)' <<<"$OUT")" || fail_ "report must say nothing was recorded for Movie 18: $OUT"; pass
 grep -q '• movies/Movie 19 (2000) — removed by: radarr ×1' "$T/bodies" || fail_ "alert must name who: $(cat "$T/bodies")"; pass
 rm -r "$T/bk/audit"
 

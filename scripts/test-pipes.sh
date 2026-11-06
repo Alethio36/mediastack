@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-pipes.sh — no pipeline in the stack ends in a reader that stops early:
+# test-pipes.sh — no pipeline in the stack or its tests ends in a reader that stops early:
 #   * after a `|`: head, grep -q / -m (or --quiet, --max-count), an awk that
 #     exits — the reader stops, the writer still writing dies of SIGPIPE, and
 #     under pipefail the pipeline is 141: an `if` reads "no", an assignment
@@ -14,7 +14,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-files=(mediastack.sh lib/*.sh services/*/*.sh scripts/soak.sh scripts/safety-live.sh)
+files=(mediastack.sh lib/*.sh services/*/*.sh scripts/*.sh)   # the tests too: a check that fails by timing is no check
 reader='(^|[^|])\|[[:space:]]*(head\b|grep\b[^|;&]*[[:space:]](-[a-zA-Z]*[qm][a-zA-Z]*|--quiet|--silent|--max-count)\b)'
 awkexit='(^|[^|])\|[^|]*\bawk\b[^|]*\bexit\b'
 hits=$(grep -nE "$reader|$awkexit" "${files[@]}" | grep -vE '^[^:]+:[0-9]+:[[:space:]]*#' | grep -v '# pipe-ok:' || true)

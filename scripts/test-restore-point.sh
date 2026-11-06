@@ -245,7 +245,7 @@ for c in "Tue 04:00=05:00" "*-*-* 23:30=00:30" "Tue,Fri 04:00:00=05:00" "=04:00"
 done
 [[ "$(sched_words "*-*-* 05:00")|$(sched_words "Mon..Fri 03:00")|$(sched_words "")|$(sched_words "Tue 04:00")" == "daily 05:00|weekdays 03:00|never|Tue 04:00" ]] \
     || fail_ "schedules in the wizard's words"; pass
-digest_short repo/x@sha256:baba630419915985442f315f08b0cf46d9f4c8a0cc4bd38e94a6d35751dd5ef5 | grep -qx 'sha256:baba63041991' || fail_ "a digest is shown as docker does (12 hex)"; pass
+grep -qx 'sha256:baba63041991' <<<"$(digest_short repo/x@sha256:baba630419915985442f315f08b0cf46d9f4c8a0cc4bd38e94a6d35751dd5ef5)" || fail_ "a digest is shown as docker does (12 hex)"; pass
 
 # ---- the scheduled backup: skip, lock, streams ----
 printf 'BACKUP_ROOT=%s/sk\nUPDATE_DEFER_IF_ACTIVE=false\n' "$T" > "$ENV_FILE"; mkdir -p "$T/sk"

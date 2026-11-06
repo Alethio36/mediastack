@@ -70,8 +70,8 @@ rm -f "$T/chown-fails"
 : > "$T/log"; touch "$T/running.mediastack-kavita" "$T/running.mediastack-audiobookshelf"
 ( set -e; uid_handover ) >/dev/null
 for s in audiobookshelf kavita; do
-    stop=$(grep -n "docker stop mediastack-$s" "$T/log" | head -1 | cut -d: -f1)
-    own=$(grep -n "chown -R .* $T/config/$s" "$T/log" | head -1 | cut -d: -f1)
+    stop=$(grep -n "docker stop mediastack-$s" "$T/log" | sed -n 1p | cut -d: -f1)
+    own=$(grep -n "chown -R .* $T/config/$s" "$T/log" | sed -n 1p | cut -d: -f1)
     [[ -n "$stop" && -n "$own" && "$stop" -lt "$own" ]] || fail_ "$s: stop must precede chown: $(cat "$T/log")"; pass
 done
 grep -q "chown -R .* $T/cache/audiobookshelf" "$T/log" || fail_ "audiobookshelf cache must be handed over"; pass

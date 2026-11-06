@@ -100,7 +100,7 @@ cp "$repo/scripts/fixtures/shard-service.yml" custom/compose.d/shardapp.yml
 vpn_gen; RENDERED_JSON=""
 [[ "$(svc_members shardapp)" == shardapp-db ]] || t_fail "the drop-in's member was not found: $(svc_members shardapp)"
 bad=$(shard_problems); [[ -z "$bad" ]] || t_fail "a well-formed drop-in shard reported: $bad"
-svc_managed | grep -qx shardapp-db && t_fail "a member must not be listed as a managed service"
+grep -qx shardapp-db <<<"$(svc_managed)" && t_fail "a member must not be listed as a managed service"
 rm custom/compose.d/shardapp.yml; vpn_gen
 echo "OK shard rules hold for the shipped fragments and a rendered drop-in shard"
 

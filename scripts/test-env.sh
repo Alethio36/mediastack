@@ -59,7 +59,7 @@ while IFS=$'\t' read -r k _ _ _ d _; do
     while read -r ref; do
         [[ "$ref" == "\${$k:-$d}" ]] || bad+="  $ref (schema: $d)"$'\n'
     done < <(grep -ohE "\\\$\{$k(:-[^}]*)?\}" docker-compose.yml services/*/compose.yml | sort -u)
-    ex=$(grep -E "^$k=" .env.example | head -1 | cut -d= -f2- || true)
+    ex=$(grep -E "^$k=" .env.example | sed -n 1p | cut -d= -f2- || true)
     [[ -z "$ex" || "$ex" == "$d" ]] || bad+="  .env.example $k=$ex (schema: $d)"$'\n'
 done < <(env_schema_rows)
 [[ -z "$bad" ]] || fail_ "compose or .env.example disagree with the schema's default:"$'\n'"$bad"; pass

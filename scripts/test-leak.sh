@@ -65,7 +65,7 @@ curl() { # curl -4 -sS -m 15 -w ... URL: RIPEstat's three answers, then the HTTP
         */as-overview/*)         if [[ -n "${RIPE_NONAME:-}" ]]; then printf 'busy\n500'; else printf '{"data":{"holder":"EXAMPLE-AS Example\\u0007 Net"}}\n200'; fi ;;
     esac
 }
-hostid_get asn | grep -q . && fail_ "no record yet: nothing to read"; pass
+grep -q . <<<"$(hostid_get asn)" && fail_ "no record yet: nothing to read"; pass
 [[ -z "$(hostid_age)" ]] || fail_ "no record: no age"; pass
 # judging the record never asks RIPEstat: the daily refresh does (host-identity),
 # never in the same run as the tunnel's checkers
