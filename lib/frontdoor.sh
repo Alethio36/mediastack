@@ -408,6 +408,8 @@ cmd_frontdoor_install() {
 
     # the panel's sign-in settings load only at its start (OliveTin: "requires restart")
     if (( cfg_changed )) && [[ "$(c_state "$(svc_cname olivetin)")" == running ]]; then
+        # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+        INSPECT_JSON=""
         sudo docker restart "$(svc_cname olivetin)" >/dev/null && ok "restarted the panel: its new settings load at start" \
             || warn "the panel's new settings need a restart: sudo docker restart $(svc_cname olivetin)"
     fi

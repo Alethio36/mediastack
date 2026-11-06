@@ -53,6 +53,8 @@ jobs:
         run: scripts/test-ll-client.sh
       - name: one render per command, not one per helper (scripts/test-render-cache.sh)
         run: scripts/test-render-cache.sh
+      - name: the docker inspect cache never outlives a change — raw mutations clear it, stopped_run's subshell too (scripts/test-inspect-cache.sh)
+        run: scripts/test-inspect-cache.sh
       - name: Jellyfin's plugins — why an install fails, doctor's checks; Prowlarr's FlareSolverr registration (scripts/test-jf-plugins.sh)
         run: scripts/test-jf-plugins.sh
       - name: the wizards' refused answers — a backslash path, the fstab check as text, a refused answer never the default (scripts/test-prompts.sh)

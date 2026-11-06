@@ -816,7 +816,8 @@ cmd_logs() {
 # the same JSON, one call per fact. CACHE RULE: anything that creates,
 # recreates, starts, stops or removes a container clears INSPECT_JSON (DC does
 # it for every compose verb but config; raw `sudo docker` mutations do it
-# explicitly), so a health poll after `up` never reads a stale snapshot.
+# explicitly, and a subshell's clears are repeated by its caller), so a
+# health poll after `up` never reads a stale snapshot (CI: test-inspect-cache).
 # A POLLING loop must handle one case itself: a plain read (c_inspect_all in
 # another helper) can repopulate the cache between the last mutation and the
 # poll, so a loop watching for a state change must re-inspect live each

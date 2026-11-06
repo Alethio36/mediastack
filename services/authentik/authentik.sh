@@ -156,7 +156,10 @@ authentik_templates_sync() { # authentik renders CONFIG_ROOT/authentik/templates
     # email, the worker sends it): running ones restart to read the new file
     local c
     for c in authentik authentik-worker; do
-        [[ "$(c_state "$(svc_cname "$c")")" == running ]] && sudo docker restart "$(svc_cname "$c")" >/dev/null
+        [[ "$(c_state "$(svc_cname "$c")")" == running ]] || continue
+        # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+        INSPECT_JSON=""
+        sudo docker restart "$(svc_cname "$c")" >/dev/null
     done
     info "authentik: its email templates updated"
 }
@@ -570,6 +573,8 @@ wire_authentik() {
     # the LDAP outpost caches bind results: a changed setup starts it afresh,
     # so an answer from before the change cannot outlive it (found live)
     if (( applied )) && [[ "$st" == successful && "$(c_state "$(svc_cname authentik-ldap)")" == running ]]; then
+        # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+        INSPECT_JSON=""
         sudo docker restart "$(svc_cname authentik-ldap)" >/dev/null && ok "authentik: LDAP outpost restarted on the new setup (its bind cache cleared)"
     fi
     case "$st" in

@@ -340,7 +340,7 @@ stopped_run() { # stopped_run WHAT "SVC..." CMD [ARG...] — stop SVC ("" = what
     printf '%s\n%s\n' "$what" "$svcs" > "$STOP_MARKER"; repo_owned "$STOP_MARKER"
     # gluetun stopped on purpose: everything the host tracked from its address
     # is from before — forgotten, or the leak gate at the start waits it out
-    local gip=""
+    local gip="" rc=0
     if [[ " $svcs " == *" gluetun "* ]]; then gip=$(gluetun_addr); fi
     (
         trap stopped_restart EXIT
@@ -350,7 +350,13 @@ stopped_run() { # stopped_run WHAT "SVC..." CMD [ARG...] — stop SVC ("" = what
         DC stop $svcs >/dev/null || { fail "$what: could not stop ${svcs:-the stack}"; exit 1; }
         lt_flows_forget "$gip"
         "$@"
-    )
+    ) || rc=$?
+    # the stops and starts above ran in a subshell: their cache clears never
+    # reached this one (found Nov 2026: the gate held Prowlarr stopped, the
+    # parent still read it running)
+    # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+    INSPECT_JSON=""
+    return "$rc"
 }
 
 stopped_start() { # start what STOP_MARKER names; the marker goes only once they are up (or the leak gate holds them)
