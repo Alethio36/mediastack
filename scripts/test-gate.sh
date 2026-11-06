@@ -318,6 +318,10 @@ VSG_RC=3; out=$( (update_apply gluetun sonarr) 2>&1 ) && fail_ "the gate held th
 VSG_RC=0
 grep -q 'leak_gate_refuse "update"' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) || fail_ "update refuses while the gate is closed, before anything is touched"; pass
 grep -q 'leak_test_run 1 0' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) || fail_ "a new gluetun image: the kill-switch proven the same night"; pass
+# the attachment verified once per update: by the gated start, or (no VPN'd target) the catch-all (found live Nov 2026: said twice)
+GREC=1; : > "$APPLY_LOG"; update_apply jellyfin sonarr > /dev/null 2>&1; (( UPDATE_GUARDED == 1 )) || fail_ "a gated start: guarded"; pass
+: > "$APPLY_LOG"; update_apply jellyfin > /dev/null 2>&1; (( UPDATE_GUARDED == 0 )) || fail_ "no VPN'd target: not guarded, the catch-all runs"; pass
+grep -q '(( UPDATE_GUARDED )) || vpn_reattach_guard' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) || fail_ "update runs the catch-all only when no gated start verified"; pass
 
 # ---- doctor during a gated stop: one finding, the rest attributed ----
 D_FAILS=0

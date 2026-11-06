@@ -823,6 +823,7 @@ apply_up() {
 }
 
 UPDATE_GCHG=0   # update_apply's verdict: 1 when gluetun was recreated (its kill-switch is proven after the health gate)
+UPDATE_GUARDED=0   # 1 when update_apply started VPN'd services through the gate, whose guard verified their attachment
 APPLY_VERB=update   # what update_apply's and apply_up's messages call the run: update, or restore
 update_apply() { # update_apply [--restore] TARGET... — apply the pulled images; the VPN group through the leak gate
     # The leak gate (services/gluetun/gate.sh): the VPN group starts last,
@@ -836,7 +837,7 @@ update_apply() { # update_apply [--restore] TARGET... — apply the pulled image
     local gchg=0 vgrp rest=() mine=() t gip vrc=0 restored=0 targets
     APPLY_VERB=update
     if [[ "${1:-}" == --restore ]]; then restored=1; APPLY_VERB=restore; shift; fi
-    targets=("$@")
+    targets=("$@"); UPDATE_GUARDED=0
     vgrp=" $(vpn_group | paste -sd' ') "
     for t in "${targets[@]}"; do
         if [[ "$t" == gluetun ]] && { (( restored )) || gluetun_recreates; }; then gchg=1; fi
@@ -857,7 +858,7 @@ update_apply() { # update_apply [--restore] TARGET... — apply the pulled image
     if (( ${#mine[@]} )); then
         vpn_start_group "${mine[@]}" || vrc=$?
         case $vrc in
-            0) ;;
+            0) UPDATE_GUARDED=1 ;;
             3) if (( restored )); then die "restore: the leak gate stopped the VPN group (FAIL above; ops was told) — the VPN'd services stay off. Fix what the FAIL names, then: ./mediastack.sh up"; fi
                die "update: the leak gate stopped the VPN group (FAIL above; ops was told) — the VPN'd services stay off. Roll back what changed (./mediastack.sh rollback gluetun), then: ./mediastack.sh up" ;;
             *) die "$APPLY_VERB: the VPN'd services did not start — see above" ;;
@@ -992,7 +993,8 @@ cmd_update() {
     local gchg=$UPDATE_GCHG
     sudo docker image prune -f >/dev/null
 
-    vpn_reattach_guard
+    # the catch-all for drift from any other path — once: a gated start just verified it
+    (( UPDATE_GUARDED )) || vpn_reattach_guard
 
     hr "Health gate"
     local bad=() b
