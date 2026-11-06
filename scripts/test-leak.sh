@@ -282,7 +282,8 @@ unset -f sudo curl date
 # gluetun restarted in place keeps its ID but builds a new namespace; the
 # joined ones stay in the old one (found live, Nov 2026)
 declare -A NS=([100]="net:[4026533156]" [200]="net:[4026533156]" [300]="net:[4026532621]" [400]="")
-sudo() { [[ "$1" == readlink ]] || return 1; local p=${2#/proc/}; p=${p%%/*}; [[ -n "${NS[$p]:-}" ]] && echo "${NS[$p]}"; }
+ns_sudo() { sudo() { [[ "$1" == readlink ]] || return 1; local p=${2#/proc/}; p=${p%%/*}; [[ -n "${NS[$p]:-}" ]] && echo "${NS[$p]}"; }; }
+ns_sudo
 GID=aaaa1111
 INSPECT_JSON='[{"Name":"/g","Id":"aaaa1111","State":{"Pid":100}},
   {"Name":"/live","HostConfig":{"NetworkMode":"container:aaaa1111"},"State":{"Pid":200}},
@@ -299,7 +300,9 @@ GNS=$(c_netns g)
 sudo() { if [[ "$*" == "docker inspect -f {{.State.Running}} bbbb2222" ]]; then echo true; else return 1; fi; }
 [[ $(vpn_join elsewhere "$GID" "$GNS") == other ]] || fail_ "joined to another running container: other"; pass
 [[ $(vpn_join orphan "$GID" "$GNS") == stale ]] || fail_ "joined to a container that is gone (gluetun recreated under it): stale, no way out — not a leak path"; pass
-unset -f sudo
+# back to the namespace stub, never the real sudo: the fixtures' pids are made up,
+# and a real process with one of them (pid 400 on a CI runner) made this flaky
+ns_sudo
 [[ $(vpn_join unreadable "$GID" "$GNS") == unknown ]] || fail_ "namespace unreadable: unknown, never ok"; pass
 [[ $(vpn_join stopped "$GID" "$GNS") == unknown ]] || fail_ "no pid: unknown, never ok"; pass
 [[ $(vpn_join live "$GID" "") == unknown ]] || fail_ "gluetun's namespace unknown: unknown, never ok"; pass
