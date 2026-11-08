@@ -231,6 +231,19 @@ nosudo 1 >/dev/null || fail_ "no answers given: no check (the questionnaire says
 grep -q 'exec bash "$SCRIPT_DIR/mediastack.sh" configure "${ANSWERS_OPTS\[@\]}"' lib/lifecycle.sh \
     && grep -q '^    sudo_unattended_check' <(awk '/^cmd_install\(\)/,/^}/' lib/lifecycle.sh) || fail_ "install checks sudo first and hands its answers to configure"; pass
 
+# ---- answers.example: every line a question configure asks, every question in it ----
+cp answers.example "$T/ex.env"; chmod 600 "$T/ex.env"
+( ANSWERS_PASS=check; ANSWERS_PROBLEMS=$T/p; ANSWER=(); : > "$T/p"; answers_load "$T/ex.env"
+  [[ ! -s "$T/p" && ${#ANSWER[@]} == 0 ]] ) || fail_ "answers.example loads clean, every answer blank: $(cat "$T/p")"; pass
+missing=$(env_schema_rows | awk -F'\t' '$6 != "-" && $1 !~ /</ { print $1 }' | while read -r k; do grep -q "^$k=$" answers.example || echo "$k"; done)
+[[ -z "$missing" ]] || fail_ "answers.example lacks questions configure asks (run scripts/gen-answers.sh): $missing"; pass
+grep -q '^ENABLE_SONARR=$' answers.example && grep -q '^TRASH_PROFILE_RADARR=$' answers.example && ! grep -q '^ENABLE_OLIVETIN=' answers.example \
+    && ! grep -q '^ENABLE_WIZARR=' answers.example || fail_ "the families: a line per service it can switch on, per arr TRaSH manages"; pass
+fresh; sed 's/^SIGNIN=$/SIGNIN=none/; s/^NORDVPN_TOKEN=$/NORDVPN_TOKEN=TOKEN/; s/^ENABLE_SONARR=$/ENABLE_SONARR=y/' answers.example > "$T/a.env"; chmod 600 "$T/a.env"
+filed "$T/a.env" '' --fresh || fail_ "answers.example with three lines filled runs unattended: $(cat "$T/out")"
+snapshot "$T/template"; diff "$T/typed.env" "$T/template.env" >&2 || fail_ "and gives what typing the same three answers gives"; pass
+grep -q '^/answers\*\.env$' .gitignore || fail_ "your answers (answers*.env) are git-ignored"; pass
+
 # ---- configure's own arguments ----
 out=$( (need_cmd() { :; }; cmd_configure x) 2>&1 ) && fail_ "configure refuses what it does not take"
 [[ "$out" == *"unknown argument 'x' for 'configure' (accepts: --answers FILE, --domain D, --services a,b, --signin none|wizarr|authentik)"* ]] || fail_ "and says what it takes: $out"; pass

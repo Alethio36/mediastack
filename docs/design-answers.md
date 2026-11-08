@@ -1,9 +1,7 @@
 # Design: the answers file — configure, answered ahead
 
-*Status: agreed (Nov 2026); steps 1–4 are built (`install` and `configure`
-take the answers file and the flags; unattended installs run end to end).
-Step 5, the generated template, is next.
-Builds on
+*Status: built (Nov 2026), steps 1–5; proven by scripts/test-answers.sh,
+not yet on a live install. Builds on
 [design-install.md](design-install.md) (the questionnaire, quick and full,
 each service's question hooks). Sections marked **agreed** were settled one
 by one.*
@@ -231,7 +229,12 @@ Each step touches more than three files — known and accepted for this work.
    recorded by the questionnaire, answers configure's closing question;
    blank keeps its defaults. The file is read in two passes over the schema
    instead of three per line (test-answers: 65s to 27s).
-5. The template, its generator and CI step; README and docs.
+5. *Done:* `answers.example`, written by `scripts/gen-answers.sh` from the
+   schema (meaning, type, recommendation) and the labels (description,
+   preset, own installer, arr type) on a throwaway render; CI runs it with
+   `--check`. Sections: how configure runs, the services, sign-in, the
+   stack, then each service's. A login's password says it is typed only
+   with `STACK_LOGINS=each`. `answers*.env` is git-ignored.
 
 ## Not in v1
 

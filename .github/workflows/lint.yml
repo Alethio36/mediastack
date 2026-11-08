@@ -77,6 +77,8 @@ jobs:
         run: scripts/test-questions.sh
       - name: the answers file — every problem at once, typed and written answers agree, the check pass asks nothing (scripts/test-answers.sh)
         run: scripts/test-answers.sh
+      - name: answers.example is what the schema and the labels make it (scripts/gen-answers.sh --check)
+        run: scripts/gen-answers.sh --check
       - name: a certificate of your own — the pair's checks, Traefik's config, trust, up's copy, doctor's warning (scripts/test-certs.sh)
         run: scripts/test-certs.sh
       - name: wire goes on past a failed app; LazyLibrarian's API and Jellyfin's plugins (scripts/test-wire.sh)
