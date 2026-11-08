@@ -43,10 +43,14 @@ They are handed to the hub by wire, then kept there (change: notify)."
         done
         [[ -z "$REPLY_VAL" ]] || answers+="$st"$'\t'"$REPLY_VAL"$'\n'
     done
-    if [[ -z "$answers" ]]; then
+    notify_urls_record "$answers"
+}
+
+notify_urls_record() { # notify_urls_record "ops<TAB>urls\nusers<TAB>urls\n" — held 0600 for wire apprise; nothing: notifications stay off
+    if [[ -z "$1" ]]; then
         state_del "$NOTIFY_URLS_STATE"
         info "no URLs — notifications stay off until configure (or: ./mediastack.sh notify set) gives some"
         return 0
     fi
-    state_set "$NOTIFY_URLS_STATE" "${answers%$'\n'}"; chmod 600 "$STATE_DIR/$NOTIFY_URLS_STATE"
+    state_set "$NOTIFY_URLS_STATE" "${1%$'\n'}"; chmod 600 "$STATE_DIR/$NOTIFY_URLS_STATE"
 }

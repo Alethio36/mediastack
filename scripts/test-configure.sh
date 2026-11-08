@@ -192,6 +192,14 @@ cp "$ENV_FILE" "$T/checks.before"
 [[ -z "$(sched_problem 'Tue 04:00')" && "$(sched_problem bogus)" == "'bogus' is not a valid schedule." ]] || fail_ "a schedule is what systemd takes"; pass
 [[ "$(accounts_current gluetun,authentik,traefik)" == authentik && "$(accounts_current gluetun,wizarr)" == wizarr \
    && "$(accounts_current gluetun)" == none && -z "$(accounts_current '')" ]] || fail_ "the current account model"; pass
+# the services' own (their question hooks)
+[[ -z "$(portal_title_problem 'My Portal')" && -n "$(portal_title_problem '   ')" ]] || fail_ "the portal needs a name"; pass
+[[ -z "$(smtp_host_problem smtp.Example.com)" && -n "$(smtp_host_problem 'bad host!')" ]] || fail_ "a mail server's name (any case)"; pass
+[[ -z "$(smtp_password_problem 'ab cd ef')" && -n "$(smtp_password_problem 'pa$s')" ]] || fail_ "a mail password: spaces dropped, no \$"; pass
+[[ -z "$(jf_server_name_problem 'My Jelly')" && -n "$(jf_server_name_problem 'bad$name')" && -n "$(jf_server_name_problem ' ')" ]] \
+    || fail_ "Jellyfin's name: something, nothing .env cannot hold"; pass
+[[ -z "$(trash_profile_problem 720p)" && -z "$(trash_profile_problem skip)" && -n "$(trash_profile_problem 8k)" ]] || fail_ "a TRaSH profile"; pass
+[[ -z "$(traefik_domain_problem Media.Example.com)" && -n "$(traefik_domain_problem 'Bad Domain')" ]] || fail_ "a domain (any case)"; pass
 cmp -s "$ENV_FILE" "$T/checks.before" || fail_ "a check writes nothing"; pass
 ( curl() { cat >/dev/null; echo '{"nordlynx_private_key":"K1"}'; }; [[ "$(nord_wg_key T)" == K1 ]] ) || fail_ "Nord's key for a token"; pass
 ( curl() { cat >/dev/null; echo '{}'; }; ! out=$(nord_wg_key T) && [[ "$out" == "Token rejected by NordVPN"* ]] ) || fail_ "a rejected token: rc 1 and why"; pass

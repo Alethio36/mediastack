@@ -37,8 +37,10 @@ cf_check() { # cf_check TOKEN DOMAIN -> the zone it found (rc 0); why not: rc 3 
     return 4
 }
 
+traefik_domain_problem() { env_type_ok domain "${1,,}" || echo "'$1' is not a domain name (e.g. media.example.com)."; }   # recorded lowercase; cf_check and own_cert_problem check the rest
+
 traefik_questions() { # the questionnaire's hook; traefik-setup asks them again
-    local domain rc why
+    local domain rc why p
     domain=$(env_get STACK_DOMAIN)
     if q_quick && [[ -z "$(traefik_missing)" ]]; then
         # an answer is kept only while it still works: your certificate's files
@@ -59,8 +61,8 @@ your own network."
     while true; do
         while true; do   # lowercased before the check: ask_valid would judge it as typed
             ask TD "Base domain (e.g. media.example.com)" "$domain"
-            env_type_ok domain "${REPLY_VAL,,}" && { domain="${REPLY_VAL,,}"; break; }
-            fail "'$REPLY_VAL' is not a domain name (e.g. media.example.com)."
+            p=$(traefik_domain_problem "$REPLY_VAL"); [[ -z "$p" ]] && { domain="${REPLY_VAL,,}"; break; }
+            fail "$p"
         done
         rc=0; traefik_cert_specifics "$domain" || rc=$?
         (( rc == 4 )) || break   # 4: the domain does not fit (no zone for it, or a certificate that does not cover it) — asked again

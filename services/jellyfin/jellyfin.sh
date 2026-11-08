@@ -142,16 +142,22 @@ jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admi
 jellyfin_logins() { printf "Jellyfin's admin (the operator's, and Seerr's owner)\tJELLYFIN_ADMIN_USER\tJELLYFIN_ADMIN_PASSWORD\treserve\n"; }   # lib/logins.sh
 jellyfin_summary() { printf 'jellyfin name\t%s\n' "$(env_get JELLYFIN_SERVER_NAME)"; }   # its line of configure's summary
 
+jf_server_name_problem() { # jf_server_name_problem NAME -> why not ("" when fine)
+    case "$1" in
+        *[\$\"\'\`\\]*) echo "Leave out \$, quotes, backslashes and backticks — .env cannot hold them safely." ;;
+        *[![:space:]]*) ;;
+        *) echo "The server needs a name." ;;
+    esac
+}
+
 jellyfin_questions() { # the questionnaire's hook: the name Jellyfin's apps and casting show (wire sets it once)
     local cur; cur=$(env_get JELLYFIN_SERVER_NAME)
     if q_quick; then env_set JELLYFIN_SERVER_NAME "$cur"; q_took "Jellyfin server name" "$cur"; return 0; fi
+    local p
     while true; do
         ask JELLYFIN_SERVER_NAME "Jellyfin server name (shows in its apps and when casting)" "$cur"
-        case "$REPLY_VAL" in
-            *[\$\"\'\`\\]*) fail "Leave out \$, quotes, backslashes and backticks — .env cannot hold them safely." ;;
-            *[![:space:]]*) break ;;
-            *) fail "The server needs a name." ;;
-        esac
+        p=$(jf_server_name_problem "$REPLY_VAL"); [[ -z "$p" ]] && break
+        fail "$p"
     done
     env_set JELLYFIN_SERVER_NAME "$REPLY_VAL"
 }

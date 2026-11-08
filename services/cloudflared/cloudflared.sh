@@ -7,6 +7,9 @@
 cloudflared_questions() { # the questionnaire: the tunnel's token, asked once; none turns the tunnel off
     if ! svc_enabled cloudflared || [[ -n "$(env_get CLOUDFLARE_TUNNEL_TOKEN)" ]]; then return 0; fi
     cloudflared_token_ask && return 0
+    cloudflared_off
+}
+cloudflared_off() { # configure's record for no token: the tunnel leaves the selection
     env_set COMPOSE_PROFILES "$(env_get COMPOSE_PROFILES | tr ',' '\n' | grep -vx cloudflared | paste -sd, -)"
     info "No token — the tunnel is off. Turn it on later: ./mediastack.sh enable cloudflared (it asks for the token)"
 }

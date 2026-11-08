@@ -102,6 +102,14 @@ $(sed 's/^/  /' <<<"$p")"
     esac
 }
 
+# configure's checks and record for the email answers (lib/questionnaire.sh:
+# check, ask, record); the port and the From address are held to their types
+smtp_host_problem() { env_type_ok host "${1,,}" || echo "'$1' is not a server name or address."; }   # recorded lowercase
+smtp_password_problem() { # smtp_password_problem PASS -> why not, once its spaces are dropped ("" when fine)
+    [[ "${1//[[:space:]]/}" != *'$'* ]] || echo "it holds a \$, which compose would rewrite — use an app password or SMTP key"
+}
+email_changed() { state_set "$EMAIL_STATE" yes; }   # configure takes the reset link off until the new settings pass a test
+
 authentik_configure_email() {
     # -- email (optional): what the portal sends with
     svc_enabled authentik || return 0
@@ -122,17 +130,18 @@ authentik_configure_email() {
         case "$choice" in
             r) local k; for k in SMTP_HOST SMTP_PORT SMTP_STARTTLS SMTP_TLS SMTP_USER SMTP_PASSWORD SMTP_FROM; do env_set "$k" ""; done
                ok "Email removed — takes effect at the next: ./mediastack.sh up"
-               state_set "$EMAIL_STATE" yes; return 0 ;;   # configure takes the reset link off (it asks, not acts)
+               email_changed; return 0 ;;
             c) ;;
             *) return 0 ;;
         esac
     else
         confirm "Set up email now?" || { info "Email skipped — later: ./mediastack.sh configure (docs/email.md)"; return 0; }
     fi
+    local p
     while true; do
         ask SMTP_HOST "Mail server (e.g. smtp.gmail.com, smtp.fastmail.com, smtp-relay.brevo.com)" "$cur"
-        env_type_ok host "${REPLY_VAL,,}" && { env_set SMTP_HOST "${REPLY_VAL,,}"; break; }
-        fail "'$REPLY_VAL' is not a server name or address."
+        p=$(smtp_host_problem "$REPLY_VAL"); [[ -z "$p" ]] && { env_set SMTP_HOST "${REPLY_VAL,,}"; break; }
+        fail "$p"
     done
     echo "  Security: 1) STARTTLS — port 587, most services (recommended)"
     echo "            2) TLS      — port 465"
@@ -154,7 +163,7 @@ authentik_configure_email() {
             # how it is shown (Gmail: groups of four), so they go
             pw=${REPLY_VAL//[[:space:]]/}
             [[ "$pw" == "$REPLY_VAL" ]] || info "spaces dropped"
-            [[ "$pw" == *'$'* ]] && { fail "it holds a \$, which compose would rewrite — use an app password or SMTP key"; continue; }
+            p=$(smtp_password_problem "$pw"); [[ -z "$p" ]] || { fail "$p"; continue; }
             env_set SMTP_PASSWORD "$pw"; break
         done
     else env_set SMTP_PASSWORD ""; fi
@@ -168,5 +177,5 @@ authentik_configure_email() {
         fail "'$REPLY_VAL' is not an email address."
     done
     ok "Email set. authentik reads it when it starts: ./mediastack.sh up, then ./mediastack.sh email test <your address>"
-    state_set "$EMAIL_STATE" yes   # new settings: configure takes the reset link off until they pass a test
+    email_changed
 }

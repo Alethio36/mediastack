@@ -25,8 +25,10 @@ trash_preset_words() { # trash_preset_words PROFILE -> what an instance's preset
     esac
 }
 
+trash_profile_problem() { case "$1" in 1080p|720p|4k|skip) ;; *) echo "Type 1080p, 720p, 4k or skip." ;; esac; }   # an arr's profile, asked
+
 recyclarr_questions() { # the questionnaire's hook: the TRaSH profile of each instance trash-sync manages
-    local s key cur pre rec
+    local s key cur pre rec p
     for s in $(trash_instances); do
         key=$(trash_envkey "$s"); cur=$(env_get "$key")
         rec=$(env_recommended "$key") || die "$key has no recommended profile in the schema (services/recyclarr/env.tsv)"
@@ -51,7 +53,8 @@ recyclarr_questions() { # the questionnaire's hook: the TRaSH profile of each in
   skip    leave this instance unmanaged"
         while true; do
             ask TP "Profile for $s (1080p/720p/4k/skip)" "${cur:-$rec}"
-            case "$REPLY_VAL" in 1080p|720p|4k|skip) env_set "$key" "$REPLY_VAL"; break ;; *) fail "Type 1080p, 720p, 4k or skip." ;; esac
+            p=$(trash_profile_problem "$REPLY_VAL"); [[ -z "$p" ]] && { env_set "$key" "$REPLY_VAL"; break; }
+            fail "$p"
         done
     done
 }

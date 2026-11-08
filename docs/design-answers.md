@@ -1,8 +1,8 @@
 # Design: the answers file — configure, answered ahead
 
-*Status: agreed (Nov 2026); steps 1–2 of the build order are done (the
-`recommended` column, the preset label, the answers file's own rows;
-configure's own questions split into check, asking and record).
+*Status: agreed (Nov 2026); steps 1–3 of the build order are done (the
+`recommended` column, the preset label, the answers file's own rows; every
+question split into check, asking and record).
 Builds on
 [design-install.md](design-install.md) (the questionnaire, quick and full,
 each service's question hooks). Sections marked **agreed** were settled one
@@ -201,7 +201,14 @@ Each step touches more than three files — known and accepted for this work.
    `services_record` (dependencies, conflicts, `COMPOSE_PROFILES`),
    `accounts_record`, `panel_record`. No change in behaviour, one tightening:
    a time zone with `/../` in it is refused, as `.env` already refused it.
-3. The same for the services' question hooks.
+3. *Done:* the same for the services' question hooks. Checks:
+   `traefik_domain_problem` (with `cf_check` and `own_cert_problem`, already
+   apart), `portal_title_problem`, `smtp_host_problem`,
+   `smtp_password_problem` (and `smtp_problems` for the settings together),
+   `jf_server_name_problem`, `trash_profile_problem`, `notify_urls_ok`.
+   Records: `email_changed`, `notify_urls_record`, `cloudflared_off`. The
+   logins' record waits for step 4: where a typed password comes from is the
+   one thing the file changes there, so it is shaped then.
 4. `--answers`: the two passes, the flags, the secrets rule, the sudo refusal.
 5. The template, its generator and CI step; README and docs.
 
