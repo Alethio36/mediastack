@@ -48,6 +48,7 @@ services:
       traefik.http.routers.jellysearch.priority: "100"
       traefik.http.services.jellysearch.loadbalancer.server.port: "5000"
       mediastack.desc: "instant, typo-tolerant Jellyfin search"
+      mediastack.preset: "standard"
       mediastack.vpn: "false"
       mediastack.config: "false"
     # No healthcheck: minimal .NET image, no probe tooling. Doctor checks the

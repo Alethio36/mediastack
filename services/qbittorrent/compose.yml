@@ -31,6 +31,7 @@ services:
       mediastack.managed: "true"
       mediastack.torrent: "true"
       mediastack.desc: "torrent client (runs inside the VPN)"
+      mediastack.preset: "standard"
       mediastack.vpn: "true"
       mediastack.vpntoggle: "true"
       mediastack.config: "true"

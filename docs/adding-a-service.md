@@ -70,6 +70,7 @@ backups and the update pipeline like any shipped service.
 | `mediastack.subdomain: "x"` | default hostname for the status URL column (`<X>_HOST` in `.env` overrides) |
 | `mediastack.port: "1234"` | the port the app listens on INSIDE its container — `vpn_gen`'s published port, the Traefik backend port, and what other containers dial. The host-side port is derived from the rendered `ports:` (`svc_port`), so a `${MYAPP_PORT:-1234}:1234` mapping keeps the status table, `wire`'s API calls and the readiness gates on the overridden port |
 | `mediastack.desc: "…"` | one-line description shown in the `configure` service picker |
+| `mediastack.preset: "standard"` | in configure's **standard** preset (and so on in custom's picker and, blank, in the answers file); `.env.example`'s `COMPOSE_PROFILES` must list exactly these (`scripts/test-env.sh`) |
 | `mediastack.conflicts: "other"` | does the same job as `other` and never runs beside it (either side may declare it): `configure` asks which to keep, `enable` refuses the second |
 | `mediastack.installer: "verb"` | set up by its own command, not `enable`/`configure`: `everything` and `custom` leave it out with a pointer to the verb, `enable` refuses — the verb enables it once its setup is in place |
 | `mediastack.errors: '<regex>'` | what counts as an error line for `doctor`'s log-noise check (extended regex, case-insensitive) — on a service or a shard member (doctor counts every container of a shard). Default: any line containing the word `error` or `fatal`. Set it for an app whose logs carry a level, so a logger name or field key holding the word is not counted — authentik's is `"level": ?"(error\|critical\|fatal\|panic)"` |
@@ -267,6 +268,15 @@ lives in the fragment — a `_HOST` fallback must equal the service's
 it ships with its own line in `.env.example` (the next free number) and the
 fragment reads a bare `${X_UID}` — `scripts/test-env.sh` fails a UID missing
 from `.env.example` or carrying a compose fallback.
+
+**A question's recommended answer is the `recommended` column** — what
+`configure`'s quick mode takes, full mode offers, and a blank in the answers
+file takes ([design-answers.md](design-answers.md)). `-` for anything not
+asked; `ask` when there is no good guess; `default` when it is the default
+column's value; `skip` for an optional one best left unset; `=text` when
+your code works it out (the text says how); otherwise the value itself,
+checked against the key's type. An answer that is not a `.env` value at
+all (a token turned into a key, say) gets a row with writer `answers`.
 
 ### Wiring it to other apps (`wire`)
 

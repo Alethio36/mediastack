@@ -41,6 +41,7 @@ services:
       traefik.http.routers.seerr.tls: "true"
       traefik.http.services.seerr.loadbalancer.server.port: "5055"
       mediastack.desc: "request/discovery site for your users"
+      mediastack.preset: "standard"
       mediastack.vpn: "false"
       mediastack.config: "true"
       mediastack.user_facing: "true"

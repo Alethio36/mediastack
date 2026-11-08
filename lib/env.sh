@@ -19,7 +19,7 @@ env_schema_all() { # the whole schema: the shared rows, then every service's (se
     for f in "$ENV_SCHEMA_FILE" "$SCRIPT_DIR"/services/*/env.tsv; do [[ -e "$f" ]] && cat "$f"; done
     return 0
 }
-env_schema_rows() { env_schema_all | grep -vE '^(#|[[:space:]]*$)'; }   # key type empty writer default meaning
+env_schema_rows() { env_schema_all | grep -vE '^(#|[[:space:]]*$)'; }   # key type empty writer default recommended meaning
 
 env_defaults_load() { # the schema's defaults into ENV_DEFAULT — once, in the top-level shell, so every $( ) inherits them
     local k d
@@ -33,7 +33,9 @@ env_defaults_load() { # the schema's defaults into ENV_DEFAULT — once, in the 
 # key <TAB> type <TAB> empty <TAB> value for every key the schema knows —
 # its own row, else the family with the longest matching part. A family key
 # counts only for a service that exists (stems: " RADARR RADARR_4K MYAPP "),
-# so MYAPP_DB_NAME is never taken for a container name.
+# so MYAPP_DB_NAME is never taken for a container name. want picks the rows:
+# env (.env's settings), answers (the answers file's own keys) or all; col
+# is the column printed in type's place (2; 6 for the recommended answer).
 ENV_LOOKUP_AWK='
     function lookup(k,   i, f, p, s, ok, best, bl) {
         if (k in exact) return exact[k]
@@ -43,14 +45,15 @@ ENV_LOOKUP_AWK='
             if (p ~ /^<svc>_/)       { s = substr(p, 6); ok = (length(k) > length(s) && substr(k, length(k) - length(s) + 1) == s && index(stems, " " substr(k, 1, length(k) - length(s)) " ")) }
             else if (p ~ /^<root>_/) { s = substr(p, 7); ok = (length(k) > length(s) && substr(k, length(k) - length(s) + 1) == s && substr(k, 1, length(k) - length(s)) ~ ("^" roots "$")) }
             else                     { s = substr(p, 1, length(p) - 5); ok = (index(k, s) == 1 && index(stems, " " substr(k, length(s) + 1) " ")) }
-            if (ok && length(s) > bl) { bl = length(s); best = f[2] "\t" f[3] }
+            if (ok && length(s) > bl) { bl = length(s); best = f[col] "\t" f[3] }
         }
         return best
     }
     FNR == NR {
         if ($0 ~ /^#/ || $0 ~ /^[[:space:]]*$/) next
-        if ($1 ~ /^<svc>_/ || $1 ~ /^<root>_/ || $1 ~ /<arr>$/) fam[++n] = $0
-        else exact[$1] = $2 "\t" $3
+        if (want != "all" && (($4 == "answers") != (want == "answers"))) next
+        if ($1 ~ /^<svc>_/ || $1 ~ /^<root>_/ || $1 ~ /<(arr|svc)>$/) fam[++n] = $0
+        else exact[$1] = $(col) "\t" $3
         next
     }
     match($0, /^[A-Z][A-Z0-9_]*=/) {
@@ -65,8 +68,19 @@ env_stems() { # every service's variable stem, from the compose files themselves
     done | sort -u | while read -r f; do printf '%s ' "$(uvar "$f")"; done   # uvar prints no newline
 }
 
-env_schema_known() { # env_schema_known FILE -> key <TAB> type <TAB> empty <TAB> value, for every schema-known key in FILE
-    awk -F'\t' -v roots="$ENV_ROOTS_RE" -v stems=" $(env_stems)" "$ENV_LOOKUP_AWK" <(env_schema_all) "$1"
+env_schema_known() { # env_schema_known FILE [env|answers|all] [COL] -> key <TAB> type <TAB> empty <TAB> value, for every schema-known key in FILE
+    awk -F'\t' -v roots="$ENV_ROOTS_RE" -v stems=" $(env_stems)" -v want="${2:-env}" -v col="${3:-2}" \
+        "$ENV_LOOKUP_AWK" <(env_schema_all) "$1"
+}
+
+env_recommended() { # env_recommended KEY -> the answer configure recommends for KEY; rc 1 when its row names no value (ask, skip, worked out, not a question)
+    local r
+    r=$(env_schema_known <(echo "$1=") all 6 | cut -f2)
+    case "$r" in
+        ""|-|ask|skip|=*) return 1 ;;
+        default) echo "${ENV_DEFAULT[$1]:-}" ;;   # a family has no default here: empty
+        *) echo "$r" ;;
+    esac
 }
 
 env_schema_lookup() { # env_schema_lookup KEY -> "type<TAB>empty" of its row (its own, else its family's); rc 1 when none
@@ -164,17 +178,19 @@ env_custom_refs() { # every ${VAR} your custom/ files use
     return 0
 }
 
-env_unknown() { # -> "key<TAB>unknown" or "key<TAB>retired<TAB>N" for every key nothing reads (and not marked)
-    local refs known prev="" line k row
+env_unknown() { # -> "key<TAB>unknown", "key<TAB>answers" or "key<TAB>retired<TAB>N" for every key nothing reads (and not marked)
+    local refs known answers prev="" line k row
     refs=" $(env_custom_refs | tr '\n' ' ') "
     known=$(env_schema_known "$ENV_FILE" | cut -f1,2)
+    answers=" $(env_schema_known "$ENV_FILE" answers | cut -f1 | tr '\n' ' ') "
     while IFS= read -r line; do
         if [[ "$line" == "$ENV_IGNORE_MARK" ]]; then prev=ignore; continue; fi
         if [[ "$line" =~ ^([A-Z][A-Z0-9_]*)= ]]; then
             k=${BASH_REMATCH[1]}
             if [[ "$prev" != ignore && "$k" != COMPOSE_* && "$k" != DOCKER_* && "$refs" != *" $k "* ]]; then
                 row=$(awk -F'\t' -v k="$k" '$1 == k { print $2; exit }' <<<"$known")
-                if [[ -z "$row" ]]; then printf '%s\tunknown\n' "$k"
+                if [[ -z "$row" && "$answers" == *" $k "* ]]; then printf '%s\tanswers\n' "$k"
+                elif [[ -z "$row" ]]; then printf '%s\tunknown\n' "$k"
                 elif [[ "$row" == retired:* ]]; then printf '%s\tretired\t%s\n' "$k" "${row#retired:}"
                 fi
             fi
@@ -192,6 +208,8 @@ _doctor_env() {
         n=$((n + 1))
         if [[ "$kind" == retired ]]; then
             warn "$k is no longer used (since schema $since) — safe to delete from .env"
+        elif [[ "$kind" == answers ]]; then
+            warn "$k is a key of the answers file, not a setting — in .env it does nothing; delete it (docs/design-answers.md)"
         else
             warn "$k is not a mediastack setting and nothing in custom/ uses it — a typo, a leftover, or yours? Fix it, delete it, or mark it: a line '$ENV_IGNORE_MARK' directly above it"
         fi

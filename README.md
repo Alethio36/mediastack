@@ -443,7 +443,7 @@ A deployment is `.env` + `custom/` + the roots: that is what to keep, copy
 or back up.
 
 **`.env` is checked.** Every setting is described in `lib/env.schema.tsv`
-(the shared ones) and `services/<name>/env.tsv` (each service's own) — its type, whether it may be empty, who writes it, its default, what it means — including
+(the shared ones) and `services/<name>/env.tsv` (each service's own) — its type, whether it may be empty, who writes it, its default, configure's recommended answer, what it means — including
 the advanced ones read with a default, like `<SERVICE>_PORT` or
 `WIZARR_HOST`). **Empty means the default.** `KEY=` with nothing after it and
 no line at all read the same, for the script and compose alike: the

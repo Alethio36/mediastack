@@ -65,6 +65,7 @@ services:
       traefik.enable: "true"
       # VPN'd service routers are generated into local/vpn-overlay.yml (vpn_gen)
       mediastack.desc: "VPN gateway — all download traffic exits through this tunnel"
+      mediastack.preset: "standard"
       mediastack.vpn: "false"      # gluetun IS the vpn, not behind it
       mediastack.config: "true"
     # Same probe the image ships, but with a start grace: a cold tunnel can

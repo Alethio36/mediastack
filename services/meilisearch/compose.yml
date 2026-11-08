@@ -32,6 +32,7 @@ services:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"
       mediastack.desc: "search engine backing JellySearch"
+      mediastack.preset: "standard"
       mediastack.vpn: "false"
       mediastack.config: "false"
       mediastack.cache: "true"

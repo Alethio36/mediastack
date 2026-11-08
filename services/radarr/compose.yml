@@ -27,6 +27,7 @@ services:
       mediastack.managed: "true"
       mediastack.logins: "arr"   # the one login the arrs share (arr_logins, services/_arr/arr.sh)
       mediastack.desc: "movie automation"
+      mediastack.preset: "standard"
       mediastack.vpn: "true"
       mediastack.vpntoggle: "true"
       mediastack.config: "true"

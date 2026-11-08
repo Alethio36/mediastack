@@ -69,7 +69,7 @@ _configure_mode() {
              recommended answer, and the summary at the end shows them all
   2) full    every question, each with its recommended answer as the default"
     while true; do
-        ask Q_MODE "Choice" 1
+        ask Q_MODE "Choice" "$( [[ "$(env_recommended CONFIGURE_MODE)" == full ]] && echo 2 || echo 1 )"
         case "$REPLY_VAL" in 1) Q_MODE=quick; break ;; 2) Q_MODE=full; break ;; *) fail "Pick 1 or 2." ;; esac
     done
 }
@@ -112,8 +112,8 @@ root_entries() { # root_entries DIR -> how many entries it holds; ? when it cann
 
 configure_root() { # configure_root VAR title "explanation..." allow_network(yes/no) -> Q_ROOT[VAR], Q_ROOT_MOVE[VAR]
     local var="$1" title="$2" text="$3" allow_net="$4" cur val p rc fs e
-    cur=$(env_get "$var")   # not set yet: the folder .env.example suggests
-    [[ -n "$cur" ]] || cur=$(grep -E "^$var=" .env.example | sed -n 1p | cut -d= -f2-)
+    cur=$(env_get "$var")   # not set yet: the recommended folder (the schema's)
+    [[ -n "$cur" ]] || cur=$(env_recommended "$var") || die "$var has no recommended folder in the schema (lib/env.schema.tsv)"
     cur=$(abspath "$cur")
     if q_quick && [[ -z "$(root_problem "$cur" "$allow_net")" ]]; then
         Q_ROOT[$var]=$cur; Q_ROOT_MOVE[$var]=""; q_took "$title" "$cur"; return 0
@@ -274,9 +274,9 @@ _configure_pick_download_clients() { # "everything": keep one download client, o
 _configure_services() {
     # -- services (à la carte)
     render
-    # a curated preset, kept beside its description below — not discovery
-    # (status/backup/doctor/update never need a list edited), so not a label
-    local STD="gluetun qbittorrent sonarr radarr prowlarr jellyfin meilisearch jellysearch seerr"
+    # the standard preset: each service in it says so (mediastack.preset), so a
+    # new one joins by its own folder — the description below names them in words
+    local STD; STD=$(svc_managed_where mediastack.preset standard | tr '\n' ' ')
     # a re-run keeps what is enabled unless asked otherwise: option 0 exists
     # (and is the default) only when something is enabled already
     local cur_list cur_n=0 def=1
@@ -639,7 +639,11 @@ stack's. A login made already keeps its name and password (change one:
 
 _configure_panel_offer() { # with Traefik on and no panel yet: offer it; configure installs it after provisioning
     if ! svc_enabled traefik || svc_enabled olivetin; then return 0; fi
-    if q_quick; then state_set "$PANEL_STATE" yes; q_took "Web panel" "installed"; return 0; fi
+    if q_quick; then
+        if [[ "$(env_recommended PANEL)" == yes ]]; then state_set "$PANEL_STATE" yes; q_took "Web panel" "installed"
+        else state_del "$PANEL_STATE"; q_took "Web panel" "not installed"; fi
+        return 0
+    fi
     explain "Web panel (optional)" \
 "Buttons for the stack's everyday commands — status, restarts, updates,
 backups — in your browser at https://$(svc_subdomain olivetin).<domain>, behind the
@@ -650,14 +654,13 @@ script: its own SSH key and a sudo rule for nothing else."
 }
 
 # -------------------------------------------------------------- schedules --
-SCHED_UPDATE_RECOMMENDED="Tue 04:00"   # weekly, choice 2 at its suggested day and time
-
 _configure_schedule() { # updates and backups: two timers, one section — suggested answers, your call
     if q_quick; then
         # a first run takes the recommended pair; a re-run keeps what was chosen (never included)
         if (( ${CONFIGURE_FRESH:-0} )); then
-            env_set UPDATE_SCHEDULE "$SCHED_UPDATE_RECOMMENDED"
-            env_set BACKUP_SCHEDULE "*-*-* $(sched_time_after "$SCHED_UPDATE_RECOMMENDED")"
+            local rec; rec=$(env_recommended UPDATE_SCHEDULE) || die "UPDATE_SCHEDULE has no recommended value in the schema (lib/env.schema.tsv)"
+            env_set UPDATE_SCHEDULE "$rec"
+            env_set BACKUP_SCHEDULE "*-*-* $(sched_time_after "$rec")"
         fi
         q_took "Updates" "$(sched_words "$(env_get UPDATE_SCHEDULE)")"
         q_took "Backups" "$(sched_words "$(env_get BACKUP_SCHEDULE)")"

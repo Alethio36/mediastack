@@ -61,18 +61,18 @@ curl() {
 }
 # shellcheck disable=SC2034  # read by the sourced entrypoint's svc_* helpers
 RENDERED_JSON='{"services":{
-  "gluetun":     {"labels":{"mediastack.managed":"true","mediastack.desc":"VPN"}},
-  "qbittorrent": {"labels":{"mediastack.managed":"true","mediastack.desc":"torrents"},"depends_on":{"gluetun":{}}},
+  "gluetun":     {"labels":{"mediastack.managed":"true","mediastack.preset":"standard","mediastack.desc":"VPN"}},
+  "qbittorrent": {"labels":{"mediastack.managed":"true","mediastack.preset":"standard","mediastack.desc":"torrents"},"depends_on":{"gluetun":{}}},
   "deluge":      {"labels":{"mediastack.managed":"true","mediastack.desc":"torrents"},"depends_on":{"gluetun":{}}},
   "olivetin":    {"labels":{"mediastack.managed":"true","mediastack.desc":"web panel","mediastack.installer":"frontdoor-install"}},
-  "sonarr":      {"labels":{"mediastack.managed":"true","mediastack.desc":"series","mediastack.logins":"arr"}},
-  "radarr":      {"labels":{"mediastack.managed":"true","mediastack.desc":"films","mediastack.logins":"arr"}},
-  "prowlarr":    {"labels":{"mediastack.managed":"true","mediastack.desc":"indexers","mediastack.logins":"arr"}},
+  "sonarr":      {"labels":{"mediastack.managed":"true","mediastack.preset":"standard","mediastack.desc":"series","mediastack.logins":"arr"}},
+  "radarr":      {"labels":{"mediastack.managed":"true","mediastack.preset":"standard","mediastack.desc":"films","mediastack.logins":"arr"}},
+  "prowlarr":    {"labels":{"mediastack.managed":"true","mediastack.preset":"standard","mediastack.desc":"indexers","mediastack.logins":"arr"}},
   "kavita":      {"labels":{"mediastack.managed":"true","mediastack.desc":"books"}},
-  "jellyfin":    {"labels":{"mediastack.managed":"true","mediastack.desc":"media"}},
-  "meilisearch": {"labels":{"mediastack.managed":"true","mediastack.desc":"index"}},
-  "jellysearch": {"labels":{"mediastack.managed":"true","mediastack.desc":"search"},"depends_on":{"meilisearch":{}}},
-  "seerr":       {"labels":{"mediastack.managed":"true","mediastack.desc":"requests"}},
+  "jellyfin":    {"labels":{"mediastack.managed":"true","mediastack.preset":"standard","mediastack.desc":"media"}},
+  "meilisearch": {"labels":{"mediastack.managed":"true","mediastack.preset":"standard","mediastack.desc":"index"}},
+  "jellysearch": {"labels":{"mediastack.managed":"true","mediastack.preset":"standard","mediastack.desc":"search"},"depends_on":{"meilisearch":{}}},
+  "seerr":       {"labels":{"mediastack.managed":"true","mediastack.preset":"standard","mediastack.desc":"requests"}},
   "traefik":     {"labels":{"mediastack.managed":"true","mediastack.desc":"https","mediastack.conflicts":"npm"}},
   "npm":         {"labels":{"mediastack.managed":"true","mediastack.desc":"gui proxy","mediastack.conflicts":"traefik"}},
   "authentik":   {"labels":{"mediastack.managed":"true","mediastack.desc":"portal","mediastack.conflicts":"wizarr"}},
@@ -255,7 +255,7 @@ grep -q '^ *logins_fill' <<<"$(awk '/^provision\(\)/,/^}/' mediastack.sh)" || fa
 NOT_LOGINS="AUTHENTIK_DB_PASSWORD AUTHENTIK_ADMIN_PASSWORD AUTHENTIK_LDAP_BIND_PASSWORD SMTP_PASSWORD"   # a database's, the portal's own admin, its LDAP bind, the mail server's
 declared=$(for f in $(declare -F | awk '{print $3}' | grep '_logins$'); do "$f"; done | cut -f3)
 bad=""
-for k in $(cut -f1 services/*/env.tsv lib/env.schema.tsv | grep -E '_PASSWORD$'); do
+for k in $(awk -F'\t' '!/^#/ && $4 != "answers" { print $1 }' services/*/env.tsv lib/env.schema.tsv | grep -E '_PASSWORD$'); do   # .env's: an answers-file key is no login
     grep -qx "$k" <<<"$declared" || [[ " $NOT_LOGINS " == *" $k "* ]] || bad+="$k "
 done
 [[ -z "$bad" ]] || fail_ "a password no service declares as a login (add its <name>_logins, or say why it is not one): $bad"; pass

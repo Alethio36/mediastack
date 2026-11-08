@@ -25,12 +25,11 @@ trash_preset_words() { # trash_preset_words PROFILE -> what an instance's preset
     esac
 }
 
-TRASH_RECOMMENDED=1080p   # the profile quick takes, and full offers first
-
 recyclarr_questions() { # the questionnaire's hook: the TRaSH profile of each instance trash-sync manages
-    local s key cur pre
+    local s key cur pre rec
     for s in $(trash_instances); do
         key=$(trash_envkey "$s"); cur=$(env_get "$key")
+        rec=$(env_recommended "$key") || die "$key has no recommended profile in the schema (services/recyclarr/env.tsv)"
         # an instance with one obvious job carries it: mediastack.trashprofile
         pre=$(svc_label "$s" mediastack.trashprofile)
         if [[ -n "$pre" ]]; then
@@ -40,7 +39,7 @@ recyclarr_questions() { # the questionnaire's hook: the TRaSH profile of each in
         if q_quick; then
             # enabling something else, an arr's kept profile is not news: said only when recorded
             if [[ -n "$cur" && -n "${Q_FOR:-}" ]]; then continue; fi
-            [[ -n "$cur" ]] || env_set "$key" "$TRASH_RECOMMENDED"
+            [[ -n "$cur" ]] || env_set "$key" "$rec"
             q_took "TRaSH profile: $s" "$(env_get "$key")"
             continue
         fi
@@ -51,7 +50,7 @@ recyclarr_questions() { # the questionnaire's hook: the TRaSH profile of each in
   4k      TRaSH UHD guide profile
   skip    leave this instance unmanaged"
         while true; do
-            ask TP "Profile for $s (1080p/720p/4k/skip)" "${cur:-$TRASH_RECOMMENDED}"
+            ask TP "Profile for $s (1080p/720p/4k/skip)" "${cur:-$rec}"
             case "$REPLY_VAL" in 1080p|720p|4k|skip) env_set "$key" "$REPLY_VAL"; break ;; *) fail "Type 1080p, 720p, 4k or skip." ;; esac
         done
     done

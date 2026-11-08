@@ -1,6 +1,8 @@
 # Design: the answers file — configure, answered ahead
 
-*Status: agreed (Nov 2026), not built. Builds on
+*Status: agreed (Nov 2026); step 1 of the build order is done (the
+`recommended` column, the preset label, the answers file's own rows).
+Builds on
 [design-install.md](design-install.md) (the questionnaire, quick and full,
 each service's question hooks). Sections marked **agreed** were settled one
 by one.*
@@ -39,23 +41,38 @@ over the file. **agreed**
 
 `.env` syntax: `KEY=value`, `#` comments, nothing else. **agreed**
 
-- **Keys.** The `.env` keys a question writes, plus a few answers-only keys
-  for answers that are not `.env` values: the services (`ENABLE_<SVC>`), how
-  people sign in (`SIGNIN`), the web panel (`PANEL`), the notification URLs
-  (`NOTIFY_OPS`, `NOTIFY_USERS` — still one-shot through `local/state`),
-  inputs that become something else (`NORDVPN_TOKEN` -> the WireGuard key),
-  the mode (`CONFIGURE_MODE`) and the closing question (`START`). The exact
-  list comes from build step 1's inventory. An unknown key is an error — no
-  typo tolerance, as for `.env`.
+- **Keys.** Every schema row whose `recommended` column is not `-`: the
+  `.env` keys a question writes, and the answers file's own keys — rows with
+  writer `answers`, which are never `.env`'s (doctor names one found there):
+  the services (`ENABLE_<SVC>`), how people sign in (`SIGNIN`), the unified
+  password (`STACK_PASSWORD`), the web panel (`PANEL`), the notification URLs
+  (`NOTIFY_OPS`, `NOTIFY_USERS` — still one-shot through `local/state`), an
+  input that becomes something else (`NORDVPN_TOKEN` -> the WireGuard key),
+  the mode (`CONFIGURE_MODE`) and the closing question (`START`). One table
+  holds every key of either file. An unknown key is an error — no typo
+  tolerance, as for `.env`. **agreed**
 - **Blank means "not answered".** A missing key, `KEY=` and a blank file are
   the same thing. **agreed**
+- **Blank keeps what is set; the recommendation fills only what is not.** As
+  quick does today: on a re-run, a blank leaves the current value alone, so
+  a partial file never resets the settings it does not name. On a fresh
+  install nothing is set, so a blank takes the recommendation. **agreed**
 
   | Answer                               | quick                   | full                         | no terminal          |
   |--------------------------------------|-------------------------|------------------------------|----------------------|
   | written                              | used                    | used                         | used                 |
-  | blank, the question has a recommendation | taken, and said so  | asked, recommendation as default | taken            |
-  | blank, no recommendation             | asked                   | asked                        | listed as missing    |
+  | blank, a value is set                | kept                    | asked, the value as default  | kept                 |
+  | blank, nothing set, a recommendation | taken, and said so      | asked, recommendation as default | taken            |
+  | blank, nothing set, `ask`            | asked                   | asked                        | listed as missing    |
 
+  Optional questions (`skip`) keep today's quick behaviour with a terminal:
+  the ones quick asks now (the notification URLs, the tunnel's token) are
+  still asked, Enter leaving them unset; without a terminal they stay unset.
+- **The services are answered as a whole.** If the file answers any
+  `ENABLE_` line, the blank ones take the standard preset; if it answers
+  none, the services question is asked (or, with no terminal, missing) —
+  quick asks it today, and a file saying nothing about services must not
+  install the preset silently. **agreed**
 - **Empty is never an answer.** Keys where an empty value means something
   (`BACKUP_SCHEDULE=` = never, `VPN_SERVER_COUNTRIES=` = auto) take the
   question's word in the file: `never`, `auto`. **agreed**
@@ -70,17 +87,28 @@ over the file. **agreed**
 
 ## Recommended answers: one source
 
-Today recommended answers live in code (`SCHED_UPDATE_RECOMMENDED`,
-`TRASH_RECOMMENDED`, the `STD` list, the values `q_took` reports). They move
+Recommended answers lived in code (`SCHED_UPDATE_RECOMMENDED`,
+`TRASH_RECOMMENDED`, the `STD` list, `.env.example`'s folders). They moved
 to one source that the questionnaire and the template both read. **agreed**
 
 - **A `recommended` column** in `lib/env.schema.tsv` and in each service's
-  `env.tsv` (a service owns its recommendations). Its value is one of:
-  a value; `-` for none (the question is always asked: services, sign-in,
-  the VPN details); or `=` followed by a rule's text for one that is
-  computed (the backup an hour after the update, the host's time zone) — the
-  code computes it, the text goes in the template.
-- **The standard preset becomes a label**, `mediastack.preset: standard`,
+  `env.tsv` (a service owns its recommendations), before `meaning`. Its
+  value is one of: **agreed**
+  - `-` — not a question: the answers file has no such key;
+  - `ask` — no recommendation, always asked (sign-in, the VPN details, the
+    domain, a typed password);
+  - `default` — the `default` column's value. Most recommendations are the
+    default already (`STACK_USER`, `PORTAL_TITLE`, `TLS_SOURCE`, …), and a
+    default is written once;
+  - `skip` — optional, recommended left unset (email, the tunnel, the
+    notification URLs);
+  - `=text` — worked out by the questionnaire (the host's time zone, the
+    backup an hour after the update, the first download client by
+    priority); the text says how, for the template;
+  - anything else — the value itself, checked against the key's type
+    (`UPDATE_SCHEDULE` `Tue 04:00`, `TRASH_PROFILE_<arr>` `1080p`, the
+    folders `./config` … — `.env.example` must suggest the same).
+- **The standard preset is a label**, `mediastack.preset: standard`,
   replacing the hard-coded `STD` list in `_configure_services`. This reverses
   the earlier "not a label" choice: the list meant adding a standard service
   edited the questionnaire. `ENABLE_<SVC>`'s recommendation is read from it.
@@ -159,8 +187,9 @@ hooks:
 
 Each step touches more than three files — known and accepted for this work.
 
-1. The inventory, the `recommended` column and the preset label; quick reads
-   the column. No change in behaviour: test-questions' output is unchanged.
+1. *Done:* the inventory, the `recommended` column and the preset label;
+   quick reads the column (the folders, the update schedule, the TRaSH
+   profile, the panel, the mode). No change in behaviour.
 2. `check` / `ask` / `record` for configure's own sections.
 3. The same for the services' question hooks.
 4. `--answers`: the two passes, the flags, the secrets rule, the sudo refusal.

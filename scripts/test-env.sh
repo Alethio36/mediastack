@@ -19,6 +19,11 @@
 #     call, compose's ${KEY:-x} says the schema's x (never a bare ${KEY}),
 #     .env.example shows the default or nothing, a family's _HOST fallback is
 #     its service's subdomain label, and empty or absent reads as the default
+#   * configure's recommended answers (docs/design-answers.md): every row has
+#     one of the column's words or a value its type accepts; the answers
+#     file's own rows have no default and are never .env's; .env.example
+#     suggests what the column recommends; the standard preset is the
+#     services labelled so, and .env.example enables exactly those
 #
 #   scripts/test-env.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -37,8 +42,8 @@ fail_() { echo "FAIL: $*" >&2; exit 1; }
 known_of() { printf '%s=\n' "$@" > "$T/keys"; env_schema_known "$T/keys" | cut -f1; }   # which of these keys the schema knows
 
 # ---- the schema itself ----
-while IFS=$'\t' read -r k t e w d m; do
-    [[ -n "$d" && -n "$m" && "$m" != *$'\t'* && "$e" =~ ^(ok|no)$ && "$w" =~ ^(you|wizard|script|advanced|-)$ ]] || fail_ "malformed schema row: $k"
+while IFS=$'\t' read -r k t e w d r m; do
+    [[ -n "$d" && -n "$r" && -n "$m" && "$m" != *$'\t'* && "$e" =~ ^(ok|no)$ && "$w" =~ ^(you|wizard|script|advanced|answers|-)$ ]] || fail_ "malformed schema row: $k"
     [[ "$t" == retired:* || "$(env_type_expect "$t")" != "?" ]] || fail_ "$k: unknown type $t"
     # a family's defaults differ per service; a retired key has none
     [[ "$d" == - || ( "$k" != *'<'* && "$t" != retired:* ) ]] || fail_ "$k: a family or retired key carries no default (got '$d')"
@@ -91,7 +96,7 @@ ENV_FILE=.env.example
 env_validate || fail_ ".env.example has values the schema refuses"; pass
 [[ "$(env_get ENV_SCHEMA)" == "$SCRIPT_SCHEMA" ]] || fail_ ".env.example says ENV_SCHEMA=$(env_get ENV_SCHEMA), the script is $SCRIPT_SCHEMA"; pass
 missing=""
-while IFS=$'\t' read -r k t e w d m; do
+while IFS=$'\t' read -r k t e w d r m; do
     [[ "$w" =~ ^(you|wizard)$ && "$k" != *'<'* ]] || continue
     grep -qE "^$k=" .env.example || missing+="$k "
 done < <(env_schema_rows)
@@ -109,6 +114,36 @@ done < <(grep -rhoE '\$\{[A-Z0-9_]+_(UID|UPDATE)[^}]*\}' docker-compose.yml serv
 [[ -z "$fallback" ]] || fail_ "a service UID/update switch carries a compose fallback (configure allocates it): $fallback"; pass
 unknown=$(env_unknown | cut -f1 | tr '\n' ' ')
 [[ -z "$unknown" ]] || fail_ ".env.example holds keys the schema does not: $unknown"; pass
+
+# ---- configure's recommended answers ----
+bad=""
+while IFS=$'\t' read -r k t e w d r m; do
+    case "$r" in
+        -|ask|skip|=?*) ;;
+        default) [[ "$d" != - || "$e" == ok ]] || bad+="  $k: 'default', but it has none and may not be empty"$'\n' ;;
+        *) [[ "$t" == retired:* ]] && bad+="  $k: a retired key recommends nothing"$'\n'
+           env_type_ok "$t" "$r" || bad+="  $k: recommends '$r', not a $t"$'\n' ;;
+    esac
+    if [[ "$w" == answers ]]; then
+        [[ "$d" == - && "$r" != - ]] || bad+="  $k: an answers-file key has no default and is a question (recommended: not -)"$'\n'
+        pat="^$k="; [[ "$k" != *'<svc>' ]] || pat="^${k%<svc>}"
+        ! grep -qE "$pat" .env.example || bad+="  $k: an answers-file key, yet .env.example holds it"$'\n'
+    fi
+    ex=$(grep -E "^$k=" .env.example | sed -n 1p | cut -d= -f2- || true)
+    case "$r" in -|ask|skip|default|=*) ;; *) [[ -z "$ex" || "$ex" == "$r" ]] || bad+="  $k: .env.example suggests '$ex', the schema recommends '$r'"$'\n' ;; esac
+done < <(env_schema_rows)
+[[ -z "$bad" ]] || fail_ "recommended answers:"$'\n'"$bad"; pass
+( ENV_FILE=$T/none.env; : > "$ENV_FILE"
+  [[ "$(env_recommended STACK_USER)" == admin ]] || fail_ "default: the default column's value, got '$(env_recommended STACK_USER)'"
+  [[ "$(env_recommended UPDATE_SCHEDULE)" == "Tue 04:00" ]] || fail_ "a value: itself"
+  [[ "$(env_recommended TRASH_PROFILE_RADARR)" == 1080p ]] || fail_ "a family's row answers for its members"
+  [[ "$(env_recommended PANEL)" == yes ]] || fail_ "an answers-file key has its recommendation too"
+  for k in STACK_DOMAIN SMTP_HOST TZ ARR_USER NOSUCH_KEY; do
+      if env_recommended "$k" >/dev/null; then fail_ "$k names no value (ask, skip, worked out, not a question): rc 1"; fi
+  done ); pass
+preset=$(grep -l '^ *mediastack.preset: "standard"' services/*/compose.yml | cut -d/ -f2 | sort | paste -sd, -)
+shipped=$(grep -E '^COMPOSE_PROFILES=' .env.example | cut -d= -f2 | tr ',' '\n' | sort | paste -sd, -)
+[[ -n "$preset" && "$preset" == "$shipped" ]] || fail_ "the standard preset (labels: $preset) is what .env.example enables ($shipped)"; pass
 
 # ---- types ----
 good() { env_type_ok "$1" "$2" || fail_ "$1 must accept '$2'"; pass; }
@@ -145,6 +180,11 @@ printf 'RECYLE_DAYS=3\nMYAPP_API_KEY=k\nCOMPOSE_HTTP_TIMEOUT=120\n# mediastack: 
 got=$(env_unknown | tr '\t\n' ': ')
 [[ "$got" == "RECYLE_DAYS:unknown ERSATZTV_UID:retired:3 NOSUCH_NAME:unknown LATER:unknown " ]] \
     || fail_ "unknown keys (a mark covers only the line right below it): $got"; pass
+printf 'SIGNIN=none\nENABLE_RADARR=y\nENABLE_NOSUCH=y\nPANEL=yes\n' > "$ENV_FILE"
+got=$(env_unknown | tr '\t\n' ': ')
+[[ "$got" == "SIGNIN:answers ENABLE_RADARR:answers ENABLE_NOSUCH:unknown PANEL:answers " ]] \
+    || fail_ "an answers-file key in .env is named as one (a family only for a service that exists): $got"; pass
+env_validate || fail_ "an answers-file key in .env is doctor's to report, never a value problem"; pass
 
 # ---- schema 29 ----
 LOCAL_DIR=$T/local; STATE_DIR=$T/local/state; ENV_BACKUP_DIR=$T/local/env-backups; info() { :; }
