@@ -17,7 +17,7 @@ help a b c
 install
 install x
 
-# configure  (none)
+# configure  (free: --answers FILE, its own parse refuses the rest)
 configure
 configure x
 

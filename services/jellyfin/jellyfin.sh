@@ -151,9 +151,13 @@ jf_server_name_problem() { # jf_server_name_problem NAME -> why not ("" when fin
 }
 
 jellyfin_questions() { # the questionnaire's hook: the name Jellyfin's apps and casting show (wire sets it once)
-    local cur; cur=$(env_get JELLYFIN_SERVER_NAME)
+    local cur p; cur=$(env_get JELLYFIN_SERVER_NAME)
+    if answer JELLYFIN_SERVER_NAME; then
+        p=$(jf_server_name_problem "$REPLY_VAL"); [[ -z "$p" ]] || answer_refused "JELLYFIN_SERVER_NAME: $p"
+        env_set JELLYFIN_SERVER_NAME "$REPLY_VAL"; q_answered "Jellyfin server name" "$REPLY_VAL"; return 0
+    fi
     if q_quick; then env_set JELLYFIN_SERVER_NAME "$cur"; q_took "Jellyfin server name" "$cur"; return 0; fi
-    local p
+    if answers_checking; then q_unasked "Jellyfin server name" JELLYFIN_SERVER_NAME; return 0; fi
     while true; do
         ask JELLYFIN_SERVER_NAME "Jellyfin server name (shows in its apps and when casting)" "$cur"
         p=$(jf_server_name_problem "$REPLY_VAL"); [[ -z "$p" ]] && break

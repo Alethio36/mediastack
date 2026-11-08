@@ -1,8 +1,8 @@
 # Design: the answers file — configure, answered ahead
 
-*Status: agreed (Nov 2026); steps 1–3 of the build order are done (the
-`recommended` column, the preset label, the answers file's own rows; every
-question split into check, asking and record).
+*Status: agreed (Nov 2026); steps 1–3 and the first half of 4 are built
+(`configure --answers FILE`; unattended `install`, the flags, the sudo
+refusal and `START` are 4b).
 Builds on
 [design-install.md](design-install.md) (the questionnaire, quick and full,
 each service's question hooks). Sections marked **agreed** were settled one
@@ -209,7 +209,19 @@ Each step touches more than three files — known and accepted for this work.
    Records: `email_changed`, `notify_urls_record`, `cloudflared_off`. The
    logins' record waits for step 4: where a typed password comes from is the
    one thing the file changes there, so it is shaped then.
-4. `--answers`: the two passes, the flags, the secrets rule, the sudo refusal.
+4. *4a done:* `configure --answers FILE` (lib/answers.sh). Pass 1 is the
+   questionnaire itself on a scratch copy of `.env` and `local/state`, with
+   nothing asked: each section takes its written answer, checks it and
+   reports a refusal (`answer_refused`); where it would ask it calls
+   `q_unasked` instead — asked in pass 2, or (no terminal) a missing answer.
+   No check is written twice. Any question the check pass reaches without
+   that guard stops it loud (`prompt_guard` in every prompt). A blank file
+   key is quick; no terminal means quick, and `CONFIGURE_MODE=full` without
+   one is refused. Names the questions take in any case (`SMTP_HOST`,
+   `STACK_DOMAIN`, `VPN_PROVIDER`) are lowercased as typed ones are.
+   Network checks (Cloudflare, Nord) run in both passes. Exit 4 with the
+   list; configure applies nothing.
+   *4b:* `install --answers`, the flags, the sudo refusal, `START`.
 5. The template, its generator and CI step; README and docs.
 
 ## Not in v1

@@ -28,8 +28,7 @@ rc=1
 ## configure
 CALL cmd_configure [0]
 ## configure x
-ERROR 'configure' takes no arguments (got: x)
-rc=1
+CALL cmd_configure [1] x
 ## add-mount
 CALL cmd_add_mount [0]
 ## add-mount x

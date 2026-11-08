@@ -42,6 +42,7 @@ traefik_domain_problem() { env_type_ok domain "${1,,}" || echo "'$1' is not a do
 traefik_questions() { # the questionnaire's hook; traefik-setup asks them again
     local domain rc why p
     domain=$(env_get STACK_DOMAIN)
+    if answers_any "${TRAEFIK_ANSWERS[@]}"; then traefik_from_answers; return 0; fi
     if q_quick && [[ -z "$(traefik_missing)" ]]; then
         # an answer is kept only while it still works: your certificate's files
         # can go missing (a rebuilt host, found live Nov 2026)
@@ -49,6 +50,7 @@ traefik_questions() { # the questionnaire's hook; traefik-setup asks them again
         if [[ -z "$why" ]]; then q_took "HTTPS" "keep $domain, $(traefik_cert_words)"; return 0; fi
         warn "HTTPS: your certificate cannot be kept — $why. Asked again below."
     fi
+    if answers_checking; then q_unasked "HTTPS" "STACK_DOMAIN and the certificate's keys"; return 0; fi
     traefik_cert_question
     # explained right before it is asked, after the certificate's choice
     explain "Your domain" \
@@ -68,6 +70,29 @@ your own network."
         (( rc == 4 )) || break   # 4: the domain does not fit (no zone for it, or a certificate that does not cover it) — asked again
     done
     env_set STACK_DOMAIN "$domain"
+}
+
+TRAEFIK_ANSWERS=(STACK_DOMAIN TLS_SOURCE ACME_ENV ACME_EMAIL CF_DNS_API_TOKEN TLS_CERT_FILE TLS_KEY_FILE)
+traefik_from_answers() { # the domain and its certificate from the answers file; a blank keeps what is set — then checked as configure checks them
+    local k p domain why rc
+    for k in "${TRAEFIK_ANSWERS[@]}"; do answer "$k" && env_set "$k" "$REPLY_VAL"; done
+    domain=$(env_get STACK_DOMAIN)
+    if [[ -z "$domain" ]]; then answer_refused "HTTPS has no domain — set STACK_DOMAIN"; return 0; fi
+    p=$(traefik_domain_problem "$domain"); [[ -z "$p" ]] || { answer_refused "STACK_DOMAIN: $p"; return 0; }
+    domain=${domain,,}; env_set STACK_DOMAIN "$domain"
+    k=$(traefik_missing); [[ -z "$k" ]] || { answer_refused "HTTPS needs $k"; return 0; }
+    if certs_own; then
+        why=$(own_cert_problem "$(env_get TLS_CERT_FILE)" "$(env_get TLS_KEY_FILE)" "$domain")
+        [[ -z "$why" ]] || answer_refused "TLS_CERT_FILE/TLS_KEY_FILE: $why"
+    else
+        rc=0; why=$(cf_check "$(env_get CF_DNS_API_TOKEN)" "$domain") || rc=$?
+        case "$rc" in
+            0) ;;
+            2) answer_refused "CF_DNS_API_TOKEN: could not reach Cloudflare's API to check it — check this host's connection" ;;
+            *) answer_refused "CF_DNS_API_TOKEN: $why" ;;
+        esac
+    fi
+    q_answered "HTTPS" "$domain, $(traefik_cert_words)"
 }
 
 traefik_cert_why() { # why the recorded certificate cannot serve now ("" when it can, or Let's Encrypt issues it)

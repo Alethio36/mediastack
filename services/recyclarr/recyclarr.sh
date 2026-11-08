@@ -35,8 +35,13 @@ recyclarr_questions() { # the questionnaire's hook: the TRaSH profile of each in
         # an instance with one obvious job carries it: mediastack.trashprofile
         pre=$(svc_label "$s" mediastack.trashprofile)
         if [[ -n "$pre" ]]; then
+            answers_any "$key" && answer_refused "$key: $s's profile is set by what it is for ($pre) — leave it blank"
             [[ "$cur" == "$pre" ]] || { env_set "$key" "$pre"; info "$s: $(trash_preset_words "$pre")"; }
             continue
+        fi
+        if answer "$key"; then
+            p=$(trash_profile_problem "$REPLY_VAL"); [[ -z "$p" ]] || answer_refused "$key: $p"
+            env_set "$key" "$REPLY_VAL"; q_answered "TRaSH profile: $s" "$REPLY_VAL"; continue
         fi
         if q_quick; then
             # enabling something else, an arr's kept profile is not news: said only when recorded
@@ -45,6 +50,7 @@ recyclarr_questions() { # the questionnaire's hook: the TRaSH profile of each in
             q_took "TRaSH profile: $s" "$(env_get "$key")"
             continue
         fi
+        if answers_checking; then q_unasked "TRaSH profile: $s" "$key"; continue; fi
         explain "TRaSH profile: $s" \
 "The quality profile trash-sync manages on this instance:
   1080p   TRaSH guide default (recommended)

@@ -7,13 +7,18 @@
 portal_title_problem() { [[ "$1" =~ [^[:space:]] ]] || echo "The portal needs a name."; }   # portal_title_problem NAME -> why not ("" when fine)
 
 authentik_questions() {
-    if q_quick && [[ "$(env_get PORTAL_TITLE)" =~ [^[:space:]] ]]; then
+    local p
+    if answer PORTAL_TITLE; then
+        p=$(portal_title_problem "$REPLY_VAL"); [[ -z "$p" ]] || answer_refused "PORTAL_TITLE: $p"
+        env_set PORTAL_TITLE "$REPLY_VAL"; q_answered "Portal name" "$REPLY_VAL"
+    elif q_quick && [[ "$(env_get PORTAL_TITLE)" =~ [^[:space:]] ]]; then
         env_set PORTAL_TITLE "$(env_get PORTAL_TITLE)"; q_took "Portal name" "$(env_get PORTAL_TITLE)"
+    elif answers_checking; then
+        q_unasked "Portal name" PORTAL_TITLE
     else
         explain "The portal's name" \
 "authentik is the portal your users sign up and log in at. Its name is shown
 on the login and sign-up pages (\"Join <name>\")."
-        local p
         while true; do
             ask PORTAL_TITLE "Portal name" "$(env_get PORTAL_TITLE)"
             p=$(portal_title_problem "$REPLY_VAL"); [[ -z "$p" ]] && break

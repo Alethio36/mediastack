@@ -16,9 +16,14 @@ notify_pending() { # notify_pending STREAM -> the URLs configure recorded for it
 
 apprise_questions() {
     if [[ -n "$(state_get "$NOTIFY_STORED_STATE")" ]]; then
+        answers_any NOTIFY_OPS NOTIFY_USERS && answer_refused "NOTIFY_OPS/NOTIFY_USERS: the hub holds its URLs already — change them with ./mediastack.sh notify set"
         if q_quick; then q_took "Notifications" "kept in the hub (change them: ./mediastack.sh notify)"; fi
         return 0
     fi
+    if answers_any NOTIFY_OPS NOTIFY_USERS; then notify_from_answers; return 0; fi
+    # optional: with no one to ask, the streams stay off
+    if [[ -n "$ANSWERS_FILE" ]] && ! q_terminal; then notify_urls_record ""; return 0; fi
+    answers_checking && return 0   # asked in pass 2
     explain "Notifications (Apprise)" \
 "One hub, two streams — give each one or more Apprise URLs
 (comma-separated), or leave blank to skip a stream:
@@ -44,6 +49,18 @@ They are handed to the hub by wire, then kept there (change: notify)."
         [[ -z "$REPLY_VAL" ]] || answers+="$st"$'\t'"$REPLY_VAL"$'\n'
     done
     notify_urls_record "$answers"
+}
+
+notify_from_answers() { # the streams' URLs from the answers file, checked as typed ones are
+    local st k out answers=""
+    for st in ops users; do
+        k=NOTIFY_${st^^}
+        answer "$k" || continue
+        out=$(notify_urls_ok "$st" "$REPLY_VAL" 2>&1) || answer_refused "$k: $(grep -v '^OK' <<<"$out" | sed 's/\x1b\[[0-9;]*m//g; s/^FAIL //' | paste -sd' ' -)"
+        answers+="$st"$'\t'"$REPLY_VAL"$'\n'
+    done
+    notify_urls_record "$answers"
+    q_answered "Notifications" "$(cut -f1 <<<"${answers%$'\n'}" | paste -sd' ' -)"
 }
 
 notify_urls_record() { # notify_urls_record "ops<TAB>urls\nusers<TAB>urls\n" — held 0600 for wire apprise; nothing: notifications stay off

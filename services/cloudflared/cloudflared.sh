@@ -5,7 +5,12 @@
 # relies on lib/common.sh at call time.
 
 cloudflared_questions() { # the questionnaire: the tunnel's token, asked once; none turns the tunnel off
-    if ! svc_enabled cloudflared || [[ -n "$(env_get CLOUDFLARE_TUNNEL_TOKEN)" ]]; then return 0; fi
+    if ! svc_enabled cloudflared; then return 0; fi
+    if answer CLOUDFLARE_TUNNEL_TOKEN; then env_set CLOUDFLARE_TUNNEL_TOKEN "$REPLY_VAL"; q_answered "Tunnel token" "" secret; return 0; fi
+    [[ -z "$(env_get CLOUDFLARE_TUNNEL_TOKEN)" ]] || return 0
+    # optional: with no one to ask, the tunnel stays off
+    if [[ -n "$ANSWERS_FILE" ]] && ! q_terminal; then cloudflared_off; return 0; fi
+    answers_checking && return 0   # asked in pass 2
     cloudflared_token_ask && return 0
     cloudflared_off
 }
@@ -29,6 +34,7 @@ hostname per service, same names as your HTTPS routes) or directly at a
 service, e.g. http://jellyfin:8096. Service names resolve — cloudflared
 shares the stack's network."
     local tok
+    prompt_guard "Tunnel token"
     read -r -s -p "Tunnel token (input hidden; Enter = no tunnel): " tok; echo
     [[ -n "$tok" ]] || return 1
     env_set CLOUDFLARE_TUNNEL_TOKEN "$tok"

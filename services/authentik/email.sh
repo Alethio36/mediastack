@@ -110,9 +110,27 @@ smtp_password_problem() { # smtp_password_problem PASS -> why not, once its spac
 }
 email_changed() { state_set "$EMAIL_STATE" yes; }   # configure takes the reset link off until the new settings pass a test
 
+email_from_answers() { # the email settings from the answers file; a blank keeps what is set — then checked together
+    local k p
+    for k in "${SMTP_KEYS[@]}"; do answer "$k" && env_set "$k" "$REPLY_VAL"; done
+    if answer SMTP_HOST; then
+        p=$(smtp_host_problem "$REPLY_VAL"); [[ -z "$p" ]] || answer_refused "SMTP_HOST: $p"
+        env_set SMTP_HOST "${REPLY_VAL,,}"
+    fi
+    if answer SMTP_PASSWORD; then
+        p=$(smtp_password_problem "$REPLY_VAL"); [[ -z "$p" ]] || answer_refused "SMTP_PASSWORD: $p"
+        env_set SMTP_PASSWORD "${REPLY_VAL//[[:space:]]/}"
+    fi
+    [[ -n "$(env_get SMTP_HOST)" ]] || answer_refused "email has no server — set SMTP_HOST (or leave every SMTP_ key blank)"
+    while IFS= read -r p; do [[ -z "$p" ]] || answer_refused "$p"; done <<<"$(smtp_problems)"
+    email_changed
+    q_answered "Email" "$(env_get SMTP_HOST), from $(env_get SMTP_FROM)"
+}
+
 authentik_configure_email() {
     # -- email (optional): what the portal sends with
     svc_enabled authentik || return 0
+    if answers_any "${SMTP_KEYS[@]}"; then email_from_answers; return 0; fi
     if q_quick; then   # optional, so quick leaves it as it is
         q_took "Email" "$( [[ -n "$(env_get SMTP_HOST)" ]] && echo "keep $(env_get SMTP_HOST)" || echo "not set — a full configure sets it")"
         return 0
@@ -123,6 +141,7 @@ authentik_configure_email() {
         "docs/email.md walks through each. Once a test passes, the portal's" \
         "sign-in page offers \"Forgot password?\" (a reset link by email). Skip it" \
         "and ./mediastack.sh reset-password covers someone locked out."
+    if answers_checking; then q_unasked "Email" "the SMTP_ keys"; return 0; fi
     local cur choice pw from
     cur=$(env_get SMTP_HOST)
     if [[ -n "$cur" ]]; then

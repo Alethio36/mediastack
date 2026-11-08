@@ -30,7 +30,7 @@ _configure_selfheal() {
 
 }
 
-questionnaire_ask() { # questionnaire_ask [--fresh] — the questions, in their own process; returns only when all were answered
+questionnaire_ask() { # questionnaire_ask [--fresh] [--answers FILE] — the questions, in their own process; returns only when all were answered
     local rc=0
     # Ctrl-C reaches both processes: the questionnaire dies of it (130) and
     # says so by its exit code; this handler keeps configure alive to read it
@@ -41,6 +41,7 @@ questionnaire_ask() { # questionnaire_ask [--fresh] — the questions, in their 
         0)   ;;
         130) echo; info "Cancelled — nothing was applied. The answers so far are next time's defaults (a folder change is asked again)."; exit 130 ;;
         3)   exit 3 ;;   # it said why: no terminal to ask on
+        4)   die "the answers file has the problems listed above — nothing was asked or applied. Fix them and run configure again." ;;
         *)   die "the questions stopped (exit $rc, above) — nothing was applied. Run ./mediastack.sh configure again." ;;
     esac
 }
@@ -96,9 +97,18 @@ root_move_apply() { # root_move_apply VAR old new CHOICE — the old folder's co
     ok "$var contents moved to $new ($n $( (( n == 1 )) && echo entry || echo entries), $size)"
 }
 
-cmd_configure() {
+cmd_configure() { # configure [--answers FILE] — the questions (or the answers file's), then everything they decide
     need_cmd jq; need_cmd docker
-    local fresh=()
+    local fresh=() answers=() f
+    while (( $# )); do
+        case "$1" in
+            --answers) [[ -n "${2:-}" ]] || die "--answers: name the file (docs/design-answers.md)"
+                       f=$2; [[ "$f" == /* ]] || f=$CALLER_DIR/$f
+                       [[ -f "$f" ]] || die "--answers: $2 is not a file"
+                       answers=(--answers "$f"); shift 2 ;;
+            *) die "unknown argument '$1' for 'configure' (accepts: --answers FILE)" ;;
+        esac
+    done
     if [[ ! -f "$ENV_FILE" ]]; then
         cp .env.example "$ENV_FILE"; chmod 600 "$ENV_FILE"; info "Created .env from .env.example"
         state_set configure-first yes   # until the questions are answered once, the .env holds no choices
@@ -111,7 +121,7 @@ cmd_configure() {
         info "configure makes users and folders with sudo — its password is asked once, now"
         sudo -v
     fi
-    questionnaire_ask "${fresh[@]}"
+    questionnaire_ask "${fresh[@]}" "${answers[@]}"
     state_del configure-first
 
     roots_apply

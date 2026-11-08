@@ -75,6 +75,8 @@ jobs:
         run: scripts/test-configure.sh
       - name: the questionnaire asks and records only — quick or full, its exit codes, configure applies the folders (scripts/test-questions.sh)
         run: scripts/test-questions.sh
+      - name: the answers file — every problem at once, typed and written answers agree, the check pass asks nothing (scripts/test-answers.sh)
+        run: scripts/test-answers.sh
       - name: a certificate of your own — the pair's checks, Traefik's config, trust, up's copy, doctor's warning (scripts/test-certs.sh)
         run: scripts/test-certs.sh
       - name: wire goes on past a failed app; LazyLibrarian's API and Jellyfin's plugins (scripts/test-wire.sh)

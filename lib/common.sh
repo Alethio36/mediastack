@@ -64,7 +64,12 @@ sudo_keepalive() {
     trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true' EXIT
 }
 
+# configure's check pass (lib/answers.sh) asks nothing: a question reached
+# there lacks its guard, and asking would hang an unattended run
+prompt_guard() { [[ "${ANSWERS_PASS:-}" != check ]] || die "configure's check reached the question '$1' — it has no answers-file guard (a bug)"; }
+
 confirm_yes() { # confirm_yes "question" -> 0 yes (also Enter, or input that has ended) / 1 no
+    prompt_guard "$1"
     local ans
     read -r -p "$1 [Y/n]: " ans || true
     [[ -z "$ans" || "${ans,,}" == y || "${ans,,}" == yes ]]
@@ -80,12 +85,14 @@ hidden_clean() { # hidden_clean VALUE -> HIDDEN_VAL: without terminal escape seq
 }
 
 ask_hidden() { # ask_hidden "prompt" -> REPLY_VAL, typed without echo; empty is an answer
+    prompt_guard "$1"
     local a
     read -r -s -p "$1: " a || [[ -n "$a" ]] || { echo; die "no answer to '$1': the input ended"; }
     echo; hidden_clean "$a"; REPLY_VAL=$HIDDEN_VAL
 }
 
 confirm() { # confirm "question" -> 0 yes / 1 no
+    prompt_guard "$1"
     local ans
     read -r -p "$1 [y/N]: " ans
     [[ "${ans,,}" == y || "${ans,,}" == yes ]]
@@ -181,6 +188,7 @@ ask_valid() { # ask_valid TYPE VAR "prompt" "default" "what it must be" -> REPLY
 #   yes or no           Question? [Y/n] / [y/N]:   confirm_yes / confirm — the capital is the default
 #   hidden input        Prompt (input hidden):     and "Enter = ..." for what an empty answer does
 ask() { # ask VAR "prompt" "default" -> sets REPLY_VAL
+    prompt_guard "$2"
     local def="$3" ans hint=""
     [[ -n "$def" ]] && hint=" [$def]"
     # input that has ended is no answer: a question asked again would spin forever.
@@ -192,6 +200,7 @@ ask() { # ask VAR "prompt" "default" -> sets REPLY_VAL
 ask_token() { # ask_token "prompt" "current" -> REPLY_VAL; pasted secrets:
     # hidden input, single entry (no typo-confirm — it's pasted), Enter
     # keeps the current value when one exists, empty is refused otherwise.
+    prompt_guard "$1"
     local a hint=""
     [[ -n "${2:-}" ]] && hint=" [Enter keeps the current one]"
     while true; do
@@ -209,6 +218,7 @@ ask_token() { # ask_token "prompt" "current" -> REPLY_VAL; pasted secrets:
 ask_secret() { # ask_secret "prompt" "generated-default" -> REPLY_VAL
     # Never echoes. Enter accepts the generated default (view: credentials);
     # a typed password must be entered twice to guard against blind typos.
+    prompt_guard "$1"
     local a b
     while true; do
         read -r -s -p "$1 [Enter = accept a generated one]: " a || [[ -n "$a" ]] || { echo; die "no answer to '$1': the input ended"; }; echo

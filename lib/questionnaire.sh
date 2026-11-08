@@ -32,9 +32,17 @@ EMAIL_STATE=email-changed        # state key: email settings changed — the por
 q_quick() { [[ "$Q_MODE" == quick ]]; }
 q_took() { info "$1: $2 (recommended)"; }   # q_took TITLE ANSWER — quick took the recommended answer, and says so
 
-cmd_questionnaire() { # questionnaire [--fresh | --for SVC...] — configure's questions, or (--for) those of services enable brings
-    [[ -t 0 ]] || { echo "${C_RED}ERROR${C_RST} configure asks questions — run it in a terminal" >&2; exit 3; }
-    questionnaire_run "$@"
+cmd_questionnaire() { # questionnaire [--fresh] [--answers FILE] | --for SVC... — configure's questions, or (--for) those of services enable brings
+    local file="" a=()
+    while (( $# )); do
+        case "$1" in
+            --answers) [[ -n "${2:-}" ]] || die "--answers: name the file"; file=$2; [[ "$file" == /* ]] || file=$CALLER_DIR/$file; shift 2 ;;
+            *) a+=("$1"); shift ;;
+        esac
+    done
+    if [[ -n "$file" ]]; then questionnaire_answers_run "$file" "${a[@]}" || exit $?; return 0; fi
+    [[ -t 0 ]] || { echo "${C_RED}ERROR${C_RST} configure asks questions — run it in a terminal, or give it an answers file: configure --answers FILE" >&2; exit 3; }
+    questionnaire_run "${a[@]}"
 }
 
 questionnaire_run() { # the questions, in order; each section records its own answers
@@ -69,6 +77,12 @@ questionnaire_for() { # enable's questions: what the services it brings need, qu
 }
 
 _configure_mode() {
+    if answer CONFIGURE_MODE; then
+        [[ "$REPLY_VAL" == quick ]] || q_terminal || answer_refused "CONFIGURE_MODE=full asks every question — it needs a terminal"
+        Q_MODE=$REPLY_VAL; q_answered "Mode" "$Q_MODE"; return 0
+    fi
+    # an answers file exists to skip questions: blank is quick
+    if [[ -n "$ANSWERS_FILE" ]]; then Q_MODE=quick; q_took "Mode" quick; return 0; fi
     explain "How much should configure ask?" \
 "  1) quick   only what has no sensible default — the services, how people
              sign in, your VPN details; everything else takes the
@@ -121,9 +135,18 @@ configure_root() { # configure_root VAR title "explanation..." allow_network(yes
     cur=$(env_get "$var")   # not set yet: the recommended folder (the schema's)
     [[ -n "$cur" ]] || cur=$(env_recommended "$var") || die "$var has no recommended folder in the schema (lib/env.schema.tsv)"
     cur=$(abspath "$cur")
+    if answer "$var"; then
+        val=$(abspath "${REPLY_VAL/#\~/$HOME}")
+        p=$(root_problem "$val" "$allow_net"); [[ -z "$p" ]] || answer_refused "$var: $p"
+        # a folder that moves needs its contents' fate decided: that is configure's question
+        [[ "$val" == "$cur" || "$(root_entries "$cur")" == 0 ]] \
+            || answer_refused "$var moves ($cur -> $val) and $cur is not empty — change a folder with ./mediastack.sh configure: it asks what happens to the contents"
+        Q_ROOT[$var]=$val; Q_ROOT_MOVE[$var]=""; q_answered "$title" "$val"; return 0
+    fi
     if q_quick && [[ -z "$(root_problem "$cur" "$allow_net")" ]]; then
         Q_ROOT[$var]=$cur; Q_ROOT_MOVE[$var]=""; q_took "$title" "$cur"; return 0
     fi
+    if answers_checking; then q_unasked "$title" "$var"; Q_ROOT[$var]=$cur; Q_ROOT_MOVE[$var]=""; return 0; fi
     explain "$title" "$text"
     while true; do
         ask "$var" "$title path" "$cur"; val=$(abspath "$REPLY_VAL")
@@ -290,8 +313,53 @@ _configure_services() {
     # a .env this run created holds the example's preset, not a choice: nothing to keep
     if (( ${CONFIGURE_FRESH:-0} )); then cur_list=""; fi
     [[ -n "$cur_list" ]] && { cur_n=$(tr ',' '\n' <<<"$cur_list" | grep -c .); def=0; }
+    local mode sel="" cur_en s d dp from_file=0
+    # the answers file: ENABLE_ lines pick the services (the question is answered as a whole)
+    if answers_enable_any; then services_from_answers "$cur_list"; sel=$SVC_ANSWERED; from_file=1; mode="file"
     # quick on a configured stack: what runs, and how people sign in, stay as they are
-    if q_quick && (( cur_n )); then q_took "Services" "keep the current $cur_n"; return 0; fi
+    elif q_quick && (( cur_n )); then
+        if ! answers_any SIGNIN; then q_took "Services" "keep the current $cur_n"; return 0; fi
+        sel=$(tr ',' ' ' <<<"$cur_list"); mode=0   # sign-in answered: only that changes
+    elif answers_checking; then
+        q_unasked "Services" "ENABLE_<SERVICE> lines"; sel=${cur_list//,/ }; sel=${sel:-$STD}; mode=1
+    else
+        services_ask
+    fi
+    [[ -n "$sel" ]] || die "No services selected — nothing to run."
+    # shellcheck disable=SC2086  # a word list of services
+    if answer SIGNIN; then accounts_record "$REPLY_VAL" "$cur_list" $sel; else accounts_choose "$cur_list" $sel; fi
+    sel=$ACCOUNTS_SEL
+    if [[ "$mode" == 0 ]] && (( ! ACCOUNTS_CHANGED )); then
+        ok "Keeping the current $cur_n service(s): $cur_list"; return 0   # nothing changed: .env untouched
+    fi
+    # shellcheck disable=SC2086  # a word list of services
+    SVC_FROM_ANSWERS=$from_file services_record $sel
+}
+
+answers_enable_any() { local k; for k in "${!ANSWER[@]}"; do [[ "$k" == ENABLE_* ]] && return 0; done; return 1; }
+
+services_from_answers() { # services_from_answers CURRENT-PROFILES -> SVC_ANSWERED: what the ENABLE_ lines pick; a blank one keeps what runs (a first run: the standard preset)
+    local cur=",$1," s k std pick=" " ok
+    std=" $(svc_managed_where mediastack.preset standard | tr '\n' ' ') "
+    SVC_ANSWERED=""
+    for s in $(svc_managed); do
+        [[ "$s" == wizarr || "$s" == authentik ]] && continue                                     # SIGNIN picks these
+        [[ -n "$(svc_label "$s" mediastack.installer)" && "$cur" != *",$s,"* ]] && continue     # set up by its own command
+        pick+="$s "; k=ENABLE_$(uvar "$s")
+        if answer "$k"; then [[ "$REPLY_VAL" == y ]] && SVC_ANSWERED+="$s "
+        elif [[ "$cur" != ",," ]]; then [[ "$cur" == *",$s,"* ]] && SVC_ANSWERED+="$s "
+        elif [[ "$std" == *" $s "* ]]; then SVC_ANSWERED+="$s "
+        fi
+    done
+    while read -r k; do
+        ok=0; for s in $pick; do [[ "$k" == "ENABLE_$(uvar "$s")" ]] && ok=1; done
+        (( ok )) || answer_refused "$k: no service is switched on that way (SIGNIN picks Wizarr or authentik; a service with its own setup command is set up by it)"
+    done < <(printf '%s\n' "${!ANSWER[@]}" | grep '^ENABLE_' | sort)
+    [[ -n "$SVC_ANSWERED" ]] || answer_refused "the ENABLE_ lines leave nothing to run"
+    q_answered "Services" "$SVC_ANSWERED"
+}
+
+services_ask() { # the services question -> sel and mode (the caller's)
     local -a menu=("Pick exactly what runs — anything, à la carte. Dependencies are handled
 for you (picking qBittorrent brings the VPN; JellySearch brings its
 search engine). Change any of this later with enable/disable. How people
@@ -304,7 +372,6 @@ sign in (none, Wizarr or authentik) is asked next."
 "  3) custom      yes/no through each service")
     (( cur_n )) && menu+=("  0) keep current: $cur_n enabled ($(tr ',' ' ' <<<"$cur_list"))")
     explain "Services" "${menu[@]}"
-    local mode sel="" cur_en s d dp
     while true; do
         ask SVC_MODE "Choice" "$def"; mode="$REPLY_VAL"
         case "$mode" in
@@ -332,19 +399,12 @@ sign in (none, Wizarr or authentik) is asked next."
                else
                    dp="y/N"; def=n
                fi
+               prompt_guard "$s"
                read -r -p "  $s — ${d:-no description} [$dp]: " REPLY_VAL
                REPLY_VAL="${REPLY_VAL:-$def}"
                [[ "${REPLY_VAL,,}" == y* ]] && sel+="$s "
            done ;;
     esac
-    [[ -n "$sel" ]] || die "No services selected — nothing to run."
-    # shellcheck disable=SC2086  # a word list of services
-    accounts_choose "$cur_list" $sel; sel=$ACCOUNTS_SEL
-    if [[ "$mode" == 0 ]] && (( ! ACCOUNTS_CHANGED )); then
-        ok "Keeping the current $cur_n service(s): $cur_list"; return 0   # nothing changed: .env untouched
-    fi
-    # shellcheck disable=SC2086  # a word list of services
-    services_record $sel
 }
 
 services_record() { # services_record SVC... — the selection, what it needs, one of each conflicting pair: COMPOSE_PROFILES
@@ -368,9 +428,15 @@ services_record() { # services_record SVC... — the selection, what it needs, o
             keep=traefik; info "$([[ "$a" == traefik ]] && echo "$b" || echo "$a") left out: the portal (authentik) is reached through Traefik"
         else
             local kdef=1; [[ "$b" == traefik ]] && kdef=2   # Traefik: the recommended front door
-            if q_quick; then
+            if (( ${SVC_FROM_ANSWERS:-0} )); then
+                keep=$a; [[ "$kdef" == 2 ]] && keep=$b
+                answer_refused "$a and $b cannot both run (they do the same job) — answer one of ENABLE_$(uvar "$a") and ENABLE_$(uvar "$b") with n"
+            elif q_quick; then
                 keep=$a; [[ "$kdef" == 2 ]] && keep=$b
                 q_took "Choose one: $a or $b" "$keep"
+            elif answers_checking; then
+                keep=$a; [[ "$kdef" == 2 ]] && keep=$b
+                q_unasked "Choose one: $a or $b" "ENABLE_$(uvar "$a") or ENABLE_$(uvar "$b")"
             else
                 explain "Choose one: $a or $b" \
 "These two do the same job in different ways and cannot both run:" \
@@ -404,6 +470,7 @@ accounts_current() { # accounts_current CURRENT-PROFILES -> none | wizarr | auth
 accounts_choose() { # accounts_choose CURRENT-PROFILES SVC... -> ACCOUNTS_SEL: the selection with the chosen model in it (the other out)
     local cur=$1 model c; shift
     model=$(accounts_current "$cur")
+    if answers_checking; then q_unasked "Sign-in" SIGNIN; accounts_record "${model:-none}" "$cur" "$@"; return 0; fi
     local -a menu=("How do people get into your media apps?"
 "  1) none       you make each person's accounts yourself, in each app"
 "                (Jellyfin's dashboard and so on). Simplest; nothing extra runs."
@@ -448,16 +515,24 @@ _configure_download_client() { # several download clients enabled: the one the a
     n=$(grep -c . <<<"$enabled" || true)
     cur=$(env_get DOWNLOAD_CLIENT)
     if (( n < 2 )); then
+        if answer DOWNLOAD_CLIENT && ! grep -qx "$REPLY_VAL" <<<"$enabled"; then
+            answer_refused "DOWNLOAD_CLIENT=$REPLY_VAL is not among the download clients that run (${enabled:-none})"
+        fi
         # nothing to choose; a choice naming a client no longer enabled would stop wire
         if [[ -n "$cur" ]] && ! grep -qx "$cur" <<<"$enabled"; then
             env_set DOWNLOAD_CLIENT ""; info "DOWNLOAD_CLIENT cleared: $cur is no longer enabled"
         fi
         return 0
     fi
+    if answer DOWNLOAD_CLIENT; then
+        grep -qx "$REPLY_VAL" <<<"$enabled" || answer_refused "DOWNLOAD_CLIENT=$REPLY_VAL is not among the download clients that run ($(paste -sd' ' <<<"$enabled"))"
+        env_set DOWNLOAD_CLIENT "$REPLY_VAL"; q_answered "Download client" "$REPLY_VAL"; return 0
+    fi
     if q_quick; then
         grep -qx "$cur" <<<"$enabled" || cur=$(head -1 <<<"$enabled")
         env_set DOWNLOAD_CLIENT "$cur"; q_took "Download client" "$cur"; return 0
     fi
+    if answers_checking; then q_unasked "Download client" DOWNLOAD_CLIENT; return 0; fi
     explain "Download client" \
 "More than one download client is enabled. The arrs, Prowlarr and Cleanuparr
 send to one of them; the others keep running, their entries switched off
@@ -500,6 +575,32 @@ nord_wg_key() { # nord_wg_key TOKEN -> the WireGuard private key NordVPN issues 
     echo "$key"
 }
 
+vpn_from_answers() { # vpn_from_answers CURRENT-KEY — the VPN from the answers file; a blank keeps what is set
+    local prov key p
+    prov=$(env_get VPN_PROVIDER); answer VPN_PROVIDER && prov=$REPLY_VAL
+    p=$(vpn_provider_problem "$prov"); [[ -z "$p" ]] || answer_refused "VPN_PROVIDER: $p"
+    prov=${prov,,}; env_set VPN_PROVIDER "$prov"
+    key=$1
+    if answer WIREGUARD_PRIVATE_KEY; then key=$REPLY_VAL
+    elif answer NORDVPN_TOKEN; then
+        if [[ "$prov" != nordvpn ]]; then answer_refused "NORDVPN_TOKEN is NordVPN's — VPN_PROVIDER is $prov"; return 0; fi
+        key=$(nord_wg_key "$REPLY_VAL") || { answer_refused "NORDVPN_TOKEN: $key"; return 0; }
+    fi
+    [[ -n "$key" ]] || answer_refused "the VPN has no key — set WIREGUARD_PRIVATE_KEY$( [[ "$prov" == nordvpn ]] && echo " or NORDVPN_TOKEN" )"
+    env_set WIREGUARD_PRIVATE_KEY "$key"
+    if [[ "$prov" == custom ]]; then
+        answer WIREGUARD_ADDRESSES && env_set WIREGUARD_ADDRESSES "$REPLY_VAL"
+        p=$(wg_addresses_problem "$(env_get WIREGUARD_ADDRESSES)"); [[ -z "$p" ]] || answer_refused "WIREGUARD_ADDRESSES: $p"
+    elif answers_any WIREGUARD_ADDRESSES; then
+        answer_refused "WIREGUARD_ADDRESSES is for VPN_PROVIDER=custom (the provider sets the address)"
+    fi
+    if answer VPN_SERVER_COUNTRIES; then
+        p=$(vpn_countries_problem "$REPLY_VAL"); [[ -z "$p" ]] || answer_refused "VPN_SERVER_COUNTRIES: $p"
+        env_set VPN_SERVER_COUNTRIES "$REPLY_VAL"
+    fi
+    q_answered "VPN" "$prov, key set, servers: $(env_or_note VPN_SERVER_COUNTRIES auto)"
+}
+
 ask_countries() { # ask_countries "prompt" -> REPLY_VAL: country names, comma-separated, or empty
     if q_quick; then REPLY_VAL=$(env_get VPN_SERVER_COUNTRIES); q_took "Server country" "${REPLY_VAL:-auto}"; return 0; fi
     local p
@@ -514,7 +615,11 @@ _configure_vpn() {
     # -- VPN: only when something runs in it
     svc_enabled gluetun || return 0
     local wg_cur; wg_cur=$(env_get WIREGUARD_PRIVATE_KEY)
+    if answers_any VPN_PROVIDER NORDVPN_TOKEN WIREGUARD_PRIVATE_KEY WIREGUARD_ADDRESSES VPN_SERVER_COUNTRIES; then
+        vpn_from_answers "$wg_cur"; return 0
+    fi
     if q_quick && [[ -n "$wg_cur" ]]; then q_took "VPN" "keep $(env_get VPN_PROVIDER) and its key"; return 0; fi
+    if answers_checking; then q_unasked "VPN" "VPN_PROVIDER and NORDVPN_TOKEN or WIREGUARD_PRIVATE_KEY"; return 0; fi
     explain "VPN (gluetun)" \
 "All download traffic runs inside a VPN container. Supported: any gluetun
 provider (nordvpn, mullvad, protonvpn, surfshark, ...) or 'custom' to paste
@@ -572,9 +677,11 @@ _configure_timezone() {
     local tz_host tz_cur
     tz_host=$(timedatectl show -p Timezone --value 2>/dev/null || echo Etc/UTC)
     tz_cur=$(env_get TZ); [[ "$tz_cur" == Etc/UTC ]] && tz_cur="$tz_host"   # the default is no choice: offer the host's
+    if answer TZ; then env_set TZ "$REPLY_VAL"; q_answered "Timezone" "$REPLY_VAL"; return 0; fi
     if q_quick && [[ -f "/usr/share/zoneinfo/$tz_cur" ]]; then
         env_set TZ "$tz_cur"; q_took "Timezone" "$tz_cur"; return 0
     fi
+    if answers_checking; then q_unasked "Timezone" TZ; return 0; fi
     explain "Timezone" \
         "Used for logs, in-app times and the update/backup schedules (they run" \
         "at their times in this zone, whatever the host's own). IANA format, e.g." \
@@ -626,10 +733,18 @@ svc_hooks() { # svc_hooks SUFFIX — each enabled service's <name>_SUFFIX, the p
 _configure_logins() { # the stack's own logins (lib/logins.sh): one username, the passwords generated, unified or typed for each
     local -a miss; local l user mode pw
     mapfile -t miss < <(login_missing)
+    logins_answers_fit "${miss[@]}"
     (( ${#miss[@]} )) || return 0   # every login is made: set-credentials changes one
     user=$(env_get STACK_USER); mode=$(env_get STACK_LOGINS)
-    if q_quick && [[ "$mode" != each && -z "$(login_user_problem "$user")" ]]; then
+    if answers_any STACK_USER STACK_LOGINS; then
+        answer STACK_USER && user=$REPLY_VAL
+        answer STACK_LOGINS && mode=$REPLY_VAL
+        pw=$(login_user_problem "$user"); [[ -z "$pw" ]] || answer_refused "STACK_USER: '$user' won't do: $pw"
+        q_answered "Logins" "$user, passwords $mode"
+    elif q_quick && [[ "$mode" != each && -z "$(login_user_problem "$user")" ]]; then
         q_took "Logins" "$user, passwords $mode"
+    elif answers_checking; then
+        q_unasked "Logins" "STACK_USER and STACK_LOGINS"
     else
         local -a menu=("The stack's own logins — the ones the stack makes and uses itself:")
         for l in "${miss[@]}"; do menu+=("  * $(cut -f1 <<<"$l")"); done
@@ -664,29 +779,62 @@ stack's. A login made already keeps its name and password (change one:
                 warn "the logins made already have different passwords: the new ones share this one; make them all one with: ./mediastack.sh set-credentials all"
                 pw=""
             fi
-            if [[ -z "$pw" ]]; then login_pass_ask "The one password"; pw=$REPLY_VAL; fi
+            if [[ -z "$pw" ]] && answer STACK_PASSWORD; then pw=$REPLY_VAL
+            elif [[ -z "$pw" ]] && answers_checking; then q_unasked "The one password" STACK_PASSWORD; pw=placeholder-unasked
+            elif [[ -z "$pw" ]]; then login_pass_ask "The one password"; pw=$REPLY_VAL; fi
             for l in "${miss[@]}"; do
                 local why; why=$(login_pass_problem "$pw" "$(cut -f3 <<<"$l")")
                 # never a quietly different password: "unified" would no longer be true
-                [[ -z "$why" ]] || die "the shared password does not suit $(cut -f1 <<<"$l") ($why) — make one that suits every login: ./mediastack.sh set-credentials all, then run this again"
+                if [[ -n "$why" && "$pw" != placeholder-unasked ]]; then
+                    if answers_any STACK_PASSWORD; then answer_refused "STACK_PASSWORD does not suit $(cut -f1 <<<"$l") ($why)"
+                    else die "the shared password does not suit $(cut -f1 <<<"$l") ($why) — make one that suits every login: ./mediastack.sh set-credentials all, then run this again"; fi
+                fi
                 login_record "$l" "$pw"
             done ;;
         each)
+            local pk why
             for l in "${miss[@]}"; do
-                login_pass_ask "Password for $(cut -f1 <<<"$l")" "$(cut -f3 <<<"$l")"
+                pk=$(cut -f3 <<<"$l")
+                if answer "$pk"; then
+                    why=$(login_pass_problem "$REPLY_VAL" "$pk"); [[ -z "$why" ]] || answer_refused "$pk: $why"
+                elif answers_checking; then
+                    q_unasked "Password for $(cut -f1 <<<"$l")" "$pk"; REPLY_VAL=placeholder-unasked
+                else
+                    login_pass_ask "Password for $(cut -f1 <<<"$l")" "$pk"
+                fi
                 login_record "$l" "$REPLY_VAL"
             done ;;
     esac
     ok "Logins: ${#miss[@]} recorded for '$user' (see them: ./mediastack.sh credentials)"
 }
 
+logins_answers_fit() { # logins_answers_fit MISSING-LOGIN... — a written password only for a login this run makes, in the mode that takes it
+    local mode k l made=" "
+    mode=$(env_get STACK_LOGINS); answer STACK_LOGINS && mode=$REPLY_VAL
+    for l in "$@"; do made+="$(cut -f3 <<<"$l") "; done
+    if answers_any STACK_PASSWORD; then
+        [[ "$mode" == unified ]] || answer_refused "STACK_PASSWORD is the one password of STACK_LOGINS=unified (it is $mode)"
+        (( $# )) || answer_refused "STACK_PASSWORD: every login is made already — change them with ./mediastack.sh set-credentials all"
+    fi
+    while read -r k; do
+        answers_any "$k" || continue
+        [[ "$mode" == each ]] || answer_refused "$k is typed for STACK_LOGINS=each (it is $mode)"
+        [[ "$made" == *" $k "* ]] || answer_refused "$k: that login is made already, or its service does not run — change it with ./mediastack.sh set-credentials"
+    done < <(env_schema_rows | awk -F'\t' '$4 != "answers" && $6 == "ask" && $1 ~ /_PASSWORD$/ { print $1 }')
+}
+
 _configure_panel_offer() { # with Traefik on and no panel yet: offer it; configure installs it after provisioning
-    if ! svc_enabled traefik || svc_enabled olivetin; then return 0; fi
+    if ! svc_enabled traefik || svc_enabled olivetin; then
+        answers_any PANEL && answer_refused "PANEL: the web panel is offered only with Traefik on and no panel yet"
+        return 0
+    fi
+    if answer PANEL; then panel_record "$REPLY_VAL"; q_answered "Web panel" "$REPLY_VAL"; return 0; fi
     if q_quick; then
         panel_record "$(env_recommended PANEL)"
         q_took "Web panel" "$( [[ "$(env_recommended PANEL)" == yes ]] && echo installed || echo "not installed" )"
         return 0
     fi
+    if answers_checking; then q_unasked "Web panel" PANEL; return 0; fi
     explain "Web panel (optional)" \
 "Buttons for the stack's everyday commands — status, restarts, updates,
 backups — in your browser at https://$(svc_subdomain olivetin).<domain>, behind the
@@ -702,6 +850,7 @@ panel_record() { # panel_record yes|no — configure installs the panel after pr
 
 # -------------------------------------------------------------- schedules --
 _configure_schedule() { # updates and backups: two timers, one section — suggested answers, your call
+    if answers_any UPDATE_SCHEDULE BACKUP_SCHEDULE; then schedules_from_answers; return 0; fi
     if q_quick; then
         # a first run takes the recommended pair; a re-run keeps what was chosen (never included)
         if (( ${CONFIGURE_FRESH:-0} )); then
@@ -713,6 +862,7 @@ _configure_schedule() { # updates and backups: two timers, one section — sugge
         q_took "Backups" "$(sched_words "$(env_get BACKUP_SCHEDULE)")"
         return 0
     fi
+    if answers_checking; then q_unasked "Schedules" "UPDATE_SCHEDULE and BACKUP_SCHEDULE"; return 0; fi
     explain "Schedules" \
 "Two jobs run on their own, each on its own schedule:
   Updates  pull new versions of your services. A restore point of every
@@ -734,6 +884,22 @@ on by default) — other apps aren't asked. Pick quiet times for YOUR household.
         if confirm_yes "Keep these?"; then echo; break; fi
         echo
     done
+}
+
+schedules_from_answers() { # the two schedules from the answers file; a blank keeps what is set (a first run: the recommended pair)
+    local u b p k
+    u=$(env_get UPDATE_SCHEDULE); b=$(env_get BACKUP_SCHEDULE)
+    if (( ${CONFIGURE_FRESH:-0} )); then u=$(env_recommended UPDATE_SCHEDULE); b=""; fi
+    answer UPDATE_SCHEDULE && u=$REPLY_VAL
+    if answer BACKUP_SCHEDULE; then b=$REPLY_VAL
+    elif (( ${CONFIGURE_FRESH:-0} )); then b="*-*-* $(sched_time_after "$u")"   # an hour after the update
+    fi
+    for k in UPDATE_SCHEDULE BACKUP_SCHEDULE; do
+        [[ "$k" == UPDATE_SCHEDULE ]] && p=$u || p=$b
+        [[ -z "$p" ]] || { p=$(sched_problem "$p"); [[ -z "$p" ]] || answer_refused "$k: $p"; }
+    done
+    env_set UPDATE_SCHEDULE "$u"; env_set BACKUP_SCHEDULE "$b"
+    q_answered "Updates" "$(sched_words "$u")"; q_answered "Backups" "$(sched_words "$b")"
 }
 
 sched_problem() { # sched_problem EXPR -> why EXPR is no schedule ("" when systemd takes it)
