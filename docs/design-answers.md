@@ -1,7 +1,8 @@
 # Design: the answers file — configure, answered ahead
 
-*Status: agreed (Nov 2026); step 1 of the build order is done (the
-`recommended` column, the preset label, the answers file's own rows).
+*Status: agreed (Nov 2026); steps 1–2 of the build order are done (the
+`recommended` column, the preset label, the answers file's own rows;
+configure's own questions split into check, asking and record).
 Builds on
 [design-install.md](design-install.md) (the questionnaire, quick and full,
 each service's question hooks). Sections marked **agreed** were settled one
@@ -190,7 +191,16 @@ Each step touches more than three files — known and accepted for this work.
 1. *Done:* the inventory, the `recommended` column and the preset label;
    quick reads the column (the folders, the update schedule, the TRaSH
    profile, the panel, the mode). No change in behaviour.
-2. `check` / `ask` / `record` for configure's own sections.
+2. *Done:* `check` / `ask` / `record` for configure's own sections. A check
+   prints why a value is refused and writes nothing; an answer with no check
+   of its own is held to its schema type, one with no record is written with
+   `env_set`. Checks: `root_problem`, `vpn_provider_problem`,
+   `vpn_countries_problem`, `wg_addresses_problem`, `sched_problem`,
+   `login_user_problem` / `login_pass_problem` (already split), the time
+   zone's type; `nord_wg_key` turns the token into the key. Records:
+   `services_record` (dependencies, conflicts, `COMPOSE_PROFILES`),
+   `accounts_record`, `panel_record`. No change in behaviour, one tightening:
+   a time zone with `/../` in it is refused, as `.env` already refused it.
 3. The same for the services' question hooks.
 4. `--answers`: the two passes, the flags, the secrets rule, the sudo refusal.
 5. The template, its generator and CI step; README and docs.

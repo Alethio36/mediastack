@@ -183,4 +183,17 @@ _configure_panel_offer </dev/null > "$T/out" 2>&1; [[ ! -s "$T/out" ]] || fail_ 
 printf 'COMPOSE_PROFILES=traefik,olivetin\n' > "$ENV_FILE"
 _configure_panel_offer </dev/null > "$T/out" 2>&1; [[ ! -s "$T/out" ]] || fail_ "an installed panel is not offered again"; pass
 
+# ---- each answer's check: says why, changes nothing (the answers file reuses them) ----
+cp "$ENV_FILE" "$T/checks.before"
+[[ -z "$(vpn_provider_problem NordVPN)" && -n "$(vpn_provider_problem 'bad name!')" ]] || fail_ "provider: a gluetun name (any case), not punctuation"; pass
+[[ -z "$(vpn_countries_problem '')" && -z "$(vpn_countries_problem 'Netherlands,Sweden')" && -n "$(vpn_countries_problem 'Swi$$')" ]] \
+    || fail_ "countries: empty (auto) or names"; pass
+[[ -z "$(wg_addresses_problem '10.5.0.2/32, fd00::2/128')" && -n "$(wg_addresses_problem 10.5.0.2)" ]] || fail_ "addresses: IP/prefix, comma-separated"; pass
+[[ -z "$(sched_problem 'Tue 04:00')" && "$(sched_problem bogus)" == "'bogus' is not a valid schedule." ]] || fail_ "a schedule is what systemd takes"; pass
+[[ "$(accounts_current gluetun,authentik,traefik)" == authentik && "$(accounts_current gluetun,wizarr)" == wizarr \
+   && "$(accounts_current gluetun)" == none && -z "$(accounts_current '')" ]] || fail_ "the current account model"; pass
+cmp -s "$ENV_FILE" "$T/checks.before" || fail_ "a check writes nothing"; pass
+( curl() { cat >/dev/null; echo '{"nordlynx_private_key":"K1"}'; }; [[ "$(nord_wg_key T)" == K1 ]] ) || fail_ "Nord's key for a token"; pass
+( curl() { cat >/dev/null; echo '{}'; }; ! out=$(nord_wg_key T) && [[ "$out" == "Token rejected by NordVPN"* ]] ) || fail_ "a rejected token: rc 1 and why"; pass
+
 echo "OK configure: $checks checks"

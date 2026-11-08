@@ -23,6 +23,12 @@ PANEL_STATE=panel-install        # state key: install the web panel after provis
 # shellcheck disable=SC2034  # set by services/authentik/email.sh, read by lib/configure.sh
 EMAIL_STATE=email-changed        # state key: email settings changed — the portal's reset link follows them
 
+# Each question is split in three (docs/design-answers.md): a check that
+# prints why a value is refused ("" when it is fine) and changes nothing, the
+# asking, which loops on the check, and a record that writes the answer. The
+# answers file reuses the checks and records. An answer with no check of its
+# own is held to its schema type; one with no record is written with env_set.
+
 q_quick() { [[ "$Q_MODE" == quick ]]; }
 q_took() { info "$1: $2 (recommended)"; }   # q_took TITLE ANSWER — quick took the recommended answer, and says so
 
@@ -337,6 +343,12 @@ sign in (none, Wizarr or authentik) is asked next."
     if [[ "$mode" == 0 ]] && (( ! ACCOUNTS_CHANGED )); then
         ok "Keeping the current $cur_n service(s): $cur_list"; return 0   # nothing changed: .env untouched
     fi
+    # shellcheck disable=SC2086  # a word list of services
+    services_record $sel
+}
+
+services_record() { # services_record SVC... — the selection, what it needs, one of each conflicting pair: COMPOSE_PROFILES
+    local sel="$*"
     info "Resolving dependencies..."
     # the portal is reached through Traefik: choosing it brings Traefik
     if [[ " $sel " == *" authentik "* && " $sel " != *" traefik "* ]]; then
@@ -381,11 +393,17 @@ sign in (none, Wizarr or authentik) is asked next."
 # How people get into the apps: one account model at most (they conflict —
 # two populations, duplicate names). Asked every time, whatever the preset;
 # a re-run defaults to the current one.
+accounts_current() { # accounts_current CURRENT-PROFILES -> none | wizarr | authentik, "" before the first configure
+    local cur=",$1,"
+    if [[ "$cur" == *",authentik,"* ]]; then echo authentik
+    elif [[ "$cur" == *",wizarr,"* ]]; then echo wizarr
+    elif [[ "$cur" != ",," ]]; then echo none
+    fi
+}
+
 accounts_choose() { # accounts_choose CURRENT-PROFILES SVC... -> ACCOUNTS_SEL: the selection with the chosen model in it (the other out)
-    local cur=",$1," model="" c s; shift
-    [[ "$cur" == *",authentik,"* ]] && model=authentik
-    [[ "$cur" == *",wizarr,"* ]] && model=wizarr
-    [[ -z "$model" && "$cur" != ",," ]] && model=none
+    local cur=$1 model c; shift
+    model=$(accounts_current "$cur")
     local -a menu=("How do people get into your media apps?"
 "  1) none       you make each person's accounts yourself, in each app"
 "                (Jellyfin's dashboard and so on). Simplest; nothing extra runs."
@@ -404,6 +422,11 @@ accounts_choose() { # accounts_choose CURRENT-PROFILES SVC... -> ACCOUNTS_SEL: t
         esac
         break
     done
+    accounts_record "$c" "$cur" "$@"
+}
+
+accounts_record() { # accounts_record none|wizarr|authentik CURRENT-PROFILES SVC... -> ACCOUNTS_SEL, ACCOUNTS_CHANGED
+    local c=$1 model s; model=$(accounts_current "$2"); shift 2
     if [[ "$model" == authentik && "$c" != authentik ]]; then
         warn "Leaving the portal: people's portal accounts stay in authentik's database, but nobody can sign in"
         warn "  with them — every app goes back to its own login."
@@ -417,9 +440,11 @@ accounts_choose() { # accounts_choose CURRENT-PROFILES SVC... -> ACCOUNTS_SEL: t
     ok "Accounts: $c"
 }
 
+download_clients_enabled() { role_providers download-client "${ROLE_CONSUMERS[0]}"; }   # in priority order, one per line
+
 _configure_download_client() { # several download clients enabled: the one the arrs, Prowlarr and Cleanuparr use
     local enabled cur n i c def=1
-    enabled=$(role_providers download-client "${ROLE_CONSUMERS[0]}")
+    enabled=$(download_clients_enabled)
     n=$(grep -c . <<<"$enabled" || true)
     cur=$(env_get DOWNLOAD_CLIENT)
     if (( n < 2 )); then
@@ -453,12 +478,35 @@ send to one of them; the others keep running, their entries switched off
 }
 
 # -------------------------------------------------------------------- VPN --
+vpn_provider_problem() { # vpn_provider_problem NAME -> why NAME is no gluetun provider ("" when it can be; recorded lowercase)
+    [[ "${1,,}" =~ ^[a-z0-9][a-z0-9\ ._-]*$ ]] || echo "'${1,,}' is not a provider name (gluetun's names: nordvpn, mullvad, protonvpn, ... or custom)."
+}
+vpn_countries_problem() { # vpn_countries_problem LIST -> why LIST is no country list ("" when it is; empty = auto)
+    [[ -z "$1" || "$1" =~ ^[A-Za-z][A-Za-z\ ,.\'-]*$ ]] || echo "'$1' is not a country name (e.g. Switzerland, or Netherlands,Sweden)."
+}
+wg_addresses_problem() { # wg_addresses_problem ADDRS -> why ADDRS is no [Interface] Address line ("" when it is)
+    # one or more IP/prefix, comma-separated
+    [[ "$1" =~ ^[0-9A-Fa-f:.]+/[0-9]{1,3}(,[[:space:]]*[0-9A-Fa-f:.]+/[0-9]{1,3})*$ ]] \
+        || echo "'$1' is not an address like 10.5.0.2/32 (copy the Address line of the config file)."
+}
+nord_wg_key() { # nord_wg_key TOKEN -> the WireGuard private key NordVPN issues for TOKEN; rc 1 with the reason instead
+    local key
+    # the login goes in on stdin (-K -), never on the command line where ps shows it
+    key=$(curl -fsS -K - "https://api.nordvpn.com/v1/users/services/credentials" \
+              <<<"user = \"token:${1}\"" \
+          | jq -r '.nordlynx_private_key // empty') \
+        || { echo "Could not reach Nord's API. Check connectivity and retry."; return 1; }
+    [[ -n "$key" ]] || { echo "Token rejected by NordVPN — regenerate it and re-run configure."; return 1; }
+    echo "$key"
+}
+
 ask_countries() { # ask_countries "prompt" -> REPLY_VAL: country names, comma-separated, or empty
     if q_quick; then REPLY_VAL=$(env_get VPN_SERVER_COUNTRIES); q_took "Server country" "${REPLY_VAL:-auto}"; return 0; fi
+    local p
     while true; do
         ask VPN_SERVER_COUNTRIES "$1" "$(env_get VPN_SERVER_COUNTRIES)"
-        [[ -z "$REPLY_VAL" || "$REPLY_VAL" =~ ^[A-Za-z][A-Za-z\ ,.\'-]*$ ]] && return 0
-        fail "'$REPLY_VAL' is not a country name (e.g. Switzerland, or Netherlands,Sweden)."
+        p=$(vpn_countries_problem "$REPLY_VAL"); [[ -z "$p" ]] && return 0
+        fail "$p"
     done
 }
 
@@ -471,12 +519,13 @@ _configure_vpn() {
 "All download traffic runs inside a VPN container. Supported: any gluetun
 provider (nordvpn, mullvad, protonvpn, surfshark, ...) or 'custom' to paste
 your own WireGuard details (for fussy/unlisted providers)."
+    local p
     while true; do
         ask VPN_PROVIDER "VPN provider" "$(env_get VPN_PROVIDER)"
-        REPLY_VAL=${REPLY_VAL,,}
-        [[ "$REPLY_VAL" =~ ^[a-z0-9][a-z0-9\ ._-]*$ ]] && break
-        fail "'$REPLY_VAL' is not a provider name (gluetun's names: nordvpn, mullvad, protonvpn, ... or custom)."
+        p=$(vpn_provider_problem "$REPLY_VAL"); [[ -z "$p" ]] && break
+        fail "$p"
     done
+    REPLY_VAL=${REPLY_VAL,,}
     env_set VPN_PROVIDER "$REPLY_VAL"
     case "$REPLY_VAL" in
         nordvpn)
@@ -488,14 +537,9 @@ your own WireGuard details (for fussy/unlisted providers)."
 "2. 'Set up NordVPN manually' -> generate an access token" \
 "3. Copy it (it is shown only once) and paste it below." \
 "The key is fetched from Nord's API — nothing is installed on this host."
-                local tok key
-                ask_token "NordVPN access token (input hidden)"; tok=$REPLY_VAL
-                # the login goes in on stdin (-K -), never on the command line where ps shows it
-                key=$(curl -fsS -K - "https://api.nordvpn.com/v1/users/services/credentials" \
-                          <<<"user = \"token:${tok}\"" \
-                      | jq -r '.nordlynx_private_key // empty') \
-                    || die "Could not reach Nord's API. Check connectivity and retry."
-                [[ -n "$key" ]] || die "Token rejected by NordVPN — regenerate it and re-run configure."
+                local key
+                ask_token "NordVPN access token (input hidden)"
+                key=$(nord_wg_key "$REPLY_VAL") || die "$key"
                 env_set WIREGUARD_PRIVATE_KEY "$key"
                 ok "WireGuard key fetched and verified."
                 ask_countries "Server country (e.g. Switzerland; Enter = auto)"
@@ -509,9 +553,8 @@ the remaining server-side settings to add to .env / an override file."
             ask_token "PrivateKey (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
             while true; do
                 ask WIREGUARD_ADDRESSES "Address" "$(env_get WIREGUARD_ADDRESSES)"
-                # one or more IP/prefix, comma-separated (the [Interface] Address line)
-                [[ "$REPLY_VAL" =~ ^[0-9A-Fa-f:.]+/[0-9]{1,3}(,[[:space:]]*[0-9A-Fa-f:.]+/[0-9]{1,3})*$ ]] && break
-                fail "'$REPLY_VAL' is not an address like 10.5.0.2/32 (copy the Address line of the config file)."
+                p=$(wg_addresses_problem "$REPLY_VAL"); [[ -z "$p" ]] && break
+                fail "$p"
             done
             env_set WIREGUARD_ADDRESSES "$REPLY_VAL" ;;
         *)
@@ -539,7 +582,7 @@ _configure_timezone() {
         "If unsure, accept the default."
     while true; do
         ask TZ "Timezone" "$tz_cur"
-        if [[ -f "/usr/share/zoneinfo/$REPLY_VAL" ]]; then
+        if env_type_ok tz "$REPLY_VAL"; then
             env_set TZ "$REPLY_VAL"
             ok "TZ=$REPLY_VAL — current time there: $(TZ=$REPLY_VAL date '+%H:%M %Z')"
             break
@@ -640,8 +683,8 @@ stack's. A login made already keeps its name and password (change one:
 _configure_panel_offer() { # with Traefik on and no panel yet: offer it; configure installs it after provisioning
     if ! svc_enabled traefik || svc_enabled olivetin; then return 0; fi
     if q_quick; then
-        if [[ "$(env_recommended PANEL)" == yes ]]; then state_set "$PANEL_STATE" yes; q_took "Web panel" "installed"
-        else state_del "$PANEL_STATE"; q_took "Web panel" "not installed"; fi
+        panel_record "$(env_recommended PANEL)"
+        q_took "Web panel" "$( [[ "$(env_recommended PANEL)" == yes ]] && echo installed || echo "not installed" )"
         return 0
     fi
     explain "Web panel (optional)" \
@@ -649,8 +692,12 @@ _configure_panel_offer() { # with Traefik on and no panel yet: offer it; configu
 backups — in your browser at https://$(svc_subdomain olivetin).<domain>, behind the
 portal when it runs. Installing it adds a host user that may run only this
 script: its own SSH key and a sudo rule for nothing else."
-    if confirm_yes "Install the web panel now?"; then state_set "$PANEL_STATE" yes
-    else state_del "$PANEL_STATE"; info "Later: ./mediastack.sh frontdoor-install"; fi
+    if confirm_yes "Install the web panel now?"; then panel_record yes
+    else panel_record no; info "Later: ./mediastack.sh frontdoor-install"; fi
+}
+
+panel_record() { # panel_record yes|no — configure installs the panel after provisioning, or not
+    if [[ "$1" == yes ]]; then state_set "$PANEL_STATE" yes; else state_del "$PANEL_STATE"; fi
 }
 
 # -------------------------------------------------------------- schedules --
@@ -689,8 +736,12 @@ on by default) — other apps aren't asked. Pick quiet times for YOUR household.
     done
 }
 
+sched_problem() { # sched_problem EXPR -> why EXPR is no schedule ("" when systemd takes it)
+    systemd-analyze calendar "$1" >/dev/null 2>&1 || echo "'$1' is not a valid schedule."
+}
+
 sched_choose() { # sched_choose VAR TITLE DEFAULT-CHOICE DEFAULT-TIME NEVER-TEXT -> VAR set in .env ("" = never)
-    local var=$1 title=$2 defc=$3 deft=$4 never=$5 cur expr day c
+    local var=$1 title=$2 defc=$3 deft=$4 never=$5 cur expr day c p
     cur=$(env_get "$var")
     local -a line=("" "daily       every day at a time you pick" "weekly      one day a week" \
                    "weekdays    Mon-Fri" "weekends    Sat+Sun" "custom      raw systemd OnCalendar expression" \
@@ -724,7 +775,7 @@ sched_choose() { # sched_choose VAR TITLE DEFAULT-CHOICE DEFAULT-TIME NEVER-TEXT
             6) env_set "$var" ""; return 0 ;;
             *) fail "Pick 0-6."; continue ;;
         esac
-        systemd-analyze calendar "$expr" >/dev/null 2>&1 || { fail "'$expr' is not a valid schedule."; continue; }
+        p=$(sched_problem "$expr"); [[ -z "$p" ]] || { fail "$p"; continue; }
         env_set "$var" "$expr"; return 0
     done
 }
