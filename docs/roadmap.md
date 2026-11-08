@@ -922,6 +922,13 @@ all built; what each still leaves open is noted below.
     API (no login), FlareSolverr or another app's database directly.
 
 ### Project health
+- **Stale `writer` column in the schema** *(found Nov 2026, while adding the
+  `recommended` column)*. `MEDIA_DIR_*`, `MEDIA_GROUP_GID` and `UID_BASE` say
+  writer `wizard`, but configure no longer asks any of them (library folder
+  names became defaults; the IDs are allocated). Decide each one's real
+  writer (`you` or `advanced`), and have `scripts/test-env.sh` hold the two
+  columns together: a `wizard` row is one a question writes, so its
+  `recommended` is never `-`.
 - **Optimization & project-health pass.** The build phase prioritized capability
   over refinement. A deliberate sweep: audit `mediastack.sh` for dead code,
   redundant logic, and oversized functions; confirm every verb still earns its
