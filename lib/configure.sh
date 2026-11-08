@@ -97,18 +97,12 @@ root_move_apply() { # root_move_apply VAR old new CHOICE — the old folder's co
     ok "$var contents moved to $new ($n $( (( n == 1 )) && echo entry || echo entries), $size)"
 }
 
-cmd_configure() { # configure [--answers FILE] — the questions (or the answers file's), then everything they decide
+cmd_configure() { # configure [--answers FILE] [--domain D] [--services a,b] [--signin X] — the questions (answered ahead or asked), then everything they decide
     need_cmd jq; need_cmd docker
-    local fresh=() answers=() f
-    while (( $# )); do
-        case "$1" in
-            --answers) [[ -n "${2:-}" ]] || die "--answers: name the file (docs/design-answers.md)"
-                       f=$2; [[ "$f" == /* ]] || f=$CALLER_DIR/$f
-                       [[ -f "$f" ]] || die "--answers: $2 is not a file"
-                       answers=(--answers "$f"); shift 2 ;;
-            *) die "unknown argument '$1' for 'configure' (accepts: --answers FILE)" ;;
-        esac
-    done
+    local fresh=()
+    answers_opts "$@"
+    (( ${#ANSWERS_REST[@]} == 0 )) || die "unknown argument '${ANSWERS_REST[0]}' for 'configure' (accepts: --answers FILE, --domain D, --services a,b, --signin none|wizarr|authentik)"
+    sudo_unattended_check
     if [[ ! -f "$ENV_FILE" ]]; then
         cp .env.example "$ENV_FILE"; chmod 600 "$ENV_FILE"; info "Created .env from .env.example"
         state_set configure-first yes   # until the questions are answered once, the .env holds no choices
@@ -121,7 +115,7 @@ cmd_configure() { # configure [--answers FILE] — the questions (or the answers
         info "configure makes users and folders with sudo — its password is asked once, now"
         sudo -v
     fi
-    questionnaire_ask "${fresh[@]}" "${answers[@]}"
+    questionnaire_ask "${fresh[@]}" "${ANSWERS_OPTS[@]}"
     state_del configure-first
 
     roots_apply
@@ -148,7 +142,17 @@ cmd_configure() { # configure [--answers FILE] — the questions (or the answers
 }
 
 chain_wanted() { # a first run (never wired) starts everything on Enter; a live stack serves people and applying restarts things: No unless asked
+    local start; start=$(state_get "$START_STATE"); state_del "$START_STATE"
+    case "$start" in
+        yes) info "Start: yes (from the answers)"; return 0 ;;
+        no)  info "Start: no (from the answers)"; return 1 ;;
+    esac
     if [[ ! -f "$WIRED_FILE" ]]; then confirm_yes "Start everything now?"; else confirm "Apply the changes now?"; fi
+}
+
+sudo_unattended_check() { # with answers given and no terminal, sudo cannot ask its password: refuse before anything starts
+    (( ${#ANSWERS_OPTS[@]} )) && [[ ! -t 0 ]] && (( $(id -u) != 0 )) || return 0
+    sudo -n true 2>/dev/null || die "sudo needs its password, and with no terminal nothing can ask for it — run 'sudo -v' first (in the same session), or run this as root"
 }
 
 # ------------------------------------------------------------ the chain --

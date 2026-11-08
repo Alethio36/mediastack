@@ -1,8 +1,8 @@
 # Design: the answers file — configure, answered ahead
 
-*Status: agreed (Nov 2026); steps 1–3 and the first half of 4 are built
-(`configure --answers FILE`; unattended `install`, the flags, the sudo
-refusal and `START` are 4b).
+*Status: agreed (Nov 2026); steps 1–4 are built (`install` and `configure`
+take the answers file and the flags; unattended installs run end to end).
+Step 5, the generated template, is next.
 Builds on
 [design-install.md](design-install.md) (the questionnaire, quick and full,
 each service's question hooks). Sections marked **agreed** were settled one
@@ -221,7 +221,16 @@ Each step touches more than three files — known and accepted for this work.
    `STACK_DOMAIN`, `VPN_PROVIDER`) are lowercased as typed ones are.
    Network checks (Cloudflare, Nord) run in both passes. Exit 4 with the
    list; configure applies nothing.
-   *4b:* `install --answers`, the flags, the sudo refusal, `START`.
+   *4b done:* `install` and `configure` take the same four options
+   (`--answers FILE`, `--domain`, `--services a,b`, `--signin`; one parser,
+   `answers_opts`), and `install` carries on into `configure` with them
+   instead of asking. A flag is an answer over the file's; `--services` is
+   the exact set (the file's `ENABLE_` lines give way, and it says so).
+   Answers given and no terminal: sudo that would ask for a password is
+   refused before anything starts (`sudo -v` first, or root). `START`,
+   recorded by the questionnaire, answers configure's closing question;
+   blank keeps its defaults. The file is read in two passes over the schema
+   instead of three per line (test-answers: 65s to 27s).
 5. The template, its generator and CI step; README and docs.
 
 ## Not in v1

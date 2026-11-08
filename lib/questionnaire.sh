@@ -32,17 +32,11 @@ EMAIL_STATE=email-changed        # state key: email settings changed — the por
 q_quick() { [[ "$Q_MODE" == quick ]]; }
 q_took() { info "$1: $2 (recommended)"; }   # q_took TITLE ANSWER — quick took the recommended answer, and says so
 
-cmd_questionnaire() { # questionnaire [--fresh] [--answers FILE] | --for SVC... — configure's questions, or (--for) those of services enable brings
-    local file="" a=()
-    while (( $# )); do
-        case "$1" in
-            --answers) [[ -n "${2:-}" ]] || die "--answers: name the file"; file=$2; [[ "$file" == /* ]] || file=$CALLER_DIR/$file; shift 2 ;;
-            *) a+=("$1"); shift ;;
-        esac
-    done
-    if [[ -n "$file" ]]; then questionnaire_answers_run "$file" "${a[@]}" || exit $?; return 0; fi
+cmd_questionnaire() { # questionnaire [--fresh] [--answers FILE] [--domain D] [--services a,b] [--signin X] | --for SVC... — configure's questions, or (--for) those of services enable brings
+    answers_opts "$@"
+    if (( ${#ANSWERS_OPTS[@]} )); then questionnaire_answers_run "${ANSWERS_OPTS[@]}" -- "${ANSWERS_REST[@]}" || exit $?; return 0; fi
     [[ -t 0 ]] || { echo "${C_RED}ERROR${C_RST} configure asks questions — run it in a terminal, or give it an answers file: configure --answers FILE" >&2; exit 3; }
-    questionnaire_run "${a[@]}"
+    questionnaire_run "${ANSWERS_REST[@]}"
 }
 
 questionnaire_run() { # the questions, in order; each section records its own answers
@@ -65,6 +59,12 @@ questionnaire_run() { # the questions, in order; each section records its own an
     _configure_logins
     _configure_schedule
     _configure_panel_offer
+    _configure_start
+}
+
+START_STATE=configure-start   # state key: the answers' START, for configure's closing question
+_configure_start() { # the closing question is configure's; a written START answers it ahead
+    if answer START; then state_set "$START_STATE" "$REPLY_VAL"; q_answered "Start" "$REPLY_VAL"; else state_del "$START_STATE"; fi
 }
 
 questionnaire_for() { # enable's questions: what the services it brings need, quick — the rest of the stack is answered
@@ -82,7 +82,7 @@ _configure_mode() {
         Q_MODE=$REPLY_VAL; q_answered "Mode" "$Q_MODE"; return 0
     fi
     # an answers file exists to skip questions: blank is quick
-    if [[ -n "$ANSWERS_FILE" ]]; then Q_MODE=quick; q_took "Mode" quick; return 0; fi
+    if answers_on; then Q_MODE=quick; q_took "Mode" quick; return 0; fi
     explain "How much should configure ask?" \
 "  1) quick   only what has no sensible default — the services, how people
              sign in, your VPN details; everything else takes the
@@ -336,7 +336,10 @@ _configure_services() {
     SVC_FROM_ANSWERS=$from_file services_record $sel
 }
 
-answers_enable_any() { local k; for k in "${!ANSWER[@]}"; do [[ "$k" == ENABLE_* ]] && return 0; done; return 1; }
+answers_enable_any() { # the services are answered: --services, or an ENABLE_ line
+    local k; [[ -n "$ANSWER_SERVICES" ]] && return 0
+    for k in "${!ANSWER[@]}"; do [[ "$k" == ENABLE_* ]] && return 0; done; return 1
+}
 
 services_from_answers() { # services_from_answers CURRENT-PROFILES -> SVC_ANSWERED: what the ENABLE_ lines pick; a blank one keeps what runs (a first run: the standard preset)
     local cur=",$1," s k std pick=" " ok
@@ -346,18 +349,25 @@ services_from_answers() { # services_from_answers CURRENT-PROFILES -> SVC_ANSWER
         [[ "$s" == wizarr || "$s" == authentik ]] && continue                                     # SIGNIN picks these
         [[ -n "$(svc_label "$s" mediastack.installer)" && "$cur" != *",$s,"* ]] && continue     # set up by its own command
         pick+="$s "; k=ENABLE_$(uvar "$s")
-        if answer "$k"; then [[ "$REPLY_VAL" == y ]] && SVC_ANSWERED+="$s "
+        if [[ -n "$ANSWER_SERVICES" ]]; then [[ "$ANSWER_SERVICES" == *" $s "* ]] && SVC_ANSWERED+="$s "   # exactly these
+        elif answer "$k"; then [[ "$REPLY_VAL" == y ]] && SVC_ANSWERED+="$s "
         elif [[ "$cur" != ",," ]]; then [[ "$cur" == *",$s,"* ]] && SVC_ANSWERED+="$s "
         elif [[ "$std" == *" $s "* ]]; then SVC_ANSWERED+="$s "
         fi
     done
+    for k in $ANSWER_SERVICES; do
+        [[ " $pick " == *" $k "* ]] || answer_refused "--services: $k is no service to switch on that way (--signin picks Wizarr or authentik; a service with its own setup command is set up by it)"
+    done
+    [[ -z "$ANSWER_SERVICES" ]] || ! answers_enable_lines || info "--services: the file's ENABLE_ lines give way to it"
     while read -r k; do
         ok=0; for s in $pick; do [[ "$k" == "ENABLE_$(uvar "$s")" ]] && ok=1; done
         (( ok )) || answer_refused "$k: no service is switched on that way (SIGNIN picks Wizarr or authentik; a service with its own setup command is set up by it)"
     done < <(printf '%s\n' "${!ANSWER[@]}" | grep '^ENABLE_' | sort)
-    [[ -n "$SVC_ANSWERED" ]] || answer_refused "the ENABLE_ lines leave nothing to run"
+    [[ -n "$SVC_ANSWERED" ]] || answer_refused "the services answered leave nothing to run"
     q_answered "Services" "$SVC_ANSWERED"
 }
+
+answers_enable_lines() { local k; for k in "${!ANSWER[@]}"; do [[ "$k" == ENABLE_* ]] && return 0; done; return 1; }
 
 services_ask() { # the services question -> sel and mode (the caller's)
     local -a menu=("Pick exactly what runs — anything, à la carte. Dependencies are handled

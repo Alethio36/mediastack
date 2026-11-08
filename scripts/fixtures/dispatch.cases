@@ -13,7 +13,7 @@ help extra
 help
 help a b c
 
-# install  (none)
+# install  (free: the answers options, its own parse refuses the rest)
 install
 install x
 

@@ -9,7 +9,7 @@ cloudflared_questions() { # the questionnaire: the tunnel's token, asked once; n
     if answer CLOUDFLARE_TUNNEL_TOKEN; then env_set CLOUDFLARE_TUNNEL_TOKEN "$REPLY_VAL"; q_answered "Tunnel token" "" secret; return 0; fi
     [[ -z "$(env_get CLOUDFLARE_TUNNEL_TOKEN)" ]] || return 0
     # optional: with no one to ask, the tunnel stays off
-    if [[ -n "$ANSWERS_FILE" ]] && ! q_terminal; then cloudflared_off; return 0; fi
+    if answers_on && ! q_terminal; then cloudflared_off; return 0; fi
     answers_checking && return 0   # asked in pass 2
     cloudflared_token_ask && return 0
     cloudflared_off

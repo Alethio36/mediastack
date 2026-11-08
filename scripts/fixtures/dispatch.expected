@@ -23,8 +23,7 @@ CALL cmd_help [3] a b c
 ## install
 CALL cmd_install [0]
 ## install x
-ERROR 'install' takes no arguments (got: x)
-rc=1
+CALL cmd_install [1] x
 ## configure
 CALL cmd_configure [0]
 ## configure x

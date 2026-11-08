@@ -13,6 +13,9 @@
 #     conflicting pair, a download client that does not run, a token for
 #     another provider, full mode with no one to ask, a password for the wrong
 #     mode, a folder that moves with its contents, a token Cloudflare refuses
+#   * the flags (--domain, --services, --signin) are answers too, over the
+#     file's; START answers configure's closing question; with answers and no
+#     terminal, sudo that wants a password is refused before anything starts
 #   * the check pass asks nothing: a question without its guard stops loud
 # The entrypoint is sourced (minus main "$@"); the catalogue is a fixture.
 #
@@ -78,7 +81,7 @@ fresh() { rm -rf "$T/w"; mkdir -p "$T/w/local/state"; cp .env.example "$T/w/.env
 typed() { ( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
             printf '%b' "$1" | questionnaire_run "${@:2}" ) > "$T/out" 2>&1; }
 filed() { ( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
-            printf '%b' "$2" | questionnaire_answers_run "$1" "${@:3}" ) > "$T/out" 2>&1; }
+            printf '%b' "$2" | questionnaire_answers_run --answers "$1" -- "${@:3}" ) > "$T/out" 2>&1; }
 answers() { printf '%b' "$1" > "$T/a.env"; chmod 600 "$T/a.env"; }   # answers LINES — the file, 0600
 masked() { sed -E 's/^([A-Z_]*(PASSWORD|MASTER_KEY))=.+/\1=<generated>/' "$1"; }
 snapshot() { masked "$T/w/.env" > "$1.env"; cp -r "$T/w/local/state" "$1.state"; }
@@ -181,9 +184,56 @@ fresh; answers 'CONFIGURE_MODE=full\nENABLE_SONARR=y\nENABLE_TRAEFIK=y\nSIGNIN=a
 Q_TERMINAL=1 filed "$T/a.env" '' --fresh
 ! has "the check stopped" && ! has "reached the question" || fail_ "full, little answered: every unanswered question guarded: $(cat "$T/out")"; pass
 
+# ---- the flags: into the same answers, over the file's ----
+fresh; answers 'NORDVPN_TOKEN=TOKEN\nENABLE_RADARR=y\nENABLE_JELLYFIN=y\n'
+( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
+  questionnaire_answers_run --answers "$T/a.env" --signin none --services sonarr,qbittorrent -- --fresh </dev/null ) > "$T/out" 2>&1 \
+    || fail_ "file and flags together: $(cat "$T/out")"
+[[ "$(envv COMPOSE_PROFILES)" == gluetun,qbittorrent,sonarr ]] || fail_ "--services: exactly those (and what they need): $(envv COMPOSE_PROFILES)"; pass
+has "--services: the file's ENABLE_ lines give way to it" || fail_ "the file's ENABLE_ lines give way, and it says so"; pass
+fresh
+( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
+  questionnaire_answers_run --signin wizard --services 'a b' --domain 'not a domain' -- --fresh </dev/null ) > "$T/out" 2>&1
+[[ $? == 4 && "$(problems)" == 3 ]] && has "--signin: SIGNIN='wizard' is not one of: none, wizarr, authentik" \
+    && has "--domain: STACK_DOMAIN='not a domain' is not a domain" && has "--services: 'a b' is not service names" \
+    && has "the answers and --signin wizard" || fail_ "flags alone, each refused value named: $(cat "$T/out")"; pass
+fresh
+( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
+  questionnaire_answers_run --signin none --services sonarr,olivetin,nosuch -- --fresh </dev/null ) > "$T/out" 2>&1
+[[ $? == 4 ]] && has "--services: olivetin is no service to switch on that way" && has "--services: nosuch is no service" \
+    || fail_ "--services names only services it can switch on: $(cat "$T/out")"; pass
+fresh
+( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
+  questionnaire_answers_run --signin none --services sonarr,qbittorrent -- --fresh </dev/null ) > "$T/out" 2>&1
+[[ $? == 4 && "$(problems)" == 1 ]] && has "VPN is not answered" || fail_ "flags alone, no terminal: only the VPN is missing (qBittorrent brings it): $(cat "$T/out")"; pass
+( CALLER_DIR=$T; answers 'SIGNIN=none\n'; cd /; answers_opts --answers a.env --fresh --signin none
+  [[ "${ANSWERS_OPTS[*]}" == "--answers $T/a.env --signin none" && "${ANSWERS_REST[*]}" == --fresh ]] ) \
+    || fail_ "the options are taken out, a relative file found from where it was run, the rest kept in order"; pass
+out=$( (answers_opts --signin) 2>&1 ) && fail_ "an option needs its value"
+[[ "$out" == *"--signin: give it a value"* ]] || fail_ "and says so: $out"; pass
+
+# ---- START: configure's closing question, answered ahead ----
+fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\nSTART=no\n'; filed "$T/a.env" '' --fresh || fail_ "START=no: $(cat "$T/out")"
+( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state WIRED_FILE=$T/none; out=$(chain_wanted </dev/null 2>&1); rc=$?
+  (( rc == 1 )) && [[ "$out" == *"Start: no (from the answers)"* && -z "$(state_get "$START_STATE")" ]] ) || fail_ "START=no: nothing started, nothing asked, the answer used once"; pass
+answers 'START=yes\n'; filed "$T/a.env" '' || fail_ "START=yes on a re-run"
+( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state WIRED_FILE=$T/w/.env; chain_wanted </dev/null >/dev/null 2>&1 ) || fail_ "START=yes: applied without asking, even on a live stack"; pass
+answers 'TZ=Europe/Berlin\n'; filed "$T/a.env" '' || fail_ "blank START"
+[[ -z "$(ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state state_get "$START_STATE")" ]] || fail_ "a blank START keeps configure's own default"; pass
+
+# ---- sudo with no one to type its password ----
+nosudo() { ( id() { [[ "$1" == -u ]] && echo 1000; }; sudo() { [[ "$*" == "-n true" ]] && return "$1"; }; ANSWERS_OPTS=("${@:2}")
+             sudo() { return "$SUDO_RC"; }; SUDO_RC=$1 sudo_unattended_check </dev/null ) 2>&1; }
+out=$(nosudo 1 --signin none) && fail_ "answers, no terminal, sudo wants a password: refused up front"
+[[ "$out" == *"sudo needs its password, and with no terminal nothing can ask for it — run 'sudo -v' first"* ]] || fail_ "and says what to do: $out"; pass
+nosudo 0 --signin none >/dev/null || fail_ "sudo already open (sudo -v, or NOPASSWD): carries on"; pass
+nosudo 1 >/dev/null || fail_ "no answers given: no check (the questionnaire says it needs a terminal)"; pass
+grep -q 'exec bash "$SCRIPT_DIR/mediastack.sh" configure "${ANSWERS_OPTS\[@\]}"' lib/lifecycle.sh \
+    && grep -q '^    sudo_unattended_check' <(awk '/^cmd_install\(\)/,/^}/' lib/lifecycle.sh) || fail_ "install checks sudo first and hands its answers to configure"; pass
+
 # ---- configure's own arguments ----
 out=$( (need_cmd() { :; }; cmd_configure x) 2>&1 ) && fail_ "configure refuses what it does not take"
-[[ "$out" == *"unknown argument 'x' for 'configure' (accepts: --answers FILE)"* ]] || fail_ "and says what it takes: $out"; pass
+[[ "$out" == *"unknown argument 'x' for 'configure' (accepts: --answers FILE, --domain D, --services a,b, --signin none|wizarr|authentik)"* ]] || fail_ "and says what it takes: $out"; pass
 out=$( (need_cmd() { :; }; CALLER_DIR=$T; cmd_configure --answers nosuch.env) 2>&1 ) && fail_ "a file that is not there stops configure"
 [[ "$out" == *"--answers: nosuch.env is not a file"* ]] || fail_ "named as given, looked for where configure was run: $out"; pass
 

@@ -1131,8 +1131,8 @@ cmd_set_user_facing() {
 #          exist for the panel, timers and units and are listed last.
 VERBS=(
     "help~help~~Other~This list."
-    "install~install~none~Setup~Install host dependencies (docker, jq, ...). Run once."
-    "configure~configure [--answers FILE]~free~Setup~Interactive setup wizard, quick or full: .env, users, folders; --answers: questions answered ahead (docs/design-answers.md). Safe to re-run."
+    "install~install [--answers FILE] [--domain D] [--services a,b] [--signin X]~free~Setup~Install host dependencies (docker, jq, ...), then configure; with answers given it asks nothing (docs/design-answers.md). Run once."
+    "configure~configure [--answers FILE] [--domain D] [--services a,b] [--signin X]~free~Setup~Interactive setup wizard, quick or full: .env, users, folders; --answers: questions answered ahead (docs/design-answers.md). Safe to re-run."
     "add-mount~add-mount~none~Setup~Guided NFS/SMB mount on this host (fstab automount + poison layer)."
     "up~up~none~Run~Start the stack (everything enabled in COMPOSE_PROFILES)."
 "down~down~none~Run~Stop the stack and pause its scheduled jobs until up. Configs and data are untouched."

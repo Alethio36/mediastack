@@ -19,7 +19,10 @@ leak_tools_install() { # leak-test reads the host's traffic: conntrack (flows), 
     ok "${need[*]} installed — uninstall removes them again"
 }
 
-cmd_install() {
+cmd_install() { # install [--answers FILE] [--domain D] [--services a,b] [--signin X] — the host's dependencies, then configure (with the answers, it asks nothing)
+    answers_opts "$@"
+    (( ${#ANSWERS_REST[@]} == 0 )) || die "unknown argument '${ANSWERS_REST[0]}' for 'install' (accepts: --answers FILE, --domain D, --services a,b, --signin none|wizarr|authentik)"
+    sudo_unattended_check
     hr "Host dependencies"
     [[ -r /etc/os-release ]] || die "Cannot read /etc/os-release — unsupported OS."
     # shellcheck disable=SC1091
@@ -63,7 +66,10 @@ your VPN — HAVE THIS READY: a NordVPN access token (nordvpn.com -> Services
 With HTTPS: your domain and its Cloudflare token. Then it starts everything,
 connects the apps and checks the result (~15-20 min on a first run).
 EOT
-    # install carries on into configure (docs/design-install.md, "The flow")
+    # install carries on into configure (docs/design-install.md, "The flow"); answers given: without asking
+    if (( ${#ANSWERS_OPTS[@]} )); then
+        echo; exec bash "$SCRIPT_DIR/mediastack.sh" configure "${ANSWERS_OPTS[@]}"
+    fi
     if [[ -t 0 ]] && confirm_yes "Configure now?"; then
         echo; exec bash "$SCRIPT_DIR/mediastack.sh" configure
     fi

@@ -22,7 +22,7 @@ apprise_questions() {
     fi
     if answers_any NOTIFY_OPS NOTIFY_USERS; then notify_from_answers; return 0; fi
     # optional: with no one to ask, the streams stay off
-    if [[ -n "$ANSWERS_FILE" ]] && ! q_terminal; then notify_urls_record ""; return 0; fi
+    if answers_on && ! q_terminal; then notify_urls_record ""; return 0; fi
     answers_checking && return 0   # asked in pass 2
     explain "Notifications (Apprise)" \
 "One hub, two streams — give each one or more Apprise URLs
