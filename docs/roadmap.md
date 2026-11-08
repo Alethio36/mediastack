@@ -341,6 +341,16 @@ arrive on their own, as with watchtower, but validated first.
   Estimated ~300 lines with tests for pins, Renovate, tags and the walk.
 
 ### Decisions pending
+- **Updating mediastack itself** *(raised Nov 2026, to figure out later)*.
+  Today the script only moves when someone runs `upgrade`; the timers pull
+  images (`update --auto`), never the script. So an install that never
+  upgrades runs new app versions with old wiring — Jellyfin 12 dropping
+  legacy auth broke `wire` exactly that way — and nothing tells it an
+  upgrade exists (no code fetches from the remote). Options on the table:
+  a "N commits behind your branch — run upgrade" note in doctor and the
+  update run's ops notification (`git fetch` only, never a pull), now; or
+  wait for versions from the repo (above), where images move only with the
+  script and the nightly walk is opted out of with `UPDATE_CHANNEL=manual`.
 - **Ship Pinchflat?** YouTube archiving, rated ship-worthy; brings two
   house-rule exceptions (no VPN; a self-updating yt-dlp).
   Evaluation: [watchlist.md](watchlist.md#pinchflat--pick).
