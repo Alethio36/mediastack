@@ -178,9 +178,9 @@ validation, notifications, SSO). Before `migrate` moves the first household:
 7. Then `migrate` (below, under Project health).
 
 Decided (Nov 2026), before the rollout, in this order: an unattended install
-from an answers file (a partial `.env`, every question's check shared with
-the interactive path, a missing answer one loud error, secrets from files —
-design first); a record of every run (`local/runs/`) and a support bundle
+from an answers file — configure answered ahead, blanks taking one source of
+recommended answers (designed and agreed:
+[design-answers.md](design-answers.md)); a record of every run (`local/runs/`) and a support bundle
 built from it, redacted by allowlist and shown before it is shared; `wire`
 reading a setting back after a write that timed out before calling it
 failed (today only the sign-in page's show-password write does). After MVP:
