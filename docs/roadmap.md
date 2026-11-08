@@ -479,6 +479,21 @@ arrive on their own, as with watchtower, but validated first.
   data root), so it comes after the MVP.
 
 ### End-user experience
+- **VPN depth** *(raised Nov 2026, to scope)*. configure asks a provider,
+  a WireGuard key and countries; gluetun can do much more, and the
+  questions should offer it per provider rather than leave it to `.env`:
+  the server's city, region or hostname (`VPN_SERVER_CITIES` and
+  `VPN_SERVER_HOSTNAMES` exist but are never asked); the provider's server
+  types (NordVPN's P2P, Double VPN or obfuscated servers; Proton's Secure
+  Core; Mullvad's owned servers); OpenVPN where WireGuard is not offered;
+  and port forwarding where the provider supports it (Proton, PIA and
+  others) — it decides whether a torrent client is reachable for seeding.
+  Provider by provider (NordVPN, ProtonVPN, Mullvad, Surfshark, PIA, …):
+  what gluetun supports for each is checked against its wiki first, each
+  provider's choices become questions with checks (and answers-file keys),
+  and the leak gate and doctor learn whatever a choice changes (a
+  forwarded port, a second hop). Related: an install without a VPN
+  provider (after MVP, above).
 - **Password reset by email** — *shipped (Oct 2026)*. The
   `mediastack-recovery` flow (blueprint): identify by username or email (an
   unknown one gets the same answer), a 30-minute single-use link in
