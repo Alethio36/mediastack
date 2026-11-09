@@ -378,6 +378,21 @@ first_pass() { # first_pass STATUS-AFTER-THE-WAIT -> "forced|waited-only fails=N
 }
 [[ "$(first_pass successful)" == "waited-only fails=0 gate" ]] || fail_ "applied by its own first pass: nothing forced, the gate follows: $(first_pass successful)"; pass
 [[ "$(first_pass outdated)" == "waited-only fails=1 nogate" ]] || fail_ "not applied within the wait: a failure, still nothing forced: $(first_pass outdated)"; pass
+[[ "$(first_pass error)" == "forced fails=0 gate" ]] || fail_ "its first pass failed (with its defaults applied): applied once more, the gate follows: $(first_pass error)"; pass
+# the first pass applies everything at once, ours before its defaults (found
+# live Nov 2026: ours 04:55:08, the defaults 04:55:46-04:56:09): an error while
+# they are pending is provisional — wait for them; a clock ticks with each sleep
+bp_clock() { # bp_clock NEEDS-APPLIED-AT -> "STATUS-RETURNED at TICK"
+    ( echo 0 > "$T/tick"; sleep() { echo $(( $(cat "$T/tick") + 1 )) > "$T/tick"; }
+      ak_api() { [[ "$1 $2" == "GET /managed/blueprints/?page_size=200" ]] || { echo '{}'; return 0; }
+          local st=outdated; (( $(cat "$T/tick") >= NEEDS_AT )) && st=successful
+          jq -cn --arg st "$st" '{results:([{name:"Mediastack - Portal", status:"error", last_applied_hash:"", pk:"bp-1"}]
+              + ($ARGS.positional | map({path: ., status: $st})))}' --args "${AUTHENTIK_BLUEPRINT_NEEDS[@]}"; }
+      NEEDS_AT=$1; st=$(authentik_first_pass_wait); echo "$st at $(cat "$T/tick")" )
+}
+[[ "$(bp_clock 4)" == "error at 4" ]] || fail_ "an error while its defaults are pending waits for them, then stands: $(bp_clock 4)"; pass
+[[ "$(bp_clock 0)" == "error at 0" ]] || fail_ "an error with its defaults applied is final at once: $(bp_clock 0)"; pass
+[[ "$(bp_clock 9999)" == "error at $(( AUTHENTIK_DISCOVER_WAIT / 5 ))" ]] || fail_ "the wait for them is bounded: $(bp_clock 9999)"; pass
 # what our blueprint builds on is applied first, in its own run: authentik's
 # first pass applied ours before its defaults (found live Nov 2026)
 bpe=$(python3 - <<'PY'
@@ -404,11 +419,13 @@ for f in $(grep -oE '!Find \[authentik_flows.flow, \[slug, default-[a-z0-9-]+\]\
     esac
     [[ " ${AUTHENTIK_BLUEPRINT_NEEDS[*]} " == *" $want "* ]] || fail_ "$f's blueprint is not a prerequisite"
 done; pass
-# a forced apply waits for authentik to know them; never found: no apply, a reason
-r=$( ( ak_api() { if [[ "$1 $2" == "POST /managed/blueprints/"* ]]; then echo APPLIED >> "$T/applied"; fi; echo '{"results":[{"path":"default/default-brand.yaml"}]}'; }
+# a forced apply waits for authentik to have APPLIED them — found is not enough
+# (found live Nov 2026); never applied: no apply, the pending ones named
+r=$( ( ak_api() { if [[ "$1 $2" == "POST /managed/blueprints/"* ]]; then echo APPLIED >> "$T/applied"; fi
+                  echo '{"results":[{"path":"default/default-brand.yaml","status":"successful"},{"path":"default/flow-default-provider-authorization-implicit-consent.yaml","status":"outdated"}]}'; }
        sleep() { :; }; rm -f "$T/applied"; authentik_blueprint_apply ) )
-[[ "$r" == "unreadable (authentik has not found its own default/flow-default-provider-authorization-implicit-consent.yaml default/flow-default-provider-invalidation.yaml yet)" && ! -e "$T/applied" ]] \
-    || fail_ "its defaults not found: nothing forced, the missing ones named: $r"; pass
+[[ "$r" == "unreadable (authentik has not applied its own default/flow-default-provider-authorization-implicit-consent.yaml default/flow-default-provider-invalidation.yaml yet)" && ! -e "$T/applied" ]] \
+    || fail_ "its defaults found but not applied (or not found): nothing forced, the pending ones named: $r"; pass
 
 # the reason printer is how a failure is reported: it never fails itself
 r=$( ( set -Ee; trap 'echo TRAPPED; exit 9' ERR   # as wire runs it

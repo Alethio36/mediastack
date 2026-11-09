@@ -251,14 +251,21 @@ authentik_blueprint_discovered() { # wait for authentik to discover the blueprin
 }
 
 authentik_first_pass_wait() { # a first start: wait for authentik's own first pass to apply the blueprint; -> its status then
-    # Its first pass also creates authentik's default flows, which mediastack's
-    # blueprint references: applied before them, it fails (found live Nov 2026,
-    # when configure's chain reached wire before that pass had run)
-    local st waited=0
+    # That pass applies every blueprint at once, in no set order: ours can run
+    # before, or alongside, the defaults it builds on, and fail on them (found
+    # live Nov 2026: ours at 04:55:08, its defaults at 04:55:46-04:56:09). An
+    # error while those defaults are still pending is provisional: wait for
+    # them, then the status is final (wire applies again on an error).
+    local st waited=0 pending
     while :; do
         st=$(authentik_blueprint_status)
-        [[ "$st" == outdated ]] || { echo "$st"; return 0; }
-        (( waited >= AUTHENTIK_DISCOVER_WAIT )) && { echo outdated; return 0; }
+        case "$st" in
+            outdated) ;;
+            error) pending=$(authentik_blueprint_needs_pending) || pending="(unreadable)"
+                   [[ -n "$pending" ]] || { echo error; return 0; } ;;
+            *) echo "$st"; return 0 ;;
+        esac
+        (( waited >= AUTHENTIK_DISCOVER_WAIT )) && { echo "$st"; return 0; }
         sleep 5; waited=$((waited + 5))
     done
 }
@@ -274,26 +281,31 @@ authentik_blueprint_why() { # authentik's own reasons for rejecting mediastack's
 }
 
 # the defaults mediastack's blueprint applies first (its metaapplyblueprint
-# entries): authentik must have discovered them, or that apply fails
+# entries). Found is not enough: until authentik has applied them, an apply of
+# ours meets its own pass over the same objects and fails (found live Nov 2026)
 AUTHENTIK_BLUEPRINT_NEEDS=(default/default-brand.yaml default/flow-default-provider-authorization-implicit-consent.yaml default/flow-default-provider-invalidation.yaml)
-authentik_blueprint_needs_found() { # 0 once authentik knows every blueprint ours builds on (waited for, up to two minutes)
-    local out p t miss
-    for t in $(seq 1 24); do
-        out=$(ak_api GET "/managed/blueprints/?page_size=200") || out='{}'
-        miss=""
-        for p in "${AUTHENTIK_BLUEPRINT_NEEDS[@]}"; do
-            jq -e --arg p "$p" 'any(.results[]?; .path == $p)' <<<"$out" >/dev/null 2>&1 || miss+="$p "
-        done
-        [[ -n "$miss" ]] || return 0
-        sleep 5
+authentik_blueprint_needs_pending() { # -> the prerequisites authentik has not applied successfully yet, space-separated ("" when none); rc 1 when unreadable
+    local out p miss=""
+    out=$(ak_api GET "/managed/blueprints/?page_size=200") || return 1
+    for p in "${AUTHENTIK_BLUEPRINT_NEEDS[@]}"; do
+        [[ "$(jq -r --arg p "$p" '[.results[]? | select(.path == $p) | .status][0] // "not found"' <<<"$out")" == successful ]] || miss+="$p "
     done
-    echo "${miss% }"; return 1
+    echo "${miss% }"
+}
+authentik_blueprint_needs_applied() { # 0 once authentik has applied every blueprint ours builds on (waited for, up to AUTHENTIK_DISCOVER_WAIT); else -> the pending ones, rc 1
+    local waited=0 miss
+    while :; do
+        miss=$(authentik_blueprint_needs_pending) || miss="(its blueprint list is unreadable)"
+        [[ -n "$miss" ]] || return 0
+        (( waited >= AUTHENTIK_DISCOVER_WAIT )) && { echo "$miss"; return 1; }
+        sleep 5; waited=$((waited + 5))
+    done
 }
 
 authentik_blueprint_apply() { # apply the current file now instead of waiting for the worker; -> its status
     local inst pk st t miss
-    # an apply before authentik has discovered its own defaults fails on their absence
-    miss=$(authentik_blueprint_needs_found) || { echo "unreadable (authentik has not found its own $miss yet)"; return 0; }
+    # an apply before authentik has applied its own defaults fails on them
+    miss=$(authentik_blueprint_needs_applied) || { echo "unreadable (authentik has not applied its own $miss yet)"; return 0; }
     inst=$(authentik_blueprint_instance 2>&1) || { echo "$inst"; return 0; }
     pk=$(jq -r '.pk // empty' <<<"$inst"); [[ -n "$pk" ]] || { echo ""; return 0; }
     ak_api POST "/managed/blueprints/$pk/apply/" >/dev/null || { echo "unreadable (apply refused)"; return 0; }
@@ -565,8 +577,8 @@ wire_authentik() {
         st=$(authentik_blueprint_discovered)
     fi
     local applied=0
-    # never applied: a first start — authentik's own first pass applies it,
-    # after the default flows it references; forcing it sooner fails
+    # never applied: a first start — authentik's own first pass applies it, at
+    # no set point among its defaults: wait for that pass (authentik_first_pass_wait)
     if [[ "$st" == outdated && -z "$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied_hash // ""' 2>/dev/null)" ]]; then
         if (( WIRE_DRY )); then info "authentik: its own first pass applies mediastack's portal setup (a first start) — the real run waits for it"; return 0; fi
         info "authentik: waiting for its own first pass to apply mediastack's portal setup (a first start; up to $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes)"

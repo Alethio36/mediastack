@@ -937,6 +937,12 @@ all built; what each still leaves open is noted below.
     API (no login), FlareSolverr or another app's database directly.
 
 ### Project health
+- **The first `wire` stops a first-start authentik** *(found Nov 2026, answers-file install on anzac4)*.
+  Its restore point stops the stack about a minute and a half into
+  authentik's first start; authentik then begins its whole first pass again
+  (about 3 minutes lost). Not a fault since the first-pass wait waits for
+  the defaults it needs; a speed fix: take the first restore point once
+  authentik's first pass is done, or before `up` starts it.
 - **Stale `writer` column in the schema** *(found Nov 2026, while adding the
   `recommended` column)*. `MEDIA_DIR_*`, `MEDIA_GROUP_GID` and `UID_BASE` say
   writer `wizard`, but configure no longer asks any of them (library folder
