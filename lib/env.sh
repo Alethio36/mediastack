@@ -93,6 +93,7 @@ env_type_expect() { # what a value of TYPE looks like, for a message
     case "$1" in
         text|secret) echo "any single-line text" ;;
         path)     echo "a folder path" ;;
+        file)     echo "a file path" ;;
         dirname)  echo "one folder name (no /)" ;;
         int)      echo "a whole number (0 or more)" ;;
         pint)     echo "a whole number (1 or more)" ;;
@@ -118,7 +119,7 @@ env_type_ok() { # env_type_ok TYPE VALUE — rc 0 when VALUE is a TYPE
     local t="$1" v="$2"
     case "$t" in
         text|secret) return 0 ;;
-        path)     [[ "$v" =~ ^[^[:space:]] && "$v" =~ [^[:space:]]$ ]] ;;
+        path|file) [[ "$v" =~ ^[^[:space:]] && "$v" =~ [^[:space:]]$ ]] ;;
         dirname)  [[ "$v" =~ ^[^/]+$ && "$v" != . && "$v" != .. ]] ;;
         int|uid)  [[ "$v" =~ ^[0-9]+$ ]] ;;
         pint)     [[ "$v" =~ ^[1-9][0-9]*$ ]] ;;

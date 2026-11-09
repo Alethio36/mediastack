@@ -32,8 +32,8 @@ RENDERED_JSON=""; render
 describe() {
     local k=$1 t=$2 d=$3 r=$4 m=$5 choices rec
     case "$t" in
+        bool|"enum:yes|no") choices="yes | no" ;;   # the file takes yes, no, y, n, true or false
         enum:*) choices=${t#enum:}; choices=${choices//|/ | } ;;
-        bool)   choices="true | false" ;;
         *)      choices=$(env_type_expect "$t") ;;
     esac
     [[ -z "${ANSWER_WORDS[$k]:-}" ]] || choices+=" (or ${ANSWER_WORDS[$k]})"
@@ -81,21 +81,23 @@ cat <<'EOT'
 # install it takes the recommendation, or is asked — and with no terminal,
 # an answer that would be asked must be written. Values follow .env's rules:
 # no quotes, and no comment after a value (comments go on their own line).
+# A yes/no answer takes yes, no, y, n, true or false; a path starting ~ is
+# your home, a relative one is inside this folder.
 # answers*.env is git-ignored: your answers never reach the repo.
 EOT
 echo; echo "# ---------------------------------------------------- how configure runs --"
 for k in CONFIGURE_MODE START; do IFS=$'\t' read -r _ t _ _ d r m <<<"$(row_of "$k")"; echo; describe "$k" "$t" "$d" "$r" "$m"; done
 
 echo; echo "# -------------------------------------------------------------- services --"
-echo "# y runs it, n leaves it off. Answer one and the blank ones take the standard"
+echo "# yes runs it, no leaves it off. Answer one and the blank ones take the standard"
 echo "# preset (on a re-run: what runs now); answer none and the question is asked."
 echo "# --services a,b on the command line names the exact set instead."
 std=" $(svc_managed_where mediastack.preset standard | tr '\n' ' ') "
 for s in $(svc_managed); do
     [[ "$s" == wizarr || "$s" == authentik ]] && continue                    # SIGNIN picks these
     [[ -z "$(svc_label "$s" mediastack.installer)" ]] || continue             # set up by its own command
-    printf '\n# %s\n#   y | n — recommended: %s\nENABLE_%s=\n' "$(svc_label "$s" mediastack.desc)" \
-        "$( [[ "$std" == *" $s "* ]] && echo y || echo n )" "$(uvar "$s")"
+    printf '\n# %s\n#   yes | no — recommended: %s\nENABLE_%s=\n' "$(svc_label "$s" mediastack.desc)" \
+        "$( [[ "$std" == *" $s "* ]] && echo yes || echo no )" "$(uvar "$s")"
 done
 
 echo; echo "# --------------------------------------------------- how people sign in --"
@@ -111,7 +113,8 @@ for f in services/*/env.tsv; do
         IFS=$'\t' read -r _ t _ _ d r m <<<"$(row_of 'TRASH_PROFILE_<arr>')"
         for a in $(svc_managed); do
             [[ "$(svc_label "$a" mediastack.arrtype)" =~ ^(sonarr|radarr)$ && -z "$(svc_label "$a" mediastack.trashprofile)" ]] || continue
-            body+=$'\n'"$(echo; describe "$(trash_envkey "$a")" "$t" "$d" "$r" "$m ($a)")"
+            [[ -z "$body" ]] || body+=$'\n'
+            body+="$(echo; describe "$(trash_envkey "$a")" "$t" "$d" "$r" "$m ($a)")"
         done
     fi
     [[ -n "$body" ]] || continue

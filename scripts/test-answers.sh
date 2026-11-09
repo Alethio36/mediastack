@@ -106,6 +106,30 @@ filed "$T/a.env" '' --fresh; [[ $? == 4 ]] && has "can be read by others (644)" 
   answers_load "$T/a.env"; [[ ! -s "$T/p" ]] && answer UPDATE_SCHEDULE && [[ -z "$REPLY_VAL" ]] && answer VPN_SERVER_COUNTRIES && [[ -z "$REPLY_VAL" ]] ) \
     || fail_ "never and auto are written answers for an empty value"; pass
 
+# ---- yes or no: yes, no, y, n, true, false in any case, kept in the form the key keeps ----
+( ANSWERS_PASS=check; ANSWERS_PROBLEMS=$T/p; ANSWER=(); : > "$T/p"
+  answers 'ENABLE_SONARR=Y\nENABLE_RADARR=no\nPANEL=TRUE\nSTART=n\nSMTP_STARTTLS=yes\nSMTP_TLS=False\n'; answers_load "$T/a.env"
+  [[ ! -s "$T/p" && "${ANSWER[ENABLE_SONARR]} ${ANSWER[ENABLE_RADARR]} ${ANSWER[PANEL]} ${ANSWER[START]} ${ANSWER[SMTP_STARTTLS]} ${ANSWER[SMTP_TLS]}" == "yes no yes no true false" ]] \
+    || { cat "$T/p"; exit 1; } ) || fail_ "every yes/no word, recorded as its key keeps it"; pass
+( ANSWERS_PASS=check; ANSWERS_PROBLEMS=$T/p; ANSWER=(); : > "$T/p"
+  answers 'PANEL=on\nSMTP_TLS=1\n'; answers_load "$T/a.env"
+  grep -qF "PANEL='on' is not yes or no (yes, no, y, n, true, false)" "$T/p" && grep -qF "SMTP_TLS='1' is not yes or no" "$T/p" \
+    && [[ -z "${ANSWER[PANEL]+set}" ]] ) || fail_ "on, 1 and the like are refused, named, never stored"; pass
+
+# ---- no terminal: compose prints no per-layer progress ----
+dc_args() { ( sudo() { echo "$*" > "$T/dc"; }; user_compose_files() { USER_FILES=(); }; leak_gate_guards() { :; }; stack_down_since() { :; }
+              DC "$@" > /dev/null; cat "$T/dc" ) }
+[[ "$(dc_args up -d sonarr)" == *" up --quiet-pull -d sonarr" ]] || fail_ "up, no terminal: --quiet-pull — $(dc_args up -d sonarr)"; pass
+[[ "$(dc_args pull sonarr)" == *" pull --quiet sonarr" ]] || fail_ "pull, no terminal: --quiet — $(dc_args pull sonarr)"; pass
+[[ "$(dc_args ps)" == *" ps" ]] || fail_ "anything else is passed as given"; pass
+
+# ---- a written path is read as a typed one: ~ is your home, a relative one is the repo's ----
+( ANSWERS_PASS=check; ANSWERS_PROBLEMS=$T/p; ANSWER=(); : > "$T/p"
+  answers 'TLS_CERT_FILE=~/certs/fullchain.pem\nTLS_KEY_FILE=certs/privkey.pem\nDATA_ROOT=~/media\n'; answers_load "$T/a.env"
+  [[ ! -s "$T/p" && "${ANSWER[TLS_CERT_FILE]}" == "$HOME/certs/fullchain.pem" && "${ANSWER[TLS_KEY_FILE]}" == "$PWD/certs/privkey.pem" \
+     && "${ANSWER[DATA_ROOT]}" == "$HOME/media" ]] || { cat "$T/p"; declare -p ANSWER; exit 1; } ) \
+    || fail_ "a written path is expanded as a typed one (~ = home, relative = the repo's)"; pass
+
 # ---- typed and written: the same .env and local/state ----
 fresh; typed '1\n1\n1\n\nTOKEN\n' --fresh || fail_ "typed quick, fresh"
 snapshot "$T/typed"
@@ -113,7 +137,7 @@ fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\n'
 filed "$T/a.env" '' --fresh || fail_ "the same answers, written, with no terminal: $(cat "$T/out")"
 snapshot "$T/filed"
 diff "$T/typed.env" "$T/filed.env" >&2 && diff -r "$T/typed.state" "$T/filed.state" >&2 || fail_ "typed and written answers give the same .env and local/state"; pass
-has "Services: " && has "(from the answers file)" && ! has "== Accounts" || fail_ "written answers are said, not asked"; pass
+has "Services: " && has "Accounts: none (from the answers file)" && ! has "== Accounts" || fail_ "written answers are said, not asked"; pass
 [[ ! -s "$T/calls" ]] || fail_ "nothing run: $(cat "$T/calls")"; pass
 
 # ---- with no terminal, what would be asked is missing; with one, only the gaps ----

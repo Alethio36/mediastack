@@ -9,6 +9,8 @@
 # install it takes the recommendation, or is asked — and with no terminal,
 # an answer that would be asked must be written. Values follow .env's rules:
 # no quotes, and no comment after a value (comments go on their own line).
+# A yes/no answer takes yes, no, y, n, true or false; a path starting ~ is
+# your home, a relative one is inside this folder.
 # answers*.env is git-ignored: your answers never reach the repo.
 
 # ---------------------------------------------------- how configure runs --
@@ -22,120 +24,120 @@ CONFIGURE_MODE=
 START=
 
 # -------------------------------------------------------------- services --
-# y runs it, n leaves it off. Answer one and the blank ones take the standard
+# yes runs it, no leaves it off. Answer one and the blank ones take the standard
 # preset (on a re-run: what runs now); answer none and the question is asked.
 # --services a,b on the command line names the exact set instead.
 
 # one notification hub for the whole stack
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_APPRISE=
 
 # audiobook + podcast server with progress sync
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_AUDIOBOOKSHELF=
 
 # subtitle automation
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_BAZARR=
 
 # strikes stalled downloads, cleans up the queue
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_CLEANUPARR=
 
 # expose services without port-forwarding
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_CLOUDFLARED=
 
 # extra torrent client (most people do not need it)
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_DELUGE=
 
 # virtual live-TV channels from your library
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_ERSATZTV=
 
 # captcha bypass helper for some indexers
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_FLARESOLVERR=
 
 # VPN gateway — all download traffic exits through this tunnel
-#   y | n — recommended: y
+#   yes | no — recommended: yes
 ENABLE_GLUETUN=
 
 # the media server your users watch
-#   y | n — recommended: y
+#   yes | no — recommended: yes
 ENABLE_JELLYFIN=
 
 # instant, typo-tolerant Jellyfin search
-#   y | n — recommended: y
+#   yes | no — recommended: yes
 ENABLE_JELLYSEARCH=
 
 # reading server for ebooks, comics and manga
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_KAVITA=
 
 # book acquisition (Readarr replacement)
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_LAZYLIBRARIAN=
 
 # music automation
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_LIDARR=
 
 # search engine backing JellySearch
-#   y | n — recommended: y
+#   yes | no — recommended: yes
 ENABLE_MEILISEARCH=
 
 # music server (Subsonic API) over lidarr's library
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_NAVIDROME=
 
 # GUI reverse proxy + certificates (alternative to traefik)
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_NPM=
 
 # network-wide ad-blocking DNS
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_PIHOLE=
 
 # indexer manager feeding the arrs
-#   y | n — recommended: y
+#   yes | no — recommended: yes
 ENABLE_PROWLARR=
 
 # torrent client (runs inside the VPN)
-#   y | n — recommended: y
+#   yes | no — recommended: yes
 ENABLE_QBITTORRENT=
 
 # movie automation
-#   y | n — recommended: y
+#   yes | no — recommended: yes
 ENABLE_RADARR=
 
 # second Radarr just for 4K movies (own library + rules)
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_RADARR_4K=
 
 # request/discovery site for your users
-#   y | n — recommended: y
+#   yes | no — recommended: yes
 ENABLE_SEERR=
 
 # TV show automation
-#   y | n — recommended: y
+#   yes | no — recommended: yes
 ENABLE_SONARR=
 
 # second Sonarr just for anime (own library + rules)
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_SONARR_ANIME=
 
 # HTTPS names for every service, one certificate through Cloudflare DNS (recommended)
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_TRAEFIK=
 
 # extra torrent client (most people do not need it)
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_TRANSMISSION=
 
 # syncs + backs up per-user watch state across media servers
-#   y | n — recommended: n
+#   yes | no — recommended: no
 ENABLE_WATCHSTATE=
 
 # --------------------------------------------------- how people sign in --
@@ -235,11 +237,11 @@ SMTP_HOST=
 SMTP_PORT=
 
 # connect plain, then upgrade to TLS (port 587) — not with SMTP_TLS
-#   true | false — optional: blank leaves it unset
+#   yes | no — optional: blank leaves it unset
 SMTP_STARTTLS=
 
 # TLS from the first byte (port 465) — not with SMTP_STARTTLS
-#   true | false — optional: blank leaves it unset
+#   yes | no — optional: blank leaves it unset
 SMTP_TLS=
 
 # the login at the mail server (empty: it takes none)
@@ -324,12 +326,11 @@ QBITTORRENT_PASSWORD=
 
 # ------------------------------------------------------------ recyclarr --
 
-
-# the TRaSH quality profile trash-sync applies to that arr (radarr)
+# the TRaSH quality profile trash-sync applies to that arr — asked: 1080p, 720p, 4k or skip (radarr)
 #   any single-line text — recommended: 1080p
 TRASH_PROFILE_RADARR=
 
-# the TRaSH quality profile trash-sync applies to that arr (sonarr)
+# the TRaSH quality profile trash-sync applies to that arr — asked: 1080p, 720p, 4k or skip (sonarr)
 #   any single-line text — recommended: 1080p
 TRASH_PROFILE_SONARR=
 
@@ -356,11 +357,11 @@ TRAEFIK_DASH_PASSWORD=
 TLS_SOURCE=
 
 # your certificate, PEM, with its chain (TLS_SOURCE=own; up copies it in when it changes)
-#   a folder path — no recommendation — asked when it applies; with no terminal it must be written
+#   a file path — no recommendation — asked when it applies; with no terminal it must be written
 TLS_CERT_FILE=
 
 # its private key, PEM, unencrypted (TLS_SOURCE=own)
-#   a folder path — no recommendation — asked when it applies; with no terminal it must be written
+#   a file path — no recommendation — asked when it applies; with no terminal it must be written
 TLS_KEY_FILE=
 
 # ------------------------------------------------------------ transmission --

@@ -177,6 +177,11 @@ DC() { # compose wrapper: project dir pinned, your files, the VPN overlay and pi
         DOWN_WARNED=1
         warn "the stack was stopped with 'down' ($(stack_down_since)): scheduled jobs stay paused until ./mediastack.sh up"
     fi
+    # no terminal (an unattended run, a log): no per-layer progress lines, which
+    # buried an install log in thousands of them (found live Nov 2026)
+    if [[ ! -t 1 ]]; then
+        case "${1:-}" in up) set -- up --quiet-pull "${@:2}" ;; pull) set -- pull --quiet "${@:2}" ;; esac
+    fi
     sudo docker compose --project-directory "$SCRIPT_DIR" "${files[@]}" "$@"
 }
 

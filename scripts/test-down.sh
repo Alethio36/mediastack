@@ -109,7 +109,7 @@ grep -qx 'DC stop sonarr' "$T/dc" && grep -qx 'DC up -d --no-recreate sonarr' "$
 reset; mark
 REAL_DC=1 run 'DC up -d radarr; DC start sonarr'
 [[ $(grep -c 'stay paused' "$T/out") == 1 ]] || fail_ "one warning per run"; pass
-grep -q 'docker compose .* up -d radarr' "$T/sudo" || fail_ "the start still happens"; pass
+grep -qE 'docker compose .* up (--quiet-pull )?-d radarr' "$T/sudo" || fail_ "the start still happens"; pass   # --quiet-pull: no terminal here
 reset
 REAL_DC=1 run 'DC up -d radarr'
 ! grep -q 'stay paused' "$T/out" || fail_ "no warning without the mark"; pass

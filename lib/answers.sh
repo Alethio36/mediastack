@@ -22,6 +22,16 @@ declare -gA ANSWER=()            # KEY -> the written answer (only written ones 
 declare -gA ANSWER_WORDS=([UPDATE_SCHEDULE]=never [BACKUP_SCHEDULE]=never [VPN_SERVER_COUNTRIES]=auto)
 # names the questions take in any case and record lowercase: the file does the same
 ANSWER_LOWER=" SMTP_HOST STACK_DOMAIN VPN_PROVIDER "
+# a yes/no answer: these words in any case, recorded in the form its key keeps
+ANSWER_YES=" yes y true "; ANSWER_NO=" no n false "
+
+answer_yesno() { # answer_yesno TYPE VALUE -> the value its key keeps (true|false for bool, yes|no for enum:yes|no); rc 1 for any other word
+    local v=${2,,} on off
+    case "$1" in bool) on=true; off=false ;; enum:yes\|no) on=yes; off=no ;; *) return 1 ;; esac
+    if [[ "$ANSWER_YES" == *" $v "* ]]; then echo "$on"
+    elif [[ "$ANSWER_NO" == *" $v "* ]]; then echo "$off"
+    else return 1; fi
+}
 
 answer() { # answer KEY -> REPLY_VAL = the written answer, rc 0; rc 1 when the file leaves it blank (or there is none)
     [[ -n "${ANSWER[$1]+set}" ]] || return 1
@@ -112,6 +122,12 @@ answers_load() { # answers_load FILE — ANSWER from it; every problem with the 
         [[ -n "$v" ]] || continue   # blank: not answered
         [[ "$ANSWER_LOWER" != *" $k "* ]] || v=${v,,}
         if [[ -n "${ANSWER_WORDS[$k]:-}" && "$v" == "${ANSWER_WORDS[$k]}" ]]; then ANSWER[$k]=""; continue; fi
+        case "${typ[$k]}" in
+            bool|"enum:yes|no")   # yes, no, y, n, true or false, in any case
+                t=$(answer_yesno "${typ[$k]}" "$v") || { answer_refused "$k='$v' is not yes or no (yes, no, y, n, true, false)"; continue; }
+                v=$t ;;
+            path|file) v=$(abspath "${v/#\~/$HOME}") ;;   # as a typed path is read: ~ is home, relative is the repo's
+        esac
         r=$(env_value_problem "$k" "$v" "${typ[$k]}" "${emp[$k]}")
         [[ -z "$r" ]] || { answer_refused "$r"; continue; }
         ANSWER[$k]=$v

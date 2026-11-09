@@ -136,7 +136,7 @@ configure_root() { # configure_root VAR title "explanation..." allow_network(yes
     [[ -n "$cur" ]] || cur=$(env_recommended "$var") || die "$var has no recommended folder in the schema (lib/env.schema.tsv)"
     cur=$(abspath "$cur")
     if answer "$var"; then
-        val=$(abspath "${REPLY_VAL/#\~/$HOME}")
+        val=$REPLY_VAL   # read as a typed one when loaded (answers_load)
         p=$(root_problem "$val" "$allow_net"); [[ -z "$p" ]] || answer_refused "$var: $p"
         # a folder that moves needs its contents' fate decided: that is configure's question
         [[ "$val" == "$cur" || "$(root_entries "$cur")" == 0 ]] \
@@ -327,7 +327,7 @@ _configure_services() {
     fi
     [[ -n "$sel" ]] || die "No services selected — nothing to run."
     # shellcheck disable=SC2086  # a word list of services
-    if answer SIGNIN; then accounts_record "$REPLY_VAL" "$cur_list" $sel; else accounts_choose "$cur_list" $sel; fi
+    if answer SIGNIN; then ACCOUNTS_NOTE=" (from the answers file)" accounts_record "$REPLY_VAL" "$cur_list" $sel; else accounts_choose "$cur_list" $sel; fi
     sel=$ACCOUNTS_SEL
     if [[ "$mode" == 0 ]] && (( ! ACCOUNTS_CHANGED )); then
         ok "Keeping the current $cur_n service(s): $cur_list"; return 0   # nothing changed: .env untouched
@@ -350,7 +350,7 @@ services_from_answers() { # services_from_answers CURRENT-PROFILES -> SVC_ANSWER
         [[ -n "$(svc_label "$s" mediastack.installer)" && "$cur" != *",$s,"* ]] && continue     # set up by its own command
         pick+="$s "; k=ENABLE_$(uvar "$s")
         if [[ -n "$ANSWER_SERVICES" ]]; then [[ "$ANSWER_SERVICES" == *" $s "* ]] && SVC_ANSWERED+="$s "   # exactly these
-        elif answer "$k"; then [[ "$REPLY_VAL" == y ]] && SVC_ANSWERED+="$s "
+        elif answer "$k"; then [[ "$REPLY_VAL" == yes ]] && SVC_ANSWERED+="$s "
         elif [[ "$cur" != ",," ]]; then [[ "$cur" == *",$s,"* ]] && SVC_ANSWERED+="$s "
         elif [[ "$std" == *" $s "* ]]; then SVC_ANSWERED+="$s "
         fi
@@ -514,7 +514,7 @@ accounts_record() { # accounts_record none|wizarr|authentik CURRENT-PROFILES SVC
     ACCOUNTS_SEL=""
     for s in "$@"; do [[ "$s" == wizarr || "$s" == authentik ]] || ACCOUNTS_SEL+="$s "; done
     [[ "$c" == none ]] || ACCOUNTS_SEL+="$c"
-    ok "Accounts: $c"
+    ok "Accounts: $c${ACCOUNTS_NOTE:-}"
 }
 
 download_clients_enabled() { role_providers download-client "${ROLE_CONSUMERS[0]}"; }   # in priority order, one per line

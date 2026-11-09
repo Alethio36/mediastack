@@ -72,6 +72,12 @@ over the file. **agreed**
   none, the services question is asked (or, with no terminal, missing) —
   quick asks it today, and a file saying nothing about services must not
   install the preset silently. **agreed**
+- **One yes/no rule.** Every yes/no question shows `yes | no`; the file takes
+  `yes`, `no`, `y`, `n`, `true` or `false` in any case and records the form
+  the key keeps (`true`/`false` for the email switches, which `.env` holds).
+  Any other word (`on`, `1`) is refused, named. **agreed**
+- **Paths are read as typed ones**: `~` is the user's home, a relative path
+  is inside the repo folder. **agreed**
 - **Empty is never an answer.** Keys where an empty value means something
   (`BACKUP_SCHEDULE=` = never, `VPN_SERVER_COUNTRIES=` = auto) take the
   question's word in the file: `never`, `auto`. **agreed**
@@ -126,7 +132,7 @@ stale, as `.env.example` is held to the schema. **agreed**
 ```
 SIGNIN=            # none | wizarr | authentik — required, no recommendation
 BACKUP_SCHEDULE=   # daily | weekly | never | a time — recommended: daily, an hour after the update
-ENABLE_LIDARR=     # music — recommended: n
+ENABLE_LIDARR=     # music — recommended: no
 TZ=                # recommended: this host's time zone
 ```
 
@@ -229,6 +235,11 @@ Each step touches more than three files — known and accepted for this work.
    recorded by the questionnaire, answers configure's closing question;
    blank keeps its defaults. The file is read in two passes over the schema
    instead of three per line (test-answers: 65s to 27s).
+   *After the first live run (anzac4, Nov 2026):* the yes/no rule and paths
+   as typed (above); `TLS_CERT_FILE`/`TLS_KEY_FILE` are of a new `file` type
+   (a file path, not a folder); with no terminal, compose pulls quietly
+   (`up --quiet-pull`, `pull --quiet` — the per-layer lines had buried the
+   install log); a written sign-in says so like every other answer.
 5. *Done:* `answers.example`, written by `scripts/gen-answers.sh` from the
    schema (meaning, type, recommendation) and the labels (description,
    preset, own installer, arr type) on a throwaway render; CI runs it with
