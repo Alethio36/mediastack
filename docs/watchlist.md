@@ -782,3 +782,11 @@ authentik mode each user sets a Navidrome password once for their music apps.
 
 **Revisit when:** LDAP (or OIDC) lands in a Navidrome release — then Navidrome
 joins Jellyfin on authentik's LDAP outpost and the extra password goes.
+
+*Checked Nov 9 2026:* #5764 still unmerged (it covers Subsonic login flows that
+send the plain password; token-based apps send md5(password + salt), so the
+server must hold a recoverable password — no hash-only directory can serve
+them). OIDC as a plugin is proposed (discussion #5803; the maintainer:
+extension points will come as plugin hooks, no timeline). Forks: rejected —
+a soft fork lags on security fixes. Meanwhile: Navidrome users are disabled
+when their portal account goes (MVP plan step 1).

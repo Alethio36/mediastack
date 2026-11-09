@@ -177,16 +177,72 @@ validation, notifications, SSO). Before `migrate` moves the first household:
    small built-in page with local how-tos and a household quick-start.
 7. Then `migrate` (below, under Project health).
 
-Decided (Nov 2026), before the rollout, in this order: an unattended install
-from an answers file — configure answered ahead, blanks taking one source of
-recommended answers (designed and agreed:
-[design-answers.md](design-answers.md)); a record of every run (`local/runs/`) and a support bundle
-built from it, redacted by allowlist and shown before it is shared; `wire`
-reading a setting back after a write that timed out before calling it
-failed (today only the sign-in page's show-password write does). After MVP:
-an install without a VPN provider — the leak gate, the boot guard, the
-timers, qBittorrent's tun0 binding and doctor all assume gluetun, so it is an
-overhaul, not a flag.
+#### The MVP plan — decided Nov 9 2026
+Done (Nov 2026): the unattended install from an answers file
+([design-answers.md](design-answers.md)) — built, then proven on two clean
+installs from `base-cert` (`install --answers` with no terminal; the second
+also proved authentik's first-start fix). The rest, in this order — each
+shipped and proven before the next; the large ones start with a design doc
+agreed first:
+0. *Done:* this plan, recorded.
+1. **Small-checks batch** — the first `wire` not stopping a first-start
+   authentik; the schema's writer column (and a test holding it to the
+   recommended column); the Wizarr-mode access review; Navidrome users
+   disabled when their portal account goes (a removed person keeps the music
+   apps today); doctor seeing the apps' own sends to the hub; a `--dry-run`
+   smoke test in CI. With it, **Renovate in report-only mode** (its Dependency
+   Dashboard: no pull requests, no pins, no code changed) — first, so its trial
+   runs while the rest is built.
+2. **Run records and the support bundle** — every run to `local/runs/`,
+   rotated; the bundle redacted by allowlist and shown before it is shared.
+3. **`wire` reads a setting back** after a write that timed out.
+4. **`rotate-secrets`** — see Credential coverage.
+5. **Access per tool** — a live spike on LDAP app passwords first, then the
+   `frontend`/`admin` rename, tiers, providers per app and grants; see Access
+   per tool and LDAP app passwords.
+6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
+7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions
+   pending.
+8. **VPN depth** — provider by provider, from gluetun's wiki.
+9. **The household's look** — notifications, then branding.
+10. **Live TV (Dispatcharr)** — evaluation, then the build.
+11. **The README as a chapter-style tutorial** and the built-in how-to page.
+12. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
+    dependency layers below; Wizarr sign-in live; `restore --service
+    authentik`, Kavita and Audiobookshelf restores; the household's own preset
+    from an answers file.
+13. **Versions from the repo** — the final step, locking in a working
+    configuration; see its section.
+14. **`migrate`** — the first household.
+
+Until step 13, updates stay "update, then fix": a broken install beats one
+with a known hole. Hidden costs on record: step 5 changes every gated route
+(proven on a keeper install's `upgrade`); steps 8 and 10 depend on upstream
+(gluetun's providers, Dispatcharr's maturity); step 13 ships pins, Renovate
+and script auto-update together or installs freeze.
+
+**Finding hidden service dependencies** (decided Nov 8 2026; step 12) — a
+hand-picked preset list only tests what was thought of, and the dependencies
+live in the shell code, not in compose (`svc_deps` sees only `depends_on` and
+`network_mode`). Three layers, cheapest first: (1) a static audit in CI —
+every reference a service's code makes to another service (its keys,
+`svc_url`, helpers, container names) must go through a declared path (a
+compose dependency, a role, an `svc_enabled`/role guard); (2) rendering in CI
+for every leave-one-out set and a pairwise covering set of the choices (sign-in,
+download client, edge, certificate, services); (3) a live matrix on the
+canary — the pairwise set as answers files, each installed unattended from a
+snapshot and judged by the soak's judges (needs scripted snapshot reverts, a
+pull-through image cache for Docker Hub's limits, an own certificate rather
+than Let's Encrypt's, run records to triage).
+
+After the MVP: an install without a VPN provider (the leak gate, the boot
+guard, the timers, qBittorrent's tun0 binding and doctor all assume gluetun —
+an overhaul, not a flag); networks generated from the wire roles; several
+library folders per media type; metadata through the VPN as a switch;
+Pinchflat, Calibre-Web-Automated and Whisparr; the Matrix shard (the harder,
+multi-container test of adding a shard, after Dispatcharr's); pre-transcoding.
+Tabled: hardware transcoding (no GPU to test), the Jellyfin sign-in time.
+Watching: Navidrome LDAP/OIDC ([watchlist.md](watchlist.md#navidrome-ldap)).
 Lower priority: RAM and system requirements, measured on the rebuilt box.
 
 ### Organised by service — phases 1–2 done (Oct 2026), phase 3 under way
@@ -294,7 +350,16 @@ is green on it: `scripts/promote.sh` waits for the checks on `unstable`'s
 tip, refuses on any red one, then fast-forwards `stable` and pushes.
 `upgrade` follows the checked-out branch.
 
-### Versions from the repo — direction agreed (Oct 2026), after the test box's rebuild
+### Versions from the repo — direction agreed (Oct 2026); the MVP plan's final step (Nov 9 2026)
+*Nov 9 2026:* the last step before the first household — it locks in a
+configuration known to work. Renovate first runs report-only (step 1 of the
+plan) to see upstream's real cadence before anything merges. Installs must not
+freeze: patch and security bumps promote themselves after CI and a canary
+night; doctor warns when an install is behind; and a grace window (about three
+weeks, set after the report-only trial) before a stale install falls back to
+its floating tags, announced every night it applies — the owner would rather
+an install update and break than not update.
+
 Today the image an install runs is whatever its upstream tag points at the
 night it updates (26 of 28 images float; on 6 Oct a Jellyfin minor and a
 PostgreSQL patch landed unattended). The direction: **git is the source of
@@ -351,12 +416,18 @@ arrive on their own, as with watchtower, but validated first.
   update run's ops notification (`git fetch` only, never a pull), now; or
   wait for versions from the repo (above), where images move only with the
   script and the nightly walk is opted out of with `UPDATE_CHANNEL=manual`.
+  *Decided (Nov 9 2026):* built in and optional — `SCRIPT_UPDATES=notify|auto`
+  (default notify; MVP plan step 7), guarded by a restore point first, a health
+  check after with rollback, a minimum version per release, fast-forward only.
+  The full answer is versions from the repo (the plan's final step).
 - **Ship Pinchflat?** YouTube archiving, rated ship-worthy; brings two
   house-rule exceptions (no VPN; a self-updating yt-dlp).
   Evaluation: [watchlist.md](watchlist.md#pinchflat--pick).
+  *Nov 9 2026:* after the MVP — a test of adding a service as a folder.
 - **Ship Calibre-Web-Automated?** Rated ship-worthy; forks the books tree onto
   a Calibre `metadata.db`. Evaluation:
   [watchlist.md](watchlist.md#calibre-web-automated-cwa--book-management--e-reader-delivery).
+  *Nov 9 2026:* after the MVP — a test of adding a service as a folder.
 - **Ship Whisparr?** *(to evaluate)* The arr for adult content, from the
   Sonarr/Radarr family: it fits the arr pattern (VPN toggle, Prowlarr sync, a
   download-client category, the recycle bin, `wire`). To weigh: its own media
@@ -365,6 +436,7 @@ arrive on their own, as with watchtower, but validated first.
   default, and keep it to the users it is meant for; Prowlarr indexer
   coverage; which Whisparr line to track (it has had more than one). Decide
   in the watchlist before shipping.
+  *Nov 9 2026:* after the MVP — a test of adding a service as a folder.
 - **Hardware transcoding in Jellyfin** *(tabled, Oct 2026: no GPU to test
   on)*. Jellyfin's encoding settings are an API `wire` already uses (the
   transcode path), so a wire step could set the hardware type (VAAPI, QSV,
@@ -420,6 +492,7 @@ arrive on their own, as with watchtower, but validated first.
     box is hours per film (fine overnight if (2) keeps the list short);
     remote playback over a slow uplink and picture-based subtitles still
     force a live transcode, whatever the files are.
+  *Nov 9 2026:* after the MVP; not critical.
 - **Live TV from outside sources — Dispatcharr** *(chosen to try, Oct 2026)*.
   An IPTV manager in the arr style: it takes M3U playlists and Xtream Codes
   accounts, matches the programme guide (EPG), and hands the result to
@@ -461,6 +534,9 @@ arrive on their own, as with watchtower, but validated first.
     transcodes in Jellyfin (IPTV formats rarely direct-play everywhere),
     and one more database to back up and restore.
   Decide in the watchlist before shipping.
+  *Nov 9 2026: into the MVP* (plan step 10) — the evaluation above first, then
+  the build as the modular-service proof, born with the access tiers, secret
+  rotation and run records in place.
 
 ### Storage layout — decided (Sept 2026), after the MVP
 - **No mergerfs in the tooling** — pooling drives is a host storage decision,
@@ -477,6 +553,7 @@ arrive on their own, as with watchtower, but validated first.
   folder, not just `DATA_ROOT/media`), and doctor's space checks per drive.
   Not needed for the first migration (that household matches oldhost's single
   data root), so it comes after the MVP.
+  *Nov 9 2026:* stays after the MVP — for a household with media on several folders or drives.
 
 ### End-user experience
 - **VPN depth** *(raised Nov 2026, to scope)*. configure asks a provider,
@@ -494,6 +571,7 @@ arrive on their own, as with watchtower, but validated first.
   and the leak gate and doctor learn whatever a choice changes (a
   forwarded port, a second hop). Related: an install without a VPN
   provider (after MVP, above).
+  *Nov 9 2026: into the MVP* (plan step 8).
 - **Password reset by email** — *shipped (Oct 2026)*. The
   `mediastack-recovery` flow (blueprint): identify by username or email (an
   unknown one gets the same answer), a 30-minute single-use link in
@@ -547,6 +625,9 @@ arrive on their own, as with watchtower, but validated first.
   mediastack wrote (a change made in an app's own settings is left alone,
   as the base URL is today); nothing is required — an empty kit is today's
   look.
+  *Nov 9 2026: merged with the richer notification layout below — "the
+  household's look" — into the MVP* (plan step 9): the notification layout
+  first, then the shared branding files, then app by app where each allows it.
 - Web panel polishing.
 - Script polishing for the end user (clearer prompts, output, ergonomics).
   - *`up`/`down` output is truncated on short terminals.*
@@ -564,6 +645,7 @@ arrive on their own, as with watchtower, but validated first.
   Seerr's events could look closer to Seerr's own Discord embeds (poster,
   fields, colour per event) while still routing through the hub — check
   Apprise's Discord options against its docs first.
+  *Nov 9 2026:* merged into "the household's look" (above), in the MVP.
 - **A self-hosted endpoint for the `ops` stream** *(tabled, Oct 2026 —
   kept here so it isn't lost)*. Likely not mediastack's to host: it may
   belong to a separate communications stack (Nextcloud, Matrix, Element),
@@ -597,6 +679,7 @@ arrive on their own, as with watchtower, but validated first.
   installs), and Jellyfin keeps its session, so people sign in rarely. The
   server's request log is JSON: `event` is the path, with `method` and
   `runtime` beside it.
+  *Nov 9 2026:* tabled — explore later.
 
 ### Media monitoring
 Answering "what happened to X?" after the fact: the nightly media manifest
@@ -823,17 +906,36 @@ all built; what each still leaves open is noted below.
   only where its API stays protected (Bazarr: auth None + its API key;
   Pi-hole: an empty password is safe now its port is local, but its phone apps
   would lose the API) — checked tool by tool.
+  *Nov 9 2026: into the MVP* (plan step 6), after per-app access — a tool drops its own login only behind its own gate.
 - **Wizarr mode: Apprise and the panel** *(review later — accepted risk for
   now)*: without authentik there is no gate, and both have no login of their
   own; they stay LAN-open as before.
+  *Nov 9 2026:* in the small-checks batch (plan step 1).
 - **Access per tool** *(look into later)*: today there are two levels — `admins`
   (every admin tool) and the household front end (`media-users`). Finer rules
   (one person gets Sonarr but not qBittorrent) would be one application and
   binding per tool instead of the one domain-wide rule.
+  *Designed (Nov 9 2026), in the MVP* (plan step 5): two tiers, **`frontend`**
+  and **`admin`** — the groups (renamed from `media-users`/`admins` by an
+  `upgrade` migration) and each service's default (a label in its folder, moved
+  with `access tier <svc> frontend|admin`); grants per person outside their tier
+  (`access grant|revoke <user> <svc>`, groups `app-<svc>`; `access list`). An
+  app admits its tier's group or its own. That needs an authentik application
+  and provider per gated app (database objects, served by the same outpost —
+  no new containers) in place of the one domain-wide provider, which decides
+  once at sign-in and so cannot tell apps apart. Moving a download or settings
+  tool to `frontend` warns. Every gated route changes: proven on a keeper
+  install's `upgrade`, not only a clean install.
 - **LDAP app passwords** *(option, later)*: authentik lets a user bind with a
   per-device app password (a TV gets its own, revocable without changing the
   main password). Breaks "one password for everything", so an option, not a
   default.
+  *Nov 9 2026: wanted, to verify first* (plan step 5): one account, extra
+  revocable passwords, one per device. LDAP binds run a flow whose password stage
+  can accept app passwords (users report binding with a token). To prove on
+  authentik 2026.8 before designing further: ordinary users can create them,
+  a direct bind accepts one, revoking stops the next bind. Then a switch
+  (`LDAP_APP_PASSWORDS`).
 - **Email for authentik** — *SMTP shipped (Oct 2026)*: the portal sends
   through any SMTP server (`configure`, `email test`, docs/email.md). What
   email is for stays the standard: (1) a user resets their own forgotten
@@ -856,6 +958,12 @@ all built; what each still leaves open is noted below.
   targets; (2) Wizarr mode's `reset-password` through Jellyfin's API (today it
   points at Jellyfin's dashboard); (3) Wizarr's admin (no API found yet — UI
   only); (4) Navidrome's per-user Subsonic password, reset by the admin.
+  *Nov 9 2026: in the MVP* (plan step 4) as `rotate-secrets [name|--all]` —
+  generate, apply, rewire every consumer (authentik first); proven by
+  `--all` then `wire --verify` clean and every sign-in working. With it:
+  Wizarr mode's `reset-password` through Jellyfin's API, Navidrome's admin
+  reset through its API. Navidrome's music-app logins stay an upstream gap
+  (watchlist).
 - **A Jellyfin lockout tells ops** — *shipped (Oct 2026)*. The throttle,
   refusing a right password after too many wrong ones, raises
   `mediastack_jellyfin_lockout` (once per person per 6 hours); a notification
@@ -917,6 +1025,7 @@ all built; what each still leaves open is noted below.
     the same files — decide the two together.
   * Not chosen: Jellyfin inside gluetun's namespace — playback would then die
     with the tunnel, and a leak-test stop would take streaming down.
+  *Nov 9 2026:* the design stands, as a user switch (`METADATA_VIA_VPN=on|off`, configure and the answers file; doctor checks either way); after the MVP.
 - **Network segmentation** *(after MVP, Oct 2026 — hardening, not a hole)*.
   Every container shares one network (`mediastack`), so a compromised one
   can reach every other's API. The easy part is done (Nov 2026): a data store
@@ -935,6 +1044,14 @@ all built; what each still leaves open is noted below.
     networks (downtime).
   * What it buys: a compromised household app could no longer reach Apprise's
     API (no login), FlareSolverr or another app's database directly.
+  *Chosen (Nov 9 2026), after the MVP:* networks generated from the wire
+  roles — each service joins only the networks of the services it talks to;
+  the VPN group stays one zone, because which services sit behind the VPN is
+  each household's choice (moving all but the torrent client out was rejected
+  for that reason). Later option: several tunnels (a gluetun per group, each
+  with its leak test; counts against the provider's device limit). Rejected:
+  host firewall rules in `DOCKER-USER` (fragile, outside the stack). A design
+  doc — the who-talks-to-whom map from the roles — comes first.
 
 ### Project health
 - **The first `wire` stops a first-start authentik** *(found Nov 2026, answers-file install on anzac4)*.
@@ -943,6 +1060,7 @@ all built; what each still leaves open is noted below.
   (about 3 minutes lost). Not a fault since the first-pass wait waits for
   the defaults it needs; a speed fix: take the first restore point once
   authentik's first pass is done, or before `up` starts it.
+  *Nov 9 2026:* in the small-checks batch (plan step 1).
 - **Stale `writer` column in the schema** *(found Nov 2026, while adding the
   `recommended` column)*. `MEDIA_DIR_*`, `MEDIA_GROUP_GID` and `UID_BASE` say
   writer `wizard`, but configure no longer asks any of them (library folder
@@ -950,6 +1068,7 @@ all built; what each still leaves open is noted below.
   writer (`you` or `advanced`), and have `scripts/test-env.sh` hold the two
   columns together: a `wizard` row is one a question writes, so its
   `recommended` is never `-`.
+  *Nov 9 2026:* in the small-checks batch (plan step 1).
 - **Optimization & project-health pass.** The build phase prioritized capability
   over refinement. A deliberate sweep: audit `mediastack.sh` for dead code,
   redundant logic, and oversized functions; confirm every verb still earns its
@@ -961,6 +1080,7 @@ all built; what each still leaves open is noted below.
   straight to the hub is invisible to it — three weeks of arr events answered
   424 (a retired tag) showed only as log noise. Doctor should read the hub's
   log for failed sends since its last run and name the sender and tag.
+  *Nov 9 2026:* in the small-checks batch (plan step 1).
 - **An ERR trap that names an unexpected stop** — *shipped (Oct 2026)*.
   `set -E` + `on_err` (lib/common.sh): an unguarded failure prints one line
   (exit code, file:line, caller chain, the command unexpanded) and the exit
@@ -988,6 +1108,7 @@ all built; what each still leaves open is noted below.
 - **A `--dry-run` smoke test in CI.** The rest of the suite is in place: each
   `scripts/test-*.sh` / `check-*.sh` states in its header what it pins, and the
   lint workflow runs them all.
+  *Nov 9 2026:* in the small-checks batch (plan step 1).
 - First-class migration (a `migrate` verb) — turns the manual cutover
   procedure into a validated command. The source is either a local path (old
   stack on the same machine) or a remote host over SSH (`--from host:/path`);
