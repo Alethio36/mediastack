@@ -75,6 +75,8 @@ jobs:
         run: scripts/test-configure.sh
       - name: the questionnaire asks and records only — quick or full, its exit codes, configure applies the folders (scripts/test-questions.sh)
         run: scripts/test-questions.sh
+      - name: Navidrome — the stack's admin, and its people following the portal (scripts/test-navidrome.sh)
+        run: scripts/test-navidrome.sh
       - name: what scripts/dryrun-live.sh counts as a write — every read passes, every kind of write is caught, none named with its secrets (scripts/test-dryrun-live.sh)
         run: scripts/test-dryrun-live.sh
       - name: the answers file — every problem at once, typed and written answers agree, the check pass asks nothing (scripts/test-answers.sh)

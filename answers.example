@@ -306,6 +306,12 @@ JELLYFIN_SERVER_NAME=
 #   any single-line text — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 KAVITA_ADMIN_PASSWORD=
 
+# ------------------------------------------------------------ navidrome --
+
+# Navidrome's admin password (configure records it)
+#   any single-line text — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+NAVIDROME_ADMIN_PASSWORD=
+
 # ------------------------------------------------------------ olivetin --
 
 # install the web panel (asked with Traefik on and no panel yet)

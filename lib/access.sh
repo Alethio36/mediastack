@@ -45,6 +45,11 @@ cmd_credentials() {
         printf '%-22s %s\n' "Kavita admin pw"       "$(env_or_note KAVITA_ADMIN_PASSWORD '(not set — run wire kavita)')"
         signin_is authentik && printf '%-22s %s\n' "Kavita admin at" "$(svc_url kavita)/login?skipAutoLogin=true   (its login page otherwise goes straight to the portal)"
     fi
+    if svc_enabled navidrome; then
+        printf '%-22s %s\n' "Navidrome admin"       "$(env_or_note NAVIDROME_ADMIN_USER '(not set — run wire navidrome)')"
+        printf '%-22s %s\n' "Navidrome admin pw"    "$(env_or_note NAVIDROME_ADMIN_PASSWORD '(not set — run wire navidrome)')"
+        signin_is authentik && info "With the portal, that Navidrome admin is the stack's own (used on this host only) — people sign in through the portal; admins get Navidrome admin rights from the portal's 'admins' group."
+    fi
     if signin_is authentik; then
         printf '%-22s %s\n' "Portal admin user"     "akadmin"
         printf '%-22s %s\n' "Portal admin password" "$(env_or_note AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"

@@ -2,7 +2,9 @@
 # the Subsonic API, so any Subsonic client (phone, desktop, car) plays your
 # collection — a real music experience where Jellyfin's is an afterthought.
 # Read-only on the music tree: it serves, it never writes; lidarr owns the
-# files. No wire role — create your account on first visit at its URL.
+# files. Its first account is the stack's own admin (wire navidrome makes it;
+# see: credentials); with the portal, people are signed in by it, and one whose
+# portal account goes loses their music apps (services/navidrome/people.sh).
 
 x-logging: &logging
   driver: json-file
@@ -34,6 +36,9 @@ services:
       # user sets once in Navidrome, so password editing stays on.
       - ND_EXTAUTH_TRUSTEDSOURCES=${MEDIASTACK_GATE_TRUST:-}
       - ND_EXTAUTH_USERHEADER=X-authentik-username
+    # 127.0.0.1 only: the script's way in (wire navidrome); people use the domain
+    ports:
+      - "127.0.0.1:${NAVIDROME_PORT:-4533}:4533"
     volumes:
       - ${CONFIG_ROOT}/navidrome:/data
       # lidarr's music root, read-only — Navidrome serves, never writes

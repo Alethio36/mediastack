@@ -188,9 +188,8 @@ agreed first:
 1. **Small-checks batch** — the first `wire` not stopping a first-start
    authentik; the schema's writer column (and a test holding it to the
    recommended column); the Wizarr-mode access review; Navidrome users
-   disabled when their portal account goes (a removed person keeps the music
-   apps today — its own patch: a stack-owned Navidrome admin and a sync,
-   decided Nov 11 2026); doctor seeing the apps' own sends to the hub; a
+   disabled when their portal account goes (*done, Nov 2026*: a stack-owned
+   Navidrome admin and a 15-minute sync, services/navidrome/people.sh); doctor seeing the apps' own sends to the hub; a
    `--dry-run` smoke test (live on the test box). With it, **Renovate in report-only mode** (its Dependency
    Dashboard: no pull requests, no pins, no code changed) — first, so its trial
    runs while the rest is built.

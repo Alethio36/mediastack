@@ -703,6 +703,7 @@ cmd_up()   {
     vpn_reattach_guard   # fail-closed: no service may run pinned to a dead gluetun
     vpnguard_ensure      # (re)install the boot/daemon guard unit
     gate_timers_ensure   # and the leak checks: local every 5 minutes (the VPN group's supervisor), full hourly, the host's address daily
+    if signin_is authentik && svc_enabled navidrome; then people_timer_ensure; fi   # Navidrome follows the portal (services/navidrome/people.sh)
     svc_enabled authentik && authentik_release_record
     sudo rm -f "$STOP_MARKER"   # everything is up: a cut-off backup's marker is settled
     ok "Stack started."
@@ -1184,6 +1185,7 @@ VERBS=(
     "unit-failed~unit-failed <unit>~max=1~Internal~Tell ops a scheduled or boot run failed (systemd's OnFailure hook)."
     "frontdoor-refresh~frontdoor-refresh~none~Internal~Regenerate the panel's config and entity files."
     "audit-extract~audit-extract~none~Internal~Copy new deletion events from auditd's rotating log into the durable log (hourly timer)."
+    "people-sync~people-sync~none~Internal~With the portal: a person whose portal account was deactivated or deleted loses their Navidrome music apps (every 15 minutes)."
 )
 
 verb_entry() { # verb_entry <verb> -> its registry line, rc 1 if unknown

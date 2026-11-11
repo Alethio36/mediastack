@@ -329,6 +329,7 @@ Internal (called by the panel, timers and units — not meant for hand use)
 | `questionnaire [--fresh] [--answers FILE] \| --for SVC...` | `configure`'s questions (`--for`: those of the services `enable` brings), run as their own process ([docs/design-install.md](docs/design-install.md)): they record the answers in `.env` and `local/state` and do nothing else. Exit 0: all answered; 130: cancelled; 3: no terminal to ask on (and no answers file); 4: the answers file's problems, listed |
 | `host-identity` | refresh the record of this host's own address (RIPEstat) that `leak-test` compares the tunnel against — once a day at a random time (`mediastack-hostid.timer`), never inside a leak-test, so no run asks about both of your addresses at once. `configure` makes the first record; by hand when leak-test reports it missing or stale |
 | `unit-failed <unit>` | tell the `ops` stream that a scheduled or boot run failed — its result, exit status and last lines (systemd's OnFailure hook; once per unit per 6 hours) |
+| `people-sync` | every 15 minutes (`mediastack-people.timer`, with the portal and Navidrome): a person whose portal account was deactivated or deleted loses their Navidrome music apps — see "Music (Navidrome)"; ops hears each one |
 | `audit-extract` | hourly (timer): copy new deletion events from auditd's rotating log into `BACKUP_ROOT/audit/`, prune it to `AUDIT_KEEP_DAYS`, flag a gap if auditd rotated first |
 
 Every verb rejects arguments it does not accept — a typo or an unsupported
@@ -695,10 +696,21 @@ The `navidrome` profile serves the music lidarr manages through the
 Subsonic API — any Subsonic client (phone, desktop, car stereo) plays
 your collection, a real music experience where Jellyfin's is an
 afterthought. It reads `${DATA_ROOT}/media/music` **read-only**: it
-serves, lidarr owns the files. No wiring — create your account on first
-visit at `https://music.<your-domain>`. With the portal, nobody creates one:
-the portal signs people in and Navidrome makes their account on the first
-visit (see "The portal and the gate").
+serves, lidarr owns the files. Its first account is the stack's own admin:
+`wire navidrome` makes it on a fresh install (see `credentials`). Without the
+portal, that admin adds people in Navidrome (Settings → Users). With the
+portal, nobody creates one: the portal signs people in and Navidrome makes
+their account on the first visit (see "The portal and the gate"); admin
+rights follow the portal's `admins` group. Their music apps use a password
+each sets once in Navidrome, which the portal never checks — so every 15
+minutes (`people-sync`) the stack takes it back from anyone whose portal
+account was deactivated or deleted: their password is replaced (their music
+and history stay; reactivated, they set a new one), and a deleted person's
+account is renamed `removed-<name>-<date>`, so someone joining later under
+that name starts fresh. An account Navidrome had before the portal, or one
+made by hand, is never touched. Navidrome on an install from before this
+already has its first visitor as admin: `wire navidrome` says how to add the
+stack's.
 
 ## Watch state (WatchState)
 
@@ -767,7 +779,8 @@ download clients, LazyLibrarian, Cleanuparr, WatchState, Pi-hole, ErsatzTV) and
 Traefik's dashboard. Navidrome sits behind a *household* gate: anyone in
 `media-users` gets in, and the portal tells Navidrome who they are (it creates
 them on their first visit); music apps use `/rest/` with a password each user
-sets once in Navidrome's settings. The panel needs no login of its own past
+sets once in Navidrome's settings, taken back when their portal account goes
+(see "Music (Navidrome)"). The panel needs no login of its own past
 the gate: it trusts the portal's identity headers, on a network only the edge
 joins (`mediastack-panel`; docs/frontdoor.md). Every route past a gate strips the portal's
 identity headers, and Navidrome trusts only Traefik's address — Traefik keeps

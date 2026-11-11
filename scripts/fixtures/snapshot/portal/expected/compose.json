@@ -1110,6 +1110,14 @@
       "networks": {
         "mediastack": {}
       },
+      "ports": [
+        {
+          "host_ip": "127.0.0.1",
+          "protocol": "tcp",
+          "published": "4533",
+          "target": 4533
+        }
+      ],
       "profiles": [
         "navidrome"
       ],
