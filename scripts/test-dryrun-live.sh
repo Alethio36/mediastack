@@ -38,6 +38,7 @@ v=$(judge curl -sS -X PUT -H 'X-Api-Key: SECRETKEY' -d '{"password":"SECRETPW"}'
 ok_    docker inspect --type container mediastack-radarr
 ok_    docker ps -aq
 ok_    docker image inspect img:latest
+ok_    docker port mediastack-traefik 9000/tcp
 ok_    docker manifest inspect img:latest
 ok_    docker buildx imagetools inspect img:latest
 ok_    docker compose --project-directory /r -f a.yml --profile '*' config --format json
@@ -73,6 +74,8 @@ ok_    sudo sh -c 'command -v conntrack'
 ok_    sudo systemctl is-active mediastack-update.timer
 ok_    sudo tee /srv/config/recyclarr/recyclarr.preview.yml
 ok_    sudo rm -f /srv/config/recyclarr/recyclarr.preview.yml
+ok_    sudo install -o 13010 -g mediacenter -m 600 /tmp/tmp.x /srv/config/recyclarr/recyclarr.preview.yml
+write_ sudo install -o 13010 -g mediacenter -m 600 /tmp/tmp.x /srv/config/recyclarr/recyclarr.yml
 write_ sudo docker compose -f a.yml up -d
 write_ sudo tee /srv/config/recyclarr/recyclarr.yml
 write_ sudo rm -f /srv/config/x

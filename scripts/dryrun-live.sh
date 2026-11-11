@@ -13,7 +13,7 @@
 #   curl     any method but GET/HEAD, or a body — except the reads that use
 #            POST: a login, Apprise's /get/<key>, and the JSON-RPC reads of
 #            Deluge and Transmission (judged by the method named in the body)
-#   docker   anything but inspect/ps/logs/info/version/images and their
+#   docker   anything but inspect/ps/logs/info/version/images/port and their
 #            inspect/ls forms; compose only config/ps/images/ls, its own
 #            `--dry-run`, and recyclarr's `sync --preview` (trash-sync's
 #            preview); exec only the read commands mediastack runs in a
@@ -23,7 +23,7 @@
 #            readlink, sha256sum, find without -delete or a writing -exec,
 #            `sh -c 'command -v …'`, systemctl's queries, timeout around a
 #            read) — docker under sudo is judged as docker; trash-sync's
-#            preview may write and remove its scratch file
+#            preview may install, write and remove its scratch file
 # A violation shows the tool and its target only (no bodies or headers: they
 # carry secrets). Not covered: a write by any other route.
 #
@@ -86,7 +86,7 @@ judge_exec() { # judge_exec CMD... -> ok | write: … (a command run inside a co
 judge_docker() { # judge_docker ARG... -> ok | write: …
     local a sub="" i
     case "${1:-}" in
-        inspect|ps|logs|info|version|images) echo ok; return ;;
+        inspect|ps|logs|info|version|images|port) echo ok; return ;;
         image|network|volume|container|manifest)
             [[ "${2:-}" =~ ^(inspect|ls|list)$ ]] && { echo ok; return; }
             echo "write: docker $1 ${2:-}"; return ;;
@@ -141,6 +141,10 @@ judge_sudo() { # judge_sudo ARG... -> ok | write: …
             echo ok; return ;;
         systemctl)
             [[ "${1:-}" =~ ^(is-active|is-enabled|is-failed|status|show|cat|list-units|list-timers|list-unit-files)$ ]] && { echo ok; return; } ;;
+        install) # trash-sync's preview installs its scratch copy (the destination: the last word)
+            local dest=${!#}
+            [[ "$dest" == */"$PREVIEW_FILE" ]] && { echo ok; return; }
+            echo "write: sudo install ${dest##*/}"; return ;;
         tee|rm) # trash-sync's preview writes and removes its scratch copy, nothing else
             local a; for a in "$@"; do [[ "$a" == -* ]] && continue
                 [[ "${a##*/}" == "$PREVIEW_FILE" ]] || { echo "write: sudo $c ${a##*/}"; return; }
