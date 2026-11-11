@@ -71,6 +71,19 @@ credential rotation first checks its service is enabled, and nothing a wire
 step calls can end the whole run (see
 [adding-a-service.md](adding-a-service.md#its-code)).
 
+## Dry runs touch nothing (live, on the test box)
+
+`scripts/dryrun-live.sh` runs `wire --dry-run`, `update --dry-run` and
+`trash-sync --dry-run` against a running stack, in a terminal, through
+wrappers for `sudo`, `docker` and `curl`: every read goes through, every
+write is blocked and recorded. It passes when each verb exits 0 with its
+dry-run line, nothing was blocked, and `.env`, `local/` and every container
+(id, start time, restarts, state) are unchanged. It runs live because a dry
+run's answers come from the apps — faking them in CI tests the fakes. What
+counts as a write is pinned in CI by `scripts/test-dryrun-live.sh`; a write
+by any other route is not seen. Run it at the end of a batch, beside
+`scripts/safety-live.sh`.
+
 ## The soak harness (test box only)
 
 `scripts/soak.sh` simulates days of use. Each simulated day runs the stack's

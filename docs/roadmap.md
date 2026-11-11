@@ -189,8 +189,9 @@ agreed first:
    authentik; the schema's writer column (and a test holding it to the
    recommended column); the Wizarr-mode access review; Navidrome users
    disabled when their portal account goes (a removed person keeps the music
-   apps today); doctor seeing the apps' own sends to the hub; a `--dry-run`
-   smoke test in CI. With it, **Renovate in report-only mode** (its Dependency
+   apps today — its own patch: a stack-owned Navidrome admin and a sync,
+   decided Nov 11 2026); doctor seeing the apps' own sends to the hub; a
+   `--dry-run` smoke test (live on the test box). With it, **Renovate in report-only mode** (its Dependency
    Dashboard: no pull requests, no pins, no code changed) — first, so its trial
    runs while the rest is built.
 2. **Run records and the support bundle** — every run to `local/runs/`,
@@ -1090,10 +1091,12 @@ all built; what each still leaves open is noted below.
   now refuses at once while an update, backup or wire holds the lock, and
   holds it across its hand-over to the pulled script (pinned by
   scripts/test-upgrade.sh).
-- **A `--dry-run` smoke test in CI.** The rest of the suite is in place: each
-  `scripts/test-*.sh` / `check-*.sh` states in its header what it pins, and the
-  lint workflow runs them all.
-  *Nov 9 2026:* in the small-checks batch (plan step 1).
+- **A `--dry-run` smoke test** — *built (Nov 2026), live on the test box, not
+  CI*: `scripts/dryrun-live.sh` (docs/testing.md). In CI a dry run needs a
+  fake Docker and fake app answers for every wire role — brittle, and it
+  proves the fakes. Its write rules are pinned in CI
+  (`scripts/test-dryrun-live.sh`). First live run: at the end of the
+  small-checks batch; expect a few reads to tune into the rules.
 - First-class migration (a `migrate` verb) — turns the manual cutover
   procedure into a validated command. The source is either a local path (old
   stack on the same machine) or a remote host over SSH (`--from host:/path`);
