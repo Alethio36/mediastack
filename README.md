@@ -701,8 +701,11 @@ serves, lidarr owns the files. Its first account is the stack's own admin:
 portal, that admin adds people in Navidrome (Settings → Users). With the
 portal, nobody creates one: the portal signs people in and Navidrome makes
 their account on the first visit (see "The portal and the gate"); admin
-rights follow the portal's `admins` group. Their music apps use a password
-each sets once in Navidrome, which the portal never checks — so every 15
+rights follow the portal's `admins` group. Their music apps sign in with
+their Navidrome password, which each person sets once in Navidrome's own
+change-password form (Navidrome has no separate app password; the
+current-password field stays blank — nobody ever chose the first one). The
+portal never checks it — so every 15
 minutes (`people-sync`) the stack takes it back from anyone whose portal
 account was deactivated or deleted: their password is replaced (their music
 and history stay; reactivated, they set a new one), and a deleted person's
