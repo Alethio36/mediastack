@@ -270,6 +270,27 @@ authentik_first_pass_wait() { # a first start: wait for authentik's own first pa
     done
 }
 
+authentik_first_pass_settle() { # before the first wire's restore point: let a first start finish its own pass. Never fails: wire_authentik judges
+    # The point stops the stack; authentik stopped mid-pass starts the whole
+    # pass over (~3 min lost, found live Nov 2026 on an answers-file install)
+    [[ "$(c_state "$(svc_cname authentik)")" == running ]] || return 0
+    local st waited=0
+    # its API, then its discovery of our blueprint: both come up during a start
+    while st=$(authentik_blueprint_status); [[ -z "$st" || "$st" == unreadable* ]]; do
+        if (( waited >= AUTHENTIK_DISCOVER_WAIT )); then
+            warn "authentik: ${st:-its portal setup not discovered} after $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes — taking the restore point anyway"
+            return 0
+        fi
+        (( waited )) || info "authentik: waiting for it to come up before the restore point stops the stack (up to $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes)"
+        sleep 5; waited=$((waited + 5))
+    done
+    # applied before (it has a hash): not a first start
+    [[ -z "$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied_hash // ""' 2>/dev/null)" ]] || return 0
+    info "authentik: a first start — letting its own first pass finish before the restore point (up to $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes)"
+    st=$(authentik_first_pass_wait)
+    info "authentik: first pass ${st:-not finished} — taking the restore point"
+}
+
 authentik_blueprint_why() { # authentik's own reasons for rejecting mediastack's blueprint (its validator, dry run — nothing applied)
     # its logs and task records keep no reasons; this command states them. Never
     # fails: it is how a failure is reported (found live: an empty result ended wire)

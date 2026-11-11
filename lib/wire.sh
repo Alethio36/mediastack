@@ -208,6 +208,7 @@ cmd_wire() {
     # was a question whose answer was Yes; docs/design-install.md)
     if (( ! WIRE_DRY )) && [[ ! -f "$WIRED_FILE" && -z "$(state_get wire-restore-taken)" ]]; then
         info "First wire on this deployment — a restore point first"
+        if signin_is authentik; then authentik_first_pass_settle; fi   # the point's stop would start its first pass over
         backup_take manual "before the first wire"
         state_set wire-restore-taken yes   # once, however the run ends
         # the backup bounced every container — let the apps come back before

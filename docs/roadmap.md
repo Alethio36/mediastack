@@ -1054,13 +1054,6 @@ all built; what each still leaves open is noted below.
   doc — the who-talks-to-whom map from the roles — comes first.
 
 ### Project health
-- **The first `wire` stops a first-start authentik** *(found Nov 2026, answers-file install on anzac4)*.
-  Its restore point stops the stack about a minute and a half into
-  authentik's first start; authentik then begins its whole first pass again
-  (about 3 minutes lost). Not a fault since the first-pass wait waits for
-  the defaults it needs; a speed fix: take the first restore point once
-  authentik's first pass is done, or before `up` starts it.
-  *Nov 9 2026:* in the small-checks batch (plan step 1).
 - **Optimization & project-health pass.** The build phase prioritized capability
   over refinement. A deliberate sweep: audit `mediastack.sh` for dead code,
   redundant logic, and oversized functions; confirm every verb still earns its

@@ -25,6 +25,8 @@
 #   * a first start: authentik is wired before jellyfin, and wire waits
 #     (bounded) for the blueprint to be discovered — a timeout is a failure,
 #     a dry run never waits
+#   * the first wire's restore point waits (bounded) for a first start's own
+#     pass to finish, so its stop does not start authentik over
 #   * the gate: Traefik's middleware asks authentik only when it runs; wire
 #     adds the gate beside the outpost's providers, puts akadmin in admins
 #     once, keeps one admins-only card per gated tool and never touches
@@ -393,6 +395,28 @@ bp_clock() { # bp_clock NEEDS-APPLIED-AT -> "STATUS-RETURNED at TICK"
 [[ "$(bp_clock 4)" == "error at 4" ]] || fail_ "an error while its defaults are pending waits for them, then stands: $(bp_clock 4)"; pass
 [[ "$(bp_clock 0)" == "error at 0" ]] || fail_ "an error with its defaults applied is final at once: $(bp_clock 0)"; pass
 [[ "$(bp_clock 9999)" == "error at $(( AUTHENTIK_DISCOVER_WAIT / 5 ))" ]] || fail_ "the wait for them is bounded: $(bp_clock 9999)"; pass
+# the first wire's restore point stops the stack: a first start of authentik
+# stopped mid-pass starts its whole pass over (~3 min lost, found live Nov
+# 2026) — wire lets that pass finish before the point, and only then
+fw=$(awk '/^cmd_wire\(\)/,/^}/' lib/wire.sh)
+settle=$(grep -n 'signin_is authentik.*authentik_first_pass_settle' <<<"$fw" | cut -d: -f1 || true)
+take=$(grep -n 'backup_take manual "before the first wire"' <<<"$fw" | cut -d: -f1 || true)
+[[ -n "$settle" && -n "$take" ]] && (( settle < take )) || fail_ "the first wire lets authentik's first pass finish before its restore point"; pass
+settled() { # settled STATE READABLE-AT HASH -> "looks=N waited|nowait" (a clock ticks with each sleep)
+    ( echo 0 > "$T/tick"; echo 0 > "$T/looks"; rm -f "$T/fpw"
+      sleep() { echo $(( $(cat "$T/tick") + 1 )) > "$T/tick"; }
+      c_state() { echo "$CST"; }
+      authentik_blueprint_status() { echo $(( $(cat "$T/looks") + 1 )) > "$T/looks"
+          if (( $(cat "$T/tick") < AT )); then echo "unreadable (HTTP 000)"; else echo outdated; fi; }
+      authentik_blueprint_instance() { jq -cn --arg h "$HASH" '{last_applied_hash:$h}'; }
+      authentik_first_pass_wait() { echo waited > "$T/fpw"; echo successful; }
+      CST=$1 AT=$2 HASH=$3; authentik_first_pass_settle >/dev/null
+      echo "looks=$(cat "$T/looks") $(cat "$T/fpw" 2>/dev/null || echo nowait)" )
+}
+[[ "$(settled exited 0 "")" == "looks=0 nowait" ]] || fail_ "authentik not running: nothing to wait for: $(settled exited 0 "")"; pass
+[[ "$(settled running 0 abc)" == "looks=1 nowait" ]] || fail_ "applied before (a hash): not a first start, no wait: $(settled running 0 abc)"; pass
+[[ "$(settled running 3 "")" == "looks=4 waited" ]] || fail_ "a first start: its API first, then its own first pass: $(settled running 3 "")"; pass
+[[ "$(settled running 9999 "")" == "looks=$(( AUTHENTIK_DISCOVER_WAIT / 5 + 1 )) nowait" ]] || fail_ "never readable: bounded, and the restore point goes ahead: $(settled running 9999 "")"; pass
 # what our blueprint builds on is applied first, in its own run: authentik's
 # first pass applied ours before its defaults (found live Nov 2026)
 bpe=$(python3 - <<'PY'
