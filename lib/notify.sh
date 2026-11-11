@@ -324,5 +324,30 @@ _doctor_notify() {
             info "$s: nothing sent yet (try: ./mediastack.sh notify test $s)"
         fi
     done
+    hub_running && _doctor_hub_failures
     return 0
+}
+
+NOTIFY_LOG_HOURS=168   # how far back doctor reads the hub's own record of failed sends (a week: some events are rare)
+_doctor_hub_failures() { # what the hub could not deliver, whoever sent it — an app posting straight to it is invisible to notify's record
+    local out n addr tags who why
+    out=$(hub_failed_sends "$NOTIFY_LOG_HOURS") || { warn "hub: $out"; return 0; }
+    if [[ -z "$out" ]]; then ok "hub: every send in the last $((NOTIFY_LOG_HOURS / 24)) days was delivered"; return 0; fi
+    while read -r n addr tags; do
+        who=$(_hub_sender "$addr")
+        case " ${NOTIFY_STREAMS[*]} " in
+            *" ${tags%%,*} "*) why="its URL(s) refused it — ./mediastack.sh notify test ${tags%%,*}" ;;
+            *) why="no stream carries that tag (mediastack's: ${NOTIFY_STREAMS[*]}) — an app mediastack wired still sending an old one is re-pointed by: ./mediastack.sh wire" ;;
+        esac
+        warn "hub: $n send(s) from $who (tag: ${tags:-none}) not delivered in the last $((NOTIFY_LOG_HOURS / 24)) days: $why"
+    done < <(sort <<<"$out" | uniq -c | awk '{ c = $1; sub(/^ *[0-9]+ /, ""); split($0, f, "\t"); print c, f[1], f[2] }')
+}
+_hub_sender() { # _hub_sender ADDR -> who that is, for people
+    local o; o=$(addr_owner "$1")
+    case "$o" in
+        host) echo "mediastack itself (this host)" ;;
+        "")   echo "$1 (nothing on the stack network holds it now)" ;;
+        "$(svc_cname gluetun)") echo "the VPN group ($(vpn_group | paste -sd' ' -), all sending as gluetun)" ;;
+        *)    echo "$o" ;;
+    esac
 }

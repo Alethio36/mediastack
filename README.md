@@ -533,7 +533,10 @@ with `notify`:
 `set` and `clear` change only that stream's lines in the hub's
 configuration — anything you added in Apprise's UI (your own tags) is
 kept. A notification that fails is recorded: `notify` and `doctor` show
-the last failure and why.
+the last failure and why. `doctor` also reads the hub's own log for the
+past week: any send it could not deliver — the apps' own (the arrs, Seerr,
+Prowlarr) included — is named with its sender and tag (an app behind the
+VPN sends as gluetun, so those show as the VPN group).
 
 **Seerr's events** (requests, approvals, availability, failures, issues)
 reach the hub tagged with the event's own name, and each stream's URLs

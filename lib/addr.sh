@@ -21,6 +21,13 @@ svc_addr()  { echo "$(svc_host "$1"):$(svc_cport "$1")"; }
 addr_of() { # addr_of <url | host:port> -> host:port (scheme and path dropped)
     local a=${1#*://}; echo "${a%%/*}"
 }
+addr_owner() { # addr_owner ADDR -> the container holding it on the stack network, "host" for its gateway (this host), "" for nobody now
+    local net
+    net=$(sudo docker network inspect mediastack 2>/dev/null) || return 0   # no network yet: nobody
+    jq -r --arg a "$1" '.[0] as $n
+        | if ([$n.IPAM.Config[]?.Gateway] | index($a)) != null then "host"
+          else ([$n.Containers[]? | select((.IPv4Address | split("/")[0]) == $a) | .Name][0] // "") end' <<<"$net"
+}
 addr_stale() { # addr_stale <what> <target> <stored host:port> -> 0 when mediastack's own address needs re-pointing
     # Only addresses mediastack itself makes are claimed: the target's port on
     # localhost, 127.0.0.1, gluetun or the target's name (any layout, before or

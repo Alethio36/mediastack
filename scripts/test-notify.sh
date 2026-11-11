@@ -16,6 +16,10 @@
 #     callers for re-pointing only where it actually moves
 #   * the hub is reached only through its interface (hub_*): nothing outside
 #     services/apprise/ speaks its HTTP API, and every interface name exists
+#   * doctor reads the hub's own log for sends it could not deliver, whoever
+#     sent them (an app posting straight to it), and names the sender: a
+#     container, the VPN group (all as gluetun), this host, or an address
+#     nobody holds now — and the tag, with why it failed
 #
 #   scripts/test-notify.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -211,6 +215,42 @@ ENV_FILE=$T/env
 )
 checks=$((checks + 7))
 
+# ---- doctor: the hub's own record of failed sends (lines as apprise-api 2.1 writes them, live Nov 2026) ----
+cat > "$T/hublog" <<'LOG'
+2026-11-11T12:09:54.539442738Z 2026-11-11 04:09:54,539 [INFO] django: NOTIFY - 172.31.250.3 - Delivered Notification(s) - Tags: ops, KEY: mediastack
+2026-11-11T12:10:44.393687247Z 2026-11-11 04:10:44,393 [WARNING] django: NOTIFY - 172.31.250.129 - One or more notifications not sent (Tags: doctor-probe) using KEY: mediastack
+2026-11-11T12:10:44.395363703Z 2026-11-11 04:10:44,395 [WARNING] django.request: Failed Dependency: /notify/mediastack
+2026-11-11T12:10:44.396672241Z [pid: 151|app: 0|req: 13/13] 172.31.250.129 () {28 vars in 344 bytes} [Wed Nov 11 04:10:44 2026] POST /notify/mediastack => generated 67 bytes in 10 msecs (HTTP/1.1 424) 7 headers in 452 bytes (6 switches on core 0)
+2026-11-11T12:11:00.000000000Z 2026-11-11 04:11:00,000 [WARNING] django: NOTIFY - 172.31.250.3 - One or more notifications not sent (Tags: activity) using KEY: mediastack
+2026-11-11T12:12:00.000000000Z 2026-11-11 04:12:00,000 [WARNING] django: NOTIFY - 172.31.250.3 - One or more notifications not sent (Tags: activity) using KEY: mediastack
+2026-11-11T12:13:00.000000000Z 2026-11-11 04:13:00,000 [WARNING] django: NOTIFY - 172.31.250.128 - One or more notifications not sent (Tags: ops) using KEY: mediastack
+2026-11-11T12:14:00.000000000Z 2026-11-11 04:14:00,000 [ERROR] django: NOTIFY - 172.31.250.140 - Notification delivery failed using KEY: mediastack: boom
+2026-11-11T12:15:00.000000000Z 2026-11-11 04:15:00,000 [WARNING] django: NOTIFY - 172.31.250.141 - One or more notifications not sent (Tags: ops) using KEY: someone-else
+LOG
+jq -n '[{IPAM:{Config:[{Subnet:"172.31.250.0/24", Gateway:"172.31.250.128"}]},
+         Containers:{a:{Name:"mediastack-jellyfin", IPv4Address:"172.31.250.129/24"},
+                     b:{Name:"mediastack-gluetun", IPv4Address:"172.31.250.3/24"}}}]' > "$T/net"
+hub_doctor() { # -> doctor's lines about the hub's failed sends
+    ( sudo() { case "$*" in "docker logs --since 168h"*) cat "$T/hublog" ;; "docker network inspect mediastack") cat "$T/net" ;; *) return 1 ;; esac; }
+      svc_cname() { echo "mediastack-$1"; }; vpn_group() { printf 'qbittorrent\nradarr\n'; }
+      ok() { echo "OK $*"; }; warn() { echo "WARN $*"; }
+      _doctor_hub_failures )
+}
+got=$(hub_doctor)
+[[ "$(grep -c '^WARN' <<<"$got")" == 4 ]] || fail_ "one line per sender and tag, ours only (another key is not ours): $got"; pass
+grep -qF "WARN hub: 1 send(s) from mediastack-jellyfin (tag: doctor-probe) not delivered in the last 7 days: no stream carries that tag" <<<"$got" \
+    || fail_ "a container by name, an unknown tag said so: $got"; pass
+grep -qF "WARN hub: 2 send(s) from the VPN group (qbittorrent radarr, all sending as gluetun) (tag: activity)" <<<"$got" \
+    || fail_ "gluetun's address is the VPN group, counted: $got"; pass
+grep -qF "from mediastack itself (this host) (tag: ops) not delivered in the last 7 days: its URL(s) refused it — ./mediastack.sh notify test ops" <<<"$got" \
+    || fail_ "the gateway is this host; a stream's tag: its URLs refused it: $got"; pass
+grep -qF "from 172.31.250.140 (nothing on the stack network holds it now) (tag: (an error))" <<<"$got" \
+    || fail_ "a delivery error from an address nobody holds now: $got"; pass
+: > "$T/hublog"
+[[ "$(hub_doctor)" == "OK hub: every send in the last 7 days was delivered" ]] || fail_ "nothing failed: said so: $(hub_doctor)"; pass
+got=$( ( sudo() { echo "permission denied"; return 1; }; svc_cname() { echo "mediastack-$1"; }; warn() { echo "WARN $*"; }; _doctor_hub_failures ) )
+[[ "$got" == "WARN hub: its log is unreadable: permission denied" ]] || fail_ "an unreadable log is a warning with its reason, not silence: $got"; pass
+
 # ---- the hub is reached only through its interface (services/apprise/hub.sh) ----
 # Only the provider's folder speaks the hub's HTTP API; everything else calls
 # hub_*. A second provider defines every name in the interface. Migrations
@@ -219,7 +259,7 @@ checks=$((checks + 7))
 leak=$(grep -rnE 'hub_local_url|/(notify|get|add|del)/\$HUB_KEY|svc_(enabled|cname|hostport) "?apprise' lib services mediastack.sh --include=*.sh \
         | grep -vE '^(services/apprise/|lib/migrations\.sh:)' || true)
 [[ -z "$leak" ]] || fail_ "the hub's own API used outside services/apprise/: $leak"; pass
-for f in hub_enabled hub_running hub_local_url hub_notify_url hub_configured hub_send hub_outcome hub_cfg_get hub_cfg_put; do
+for f in hub_enabled hub_running hub_local_url hub_notify_url hub_configured hub_send hub_outcome hub_cfg_get hub_cfg_put hub_failed_sends; do
     grep -qE "^$f\(\)" services/apprise/hub.sh || fail_ "the hub interface lacks $f"; pass
 done
 [[ "$(sed -n 's/^HUB_SVC=//p' services/apprise/hub.sh)" == apprise ]] || fail_ "HUB_SVC names the hub's service"; pass

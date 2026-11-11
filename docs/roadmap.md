@@ -1061,12 +1061,15 @@ all built; what each still leaves open is noted below.
   place; tighten style and error-handling consistency; find lean-ness wins
   (fewer moving parts, faster common paths); verify docs match behavior; re-check
   the whole against the goals above. A lean-and-correct sweep, not a rewrite.
-- **Doctor sees what the apps send the hub, not only the script's sends.** The
-  notification check records `notify`'s own sends; an arr or Seerr posting
-  straight to the hub is invisible to it — three weeks of arr events answered
-  424 (a retired tag) showed only as log noise. Doctor should read the hub's
-  log for failed sends since its last run and name the sender and tag.
-  *Nov 9 2026:* in the small-checks batch (plan step 1).
+- **Doctor sees what the apps send the hub, not only the script's sends** —
+  *done (Nov 2026)*. Three weeks of arr events answered 424 (a retired tag)
+  had shown only as log noise. `doctor` reads the hub's own log for the past
+  week (`hub_failed_sends`; Apprise logs the sender's address and the tags,
+  checked live on apprise-api 2.1) and names each sender and tag: a
+  container, the VPN group (its apps all send as gluetun — no finer than
+  that), this host, or an address nothing holds now. A week, not "since the
+  last run": doctor stays read-only, and a failure that keeps happening keeps
+  showing. The record is only as long as Docker keeps the hub's log.
 - **An ERR trap that names an unexpected stop** — *shipped (Oct 2026)*.
   `set -E` + `on_err` (lib/common.sh): an unguarded failure prints one line
   (exit code, file:line, caller chain, the command unexpanded) and the exit

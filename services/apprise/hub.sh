@@ -13,6 +13,7 @@
 #   hub_cfg_get                     the stored configuration text (empty when none)
 #   hub_cfg_put TEXT                store it (empty: remove the configuration)
 #   hub_notify_url                  where an app on the stack network posts a message (its address follows the VPN)
+#   hub_failed_sends HOURS          the sends it could not deliver in that time, by anyone: "addr<TAB>tags" per send
 #
 # The configuration is Apprise's text format (tags=URL per line); lib/notify.sh
 # edits those lines. The apps' own hub entries (the arrs, Prowlarr, Seerr,
@@ -75,4 +76,16 @@ hub_cfg_put() { # hub_cfg_put TEXT — store it (empty: remove the configuration
     code=${out##*$'\n'}
     [[ "$code" =~ ^2 ]] || die "the hub rejected the configuration [HTTP $code]: $(oneline "${out%$'\n'*}")
   Check the URL against https://github.com/caronc/apprise/wiki"
+}
+
+hub_failed_sends() { # hub_failed_sends HOURS -> "addr<TAB>tags" per send the hub could not deliver (its log: the apps' sends and the script's); rc 1 + why when unreadable
+    # Apprise logs the sender's address and the tags (apprise-api 2.1, checked
+    # live Nov 2026): "NOTIFY - <addr> - One or more notifications not sent
+    # (Tags: <t>) using KEY: <k>" (424: no URL carries the tag, or every URL
+    # failed), "NOTIFY - <addr> - Notification delivery failed…" (an error).
+    # The log is only as long as Docker keeps it (LOG_MAX_SIZE x LOG_MAX_FILE).
+    local out
+    out=$(sudo docker logs --since "${1}h" "$(svc_cname "$HUB_SVC")" 2>&1) || { echo "its log is unreadable: $(oneline "$out")"; return 1; }
+    sed -nE "s/.*NOTIFY - ([0-9a-fA-F.:]+) - One or more notifications not sent( \(Tags: ([^)]*)\))? using KEY: $HUB_KEY.*/\1\t\3/p
+             s/.*NOTIFY - ([0-9a-fA-F.:]+) - Notification delivery failed using KEY: $HUB_KEY.*/\1\t(an error)/p" <<<"$out"
 }
