@@ -1061,14 +1061,6 @@ all built; what each still leaves open is noted below.
   the defaults it needs; a speed fix: take the first restore point once
   authentik's first pass is done, or before `up` starts it.
   *Nov 9 2026:* in the small-checks batch (plan step 1).
-- **Stale `writer` column in the schema** *(found Nov 2026, while adding the
-  `recommended` column)*. `MEDIA_DIR_*`, `MEDIA_GROUP_GID` and `UID_BASE` say
-  writer `wizard`, but configure no longer asks any of them (library folder
-  names became defaults; the IDs are allocated). Decide each one's real
-  writer (`you` or `advanced`), and have `scripts/test-env.sh` hold the two
-  columns together: a `wizard` row is one a question writes, so its
-  `recommended` is never `-`.
-  *Nov 9 2026:* in the small-checks batch (plan step 1).
 - **Optimization & project-health pass.** The build phase prioritized capability
   over refinement. A deliberate sweep: audit `mediastack.sh` for dead code,
   redundant logic, and oversized functions; confirm every verb still earns its

@@ -124,6 +124,8 @@ while IFS=$'\t' read -r k t e w d r m; do
         *) [[ "$t" == retired:* ]] && bad+="  $k: a retired key recommends nothing"$'\n'
            env_type_ok "$t" "$r" || bad+="  $k: recommends '$r', not a $t"$'\n' ;;
     esac
+    # a wizard row is one a question writes, so it has a recommended answer
+    [[ "$w" != wizard || "$r" != - ]] || bad+="  $k: writer wizard, but not a question (recommended: -) — its writer is you, script or advanced"$'\n'
     if [[ "$w" == answers ]]; then
         [[ "$d" == - && "$r" != - ]] || bad+="  $k: an answers-file key has no default and is a question (recommended: not -)"$'\n'
         pat="^$k="; [[ "$k" != *'<svc>' ]] || pat="^${k%<svc>}"
