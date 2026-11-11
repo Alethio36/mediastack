@@ -828,7 +828,10 @@ the domain address is the way in — and the arrs trust the portal (one login;
 (nzb360, LunaSea, Home Assistant…) use the domain address: the arrs' and
 Bazarr's `/api` skips the gate and still demands their API key. The others
 still ask for their own login behind the portal for now. Disabling authentik
-gives every arr its own login back — verified — before the ports reopen. After
+gives every arr its own login back — verified — before the ports reopen.
+Apprise has no login of its own, so it is served only through the portal:
+without it (Wizarr, or no account model) its address is refused to everyone
+and its port listens on 127.0.0.1 only — `notify` does what its UI would. After
 enabling authentik, run `./mediastack.sh wire` once: it waits for the portal's
 first start, attaches the gate, adds the admin cards to your dashboard and
 switches Jellyfin's sign-in to the portal (doctor fails until it has).

@@ -79,7 +79,8 @@ rule_strip() {
         | ($L | map(select(.key | test("^traefik\\.http\\.routers\\.[^.]+\\.middlewares$"))) | map({key: (.key | split(".")[3]), value: .value}) | from_entries) as $mw
         | [.services | to_entries[] | select(.value.labels["mediastack.auth"] == "gate") | .key | gsub("[^a-z0-9]"; "")] as $gated
         | $routes[] | select(.svc as $v | $gated | index($v)) | ($mw[.r] // "") as $m
-        | select(($m | contains("mediastack-gate")) | not) | select(($m | contains("mediastack-strip")) | not)
+        | select(($m | contains("mediastack-gate")) | not) | select(($m | contains("mediastack-portal-only")) | not)   # portal-only chains to the gate
+        | select(($m | contains("mediastack-strip")) | not)
         | "router \(.r) reaches gated \(.svc) without the gate and without stripping identity headers"' "$(cj "$1")"
 }
 rule_trust() {

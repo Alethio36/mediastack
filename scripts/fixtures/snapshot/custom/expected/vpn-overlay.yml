@@ -121,7 +121,7 @@ services:
     networks: [mediastack]
     dns_search: ["."]
     ports:
-      - "${MEDIASTACK_GATE_BIND:-}${APPRISE_PORT:-8000}:8000"
+      - "127.0.0.1:${APPRISE_PORT:-8000}:8000"
     labels:
       mediastack.vpn: "false"
       traefik.enable: "true"
@@ -130,7 +130,7 @@ services:
       traefik.http.routers.apprise.tls: "true"
       traefik.http.routers.apprise.service: "apprise"
       traefik.http.services.apprise.loadbalancer.server.port: "8000"
-      traefik.http.routers.apprise.middlewares: "mediastack-gate@file"
+      traefik.http.routers.apprise.middlewares: "mediastack-portal-only@file"
   audiobookshelf:
     networks: [mediastack]
     dns_search: ["."]

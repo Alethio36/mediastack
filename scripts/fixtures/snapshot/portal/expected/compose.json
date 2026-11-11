@@ -36,6 +36,7 @@
       "labels": {
         "com.centurylinklabs.watchtower.enable": "false",
         "mediastack.auth": "gate",
+        "mediastack.auth.ownlogin": "false",
         "mediastack.config": "true",
         "mediastack.desc": "one notification hub for the whole stack",
         "mediastack.managed": "true",
@@ -45,7 +46,7 @@
         "mediastack.vpntoggle": "true",
         "traefik.enable": "true",
         "traefik.http.routers.apprise.entrypoints": "websecure",
-        "traefik.http.routers.apprise.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.apprise.middlewares": "mediastack-portal-only@file",
         "traefik.http.routers.apprise.rule": "Host(`notify.media.example.com`)",
         "traefik.http.routers.apprise.service": "apprise",
         "traefik.http.routers.apprise.tls": "true",

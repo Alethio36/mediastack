@@ -4,7 +4,7 @@
 services:
   gluetun:
     ports:
-      - "${MEDIASTACK_GATE_BIND:-}${APPRISE_PORT:-8000}:8000"
+      - "127.0.0.1:${APPRISE_PORT:-8000}:8000"
       - "127.0.0.1:${AUDIOBOOKSHELF_PORT:-13378}:13378"
       - "${MEDIASTACK_GATE_BIND:-}${BAZARR_PORT:-6767}:6767"
       - "${MEDIASTACK_GATE_BIND:-}${DELUGE_PORT:-8112}:8112"
@@ -22,7 +22,7 @@ services:
       traefik.http.routers.apprise.tls: "true"
       traefik.http.routers.apprise.service: "apprise"
       traefik.http.services.apprise.loadbalancer.server.port: "8000"
-      traefik.http.routers.apprise.middlewares: "mediastack-gate@file"
+      traefik.http.routers.apprise.middlewares: "mediastack-portal-only@file"
       traefik.http.routers.audiobookshelf.rule: "Host(`${AUDIOBOOKSHELF_HOST:-audiobooks}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.audiobookshelf.entrypoints: "websecure"
       traefik.http.routers.audiobookshelf.tls: "true"

@@ -908,10 +908,17 @@ all built; what each still leaves open is noted below.
   Pi-hole: an empty password is safe now its port is local, but its phone apps
   would lose the API) — checked tool by tool.
   *Nov 9 2026: into the MVP* (plan step 6), after per-app access — a tool drops its own login only behind its own gate.
-- **Wizarr mode: Apprise and the panel** *(review later — accepted risk for
-  now)*: without authentik there is no gate, and both have no login of their
-  own; they stay LAN-open as before.
-  *Nov 9 2026:* in the small-checks batch (plan step 1).
+- **Wizarr mode: Apprise and the panel** — *reviewed and closed (Nov 2026)*.
+  The panel has its own login (`frontdoor-install` sets it without the portal):
+  LAN-reachable behind it, like the arrs. Apprise has none — anyone on the LAN
+  could read its URLs (a webhook is a credential), change them or send — so a
+  tool marked `mediastack.auth.ownlogin: "false"` is served only through the
+  portal: without one, Traefik refuses its route (`mediastack-portal-only`)
+  and its host port binds 127.0.0.1; `notify` covers what its UI did.
+  Open: ErsatzTV has no login either (only OIDC, if set up) and stays
+  LAN-open without the portal — the label would leave it no UI but an SSH
+  tunnel, so that is a separate call. WatchState's login is claimed by its
+  first visitor (as Navidrome's admin was).
 - **Access per tool** *(look into later)*: today there are two levels — `admins`
   (every admin tool) and the household front end (`media-users`). Finer rules
   (one person gets Sonarr but not qBittorrent) would be one application and

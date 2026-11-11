@@ -38,7 +38,10 @@ services:
       mediastack.vpn: "false"
       mediastack.vpntoggle: "true"
       mediastack.subdomain: "notify"
-      mediastack.auth: "gate"   # no login of its own: behind the portal (mediastack-gate)
+      mediastack.auth: "gate"   # behind the portal (mediastack-gate)
+      # no login of its own: served only through the portal; without it, on
+      # this host only (127.0.0.1) — `notify` does what its UI would
+      mediastack.auth.ownlogin: "false"
       mediastack.config: "true"
     healthcheck:
       test: ["CMD-SHELL", "curl -fs --max-time 5 http://127.0.0.1:8000/status || exit 1"]

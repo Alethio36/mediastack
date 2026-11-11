@@ -190,6 +190,13 @@ traefik_gate_middleware() { # mediastack-gate: what a router with mediastack.aut
           X-authentik-uid: ""
 STRIP
     if signin_is authentik; then
+        # a tool with no login of its own (mediastack.auth.ownlogin: false) is
+        # served only through the portal: the same gate while it runs
+        cat <<'ONLY'
+    mediastack-portal-only:
+      chain:
+        middlewares: [mediastack-gate]
+ONLY
         # authentik's built-in outpost decides (services/authentik/authentik.sh attaches the gate to it)
         cat <<'GATE'
     mediastack-gate:
@@ -204,13 +211,17 @@ STRIP
           - X-authentik-uid
 GATE
     else
-        # no portal (Wizarr mode): the route stays as it was — an accepted risk,
-        # docs/roadmap.md (Security & access)
+        # no portal (Wizarr mode): a tool with its own login stays reachable
+        # (its login guards it); one with none is refused to everyone — it is
+        # reached on this host only (its port binds 127.0.0.1)
         cat <<'GATE'
     mediastack-gate:
       headers:
         customResponseHeaders:
           X-Mediastack-Gate: "off"
+    mediastack-portal-only:
+      ipAllowList:
+        sourceRange: ["127.0.0.1/32"]   # addr-ok: nobody — Traefik never sees a request from its own loopback
 GATE
     fi
 }
@@ -289,8 +300,8 @@ cmd_traefik_setup() {
 # overlay, on gluetun for a VPN'd service, on the service itself otherwise) ----
 edge_enable_label() { echo "${1}traefik.enable: \"true\""; }   # edge_enable_label INDENT — the edge serves this container
 edge_router_name() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik router name
-edge_route_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass>  (router/service only)
-    local i="$1" r="$2" sub="$3" cp="$4" stem="$5" auth="${6:-}" bypass="${7:-}"
+edge_route_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass> <ownlogin>  (router/service only)
+    local i="$1" r="$2" sub="$3" cp="$4" stem="$5" auth="${6:-}" bypass="${7:-}" ownlogin="${8:-}"
     echo "${i}traefik.http.routers.${r}.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${STACK_DOMAIN:-unset.invalid}\`)\""
     echo "${i}traefik.http.routers.${r}.entrypoints: \"websecure\""
     echo "${i}traefik.http.routers.${r}.tls: \"true\""
@@ -298,7 +309,9 @@ edge_route_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass> 
     echo "${i}traefik.http.services.${r}.loadbalancer.server.port: \"${cp}\""
     # mediastack.auth: gate -> the portal decides who gets through (services/traefik/edge.sh
     # defines mediastack-gate: authentik's check when it runs, a no-op otherwise)
-    if [[ "$auth" == gate ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-gate@file\""; fi
+    # mediastack.auth.ownlogin: false -> no login of its own: the portal, or nobody
+    if [[ "$auth" == gate && "$ownlogin" == false ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-portal-only@file\""
+    elif [[ "$auth" == gate ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-gate@file\""; fi
     # mediastack.auth.bypass: a path (the API) that skips the gate — only for a
     # tool whose API demands its own key, so companion apps keep working. The
     # longer rule wins in Traefik, so this router takes that path.

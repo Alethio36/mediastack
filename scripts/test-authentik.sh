@@ -27,6 +27,8 @@
 #     a dry run never waits
 #   * the first wire's restore point waits (bounded) for a first start's own
 #     pass to finish, so its stop does not start authentik over
+#   * a tool with no login of its own (Apprise): through the portal, or — with
+#     no portal — refused at Traefik and reached on this host only
 #   * the gate: Traefik's middleware asks authentik only when it runs; wire
 #     adds the gate beside the outpost's providers, puts akadmin in admins
 #     once, keeps one admins-only card per gated tool and never touches
@@ -271,6 +273,15 @@ AK_ON=1; mw=$(traefik_gate_middleware)
     || fail_ "with authentik: the gate asks its outpost"; pass
 AK_ON=; mw=$(traefik_gate_middleware)
 [[ "$mw" == *"mediastack-gate:"* && "$mw" != *forwardAuth* ]] || fail_ "without authentik: the gate is a no-op (Wizarr mode keeps today's access)"; pass
+# a tool with no login of its own: through the portal, or nobody
+AK_ON=1; mw=$(traefik_gate_middleware)
+[[ "$mw" == *$'mediastack-portal-only:\n      chain:\n        middlewares: [mediastack-gate]'* ]] || fail_ "with authentik: portal-only is the gate"; pass
+AK_ON=; mw=$(traefik_gate_middleware)
+[[ "$mw" == *$'mediastack-portal-only:\n      ipAllowList:\n        sourceRange: ["127.0.0.1/32"]'* ]] || fail_ "without authentik: portal-only refuses everyone through Traefik"; pass
+r=$(edge_route_labels "" apprise notify 8000 APPRISE gate "" false)
+[[ "$r" == *'routers.apprise.middlewares: "mediastack-portal-only@file"'* && "$r" != *mediastack-gate@file* ]] || fail_ "no login of its own: the route takes portal-only: $r"; pass
+r=$(edge_route_labels "" sonarr sonarr 8989 SONARR gate "" "")
+[[ "$r" == *'routers.sonarr.middlewares: "mediastack-gate@file"'* ]] || fail_ "its own login: the gate, as before: $r"; pass
 
 # the provider is ADDED to the built-in outpost, never replacing what is there;
 # akadmin joins admins once; cards: one per gated tool, admins only, stale ones go

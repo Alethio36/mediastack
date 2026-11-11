@@ -30,6 +30,9 @@ http:
       headers:
         customResponseHeaders:
           X-Mediastack-Gate: "off"
+    mediastack-portal-only:
+      ipAllowList:
+        sourceRange: ["127.0.0.1/32"]   # addr-ok: nobody — Traefik never sees a request from its own loopback
 tcp:
   middlewares:
     # the LDAP route answers the stack network only — never the LAN

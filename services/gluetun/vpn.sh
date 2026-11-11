@@ -366,7 +366,7 @@ vpn_gen() {
     # Build the three sections up front so empty ones can be omitted (an empty
     # `ports:`/`labels:` mapping is invalid YAML) and traefik.enable is emitted
     # exactly once per container (never duplicated as a mapping key).
-    local gports="" glabels="" stanzas="" s stem cport sub rname defv eff hp auth bypass
+    local gports="" glabels="" stanzas="" s stem cport sub rname defv eff hp auth bypass ownlogin
     for s in $svcs; do
         stem=$(uvar "$s"); rname=$(edge_router_name "$s")
         cport=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.port"] // ""' <<<"$bj")
@@ -378,12 +378,15 @@ vpn_gen() {
         hp=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.hostport"] // "true"' <<<"$bj")
         auth=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"] // ""' <<<"$bj")
         bypass=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth.bypass"] // ""' <<<"$bj")
+        ownlogin=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth.ownlogin"] // ""' <<<"$bj")
+        # no login of its own: its port is this host's only, portal or not
+        [[ "$ownlogin" == false && "$hp" != false ]] && hp=local
         [[ -n "$cport" ]] || die "vpn: $s carries no mediastack.port label"
         [[ -n "$sub"   ]] || die "vpn: $s carries no mediastack.subdomain label"
         eff=$(vpn_effective "$s" "$defv")
         if [[ "$eff" == true ]]; then
             [[ "$hp" != false ]] && gports+="$(vpn_port_line "$stem" "$cport" "$auth" "$hp")"$'\n'
-            glabels+="$(edge_route_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'
+            glabels+="$(edge_route_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass" "$ownlogin")"$'\n'
             stanzas+="  ${s}:"$'\n'"    network_mode: \"service:gluetun\""$'\n'
             stanzas+="    depends_on:"$'\n'"      gluetun:"$'\n'"        condition: service_healthy"$'\n'   # addr-ok: a YAML key, no address
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"true\""$'\n'
@@ -396,7 +399,7 @@ vpn_gen() {
             stanzas+="  ${s}:"$'\n'"    networks: [mediastack]"$'\n'"    dns_search: [\".\"]"$'\n'
             [[ "$hp" != false ]] && stanzas+="    ports:"$'\n'"$(vpn_port_line "$stem" "$cport" "$auth" "$hp")"$'\n'
             stanzas+="    labels:"$'\n'"      mediastack.vpn: \"false\""$'\n'"$(edge_enable_label "      ")"$'\n'
-            stanzas+="$(edge_route_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass")"$'\n'
+            stanzas+="$(edge_route_labels "      " "$rname" "$sub" "$cport" "$stem" "$auth" "$bypass" "$ownlogin")"$'\n'
         fi
     done
     # in gluetun's namespace by their own fragment (no toggle): the gate starts them too

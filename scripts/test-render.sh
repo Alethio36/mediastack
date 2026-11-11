@@ -14,7 +14,9 @@
 #   5. the shard rules hold for every shipped fragment, and a two-container
 #      drop-in shard renders with its member found and not managed
 #   6. every web interface declares mediastack.auth, and exactly the gated
-#      ones' routes carry the mediastack-gate middleware
+#      ones' routes carry the mediastack-gate middleware — or, for a tool with
+#      no login of its own (mediastack.auth.ownlogin: false, Apprise),
+#      mediastack-portal-only, with its host port on 127.0.0.1 only
 #   7. no container inherits the host's search domain: every service with its
 #      own network declares dns_search ["."] (fragment or vpn_gen), and none
 #      sharing another's network carries one (Docker refuses it)
@@ -112,9 +114,21 @@ bad=$(jq -r '.services | to_entries[] | select(.value.labels["mediastack.subdoma
 for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.subdomain"] != null) | .key' <<<"$RENDERED_JSON"); do
     r=$(edge_router_name "$s"); auth=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"]' <<<"$RENDERED_JSON")
     mw=$(jq -r --arg k "traefik.http.routers.$r.middlewares" '[.services[].labels[$k] // empty] | join(",")' <<<"$RENDERED_JSON")
-    if [[ "$auth" == gate ]]; then [[ "$mw" == *mediastack-gate@file* ]] || t_fail "$s is gated but its route ($r) has no mediastack-gate middleware"
+    own=$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth.ownlogin"] // ""' <<<"$RENDERED_JSON")
+    if [[ "$own" == false ]]; then
+        [[ "$auth" == gate ]] || t_fail "$s has no login of its own, so it must be gated (got: $auth)"
+        [[ "$mw" == *mediastack-portal-only@file* && "$mw" != *mediastack-gate@file* ]] \
+            || t_fail "$s has no login of its own: its route ($r) must carry mediastack-portal-only (got: $mw)"
+        # its port: this host only, whatever the account model
+        ports=$(jq -r --arg s "$s" '[.services[$s].ports[]?, (if .services[$s].network_mode == "service:gluetun" then .services.gluetun.ports[]? else empty end)]
+            | map(select(.target == ($ARGS.named.cp | tonumber))) | map(.host_ip // "any") | join(",")' \
+            --arg cp "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.port"]' <<<"$RENDERED_JSON")" <<<"$RENDERED_JSON")
+        [[ -z "$ports" || "$ports" =~ ^127\.0\.0\.1(,127\.0\.0\.1)*$ ]] \
+            || t_fail "$s has no login of its own: its host port must listen on 127.0.0.1 only (got: $ports)"
+    elif [[ "$auth" == gate ]]; then [[ "$mw" == *mediastack-gate@file* ]] || t_fail "$s is gated but its route ($r) has no mediastack-gate middleware"
     else [[ "$mw" != *mediastack-gate@file* ]] || t_fail "$s is $auth but its route carries the gate"; fi
 done
+grep -q 'mediastack.auth.ownlogin: "false"' services/apprise/compose.yml || t_fail "Apprise has no login of its own: it says so"
 # an API that skips the gate: only on a gated tool, as its own router without the gate
 for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.auth.bypass"] != null) | .key' <<<"$RENDERED_JSON"); do
     [[ "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"]' <<<"$RENDERED_JSON")" == gate ]] || t_fail "$s: a gate bypass on a service that is not gated"
