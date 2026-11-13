@@ -65,14 +65,14 @@ rewired. Each row's code lives in its service's folder.
 | `AUTHENTIK_KAVITA_CLIENT_SECRET` | the provider (blueprint) | Kavita (`wire kavita`, one restart) | — |
 | each arr's API key (Radarr, Sonarr, the 4K/anime instances, Lidarr) | the arr (its `ResetApiKey` command; read back from `config.xml`) | Prowlarr, Seerr, Bazarr, Cleanuparr, Recyclarr (their `wire` roles, `trash-sync`'s config) | **companion apps** |
 | Prowlarr's API key | Prowlarr (`ResetApiKey`; read back from `config.xml`) | every arr's indexers (Prowlarr pushes them itself), LazyLibrarian | **companion apps** |
-| Bazarr's API key | its `config.yaml` | — | **companion apps** |
-| LazyLibrarian's API key | its `config.ini` | Prowlarr's application entry | — |
+| Bazarr's API key | Bazarr (`settings-auth-apikey` through its settings form; `config.yaml` follows) | — | **companion apps** |
+| LazyLibrarian's API key | its `config.ini` (`ll_api_enable` writes a new one while it is stopped) | Prowlarr's application entry | — |
 | `JELLYFIN_API_KEY` | Jellyfin (the old key deleted, then `wire jellyfin` mints and stores a new one) | Wizarr's server entry | Wizarr mode: see spike 4 |
 | `SEERR_API_KEY` | Seerr (`POST /settings/main/regenerate`; `wire seerr` stores it) | the script only | **companion apps** |
-| `CLEANUPARR_API_KEY` | Cleanuparr | the script only | — |
+| `CLEANUPARR_API_KEY` | Cleanuparr (`POST /account/api-key/regenerate`; `wire cleanuparr` stores it) | the script only | — |
 | `WIZARR_API_KEY` | Wizarr | the script only | see spike 5 |
 | `MEILI_MASTER_KEY` | Meilisearch (compose) | JellySearch (compose; re-indexes from Jellyfin's database at every start) | search down until both are back |
-| `GLUETUN_CONTROL_APIKEY` | gluetun (compose) | — | **the VPN group restarts through the leak gate** |
+| `GLUETUN_CONTROL_APIKEY` | gluetun (compose: `.env`, then `up` through the leak gate) | — | **the VPN group restarts through the leak gate** |
 | **every session** (not a secret: the run's last step) | authentik (`DELETE /core/authenticated_sessions/<uuid>/` for each) | the gates' sessions end with them (authentik tells its outposts) | **everyone signed out**: portal, gated tools, panel, household gates |
 | the generated logins (arr, qBittorrent, Deluge, Transmission, Jellyfin's admin, Pi-hole, Traefik's dashboard, Audiobookshelf's root, Kavita's admin, Navidrome's admin) | each app (`sc_rotate_*`, non-interactive) | what `set-credentials` already updates | **companion apps** using a login; the operator's saved passwords |
 
@@ -210,7 +210,10 @@ logins → the `set-credentials all` hint instead of the login line).
    generates and the run reads the new key back (`arr_key`). Prowlarr's own
    reset raises `ApiKeyChangedEvent`, a forced full sync of every indexer to
    every app with the new key (from its source; the test box has no indexers
-   to watch it — proven with the build). Still open: Bazarr, LazyLibrarian.
+   to watch it — proven with the build). *Bazarr (13 Nov, live):* its settings
+   form takes `settings-auth-apikey` (204), the old key 401, the new 200,
+   `config.yaml` follows. *LazyLibrarian:* `ll_api_enable` already writes a
+   new key while it is stopped — it is the rotator (proven with the build).
 4. *Jellyfin's own part done (13 Nov 2026, live).* Deleting the stack key
    (`DELETE /Auth/Keys/<key>`, 204) refuses it at once (401); `wire
    jellyfin` mints a new one and stores it (200). Still open, **Jellyfin's
@@ -223,7 +226,10 @@ logins → the `set-credentials all` hint instead of the login line).
    the old key 403, the new 200. `wire seerr` stored the key only at Seerr's
    first setup, so a regenerated one left `.env` dead with wire and doctor
    silent — reproduced and fixed (`fix(seerr)`: stored on every run, doctor
-   tests it). Still open: **Cleanuparr's** regenerate call.
+   tests it). *Cleanuparr's (13 Nov, live):* `POST /account/api-key/regenerate`
+   with its API key answers the new one; `wire cleanuparr` already stores it.
+   *gluetun's control key (13 Nov, live):* `.env`, `up` — recreated through
+   the leak gate, the control server still asks for credentials (401).
 7. **Every holder's wire step corrects a stale key** (and `--verify` reports
    one). Any create-only step is fixed first, as its own patch. authentik's
    holders: done (2). The arrs' holders: Prowlarr's and Seerr's entries were
@@ -231,11 +237,16 @@ logins → the `set-credentials all` hint instead of the login line).
    Seerr's copy old, `wire --verify` clean) and fixed (`fix(wire)`): Prowlarr's
    masked copy is tested and replaced when refused as the key, Seerr's
    compared. Seerr writes blind, so `--verify` skips it; `wire` heals it.
-   Still to audit: Bazarr's, Cleanuparr's and Recyclarr's copies.
+   Bazarr posts its whole settings form on every `wire` — its copy follows
+   (live). Cleanuparr's instances were create-only too — reproduced live (its
+   test 400, wire silent) and fixed (`fix(cleanuparr)`): its masked copy is
+   tested, and replaced when only the arr's current key passes. Recyclarr's
+   config is written from `arr_key` at every `trash-sync` (proven with the
+   build).
 8. **Meilisearch**: a new master key in `.env`, `up` recreated both; JellySearch
    re-indexed from Jellyfin's database at its start ("Indexed 7 items") — no
-   re-index step of ours (13 Nov 2026, live). Still to prove: the old key
-   refused (the first probe used `wget`, which the image lacks).
+   re-index step of ours (13 Nov 2026, live). The current key 200, any other
+   403 (live, with `curl`: the image has no `wget`).
 
 ## Proof (anzac4)
 
