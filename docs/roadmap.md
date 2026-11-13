@@ -200,7 +200,8 @@ agreed first:
    every API helper marks a call that got no answer; when the run ends, each role
    that had one is read back with its own `wire <role> --verify` (lib/wire.sh,
    scripts/test-wire-late.sh). A role that writes blind cannot be read back.
-4. **`rotate-secrets`** — see Credential coverage.
+4. **`rotate-secrets`** — design: [design-rotate.md](design-rotate.md)
+   (*proposed*); see Credential coverage.
 5. **Access per tool** — a live spike on LDAP app passwords first, then the
    `frontend`/`admin` rename, tiers, providers per app and grants; see Access
    per tool and LDAP app passwords.
@@ -969,13 +970,13 @@ all built; what each still leaves open is noted below.
   password and the OIDC client secrets, Audiobookshelf's and Kavita's (regenerate → blueprint →
   wire), the LDAP outpost token, authentik's API token and database password,
   the Meilisearch key, the arr/Seerr/Wizarr/cleanuparr API keys (each app, then
-  everything that stores it) — a `rotate-secret <name>` verb or `set-credentials`
-  targets; (2) Wizarr mode's `reset-password` through Jellyfin's API (today it
+  everything that stores it); (2) Wizarr mode's `reset-password` through Jellyfin's API (today it
   points at Jellyfin's dashboard); (3) Wizarr's admin (no API found yet — UI
   only); (4) Navidrome's per-user Subsonic password, reset by the admin.
-  *Nov 9 2026: in the MVP* (plan step 4) as `rotate-secrets [name|--all]` —
-  generate, apply, rewire every consumer (authentik first); proven by
-  `--all` then `wire --verify` clean and every sign-in working. With it:
+  *Nov 9 2026: in the MVP* (plan step 4). *13 Nov 2026:* `rotate-secrets`,
+  no arguments — every machine secret at once, plus the stack's own logins
+  when they are generated ([design-rotate.md](design-rotate.md)); proven by a
+  run, then `wire --verify` clean and every sign-in working. With it:
   Wizarr mode's `reset-password` through Jellyfin's API, Navidrome's admin
   reset through its API. Navidrome's music-app logins stay an upstream gap
   (watchlist).
