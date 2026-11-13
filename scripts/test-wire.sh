@@ -14,6 +14,7 @@
 #   * an arr's API key that Prowlarr or Seerr holds is kept current: Prowlarr's
 #     (masked) is tested and replaced only when refused as the key; Seerr's is
 #     compared; --verify only reports
+#   * Seerr's own key in .env follows Seerr (one regenerated in its settings)
 #
 #   scripts/test-wire.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -171,5 +172,19 @@ sk 0 OLDKEY >/dev/null
 grep -q "'.hostname = \$h | .port = \$p | del(.id)'" services/seerr/seerr.sh || fail_ "the address re-point's PUT leaves the id out of its body too"; pass
 [[ "$(sk 1 OLDKEY)" == $'\nOLDKEY\nfails=0' ]] || fail_ "a dry run: reported, nothing written: $(sk 1 OLDKEY)"; pass
 [[ "$(sk 0 NEWKEY)" == $'\nNEWKEY\nfails=0' ]] || fail_ "seerr holds the current key: nothing written: $(sk 0 NEWKEY)"; pass
+
+# ---- Seerr's own key in .env follows Seerr (found live Nov 2026: regenerated in
+#      Seerr, .env kept the dead key, wire and doctor both silent) ----
+ks() { # ks DRY STORED -> SEERR_API_KEY after, fails=N
+    ( WIRE_DRY=$1 WIRE_FAILS=0 WIRE_CHANGES=0; echo "$2" > "$T/ek"
+      seerr_api() { [[ "$1 $2" == "GET /settings/main" ]] && echo '{"apiKey":"SEERRNEW"}'; }; seerr_code() { echo 200; }
+      env_get() { cat "$T/ek"; }; env_set() { echo "$2" > "$T/ek"; }
+      seerr_key_store jar >/dev/null 2>&1; echo "$(cat "$T/ek") fails=$WIRE_FAILS" )
+}
+[[ "$(ks 0 SEERROLD)" == "SEERRNEW fails=0" ]] || fail_ "a key regenerated in Seerr: stored: $(ks 0 SEERROLD)"; pass
+[[ "$(ks 1 SEERROLD)" == "SEERROLD fails=0" ]] || fail_ "a dry run: reported, .env untouched: $(ks 1 SEERROLD)"; pass
+[[ "$(ks 0 SEERRNEW)" == "SEERRNEW fails=0" ]] || fail_ "already Seerr's: nothing to do: $(ks 0 SEERRNEW)"; pass
+grep -q 'seerr_initialized; then' services/seerr/seerr.sh && awk '/if \$seerr_initialized; then/,/return 0/' services/seerr/seerr.sh | grep seerr_key_store >/dev/null \
+    || fail_ "an initialised Seerr has its key checked on every wire, not only at its first"; pass
 
 echo "OK wire: $checks checks"

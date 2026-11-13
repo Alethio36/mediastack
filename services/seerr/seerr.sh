@@ -38,6 +38,17 @@ seerr_entry_key() { # seerr_entry_key SVC TYPE JAR — SEERR_ENTRY (one of Seerr
     SEERR_ENTRY=$new; ok "seerr -> $s: API key updated"
 }
 
+seerr_key_store() { # seerr_key_store JAR — .env holds Seerr's own API key (doctor, notify's test, support): one regenerated in its settings follows
+    local jar="$1" out skey
+    out=$(seerr_api GET /settings/main "$jar") \
+        || { wfail "seerr: its main settings are unreadable [HTTP $(seerr_code)] — its API key not checked"; return 0; }
+    skey=$(jq -r '.apiKey // empty' <<<"$out" 2>/dev/null)
+    [[ -n "$skey" ]] || { wfail "seerr: its main settings hold no API key"; return 0; }
+    [[ "$(env_get SEERR_API_KEY)" != "$skey" ]] || return 0
+    w_would "seerr: store its current API key (SEERR_API_KEY is not seerr's)" || return 0
+    env_set SEERR_API_KEY "$skey"; ok "seerr: its API key stored (SEERR_API_KEY)"
+}
+
 wire_seerr() {
     hr "wire: seerr"
     svc_enabled seerr || { info "seerr not enabled — skipped"; return 0; }
@@ -200,15 +211,14 @@ wire_seerr() {
         fi
     fi
     if $seerr_initialized; then
+        seerr_key_store "$jar"
         rm -f "$jar"
         ok "seerr arr entries verified"
         return 0
     fi
     out=$(seerr_api POST /settings/initialize "$jar") \
         || { wfail "seerr initialise call failed [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; rm -f "$jar"; return 0; }
-    local skey
-    skey=$(seerr_api GET /settings/main "$jar" | jq -r '.apiKey // empty' 2>/dev/null || true)   # soft read: optional: stored only when read
-    [[ -n "$skey" ]] && env_set SEERR_API_KEY "$skey"
+    seerr_key_store "$jar"
     rm -f "$jar"
     ok "seerr initialised — users sign in with their jellyfin logins"
 }
@@ -217,9 +227,21 @@ seerr_doctor() { # doctor: apps — initialised
     local spub
     spub=$(curl -s -m 10 "$(seerr_url)/api/v1/settings/public" 2>/dev/null || true)
     case "$(jq -r '.initialized' <<<"$spub" 2>/dev/null)" in
-        true)  ok "seerr initialised" ;;
+        true)  ok "seerr initialised"; seerr_doctor_key ;;
         false) warn "seerr not initialised yet — run: ./mediastack.sh wire seerr" ;;
         *)     warn "seerr public settings unreadable — API may still be warming up" ;;
+    esac
+}
+
+seerr_doctor_key() { # doctor: the stored key opens Seerr's API (notify's test and support ride on it)
+    local key code
+    key=$(env_get SEERR_API_KEY)
+    [[ -n "$key" ]] || { warn "seerr: no API key stored yet — ./mediastack.sh wire seerr"; return 0; }
+    code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-Api-Key: $key" "$(seerr_url)/api/v1/settings/main" 2>/dev/null || true)
+    case "$code" in
+        2*)      ok "seerr accepts the stack API key (SEERR_API_KEY)" ;;
+        401|403) d_fail "seerr rejects the stack API key (HTTP $code)" "it was regenerated in Seerr's settings" "./mediastack.sh wire seerr  # stores Seerr's current key" ;;
+        *)       warn "seerr API key check inconclusive (HTTP ${code:-none})" ;;
     esac
 }
 
