@@ -240,7 +240,9 @@ logins → the `set-credentials all` hint instead of the login line).
    Bazarr posts its whole settings form on every `wire` — its copy follows
    (live). Cleanuparr's instances were create-only too — reproduced live (its
    test 400, wire silent) and fixed (`fix(cleanuparr)`): its masked copy is
-   tested, and replaced when only the arr's current key passes. Recyclarr's
+   tested, and replaced when only the arr's current key passes. Its
+   `--verify` stopped before signing in yet said "no drift" — fixed too: a dry
+   run reads it with the stored key. Recyclarr's
    config is written from `arr_key` at every `trash-sync` (proven with the
    build).
 8. **Meilisearch**: a new master key in `.env`, `up` recreated both; JellySearch
