@@ -21,10 +21,12 @@ expected=scripts/fixtures/dispatch.expected
 # a copy of the entrypoint without its last line (main "$@") so it can be
 # sourced for its definitions; it lives beside the real one because the
 # script locates lib/ relative to itself (no tty on capture: no colour codes)
-lib=$(mktemp .test-dispatch.XXXXXX); trap 'rm -f "$lib"' EXIT
+lib=$(mktemp .test-dispatch.XXXXXX); runs=$(mktemp -d); trap 'rm -rf "$lib" "$runs"' EXIT
 sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
+# shellcheck disable=SC2034  # read by the sourced lib/runs.sh
+LOCAL_DIR=$runs   # each main() records its run (lib/runs.sh): there, not in the repo
 
 # every cmd_* goes away; the dispatcher's call then reaches this handler
 while read -r _ _ fn; do

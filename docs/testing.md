@@ -78,7 +78,8 @@ step calls can end the whole run (see
 wrappers for `sudo`, `docker` and `curl`: every read goes through, every
 write is blocked and recorded. It passes when each verb exits 0 with its
 dry-run line, nothing was blocked, and `.env`, `local/` and every container
-(id, start time, restarts, state) are unchanged. It runs live because a dry
+(id, start time, restarts, state) are unchanged — all but `local/runs/`,
+where every run, a dry one too, keeps its record. It runs live because a dry
 run's answers come from the apps — faking them in CI tests the fakes. What
 counts as a write is pinned in CI by `scripts/test-dryrun-live.sh`; a write
 by any other route is not seen. Run it at the end of a batch, beside

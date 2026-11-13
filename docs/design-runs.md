@@ -1,6 +1,7 @@
 # Design: run records and the support bundle
 
-*Status: agreed (13 Nov 2026), MVP plan step 2; nothing built yet. Built
+*Status: agreed (13 Nov 2026), MVP plan step 2. Part 1 (run records) built
+(lib/runs.sh, scripts/test-runs.sh), not yet proven live; the rest follows
 in the order at the end, each part proven live before the next.*
 
 ## Why
@@ -65,33 +66,49 @@ exit:     0 after 412s
 
 ### Verbs whose output is a secret — **agreed**
 `credentials`, `invite`, `reset-password` and `set-credentials` print logins,
-invitation links or sign-in links. Their record keeps the header and the
-footer only (`output: not recorded — it prints secrets`). A column in the
-verb registry says so, and CI holds the list: a verb that prints a stored
-secret without being marked fails.
+invitation links or sign-in links, and `logs` prints other people's activity
+(and `logs -f` never ends). Their record keeps the header and the footer only
+(`output: not recorded — …`), listed in `RUNS_HEADER_ONLY`. *As built:* every
+record is also scrubbed when it ends — each secret `.env` holds (the schema's
+`secret` type, families included) becomes `<secret:KEY>` — so a verb that
+prints a stored secret leaves none in its record. That replaces the CI rule
+first proposed (CI cannot tell what a verb prints); the bundle's own final
+check stays.
 
 ### How — **agreed**
-In `main()`, before the verb runs: stdout and stderr each go through
-`tee -p -a` into the record, back to their own stream. Two streams, not one,
-so a verb whose stdout is read by a program (`list --json`, for the panel)
-gets exactly the bytes it got before; the cost is that a line on stderr can
-land a few lines out of order in the record. `tee -p`: a record that cannot
-be written (disk full) is reported once and the run carries on.
+In `main()`, before the verb runs (`run_record_start`):
 
-Hidden complexity, each handled in the one function that sets this up:
-- **The terminal checks move.** Colours and `DC`'s quiet pulls look at
-  `[[ -t 1 ]]`, which turns false once stdout is a pipe. Both read a flag
-  taken before the redirect, so an interactive run still gets colours and
-  pull progress.
-- **The last lines must not be lost.** At exit the streams are closed and
-  both `tee`s waited for before the footer is written.
-- **`upgrade` execs the new script.** The record's path and owning pid
-  travel in the environment; a process that inherits them writes into the
-  same record and opens none of its own, and the footer is written by the pid
-  that opened it (`exec` keeps the pid). `sudo` drops the environment, so a
-  `sudo mediastack.sh …` inside a run makes a record of its own — expected.
-- **Root-made records.** Timers run as root; the record is handed to the
-  repo's owner when it is opened.
+```
+main ── stdout/stderr ──> tee ──> the screen, byte for byte
+                           └────> run_stamp ──> the record, then its footer
+```
+
+- **One `tee` when stdout and stderr go to the same place** (a terminal,
+  `2>&1`, the journal): their order is kept exactly. Otherwise one `tee` and
+  one stamper each, so a program reading stdout (`list --json`, for the
+  panel) gets exactly the bytes it got before, and a line of one stream never
+  splits a line of the other. `tee -p`: a stamper that stops (disk full) is
+  reported once and the screen carries on.
+- **The footer is written by the last stamper to finish**, from the exit
+  status the run leaves in `<record>.end` as it ends — so it always follows
+  the last line. No `.end`: the run never finished.
+- **One EXIT trap.** It runs hooks (`on_exit`, lib/common.sh); a second
+  `trap … EXIT` in the main shell would silently drop the footer, so CI allows
+  them only in subshells. The sudo keepalive lets go of the record's pipe.
+- **Signals.** Bash's EXIT trap sees `$? = 0` after a signal, so Ctrl-C, a stop
+  and a hang-up are noted (130, 143, 129) and then re-raised: the run ends as
+  it always did.
+- **`exec` keeps one record.** The record's path and owning pid travel in the
+  environment; `exec` keeps the pid, so `upgrade`'s hand-over and `install`'s
+  `configure` end the record; any other process that inherits it (configure's
+  questionnaire, update's `wire --verify`) writes into it and ends nothing.
+  `sudo` drops the environment, so a `sudo mediastack.sh …` inside a run makes
+  a record of its own.
+- **The terminal.** Colours are decided before the redirect and stay. Compose
+  sees a pipe, so image pulls show a line per image (as an unattended install
+  always did), not progress bars — which would bury the record.
+- **Root-made records** (timers, the panel) are handed to the repo's owner.
+- **Cost:** about 90 ms per run (the commit, the schema read for the scrub).
 
 ### Retention — **agreed**
 Pruned at each run's start: per verb and its options (`vpn-watch` and

@@ -437,7 +437,7 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
 | repo root | the code (`mediastack.sh`, `lib/`, `services/` — one folder per service, `docs/`) | the project — `upgrade` replaces it |
 | `.env` | every setting | you (and `configure`) |
 | `custom/` | `override.yml` (changes to shipped services), `compose.d/` (your own services, one file each), `proxy.d/` (your own Traefik routes), `trash-overrides.yml` | you — never touched by the script's upgrades, saved in every restore point |
-| `local/` | the VPN overlay, pinned images, `.env` backups (the first and the newest 9), a marker while a backup has services stopped | the script — delete it and it is rebuilt (pins and backups excepted) |
+| `local/` | the VPN overlay, pinned images, `.env` backups (the first and the newest 9), a marker while a backup has services stopped, and `runs/`: a record of every run (below) | the script — delete it and it is rebuilt (pins and backups excepted) |
 | `config/` `cache/` `transcodes/` `data/` `backups/` | the default roots | the apps — move them with `configure` |
 
 A deployment is `.env` + `custom/` + the roots: that is what to keep, copy
@@ -466,6 +466,19 @@ MY_OWN_VAR=value
 Variables your `custom/` files use (`${MYAPP_API_KEY}`) count as used and need
 no mark. The script's own pending work (a re-point after a VPN toggle, an
 ownership handover) lives in `local/state/`, not in `.env`.
+
+**Every run is recorded** in `local/runs/` — from a terminal, the panel, a
+timer or the boot guard: one file per run, named for when it started and the
+command, with who started it, the commit, everything it printed (each line
+timestamped in the stack's time zone) and, at the end, its exit status. A
+record without that last line never finished (a dropped SSH session, a
+reboot). The screen shows exactly what it did before; one difference: image
+pulls show a line per image, not the progress bars. `credentials`,
+`invite`, `reset-password`, `set-credentials` and `logs` record only when
+they ran and how they ended, and any secret from `.env` that a run prints is
+kept in its record as `<secret:KEY>`. The newest 20 runs of each command are
+kept, and a failed or unfinished one 30 days. Records are yours alone
+(mode 600) and never leave the host by themselves.
 
 **Outside this folder**, mediastack places only what its features need, and
 one registry (`lib/footprint.sh`) lists all of it — `doctor` shows what is on

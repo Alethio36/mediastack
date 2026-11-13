@@ -36,7 +36,7 @@ questionnaire_ask() { # questionnaire_ask [--fresh] [--answers FILE] — the que
     # says so by its exit code; this handler keeps configure alive to read it
     trap ':' INT
     bash "$SCRIPT_DIR/mediastack.sh" questionnaire "$@" || rc=$?
-    trap - INT
+    int_trap_default   # the run record notes a Ctrl-C after this (lib/runs.sh)
     case "$rc" in
         0)   ;;
         130) echo; info "Cancelled — nothing was applied. The answers so far are next time's defaults (a folder change is asked again)."; exit 130 ;;

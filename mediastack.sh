@@ -62,6 +62,8 @@ for _svc_lib in "$SCRIPT_DIR"/services/*/*.sh; do
     source "$_svc_lib"
 done
 unset _svc_lib
+# shellcheck source=lib/runs.sh
+source "$SCRIPT_DIR/lib/runs.sh"
 # shellcheck source=lib/migrations.sh
 source "$SCRIPT_DIR/lib/migrations.sh"
 # shellcheck source=lib/env.sh
@@ -749,7 +751,7 @@ cmd_enable() {
     env_set COMPOSE_PROFILES "$(echo "$sel" | paste -sd, -)"
     trap ':' INT   # Ctrl-C ends the questions; this process restores the set and says so
     bash "$SCRIPT_DIR/mediastack.sh" questionnaire --for "${new[@]}" || rc=$?
-    trap - INT
+    int_trap_default   # the run record notes a Ctrl-C after this (lib/runs.sh)
     if (( rc )); then
         env_set COMPOSE_PROFILES "$old"
         (( rc == 3 )) && exit 3   # it said why: no terminal to ask on
@@ -1224,6 +1226,7 @@ main() {
     entry=$(verb_entry "$cmd") || { fail "Unknown command '$cmd'"; echo; cmd_help; exit 1; }
     local spec; spec=$(cut -d'~' -f3 <<<"$entry")
     args_check "$spec" "$@"
+    run_record_start "$cmd" "$@"   # local/runs/ (lib/runs.sh)
     sudo_keepalive
     if [[ -n "$(stack_down_since)" ]] && scheduled_run; then
         info "the stack was stopped with 'down' ($(stack_down_since)) — skipping '$cmd${*:+ $*}'; scheduled jobs resume after: ./mediastack.sh up"

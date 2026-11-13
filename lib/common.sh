@@ -39,6 +39,17 @@ on_err() {
     echo "${C_RED}ERROR${C_RST} unhandled failure (exit $rc) at $src:${BASH_LINENO[0]}${chain:+ in $chain}: $cmd" >&2
 }
 
+# What runs at exit, in the main shell: one EXIT trap, armed by the first
+# hook, runs every hook, newest first, each given the run's exit status. A
+# second `trap … EXIT` would silently replace the others — the run record's
+# footer among them — so code adds a hook here instead.
+EXIT_HOOKS=()
+on_exit() { EXIT_HOOKS+=("$1"); trap run_exit_hooks EXIT; }   # on_exit FUNCTION — call FUNCTION RC when the run ends
+run_exit_hooks() {
+    local rc=$? i
+    for (( i = ${#EXIT_HOOKS[@]} - 1; i >= 0; i-- )); do "${EXIT_HOOKS[i]}" "$rc" || true; done
+}
+
 # sudo forgets the password after a gap with no sudo call (15 min on Debian),
 # and one long step (a first image pull) is such a gap. A background loop
 # renews it while this run lives. -n: it never asks, so it only keeps a
@@ -55,14 +66,16 @@ sudo_keepalive() {
     # for up to a minute after the run (found live, Nov 2026: `up` refused)
     (
         trap - ERR; set +e   # a renewal before the first sudo fails, quietly
+        run_fds_close        # nor the run record's pipe, which would hold its footer back until the last sleep ends
         while kill -0 "$parent" 2>/dev/null; do
             sudo -n -v
             sleep "$SUDO_KEEPALIVE_EVERY"
         done
     ) </dev/null >/dev/null 2>&1 8<&- 9<&- &
     SUDO_KEEPALIVE_PID=$!
-    trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true' EXIT
+    on_exit sudo_keepalive_stop
 }
+sudo_keepalive_stop() { kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true; }
 
 # configure's check pass (lib/answers.sh) asks nothing: a question reached
 # there lacks its guard, and asking would hang an unattended run

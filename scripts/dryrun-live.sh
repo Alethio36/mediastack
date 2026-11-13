@@ -6,7 +6,7 @@
 # on the box, from the repo, in a terminal (trash-sync's preview needs one):
 #   scripts/dryrun-live.sh
 # Pass = each verb exits 0 and prints its dry-run line, no violation, and
-# .env, local/ and every container (id, start time, restarts, state) are the
+# .env, local/ (but its run records) and every container (id, start time, restarts, state) are the
 # same afterwards. Exit 0 = passed.
 #
 # What a write is (the --judge rules below; scripts/test-dryrun-live.sh pins them):
@@ -189,7 +189,8 @@ done
 
 snapshot() { # what a dry run must leave as it was
     sha256sum .env
-    sudo find local -type f -print0 | sort -z | sudo xargs -0r sha256sum   # some of local/ is 0600
+    # some of local/ is 0600; local/runs/ is every run's own record (lib/runs.sh), these dry runs' too
+    sudo find local -path local/runs -prune -o -type f -print0 | sort -z | sudo xargs -0r sha256sum
     sudo docker ps -aq | xargs -r sudo docker inspect -f '{{.Name}} {{.Id}} {{.State.StartedAt}} {{.RestartCount}} {{.State.Status}}'
 }
 snapshot > "$work/before"
