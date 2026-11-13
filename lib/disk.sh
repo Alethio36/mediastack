@@ -31,13 +31,16 @@ disk_targets() { # label<TAB>path for every place the stack writes
 }
 
 disk_h() { numfmt --to=iec-i --suffix=B "$1"; }
+disk_df() { # disk_df PATH -> "mount size avail inodes inodes-free", in bytes (no -P: GNU df refuses it with --output)
+    sudo df -B1 --output=target,size,avail,itotal,iavail "$1" 2>/dev/null | sed -n 2p
+}
 
 disk_report() { # one line per filesystem: level<TAB>mount<TAB>labels<TAB>size<TAB>avail<TAB>inodes<TAB>inodes-free
     local label path out mnt size avail itot ifree level
     local -A labels=() line=()
     local -a order=()
     while IFS=$'\t' read -r label path; do
-        out=$(sudo df -P -B1 --output=target,size,avail,itotal,iavail "$(disk_existing "$path")" 2>/dev/null | sed -n 2p) || continue
+        out=$(disk_df "$(disk_existing "$path")") || continue
         read -r mnt size avail itot ifree <<<"$out"
         [[ -n "$mnt" ]] || continue
         if [[ -z "${labels[$mnt]:-}" ]]; then order+=("$mnt"); labels[$mnt]=$label; line[$mnt]="$size $avail $itot $ifree"
@@ -71,11 +74,17 @@ _doctor_disk() { # in doctor's host resources
             *)    ok "disk $mnt ($labels): $words" ;;
         esac
     done < <(disk_report)
-    (( n )) || warn "disk: no filesystem could be read (df)"
+    (( n )) || d_fail "disk: no filesystem the stack writes to could be read" "df gave nothing for any root, Docker's data or this folder — the space check did not run" "run: sudo df -B1 --output=target,size,avail $SCRIPT_DIR"
 }
 
 disk_watch() { # nightly (with the manifest): a filesystem running out tells ops — a failure every night, a warning once a week
-    local level mnt labels size avail itot ifree words key last now=$EPOCHSECONDS
+    local level mnt labels size avail itot ifree words key last now=$EPOCHSECONDS rep
+    rep=$(disk_report)
+    if [[ -z "$rep" ]]; then
+        warn "disk: no filesystem the stack writes to could be read (df) — the space check did not run"
+        notify ops "Mediastack: the disk check could not run" "df gave nothing for any root, Docker's data or this folder. Details: \`./mediastack.sh doctor\`" failure
+        return 0
+    fi
     while IFS=$'\t' read -r level mnt labels size avail itot ifree; do
         key="disk-warned-$(cksum <<<"$mnt" | cut -d' ' -f1)"
         [[ "$level" == ok ]] && { [[ -n "$(state_get "$key")" ]] && rm -f "$STATE_DIR/$key"; continue; }
@@ -89,5 +98,5 @@ disk_watch() { # nightly (with the manifest): a filesystem running out tells ops
         [[ -n "$last" ]] && (( now - last < DISK_WARN_EVERY )) && continue
         notify ops "Mediastack: a disk is getting full" "$mnt ($labels): $words. It fails below $(disk_h "$DISK_FAIL_BYTES"). Details: \`./mediastack.sh doctor\`" warning
         state_set "$key" "$now"
-    done < <(disk_report)
+    done <<<"$rep"
 }

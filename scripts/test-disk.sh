@@ -34,12 +34,14 @@ SCRIPT_DIR=$T/repo
 repo_owned() { :; }
 sudo() { "$@"; }
 docker() { [[ "$*" == "info --format {{.DockerRootDir}}" ]] && echo "$T/var-docker"; }
-# df: each path's filesystem from $T/fs.<name> -> "mount size avail inodes free"
+# the real df takes exactly what disk_df passes (a stub of df hid -P with --output, found live 13 Nov)
+[[ "$(disk_df /)" =~ ^/\ +[0-9]+\ +[0-9]+\ +[0-9]+\ +[0-9]+$ ]] || fail_ "disk_df on / with the real df: '$(disk_df /)'"; pass
+# then each path's filesystem from $T/fs.<name> -> "mount size avail inodes free"
 fs() { printf '%s %s %s %s %s\n' "$2" "$3" "$4" "$5" "$6" > "$T/fs.$1"; }
-df() {
-    local p=${!#} f
-    case "$p" in "$T"/media*) f=media ;; "$T"/var-docker*) f=docker ;; "$T"/repo*) f=repo ;; *) return 1 ;; esac
-    echo "Mounted on 1B-blocks Avail Inodes IFree"; cat "$T/fs.$f"
+disk_df() {
+    local f
+    case "$1" in "$T"/media*) f=media ;; "$T"/var-docker*) f=docker ;; "$T"/repo*) f=repo ;; *) return 1 ;; esac
+    cat "$T/fs.$f"
 }
 notify() { printf '%s|%s|%s\n' "$1" "$2" "$4" >> "$T/sent"; }
 sent() { [[ -e "$T/sent" ]] && wc -l < "$T/sent" || echo 0; }
@@ -86,6 +88,10 @@ for f in "$STATE_DIR"/disk-warned-*; do echo $(( EPOCHSECONDS - DISK_WARN_EVERY 
 disk_watch > /dev/null; [[ $(sent) == 2 ]] || fail_ "and again a week later"; pass
 fs repo /srv 100000000000 $(( 20 * G )) 1000000 900000; disk_watch > /dev/null
 [[ -z "$(ls "$STATE_DIR"/disk-warned-* 2>/dev/null)" ]] || fail_ "back to ok: the mark goes, so the next warning is told at once"; pass
+# nothing readable: loud in doctor and at night, never silent
+disk_df() { return 1; }
+D_FAILS=0; _doctor_disk > /dev/null; (( D_FAILS == 1 )) || fail_ "doctor: a space check that cannot run is a problem"; pass
+rm -f "$T/sent"; disk_watch > /dev/null; grep -q '^ops|Mediastack: the disk check could not run|failure$' "$T/sent" || fail_ "nightly: ops hears the check did not run"; pass
 SCRIPT_DIR=$SCRIPT_DIR_REAL
 awk '/^manifest_take\(\)/ { f = 1 } f && /^    disk_watch/ { ok = 1 } f && /scan/ { exit } END { exit !ok }' lib/manifest.sh || fail_ "the nightly manifest checks the disks first"; pass
 
