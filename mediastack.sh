@@ -98,6 +98,8 @@ source "$SCRIPT_DIR/lib/configure.sh"
 source "$SCRIPT_DIR/lib/lifecycle.sh"
 # shellcheck source=lib/access.sh
 source "$SCRIPT_DIR/lib/access.sh"
+# shellcheck source=lib/rotate.sh
+source "$SCRIPT_DIR/lib/rotate.sh"
 # shellcheck source=lib/newservice.sh
 source "$SCRIPT_DIR/lib/newservice.sh"
 env_defaults_load   # the .env schema's defaults, read once here: every $( ) inherits them
@@ -1163,6 +1165,7 @@ VERBS=(
     "invite~invite [--expires 1|7|30] [--email ADDRESS]~free~Connect~Mint an invitation (the portal's, or Wizarr's) and print the ready-to-share URL; with the portal and working email, --email sends it."
     "credentials~credentials~none~Connect~Show the app logins wire created/stored."
     "set-credentials~set-credentials <target|all>~max=1~Connect~Rotate a stored login everywhere it lives, atomically."
+    "rotate-secrets~rotate-secrets~none~Connect~Give every secret the stack made for itself a new value, rewire what holds it, prove it (docs/design-rotate.md)."
     "reset-password~reset-password <user>~max=1~Connect~Someone locked out of the portal: clear their login throttle, mint a single-use sign-in link."
     "set-email~set-email <user> <address> [--yes]~free~Connect~An admin changes a person's portal email; Kavita follows. A shared address warns and asks (--yes overrides)."
     "users~users~none~Connect~The portal's people: username, name, email, groups, and whether they can sign in."

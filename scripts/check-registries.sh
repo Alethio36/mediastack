@@ -28,6 +28,10 @@ for r in $(list lib/wire.sh 's/^WIRE_ROLES=(\(.*\))$/\1/p'); do want_one WIRE_RO
 for t in $(list lib/access.sh 's/^    case "$target" in \([a-z|]*\)) ;; \*)$/\1/p' | tr '|' ' '); do
     [[ "$t" == all ]] || want_one set-credentials "sc_rotate_$t"
 done
+# rotate-secrets: ROTATE_ORDER -> <stem>_secrets and <stem>_secret_rotate
+for s in $(list lib/rotate.sh 's/^ROTATE_ORDER=(\(.*\))$/\1/p'); do
+    want_one ROTATE_ORDER "${s}_secrets"; want_one ROTATE_ORDER "${s}_secret_rotate"
+done
 # doctor: DOCTOR_APPS -> <app>_doctor
 for a in $(list lib/doctor.sh 's/^DOCTOR_APPS=(\(.*\))$/\1/p'); do want_one DOCTOR_APPS "${a}_doctor"; done
 # by name: a lib or the entrypoint calling <service>_<anything> (a service's

@@ -7,3 +7,23 @@ meilisearch_questions() { # the questionnaire: its master key (a machine secret)
         ok "Generated Meilisearch master key (machine secret — you never need it)."
     fi
 }
+
+# ---- rotate-secrets (lib/rotate.sh) ----
+meilisearch_secrets() { svc_enabled meilisearch && printf 'MEILI_MASTER_KEY\tsearch\n'; return 0; }
+meilisearch_secret_rotate() { rotate_env MEILI_MASTER_KEY "$(gen_secret 44)" meili_key_proven; }
+meili_key_code() { # meili_key_code KEY -> the HTTP code Meilisearch answers KEY with (000 when it does not answer)
+    local c
+    c=$(sudo docker exec "$(svc_cname meilisearch)" sh -c 'curl -s -m 5 -o /dev/null -w "%{http_code}" -H "Authorization: Bearer $0" http://127.0.0.1:7700/keys' "$1" 2>/dev/null) || true   # addr-ok: Meilisearch's own localhost, from inside its container (curl prints 000 when nothing answers)
+    echo "${c:-000}"
+}
+meili_key_proven() { # meili_key_proven NEW OLD — Meilisearch takes NEW and refuses OLD (it may take a few seconds to start)
+    local _ code
+    for _ in $(seq 1 15); do
+        code=$(meili_key_code "$1"); [[ "$code" == 200 ]] && break
+        sleep 2
+    done
+    [[ "$code" == 200 ]] || { fail "meilisearch: the key it should take answers HTTP $code"; return 1; }
+    code=$(meili_key_code "$2")
+    [[ "$code" == 403 ]] || { fail "meilisearch: the key it should refuse answers HTTP $code"; return 1; }
+    ok "meilisearch: takes the key it should, refuses the other"
+}

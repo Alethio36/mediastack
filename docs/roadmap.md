@@ -201,7 +201,7 @@ agreed first:
    that had one is read back with its own `wire <role> --verify` (lib/wire.sh,
    scripts/test-wire-late.sh). A role that writes blind cannot be read back.
 4. **`rotate-secrets`** — design: [design-rotate.md](design-rotate.md)
-   (*proposed*); see Credential coverage.
+   (*agreed*, 13 Nov 2026; being built slice by slice); see Credential coverage.
 5. **Access per tool** — a live spike on LDAP app passwords first, then the
    `frontend`/`admin` rename, tiers, providers per app and grants; see Access
    per tool and LDAP app passwords.

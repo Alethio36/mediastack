@@ -137,8 +137,8 @@ gluetun_recreates() {
 
 # Every restore point says who made it and what ran: `meta` holds its kind —
 # manual (backup by hand or the panel), scheduled (the backup timer), update
-# (a full update's point), update-scoped (update <svc>), migrate (an import) —
-# an optional note, and one "svc version digest" line per container.
+# (a full update's point), update-scoped (update <svc>), migrate (an import),
+# rotate (before rotate-secrets) — an optional note, and one "svc version digest" line per container.
 # Information only: retention, restore and the skip rule never read it.
 backup_take() { # backup_take KIND NOTE — a full cold restore point into the GFS pool
     load_env; require_mounts

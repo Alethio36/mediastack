@@ -1,10 +1,10 @@
 # Design: rotate-secrets
 
-*Status: proposed (13 Nov 2026), MVP plan step 4. Direction agreed 13 Nov:
-one verb, no arguments, every machine secret at once; `.env` before the
-holders are rewired (agreed 13 Nov). Spike: authentik's part done (1, 2 and
-its share of 7, below); the rest next on the test box, then this doc is
-revised to agreed before any build.*
+*Status: agreed (13 Nov 2026), MVP plan step 4: one verb, no arguments, every
+machine secret at once; `.env` before the holders are rewired. Spike done
+(below) save what needs another install — Wizarr mode, Prowlarr's key reaching
+indexers — and what the build proves itself (LazyLibrarian, Recyclarr); those
+move into the proof. Build: slice 1 (the framework, Meilisearch's key) built.*
 
 ## Why
 
@@ -265,8 +265,11 @@ Jellyfin's API.
 
 1. The spike; this doc to agreed.
 2. `lib/rotate.sh`: the verb, the cost and confirmation, the restore point
-   and lock, the journal, the order, the end and its warning; the CI
-   coverage check; doctor's leftover journal.
+   and lock, the journal, the order, the end and its warning; doctor's
+   leftover journal — with Meilisearch's key as its first secret (slice 1).
+   The CI coverage check comes with the last slice, once every secret has
+   its rotator. Doctor runs at the end and its summary is reported, never
+   the run's verdict (its findings may predate the run).
 3. The keys outside authentik (gluetun, Meilisearch, Jellyfin, Seerr,
    Cleanuparr, the arr family) — proven live.
 4. authentik's — proven live.

@@ -441,6 +441,11 @@ _doctor_runs() { # runs that never finished (lib/runs.sh): a dropped SSH session
         n=$((n + 1))
     done < <(run_unfinished 7)
     (( n )) || ok "every run of the last 7 days finished (local/runs/)"
+    if [[ -n "$(rotate_inflight)" ]]; then
+        d_fail "a rotation never finished: $(rotate_inflight) was in flight (local/rotate/journal)" \
+            "that secret may be new in one place and old in another" \
+            "./mediastack.sh restore --all --from $(rotate_journal_point), then: ./mediastack.sh rotate-secrets"
+    fi
 }
 
 cmd_doctor() { # doctor [--scheduled] — the timer's run tells ops and succeeds: its problems are findings, not a failed run
