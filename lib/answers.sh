@@ -102,6 +102,12 @@ answers_load() { # answers_load FILE — ANSWER from it; every problem with the 
     [[ -f "$f" && -r "$f" ]] || { answer_refused "$f is not a readable file"; return 0; }
     [[ "$(stat -c %u "$f")" == "$(id -u)" ]] || answer_refused "$f is not yours — it holds secrets: make it yours (chown) and readable by you alone (chmod 600)"
     (( 8#$(stat -c %a "$f") & 8#077 )) && answer_refused "$f can be read by others ($(stat -c %a "$f")) — it holds secrets: chmod 600 $f"
+    # Windows line endings: every value would carry a hidden \r — a checked one
+    # refused for a reason nobody can see, a token or password taken with it
+    if grep -q $'\r' "$f"; then
+        answer_refused "$f has Windows line endings (CRLF) — convert it: sed -i 's/\\r\$//' $f"
+        return 0
+    fi
     declare -A seen=()
     # the schema's word on every key in the file: one pass for its recommendation, one for its type
     while IFS=$'\t' read -r k r e _; do rec[$k]=$r; emp[$k]=$e; done < <(env_schema_known "$f" all 6)

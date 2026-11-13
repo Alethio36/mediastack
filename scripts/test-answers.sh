@@ -102,6 +102,11 @@ cmp -s "$T/w/.env" "$T/before.env" && [[ -z "$(ls -A "$T/w/local/state")" ]] || 
 [[ ! -s "$T/calls" ]] || fail_ "nothing run: $(cat "$T/calls")"; pass
 answers 'SIGNIN=none\n'; chmod 644 "$T/a.env"
 filed "$T/a.env" '' --fresh; [[ $? == 4 ]] && has "can be read by others (644)" || fail_ "a file others can read is refused"; pass
+fresh; cp "$T/w/.env" "$T/before.env"
+answers 'SIGNIN=none\r\nNORDVPN_TOKEN=abc123\r\n'
+filed "$T/a.env" '' --fresh; [[ $? == 4 ]] && has "has Windows line endings (CRLF)" && has "sed -i 's/\r\$//' $T/a.env" \
+    && [[ "$(problems)" == 1 ]] || fail_ "a file with Windows line endings is refused once, with the command that converts it"; pass
+cmp -s "$T/w/.env" "$T/before.env" || fail_ "a CRLF file writes nothing"; pass
 ( ANSWERS_PASS=check; ANSWERS_PROBLEMS=$T/p; ANSWER=(); : > "$T/p"; answers 'UPDATE_SCHEDULE=never\nVPN_SERVER_COUNTRIES=auto\n'
   answers_load "$T/a.env"; [[ ! -s "$T/p" ]] && answer UPDATE_SCHEDULE && [[ -z "$REPLY_VAL" ]] && answer VPN_SERVER_COUNTRIES && [[ -z "$REPLY_VAL" ]] ) \
     || fail_ "never and auto are written answers for an empty value"; pass
