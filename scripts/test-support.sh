@@ -34,12 +34,26 @@ cat > "$T/fx.sh" <<EOF
 source "$PWD/$lib"; set +e +E; trap - ERR
 LOCAL_DIR=\$T/local; STATE_DIR=\$T/local/state; ENV_FILE=\$T/env; HOSTID_FILE=\$T/local/host-identity; PINS_FILE=\$T/local/pins.yml
 sudo() { "\$@"; }; systemctl() { echo "(no systemd here)"; }; repo_owned() { :; }
+CUSTOM_DIR=\$T/custom
+# the outside: every name resolves but one, one site does not answer; the portal's name points here
+getent() { case "\$1 \$2" in
+    "ahosts ghcr.io") return 2 ;;
+    "ahostsv4 portal.media.example-real.com") echo "192.168.70.36 STREAM portal" ;;
+    ahosts*) echo "1.2.3.4 STREAM \$2" ;;
+    *) command getent "\$@" ;; esac; }
+curl() { [[ "\$*" == *api.nordvpn.com* ]] && { echo "curl: (28) Connection timed out after 8001 ms"; return 28; }; printf '200 in 0.12s'; }
+hostname() { [[ "\${1:-}" == -I ]] && echo "192.168.70.36 172.17.0.1" || command hostname "\$@"; }
+journalctl() { case "\$*" in
+    "-k "*) echo "2026-11-12T03:00:00 kernel: Out of memory: Killed process 4242 (jellyfin)"; echo "2026-11-12T03:00:01 kernel: unrelated line" ;;
+    "-u docker"*) echo "2026-11-13T01:00:00 dockerd[1]: level=error msg=\"pull failed for 203.0.113.9\"" ;; esac; }
 docker() { # two containers: one healthy (its checks' noisy output), one whose last check failed
     case "\$*" in
         "ps -a"*) printf 'mediastack-good\nmediastack-bad\n' ;;
         "inspect --format"*) printf 'sha256:aaa\nsha256:bbb\n' ;;
         "inspect "*) cat "\$T/inspect.json" ;;
         "image inspect"*) echo '[]' ;;
+        "logs --tail 300 -t mediastack-jellyfin") echo "2026-11-13T01:00:00Z user bob@home.example signed in from 203.0.113.9" ;;
+        "logs "*) echo "Error: No such container"; return 1 ;;
         *) return 1 ;;
     esac
 }
@@ -136,6 +150,28 @@ grep -q 'watch 3$' "$b" && ! grep -q 'watch 2$' "$b" && grep -q 'watch failed$' 
 ! grep -q 'an old doctor' "$b" || fail_ "no old doctor records (the bundle has a fresh one)"; pass
 mapfile -t order < <(grep '^--- 2026' "$b"); [[ "$(printf '%s\n' "${order[@]}" | sort)" == "$(printf '%s\n' "${order[@]}")" ]] || fail_ "in the order they ran"; pass
 
+# ---- reachability ----
+reset; rm -rf "$T/custom"; run 'cmd_support --note x' || fail_ "support runs (reach)"
+b=$(bundle)
+grep -qx "Jellyfin's plugin repository (repo.jellyfin.org): HTTP 200 in 0.12s" "$b" && grep -qx "GitHub's registry, ghcr.io (images) (ghcr.io): its name does not resolve" "$b" \
+    && grep -qx "NordVPN's API (the VPN key) (api.nordvpn.com): no answer — curl: (28) Connection timed out after 8001 ms" "$b" \
+    || fail_ "each outside address: answered, unresolved, or no answer and why"; pass
+grep -qx "the stack's own names (portal.example.test): resolve to this host (192.168.70.36)" "$b" || fail_ "the portal's name points at this host"; pass
+! grep -q '===== container logs\|===== custom/\|===== host events' "$b" || fail_ "logs, custom/ and host events only when asked"; pass
+grep -qx '  (none)' <(sed -n '/^files in custom/,/^$/p' "$b") || fail_ "no custom/: (none)"; pass
+
+# ---- only when asked ----
+reset; mkdir -p "$T/custom/compose.d"; printf 'services:\n  mine:\n    environment:\n      MY_TOKEN: Sup3rS3cretArrPass\n' > "$T/custom/compose.d/mine.yml"
+run 'cmd_support --note x --logs jellyfin,nosuch --custom --host-events' || fail_ "support runs (asked)"
+b=$(bundle)
+grep -qxE '2026-11-13T01:00:00Z user <email-[0-9]+> signed in from <ip-[0-9]+>' "$b" && grep -q "(no logs: is 'nosuch' a service that runs here?" "$b" \
+    || fail_ "--logs: each one's lines, redacted; an unknown one said"; pass
+grep -qx -- '--- custom/compose.d/mine.yml' "$b" && grep -qx '      MY_TOKEN: <secret:ARR_PASSWORD>' "$b" || fail_ "--custom: the files, a known secret still taken out"; pass
+grep -qx '  2026-11-12T03:00:00 kernel: Out of memory: Killed process 4242 (jellyfin)' "$b" && ! grep -q 'unrelated line' "$b" \
+    && grep -q 'dockerd\[1\]: level=error msg="pull failed for <ip-' "$b" || fail_ "--host-events: OOM kills and Docker's errors"; pass
+grep -q '^custom/ is in it: secrets you wrote there are not ones the stack knows' "$T/out" && grep -q "^Container logs are in it: they can hold people's names" "$T/out" \
+    || fail_ "the summary warns what the asked-for parts may hold"; pass
+
 # ---- the summary ----
 mapfile -t L < "$T/out"
 [[ "${L[-1]}" == "PLEASE PROOFREAD IT FOR SECRETS OR SENSITIVE INFORMATION AND REDACT ANY BEFORE SENDING" ]] || fail_ "the very last line is the warning: '${L[-1]}'"; pass
@@ -148,6 +184,9 @@ reset; rec 20261113-010000-x-1.log 0 "pw Sup3rS3cretArrPass"
 run 'support_redact() { cp "$1" "$2"; : > "$3"; }; cmd_support --note x' && fail_ "a missed secret must fail"
 [[ -z "$(bundle)" ]] && grep -qF 'survived the redaction (<secret:ARR_PASSWORD>) — the bundle was deleted' "$T/out" || fail_ "the bundle is deleted, the leak named by its key, not its value"; pass
 grep -qF Sup3rS3cretArrPass "$T/out" && fail_ "the refusal never prints the secret"; pass
+
+run 'cmd_support --logs "jelly fin"' && fail_ "a bad service name is refused"
+grep -q "support --logs: 'jelly fin' is not a service name" "$T/out" || fail_ "and says what it wants"; pass
 
 # ---- the verb ----
 bash -c "source \"$PWD/$lib\"; verb_entry support >/dev/null" || fail_ "support is a verb"; pass

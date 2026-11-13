@@ -72,7 +72,7 @@ support_install() { # the code and what is yours
     echo "local edits to tracked files (git status):"
     sp_list "$(git -c safe.directory="$SCRIPT_DIR" -C "$SCRIPT_DIR" status --short -uno 2>&1 || true)"
     echo "files in custom/ (names only — --custom adds their contents):"
-    sp_list "$(find "$SCRIPT_DIR/custom" -type f -printf '%P (%s bytes)\n' 2>/dev/null | sort || true)"
+    sp_list "$(find "$CUSTOM_DIR" -type f -printf '%P (%s bytes)\n' 2>/dev/null | sort || true)"
 }
 
 support_settings() { # .env: what differs from .env.example — secrets as <set>, keys the schema does not know by name only
@@ -129,9 +129,72 @@ support_markers() { # what the stack is in the middle of: names and dates, value
     for k in WIRE_REPOINT UID_HANDOVER; do v=$(state_get "$k"); echo "pending $k: ${v:-none}"; done
     echo "maintenance lock: $(flock -n "$MAINT_LOCK" true 2>/dev/null && echo free || echo held)"
     echo "mediastack runs going now:"
-    pgrep -af 'mediastack\.sh' 2>/dev/null | grep -v " support" | sed 's/^/  /' || echo "  (none)"
+    # one run's $( ) subshells share its command line: each command once, with how many processes
+    sp_list "$(pgrep -af 'mediastack\.sh' 2>/dev/null | cut -d' ' -f2- | grep -v ' support' | sort | uniq -c | awk '{ n = $1; $1 = ""; print substr($0, 2) (n > 1 ? " (" n " processes)" : "") }' || true)"
     echo "local/state (names and dates only):"
     sp_list "$(for f in "$STATE_DIR"/*; do [[ -e "$f" ]] && echo "${f##*/} ($(date -r "$f" --iso-8601=seconds))"; done; true)"
+}
+
+# reachability: what the stack needs from outside, from this host (not through the VPN)
+SUPPORT_REACH=(
+    "Jellyfin's plugin repository|https://repo.jellyfin.org/files/plugin/manifest.json"
+    "Docker Hub (images)|https://registry-1.docker.io/v2/"
+    "GitHub's registry, ghcr.io (images)|https://ghcr.io/v2/"
+    "LinuxServer's registry, lscr.io (images)|https://lscr.io/v2/"
+    "GitHub (the TRaSH guides)|https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/README.md"
+    "NordVPN's API (the VPN key)|https://api.nordvpn.com/v1/servers/countries"
+    "Cloudflare's API (certificates)|https://api.cloudflare.com/client/v4/ips"
+    "RIPEstat (leak-test's record of this host)|https://stat.ripe.net/data/as-overview/data.json?resource=AS3333"
+)
+SUPPORT_REACH_WAIT=8   # seconds per address
+support_reach() {
+    local e label url host out name addrs mine
+    echo "from this host, not through the VPN; an answer of any HTTP status means it is reachable (401 is a registry asking for a login)"
+    for e in "${SUPPORT_REACH[@]}"; do
+        label=${e%%|*}; url=${e#*|}; host=${url#https://}; host=${host%%/*}
+        if [[ -z "$(getent ahosts "$host" 2>/dev/null || true)" ]]; then echo "$label ($host): its name does not resolve"; continue; fi
+        if out=$(curl -sS -o /dev/null -m "$SUPPORT_REACH_WAIT" -w '%{http_code} in %{time_total}s' "$url" 2>&1); then
+            echo "$label ($host): HTTP $out"
+        else echo "$label ($host): no answer — $(oneline "$out")"; fi
+    done
+    name=$(env_get STACK_DOMAIN)
+    [[ -n "$name" ]] || { echo "the stack's own names: no STACK_DOMAIN"; return 0; }
+    name="portal.$name"
+    addrs=$(getent ahostsv4 "$name" 2>/dev/null | awk '{ print $1 }' | sort -u | paste -sd' ' -) || true
+    mine=" $(hostname -I 2>/dev/null || true) "
+    if [[ -z "$addrs" ]]; then echo "the stack's own names ($name): do not resolve from this host"
+    elif [[ "$mine" == *" ${addrs%% *} "* ]]; then echo "the stack's own names ($name): resolve to this host ($addrs)"
+    else echo "the stack's own names ($name): resolve to $addrs — not this host ($(xargs <<<"$mine"))"; fi
+}
+
+# only when asked (their content is the user's own, or other people's)
+SUPPORT_LOG_LINES=300
+SUPPORT_CUSTOM_MAX=65536   # bytes per file in custom/
+support_logs_asked() { support_logs "${SUPPORT_LOG_SVCS[@]}"; }
+support_logs() { # support_logs SVC... — each one's last lines
+    local s c
+    for s in "$@"; do
+        c="mediastack-$s"
+        echo "--- $s (the last $SUPPORT_LOG_LINES lines, its own timestamps)"
+        sudo docker logs --tail "$SUPPORT_LOG_LINES" -t "$c" 2>&1 || echo "(no logs: is '$s' a service that runs here? the containers: sudo docker ps)"
+    done
+}
+support_custom() { # the files in custom/, their contents
+    local f
+    [[ -d "$CUSTOM_DIR" ]] || { echo "(no custom/ folder)"; return 0; }
+    while IFS= read -r -d '' f; do
+        echo "--- custom/${f#"$CUSTOM_DIR/"}"
+        if ! grep -Iq . "$f" 2>/dev/null && [[ -s "$f" ]]; then echo "(not text — left out)"; continue; fi
+        head -c "$SUPPORT_CUSTOM_MAX" "$f"; echo
+        (( $(stat -c %s "$f") > SUPPORT_CUSTOM_MAX )) && echo "(cut at $SUPPORT_CUSTOM_MAX bytes)"
+    done < <(find "$CUSTOM_DIR" -type f -print0 | sort -z)
+    return 0
+}
+support_host_events() { # the kernel's OOM kills (7 days) and the Docker daemon's errors (24 hours)
+    echo "--- the kernel: processes killed for memory, last 7 days"
+    sp_list "$(sudo journalctl -k --since -7d --no-pager -o short-iso 2>&1 | grep -iE 'out of memory|oom-kill|killed process' | tail -n 100 || true)"
+    echo "--- the Docker daemon: errors, last 24 hours"
+    sp_list "$(sudo journalctl -u docker --since -24h --no-pager -o short-iso -p err 2>&1 | tail -n 100 || true)"
 }
 
 support_doctor() { timeout "$SUPPORT_WAIT" "$SCRIPT_DIR/mediastack.sh" doctor 2>&1; }
@@ -251,12 +314,21 @@ support_part() { # support_part TITLE FUNCTION — its lines into the bundle; ho
     SUPPORT_SUMMARY+=("$(printf '%-28s %6s lines%s' "$1" "$n" "$( (( rc )) && echo "  — ended with exit $rc")")")
 }
 
-cmd_support() { # support [--note TEXT] — the bundle to send to whoever helps (docs/design-runs.md)
-    local note="" ts out counts lan user size kind count taken="" left
+SUPPORT_USAGE='support [--note "what went wrong"] [--logs SVC,...] [--custom] [--host-events]'
+cmd_support() { # the bundle to send to whoever helps (docs/design-runs.md)
+    local note="" logs="" custom=0 events=0 ts out counts lan user size kind count taken="" left s
+    local -a svcs=()
     while (( $# )); do case "$1" in
-        --note) [[ -n "${2:-}" ]] || die "usage: support [--note \"what went wrong\"]"; note=$2; shift 2 ;;
-        *) die "unknown support argument '$1' (usage: support [--note \"what went wrong\"])" ;;
+        --note) [[ -n "${2:-}" ]] || die "usage: $SUPPORT_USAGE"; note=$2; shift 2 ;;
+        --logs) [[ -n "${2:-}" ]] || die "usage: $SUPPORT_USAGE"; logs=$2; shift 2 ;;
+        --custom) custom=1; shift ;;
+        --host-events) events=1; shift ;;
+        *) die "unknown support argument '$1' (usage: $SUPPORT_USAGE)" ;;
     esac; done
+    if [[ -n "$logs" ]]; then
+        IFS=, read -r -a svcs <<<"$logs"
+        for s in "${svcs[@]}"; do [[ "$s" =~ ^[a-z0-9-]+$ ]] || die "support --logs: '$s' is not a service name (comma-separated, e.g. --logs jellyfin,authentik)"; done
+    fi
     load_env   # no render: support reads the stack as it is, even one compose cannot render (doctor says why)
     if [[ -z "$note" && -t 0 ]]; then
         read -r -p "In one line, what went wrong? (Enter to skip) " note || true
@@ -264,7 +336,7 @@ cmd_support() { # support [--note TEXT] — the bundle to send to whoever helps 
     SUPPORT_DIR="$LOCAL_DIR/support"
     mkdir -p "$SUPPORT_DIR"; chmod 700 "$SUPPORT_DIR"; repo_owned "$LOCAL_DIR" "$SUPPORT_DIR"
     ts=$(date +%Y%m%d-%H%M%S); out="$SUPPORT_DIR/support-$ts.txt"
-    SUPPORT_RAW=$(mktemp); counts=$(mktemp); SUPPORT_SUMMARY=()
+    SUPPORT_RAW=$(mktemp); counts=$(mktemp); SUPPORT_SUMMARY=(); SUPPORT_LOG_SVCS=("${svcs[@]}")
     info "building the bundle — doctor and wire --verify take a minute or two"
     { echo "# mediastack support bundle — made $(date --iso-8601=seconds) by \`./mediastack.sh support\`"
       echo "# commit $(run_commit)"
@@ -274,11 +346,16 @@ cmd_support() { # support [--note TEXT] — the bundle to send to whoever helps 
     support_part "settings (.env)" support_settings
     support_part "the stack" support_stack
     support_part "in progress" support_markers
+    support_part "reachability" support_reach
     support_part "doctor" support_doctor
     support_part "wire --verify" support_verify
     support_part "run records" support_records
+    (( ${#svcs[@]} )) && support_part "container logs (--logs)" support_logs_asked
+    (( custom )) && support_part "custom/ (--custom)" support_custom
+    (( events )) && support_part "host events (--host-events)" support_host_events
     ( umask 077; support_redact "$SUPPORT_RAW" "$out" "$counts" ) || { rm -f "$SUPPORT_RAW" "$counts" "$out"; die "support: the redaction failed — no bundle written"; }
     rm -f "$SUPPORT_RAW"
+    SUPPORT_LOG_SVCS=()
     left=$(support_leftover "$out")
     if [[ -n "$left" ]]; then
         rm -f "$out" "$counts"
@@ -300,6 +377,8 @@ cmd_support() { # support [--note TEXT] — the bundle to send to whoever helps 
     echo "  scp $user@${lan:-THIS-HOST-ADDRESS}:$out ."
     echo "Send it by e-mail to whoever helps you. A GitHub issue on this project is public:"
     echo "anyone can read what you attach there, so the redaction is all that protects it."
+    (( custom )) && echo "custom/ is in it: secrets you wrote there are not ones the stack knows, so the redaction cannot find them — read that part closely."
+    (( ${#svcs[@]} )) && echo "Container logs are in it: they can hold people's names, titles and addresses the redaction does not know — read them closely."
     echo "Nothing was sent."
     echo
     echo "${C_BLD}${SUPPORT_WARNING}${C_RST}"
