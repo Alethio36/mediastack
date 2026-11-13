@@ -22,6 +22,21 @@ seerr_api() { # seerr_api METHOD PATH JAR [json-body] -> body; rc = http 2xx
     [[ "$code" =~ ^2 ]]
 }
 
+SEERR_ENTRY=""   # seerr_entry_key's entry (a global: a $(…) subshell would lose wire's failure count)
+seerr_entry_key() { # seerr_entry_key SVC TYPE JAR — SEERR_ENTRY (one of Seerr's server entries) gets SVC's current API key, fixed in Seerr when stale
+    local s="$1" ty="$2" jar="$3" key new out
+    key=$(arr_key "$s")
+    [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — the copy seerr holds not checked"; return 0; }
+    [[ "$(jq -r '.apiKey // ""' <<<"$SEERR_ENTRY")" != "$key" ]] || return 0
+    w_would "seerr -> $s: give it $s's current API key (the one it holds is not $s's)" || return 0
+    new=$(jq -c --arg k "$key" '.apiKey = $k' <<<"$SEERR_ENTRY")
+    out=$(seerr_api POST "/settings/$ty/test" "$jar" "$new") \
+        || { wfail "seerr -> $s: its current API key failed seerr's test [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; return 0; }
+    out=$(seerr_api PUT "/settings/$ty/$(jq -r '.id' <<<"$SEERR_ENTRY")" "$jar" "$new") \
+        || { wfail "seerr -> $s: its API key was not updated [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; return 0; }
+    SEERR_ENTRY=$new; ok "seerr -> $s: API key updated"
+}
+
 wire_seerr() {
     hr "wire: seerr"
     svc_enabled seerr || { info "seerr not enabled — skipped"; return 0; }
@@ -92,7 +107,7 @@ wire_seerr() {
     # one server entry per arr instance, connection details straight from the
     # stack's own labels/keys. The arrs live in gluetun's network namespace,
     # so 'gluetun' is their in-network hostname. Existing entries (matched by
-    # name) are never touched — create-if-missing only.
+    # name) are yours: only their address and the arr's API key are kept current.
     local have_radarr have_sonarr set_radarr set_sonarr
     wire_arrs_ready || true
     set_radarr=$(seerr_api GET /settings/radarr "$jar") \
@@ -106,10 +121,11 @@ wire_seerr() {
         ty=$(svc_label "$s" mediastack.arrtype)
         [[ "$ty" == radarr || "$ty" == sonarr ]] || { info "$s: seerr does not manage $ty — skipped"; continue; }
         if [[ "$ty" == radarr && " $have_radarr " == *" $s "* ]] || [[ "$ty" == sonarr && " $have_sonarr " == *" $s "* ]]; then
-            ok "$s already in seerr — untouched (yours to manage in the GUI)"
+            ok "$s already in seerr — yours to manage in the GUI (its address and API key kept current)"
             local sset sentry sst
             if [[ "$ty" == radarr ]]; then sset=$set_radarr; else sset=$set_sonarr; fi
             sentry=$(jq -c --arg n "$s" '[.[]? | select(.name == $n)][0] // empty' <<<"$sset")
+            SEERR_ENTRY=$sentry; seerr_entry_key "$s" "$ty" "$jar"; sentry=$SEERR_ENTRY   # the key first: the address PUT below carries it
             sst="$(jq -r '.hostname // ""' <<<"$sentry"):$(jq -r '.port // ""' <<<"$sentry")"
             if addr_stale "seerr -> $s" "$s" "$sst"; then
                 addr_repoint "seerr -> $s" "$sst" "$(svc_addr "$s")" -- \

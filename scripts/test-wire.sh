@@ -11,6 +11,9 @@
 #   * the closing summary lists every failure again, named by its step
 #   * settings wire wrote to .env reach the containers that read them at
 #     start: what became pending during the run is recreated, nothing else
+#   * an arr's API key that Prowlarr or Seerr holds is kept current: Prowlarr's
+#     (masked) is tested and replaced only when refused as the key; Seerr's is
+#     compared; --verify only reports
 #
 #   scripts/test-wire.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -126,5 +129,41 @@ tmo() { ( curl() { echo "curl: (28) Operation timed out after 20002 milliseconds
 [[ "$(tmo GET)" == "no answer within 20s" ]] || fail_ "a read that timed out: unanswered ($(tmo GET))"; pass
 [[ "$( ( curl() { echo "curl: (7) Failed to connect"; return 7; }; api GET http://x k ) 2>&1)" == *"Failed to connect"* ]] \
     || fail_ "any other failure: curl's own words"; pass
+
+# ---- an arr's key in Prowlarr and Seerr follows the arr (found live Nov 2026:
+#      a key regenerated in Sonarr left both refused, wire --verify clean) ----
+APPS='[{"id":7,"name":"sonarr (mediastack)","fields":[{"name":"baseUrl","value":"http://gluetun:8989"},{"name":"apiKey","value":"********"}]}]'
+pk() { # pk DRY TEST-ANSWER -> the calls made, then "fails=N"
+    ( WIRE_DRY=$1 WIRE_FAILS=0 WIRE_CHANGES=0 ANSWER=$2; rm -f "$T/c"
+      api() { echo "$1 ${2##*/v1/} ${4:-}" >> "$T/c"
+          case "$1 $2" in
+              "GET "*/applications) echo "$APPS" ;;
+              "POST "*/applications/test) [[ "$ANSWER" == ok ]] && return 0; echo "$ANSWER"; return 1 ;;
+              "PUT "*) echo '{}' ;;
+          esac; }
+      prowlarr_app_key sonarr "sonarr (mediastack)" http://p/api/v1 pkey NEWKEY >/dev/null 2>&1
+      grep -v '^GET' "$T/c" | cut -d' ' -f1,2 | paste -sd' ' -; grep '^PUT' "$T/c" | cut -d' ' -f3- ; echo "fails=$WIRE_FAILS" )
+}
+refused='[{"propertyName":"ApiKey","errorMessage":"API Key is invalid"}]'
+r=$(pk 0 "$refused")
+[[ "$(sed -n 1p <<<"$r")" == "POST applications/test PUT applications/7" ]] || fail_ "refused as the key: tested, then put back: $r"; pass
+jq -e '.fields[] | select(.name=="apiKey") | .value == "NEWKEY"' <<<"$(sed -n 2p <<<"$r")" >/dev/null \
+    && jq -e '.fields[] | select(.name=="baseUrl") | .value == "http://gluetun:8989"' <<<"$(sed -n 2p <<<"$r")" >/dev/null \
+    || fail_ "the PUT carries the arr's current key, the rest of the entry as it was: $(sed -n 2p <<<"$r")"; pass
+[[ "$(pk 1 "$refused")" == $'POST applications/test\nfails=0' ]] || fail_ "--verify: tested and reported, nothing written: $(pk 1 "$refused")"; pass
+[[ "$(pk 0 ok)" == $'POST applications/test\nfails=0' ]] || fail_ "the key works: nothing written: $(pk 0 ok)"; pass
+[[ "$(pk 0 '[{"propertyName":"BaseUrl","errorMessage":"cannot connect"}]')" == $'POST applications/test\nfails=1' ]] \
+    || fail_ "refused for another reason: a failure, the key left alone"; pass
+sk() { # sk DRY HELD -> the calls made, SEERR_ENTRY's key, fails=N
+    ( WIRE_DRY=$1 WIRE_FAILS=0 WIRE_CHANGES=0; rm -f "$T/c"
+      arr_key() { echo NEWKEY; }
+      seerr_api() { echo "$1 $2 ${4:-}" >> "$T/c"; echo '{}'; }; seerr_code() { echo 200; }
+      SEERR_ENTRY=$(jq -cn --arg k "$2" '{id:3,name:"sonarr",hostname:"gluetun",apiKey:$k}')
+      seerr_entry_key sonarr sonarr jar >/dev/null 2>&1
+      { cut -d' ' -f1,2 "$T/c" 2>/dev/null || true; } | paste -sd' ' -; jq -r '.apiKey' <<<"$SEERR_ENTRY"; echo "fails=$WIRE_FAILS" )
+}
+[[ "$(sk 0 OLDKEY)" == $'POST /settings/sonarr/test PUT /settings/sonarr/3\nNEWKEY\nfails=0' ]] || fail_ "seerr holds an old key: tested, then updated: $(sk 0 OLDKEY)"; pass
+[[ "$(sk 1 OLDKEY)" == $'\nOLDKEY\nfails=0' ]] || fail_ "a dry run: reported, nothing written: $(sk 1 OLDKEY)"; pass
+[[ "$(sk 0 NEWKEY)" == $'\nNEWKEY\nfails=0' ]] || fail_ "seerr holds the current key: nothing written: $(sk 0 NEWKEY)"; pass
 
 echo "OK wire: $checks checks"

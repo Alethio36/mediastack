@@ -22,6 +22,25 @@ prowlarr_app_repoint() { # <target> <entry name> <applications JSON> <prowlarr a
     addr_repoint "prowlarr <-> $t" "${was[*]}" "${want[*]}" -- \
         arr_repoint "$purl/api/v1" "$pkey" applications "$cur" "$name" "${fields[@]}"
 }
+prowlarr_app_key() { # <target> <entry name> <prowlarr api url> <prowlarr key> <target's key>
+    # Prowlarr masks the key an entry holds ("********"), so it is tested, not
+    # read: refused as "ApiKey" -> the target's current key goes in (a key
+    # regenerated in the target's UI, or by rotate-secrets). The list is read
+    # here, after any re-point, so the PUT carries the entry as it is now.
+    local t="$1" name="$2" purl="$3" pkey="$4" key="$5" cur entry out
+    cur=$(api GET "$purl/api/v1/applications" "$pkey") \
+        || { wfail "prowlarr -> $t: its apps are unreadable — its API key not checked [$(oneline "$cur")]"; return 0; }
+    entry=$(jq -c --arg n "$name" '[.[]? | select(.name == $n)][0] // empty' <<<"$cur")
+    [[ -n "$entry" ]] || return 0
+    out=$(api POST "$purl/api/v1/applications/test" "$pkey" "$entry") && return 0
+    if ! jq -e 'any(.[]?; (.propertyName // "" | ascii_downcase) == "apikey")' <<<"$out" >/dev/null 2>&1; then
+        wfail "prowlarr -> $t: its connection test failed: $(oneline "$out")"; return 0
+    fi
+    w_would "prowlarr -> $t: give it $t's current API key (the one it holds is refused)" || return 0
+    out=$(arr_repoint "$purl/api/v1" "$pkey" applications "$cur" "$name" "apiKey=$key") \
+        && ok "prowlarr -> $t: API key updated" \
+        || wfail "prowlarr -> $t: its API key was not updated — API said: $(oneline "$out")"
+}
 prowlarr_download_client() { # manual grabs in prowlarr's UI go to the download client (category 'prowlarr')
     local key url ver base dcs dl miss e name impl schema tmpl body resp p other out
     key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr); base="$url/api/$ver"
@@ -99,6 +118,7 @@ wire_prowlarr() {
         aexists=no; grep -q "\"$s (mediastack)\"" <<<"$cur" && aexists=yes
         if [[ "$aexists" == yes ]]; then
             prowlarr_app_repoint "$s" "$s (mediastack)" "$cur" "$purl" "$pkey"
+            prowlarr_app_key "$s" "$s (mediastack)" "$purl" "$pkey" "$key"
         fi
         abody=$(cat <<JSON
 {"name":"$s (mediastack)","syncLevel":"fullSync",
@@ -123,6 +143,7 @@ JSON
             aexists=no; grep -q '"LazyLibrarian (mediastack)"' <<<"$cur" && aexists=yes
             if [[ "$aexists" == yes ]]; then
                 prowlarr_app_repoint lazylibrarian "LazyLibrarian (mediastack)" "$cur" "$purl" "$pkey"
+                prowlarr_app_key lazylibrarian "LazyLibrarian (mediastack)" "$purl" "$pkey" "$llkey"
             fi
             abody=$(cat <<JSON
 {"name":"LazyLibrarian (mediastack)","syncLevel":"fullSync",
