@@ -1167,7 +1167,7 @@ EOF
 failure_unit_ensure() { failure_unit_render | sudo tee "$SYSTEMD_DIR/$FAILURE_UNIT" >/dev/null; }   # the caller daemon-reloads
 
 cmd_unit_failed() { # unit-failed UNIT — the OnFailure hook's verb: tell ops, once per unit per cooldown
-    local unit="${1:-}" key now last res code inv lines
+    local unit="${1:-}" key now last res code inv lines pid rec from inspect
     [[ "$unit" =~ ^mediastack-[a-z0-9-]+\.service$ ]] || die "usage: unit-failed mediastack-<name>.service (systemd's OnFailure hook runs it)"
     load_env
     key="unit-failed-${unit%.service}"; now=$(date +%s); last=$(state_get "$key")
@@ -1177,12 +1177,24 @@ cmd_unit_failed() { # unit-failed UNIT — the OnFailure hook's verb: tell ops, 
     fi
     res=$(systemctl show -p Result --value "$unit" 2>/dev/null || true)
     code=$(systemctl show -p ExecMainStatus --value "$unit" 2>/dev/null || true)
-    inv=$(systemctl show -p InvocationID --value "$unit" 2>/dev/null || true)
-    if [[ -n "$inv" ]]; then lines=$(journalctl "_SYSTEMD_INVOCATION_ID=$inv" -o cat --no-pager -n 12 2>/dev/null || true)
-    else lines=$(journalctl -u "$unit" -o cat --no-pager -n 12 2>/dev/null || true); fi
+    # the run's own record (lib/runs.sh) — its words, timestamped; without one
+    # (it died before recording began) the journal, less sudo's audit lines,
+    # which carry home paths and no news (found live 12 Nov 2026)
+    pid=$(systemctl show -p ExecMainPID --value "$unit" 2>/dev/null || true)
+    rec=$(run_record_of_pid "$pid")
+    if [[ -n "$rec" ]]; then
+        lines=$(run_record_tail "$rec" 12)
+        from="its record"; inspect="local/runs/${rec##*/} (the whole run)"
+    else
+        inv=$(systemctl show -p InvocationID --value "$unit" 2>/dev/null || true)
+        if [[ -n "$inv" ]]; then lines=$(journalctl "_SYSTEMD_INVOCATION_ID=$inv" -o cat --no-pager -n 40 2>/dev/null || true)
+        else lines=$(journalctl -u "$unit" -o cat --no-pager -n 40 2>/dev/null || true); fi
+        lines=$(grep -vE 'pam_unix\(sudo:session\)|^[[:space:]]*[a-z_][a-z0-9_-]* : .*COMMAND=' <<<"$lines" | tail -n 12 || true)
+        from="the journal (no run record)"; inspect="journalctl -u $unit -n 50"
+    fi
     lines=$(cut -c1-200 <<<"$lines")
-    notify ops "Mediastack: $unit failed" "$(printf 'Result: %s, exit status %s, on %s. Its last lines:\n```\n%s\n```\nInspect: journalctl -u %s -n 50' \
-        "${res:-unknown}" "${code:-?}" "$(hostname)" "${lines:-(none in the journal)}" "$unit")" failure
+    notify ops "Mediastack: $unit failed" "$(printf 'Result: %s, exit status %s, on %s. Its last lines, from %s:\n```\n%s\n```\nInspect: %s' \
+        "${res:-unknown}" "${code:-?}" "$(hostname)" "$from" "${lines:-(none)}" "$inspect")" failure
     state_set "$key" "$now"
 }
 

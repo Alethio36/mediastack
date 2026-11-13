@@ -189,9 +189,13 @@ ENV_FILE=$T/env
 (
     STATE_DIR=$(mktemp -d); SENT=$(mktemp -d)
     load_env() { :; }; hostname() { echo testbox; }
+    LOCAL_DIR=$(mktemp -d); MAINPID=""
     systemctl() { case "$*" in
-        *"-p Result"*) echo exit-code ;; *"-p ExecMainStatus"*) echo 1 ;; *"-p InvocationID"*) echo inv123 ;; esac; }
+        *"-p Result"*) echo exit-code ;; *"-p ExecMainStatus"*) echo 1 ;; *"-p InvocationID"*) echo inv123 ;;
+        *"-p ExecMainPID"*) echo "$MAINPID" ;; esac; }
     journalctl() { [[ "$1" == "_SYSTEMD_INVOCATION_ID=inv123" ]] || { echo "journal read without the run's invocation id: $*" >&2; return 1; }
+                   printf '    root : PWD=/home/someone/mediastack ; USER=root ; COMMAND=/usr/bin/docker ps\n'
+                   printf 'pam_unix(sudo:session): session opened for user root(uid=0) by (uid=0)\n'
                    printf 'ERROR unhandled failure (exit 1) at lib/backup.sh:812 in update_run\n'; }
     notify() { local n; n=$(( $(find "$SENT" -name '*.tag' | wc -l) + 1 ))   # one send = four files
                printf '%s' "$1" > "$SENT/$n.tag"; printf '%s' "$2" > "$SENT/$n.title"
@@ -204,6 +208,8 @@ ENV_FILE=$T/env
     body=$(cat "$SENT/1.body")
     [[ "$body" == *"Result: exit-code, exit status 1, on testbox"* && "$body" == *"lib/backup.sh:812"* && "$body" == *"journalctl -u mediastack-update.service"* ]] \
         || fail_ "the body carries result, exit status, host, that run's lines and where to look: $body"; pass
+    [[ "$body" == *"from the journal (no run record)"* && "$body" != *COMMAND=* && "$body" != *pam_unix* && "$body" != */home/* ]] \
+        || fail_ "no record: the journal, without sudo's audit lines and their home paths: $body"; pass
     cmd_unit_failed mediastack-update.service >/dev/null
     [[ $(sends) == 1 ]] || fail_ "a second failure inside the cooldown must not send again"; pass
     cmd_unit_failed mediastack-backup.service >/dev/null
@@ -211,9 +217,20 @@ ENV_FILE=$T/env
     state_set unit-failed-mediastack-update $(( $(date +%s) - FAILURE_COOLDOWN - 1 ))
     cmd_unit_failed mediastack-update.service >/dev/null
     [[ $(sends) == 3 ]] || fail_ "after the cooldown a failure sends again"; pass
-    rm -rf "$STATE_DIR" "$SENT"
+    # with the run's record (lib/runs.sh): its own last lines, and the record to read
+    mkdir -p "$LOCAL_DIR/runs"; MAINPID=4242; rec=$LOCAL_DIR/runs/20261113-040000-update--auto-4242.log
+    { printf '# mediastack run\nverb:     update --auto\ncommit:   x\nby:       systemd mediastack-update\nstarted:  t\n---\n'
+      for i in $(seq 1 20); do printf '04:00:%02d line %d\n' "$i" "$i"; done
+      printf '04:00:21 ERROR the pull failed\n---\nexit:     1 after 21s\n'; } > "$rec"
+    state_set unit-failed-mediastack-update 0
+    cmd_unit_failed mediastack-update.service >/dev/null
+    body=$(cat "$SENT/4.body")
+    [[ "$body" == *"from its record"* && "$body" == *"04:00:21 ERROR the pull failed"* && "$body" == *"04:00:10 line 10"* \
+       && "$body" != *"line 9"$'\n'* && "$body" != *"exit:"* && "$body" == *"Inspect: local/runs/20261113-040000-update--auto-4242.log"* ]] \
+        || fail_ "with a record: its last 12 lines (no header, no footer) and where it is: $body"; pass
+    rm -rf "$STATE_DIR" "$SENT" "$LOCAL_DIR"
 )
-checks=$((checks + 7))
+checks=$((checks + 9))
 
 # ---- doctor: the hub's own record of failed sends (lines as apprise-api 2.1 writes them, live Nov 2026) ----
 cat > "$T/hublog" <<'LOG'

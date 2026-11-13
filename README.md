@@ -472,7 +472,8 @@ timer or the boot guard: one file per run, named for when it started and the
 command, with who started it, the commit, everything it printed (each line
 timestamped in the stack's time zone) and, at the end, its exit status. A
 record without that last line never finished (a dropped SSH session, a
-reboot). The screen shows exactly what it did before; one difference: image
+reboot): `doctor` names any from the last 7 days. When a timer's run fails,
+the notice to ops quotes the last lines of its record and names the file. The screen shows exactly what it did before; one difference: image
 pulls show a line per image, not the progress bars. `credentials`,
 `invite`, `reset-password`, `set-credentials` and `logs` record only when
 they ran and how they ended, and any secret from `.env` that a run prints is

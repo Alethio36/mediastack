@@ -1,8 +1,9 @@
 # Design: run records and the support bundle
 
 *Status: agreed (13 Nov 2026), MVP plan step 2. Part 1 (run records) built
-(lib/runs.sh, scripts/test-runs.sh), not yet proven live; the rest follows
-in the order at the end, each part proven live before the next.*
+and proven live on the test box (13 Nov); part 2 (the failure notice from the
+record, doctor's unfinished runs) built, not yet proven live; the rest
+follows in the order at the end, each part proven live before the next.*
 
 ## Why
 
@@ -149,7 +150,10 @@ under a few MB with the caps below), and then prints, without a pager
   issue on this project is public**, readable by anyone, so the redaction is
   all that protects it there.
 
-Nothing is ever sent by the script.
+Nothing is ever sent by the script. Its very last line, in bold, is the
+warning (13 Nov 2026): **PLEASE PROOFREAD IT FOR SECRETS OR SENSITIVE
+INFORMATION AND REDACT ANY BEFORE SENDING** — the redaction is automatic, the
+last look is theirs.
 
 ### What goes in — an allowlist — **agreed**
 Each part says where it came from; a part that fails says why and the bundle

@@ -153,6 +153,38 @@ run_gone() { # run_gone PID — the process has ended (exited, or a zombie nobod
     [[ ! -e "/proc/$1/status" ]] || [[ "$(grep '^State:' "/proc/$1/status" 2>/dev/null)" == *Z* ]]
 }
 
+# ---- reading records (unit-failed, doctor) ----
+run_records_dir() { echo "${RUNS_DIR:-$LOCAL_DIR/runs}"; }
+run_record_of_pid() { # run_record_of_pid PID -> the record that process opened ("" if none)
+    local -a f=("$(run_records_dir)"/*-"$1".log)
+    [[ "$1" =~ ^[0-9]+$ && -e "${f[-1]}" ]] && echo "${f[-1]}"
+    return 0
+}
+run_record_tail() { # run_record_tail FILE N -> its last N lines of output, without the header or footer
+    local i
+    # its stamper may still be writing the footer just after the run ended
+    for (( i = 0; i < 40; i++ )); do [[ "$(tail -n 1 "$1" 2>/dev/null)" == exit:* ]] && break; sleep 0.05; done
+    awk -v n="$2" 'NR > 6 { l[NR] = $0 }
+        END { last = NR; if (l[NR] ~ /^exit: / && l[NR - 1] == "---") last = NR - 2
+              for (i = last - n + 1; i <= last; i++) if (i > 6) print l[i] }' "$1"
+}
+run_alive() { # run_alive PID — that run's process is still going (a live mediastack.sh, not a reused pid)
+    [[ -r "/proc/$1/cmdline" ]] || return 1
+    [[ "$(grep '^State:' "/proc/$1/status" 2>/dev/null)" != *Z* ]] || return 1
+    [[ "$(tr '\0' ' ' < "/proc/$1/cmdline")" == *mediastack.sh* ]]
+}
+run_unfinished() { # run_unfinished DAYS -> one line per run from the last DAYS days that never finished: FILE<TAB>verb<TAB>by<TAB>started
+    local f pid since=$(( EPOCHSECONDS - $1 * 86400 ))
+    for f in "$(run_records_dir)"/*.log; do
+        [[ -e "$f" ]] || continue
+        (( $(stat -c %Y "$f") >= since )) || continue
+        [[ "$(tail -n 1 "$f")" == exit:* ]] && continue
+        pid=${f%.log}; pid=${pid##*-}
+        run_alive "$pid" && continue   # still running (this doctor among them)
+        printf '%s\t%s\t%s\t%s\n' "$f" "$(sed -n 's/^verb: *//p' "$f")" "$(sed -n 's/^by: *//p' "$f")" "$(sed -n 's/^started: *//p' "$f")"
+    done
+}
+
 run_record_start() { # run_record_start VERB ARG... — record this run, or carry on the record this process inherited
     on_exit run_record_end   # also arms the EXIT trap: main() may run in a subshell (a test), which has none of its own
     if [[ -n "${MS_RUN_RECORD:-}" ]]; then

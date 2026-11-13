@@ -397,7 +397,18 @@ _doctor_runtime_audit() {
 
 # doctor runs these in order; adding a section = append here + define
 # _doctor_<name>. Mirrors WIRE_ROLES: one registry, no second list to sync.
-DOCTOR_SECTIONS=(env environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit accounts notify audit recycle footprint)
+DOCTOR_SECTIONS=(env environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit accounts notify audit recycle runs footprint)
+
+_doctor_runs() { # runs that never finished (lib/runs.sh): a dropped SSH session, a reboot, a kill — what they did may be half done
+    hr "doctor: runs"
+    local f verb by started n=0
+    while IFS=$'\t' read -r f verb by started; do
+        [[ -n "$f" ]] || continue
+        warn "a run never finished: $verb (started $started, by $by) — what it did last: local/runs/${f##*/}"
+        n=$((n + 1))
+    done < <(run_unfinished 7)
+    (( n )) || ok "every run of the last 7 days finished (local/runs/)"
+}
 
 cmd_doctor() {
     load_env; need_cmd jq; render

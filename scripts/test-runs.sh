@@ -141,6 +141,23 @@ grep -q vw-901 "$T/kept" && grep -q vw-902 "$T/kept" && ! grep -q vw-903 "$T/kep
     || fail_ "beyond them, failed and unfinished runs stay 30 days"; pass
 grep -q 'vw--full-1' "$T/kept" || fail_ "a verb's options count apart"; pass
 
+# ---- doctor: runs that never finished ----
+reset; mkdir -p "$T/local/runs"; d=$T/local/runs
+hdr() { printf '# mediastack run\nverb:     %s\ncommit:   x\nby:       %s\nstarted:  %s\n---\n' "$1" "$2" "$3"; }
+{ hdr wire terminal 2026-11-12T21:46:32-08:00; echo "21:46:33 working"; } > "$d/20261112-214632-wire-999999.log"     # dead pid, no footer
+{ hdr doctor terminal t; echo x; printf -- '---\nexit:     0 after 1s\n'; } > "$d/20261112-214700-doctor-999998.log"
+{ hdr update other t; } > "$d/20261101-000000-update-999997.log"; touch -d '8 days ago' "$d/20261101-000000-update-999997.log"
+bash -c 'exec -a mediastack.sh sleep 5' & alive=$!
+{ hdr up terminal t; } > "$d/20261112-214800-up-$alive.log"
+out=$(bash -c "source \"\$T/fx.sh\"; _doctor_runs")
+kill "$alive" 2>/dev/null || true
+[[ "$out" == *"a run never finished: wire (started 2026-11-12T21:46:32-08:00, by terminal)"*"local/runs/20261112-214632-wire-999999.log"* ]] \
+    || fail_ "doctor names a run that never finished, when and by whom, and its record: $out"; pass
+[[ "$out" != *doctor* || "$out" == *"never finished: wire"* ]] && [[ "$out" != *"never finished: up"* && "$out" != *"never finished: update"* && "$out" != *"never finished: doctor"* ]] \
+    || fail_ "not a finished run, one still going, or one older than 7 days: $out"; pass
+reset; mkdir -p "$T/local/runs"; out=$(bash -c "source \"\$T/fx.sh\"; _doctor_runs")
+[[ "$out" == *"every run of the last 7 days finished"* ]] || fail_ "none unfinished: said so: $out"; pass
+
 # ---- who started it ----
 by() { sed -n 4p "$(rec fx)"; }
 reset; echo "0::/system.slice/mediastack-people.service" > "$T/cgroup"; run fx > /dev/null 2>&1
