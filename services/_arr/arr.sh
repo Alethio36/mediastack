@@ -83,8 +83,9 @@ arr_instance_name() { # brand the instance so notifications are tellable apart;
     local s="$1" key ep cur have want
     key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
     ep="$(arr_url "$s")/api/$(arr_apiver "$s")/config/host"
-    cur=$(api GET "$ep" "$key" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
-    have=$(jq -r '.instanceName // empty' <<<"$cur" 2>/dev/null)
+    # an unread setting is a failure of its own: a write built from it would carry the error, not the settings
+    cur=$(api GET "$ep" "$key") || { wfail "$s: could not read its settings to check its instance name — $(oneline "$cur")"; return 0; }
+    have=$(jq -r '.instanceName // empty' <<<"$cur")
     want=$(arr_pretty_name "$s")
     # one-off (stays inline, not an ensure_field concern): a custom name — non-empty,
     # different from what we'd set, and not the stock lowercase default — is the
@@ -101,7 +102,8 @@ arr_login() { # the arr's own login: "external" (trust the gate) when gate_trust
     gate_trusted "$s" || { arr_forms_login "$s"; return; }
     key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
     url=$(arr_url "$s")
-    cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
+    cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key") \
+        || { wfail "$s: could not read its settings to check how it signs in — $(oneline "$cur")"; return 0; }
     local match=no
     jq -e '.authenticationMethod == "external"' <<<"$cur" >/dev/null 2>&1 && match=yes
     # external: the arr trusts what is in front of it — the portal; its API
@@ -118,7 +120,8 @@ arr_forms_login() { # shared operator login on an arr-family UI; idempotent
     [[ -n "$auser" && -n "$apass" ]] || { info "$s: shared arr login not set yet — 'wire arr' creates it"; return 0; }
     key=$(arr_key "$s"); [[ -n "$key" ]] || return 0
     url=$(arr_url "$s")
-    cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
+    cur=$(api GET "$url/api/$(arr_apiver "$s")/config/host" "$key") \
+        || { wfail "$s: could not read its settings to check its login — $(oneline "$cur")"; return 0; }
     # match on the readable subset (the password is write-only); a forced
     # rotate never matches — one-off, stays inline
     [[ "${2:-}" != force ]] && jq -e --arg u "$auser" '.authenticationMethod=="forms" and .username==$u' <<<"$cur" >/dev/null 2>&1 && match=yes

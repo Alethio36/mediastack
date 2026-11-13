@@ -51,6 +51,27 @@ body=$(awk '/^cmd_wire\(\)/,/^}/' lib/wire.sh)   # the source: declare -f drops 
 grep -qF ': > "$WIRE_UNANSWERED_F"   # a timeout belongs to the role it happened in' <<<"$body" || fail_ "cleared at each role's start"; pass
 [[ "$(sed -n '/WIRE_STEP=apply; wire_apply_settings/,/wire_fail_summary/p' <<<"$body")" == *wire_recheck* ]] || fail_ "read back before the summary"; pass
 
+# ---- a read that got no answer: a failure of its own, nothing written, the run goes on ----
+# (found live 13 Nov: arr_instance_name fed the timeout's text to jq, which ended wire)
+fresh; WIRE_STEP=arr; WIRE_DRY=0
+calls=$T/calls; : > "$calls"
+api() { echo "$1 $2" >> "$calls"; [[ "$1" == GET ]] && { api_timed_out 28; echo "no answer within 0.001s"; return 1; }; return 0; }
+jf_api() { echo "$1 $2" >> "$calls"; [[ "$1" == GET ]] && { api_timed_out 28; printf 000 > "$JF_CODE_F"; echo "no answer"; return 1; }; return 0; }
+arr_key() { echo key; }; arr_url() { echo http://radarr; }; arr_apiver() { echo v3; }; gate_trusted() { return 0; }
+env_get() { case "$1" in ARR_USER) echo admin ;; ARR_PASSWORD) echo pw ;; JELLYFIN_SERVER_NAME) echo Jellyfin ;; *) echo "" ;; esac; }
+for step in "arr_instance_name radarr" "arr_login radarr" "arr_forms_login radarr" "jf_server_name tok"; do
+    n=$WIRE_FAILS
+    out=$( set -e; $step 2>&1; echo "went on" ) || fail_ "$step ended the run: $out"
+    [[ "$out" == *"went on"* && "$out" == *"could not read"* ]] || fail_ "$step: says it could not read: $out"
+done; pass
+jf_server_name tok > /dev/null 2>&1   # in this shell (the loop above ran each in a subshell), so it counts
+! grep -qE '^(PUT|POST) ' "$calls" || fail_ "nothing written from a read that failed: $(grep -E '^(PUT|POST) ' "$calls")"; pass
+for step in "arr_instance_name radarr" "arr_login radarr" "arr_forms_login radarr"; do $step >/dev/null 2>&1; done
+(( ${#WIRE_FAIL_UNANSWERED[@]} == WIRE_FAILS && WIRE_FAILS == 4 )) || fail_ "each such failure is noted as unanswered, for the read-back (${#WIRE_FAIL_UNANSWERED[@]} of $WIRE_FAILS)"; pass
+unset -f api jf_api arr_key arr_url arr_apiver gate_trusted env_get
+# shellcheck disable=SC1090
+source "$lib"; set +e +E; trap - ERR
+
 # ---- the read-back ----
 mkdir -p "$T/repo"; SCRIPT_DIR=$T/repo; WIRE_LATE_WAIT=0
 cat > "$T/repo/mediastack.sh" <<'S'

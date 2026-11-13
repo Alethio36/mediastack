@@ -168,8 +168,9 @@ jellyfin_questions() { # the questionnaire's hook: the name Jellyfin's apps and 
 
 jf_server_name() { # the name apps/casting show, set once: only while it is still the container's ID hash
     local tok="$1" cfg have want
-    cfg=$(jf_api GET /System/Configuration "$tok" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
-    have=$(jq -r '.ServerName // empty' <<<"$cfg" 2>/dev/null)
+    cfg=$(jf_api GET /System/Configuration "$tok") \
+        || { wfail "could not read jellyfin's settings to check its server name [HTTP $(jf_code)]: $(oneline "$cfg")"; return 0; }
+    have=$(jq -r '.ServerName // empty' <<<"$cfg")
     if [[ -n "$have" && ! "$have" =~ ^[0-9a-f]{12}$ ]]; then
         ok "server name '$have'"
         return 0
@@ -187,7 +188,7 @@ jf_transcode_path() { # transcodes belong on the cache volume, not in /config
     # config volume, which backup archives and which sits wherever CONFIG_ROOT
     # does. Segments are written at source bitrate for the whole session.
     local tok="$1" cfg have
-    cfg=$(jf_api GET /System/Configuration/encoding "$tok" || true)   # soft read: a failed read shows as a change; the write that follows fails loud
+    cfg=$(jf_api GET /System/Configuration/encoding "$tok" || true)   # soft read: judged on the next line
     [[ "$(jf_code)" =~ ^2 ]] || { wfail "could not read jellyfin's encoding settings [HTTP $(jf_code)]: $(head -c200 <<<"$cfg")"; return 0; }
     have=$(jq -r '.TranscodingTempPath // empty' <<<"$cfg" 2>/dev/null)
     if [[ "$have" == "$JF_TRANSCODE_PATH" ]]; then ok "transcodes go to $JF_TRANSCODE_PATH (the cache volume)"; return 0; fi
