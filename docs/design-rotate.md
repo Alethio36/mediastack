@@ -63,8 +63,8 @@ rewired. Each row's code lives in its service's folder.
 | `AUTHENTIK_LDAP_BIND_PASSWORD` | the search account (blueprint) | Jellyfin's LDAP plugin (`wire jellyfin`) | — |
 | `AUTHENTIK_ABS_CLIENT_SECRET` | the provider (blueprint) | Audiobookshelf (`wire audiobookshelf`) | — |
 | `AUTHENTIK_KAVITA_CLIENT_SECRET` | the provider (blueprint) | Kavita (`wire kavita`, one restart) | — |
-| each arr's API key (Radarr, Sonarr, the 4K/anime instances, Lidarr) | its `config.xml` | Prowlarr, Seerr, Bazarr, Cleanuparr, Recyclarr (their `wire` roles, `trash-sync`'s config) | **companion apps** |
-| Prowlarr's API key | its `config.xml` | every arr's indexers (Prowlarr's sync), LazyLibrarian | **companion apps** |
+| each arr's API key (Radarr, Sonarr, the 4K/anime instances, Lidarr) | the arr (its `ResetApiKey` command; read back from `config.xml`) | Prowlarr, Seerr, Bazarr, Cleanuparr, Recyclarr (their `wire` roles, `trash-sync`'s config) | **companion apps** |
+| Prowlarr's API key | Prowlarr (`ResetApiKey`; read back from `config.xml`) | every arr's indexers (Prowlarr pushes them itself), LazyLibrarian | **companion apps** |
 | Bazarr's API key | its `config.yaml` | — | **companion apps** |
 | LazyLibrarian's API key | its `config.ini` | Prowlarr's application entry | — |
 | `JELLYFIN_API_KEY` | Jellyfin (`/Auth/Keys`; old key deleted) | Wizarr's server entry | Wizarr mode: see spike 4 |
@@ -202,9 +202,15 @@ logins → the `set-credentials all` hint instead of the login line).
    `.env`, `up` (the worker recreated), `wire authentik` applies, then
    `wire jellyfin`/`audiobookshelf`/`kavita` — each already compares the
    secret itself (Kavita by its digest).
-3. **The arr-family keys**: through each app's API, or `config.xml` edited
-   while stopped (as LazyLibrarian's is today); does Prowlarr's sync push its
-   new key into every arr's indexers on its own.
+3. *Done for the arrs and Prowlarr (13 Nov 2026).* **The arr-family keys.**
+   No API sets a chosen key (`PUT /config/host` skips `ApiKey`); each app
+   makes its own: `POST /command {"name":"ResetApiKey"}` writes a new random
+   key to `config.xml`, read on every request — proven live on Sonarr: 201,
+   the old key 401, the new 200, no restart. So for these the owner
+   generates and the run reads the new key back (`arr_key`). Prowlarr's own
+   reset raises `ApiKeyChangedEvent`, a forced full sync of every indexer to
+   every app with the new key (from its source; the test box has no indexers
+   to watch it — proven with the build). Still open: Bazarr, LazyLibrarian.
 4. **Jellyfin's key in Wizarr mode**: Wizarr's server entry holds a pasted
    copy. Through Wizarr's API, or by hand — if by hand, the end says so and
    it is a cost line.
@@ -213,7 +219,12 @@ logins → the `set-credentials all` hint instead of the login line).
 6. **Seerr's and Cleanuparr's keys**: a regenerate call each.
 7. **Every holder's wire step corrects a stale key** (and `--verify` reports
    one). Any create-only step is fixed first, as its own patch. authentik's
-   holders: done (2).
+   holders: done (2). The arrs' holders: Prowlarr's and Seerr's entries were
+   create-only — reproduced live (a new Sonarr key: Prowlarr's test 400,
+   Seerr's copy old, `wire --verify` clean) and fixed (`fix(wire)`): Prowlarr's
+   masked copy is tested and replaced when refused as the key, Seerr's
+   compared. Seerr writes blind, so `--verify` skips it; `wire` heals it.
+   Still to audit: Bazarr's, Cleanuparr's and Recyclarr's copies.
 8. **Meilisearch**: a new master key, JellySearch recreated — search works
    without a re-index, or the re-index is part of the rotation.
 
