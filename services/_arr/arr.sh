@@ -216,7 +216,8 @@ support_arr() { # support: one arr's own view — version, health list, root fol
     if [[ "$s" != prowlarr ]]; then
         out=$(api GET "$base/rootfolder" "$key") && jq -r '.[] | "root folder \(.path): \(if .accessible then "reachable" else "NOT reachable" end), \((.freeSpace // 0) / 1073741824 | floor) GiB free"' <<<"$out" || echo "root folders unreadable: $(oneline "$out")"
     fi
-    out=$(api GET "$base/downloadclient" "$key") && jq -r '.[] | "download client \(.name) (\(.implementation)): \(if .enable then "on" else "off" end)\([.fields[]? | select(.name | test("category$"; "i")) | ", category " + (.value // "" | tostring)] | join(""))"' <<<"$out" || echo "download clients unreadable: $(oneline "$out")"
+    # its category fields (movieCategory, tvCategory, movieImportedCategory...) by name, the ones set only
+    out=$(api GET "$base/downloadclient" "$key") && jq -r '.[] | "download client \(.name) (\(.implementation)): \(if .enable then "on" else "off" end)\([.fields[]? | select((.name | test("category$"; "i")) and ((.value // "") | tostring) != "") | ", \(.name) \(.value)"] | join(""))"' <<<"$out" || echo "download clients unreadable: $(oneline "$out")"
     out=$(api GET "$base/indexer" "$key") && jq -r '"indexers: \(length), \([.[] | select(.enable)] | length) on"' <<<"$out" || echo "indexers unreadable: $(oneline "$out")"
     if [[ "$s" == prowlarr ]]; then
         out=$(api GET "$base/applications" "$key") && jq -r '.[] | "app \(.name) (\(.implementation)), sync \(.syncLevel)"' <<<"$out" || echo "apps unreadable: $(oneline "$out")"

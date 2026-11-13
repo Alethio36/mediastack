@@ -220,7 +220,7 @@ api() { case "$2" in
   */system/status) echo '{"version":"6.4.4.10685","osName":"ubuntu","osVersion":"24.04"}' ;;
   */health) [[ -n "${CLEAR:-}" ]] && echo '[]' || echo '[{"type":"error","message":"No indexers available with RSS sync enabled"}]' ;;
   */rootfolder) echo '[{"path":"/data/media/movies","accessible":true,"freeSpace":82678030336}]' ;;
-  */downloadclient) echo '[{"enable":true,"name":"qBittorrent","implementation":"QBittorrent","fields":[{"name":"host","value":"localhost"},{"name":"movieCategory","value":"movies"}]}]' ;;
+  */downloadclient) echo '[{"enable":true,"name":"qBittorrent","implementation":"QBittorrent","fields":[{"name":"host","value":"localhost"},{"name":"movieCategory","value":"movies"},{"name":"movieImportedCategory","value":""}]}]' ;;
   */indexer) echo '[{"enable":true},{"enable":false}]' ;;
   */applications) echo '[{"name":"Radarr","implementation":"Radarr","syncLevel":"fullSync"}]' ;;
   */api/v1/status) echo '{"version":"3.5.2","updateAvailable":false}' ;;
@@ -229,10 +229,11 @@ api() { case "$2" in
   */settings/sonarr) echo '[]' ;;
   *) echo "unexpected $2"; return 1 ;; esac; }
 jf_api() { case "$2" in
-  /System/Info) echo '{"Version":"12.4.0","OperatingSystemDisplayName":"Linux","HasPendingRestart":false}' ;;
+  /System/Info) echo '{"Version":"12.4.0","OperatingSystemDisplayName":"","HasPendingRestart":false}' ;;
   /Plugins) echo '[{"Name":"LDAP Authentication","Version":"24.0.0.0","Status":"Active"}]' ;;
   /System/Configuration/encoding) echo '{"TranscodingTempPath":"/cache/transcodes","HardwareAccelerationType":"none"}' ;;
-  /System/Configuration) echo '{"KnownProxies":["172.31.250.2"]}' ;;
+  /System/Configuration) echo '{"ServerName":"Jellyfin"}' ;;
+  /System/Configuration/network) echo '{"KnownProxies":["172.31.250.2"]}' ;;
   /Library/VirtualFolders) echo '[{"Name":"Movies","CollectionType":"movies","Locations":["/media/movies"]}]' ;; esac; }
 ak_api() { case "$2" in
   /admin/version/) echo '{"version_current":"2026.8.5","version_latest":"2026.8.5","outdated":false}' ;;
@@ -248,11 +249,11 @@ gluetun_proven() { return 0; }
 H
 hook() { bash -c "source \"\$T/fx.sh\"; source \"\$T/hooks.sh\"; NAVIDROME_PEOPLE=\$T/people; $1" 2>&1; }
 printf 'bob\ton\ncarol\toff\n' > "$T/people"; mkdir -p "$T/local/state"; echo 0 > "$T/local/state/leak-verdict"
-[[ "$(hook 'support_arr radarr')" == $'version 6.4.4.10685, on ubuntu 24.04\nhealth error: No indexers available with RSS sync enabled\nroot folder /data/media/movies: reachable, 76 GiB free\ndownload client qBittorrent (QBittorrent): on, category movies\nindexers: 2, 1 on' ]] \
+[[ "$(hook 'support_arr radarr')" == $'version 6.4.4.10685, on ubuntu 24.04\nhealth error: No indexers available with RSS sync enabled\nroot folder /data/media/movies: reachable, 76 GiB free\ndownload client qBittorrent (QBittorrent): on, movieCategory movies\nindexers: 2, 1 on' ]] \
     || fail_ "an arr: version, health, root folders, download client, indexers: $(hook 'support_arr radarr')"; pass
 [[ "$(hook 'CLEAR=1 support_arr radarr')" == *$'health: clear\nroot folder'* ]] || fail_ "an arr with a clear health list says so, nothing else"; pass
 [[ "$(hook 'support_prowlarr')" == *"app Radarr (Radarr), sync fullSync" && "$(hook 'support_prowlarr')" != *"root folder"* ]] || fail_ "Prowlarr: its apps, no root folders"; pass
-[[ "$(hook support_jellyfin)" == $'version 12.4.0, Linux\nplugin LDAP Authentication 24.0.0.0: Active\ntranscoding: to /cache/transcodes, hardware none\ntrusted proxies: 172.31.250.2\nlibrary Movies (movies): /media/movies' ]] \
+[[ "$(hook support_jellyfin)" == $'version 12.4.0\nplugin LDAP Authentication 24.0.0.0: Active\ntranscoding: to /cache/transcodes, hardware none\ntrusted proxies: 172.31.250.2\nlibrary Movies (movies): /media/movies' ]] \
     || fail_ "Jellyfin: $(hook support_jellyfin)"; pass
 [[ "$(hook support_authentik)" == $'version 2026.8.5\nblueprints: 3, 2 applied\nblueprint default/flow-oobe.yaml: error, last applied 2026-11-13T05:08:25\nblueprint mediastack/mediastack-portal.yaml: successful, last applied 2026-11-13T05:13:08\noutpost authentik Embedded Outpost: version 2026.8.5, last seen 2026-11-13T10:00:00\noutpost mediastack-ldap: no instance has reported' ]] \
     || fail_ "authentik: version, the blueprints not applied and ours, outposts: $(hook support_authentik)"; pass

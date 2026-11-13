@@ -574,10 +574,11 @@ support_jellyfin() { # support: its version, plugins, transcoding, libraries and
     local tok out
     sp_running jellyfin || return 0
     tok=$(env_get JELLYFIN_API_KEY); [[ -n "$tok" ]] || { echo "no stack API key yet (wire jellyfin makes it)"; return 0; }
-    out=$(jf_api GET /System/Info "$tok") && jq -r '"version \(.Version), \(.OperatingSystemDisplayName // .OperatingSystem // "?")\(if .HasPendingRestart then ", a restart is pending" else "" end)"' <<<"$out" || echo "system info unreadable: $(oneline "$out")"
+    out=$(jf_api GET /System/Info "$tok") && jq -r '"version \(.Version)\(if .HasPendingRestart then ", a restart is pending" else "" end)"' <<<"$out" || echo "system info unreadable: $(oneline "$out")"
     out=$(jf_api GET /Plugins "$tok") && jq -r '.[] | "plugin \(.Name) \(.Version): \(.Status)"' <<<"$out" || echo "plugins unreadable: $(oneline "$out")"
     out=$(jf_api GET /System/Configuration/encoding "$tok") && jq -r '"transcoding: to \(.TranscodingTempPath // "the default"), hardware \(.HardwareAccelerationType // "none")"' <<<"$out" || echo "transcoding settings unreadable: $(oneline "$out")"
-    out=$(jf_api GET /System/Configuration "$tok") && jq -r '"trusted proxies: \((.KnownProxies // []) | if length == 0 then "none" else join(", ") end)"' <<<"$out" || echo "configuration unreadable: $(oneline "$out")"
+    # its network settings, where KnownProxies lives (as wire and doctor read it: jf_known_proxies)
+    out=$(jf_api GET /System/Configuration/network "$tok") && jq -r 'if has("KnownProxies") then "trusted proxies: \((.KnownProxies // []) | if length == 0 then "none" else join(", ") end)" else "trusted proxies: not in its network settings (the setting moved?)" end' <<<"$out" || echo "network settings unreadable: $(oneline "$out")"
     out=$(jf_api GET /Library/VirtualFolders "$tok") && jq -r '.[] | "library \(.Name) (\(.CollectionType // "mixed")): \((.Locations // []) | join(", "))"' <<<"$out" || echo "libraries unreadable: $(oneline "$out")"
     return 0
 }
