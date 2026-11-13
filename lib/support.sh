@@ -8,6 +8,10 @@
 
 SUPPORT_DIR=""              # LOCAL_DIR/support, set when it runs
 SUPPORT_RECORDS=10          # the newest run records in the bundle (plus every failed or unfinished one of the last 7 days)
+# every few minutes, much the same each time: only the latest of each (and any that failed)
+SUPPORT_ROUTINE=" vpn-watch frontdoor-refresh people-sync "
+# the bundle runs these fresh: their old records add nothing
+SUPPORT_NOT_RECORDS=" doctor support "
 SUPPORT_RECORD_LINES=400    # each cut to its last this many lines
 SUPPORT_WAIT=300            # seconds for doctor and wire --verify
 SUPPORT_WARNING="PLEASE PROOFREAD IT FOR SECRETS OR SENSITIVE INFORMATION AND REDACT ANY BEFORE SENDING"
@@ -15,6 +19,7 @@ SUPPORT_WARNING="PLEASE PROOFREAD IT FOR SECRETS OR SENSITIVE INFORMATION AND RE
 SUPPORT_COMMON_NAMES=" root admin user media debian ubuntu pi docker mediastack server localhost host "
 
 # ---- the parts (each prints its own lines; a failing command is said, the part goes on) ----
+sp_list() { if [[ -n "$1" ]]; then sed 's/^/  /' <<<"$1"; else echo "  (none)"; fi; }   # sp_list TEXT — indented, or (none)
 sp_try() { # sp_try LABEL CMD... — run CMD; its output, or why there is none
     local out rc=0
     out=$("${@:2}" 2>&1) || rc=$?
@@ -37,7 +42,7 @@ support_stamp() { # the system: enough to rule the host out, or to build one lik
     while IFS=$'\t' read -r level mnt labels size avail itot ifree; do
         src=$(fs_source_of "$mnt")
         printf '%s (%s): %s, %s, %s, %s\n' "$mnt" "$labels" "$(disk_words "$size" "$avail" "$itot" "$ifree")" \
-            "$(fstype_of "$mnt")" "$( [[ "$(lsblk -dno ROTA "$src" 2>/dev/null || true)" == *1* ]] && echo spinning || echo 'SSD or not a local disk')" "$level"
+            "$(fstype_of "$mnt")" "$(case "$(lsblk -dno ROTA "$src" 2>/dev/null || true)" in *1*) echo 'rotational as the disk reports it (a VM'"'"'s virtual disk often says so)' ;; *0*) echo 'not rotational as the disk reports it' ;; *) echo 'rotational: unknown (not a local disk)' ;; esac)" "$level"
     done < <(disk_report)
     echo; echo "## software"
     sed -n 's/^PRETTY_NAME=//p' /etc/os-release | tr -d '"' | sed 's/^/os: /'
@@ -65,25 +70,26 @@ support_install() { # the code and what is yours
     echo "commit: $(run_commit)"
     echo "env schema: $(env_get ENV_SCHEMA) (this script: $SCRIPT_SCHEMA)"
     echo "local edits to tracked files (git status):"
-    git -c safe.directory="$SCRIPT_DIR" -C "$SCRIPT_DIR" status --short -uno 2>&1 | sed 's/^/  /' || true
+    sp_list "$(git -c safe.directory="$SCRIPT_DIR" -C "$SCRIPT_DIR" status --short -uno 2>&1 || true)"
     echo "files in custom/ (names only — --custom adds their contents):"
-    if [[ -d "$SCRIPT_DIR/custom" ]]; then
-        find "$SCRIPT_DIR/custom" -type f -printf '  %P (%s bytes)\n' 2>/dev/null | sort
-    else echo "  (no custom/ folder)"; fi
+    sp_list "$(find "$SCRIPT_DIR/custom" -type f -printf '%P (%s bytes)\n' 2>/dev/null | sort || true)"
 }
 
-support_settings() { # .env: every key the schema knows and does not call a secret; the rest by name only
-    local line k v t
-    local -A typ=()
+support_settings() { # .env: what differs from .env.example — secrets as <set>, keys the schema does not know by name only
+    local line k v t same=0
+    local -A typ=() shipped=()
     while IFS=$'\t' read -r k t _; do typ[$k]=$t; done < <(env_schema_known "$ENV_FILE" all 2)   # one pass over the schema, not one per key
+    while IFS= read -r line; do [[ "$line" =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]] && shipped[${BASH_REMATCH[1]}]=${BASH_REMATCH[2]}; done < "$SCRIPT_DIR/.env.example"
     while IFS= read -r line; do
         [[ "$line" =~ ^([A-Z][A-Z0-9_]*)=(.*)$ ]] || continue
         k=${BASH_REMATCH[1]}; v=${BASH_REMATCH[2]}
         t=${typ[$k]:-}
-        if [[ -z "$t" ]]; then echo "$k (not a setting the schema knows — value left out)"
-        elif [[ "$t" == secret ]]; then echo "$k=$( [[ -n "$v" ]] && echo '<set>' || echo '<empty>')"
+        if [[ -z "$t" ]]; then echo "$k (not a setting the schema knows — value left out)"; continue; fi
+        if [[ -n "${shipped[$k]+set}" && "${shipped[$k]}" == "$v" ]]; then same=$((same + 1)); continue; fi
+        if [[ "$t" == secret ]]; then echo "$k=$( [[ -n "$v" ]] && echo '<set>' || echo '<empty>')"
         else echo "$k=$v"; fi
     done < "$ENV_FILE"
+    echo "($same more as shipped in .env.example — not listed)"
 }
 
 support_stack() { # each container, then the timers, restore points and pins
@@ -93,7 +99,11 @@ support_stack() { # each container, then the timers, restore points and pins
         # shellcheck disable=SC2086  # a word list of container names
         sudo docker inspect $names | jq -r '.[] |
             "\(.Name | ltrimstr("/")): \(.State.Status)\(if .State.Health then ", health " + .State.Health.Status else "" end), restarts \(.RestartCount), exit \(.State.ExitCode)\(if .State.OOMKilled then ", OOM-KILLED" else "" end), started \(.State.StartedAt)\n  image \(.Config.Image) \(.Image[7:19])" +
-            (if .State.Health then "\n" + ([.State.Health.Log[-3:][] | "  check \(.End[0:19]): exit \(.ExitCode) \(.Output | gsub("\\s+"; " ") | .[0:160])"] | join("\n")) else "" end)'
+            (if .State.Health then
+                ([.State.Health.Log[-3:][] | select(.ExitCode != 0)] as $bad
+                 | if ($bad | length) == 0 then "\n  health checks: the last \(.State.Health.Log[-3:] | length) passed"
+                   else "\n" + ([$bad[] | "  check \(.End[0:19]) failed: exit \(.ExitCode) \(.Output | gsub("\\s+"; " ") | .[0:200])"] | join("\n")) end)
+             else "" end)'
         echo
         echo "images (created, pulled, version label):"
         # shellcheck disable=SC2046,SC2086  # word lists of image ids and container names
@@ -103,7 +113,7 @@ support_stack() { # each container, then the timers, restore points and pins
     echo; echo "timers:"
     systemctl list-timers 'mediastack-*' --all --no-pager 2>&1 | sed 's/^/  /' || true
     echo "failed units:"
-    systemctl list-units 'mediastack-*' --state=failed --no-pager --plain --no-legend 2>&1 | sed 's/^/  /' || true
+    sp_list "$(systemctl list-units 'mediastack-*' --state=failed --no-pager --plain --no-legend 2>&1 || true)"
     echo; echo "restore points:"
     timeout "$SUPPORT_WAIT" "$SCRIPT_DIR/mediastack.sh" backup list 2>&1 | sed 's/^/  /' || true
     echo "pins (local/pins.yml):"
@@ -112,35 +122,42 @@ support_stack() { # each container, then the timers, restore points and pins
 
 support_markers() { # what the stack is in the middle of: names and dates, values only where they are the point
     local f k v
-    echo "stopped with down: $(stack_down_since)"
+    v=$(stack_down_since); echo "stopped with down: ${v:-no}"
     if [[ -e "$STOP_MARKER" ]]; then echo "services a backup stopped: $(head -1 "$STOP_MARKER") (since $(date -r "$STOP_MARKER" --iso-8601=seconds))"
     else echo "services a backup stopped: none"; fi
     v=$(state_get "$LEAK_GATE"); echo "leak gate: ${v:-open}"
-    for k in WIRE_REPOINT UID_HANDOVER; do echo "pending $k: $(state_get "$k")"; done
+    for k in WIRE_REPOINT UID_HANDOVER; do v=$(state_get "$k"); echo "pending $k: ${v:-none}"; done
     echo "maintenance lock: $(flock -n "$MAINT_LOCK" true 2>/dev/null && echo free || echo held)"
     echo "mediastack runs going now:"
     pgrep -af 'mediastack\.sh' 2>/dev/null | grep -v " support" | sed 's/^/  /' || echo "  (none)"
     echo "local/state (names and dates only):"
-    for f in "$STATE_DIR"/*; do [[ -e "$f" ]] && echo "  ${f##*/} ($(date -r "$f" --iso-8601=seconds))"; done
-    return 0
+    sp_list "$(for f in "$STATE_DIR"/*; do [[ -e "$f" ]] && echo "${f##*/} ($(date -r "$f" --iso-8601=seconds))"; done; true)"
 }
 
 support_doctor() { timeout "$SUPPORT_WAIT" "$SCRIPT_DIR/mediastack.sh" doctor 2>&1; }
 support_verify() { timeout "$SUPPORT_WAIT" "$SCRIPT_DIR/mediastack.sh" wire --verify 2>&1; }
 
-support_records() { # the newest few, and every failed or unfinished one of the last 7 days
-    local d f since=$(( EPOCHSECONDS - 7 * 86400 ))
+support_record_verb() { local n=${1##*/}; n=${n:16}; n=${n%-*.log}; echo "${n%%--*}"; }   # 20261113-011537-vpn-watch--full-1.log -> vpn-watch
+support_records() { # the newest of yours and the occasional timers, the latest of each routine one, every failed or unfinished one of the last 7 days
+    local d f v i since=$(( EPOCHSECONDS - 7 * 86400 )) n=0
     local -a all=() pick=()
+    local -A latest=()
     d=$(run_records_dir)
-    for f in "$d"/*.log; do [[ -e "$f" && "$f" != "${MS_RUN_RECORD:-}" ]] && all+=("$f"); done
-    (( ${#all[@]} )) || { echo "no run records (local/runs/)"; return 0; }
-    local first=$(( ${#all[@]} > SUPPORT_RECORDS ? ${#all[@]} - SUPPORT_RECORDS : 0 ))
-    pick=("${all[@]:first}")
-    for f in "${all[@]}"; do
-        (( $(stat -c %Y "$f") >= since )) || continue
-        run_succeeded "$f" && continue
-        [[ " ${pick[*]} " == *" $f "* ]] || pick+=("$f")
+    for f in "$d"/*.log; do
+        [[ -e "$f" && "$f" != "${MS_RUN_RECORD:-}" ]] || continue
+        [[ "$SUPPORT_NOT_RECORDS" == *" $(support_record_verb "$f") "* ]] && continue
+        all+=("$f")
     done
+    (( ${#all[@]} )) || { echo "(no run records in local/runs/)"; return 0; }
+    for (( i = ${#all[@]} - 1; i >= 0; i-- )); do   # newest first
+        f=${all[i]}; v=$(support_record_verb "$f")
+        if [[ "$SUPPORT_ROUTINE" == *" $v "* ]]; then
+            [[ -n "${latest[$v]:-}" ]] || { latest[$v]=1; pick+=("$f"); continue; }
+        elif (( n < SUPPORT_RECORDS )); then n=$((n + 1)); pick+=("$f"); continue
+        fi
+        (( $(stat -c %Y "$f") >= since )) && ! run_succeeded "$f" && pick+=("$f")
+    done
+    mapfile -t pick < <(printf '%s\n' "${pick[@]}" | sort)   # oldest first, as they ran
     for f in "${pick[@]}"; do
         echo "--- ${f##*/}"
         head -n 6 "$f"
@@ -152,12 +169,14 @@ support_records() { # the newest few, and every failed or unfinished one of the 
 support_redaction_rules() { # literal<TAB>replacement<TAB>kind — the exact values this host would give away
     local k v h u n holder asn f
     while IFS=$'\t' read -r k v; do printf '%s\t<secret:%s>\tsecrets\n' "$v" "$k"; done < <(run_secret_pairs)
-    for f in "$STATE_DIR"/*; do   # a one-shot URL waiting there (the notification endpoints) is a secret too
-        [[ -f "$f" ]] || continue
-        while IFS= read -r v; do
-            [[ "$v" == *://* ]] && printf '%s\t<secret:state/%s>\tsecrets\n' "${v#*$'\t'}" "${f##*/}"
+    # the notification endpoints configure recorded, waiting for wire to store them ("stream<TAB>urls"):
+    # secrets too. Other state is not (the portal's address there is the domain, redacted as such)
+    f="$STATE_DIR/$NOTIFY_URLS_STATE"
+    if [[ -r "$f" ]]; then
+        while IFS=$'\t' read -r _ v; do
+            [[ -n "$v" ]] && printf '%s\t<secret:state/%s>\tsecrets\n' "$v" "$NOTIFY_URLS_STATE"
         done < "$f"
-    done
+    fi
     v=$(env_get STACK_DOMAIN); [[ -n "$v" ]] && printf '%s\texample.test\tdomain\n' "$v"
     u=$(stat -c %U "$SCRIPT_DIR"); h=$(getent passwd "$u" | cut -d: -f6)
     [[ -n "$h" && "$h" != / ]] && printf '%s\t~\tpaths\n' "$h"

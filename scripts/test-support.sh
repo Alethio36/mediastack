@@ -33,7 +33,16 @@ home=$(getent passwd "$(stat -c %U "$PWD")" | cut -d: -f6)
 cat > "$T/fx.sh" <<EOF
 source "$PWD/$lib"; set +e +E; trap - ERR
 LOCAL_DIR=\$T/local; STATE_DIR=\$T/local/state; ENV_FILE=\$T/env; HOSTID_FILE=\$T/local/host-identity; PINS_FILE=\$T/local/pins.yml
-sudo() { "\$@"; }; docker() { return 1; }; systemctl() { echo "(no systemd here)"; }; repo_owned() { :; }
+sudo() { "\$@"; }; systemctl() { echo "(no systemd here)"; }; repo_owned() { :; }
+docker() { # two containers: one healthy (its checks' noisy output), one whose last check failed
+    case "\$*" in
+        "ps -a"*) printf 'mediastack-good\nmediastack-bad\n' ;;
+        "inspect --format"*) printf 'sha256:aaa\nsha256:bbb\n' ;;
+        "inspect "*) cat "\$T/inspect.json" ;;
+        "image inspect"*) echo '[]' ;;
+        *) return 1 ;;
+    esac
+}
 support_doctor() { echo "doctor: ACME mail nick.real@gmail.com, key 0123456789abcdef0123456789abcdef"; }
 support_verify() { echo "verify: a write would happen"; return 3; }
 EOF
@@ -49,7 +58,18 @@ ACME_EMAIL=nick.real@gmail.com
 MY_OWN_THING=private-value-123
 EOF
     printf 'ops\tdiscord://12345/abcdefTOKENxyz\n' > "$T/local/state/notify-urls"
+    echo "https://portal.media.example-real.com" > "$T/local/state/AUTHENTIK_BASE_URL"   # not a secret: the domain
     printf 'asn 20055\nholder AS-WHOLESAIL - Wholesail networks LLC\n' > "$T/local/host-identity"
+    echo LOG_MAX_SIZE=10m >> "$T/env"   # as shipped: counted, not listed
+    cat > "$T/inspect.json" <<'J'
+[{"Name":"/mediastack-good","RestartCount":0,"Image":"sha256:aaaaaaaaaaaaaaaaaaaa","Config":{"Image":"x/good:latest"},
+  "State":{"Status":"running","ExitCode":0,"OOMKilled":false,"StartedAt":"2026-11-13T05:47:00Z","Health":{"Status":"healthy","Log":[
+    {"End":"2026-11-13T01:31:36.1","ExitCode":0,"Output":"<!DOCTYPE html> noisy page"},{"End":"2026-11-13T01:32:06.1","ExitCode":0,"Output":"<!DOCTYPE html> noisy page"},
+    {"End":"2026-11-13T01:32:36.1","ExitCode":0,"Output":"<!DOCTYPE html> noisy page"}]}}},
+ {"Name":"/mediastack-bad","RestartCount":4,"Image":"sha256:bbbbbbbbbbbbbbbbbbbb","Config":{"Image":"x/bad:latest"},
+  "State":{"Status":"running","ExitCode":0,"OOMKilled":true,"StartedAt":"2026-11-13T05:47:00Z","Health":{"Status":"unhealthy","Log":[
+    {"End":"2026-11-13T01:31:36.1","ExitCode":0,"Output":"ok"},{"End":"2026-11-13T01:32:06.1","ExitCode":1,"Output":"connection refused\n on 8080"}]}}}]
+J
 }
 rec() { # rec NAME EXIT|- LINE... — a run record (- : never finished)
     local f="$T/local/runs/$1" x=$2; shift 2
@@ -94,15 +114,27 @@ grep -qF 'config at ~/mediastack/config' "$b" && grep -qF 'mail <email-1>' "$b" 
 # ---- settings and records ----
 grep -qx 'ARR_PASSWORD=<set>' "$b" && grep -qx 'STACK_DOMAIN=example.test' "$b" && grep -qx 'TZ=America/Los_Angeles' "$b" \
     && grep -qx 'MY_OWN_THING (not a setting the schema knows — value left out)' "$b" || fail_ "settings: secrets <set>, unknown keys by name"; pass
+! grep -q '^LOG_MAX_SIZE=' "$b" && grep -qxE '\([0-9]+ more as shipped in \.env\.example — not listed\)' "$b" || fail_ "settings as shipped are counted, not listed"; pass
+! grep -qF 'secret:state/AUTHENTIK_BASE_URL' "$b" || fail_ "other state is not a secret (the portal's address is the domain)"; pass
+grep -qx 'mediastack-good: running, health healthy, restarts 0, exit 0, started 2026-11-13T05:47:00Z' "$b" && grep -qx '  health checks: the last 3 passed' "$b" \
+    && ! grep -q 'noisy page' "$b" || fail_ "a healthy container: one line for its checks, no output"; pass
+grep -q 'mediastack-bad: running, health unhealthy, restarts 4, exit 0, OOM-KILLED' "$b" && grep -qx '  check 2026-11-13T01:32:06 failed: exit 1 connection refused on 8080' "$b" \
+    && ! grep -qx '  check 2026-11-13T01:31:36 failed.*' "$b" || fail_ "an unhealthy one: only its failed checks, their output"; pass
 reset
 for i in $(seq -w 1 14); do rec "202611${i}-000000-status-$i.log" 0 "status $i"; done
+for i in 1 2 3; do rec "2026111${i}-000001-vpn-watch-7$i.log" 0 "watch $i"; done
+rec 20261110-000002-vpn-watch-79.log 1 "watch failed"; touch -d '1 day ago' "$T/local/runs/20261110-000002-vpn-watch-79.log"
+rec 20261113-000003-doctor-80.log 1 "an old doctor"
 rec 20261102-000001-wire-50.log 1 "wire failed"; touch -d '2 days ago' "$T/local/runs/20261102-000001-wire-50.log"
 rec 20261103-000001-up-51.log - "up cut off"; touch -d '2 days ago' "$T/local/runs/20261103-000001-up-51.log"
 rec 20261101-000001-wire-52.log 1 "old failure"; touch -d '9 days ago' "$T/local/runs/20261101-000001-wire-52.log"
 run 'cmd_support --note x' || fail_ "support runs (records)"
 b=$(bundle); r=$(grep -c '^--- 2026' "$b")
 grep -q 'status 14$' "$b" && grep -q 'status 05$' "$b" && ! grep -q 'status 04$' "$b" && grep -q 'wire failed' "$b" && grep -q 'up cut off' "$b" \
-    && ! grep -q 'old failure' "$b" && (( r == 12 )) || fail_ "the newest 10 and the failed or unfinished of the last 7 days ($r)"; pass
+    && ! grep -q 'old failure' "$b" && (( r == 14 )) || fail_ "the newest 10 and the failed or unfinished of the last 7 days ($r)"; pass
+grep -q 'watch 3$' "$b" && ! grep -q 'watch 2$' "$b" && grep -q 'watch failed$' "$b" || fail_ "a routine timer: its latest run, and any that failed"; pass
+! grep -q 'an old doctor' "$b" || fail_ "no old doctor records (the bundle has a fresh one)"; pass
+mapfile -t order < <(grep '^--- 2026' "$b"); [[ "$(printf '%s\n' "${order[@]}" | sort)" == "$(printf '%s\n' "${order[@]}")" ]] || fail_ "in the order they ran"; pass
 
 # ---- the summary ----
 mapfile -t L < "$T/out"
