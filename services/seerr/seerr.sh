@@ -30,9 +30,10 @@ seerr_entry_key() { # seerr_entry_key SVC TYPE JAR — SEERR_ENTRY (one of Seerr
     [[ "$(jq -r '.apiKey // ""' <<<"$SEERR_ENTRY")" != "$key" ]] || return 0
     w_would "seerr -> $s: give it $s's current API key (the one it holds is not $s's)" || return 0
     new=$(jq -c --arg k "$key" '.apiKey = $k' <<<"$SEERR_ENTRY")
-    out=$(seerr_api POST "/settings/$ty/test" "$jar" "$new") \
+    out=$(seerr_api POST "/settings/$ty/test" "$jar" "$(jq -c 'del(.id)' <<<"$new")") \
         || { wfail "seerr -> $s: its current API key failed seerr's test [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; return 0; }
-    out=$(seerr_api PUT "/settings/$ty/$(jq -r '.id' <<<"$SEERR_ENTRY")" "$jar" "$new") \
+    # the id is in the path: Seerr refuses it in the body (read-only in its API spec)
+    out=$(seerr_api PUT "/settings/$ty/$(jq -r '.id' <<<"$new")" "$jar" "$(jq -c 'del(.id)' <<<"$new")") \
         || { wfail "seerr -> $s: its API key was not updated [HTTP $(seerr_code)]: $(head -c200 <<<"$out")"; return 0; }
     SEERR_ENTRY=$new; ok "seerr -> $s: API key updated"
 }
@@ -130,7 +131,7 @@ wire_seerr() {
             if addr_stale "seerr -> $s" "$s" "$sst"; then
                 addr_repoint "seerr -> $s" "$sst" "$(svc_addr "$s")" -- \
                     seerr_api PUT "/settings/$ty/$(jq -r '.id' <<<"$sentry")" "$jar" \
-                    "$(jq -c --arg h "$(svc_host "$s")" --argjson p "$(svc_cport "$s")" '.hostname = $h | .port = $p' <<<"$sentry")"
+                    "$(jq -c --arg h "$(svc_host "$s")" --argjson p "$(svc_cport "$s")" '.hostname = $h | .port = $p | del(.id)' <<<"$sentry")"   # id: read-only in the body
             fi
             continue
         fi

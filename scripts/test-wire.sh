@@ -160,9 +160,15 @@ sk() { # sk DRY HELD -> the calls made, SEERR_ENTRY's key, fails=N
       seerr_api() { echo "$1 $2 ${4:-}" >> "$T/c"; echo '{}'; }; seerr_code() { echo 200; }
       SEERR_ENTRY=$(jq -cn --arg k "$2" '{id:3,name:"sonarr",hostname:"gluetun",apiKey:$k}')
       seerr_entry_key sonarr sonarr jar >/dev/null 2>&1
-      { cut -d' ' -f1,2 "$T/c" 2>/dev/null || true; } | paste -sd' ' -; jq -r '.apiKey' <<<"$SEERR_ENTRY"; echo "fails=$WIRE_FAILS" )
+      { cut -d' ' -f1,2 "$T/c" 2>/dev/null || true; } | paste -sd' ' -; jq -r '.apiKey' <<<"$SEERR_ENTRY"; echo "fails=$WIRE_FAILS"
+      cp "$T/c" "$T/sk" 2>/dev/null || rm -f "$T/sk" )
 }
 [[ "$(sk 0 OLDKEY)" == $'POST /settings/sonarr/test PUT /settings/sonarr/3\nNEWKEY\nfails=0' ]] || fail_ "seerr holds an old key: tested, then updated: $(sk 0 OLDKEY)"; pass
+# Seerr refuses the id in a body (read-only in its API spec; found live Nov 2026): it goes in the path only
+sk 0 OLDKEY >/dev/null
+! cut -d' ' -f3- "$T/sk" | jq -e 'has("id")' >/dev/null 2>&1 && [[ "$(sed -n 2p "$T/sk" | cut -d' ' -f2)" == /settings/sonarr/3 ]] \
+    || fail_ "no id in the test's or the PUT's body, the PUT's path names it: $(cat "$T/sk")"; pass
+grep -q "'.hostname = \$h | .port = \$p | del(.id)'" services/seerr/seerr.sh || fail_ "the address re-point's PUT leaves the id out of its body too"; pass
 [[ "$(sk 1 OLDKEY)" == $'\nOLDKEY\nfails=0' ]] || fail_ "a dry run: reported, nothing written: $(sk 1 OLDKEY)"; pass
 [[ "$(sk 0 NEWKEY)" == $'\nNEWKEY\nfails=0' ]] || fail_ "seerr holds the current key: nothing written: $(sk 0 NEWKEY)"; pass
 
