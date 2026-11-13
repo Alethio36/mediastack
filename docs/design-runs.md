@@ -2,7 +2,7 @@
 
 *Status: agreed (13 Nov 2026), MVP plan step 2. Part 1 (run records) built
 and proven live on the test box (13 Nov); part 2 (the failure notice from the
-record, doctor's unfinished runs) built, not yet proven live; the rest
+record, doctor's unfinished runs) built and proven live (13 Nov); the rest
 follows in the order at the end, each part proven live before the next.*
 
 ## Why

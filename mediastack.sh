@@ -64,6 +64,8 @@ done
 unset _svc_lib
 # shellcheck source=lib/runs.sh
 source "$SCRIPT_DIR/lib/runs.sh"
+# shellcheck source=lib/disk.sh
+source "$SCRIPT_DIR/lib/disk.sh"
 # shellcheck source=lib/migrations.sh
 source "$SCRIPT_DIR/lib/migrations.sh"
 # shellcheck source=lib/env.sh

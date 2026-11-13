@@ -156,6 +156,7 @@ manifest_notify_loss() { # manifest_notify_loss COMPARE-OUTPUT PREV-TS [FROM TO]
 
 manifest_take() { # manifest_take [--accept]
     load_env; require_mounts
+    disk_watch   # first: a full disk can stop the manifest itself (lib/disk.sh)
     local dir latest new ts out cmp
     dir=$(manifest_dir); guard_gitignored "$dir" "Manifest folder" "a snapshot lists your whole library"
     sudo mkdir -p "$dir"

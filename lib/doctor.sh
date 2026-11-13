@@ -173,10 +173,7 @@ _doctor_permissions() {
 _doctor_resources() {
     hr "doctor: host resources"
     local croot; croot=$(env_get CONFIG_ROOT)
-    df -h "$croot" "$(env_get DATA_ROOT)" "$(env_get CACHE_ROOT)" "$(env_get TRANSCODE_ROOT)" 2>/dev/null | tail -n +2 | sort -u | while read -r line; do
-        local pct; pct=$(awk '{print $5}' <<<"$line" | tr -d %)
-        (( pct >= 90 )) && warn "disk >90%: $line" || ok "disk: $line"
-    done
+    _doctor_disk   # every root, Docker's data and this folder (lib/disk.sh)
     local tfs
     tfs=$(fstype_of "$(env_get TRANSCODE_ROOT)" 2>/dev/null || true)
     [[ "$tfs" =~ ^(nfs|nfs4|cifs|smb3)$ ]] \
