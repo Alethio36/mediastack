@@ -66,6 +66,8 @@ unset _svc_lib
 source "$SCRIPT_DIR/lib/runs.sh"
 # shellcheck source=lib/disk.sh
 source "$SCRIPT_DIR/lib/disk.sh"
+# shellcheck source=lib/support.sh
+source "$SCRIPT_DIR/lib/support.sh"
 # shellcheck source=lib/migrations.sh
 source "$SCRIPT_DIR/lib/migrations.sh"
 # shellcheck source=lib/env.sh
@@ -1170,6 +1172,7 @@ VERBS=(
     "set-user-facing~set-user-facing [<svc> true|false]~max=2~Connect~Show or change which services notify the household on update (the 'users' stream)."
     "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login)."
     "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift)."
+    "support~support [--note TEXT]~free~Check~One text file to send to whoever helps you: the system, settings (no secrets), the stack, doctor, wire --verify and recent runs — redacted, checked, never sent by itself."
     "doctor~doctor [--scheduled]~allow=--scheduled~Check~Full health/permission/port/backup audit; every failure states its fix (--scheduled: the timer's run — problems go to ops, the run itself succeeds)."
     "audit~audit [status|on|off|report [--since DATE] [--path TEXT]]~free~Check~Deletion attribution (opt-in): who deleted or renamed media; 'report' reads the history, 'status' proves it live."
     "leak-test~leak-test [--killswitch|--local]~allow=--killswitch,--local max=1~Check~Prove no VPN'd service can leak; a leak stops them (--killswitch: disruptive proof; --local: no outside party)."

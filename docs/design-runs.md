@@ -2,8 +2,12 @@
 
 *Status: agreed (13 Nov 2026), MVP plan step 2. Part 1 (run records) built
 and proven live on the test box (13 Nov); part 2 (the failure notice from the
-record, doctor's unfinished runs) built and proven live (13 Nov); the rest
-follows in the order at the end, each part proven live before the next.*
+record, doctor's unfinished runs) built and proven live (13 Nov). Part 3 is
+built in two: 3a — `support` with the system stamp, the install, settings,
+the stack, what is in progress, doctor, wire --verify, run records, the
+redaction and its final check, the summary and the warning (built, not yet
+proven live); 3b — reachability and `--logs`, `--custom`, `--host-events`.
+Each part is proven live before the next.*
 
 ## Why
 
