@@ -1,4 +1,5 @@
 # DNS profile: Pi-hole (v6). Optional — most deployments don't need it.
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # NOTE: publishes host port 53; collides with systemd-resolved stub listeners
 # and any other DNS server. `mediastack.sh doctor` checks before you hit it.
 

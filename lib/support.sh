@@ -197,6 +197,21 @@ support_host_events() { # the kernel's OOM kills (7 days) and the Docker daemon'
     sp_list "$(sudo journalctl -u docker --since -24h --no-pager -o short-iso -p err 2>&1 | grep -v '^-- No entries --$' | tail -n 100 || true)"
 }
 
+# each service's own facts: support_<svc> in its folder (an arr: support_arr, by its family label);
+# one without says so — CI holds every service folder to a hook, the arr label, or "# support: nothing yet"
+support_services() {
+    local s fn
+    render || { echo "(compose cannot render the stack, so the services cannot be read — doctor says why)"; return 1; }
+    for s in $(svc_enabled_managed); do
+        echo "--- $s"
+        fn="support_${s//-/_}"
+        if declare -F "$fn" >/dev/null; then ( "$fn" ) 2>&1 || echo "(its facts ended with an error — what it printed is above)"
+        elif [[ -n "$(svc_label "$s" mediastack.arrtype)" ]]; then ( support_arr "$s" ) 2>&1 || echo "(its facts ended with an error — what it printed is above)"
+        else echo "(no facts of its own yet: the stack part and doctor cover it)"; fi
+    done
+}
+sp_running() { [[ "$(c_state "$(svc_cname "$1")")" == running ]] || { echo "not running — nothing to ask"; return 1; }; }
+
 support_doctor() { timeout "$SUPPORT_WAIT" "$SCRIPT_DIR/mediastack.sh" doctor 2>&1; }
 support_verify() { timeout "$SUPPORT_WAIT" "$SCRIPT_DIR/mediastack.sh" wire --verify 2>&1; }
 
@@ -355,6 +370,7 @@ cmd_support() { # the bundle to send to whoever helps (docs/design-runs.md)
     support_part "the stack" support_stack
     support_part "in progress" support_markers
     support_part "reachability" support_reach
+    support_part "each service" support_services
     support_part "doctor" support_doctor
     support_part "wire --verify" support_verify
     support_part "run records" support_records

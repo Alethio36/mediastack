@@ -1,4 +1,5 @@
 # LazyLibrarian: book acquisition — the Readarr replacement. Monitors
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # authors, searches indexers, grabs ebooks/audiobooks/magazines and hands
 # them to qBittorrent. Prowlarr auto-syncs its indexers (it's a first-class
 # Prowlarr app, like the arrs). Lives in gluetun's namespace so its grabs

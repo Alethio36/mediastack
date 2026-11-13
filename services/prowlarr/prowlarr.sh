@@ -236,3 +236,5 @@ prowlarr_indexers_retest() { # after a stack start: once FlareSolverr is up, Pro
     indexer_test_report prowlarr "$url" "$key" "$out" || return 0
     arr_indexers_retest
 }
+
+support_prowlarr() { support_arr prowlarr; }   # support: its own view, as the arrs give theirs (services/_arr/arr.sh)

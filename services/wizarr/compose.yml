@@ -1,4 +1,5 @@
 # Wizarr: invite links that onboard your users onto Jellyfin.
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # Either this or authentik, never both (mediastack.conflicts).
 # First run is a one-time UI step (create admin, connect Jellyfin, mint an
 # API key) — see README "Invites". After that: ./mediastack.sh invite

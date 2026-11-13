@@ -1,4 +1,5 @@
 # Apprise: the stack's single notification hub (apprise-api).
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # Everything notifies ONE place, tagged by audience: ops (you — errors,
 # pipeline, backups, requests) and users (the household — new media, restarts,
 # invites). Your real endpoints (ntfy, Discord, email, ...) are configured

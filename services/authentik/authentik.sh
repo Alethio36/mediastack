@@ -966,3 +966,21 @@ sc_rotate_portal() { # PASS — akadmin, through authentik's API
             && ok "authentik's worker recreated with it (nothing else changes)" \
             || die "authentik's worker was not recreated — apply with: ./mediastack.sh up"
 }
+
+support_authentik() { # support: its version, the blueprints that are not applied (and ours), its outposts
+    local out pk name h
+    sp_running authentik || return 0
+    out=$(ak_api GET /admin/version/) && jq -r '"version \(.version_current)\(if .outdated then " (a newer one exists: \(.version_latest))" else "" end)"' <<<"$out" || echo "version unreadable: $(oneline "$out")"
+    if out=$(ak_api GET "/managed/blueprints/?page_size=200"); then
+        jq -r '"blueprints: \(.results | length), \([.results[] | select(.status == "successful")] | length) applied"' <<<"$out"
+        jq -r '.results[] | select(.status != "successful" or (.path | startswith("mediastack/"))) | "blueprint \(.path): \(.status), last applied \(.last_applied[0:19])"' <<<"$out"
+    else echo "blueprints unreadable: $(oneline "$out")"; fi
+    out=$(ak_api GET "/outposts/instances/?page_size=50") || { echo "outposts unreadable: $(oneline "$out")"; return 0; }
+    while IFS=$'\t' read -r pk name; do
+        [[ -n "$pk" ]] || continue
+        if h=$(ak_api GET "/outposts/instances/$pk/health/"); then
+            jq -r --arg n "$name" 'if length == 0 then "outpost \($n): no instance has reported" else .[] | "outpost \($n): version \(.version), last seen \(.last_seen[0:19])\(if .version_outdated then ", OUTDATED" else "" end)" end' <<<"$h"
+        else echo "outpost $name: health unreadable"; fi
+    done < <(jq -r '.results[] | [.pk, .name] | @tsv' <<<"$out")
+    return 0
+}

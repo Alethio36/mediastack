@@ -1,4 +1,5 @@
 # TV profile: ErsatzTV — virtual live-TV channels from your library.
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 
 x-logging: &logging
   driver: json-file

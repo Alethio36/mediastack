@@ -117,3 +117,12 @@ cmd_people_sync() { # the timer's run; a failure goes to ops through the unit's 
     navidrome_people_sync "$tok"
     (( ! WIRE_FAILS )) || die "people-sync: $WIRE_FAILS change(s) failed (above)"
 }
+
+support_navidrome() { # support: who the portal is followed for, and whether the stack's admin signs in
+    local tok
+    sp_running navidrome || return 0
+    if tok=$(nd_login); then echo "the stack's admin signs in"; else echo "the stack's admin does NOT sign in: $(oneline "$tok")"; fi
+    if [[ -s "$NAVIDROME_PEOPLE" ]]; then awk -F'\t' '{ print "person " $1 ": " $2 }' "$NAVIDROME_PEOPLE"
+    else echo "people followed: none yet"; fi
+    return 0
+}

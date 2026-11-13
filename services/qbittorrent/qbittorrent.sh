@@ -215,3 +215,13 @@ if svc_enabled qbittorrent && [[ "$(c_state "$(svc_cname qbittorrent)")" == runn
     fi
 fi
 }
+
+support_qbittorrent() { # support: its version, the interface its transfers are bound to, its categories
+    local out
+    sp_running qbittorrent || return 0
+    qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" || { echo "it refused the login from .env: $(oneline "${QB_LOGIN_BODY:-}")"; return 0; }
+    out=$(qb_api /app/version) && echo "version $out" || echo "version unreadable: $(oneline "$out")"
+    out=$(qb_api /app/preferences) && jq -r '"transfers bound to: \(if (.current_network_interface // "") == "" then "ANY interface" else .current_network_interface end); listening on port \(.listen_port)"' <<<"$out" || echo "preferences unreadable: $(oneline "$out")"
+    out=$(qb_api /torrents/categories) && jq -r '"categories: \(keys | join(", "))"' <<<"$out" || echo "categories unreadable: $(oneline "$out")"
+    return 0
+}

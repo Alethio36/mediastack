@@ -206,3 +206,15 @@ seerr_doctor() { # doctor: apps — initialised
         *)     warn "seerr public settings unreadable — API may still be warming up" ;;
     esac
 }
+
+support_seerr() { # support: its version and the servers it sends requests to
+    local key out k
+    sp_running seerr || return 0
+    out=$(api GET "$(seerr_url)/api/v1/status" "") && jq -r '"version \(.version)\(if .updateAvailable then " (an update exists)" else "" end)"' <<<"$out" || echo "status unreadable: $(oneline "$out")"
+    key=$(env_get SEERR_API_KEY); [[ -n "$key" ]] || { echo "no API key in .env yet (wire seerr records it)"; return 0; }
+    out=$(api GET "$(seerr_url)/api/v1/settings/jellyfin" "$key") && jq -r '"jellyfin: \(.hostname // .ip // "?"):\(.port // "?"), \(.libraries // [] | map(select(.enabled)) | length) libraries enabled"' <<<"$out" || echo "jellyfin settings unreadable: $(oneline "$out")"
+    for k in radarr sonarr; do
+        out=$(api GET "$(seerr_url)/api/v1/settings/$k" "$key") && jq -r --arg k "$k" '.[] | "\($k) \(.name): \(.hostname):\(.port)\(if .is4k then ", 4K" else "" end)\(if .isDefault then ", default" else "" end), profile \(.activeProfileName // .activeProfileId), folder \(.activeDirectory)"' <<<"$out" || echo "$k settings unreadable: $(oneline "$out")"
+    done
+    return 0
+}

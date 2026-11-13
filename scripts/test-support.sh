@@ -194,6 +194,73 @@ grep -qF Sup3rS3cretArrPass "$T/out" && fail_ "the refusal never prints the secr
 run 'cmd_support --logs "jelly fin"' && fail_ "a bad service name is refused"
 grep -q "support --logs: 'jelly fin' is not a service name" "$T/out" || fail_ "and says what it wants"; pass
 
+# ---- each service's facts ----
+# every service folder: a hook, the arr family's label, or says it has nothing yet
+for d in services/*/; do
+    n=$(basename "$d"); [[ "$n" == _arr ]] && continue
+    grep -qsE "^support_${n//-/_}\(\)" "$d"*.sh || grep -qs 'mediastack.arrtype' "$d/compose.yml" || grep -qs '^# support: nothing yet' "$d/compose.yml" \
+        || fail_ "services/$n: no support_${n//-/_}, no arr label, no '# support: nothing yet'"
+done; pass
+# the dispatch: a hook, the arr family, none, one that fails, compose that cannot render
+out=$(bash -c "source \"\$T/fx.sh\"
+    render() { :; }; svc_enabled_managed() { echo jellyfin radarr meilisearch traefik; }
+    svc_label() { [[ \$1 == radarr && \$2 == mediastack.arrtype ]] && echo radarr; true; }
+    support_jellyfin() { echo 'jf facts'; }; support_arr() { echo \"arr facts for \$1\"; }; support_traefik() { echo partial; false; }
+    support_services" 2>&1)
+[[ "$out" == $'--- jellyfin\njf facts\n--- radarr\narr facts for radarr\n--- meilisearch\n(no facts of its own yet: the stack part and doctor cover it)\n--- traefik\npartial\n(its facts ended with an error — what it printed is above)' ]] \
+    || fail_ "each enabled service: its hook, the arr family's, or none said; a failing one said: $out"; pass
+out=$(bash -c "source \"\$T/fx.sh\"; render() { echo 'compose: bad'; return 1; }; support_services" 2>&1) && fail_ "an unrenderable stack fails the part"
+[[ "$out" == *"compose cannot render the stack"* ]] || fail_ "and says why: $out"; pass
+# the hooks against answers shaped like the apps' (a wrong field shows as null or an error)
+printf 'JELLYFIN_API_KEY=k\nSEERR_API_KEY=s\nQBITTORRENT_USER=admin\nQBITTORRENT_PASSWORD=p\nVPN_PROVIDER=nordvpn\nVPN_DNS_RESOLVERS=cloudflare\nAUTHENTIK_API_TOKEN=t\n' > "$T/env"
+cat > "$T/hooks.sh" <<'H'
+c_state() { echo running; }; svc_cname() { echo "mediastack-$1"; }
+arr_key() { echo key; }; arr_url() { echo http://x; }; arr_apiver() { [[ $1 == prowlarr ]] && echo v1 || echo v3; }
+api() { case "$2" in
+  */system/status) echo '{"version":"6.4.4.10685","osName":"ubuntu","osVersion":"24.04"}' ;;
+  */health) [[ -n "${CLEAR:-}" ]] && echo '[]' || echo '[{"type":"error","message":"No indexers available with RSS sync enabled"}]' ;;
+  */rootfolder) echo '[{"path":"/data/media/movies","accessible":true,"freeSpace":82678030336}]' ;;
+  */downloadclient) echo '[{"enable":true,"name":"qBittorrent","implementation":"QBittorrent","fields":[{"name":"host","value":"localhost"},{"name":"movieCategory","value":"movies"}]}]' ;;
+  */indexer) echo '[{"enable":true},{"enable":false}]' ;;
+  */applications) echo '[{"name":"Radarr","implementation":"Radarr","syncLevel":"fullSync"}]' ;;
+  */api/v1/status) echo '{"version":"3.5.2","updateAvailable":false}' ;;
+  */settings/jellyfin) echo '{"ip":"jellyfin","port":8096,"libraries":[{"enabled":true},{"enabled":false}]}' ;;
+  */settings/radarr) echo '[{"name":"Radarr","hostname":"localhost","port":7878,"is4k":false,"isDefault":true,"activeProfileName":"Any","activeDirectory":"/data/media/movies"}]' ;;
+  */settings/sonarr) echo '[]' ;;
+  *) echo "unexpected $2"; return 1 ;; esac; }
+jf_api() { case "$2" in
+  /System/Info) echo '{"Version":"12.4.0","OperatingSystemDisplayName":"Linux","HasPendingRestart":false}' ;;
+  /Plugins) echo '[{"Name":"LDAP Authentication","Version":"24.0.0.0","Status":"Active"}]' ;;
+  /System/Configuration/encoding) echo '{"TranscodingTempPath":"/cache/transcodes","HardwareAccelerationType":"none"}' ;;
+  /System/Configuration) echo '{"KnownProxies":["172.31.250.2"]}' ;;
+  /Library/VirtualFolders) echo '[{"Name":"Movies","CollectionType":"movies","Locations":["/media/movies"]}]' ;; esac; }
+ak_api() { case "$2" in
+  /admin/version/) echo '{"version_current":"2026.8.5","version_latest":"2026.8.5","outdated":false}' ;;
+  /managed/blueprints/*) echo '{"results":[{"path":"default/flow-oobe.yaml","status":"error","last_applied":"2026-11-13T05:08:25.3Z"},{"path":"mediastack/mediastack-portal.yaml","status":"successful","last_applied":"2026-11-13T05:13:08.0Z"},{"path":"system/bootstrap.yaml","status":"successful","last_applied":"2026-11-13T05:13:15.0Z"}]}' ;;
+  /outposts/instances/p1/health/) echo '[{"version":"2026.8.5","last_seen":"2026-11-13T10:00:00.1Z","version_outdated":false}]' ;;
+  /outposts/instances/p2/health/) echo '[]' ;;
+  /outposts/instances/*) echo '{"results":[{"pk":"p1","name":"authentik Embedded Outpost"},{"pk":"p2","name":"mediastack-ldap"}]}' ;; esac; }
+qb_login() { QB_COOKIE=x; return 0; }
+qb_api() { case "$1" in /app/version) echo v5.3.0 ;; /app/preferences) echo '{"current_network_interface":"","listen_port":6881}' ;; /torrents/categories) echo '{"movies":{},"tv":{}}' ;; esac; }
+seerr_url() { echo http://seerr; }
+nd_login() { echo tok; }
+gluetun_proven() { return 0; }
+H
+hook() { bash -c "source \"\$T/fx.sh\"; source \"\$T/hooks.sh\"; NAVIDROME_PEOPLE=\$T/people; $1" 2>&1; }
+printf 'bob\ton\ncarol\toff\n' > "$T/people"; mkdir -p "$T/local/state"; echo 0 > "$T/local/state/leak-verdict"
+[[ "$(hook 'support_arr radarr')" == $'version 6.4.4.10685, on ubuntu 24.04\nhealth error: No indexers available with RSS sync enabled\nroot folder /data/media/movies: reachable, 76 GiB free\ndownload client qBittorrent (QBittorrent): on, category movies\nindexers: 2, 1 on' ]] \
+    || fail_ "an arr: version, health, root folders, download client, indexers: $(hook 'support_arr radarr')"; pass
+[[ "$(hook 'CLEAR=1 support_arr radarr')" == *$'health: clear\nroot folder'* ]] || fail_ "an arr with a clear health list says so, nothing else"; pass
+[[ "$(hook 'support_prowlarr')" == *"app Radarr (Radarr), sync fullSync" && "$(hook 'support_prowlarr')" != *"root folder"* ]] || fail_ "Prowlarr: its apps, no root folders"; pass
+[[ "$(hook support_jellyfin)" == $'version 12.4.0, Linux\nplugin LDAP Authentication 24.0.0.0: Active\ntranscoding: to /cache/transcodes, hardware none\ntrusted proxies: 172.31.250.2\nlibrary Movies (movies): /media/movies' ]] \
+    || fail_ "Jellyfin: $(hook support_jellyfin)"; pass
+[[ "$(hook support_authentik)" == $'version 2026.8.5\nblueprints: 3, 2 applied\nblueprint default/flow-oobe.yaml: error, last applied 2026-11-13T05:08:25\nblueprint mediastack/mediastack-portal.yaml: successful, last applied 2026-11-13T05:13:08\noutpost authentik Embedded Outpost: version 2026.8.5, last seen 2026-11-13T10:00:00\noutpost mediastack-ldap: no instance has reported' ]] \
+    || fail_ "authentik: version, the blueprints not applied and ours, outposts: $(hook support_authentik)"; pass
+[[ "$(hook support_qbittorrent)" == $'version v5.3.0\ntransfers bound to: ANY interface; listening on port 6881\ncategories: movies, tv' ]] || fail_ "qBittorrent: $(hook support_qbittorrent)"; pass
+[[ "$(hook support_seerr)" == $'version 3.5.2\njellyfin: jellyfin:8096, 1 libraries enabled\nradarr Radarr: localhost:7878, default, profile Any, folder /data/media/movies' ]] || fail_ "Seerr: $(hook support_seerr)"; pass
+[[ "$(hook support_gluetun)" == $'provider nordvpn; countries any; cities any; hostnames any; DNS cloudflare\nlast leak-test: passed\nleak gate: open\nthe running gluetun was proven before the VPN\'d services started' ]] || fail_ "gluetun: $(hook support_gluetun)"; pass
+[[ "$(hook support_navidrome)" == $'the stack\'s admin signs in\nperson bob: on\nperson carol: off' ]] || fail_ "Navidrome: $(hook support_navidrome)"; pass
+
 # ---- the verb ----
 bash -c "source \"$PWD/$lib\"; verb_entry support >/dev/null" || fail_ "support is a verb"; pass
 grep -qE '`support( |`)' README.md || fail_ "README documents it"; pass

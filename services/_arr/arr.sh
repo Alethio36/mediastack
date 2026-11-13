@@ -205,6 +205,25 @@ arr_doctor() { # doctor: apps — each arr's and Prowlarr's own health list (ind
     done
 }
 
+support_arr() { # support: one arr's own view — version, health list, root folders, download clients, indexers (Prowlarr: its apps too)
+    local s=$1 key base out
+    sp_running "$s" || return 0
+    key=$(arr_key "$s"); [[ -n "$key" ]] || { echo "no API key yet — still initialising?"; return 0; }
+    base="$(arr_url "$s")/api/$(arr_apiver "$s")"
+    out=$(api GET "$base/system/status" "$key") && jq -r '"version \(.version), on \(.osName // "?") \(.osVersion // "")"' <<<"$out" || echo "status unreadable: $(oneline "$out")"
+    if out=$(api GET "$base/health" "$key"); then jq -r 'if length == 0 then "health: clear" else .[] | "health \(.type): \(.message)" end' <<<"$out"
+    else echo "health unreadable: $(oneline "$out")"; fi
+    if [[ "$s" != prowlarr ]]; then
+        out=$(api GET "$base/rootfolder" "$key") && jq -r '.[] | "root folder \(.path): \(if .accessible then "reachable" else "NOT reachable" end), \((.freeSpace // 0) / 1073741824 | floor) GiB free"' <<<"$out" || echo "root folders unreadable: $(oneline "$out")"
+    fi
+    out=$(api GET "$base/downloadclient" "$key") && jq -r '.[] | "download client \(.name) (\(.implementation)): \(if .enable then "on" else "off" end)\([.fields[]? | select(.name | test("category$"; "i")) | ", category " + (.value // "" | tostring)] | join(""))"' <<<"$out" || echo "download clients unreadable: $(oneline "$out")"
+    out=$(api GET "$base/indexer" "$key") && jq -r '"indexers: \(length), \([.[] | select(.enable)] | length) on"' <<<"$out" || echo "indexers unreadable: $(oneline "$out")"
+    if [[ "$s" == prowlarr ]]; then
+        out=$(api GET "$base/applications" "$key") && jq -r '.[] | "app \(.name) (\(.implementation)), sync \(.syncLevel)"' <<<"$out" || echo "apps unreadable: $(oneline "$out")"
+    fi
+    return 0
+}
+
 # ---- arr root folders + download client ----
 wire_arr() {
     hr "wire: arr instances (root folders + download client + recycle bin)"

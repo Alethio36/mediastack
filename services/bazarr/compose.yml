@@ -1,4 +1,5 @@
 # Subs profile: Bazarr — subtitle management.
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 
 x-logging: &logging
   driver: json-file

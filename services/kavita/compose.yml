@@ -1,4 +1,5 @@
 # Kavita: fast reading server for ebooks, comics, manga and light novels.
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # Modern web reader, progress sync, OPDS, Kobo/KOReader sync. `wire kavita`
 # does its first run (the stack's own admin, in `credentials`) and, with the
 # portal, sign-in through authentik (OIDC).

@@ -1,4 +1,5 @@
 # NPM (Nginx Proxy Manager): a point-and-click reverse proxy with its own
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # certificate handling — the alternative to Traefik for people who want a
 # GUI, don't have a Cloudflare-hosted domain, or already know NPM.
 #

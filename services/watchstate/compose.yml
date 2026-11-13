@@ -1,4 +1,5 @@
 # WatchState: play-state hub — syncs and backs up per-user watch state
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # across media servers (this stack's Jellyfin and any others you add) by
 # metadata GUIDs, not server-internal IDs, so state survives rebuilds and
 # path changes. Backends are configured once in its UI (like Wizarr's

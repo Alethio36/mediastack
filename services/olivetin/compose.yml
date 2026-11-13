@@ -1,4 +1,5 @@
 # OliveTin: the stack's web front door — a panel of buttons/dropdowns over
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # mediastack.sh's safe verbs. It holds NO docker access; every action is one
 # narrow SSH call to the host that lands as `sudo mediastack.sh <verb>` through
 # a forced-command wrapper (see `frontdoor-install`, which writes the config,

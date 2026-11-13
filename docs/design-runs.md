@@ -7,7 +7,11 @@ built in two: 3a — `support` with the system stamp, the install, settings,
 the stack, what is in progress, doctor, wire --verify, run records, the
 redaction and its final check, the summary and the warning (built and proven
 live, 13 Nov, then trimmed after reading two live bundles); 3b — reachability
-and `--logs`, `--custom`, `--host-events` (built, not yet proven live).
+and `--logs`, `--custom`, `--host-events` (built and proven live, 13 Nov).
+Part 4 — each service's facts: the mechanism and authentik, Jellyfin, the arrs
+and Prowlarr, qBittorrent, Seerr, gluetun, Navidrome and Traefik (built, not
+yet proven live); every other service folder says `# support: nothing yet`,
+its facts to come as it is validated (MVP step 12).
 Each part is proven live before the next.*
 
 ## Why

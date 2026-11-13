@@ -1,4 +1,5 @@
 # Recyclarr: one-shot TRaSH Guides sync tool — NOT a long-running service.
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # Invoked only via `./mediastack.sh trash-sync` (docker compose run --rm),
 # which activates its profile; `up` never starts it. No mediastack.managed
 # label on purpose: status/doctor/update skip tooling. Shares gluetun's

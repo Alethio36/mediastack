@@ -1,4 +1,5 @@
 # Cleanuparr: unsticks the download pipeline — strikes stalled/failed
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # downloads, cleans what the arrs gave up on, blocks known-malware names.
 # Wired conservatively: queue cleaning on, nothing deletes seeding torrents
 # unless you turn that on yourself in its UI.

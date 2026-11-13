@@ -60,3 +60,18 @@ own_cert_install() { # up: the recorded pair, checked, copied into Traefik's fol
         ok "your certificate is in place (until $(own_cert_until "$cert")) — Traefik reloads it by itself"
     fi
 }
+
+support_traefik() { # support: the certificate it serves for the portal — issuer, expiry, names
+    local d out
+    sp_running traefik || return 0
+    d=$(env_get STACK_DOMAIN); [[ -n "$d" ]] || { echo "no STACK_DOMAIN"; return 0; }
+    local src; src=$(env_get TLS_SOURCE)
+    echo "certificate source: ${src:-letsencrypt}$( [[ "${src:-letsencrypt}" == letsencrypt ]] && echo " ($(env_get ACME_ENV))")"
+    command -v openssl >/dev/null || { echo "openssl is not installed — the served certificate cannot be read"; return 0; }
+    local hp; hp="127.0.0.1:$(svc_hostport traefik)" || { echo "traefik publishes no HTTPS port on this host"; return 0; }
+    out=$(timeout 10 openssl s_client -connect "$hp" -servername "portal.$d" </dev/null 2>/dev/null \
+          | openssl x509 -noout -issuer -enddate -ext subjectAltName 2>&1) || true
+    if [[ -n "$out" && "$out" == *notAfter* ]]; then sed 's/^ *//; s/^/served for portal: /' <<<"$out"
+    else echo "served for portal: nothing read from $hp ($(oneline "$out"))"; fi
+    return 0
+}

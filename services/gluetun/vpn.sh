@@ -577,3 +577,16 @@ vpn_egress_ready() { # vpn_egress_ready SVC -> 0 when SVC may go out; else a FAI
     fail "$who: the tunnel still cannot reach the internet after ${VPN_EGRESS_WAIT}s (last: ${out% }) — not started. Check: ./mediastack.sh logs gluetun"
     return 1
 }
+
+support_gluetun() { # support: the provider and servers asked for, the last leak-test verdict, whether this gluetun was proven
+    local v
+    local k w; w="provider $(env_get VPN_PROVIDER)"
+    for k in COUNTRIES CITIES HOSTNAMES; do v=$(env_get "VPN_SERVER_$k"); w+="; ${k,,} ${v:-any}"; done
+    echo "$w; DNS $(env_get VPN_DNS_RESOLVERS)"
+    v=$(state_get "$LEAK_VERDICT")
+    case "$v" in 0) echo "last leak-test: passed" ;; 1) echo "last leak-test: FAILED" ;; 2) echo "last leak-test: unproven" ;; *) echo "last leak-test: none recorded" ;; esac
+    echo "leak gate: $(leak_gate_closed && echo "CLOSED ($(state_get "$LEAK_GATE"))" || echo open)"
+    if gluetun_proven; then echo "the running gluetun was proven before the VPN'd services started"
+    else echo "the running gluetun has not been proven since it started"; fi
+    return 0
+}

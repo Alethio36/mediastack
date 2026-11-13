@@ -1,4 +1,5 @@
 # Transmission: extra torrent client. Most deployments want exactly ONE torrent client
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
 # (qBittorrent). Enable only if you know why. Peer-port note: no peer port is
 # published on the host (inbound peers come through the VPN provider's port
 # forwarding, if any); configure distinct listen ports per client if you run
