@@ -77,7 +77,7 @@ wire_seerr() {
     if $seerr_initialized; then
         # initialised = its settings are yours; wire only CREATES missing arr
         # entries (matched by name), mirroring the jellyfin library contract
-        if ! w_would "verify seerr's arr entries (create missing only — nothing existing is touched)"; then rm -f "$jar"; return 0; fi
+        if ! w_would "verify seerr's arr entries (the missing ones created; existing ones keep their address and the arr's API key current)"; then rm -f "$jar"; return 0; fi
     else
         if ! w_would "bootstrap seerr: jellyfin sign-in ('$juser'), libraries, arr servers, initialise"; then rm -f "$jar"; return 0; fi
     fi

@@ -65,18 +65,26 @@ wire_cleanuparr() {
     else
         ok "account already set up"
     fi
-    (( WIRE_DRY )) && { info "remaining cleanuparr previews pend on signing in — shown on the real run"; return 0; }
-
-    # login -> bearer -> durable API key
     local tok akey
-    out=$(cup_api POST /auth/login "" "$(jq -cn --arg u "$user" --arg p "$pass" '{username:$u,password:$p}')") \
-        || { wfail "cleanuparr rejected the arr login [HTTP $(cup_code)]: $(head -c200 <<<"$out")
+    if (( WIRE_DRY )); then
+        # a dry run does not sign in: the stored key reads Cleanuparr (a key
+        # refused or missing is drift, never a quiet stop)
+        akey=$(env_get CLEANUPARR_API_KEY)
+        if [[ -z "$akey" ]] || ! cup_api GET /account/api-key "X-Api-Key: $akey" >/dev/null; then
+            w_would "cleanuparr: sign in and store its API key (CLEANUPARR_API_KEY $([[ -n "$akey" ]] && echo "is refused" || echo "is not stored yet"))" || true
+            return 0
+        fi
+    else
+        # login -> bearer -> durable API key
+        out=$(cup_api POST /auth/login "" "$(jq -cn --arg u "$user" --arg p "$pass" '{username:$u,password:$p}')") \
+            || { wfail "cleanuparr rejected the arr login [HTTP $(cup_code)]: $(head -c200 <<<"$out")
      if you changed its password in the UI, this is expected — its config stays yours"; return 0; }
-    tok=$(jq -r '.tokens.accessToken // empty' <<<"$out")
-    [[ -n "$tok" ]] || { wfail "cleanuparr login gave no access token: $(head -c200 <<<"$out")"; return 0; }
-    akey=$(cup_api GET /account/api-key "Authorization: Bearer $tok" | jq -r '.apiKey // empty' 2>/dev/null || true)   # soft read: checked on the next line
-    [[ -n "$akey" ]] || { wfail "could not read cleanuparr's API key [HTTP $(cup_code)]"; return 0; }
-    [[ "$(env_get CLEANUPARR_API_KEY)" == "$akey" ]] || env_set CLEANUPARR_API_KEY "$akey"
+        tok=$(jq -r '.tokens.accessToken // empty' <<<"$out")
+        [[ -n "$tok" ]] || { wfail "cleanuparr login gave no access token: $(head -c200 <<<"$out")"; return 0; }
+        akey=$(cup_api GET /account/api-key "Authorization: Bearer $tok" | jq -r '.apiKey // empty' 2>/dev/null || true)   # soft read: checked on the next line
+        [[ -n "$akey" ]] || { wfail "could not read cleanuparr's API key [HTTP $(cup_code)]"; return 0; }
+        [[ "$(env_get CLEANUPARR_API_KEY)" == "$akey" ]] || env_set CLEANUPARR_API_KEY "$akey"
+    fi
     local KH="X-Api-Key: $akey"
 
     # the download client (lib/roles.sh: DOWNLOAD_CLIENT, else the first
@@ -104,7 +112,7 @@ wire_cleanuparr() {
             fi
         elif miss=$(role_env_missing "$dl" download-client cleanuparr | paste -sd' ' -); [[ -n "$miss" ]]; then
             wfail "no $dl credentials in .env ($miss) — run a full 'wire' first"; dl_ok=0
-        else
+        elif w_would "cleanuparr: connect $name (the download client)"; then
             dc=$(jq -c '{enabled: true} + del(.priority)' <<<"$e")
             out=$(cup_api POST /configuration/download_client/test "$KH" "$dc") \
                 || { wfail "cleanuparr could not reach $(jq -r '.typeName' <<<"$e") [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 0; }
@@ -149,6 +157,7 @@ wire_cleanuparr() {
         fi
         # version = the arr application major, exactly the value cleanuparr's
         # own UI offers per type (ARR_META major)
+        w_would "cleanuparr: connect $s" || continue
         local aver; aver=$(arr_meta "$ty" major)
         out=$(cup_api POST "/configuration/$ty/instances" "$KH" \
               "$(jq -cn --arg n "$s" --arg u "http://$(svc_addr "$s")" --arg k "$key" --argjson v "$aver" \
@@ -162,9 +171,11 @@ wire_cleanuparr() {
     if [[ "$(jq -r '.enabled' <<<"$cfg" 2>/dev/null)" == true ]]; then
         ok "queue cleaner already on — its settings are yours to manage in the UI"
     elif [[ -n "$cfg" ]]; then
-        out=$(cup_api PUT /configuration/queue_cleaner "$KH" "$(jq -c '.enabled = true' <<<"$cfg")") \
-            && ok "queue cleaner enabled (conservative defaults — tune in its UI)" \
-            || wfail "could not enable the queue cleaner [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
+        if w_would "cleanuparr: switch its queue cleaner on (conservative defaults)"; then
+            out=$(cup_api PUT /configuration/queue_cleaner "$KH" "$(jq -c '.enabled = true' <<<"$cfg")") \
+                && ok "queue cleaner enabled (conservative defaults — tune in its UI)" \
+                || wfail "could not enable the queue cleaner [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
+        fi
     else
         wfail "could not read the queue-cleaner config [HTTP $(cup_code)]"
     fi
@@ -186,7 +197,7 @@ wire_cleanuparr() {
                 addr_repoint "cleanuparr -> apprise" "$ast" "$(svc_addr apprise)" -- \
                     cup_api PUT "/configuration/notification_providers/apprise/$(jq -r --arg n mediastack-apprise '.providers[]? | select(.name==$n) | .id' <<<"$cnp" | sed -n 1p)" "$KH" "$abody"
             fi
-        else
+        elif w_would "cleanuparr: notify the hub (tag: ops)"; then
             out=$(cup_api POST /configuration/notification_providers/apprise "$KH" \
                   "$(jq -cn --arg u "http://$(svc_addr apprise)" '{name:"mediastack-apprise",isEnabled:true,mode:"Api",
                               url:$u,key:"mediastack",tags:"ops",

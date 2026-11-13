@@ -17,6 +17,7 @@
 #   * Seerr's own key in .env follows Seerr (one regenerated in its settings)
 #   * an arr's key Cleanuparr holds (masked) follows the arr: replaced only
 #     when the stored key fails and the arr's current key passes
+#   * --verify checks Cleanuparr with its stored key and writes nothing
 #
 #   scripts/test-wire.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -215,5 +216,35 @@ grep -q '"apiKey":"NEWKEY"' "$T/c" && ! grep '/instances/test' "$T/c" | sed -n 1
 [[ "$(ck 0 ok ok)" == $'POST /configuration/sonarr/instances/test\nfails=0' ]] || fail_ "the stored key passes: one test, nothing written: $(ck 0 ok ok)"; pass
 [[ "$(ck 0 bad bad)" == $'POST /configuration/sonarr/instances/test POST /configuration/sonarr/instances/test\nfails=1' ]] \
     || fail_ "the current key fails too (the arr unreachable): a failure, the key left alone: $(ck 0 bad bad)"; pass
+
+# ---- --verify checks Cleanuparr instead of stopping quietly (found live Nov
+#      2026: its stale copy of Sonarr's key, and "no drift") ----
+cv() { # cv STORED-KEY-STATE(ok|refused|none) -> the writes a dry run sent, then its would: lines
+    ( WIRE_DRY=1 WIRE_FAILS=0 WIRE_CHANGES=0 KS=$1; rm -f "$T/c"
+      svc_enabled() { [[ "$1" == cleanuparr || "$1" == sonarr ]]; }; wire_gate() { :; }; http_ready() { :; }; hr() { :; }
+      wire_arrs_ready() { :; }; arr_instances() { echo sonarr; }; arr_known() { :; }; arr_key() { echo K; }; arr_meta() { echo 4; }
+      svc_label() { echo sonarr; }; hub_configured() { :; }; cup_code() { echo 200; }
+      role_pick() { echo qbittorrent; }; role_env_missing() { :; }
+      role_entry() { echo '{"name":"qBittorrent","typeName":"qBittorrent","host":"http://gluetun:8080"}'; }
+      env_get() { case "$1" in ARR_USER) echo admin ;; ARR_PASSWORD) echo pw ;; CLEANUPARR_API_KEY) [[ "$KS" == none ]] || echo CK ;; esac; }
+      cup_api() { echo "$1 $2" >> "$T/c"
+          case "$1 $2" in
+              "GET /auth/status") echo '{"setupCompleted":true}' ;;
+              "GET /account/api-key") [[ "$KS" == ok ]] ;;
+              "GET /configuration/download_client") echo '{"clients":[]}' ;;
+              "GET /configuration/sonarr") echo '{"instances":[]}' ;;
+              "GET /configuration/queue_cleaner") echo '{"enabled":false}' ;;
+              "GET /configuration/notification_providers") echo '{"providers":[]}' ;;
+              *) echo '{}' ;;
+          esac; }
+      out=$(wire_cleanuparr 2>&1)
+      { grep -vE '^GET' "$T/c" 2>/dev/null || true; } | paste -sd' ' -; grep -o 'would: cleanuparr: [A-Za-z ]*' <<<"$out" | paste -sd'|' - )
+}
+r=$(cv ok)
+[[ "$(sed -n 1p <<<"$r")" == "" ]] || fail_ "a dry run writes nothing (no sign-in, no create, no switch): $(sed -n 1p <<<"$r")"; pass
+[[ "$(sed -n 2p <<<"$r")" == "would: cleanuparr: connect qBittorrent |would: cleanuparr: connect sonarr|would: cleanuparr: switch its queue cleaner on |would: cleanuparr: notify the hub " ]] \
+    || fail_ "--verify reads on with the stored key and reports each missing piece: $(sed -n 2p <<<"$r")"; pass
+[[ "$(cv refused)" == $'\nwould: cleanuparr: sign in and store its API key ' ]] || fail_ "the stored key refused: drift, not a quiet stop: $(cv refused)"; pass
+[[ "$(cv none)" == $'\nwould: cleanuparr: sign in and store its API key ' ]] || fail_ "no stored key: drift, not a quiet stop: $(cv none)"; pass
 
 echo "OK wire: $checks checks"
