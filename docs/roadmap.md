@@ -194,7 +194,7 @@ agreed first:
    trial moved to step 13 (Nov 2026, see there).
 2. **Run records and the support bundle** — every run to `local/runs/`,
    rotated; the bundle redacted by allowlist and shown before it is shared.
-   Design: [design-runs.md](design-runs.md) (*proposed*, Nov 2026).
+   Design: [design-runs.md](design-runs.md) (*agreed*, 13 Nov 2026).
 3. **`wire` reads a setting back** after a write that timed out.
 4. **`rotate-secrets`** — see Credential coverage.
 5. **Access per tool** — a live spike on LDAP app passwords first, then the
