@@ -190,9 +190,8 @@ agreed first:
    recommended column); the Wizarr-mode access review; Navidrome users
    disabled when their portal account goes (*done, Nov 2026*: a stack-owned
    Navidrome admin and a 15-minute sync, services/navidrome/people.sh); doctor seeing the apps' own sends to the hub; a
-   `--dry-run` smoke test (live on the test box). With it, **Renovate in report-only mode** (its Dependency
-   Dashboard: no pull requests, no pins, no code changed) — first, so its trial
-   runs while the rest is built.
+   `--dry-run` smoke test (live on the test box). Renovate's report-only
+   trial moved to step 13 (Nov 2026, see there).
 2. **Run records and the support bundle** — every run to `local/runs/`,
    rotated; the bundle redacted by allowlist and shown before it is shared.
 3. **`wire` reads a setting back** after a write that timed out.
@@ -212,7 +211,7 @@ agreed first:
     authentik`, Kavita and Audiobookshelf restores; the household's own preset
     from an answers file.
 13. **Versions from the repo** — the final step, locking in a working
-    configuration; see its section.
+    configuration, with Renovate's report-only trial; see its section.
 14. **`migrate`** — the first household.
 
 Until step 13, updates stay "update, then fix": a broken install beats one
@@ -352,8 +351,12 @@ tip, refuses on any red one, then fast-forwards `stable` and pushes.
 
 ### Versions from the repo — direction agreed (Oct 2026); the MVP plan's final step (Nov 9 2026)
 *Nov 9 2026:* the last step before the first household — it locks in a
-configuration known to work. Renovate first runs report-only (step 1 of the
-plan) to see upstream's real cadence before anything merges. Installs must not
+configuration known to work. Renovate's report-only trial runs here, not
+earlier (moved from step 1, Nov 2026): Renovate lists nothing for a `latest`
+tag without a digest, so before the fragments carry versions it would see only
+the six versioned images and no cadence for the rest — the data the grace
+window below needs. Order: versions/digests in the fragments, then the trial
+(Dependency Dashboard, no pull requests), then automerge. Installs must not
 freeze: patch and security bumps promote themselves after CI and a canary
 night; doctor warns when an install is behind; and a grace window (about three
 weeks, set after the report-only trial) before a stale install falls back to
