@@ -131,10 +131,25 @@ line.
 ```
 `--note` (or, at a terminal, one question) puts the symptom at the top, so
 whoever reads the bundle starts from it.
-Writes `local/support/support-<YYYYmmdd-HHMMSS>.txt` (0600), opens it in a
-pager when there is a terminal, then prints its path and size and says that
-nothing was sent: the owner reads it and decides where it goes. One plain
-text file, never an archive, so every byte can be read before it is shared.
+
+The flow: the person runs `support` and sends the file to whoever helps them
+— by e-mail, or attached to a GitHub issue. So `support` writes one plain-text
+file, `local/support/support-<YYYYmmdd-HHMMSS>.txt` (0600, never an archive,
+under a few MB with the caps below), and then prints, without a pager
+(revised 13 Nov 2026: a pager is one more thing to get stuck in):
+- **what is in it** — each part and its size in lines, the parts skipped and
+  why;
+- **what was taken out** — how many secrets, addresses, e-mails and names were
+  replaced, by kind;
+- **how to read it first** — the path, and `cat` or any text editor;
+- **how to get it off the host** — the exact `scp` line to run on their own
+  computer (this host's LAN address, their user, the file's path), since most
+  people reach the host over SSH;
+- **where it may go** — e-mail stays between them and the reader; **a GitHub
+  issue on this project is public**, readable by anyone, so the redaction is
+  all that protects it there.
+
+Nothing is ever sent by the script.
 
 ### What goes in — an allowlist — **agreed**
 Each part says where it came from; a part that fails says why and the bundle
