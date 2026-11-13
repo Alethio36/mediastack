@@ -19,6 +19,7 @@ sed '$d' mediastack.sh > "$lib"
 source "$lib"
 
 sudo() { "$@"; }                        # everything here is ours already
+disk_watch() { :; }                     # the host's real disks are not this test's (scripts/test-disk.sh judges them)
 require_mounts() { :; }
 notify() { printf '%s|%s|%s\n' "$1" "$4" "$2" >> "$T/notes"; printf '%s\n' "$3" >> "$T/bodies"; }
 ENV_FILE=$T/.env
