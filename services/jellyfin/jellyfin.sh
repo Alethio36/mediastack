@@ -582,3 +582,28 @@ support_jellyfin() { # support: its version, plugins, transcoding, libraries and
     out=$(jf_api GET /Library/VirtualFolders "$tok") && jq -r '.[] | "library \(.Name) (\(.CollectionType // "mixed")): \((.Locations // []) | join(", "))"' <<<"$out" || echo "libraries unreadable: $(oneline "$out")"
     return 0
 }
+
+# ---- rotate-secrets (lib/rotate.sh) ----
+jellyfin_secrets() {
+    svc_enabled jellyfin && [[ -n "$(env_get JELLYFIN_API_KEY)" ]] || return 0
+    printf 'JELLYFIN_API_KEY\t%s\n' "$(signin_is wizarr && echo wizarr-jellyfin)"
+}
+jellyfin_secret_rotate() { # a new stack key minted beside the old one; the old one deleted only once the new one opens Jellyfin
+    local old new keys url
+    old=$(env_get JELLYFIN_API_KEY); url="$(jf_url)/System/Info"
+    jf_api POST "/Auth/Keys?app=mediastack" "$old" >/dev/null || { fail "jellyfin: refused a new key [HTTP $(jf_code)]"; return 1; }
+    keys=$(jf_api GET /Auth/Keys "$old") \
+        || { fail "jellyfin: its keys are unreadable [HTTP $(jf_code)] — a spare key named mediastack may sit in Dashboard -> API Keys"; return 1; }
+    new=$(jq -r --arg o "$old" '[.Items[]? | select(.AppName == "mediastack" and .AccessToken != $o) | .AccessToken][0] // empty' <<<"$keys")
+    [[ -n "$new" ]] || { fail "jellyfin: the new key is not in its list"; return 1; }
+    rotate_journal_hold JELLYFIN_API_KEY "$old" "$new"
+    if ! [[ "$(rotate_http_code "$url" "$(jf_auth_hdr "$new")")" =~ ^2 ]]; then
+        fail "jellyfin: the new key does not open it — deleted, the old one kept"
+        jf_api DELETE "/Auth/Keys/$new" "$old" >/dev/null || true
+        rotate_journal_release; return 1
+    fi
+    env_set JELLYFIN_API_KEY "$new"
+    jf_api DELETE "/Auth/Keys/$old" "$new" >/dev/null || { fail "jellyfin: the old key was not deleted [HTTP $(jf_code)]"; return 2; }
+    rotate_proven jellyfin "$url" "$(jf_auth_hdr "$new")" "$(jf_auth_hdr "$old")" || return 2
+    rotate_journal_release
+}

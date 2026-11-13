@@ -409,3 +409,32 @@ arr_indexers_retest() { # after Prowlarr's indexers pass: each arr re-tests its 
         indexer_test_report "$s" "$base" "$key" "$out" || true   # named in the report; the next arr is still re-tested
     done
 }
+
+# ---- rotate-secrets (lib/rotate.sh) ----
+arr_secrets() { # the arrs first, Prowlarr last: its reset pushes its new key into every arr's indexers, so it must reach them with their new keys
+    local s
+    for s in $(arr_instances); do printf '%s API key\tcompanion\n' "$s"; done
+    if svc_enabled prowlarr; then printf 'prowlarr API key\tcompanion\n'; fi
+    return 0
+}
+arr_secret_rotate() { # arr_secret_rotate "<svc> API key" — the app makes its own (ResetApiKey), read back from config.xml
+    local name="$1" s=${1% API key} old new base _
+    old=$(arr_key "$s"); [[ -n "$old" ]] || { fail "$s: no API key readable in its config.xml"; return 1; }
+    base="$(arr_url "$s")/api/$(arr_apiver "$s")"
+    if [[ "$s" == prowlarr ]]; then   # its application entries get the arrs' new keys first: its reset's sync must reach them
+        MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" wire prowlarr >/dev/null 2>&1 \
+            || { fail "prowlarr: wire prowlarr failed — the arrs' new keys are not in it, so its key is left as it is (see: ./mediastack.sh wire prowlarr)"; return 1; }
+    fi
+    rotate_journal_hold "$name" "$old" ""
+    if ! api POST "$base/command" "$old" '{"name":"ResetApiKey"}' >/dev/null; then
+        fail "$s: refused the reset — its key is unchanged"; rotate_journal_release; return 1
+    fi
+    for _ in $(seq 1 30); do new=$(arr_key "$s"); [[ -n "$new" && "$new" != "$old" ]] && break; sleep 1; done
+    if [[ -z "$new" || "$new" == "$old" ]]; then
+        [[ "$(rotate_http_code "$base/system/status" "X-Api-Key: $old")" =~ ^2 ]] || { fail "$s: took the reset, but config.xml shows no new key and the old one is refused"; return 2; }
+        fail "$s: took the reset, but kept its key"; rotate_journal_release; return 1
+    fi
+    rotate_journal_hold "$name" "$old" "$new"
+    rotate_proven "$s" "$base/system/status" "X-Api-Key: $new" "X-Api-Key: $old" || return 2
+    rotate_journal_release
+}

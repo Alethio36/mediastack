@@ -590,3 +590,20 @@ support_gluetun() { # support: the provider and servers asked for, the last leak
     else echo "the running gluetun has not been proven since it started"; fi
     return 0
 }
+
+# ---- rotate-secrets (lib/rotate.sh) ----
+gluetun_secrets() { svc_enabled gluetun && printf 'GLUETUN_CONTROL_APIKEY\tvpn\n'; return 0; }
+gluetun_secret_rotate() { rotate_env GLUETUN_CONTROL_APIKEY "$(gen_secret 32)" gluetun_control_key_proven; }
+gluetun_control_code() { # gluetun_control_code KEY -> the HTTP code gluetun's control server answers KEY with ("" when it does not answer)
+    local out
+    out=$(sudo docker exec "$(svc_cname gluetun)" sh -c 'wget -qS -O /dev/null --timeout=5 --header "X-API-Key: $0" http://127.0.0.1:8008/v1/vpn/status 2>&1' "$1" 2>/dev/null) || true   # addr-ok: gluetun's control server, from inside its namespace
+    sed -n 's/^ *HTTP\/[0-9.]* \([0-9][0-9]*\).*/\1/p' <<<"$out" | sed -n 1p
+}
+gluetun_control_key_proven() { # gluetun_control_key_proven NEW OLD — the control server opens to NEW and refuses OLD
+    local code _
+    for _ in $(seq 1 30); do code=$(gluetun_control_code "$1"); [[ "$code" == 200 ]] && break; sleep 2; done
+    [[ "$code" == 200 ]] || { fail "gluetun: the control server refuses the key it should take (HTTP ${code:-none})"; return 1; }   # addr-ok: a message, no address
+    code=$(gluetun_control_code "$2")
+    [[ "$code" == 401 ]] || { fail "gluetun: the control server does not refuse the other key (HTTP ${code:-none})"; return 1; }   # addr-ok: a message, no address
+    ok "gluetun: its control server takes the key it should, refuses the other"   # addr-ok: a message, no address
+}

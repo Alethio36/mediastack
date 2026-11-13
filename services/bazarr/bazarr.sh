@@ -74,3 +74,16 @@ wire_bazarr() {
         fi
     fi
 }
+
+# ---- rotate-secrets (lib/rotate.sh) ----
+bazarr_secrets() { svc_enabled bazarr && [[ -n "$(bazarr_key)" ]] && printf 'bazarr API key\tcompanion\n'; return 0; }
+bazarr_secret_rotate() { # a new key through its settings form; config.yaml follows
+    local old new url code
+    old=$(bazarr_key); new=$(rotate_hex); url=$(arr_url bazarr)
+    rotate_journal_hold "bazarr API key" "$old" "$new"
+    code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST -H "X-API-KEY: $old" \
+           --data-urlencode "settings-auth-apikey=$new" "$url/api/system/settings" 2>/dev/null) || true
+    if ! [[ "$code" =~ ^2 ]]; then fail "bazarr: refused the new key (HTTP ${code:-000}) — its key is unchanged"; rotate_journal_release; return 1; fi
+    rotate_proven bazarr "$url/api/system/status" "X-API-KEY: $new" "X-API-KEY: $old" || return 2
+    rotate_journal_release
+}

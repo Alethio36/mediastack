@@ -256,3 +256,20 @@ support_seerr() { # support: its version and the servers it sends requests to
     done
     return 0
 }
+
+# ---- rotate-secrets (lib/rotate.sh) ----
+seerr_secrets() { svc_enabled seerr && [[ -n "$(env_get SEERR_API_KEY)" ]] && printf 'SEERR_API_KEY\tcompanion\n'; return 0; }
+seerr_secret_rotate() { # Seerr makes its own (regenerate); .env takes it
+    local old new out code
+    old=$(env_get SEERR_API_KEY)
+    rotate_journal_hold SEERR_API_KEY "$old" ""
+    out=$(curl -sS -m 20 -X POST -H "X-Api-Key: $old" -w $'\n%{http_code}' "$(seerr_url)/api/v1/settings/main/regenerate" 2>&1) || true
+    code=${out##*$'\n'}; out=${out%$'\n'*}
+    if ! [[ "$code" =~ ^2 ]]; then fail "seerr: refused the regenerate (HTTP $code) — its key is unchanged"; rotate_journal_release; return 1; fi
+    new=$(jq -r '.apiKey // empty' <<<"$out" 2>/dev/null)
+    [[ -n "$new" && "$new" != "$old" ]] || { fail "seerr: regenerated, but its answer holds no new key — ./mediastack.sh wire seerr stores its current one"; return 2; }
+    rotate_journal_hold SEERR_API_KEY "$old" "$new"
+    env_set SEERR_API_KEY "$new"
+    rotate_proven seerr "$(seerr_url)/api/v1/settings/main" "X-Api-Key: $new" "X-Api-Key: $old" || return 2
+    rotate_journal_release
+}

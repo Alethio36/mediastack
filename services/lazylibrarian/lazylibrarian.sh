@@ -19,11 +19,11 @@ ll_api() { # ll_api cmd [k=v ...] -> body; the &cmd= API, apikey-authenticated
     curl -sS -m 15 "$(ll_url)/api?$q" 2>/dev/null
 }
 
-ll_api_enable() { # api_enabled + a new api_key into config.ini's [GENERAL], written while it is stopped
+ll_api_enable() { # ll_api_enable [KEY] — api_enabled + KEY (a new one when none is given) into config.ini's [GENERAL], written while it is stopped
     local f own key
     f="$(env_get CONFIG_ROOT)/lazylibrarian/config.ini"
     sudo test -f "$f" || { wfail "lazylibrarian: no $f yet — it writes one at its first start; re-run: ./mediastack.sh wire lazylibrarian"; return 1; }
-    key=$(head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n')   # 32 hex, as it mints its own
+    key=${1:-$(rotate_hex)}   # 32 hex, as it mints its own
     DC stop lazylibrarian >/dev/null 2>&1 || { wfail "lazylibrarian: could not stop it to write its API key"; return 1; }
     own=$(sudo stat -c %u:%g "$f")
     sudo sed -i -e '/^api_enabled *=/d' -e '/^api_key *=/d' -e "/^\[GENERAL\]\$/a api_enabled = 1\napi_key = $key" "$f"
@@ -134,4 +134,19 @@ wire_lazylibrarian() {
         ok "config reloaded"
     fi
     info "indexers arrive automatically from Prowlarr (registered in the prowlarr pass)"
+}
+
+# ---- rotate-secrets (lib/rotate.sh) ----
+lazylibrarian_secrets() { svc_enabled lazylibrarian && [[ -n "$(ll_key)" ]] && printf 'lazylibrarian API key\t\n'; return 0; }
+ll_key_takes() { [[ "$(curl -sS -m 15 "$(ll_url)/api?apikey=$1&cmd=getVersion" 2>/dev/null)" == "{"* ]]; }   # ll_key_takes KEY
+lazylibrarian_secret_rotate() { # a new key into config.ini while it is stopped (ll_api_enable); Prowlarr's copy follows at the run's wire
+    local old new
+    old=$(ll_key); new=$(rotate_hex)
+    rotate_journal_hold "lazylibrarian API key" "$old" "$new"
+    if ll_api_enable "$new" >/dev/null && ll_key_takes "$new" && ! ll_key_takes "$old"; then
+        ok "lazylibrarian: takes the new key, refuses the old one"; rotate_journal_release; return 0
+    fi
+    fail "lazylibrarian: the new key is not proven — putting the old one back"
+    if ll_api_enable "$old" >/dev/null && ll_key_takes "$old"; then rotate_journal_release; return 1; fi
+    fail "lazylibrarian: the old key is not proven either"; return 2
 }

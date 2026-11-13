@@ -224,3 +224,19 @@ cleanuparr_dl_login_resync() { # cleanuparr_dl_login_resync PROVIDER — after i
         && ok "cleanuparr: '$name' connection updated" \
         || wfail "cleanuparr: '$name' connection not updated [HTTP $(cup_code)] — fix in its UI"
 }
+
+# ---- rotate-secrets (lib/rotate.sh) ----
+cleanuparr_secrets() { svc_enabled cleanuparr && [[ -n "$(env_get CLEANUPARR_API_KEY)" ]] && printf 'CLEANUPARR_API_KEY\t\n'; return 0; }
+cleanuparr_secret_rotate() { # Cleanuparr makes its own (regenerate); .env takes it
+    local old new out
+    old=$(env_get CLEANUPARR_API_KEY)
+    rotate_journal_hold CLEANUPARR_API_KEY "$old" ""
+    out=$(cup_api POST /account/api-key/regenerate "X-Api-Key: $old") \
+        || { fail "cleanuparr: refused the regenerate [HTTP $(cup_code)] — its key is unchanged"; rotate_journal_release; return 1; }
+    new=$(jq -r '.apiKey // empty' <<<"$out" 2>/dev/null)
+    [[ -n "$new" && "$new" != "$old" ]] || { fail "cleanuparr: regenerated, but its answer holds no new key — ./mediastack.sh wire cleanuparr stores its current one"; return 2; }
+    rotate_journal_hold CLEANUPARR_API_KEY "$old" "$new"
+    env_set CLEANUPARR_API_KEY "$new"
+    rotate_proven cleanuparr "$(cup_url)/api/account/api-key" "X-Api-Key: $new" "X-Api-Key: $old" || return 2
+    rotate_journal_release
+}

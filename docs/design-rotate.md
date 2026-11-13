@@ -4,7 +4,8 @@
 machine secret at once; `.env` before the holders are rewired. Spike done
 (below) save what needs another install — Wizarr mode, Prowlarr's key reaching
 indexers — and what the build proves itself (LazyLibrarian, Recyclarr); those
-move into the proof. Build: slice 1 (the framework, Meilisearch's key) built.*
+move into the proof. Build: slice 1 (the framework, Meilisearch's key) built and
+proven live; slice 2 (every key outside authentik) built.*
 
 ## Why
 
@@ -110,22 +111,27 @@ secret is proven, so a put-back is always possible.
   run killed mid-secret leaves it: the next `rotate-secrets` refuses to start
   and names the restore point; `doctor` names it too. Never in the support
   bundle (the bundle is an allowlist; nothing under `local/rotate/` joins it).
-- **Holders are rewired by `wire`, not by rotator code.** `wire` is
-  desired-state and reads every key from its owner or `.env`, so a rotator
-  only changes the owner and names the roles to re-run. **Hidden work:** a
+- **Holders are rewired by `wire`, not by rotator code** — once, by a full
+  `wire` after the last secret (built, slice 2: an owner-made key cannot go
+  back to its old value anyway, so a rewire after each secret bought nothing
+  but twenty `wire` runs). `wire` is desired-state and reads every key from
+  its owner or `.env`, so a rotator only changes the owner and proves it.
+  One exception: Prowlarr's reset pushes its new key into every arr's
+  indexers, so the arrs go first and Prowlarr's rotation starts with
+  `wire prowlarr` — its sync then reaches each arr with its new key. **Hidden work:** a
   wire step that only creates an entry and never corrects an existing one's
   key would leave a stale copy — spike 7 audits every holder first.
 - **Order** — an explicit list in `lib/rotate.sh`, like `WIRE_ROLES`:
   authentik's (DB password, secret key, API token, akadmin, LDAP token, bind
-  password, client secrets), Jellyfin's key, the arrs', Prowlarr's, Bazarr's,
-  LazyLibrarian's, Seerr's, Cleanuparr's, Wizarr's, Meilisearch's, gluetun's,
-  the generated logins, then every session ended. authentik first: everything
+  password, client secrets), Jellyfin's key, the arrs', then Prowlarr's,
+  Seerr's, Cleanuparr's, Bazarr's, LazyLibrarian's, Wizarr's, Meilisearch's,
+  gluetun's, the generated logins, then every session ended. authentik first: everything
   after it may need the portal's API; the sessions last, so none opened
   during the run outlives it.
 - **Per service** — each service declares its secrets with a `<svc>_secrets`
-  function (one TSV line each: title, key, holders' roles, cost words) and
-  rotates them with `<svc>_secret_rotate KEY NEW OLD`, as `<svc>_logins`
-  does for logins. CI holds every `secret` row whose writer is `script` in
+  function (one TSV line each: the name, its cost tags) and rotates each with
+  `<svc>_secret_rotate NAME` (rc 0 proven, 1 back on its old value, 2 left
+  changed — the run stops), as `<svc>_logins` does for logins. CI holds every `secret` row whose writer is `script` in
   every `env.tsv` to a declaration or to the "not rotated" list in
   `lib/rotate.sh`: a new service cannot add a secret the verb forgets.
 

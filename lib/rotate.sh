@@ -12,15 +12,24 @@
 # lib/backup.sh and the services' own helpers at call time.
 
 # The order secrets are rotated in — a service's stem, as its functions are named.
-ROTATE_ORDER=(meilisearch)
+# Whatever holds a copy is rewired once, by a full `wire` after the last one:
+# an owner-made key cannot go back anyway, and every holder's step follows
+# the owner's current key (desired state).
+ROTATE_ORDER=(jellyfin arr seerr cleanuparr bazarr lazylibrarian meilisearch gluetun)
 
 # What a cost tag means: said before the run (a cost), and in the closing
 # warning when the tag is set (left empty: nothing outside the stack to do).
 declare -A ROTATE_COSTS=(
+    [companion]="phone and companion apps (nzb360, LunaSea, …) and integrations you set up lose their access to the arrs, Prowlarr, Bazarr and Seerr until you give them the new keys"
     [search]="search answers nothing while Meilisearch and JellySearch restart (a minute)"
+    [vpn]="the VPN'd services restart through the leak gate (a minute or two)"
+    [wizarr-jellyfin]="Wizarr keeps the old Jellyfin key until you paste the new one into it"
 )
 declare -A ROTATE_AFTER=(
+    [companion]="Phone and companion apps (nzb360, LunaSea, …) and any integration you set up yourself: give them the new API keys — ./mediastack.sh credentials shows them."
     [search]=""
+    [vpn]=""
+    [wizarr-jellyfin]="Wizarr: paste the new Jellyfin API key into its Settings → Servers (./mediastack.sh credentials shows it)."
 )
 
 # Secrets held outside the stack: never rotated here — the end says where a new one comes from.
@@ -66,6 +75,20 @@ rotate_tags() { # rotate_tags LIST -> each cost tag the list carries, once, in f
 }
 
 # ---------------------------------------------------------------- helpers --
+rotate_http_code() { # rotate_http_code URL HEADER -> the HTTP code URL answers a request carrying HEADER with (000: no answer)
+    local c
+    c=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "$2" "$1" 2>/dev/null) || true
+    echo "${c:-000}"
+}
+rotate_proven() { # rotate_proven WHAT URL NEW-HEADER OLD-HEADER — the new key opens URL (waited for, up to a minute), the old one is refused (401/403)
+    local what="$1" url="$2" c _
+    for _ in $(seq 1 30); do c=$(rotate_http_code "$url" "$3"); [[ "$c" =~ ^2 ]] && break; sleep 2; done
+    [[ "$c" =~ ^2 ]] || { fail "$what: the new key is refused (HTTP $c)"; return 1; }
+    c=$(rotate_http_code "$url" "$4")
+    [[ "$c" == 401 || "$c" == 403 ]] || { fail "$what: the old key still opens it (HTTP $c)"; return 1; }
+    ok "$what: takes the new key, refuses the old one"
+}
+rotate_hex() { head -c16 /dev/urandom | od -An -tx1 | tr -d ' \n'; }   # 32 hex: the shape Bazarr's and LazyLibrarian's own keys have
 rotate_up() { # the stack's own `up` (the leak gate included), quiet unless it fails
     local out rc=0
     info "starting what the change touched (up)..."
@@ -176,14 +199,24 @@ give it the new value — the end of the run lists what."
     ./mediastack.sh rotate-secrets"
     fi
 
+    hr "rotate: everything that holds one (wire)"
+    local wout wrc=0 vrc=0 dline
+    wout=$(MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" wire 2>&1) || wrc=$?
+    { grep -E 'API key updated|its API key stored|^.{0,12}FAIL' <<<"$wout" || true; } | sed 's/^/  /'
+    if (( wrc )); then fail "wire reported failures (above) — fix them, then: ./mediastack.sh wire"; vrc=1
+    else ok "wire: everything that holds one has its new value"; fi
+
     hr "rotate: the stack, proven"
-    local vrc=0 dline
     MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" wire --verify >/dev/null 2>&1 || vrc=$?
     if (( vrc )); then fail "wire --verify finds drift after the rotation — see: ./mediastack.sh wire --verify"
     else ok "wire --verify: no drift"; fi
     # doctor's findings may predate the run: reported, never the run's verdict
-    dline=$(MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" doctor 2>&1 | grep -E 'doctor: (all checks passed|[0-9]+ problem)' | tail -n 1 || true)
-    info "${dline:-doctor gave no summary} — see: ./mediastack.sh doctor"
+    dline=$(MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" doctor 2>&1 | sed -n 's/.*\(doctor: \(all checks passed\|[0-9]* problem(s)\)\).*/\1/p' | tail -n 1 || true)
+    case "$dline" in
+        *problem*) warn "$dline (some may predate this run) — see: ./mediastack.sh doctor" ;;
+        "")        warn "doctor gave no summary — see: ./mediastack.sh doctor" ;;
+        *)         ok "$dline" ;;
+    esac
     rotate_journal_end
 
     echo
