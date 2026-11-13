@@ -11,6 +11,26 @@
 cup_url() { local p; p=$(svc_hostport cleanuparr) || return 1; echo "http://127.0.0.1:$p"; }
 CUP_CODE_F="${TMPDIR:-/tmp}/.mediastack-cup-code.$$"
 cup_code() { cat "$CUP_CODE_F" 2>/dev/null || echo 000; }
+CUP_MASKED='••••••••'   # how Cleanuparr shows a stored secret; sent back, it means "keep the one you hold"
+cup_instance_key() { # cup_instance_key SVC TYPE KEY AUTHHDR — the arr's key Cleanuparr holds (masked) is tested, then replaced when only the current one passes
+    # A failed test alone does not say why (one message for every cause):
+    # the arr's current key, tested the same way, tells a stale key from an
+    # arr Cleanuparr cannot reach at all.
+    local s="$1" ty="$2" key="$3" hdr="$4" cfg inst out
+    cfg=$(cup_api GET "/configuration/$ty" "$hdr") \
+        || { wfail "cleanuparr -> $s: its $ty connections are unreadable — its API key not checked [HTTP $(cup_code)]"; return 0; }
+    inst=$(jq -c --arg n "$s" '[.instances[]? | select(.name == $n)][0] // empty' <<<"$cfg")
+    [[ -n "$inst" ]] || return 0
+    out=$(cup_api POST "/configuration/$ty/instances/test" "$hdr" "$(jq -c --arg m "$CUP_MASKED" '{url, version, apiKey: $m, instanceId: .id}' <<<"$inst")") && return 0
+    if ! out=$(cup_api POST "/configuration/$ty/instances/test" "$hdr" "$(jq -c --arg k "$key" '{url, version, apiKey: $k}' <<<"$inst")"); then
+        wfail "cleanuparr -> $s: its connection test failed, with $s's current key too [HTTP $(cup_code)]: $(head -c200 <<<"$out")"; return 0
+    fi
+    w_would "cleanuparr -> $s: give it $s's current API key (the one it holds is refused)" || return 0
+    out=$(cup_api PUT "/configuration/$ty/instances/$(jq -r '.id' <<<"$inst")" "$hdr" "$(jq -c --arg k "$key" '.apiKey = $k' <<<"$inst")") \
+        && ok "cleanuparr -> $s: API key updated" \
+        || wfail "cleanuparr -> $s: its API key was not updated [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
+}
+
 cup_api() { # cup_api METHOD PATH AUTHHDR [json-body] -> body; rc = http 2xx
     local m="$1" p="$2" hdr="$3" b="${4:-}" out code
     out=$(curl -sS -m 20 -X "$m" ${hdr:+-H "$hdr"} -H "Content-Type: application/json" \
@@ -117,7 +137,8 @@ wire_cleanuparr() {
             || { wfail "cleanuparr: could not read its $ty connections — nothing created [HTTP $(cup_code)]"; continue; }
         names=$(jq -r '[.instances[]?.name] | join(" ")' <<<"$cfg" 2>/dev/null)
         if [[ " $names " == *" $s "* ]]; then
-            ok "$s already connected — untouched"
+            ok "$s already connected — yours to manage (its address and API key kept current)"
+            cup_instance_key "$s" "$ty" "$key" "$KH"
             local ist ibody; ist=$(addr_of "$(jq -r --arg n "$s" '.instances[]? | select(.name==$n) | .url' <<<"$cfg" 2>/dev/null | sed -n 1p)")
             if addr_stale "cleanuparr -> $s" "$s" "$ist"; then
                 ibody=$(jq -c --arg n "$s" --arg u "http://$(svc_addr "$s")" '[.instances[]? | select(.name==$n)][0] | .url = $u' <<<"$cfg")

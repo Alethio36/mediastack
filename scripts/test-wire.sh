@@ -15,6 +15,8 @@
 #     (masked) is tested and replaced only when refused as the key; Seerr's is
 #     compared; --verify only reports
 #   * Seerr's own key in .env follows Seerr (one regenerated in its settings)
+#   * an arr's key Cleanuparr holds (masked) follows the arr: replaced only
+#     when the stored key fails and the arr's current key passes
 #
 #   scripts/test-wire.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -186,5 +188,32 @@ ks() { # ks DRY STORED -> SEERR_API_KEY after, fails=N
 [[ "$(ks 0 SEERRNEW)" == "SEERRNEW fails=0" ]] || fail_ "already Seerr's: nothing to do: $(ks 0 SEERRNEW)"; pass
 grep -q 'seerr_initialized; then' services/seerr/seerr.sh && awk '/if \$seerr_initialized; then/,/return 0/' services/seerr/seerr.sh | grep seerr_key_store >/dev/null \
     || fail_ "an initialised Seerr has its key checked on every wire, not only at its first"; pass
+
+# ---- an arr's key in Cleanuparr follows the arr (found live Nov 2026: a new
+#      Sonarr key, Cleanuparr's test 400, wire and --verify silent) ----
+ck() { # ck DRY STORED-TEST CURRENT-TEST -> the calls made (method + path), then the PUT body, then fails=N
+    ( WIRE_DRY=$1 WIRE_FAILS=0 WIRE_CHANGES=0 ST=$2 CT=$3; rm -f "$T/c"
+      cup_code() { echo 400; }
+      cup_api() { echo "$1 $2 ${4:-}" >> "$T/c"
+          case "$1 $2" in
+              "GET /configuration/sonarr") echo '{"instances":[{"id":"g-1","name":"sonarr","url":"http://gluetun:8989","version":4,"enabled":true,"apiKey":"••••••••"}]}' ;;
+              "POST /configuration/sonarr/instances/test")
+                  if [[ "${4:-}" == *instanceId* ]]; then [[ "$ST" == ok ]]; else [[ "$CT" == ok ]]; fi ;;
+              "PUT "*) echo '{}' ;;
+          esac; }
+      cup_instance_key sonarr sonarr NEWKEY "X-Api-Key: k" >/dev/null 2>&1
+      grep -v '^GET' "$T/c" | cut -d' ' -f1,2 | paste -sd' ' -; grep '^PUT' "$T/c" | cut -d' ' -f3- ; echo "fails=$WIRE_FAILS" )
+}
+r=$(ck 0 bad ok)
+[[ "$(sed -n 1p <<<"$r")" == "POST /configuration/sonarr/instances/test POST /configuration/sonarr/instances/test PUT /configuration/sonarr/instances/g-1" ]] \
+    || fail_ "the stored key fails, the current passes: replaced: $r"; pass
+jq -e '.apiKey == "NEWKEY" and .url == "http://gluetun:8989" and .name == "sonarr"' <<<"$(sed -n 2p <<<"$r")" >/dev/null \
+    || fail_ "the PUT carries the current key, the rest of the instance as it was: $(sed -n 2p <<<"$r")"; pass
+grep -q '"apiKey":"NEWKEY"' "$T/c" && ! grep '/instances/test' "$T/c" | sed -n 1p | grep NEWKEY >/dev/null \
+    || fail_ "the first test sends the masked value (Cleanuparr's stored key), not the current one"; pass
+[[ "$(ck 1 bad ok)" == $'POST /configuration/sonarr/instances/test POST /configuration/sonarr/instances/test\nfails=0' ]] || fail_ "--verify: both tests, nothing written: $(ck 1 bad ok)"; pass
+[[ "$(ck 0 ok ok)" == $'POST /configuration/sonarr/instances/test\nfails=0' ]] || fail_ "the stored key passes: one test, nothing written: $(ck 0 ok ok)"; pass
+[[ "$(ck 0 bad bad)" == $'POST /configuration/sonarr/instances/test POST /configuration/sonarr/instances/test\nfails=1' ]] \
+    || fail_ "the current key fails too (the arr unreachable): a failure, the key left alone: $(ck 0 bad bad)"; pass
 
 echo "OK wire: $checks checks"
