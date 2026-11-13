@@ -8,13 +8,20 @@ bazarr_key() { # bazarr_key -> api key from its config.yaml ("" while initialisi
 }
 
 # ---- bazarr ----
+BAZARR_KEY_WAIT=90   # seconds a first start may take to write its key
 wire_bazarr() {
     hr "wire: Bazarr"
     svc_enabled bazarr || { info "bazarr not enabled — skipped"; return 0; }
     wire_gate bazarr
-    local bkey burl
+    local bkey burl kw=0
     bkey=$(bazarr_key)
-    [[ -n "$bkey" ]] || { wfail "bazarr: no api key found yet (config/config.yaml) — re-run wire shortly"; return 0; }
+    if [[ -z "$bkey" ]] && (( ! WIRE_DRY )); then
+        # a first start: Bazarr writes config.yaml, its key in it, a while after
+        # its container starts (found live: `enable bazarr` wired it too soon)
+        info "waiting for bazarr to write its API key (budget ${BAZARR_KEY_WAIT}s)..."
+        until bkey=$(bazarr_key); [[ -n "$bkey" ]] || (( kw >= BAZARR_KEY_WAIT )); do sleep 3; kw=$((kw + 3)); done
+    fi
+    [[ -n "$bkey" ]] || { wfail "bazarr: no api key in config/config.yaml$( ((kw)) && echo " after ${kw}s") — re-run wire shortly; check: logs bazarr"; return 0; }
     burl=$(arr_url bazarr)
     # readiness gate: on a virgin install bazarr is still migrating its DB when
     # wire reaches it and resets the connection (HTTP 000). Poll before posting.

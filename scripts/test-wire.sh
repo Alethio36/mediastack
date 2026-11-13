@@ -18,6 +18,7 @@
 #   * an arr's key Cleanuparr holds (masked) follows the arr: replaced only
 #     when the stored key fails and the arr's current key passes
 #   * --verify checks Cleanuparr with its stored key and writes nothing
+#   * Bazarr's first start: wire waits (bounded) for the key it writes
 #
 #   scripts/test-wire.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -246,5 +247,18 @@ r=$(cv ok)
     || fail_ "--verify reads on with the stored key and reports each missing piece: $(sed -n 2p <<<"$r")"; pass
 [[ "$(cv refused)" == $'\nwould: cleanuparr: sign in and store its API key ' ]] || fail_ "the stored key refused: drift, not a quiet stop: $(cv refused)"; pass
 [[ "$(cv none)" == $'\nwould: cleanuparr: sign in and store its API key ' ]] || fail_ "no stored key: drift, not a quiet stop: $(cv none)"; pass
+
+# ---- Bazarr's first start: wire waits (bounded) for its key (found live Nov
+#      2026: `enable bazarr` failed — config.yaml had no key yet) ----
+bw() { # bw DRY KEY-AFTER-N-LOOKS -> "fails=N looks=N"
+    ( WIRE_DRY=$1 WIRE_FAILS=0 AFTER=$2; echo 0 > "$T/looks"
+      svc_enabled() { [[ "$1" == bazarr ]]; }; wire_gate() { :; }; hr() { :; }; sleep() { :; }
+      bazarr_key() { n=$(( $(cat "$T/looks") + 1 )); echo "$n" > "$T/looks"; (( n > AFTER )) && echo BK; return 0; }
+      arr_url() { echo http://b; }; curl() { echo 200; }   # past the key: the rest is not this check's
+      wire_bazarr >/dev/null 2>&1; echo "fails=$WIRE_FAILS looks=$(cat "$T/looks")" )
+}
+[[ "$(bw 0 3)" == "fails=0 looks=4" ]] || fail_ "no key yet: wire waits for it, then goes on: $(bw 0 3)"; pass
+[[ "$(bw 0 9999)" == "fails=1 looks=$(( BAZARR_KEY_WAIT / 3 + 2 ))" ]] || fail_ "never written: bounded, then a failure: $(bw 0 9999)"; pass
+[[ "$(bw 1 9999)" == "fails=1 looks=1" ]] || fail_ "a dry run never waits: $(bw 1 9999)"; pass
 
 echo "OK wire: $checks checks"
