@@ -185,7 +185,7 @@ also proved authentik's first-start fix). The rest, in this order — each
 shipped and proven before the next; the large ones start with a design doc
 agreed first:
 0. *Done:* this plan, recorded.
-1. **Small-checks batch** — the first `wire` not stopping a first-start
+1. *Done (Nov 2026, promoted at 5e146a8):* **Small-checks batch** — the first `wire` not stopping a first-start
    authentik; the schema's writer column (and a test holding it to the
    recommended column); the Wizarr-mode access review; Navidrome users
    disabled when their portal account goes (*done, Nov 2026*: a stack-owned
@@ -194,6 +194,7 @@ agreed first:
    trial moved to step 13 (Nov 2026, see there).
 2. **Run records and the support bundle** — every run to `local/runs/`,
    rotated; the bundle redacted by allowlist and shown before it is shared.
+   Design: [design-runs.md](design-runs.md) (*proposed*, Nov 2026).
 3. **`wire` reads a setting back** after a write that timed out.
 4. **`rotate-secrets`** — see Credential coverage.
 5. **Access per tool** — a live spike on LDAP app passwords first, then the
