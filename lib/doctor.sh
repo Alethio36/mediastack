@@ -7,7 +7,32 @@
 
 # ------------------------------------------------------------------ doctor --
 D_FAILS=0
-d_fail() { fail "$1"; printf '     why : %s\n     fix : %s\n' "$2" "$3"; D_FAILS=$((D_FAILS+1)); }
+D_FAIL_LINES=()
+d_fail() { fail "$1"; printf '     why : %s\n     fix : %s\n' "$2" "$3"; D_FAILS=$((D_FAILS+1)); D_FAIL_LINES+=("$1"); }
+
+# ops hears doctor when its problems change — a new one, one gone, all clear —
+# and once a week while they stand: a fresh install's "no indexers" would
+# otherwise arrive every morning. Numbers are left out of the comparison, so a
+# disk with a little less free space is the same problem, not a new one.
+DOCTOR_REMIND_EVERY=$(( 7 * 86400 ))
+doctor_fingerprint() { (( D_FAILS )) || return 0; printf '%s\n' "${D_FAIL_LINES[@]}" | tr -d '0-9' | sort | cksum | cut -d' ' -f1; }
+doctor_tell_ops() {
+    local fp told at now=$EPOCHSECONDS list
+    fp=$(doctor_fingerprint); told=$(state_get doctor-told); at=$(state_get doctor-told-at)
+    if [[ -z "$fp" ]]; then
+        [[ -n "$told" ]] && notify ops "Mediastack doctor: all clear" "Every check passed — the problems reported before are gone." info
+        rm -f "$STATE_DIR/doctor-told" "$STATE_DIR/doctor-told-at"
+        return 0
+    fi
+    if [[ "$fp" == "$told" && -n "$at" ]] && (( now - at < DOCTOR_REMIND_EVERY )); then
+        info "ops already has these problems ($(date -d "@$at" '+%a %d %b %H:%M')) — told again when they change, or in a week"
+        return 0
+    fi
+    list=$(printf -- '- %s\n' "${D_FAIL_LINES[@]:0:10}")
+    (( D_FAILS > 10 )) && list+=$'\n'"…and $(( D_FAILS - 10 )) more"
+    notify ops "Mediastack doctor: $D_FAILS problem(s)" "$list"$'\n'"Fixes: \`./mediastack.sh doctor\` on the host." failure
+    state_set doctor-told "$fp"; state_set doctor-told-at "$now"
+}
 
 # --- doctor section checks (one helper per `hr "doctor: …"` block; each self-contained,
 #     reporting via ok/warn/info/d_fail into the file-scope D_FAILS accumulator). ---
@@ -268,6 +293,7 @@ _doctor_vpn_backups() {
     fi
     _doctor_backup_disk
     _doctor_manifest
+    _doctor_schedule
     [[ -z "$(state_get WIRE_REPOINT)" ]] \
         || warn "re-pointing pending for $(state_get WIRE_REPOINT) (a VPN toggle moved it) — apply: ./mediastack.sh up"
     if grep -q "^TRASH_PROFILE_" .env 2>/dev/null; then
@@ -282,6 +308,16 @@ _doctor_vpn_backups() {
     fi
     traefik_doctor
 
+}
+
+_doctor_schedule() { # called from the vpn + backups section: doctor's own timer
+    if [[ -z "$(env_get DOCTOR_SCHEDULE)" ]]; then
+        info "scheduled doctor off (DOCTOR_SCHEDULE empty) — problems reach ops only when doctor is run by hand"
+        return 0
+    fi
+    systemctl is-enabled --quiet mediastack-doctor.timer 2>/dev/null \
+        && ok "scheduled doctor enabled ($(sched_words "$(env_get DOCTOR_SCHEDULE)"))" \
+        || warn "DOCTOR_SCHEDULE is set but its timer is not installed — run: ./mediastack.sh apply-timer"
 }
 
 _doctor_manifest() { # called from the vpn + backups section
@@ -407,7 +443,8 @@ _doctor_runs() { # runs that never finished (lib/runs.sh): a dropped SSH session
     (( n )) || ok "every run of the last 7 days finished (local/runs/)"
 }
 
-cmd_doctor() {
+cmd_doctor() { # doctor [--scheduled] — the timer's run tells ops and succeeds: its problems are findings, not a failed run
+    local scheduled=0; [[ "${1:-}" == --scheduled ]] && scheduled=1
     load_env; need_cmd jq; render
     # Sections are report-only: real problems are counted in D_FAILS, never
     # signalled by exit code. Under `set -e` a section whose last command is a
@@ -426,10 +463,10 @@ cmd_doctor() {
     fi
     for sec in "${DOCTOR_SECTIONS[@]}"; do "_doctor_$sec" || true; done
     echo
+    doctor_tell_ops
     if (( D_FAILS )); then
         fail "doctor: $D_FAILS problem(s) — fixes listed above."
-        notify ops "Mediastack doctor: $D_FAILS problem(s)" "Run \`./mediastack.sh doctor\` on the host for the findings and fixes." failure
-        exit 1
+        (( scheduled )) || exit 1
     else ok "doctor: all checks passed."; fi
 }
 

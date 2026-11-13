@@ -135,6 +135,7 @@ trash-sync --dry-run --dry-run
 # doctor  (none)
 doctor
 doctor x
+doctor --scheduled
 
 # audit  (free)
 audit

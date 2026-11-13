@@ -1120,6 +1120,7 @@ cmd_apply_timer() {
     apply_timer mediastack-update "Mediastack update pipeline" "update --auto" UPDATE_SCHEDULE "Automatic updates"
     apply_timer mediastack-backup "Mediastack scheduled backup" "backup --auto" BACKUP_SCHEDULE "Automatic backups"
     apply_timer mediastack-manifest "Mediastack media manifest" "manifest" MANIFEST_SCHEDULE "Media manifest"
+    apply_timer mediastack-doctor "Mediastack scheduled doctor" "doctor --scheduled" DOCTOR_SCHEDULE "Scheduled doctor"
 }
 
 # apply_timer UNIT DESCRIPTION VERB SCHEDULE_VAR LABEL — install/refresh one

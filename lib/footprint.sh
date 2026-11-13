@@ -49,7 +49,8 @@ fp_timers() {
              mediastack-leakcheck.timer mediastack-leakcheck.service \
              mediastack-leaktest.timer mediastack-leaktest.service \
              mediastack-hostid.timer mediastack-hostid.service \
-             mediastack-people.timer mediastack-people.service; do
+             mediastack-people.timer mediastack-people.service \
+             mediastack-doctor.timer mediastack-doctor.service; do
         printf 'timers\tunit\t%s/%s\tremove\n' "$SYSTEMD_DIR" "$u"
     done
 }

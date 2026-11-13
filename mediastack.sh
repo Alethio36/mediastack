@@ -35,7 +35,7 @@ CGROUP_FILE=/proc/self/cgroup                     # scheduled_run reads it (a te
 STATE_DIR="$LOCAL_DIR/state"                      # pending work: one file per marker (state_get/state_set)
 ENV_BACKUP_DIR="$LOCAL_DIR/env-backups"           # .env before each schema migration
 ENV_BACKUP_KEEP=10                                # the oldest (your original) + the newest 9
-SCRIPT_SCHEMA=41
+SCRIPT_SCHEMA=42
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -1150,7 +1150,7 @@ VERBS=(
     "status~status [svc]~max=1~Run~Overview table of every service, or a deep view of one."
     "logs~logs <svc> [--no-follow]~free~Run~Follow one service's logs (--no-follow: bounded snapshot)."
     "update~update [svc] [--to TAG] [--dry-run|--now]~free~Maintain~Container images: backup, pull, apply (toggles + pins respected)."
-    "apply-timer~apply-timer~none~Maintain~Install/refresh the systemd timers from UPDATE_SCHEDULE, BACKUP_SCHEDULE and MANIFEST_SCHEDULE."
+    "apply-timer~apply-timer~none~Maintain~Install/refresh the systemd timers from UPDATE_SCHEDULE, BACKUP_SCHEDULE, MANIFEST_SCHEDULE and DOCTOR_SCHEDULE."
     "backup~backup [--note TEXT] | verify [TS] | list [svc]~free~Maintain~Take a restore point now (cold); 'verify' checks checksums and archives; 'list' shows every point (kind, note, a service's version). The timer runs 'backup --auto'."
     "manifest~manifest [--accept|diff [A [B]]|find <text>]~free~Maintain~Snapshot the media library now; 'diff' shows what was lost between snapshots; 'find' says when a path was last seen."
     "restore~restore --service <svc>|--all [--from TS]~free~Maintain~Restore configs + image from a restore point."
@@ -1170,7 +1170,7 @@ VERBS=(
     "set-user-facing~set-user-facing [<svc> true|false]~max=2~Connect~Show or change which services notify the household on update (the 'users' stream)."
     "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login)."
     "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift)."
-    "doctor~doctor~none~Check~Full health/permission/port/backup audit; every failure states its fix."
+    "doctor~doctor [--scheduled]~allow=--scheduled~Check~Full health/permission/port/backup audit; every failure states its fix (--scheduled: the timer's run — problems go to ops, the run itself succeeds)."
     "audit~audit [status|on|off|report [--since DATE] [--path TEXT]]~free~Check~Deletion attribution (opt-in): who deleted or renamed media; 'report' reads the history, 'status' proves it live."
     "leak-test~leak-test [--killswitch|--local]~allow=--killswitch,--local max=1~Check~Prove no VPN'd service can leak; a leak stops them (--killswitch: disruptive proof; --local: no outside party)."
     "vpn~vpn [svc on|off] [--i-know]~max=3~Check~Show or change which services run behind the VPN; apply with: up."

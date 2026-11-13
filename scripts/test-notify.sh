@@ -314,4 +314,36 @@ wa 204 </dev/null || fail_ "nothing recorded, no terminal"
 ! grep -q '/add/mediastack' "$T/hub" && grep -q 'configure asks them' "$T/out" || fail_ "nothing to store: wire asks nothing, says where they come from"; pass
 ! grep -nE 'ask_hidden|ask_token|ask_secret|read -r -[sp]' services/apprise/apprise.sh || fail_ "wire apprise asks nothing"; pass
 
+# ---- doctor tells ops when its problems change, weekly while they stand ----
+(
+    STATE_DIR=$(mktemp -d); SENT=$(mktemp)
+    notify() { printf '%s|%s|%s\n%s\n--\n' "$1" "$2" "$4" "$3" >> "$SENT"; }
+    info() { :; }
+    told() { grep -c '^ops|' "$SENT" || true; }
+    probs() { D_FAIL_LINES=("$@"); D_FAILS=$#; }
+    probs "radarr: No indexers" "sonarr: No indexers" "disk /srv: 1.0GiB free of 94GiB (1%)"
+    doctor_tell_ops
+    [[ $(told) == 1 ]] && grep -q '^ops|Mediastack doctor: 3 problem(s)|failure$' "$SENT" && grep -q '^- disk /srv: 1.0GiB free' "$SENT" \
+        || fail_ "the first time: ops hears the problems, listed: $(cat "$SENT")"; pass
+    probs "radarr: No indexers" "sonarr: No indexers" "disk /srv: 0.9GiB free of 94GiB (0%)"
+    doctor_tell_ops; [[ $(told) == 1 ]] || fail_ "the same problems, numbers moved: not again"; pass
+    echo $(( EPOCHSECONDS - DOCTOR_REMIND_EVERY - 1 )) > "$STATE_DIR/doctor-told-at"
+    doctor_tell_ops; [[ $(told) == 2 ]] || fail_ "a week later: told again"; pass
+    probs "radarr: No indexers"
+    doctor_tell_ops; [[ $(told) == 3 ]] || fail_ "a different set: told at once"; pass
+    probs
+    doctor_tell_ops; [[ $(told) == 4 ]] && grep -q '^ops|Mediastack doctor: all clear|info$' "$SENT" || fail_ "all fixed: ops hears all clear"; pass
+    doctor_tell_ops; [[ $(told) == 4 ]] || fail_ "clear again: nothing more"; pass
+    mapfile -t many < <(seq -f 'problem %g' 1 13); probs "${many[@]}"; : > "$SENT"
+    doctor_tell_ops; grep -q '^- problem 10$' "$SENT" && ! grep -q '^- problem 11$' "$SENT" && grep -q '^…and 3 more$' "$SENT" \
+        || fail_ "at most 10 listed, the rest counted: $(cat "$SENT")"; pass
+    rm -rf "$STATE_DIR" "$SENT"
+)
+checks=$((checks + 7))
+# the timer's run tells ops and succeeds (a non-zero exit would also set off unit-failed); a manual run still fails
+grep -q 'apply_timer mediastack-doctor "Mediastack scheduled doctor" "doctor --scheduled" DOCTOR_SCHEDULE' lib/backup.sh \
+    && grep -q '(( scheduled )) || exit 1' <(awk '/^cmd_doctor\(\)/,/^}/' lib/doctor.sh) \
+    && grep -q 'doctor_tell_ops' <(awk '/^cmd_doctor\(\)/,/^}/' lib/doctor.sh) \
+    || fail_ "doctor --scheduled from its timer exits 0 with problems; by hand, 1"; pass
+
 echo "OK notify: $checks checks"

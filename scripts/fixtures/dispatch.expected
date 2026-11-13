@@ -185,8 +185,10 @@ CALL cmd_trash_sync [2] --dry-run --dry-run
 ## doctor
 CALL cmd_doctor [0]
 ## doctor x
-ERROR 'doctor' takes no arguments (got: x)
+ERROR unknown argument 'x' for 'doctor' (accepts: --scheduled)
 rc=1
+## doctor --scheduled
+CALL cmd_doctor [1] --scheduled
 ## audit
 CALL cmd_audit [0]
 ## audit status
