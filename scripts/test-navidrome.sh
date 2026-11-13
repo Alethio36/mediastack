@@ -16,9 +16,10 @@
 #     behind; names match in any case
 #   * a dry run writes nothing, records nothing; a write that does not hold
 #     is a failure and records nothing
-#   * the timer: every 15 minutes, runs people-sync, in the footprint; up
-#     installs it only with the portal and Navidrome; people-sync does nothing
-#     without them; Navidrome is published on 127.0.0.1 only
+#   * the timer: every 15 minutes, runs people-sync, in the footprint; wire
+#     navidrome installs it only with the portal and once the stack's admin
+#     signs in (never up, never a dry run); people-sync does nothing without
+#     them; Navidrome is published on 127.0.0.1 only
 #
 #   scripts/test-navidrome.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -132,7 +133,23 @@ navidrome_people_sync tok-1 > "$T/out"
 [[ "$(timer_timer_render x '*:0/15')" == *"OnCalendar=*:0/15"* ]] && grep -qF 'timer_timer_render "Mediastack: Navidrome follows the portal" "*:0/15"' services/navidrome/people.sh \
     && grep -qF 'timer_service_render "Mediastack: Navidrome follows the portal" people-sync' services/navidrome/people.sh || fail_ "every 15 minutes, people-sync"; pass
 [[ "$(fp_timers)" == *mediastack-people.timer* && "$(fp_timers)" == *mediastack-people.service* ]] || fail_ "the timer is in the footprint (uninstall removes it)"; pass
-grep -q 'if signin_is authentik && svc_enabled navidrome; then people_timer_ensure; fi' <(awk '/^cmd_up\(\)/,/^}/' mediastack.sh) || fail_ "up installs it with the portal and Navidrome"; pass
+! grep -q people_timer_ensure <(awk '/^cmd_up\(\)/,/^}/' mediastack.sh) || fail_ "up never installs it: its first run could beat wire's createAdmin (found live)"; pass
+wired() { # wired [VAR=value...] — wire_navidrome against the fake; -> what ran, in order
+    rm -f "$T/order"
+    ( for a in "$@"; do export "${a?}"; done
+      svc_enabled() { return 0; }; wire_gate() { :; }; nd_ready() { return 0; }
+      signin_is() { [[ "${SIGNIN_X:-authentik}" == "$1" ]]; }
+      people_timer_ensure() { echo timer >> "$T/order"; }
+      navidrome_people_sync() { echo sync >> "$T/order"; }
+      wire_navidrome >/dev/null 2>&1 )
+    [[ ! -e "$T/order" ]] || tr '\n' ' ' < "$T/order"
+}
+fresh; nd_set; portal_set
+[[ "$(wired)" == "timer sync " ]] || fail_ "the admin signs in: the timer, then the sync: $(wired)"; pass
+fresh; [[ "$(wired ND_HAS_ADMIN= ND_EMPTY=1)" == "timer sync " ]] || fail_ "a fresh install: the admin made first, then the timer"; pass
+fresh; [[ -z "$(wired ND_HAS_ADMIN=)" ]] || fail_ "the admin does not sign in: no timer, no sync"; pass
+fresh; [[ "$(wired WIRE_DRY=1)" == "sync " ]] || fail_ "a dry run installs no timer"; pass
+fresh; [[ -z "$(wired SIGNIN_X=wizarr)" ]] || fail_ "without the portal: no timer"; pass
 verb_entry people-sync >/dev/null || fail_ "people-sync is a verb"; pass
 ( load_env() { :; }; render() { :; }; signin_is() { return 1; }; nd_login() { echo called > "$T/login"; }; rm -f "$T/login"; cmd_people_sync ) && [[ ! -e "$T/login" ]] \
     || fail_ "people-sync without the portal: nothing to do, nothing called"; pass

@@ -91,7 +91,7 @@ navidrome_people_sync() { # navidrome_people_sync TOKEN — Navidrome's people f
 
 # ---- every 15 minutes: people-sync (mediastack-people.timer) ----
 PEOPLE_TIMER=mediastack-people
-people_timer_ensure() { # write, enable and start the timer; reloads systemd only when a file changed (up, with the portal and Navidrome)
+people_timer_ensure() { # write, enable and start the timer; reloads systemd only when a file changed (wire navidrome, once the stack's admin signs in)
     local svc tim changed=0
     svc=$(mktemp); tim=$(mktemp)
     timer_service_render "Mediastack: Navidrome follows the portal" people-sync > "$svc"

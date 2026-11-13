@@ -60,5 +60,8 @@ wire_navidrome() {
     nd_admin_ensure || return 0
     ok "navidrome: admin login works"
     signin_is authentik || return 0
+    # the timer starts only once the stack's admin signs in: started by up, its
+    # first run beat this wire's createAdmin and told ops of a failure (found live)
+    (( WIRE_DRY )) || people_timer_ensure
     navidrome_people_sync "$ND_TOKEN"
 }

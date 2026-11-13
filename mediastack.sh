@@ -703,7 +703,6 @@ cmd_up()   {
     vpn_reattach_guard   # fail-closed: no service may run pinned to a dead gluetun
     vpnguard_ensure      # (re)install the boot/daemon guard unit
     gate_timers_ensure   # and the leak checks: local every 5 minutes (the VPN group's supervisor), full hourly, the host's address daily
-    if signin_is authentik && svc_enabled navidrome; then people_timer_ensure; fi   # Navidrome follows the portal (services/navidrome/people.sh)
     svc_enabled authentik && authentik_release_record
     sudo rm -f "$STOP_MARKER"   # everything is up: a cut-off backup's marker is settled
     ok "Stack started."
