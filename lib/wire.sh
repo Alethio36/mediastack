@@ -85,7 +85,7 @@ wire_recheck() { # when the run ends: read back each role that had a call go una
                 keep+=("${WIRE_FAIL_LIST[i]}")
             done
             WIRE_FAIL_LIST=("${keep[@]}"); WIRE_FAIL_UNANSWERED=("${still[@]}"); WIRE_FAILS=$((WIRE_FAILS - n))
-            ok "$role: read back — everything is in place: what got no answer was done late ($n failure(s) taken back)"
+            ok "$role: read back — everything is in place, so the $n failure(s) from calls that got no answer are taken back"
         else
             warn "$role: read back — not everything is in place; its failure(s) stand:"
             grep -E 'would:|FAIL' <<<"$out" | sed -n 1,8p | sed 's/^/    /' || true

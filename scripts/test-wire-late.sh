@@ -91,7 +91,7 @@ WIRE_STEP=arr;       echo x > "$WIRE_UNANSWERED_F"; wfail "radarr root folder �
 WIRE_STEP=seerr;     echo x > "$WIRE_UNANSWERED_F"; wfail "settings — no answer" >/dev/null
 WIRE_STEP=""
 out=$(wire_recheck 2>&1; echo "FAILS=$WIRE_FAILS"; printf 'LIST=%s\n' "${WIRE_FAIL_LIST[@]}")
-[[ "$out" == *"authentik: read back — everything is in place: what got no answer was done late (1 failure(s) taken back)"* \
+[[ "$out" == *"authentik: read back — everything is in place, so the 1 failure(s) from calls that got no answer are taken back"* \
    && "$out" == *"arr: read back — everything is in place"* ]] || fail_ "clean roles: their unanswered failures taken back: $out"; pass
 [[ "$out" == *"jellyfin: read back — not everything is in place"*"would: jellyfin: set Known proxies"* ]] || fail_ "drift: the failure stands, what is missing shown: $out"; pass
 [[ "$out" == *"seerr: it writes blind, so it cannot be read back"* ]] || fail_ "a blind role cannot be read back"; pass
