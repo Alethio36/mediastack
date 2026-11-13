@@ -1,8 +1,10 @@
 # Design: rotate-secrets
 
 *Status: proposed (13 Nov 2026), MVP plan step 4. Direction agreed 13 Nov:
-one verb, no arguments, every machine secret at once. Next: the live spike
-(below) on the test box, then this doc is revised to agreed before any build.*
+one verb, no arguments, every machine secret at once; `.env` before the
+holders are rewired (agreed 13 Nov). Spike: authentik's part done (1, 2 and
+its share of 7, below); the rest next on the test box, then this doc is
+revised to agreed before any build.*
 
 ## Why
 
@@ -91,7 +93,7 @@ the put-back fails: the run stops, names the restore point:
                     ./mediastack.sh restore --all --from <ts>
 ```
 
-**Change from the agreed principle 2** ("only then `.env`"): `.env` takes the
+**Change from principle 2** (*agreed 13 Nov*; was "only then `.env`"): `.env` takes the
 new value *before* the holders are rewired, because `wire` reads `.env`, and
 the compose-carried secrets (authentik's, Meilisearch's, gluetun's) only
 reach their container through it. The journal keeps the old value until the
@@ -159,13 +161,32 @@ logins → the `set-credentials all` hint instead of the login line).
 
 ## Spike — on the test box, before the build
 
-1. **authentik's secret key.** The schema says "never change it once its
-   database exists". Find out what else it protects besides sessions. If
-   changing it loses stored data, it comes back here before anything is
-   built.
-2. **authentik's API token and LDAP outpost token**: rotated through the API
-   (a new key on the same token, or a new token and the old one deleted); the
-   outpost reconnects after a recreate.
+1. *Done (13 Nov 2026).* **authentik's secret key.** Its docs: cookie
+   signing, a change ends active sessions; before 2023.6 it also derived user
+   IDs, hence the old "never change it" (the schema's note is stale — we run
+   2026.8). Its source (2026.8.5): session cookies, file links signed for 15
+   minutes, the built-in outpost's own sign-in to the server (same container)
+   and an error-report tag — nothing stored is encrypted with it. Live on the
+   test box: a new key, `up` recreated server and worker, `wire --verify`
+   clean, doctor unchanged. Rotation: `.env`, recreate both. Sign-out itself
+   is proven with the build (no session existed during the spike).
+2. *Done (13 Nov 2026, from its source).* **API token and LDAP outpost
+   token**: `POST /core/tokens/<identifier>/set_key/` sets a new key on the
+   same token (`authentik-bootstrap-token`, `ak-outpost-<pk>-api`). The
+   bootstrap blueprint's token entry is `state: created`, so a restart never
+   puts the old key back. The outpost's: `wire authentik` already copies it
+   into `.env` and restarts the outpost.
+   **Database password**: `POSTGRES_PASSWORD` is read only when the database
+   is created — `ALTER ROLE` inside `authentik-db` (SQL on stdin, never in a
+   process list), then `.env`, then server and worker recreated: open
+   connections survive the change, so only a fresh start proves it.
+   **Bind password, client secrets**: the blueprint reads them from the
+   worker (`!Env`), and authentik applies a blueprint only when its file
+   changes — found and fixed first (`fix(authentik)`, reproduced live: a new
+   `PORTAL_TITLE` never reached authentik, `wire --verify` clean). With it:
+   `.env`, `up` (the worker recreated), `wire authentik` applies, then
+   `wire jellyfin`/`audiobookshelf`/`kavita` — each already compares the
+   secret itself (Kavita by its digest).
 3. **The arr-family keys**: through each app's API, or `config.xml` edited
    while stopped (as LazyLibrarian's is today); does Prowlarr's sync push its
    new key into every arr's indexers on its own.
@@ -176,7 +197,8 @@ logins → the `set-credentials all` hint instead of the login line).
    it moves to "not rotated" with how to make a new one and `wire wizarr`.
 6. **Seerr's and Cleanuparr's keys**: a regenerate call each.
 7. **Every holder's wire step corrects a stale key** (and `--verify` reports
-   one). Any create-only step is fixed first, as its own patch.
+   one). Any create-only step is fixed first, as its own patch. authentik's
+   holders: done (2).
 8. **Meilisearch**: a new master key, JellySearch recreated — search works
    without a re-index, or the re-index is part of the rotation.
 
