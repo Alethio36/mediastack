@@ -446,20 +446,31 @@ for p in "${AUTHENTIK_BLUEPRINT_NEEDS[@]}"; do
     grep -qx "$p True" <<<"$bpe" || fail_ "the blueprint applies $p first, required: $bpe"
 done; pass
 grep -qx 'rest-meta 0' <<<"$bpe" || fail_ "the prerequisites come before every other entry"; pass
-for f in $(grep -oE '!Find \[authentik_flows.flow, \[slug, default-[a-z0-9-]+\]\]' services/authentik/blueprints/mediastack-portal.yaml | grep -oE 'default-[a-z0-9-]+' | sort -u); do
+# every object the blueprint looks up (!Find) comes from a prerequisite, or is
+# made by authentik before any blueprint runs: the scope mappings were missed
+# once (found live 12 Nov 2026: ours failed, providers-oauth2 applied after it)
+finds=$(grep -oE '!Find \[[a-z0-9_.]+, \[[a-z_]+, [^]]+\]\]' services/authentik/blueprints/mediastack-portal.yaml | sort -u)
+[[ -n "$finds" ]] || fail_ "no !Find found in the blueprint: the pattern no longer matches it"
+while IFS= read -r f; do
     case "$f" in
-        default-provider-authorization-implicit-consent) want=default/flow-default-provider-authorization-implicit-consent.yaml ;;
-        default-provider-invalidation-flow) want=default/flow-default-provider-invalidation.yaml ;;
-        *) fail_ "the blueprint references $f: add its default blueprint to the prerequisites" ;;
+        '!Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]')
+            want=default/flow-default-provider-authorization-implicit-consent.yaml ;;
+        '!Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]')
+            want=default/flow-default-provider-invalidation.yaml ;;
+        '!Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-'*)
+            want=system/providers-oauth2.yaml ;;
+        '!Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]')
+            continue ;;   # made at start (authentik/crypto/apps.py, self_signed), before any blueprint
+        *) fail_ "the blueprint looks up $f: add the blueprint that makes it to the prerequisites" ;;
     esac
-    [[ " ${AUTHENTIK_BLUEPRINT_NEEDS[*]} " == *" $want "* ]] || fail_ "$f's blueprint is not a prerequisite"
-done; pass
+    [[ " ${AUTHENTIK_BLUEPRINT_NEEDS[*]} " == *" $want "* ]] || fail_ "$f comes from $want, which is not a prerequisite"
+done <<<"$finds"; pass
 # a forced apply waits for authentik to have APPLIED them — found is not enough
 # (found live Nov 2026); never applied: no apply, the pending ones named
 r=$( ( ak_api() { if [[ "$1 $2" == "POST /managed/blueprints/"* ]]; then echo APPLIED >> "$T/applied"; fi
                   echo '{"results":[{"path":"default/default-brand.yaml","status":"successful"},{"path":"default/flow-default-provider-authorization-implicit-consent.yaml","status":"outdated"}]}'; }
        sleep() { :; }; rm -f "$T/applied"; authentik_blueprint_apply ) )
-[[ "$r" == "unreadable (authentik has not applied its own default/flow-default-provider-authorization-implicit-consent.yaml default/flow-default-provider-invalidation.yaml yet)" && ! -e "$T/applied" ]] \
+[[ "$r" == "unreadable (authentik has not applied its own default/flow-default-provider-authorization-implicit-consent.yaml default/flow-default-provider-invalidation.yaml system/providers-oauth2.yaml yet)" && ! -e "$T/applied" ]] \
     || fail_ "its defaults found but not applied (or not found): nothing forced, the pending ones named: $r"; pass
 
 # the reason printer is how a failure is reported: it never fails itself

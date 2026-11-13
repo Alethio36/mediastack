@@ -15,8 +15,11 @@ entries:
   # -- what this setup builds on: authentik's own defaults, applied first --
   # On a first start authentik applies every blueprint in one pass, and ours
   # came before the defaults it references (the default brand, two provider
-  # flows): it failed until a later pass (found live Nov 2026). These apply
-  # them first, in this blueprint's own run (authentik_blueprints.metaapplyblueprint).
+  # flows, the OAuth2 scope mappings): it failed until a later pass (found live
+  # Nov 2026, the scope mappings again on 12 Nov). These apply them first, in
+  # this blueprint's own run (authentik_blueprints.metaapplyblueprint). The
+  # self-signed certificate needs none: authentik makes it at start, before
+  # any blueprint runs (authentik/crypto/apps.py, self_signed).
   - model: authentik_blueprints.metaapplyblueprint
     attrs:
       identifiers:
@@ -31,6 +34,11 @@ entries:
     attrs:
       identifiers:
         path: default/flow-default-provider-invalidation.yaml
+      required: true
+  - model: authentik_blueprints.metaapplyblueprint
+    attrs:
+      identifiers:
+        path: system/providers-oauth2.yaml
       required: true
 
   # -- groups -------------------------------------------------------------

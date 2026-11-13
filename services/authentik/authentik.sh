@@ -304,7 +304,7 @@ authentik_blueprint_why() { # authentik's own reasons for rejecting mediastack's
 # the defaults mediastack's blueprint applies first (its metaapplyblueprint
 # entries). Found is not enough: until authentik has applied them, an apply of
 # ours meets its own pass over the same objects and fails (found live Nov 2026)
-AUTHENTIK_BLUEPRINT_NEEDS=(default/default-brand.yaml default/flow-default-provider-authorization-implicit-consent.yaml default/flow-default-provider-invalidation.yaml)
+AUTHENTIK_BLUEPRINT_NEEDS=(default/default-brand.yaml default/flow-default-provider-authorization-implicit-consent.yaml default/flow-default-provider-invalidation.yaml system/providers-oauth2.yaml)
 authentik_blueprint_needs_pending() { # -> the prerequisites authentik has not applied successfully yet, space-separated ("" when none); rc 1 when unreadable
     local out p miss=""
     out=$(ak_api GET "/managed/blueprints/?page_size=200") || return 1
