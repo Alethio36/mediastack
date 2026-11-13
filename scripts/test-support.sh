@@ -41,11 +41,11 @@ getent() { case "\$1 \$2" in
     "ahostsv4 portal.media.example-real.com") echo "192.168.70.36 STREAM portal" ;;
     ahosts*) echo "1.2.3.4 STREAM \$2" ;;
     *) command getent "\$@" ;; esac; }
-curl() { [[ "\$*" == *api.nordvpn.com* ]] && { echo "curl: (28) Connection timed out after 8001 ms"; return 28; }; printf '200 in 0.12s'; }
+curl() { [[ "\$*" == *api.nordvpn.com* ]] && { echo "curl: (28) Connection timed out after 8001 ms"; return 28; }; printf '200 0.120000'; }
 hostname() { [[ "\${1:-}" == -I ]] && echo "192.168.70.36 172.17.0.1" || command hostname "\$@"; }
 journalctl() { case "\$*" in
     "-k "*) echo "2026-11-12T03:00:00 kernel: Out of memory: Killed process 4242 (jellyfin)"; echo "2026-11-12T03:00:01 kernel: unrelated line" ;;
-    "-u docker"*) echo "2026-11-13T01:00:00 dockerd[1]: level=error msg=\"pull failed for 203.0.113.9\"" ;; esac; }
+    "-u docker"*) echo "2026-11-13T01:00:00 dockerd[1]: level=error msg=\"pull failed for 203.0.113.9\""; echo "-- No entries --" ;; esac; }
 docker() { # two containers: one healthy (its checks' noisy output), one whose last check failed
     case "\$*" in
         "ps -a"*) printf 'mediastack-good\nmediastack-bad\n' ;;
@@ -102,7 +102,9 @@ rec 20261113-010000-leak-test-1.log 1 \
     "portal https://portal.media.example-real.com and ldap.MEDIA.Example-Real.com:443" \
     "webhook https://discord.com/api/webhooks/1111/abcSECRET, https://admin:pw123@host.lan/x?token=zzz9&a=1, tgram://bot:chat" \
     "config at $home/mediastack/config, mail nick.real@gmail.com, pw Sup3rS3cretArrPass, url discord://12345/abcdefTOKENxyz" \
-    "ipv6 2001:db8:85a3::8a2e:370:7334 and fe80::1"
+    "ipv6 2001:db8:85a3::8a2e:370:7334 and fe80::1" \
+    "UA Chrome/142.0.0.0 Safari/537.36 from 203.0.113.9 at http://198.51.100.7/x, Version=21.0.0.0, LDAP Authentication_22.0.0.0" \
+    "Loaded plugin: TMDb 12.0.0.0 and 192.0.2.44 asked"
 run 'cmd_support --note "it broke, my pw is Sup3rS3cretArrPass"' || fail_ "support runs"
 b=$(bundle); [[ -n "$b" && "$(stat -c %a "$b")" == 600 ]] || fail_ "one file, yours alone"; pass
 for p in "the system" "the install" "settings (.env)" "the stack" "in progress" doctor "wire --verify" "run records"; do
@@ -118,6 +120,8 @@ for v in Sup3rS3cretArrPass 0123456789abcdef0123456789abcdef abcdefTOKENxyz exam
 done; pass
 grep -qF 'tunnel exits at <ip-1> (Datacamp)' "$b" && grep -qF 'the tunnel again <ip-1>;' "$b" || fail_ "a public address: one token, the same each time"; pass
 grep -qF 'LAN 192.168.69.1, stack 172.31.250.3' "$b" && grep -qF 'fe80::1' "$b" || fail_ "private addresses stay"; pass
+grep -qE 'UA Chrome/142\.0\.0\.0 Safari/537\.36 from <ip-[0-9]+> at http://<ip-[0-9]+>/x, Version=21\.0\.0\.0, LDAP Authentication_22\.0\.0\.0$' "$b" \
+    && grep -qE 'Loaded plugin: TMDb 12\.0\.0\.0 and <ip-[0-9]+> asked$' "$b" || fail_ "versions stay, addresses beside them go: $(grep -E 'UA Chrome|Loaded plugin' "$b")"; pass
 grep -qF 'https://portal.example.test and ldap.example.test:443' "$b" || fail_ "the domain, any case, keeps its names"; pass
 grep -qF '(<isp>, 61 blocks)' "$b" && grep -qF 'is <isp> (<isp>)' "$b" || fail_ "the ISP's number and name"; pass
 grep -qF 'https://discord.com/<redacted>' "$b" && grep -qF 'https://<redacted>@host.lan/x?token=<redacted>&a=1' "$b" \
@@ -153,7 +157,7 @@ mapfile -t order < <(grep '^--- 2026' "$b"); [[ "$(printf '%s\n' "${order[@]}" |
 # ---- reachability ----
 reset; rm -rf "$T/custom"; run 'cmd_support --note x' || fail_ "support runs (reach)"
 b=$(bundle)
-grep -qx "Jellyfin's plugin repository (repo.jellyfin.org): HTTP 200 in 0.12s" "$b" && grep -qx "GitHub's registry, ghcr.io (images) (ghcr.io): its name does not resolve" "$b" \
+grep -qx "Jellyfin's plugin repository (repo.jellyfin.org): HTTP 200 in 120 ms" "$b" && grep -qx "GitHub's registry, ghcr.io (images) (ghcr.io): its name does not resolve" "$b" \
     && grep -qx "NordVPN's API (the VPN key) (api.nordvpn.com): no answer — curl: (28) Connection timed out after 8001 ms" "$b" \
     || fail_ "each outside address: answered, unresolved, or no answer and why"; pass
 grep -qx "the stack's own names (portal.example.test): resolve to this host (192.168.70.36)" "$b" || fail_ "the portal's name points at this host"; pass
@@ -168,7 +172,9 @@ grep -qxE '2026-11-13T01:00:00Z user <email-[0-9]+> signed in from <ip-[0-9]+>' 
     || fail_ "--logs: each one's lines, redacted; an unknown one said"; pass
 grep -qx -- '--- custom/compose.d/mine.yml' "$b" && grep -qx '      MY_TOKEN: <secret:ARR_PASSWORD>' "$b" || fail_ "--custom: the files, a known secret still taken out"; pass
 grep -qx '  2026-11-12T03:00:00 kernel: Out of memory: Killed process 4242 (jellyfin)' "$b" && ! grep -q 'unrelated line' "$b" \
-    && grep -q 'dockerd\[1\]: level=error msg="pull failed for <ip-' "$b" || fail_ "--host-events: OOM kills and Docker's errors"; pass
+    && grep -q 'dockerd\[1\]: level=error msg="pull failed for <ip-' "$b" && ! grep -q -- '-- No entries --' "$b" \
+    || fail_ "--host-events: OOM kills and Docker's errors, journalctl's own chatter left out"; pass
+grep -qx "Jellyfin's plugin repository (repo.jellyfin.org): HTTP 200 in 120 ms" "$b" || fail_ "reachability timings in ms"; pass
 grep -q '^custom/ is in it: secrets you wrote there are not ones the stack knows' "$T/out" && grep -q "^Container logs are in it: they can hold people's names" "$T/out" \
     || fail_ "the summary warns what the asked-for parts may hold"; pass
 

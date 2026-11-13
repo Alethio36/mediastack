@@ -153,8 +153,8 @@ support_reach() {
     for e in "${SUPPORT_REACH[@]}"; do
         label=${e%%|*}; url=${e#*|}; host=${url#https://}; host=${host%%/*}
         if [[ -z "$(getent ahosts "$host" 2>/dev/null || true)" ]]; then echo "$label ($host): its name does not resolve"; continue; fi
-        if out=$(curl -sS -o /dev/null -m "$SUPPORT_REACH_WAIT" -w '%{http_code} in %{time_total}s' "$url" 2>&1); then
-            echo "$label ($host): HTTP $out"
+        if out=$(curl -sS -o /dev/null -m "$SUPPORT_REACH_WAIT" -w '%{http_code} %{time_total}' "$url" 2>&1); then
+            printf '%s (%s): HTTP %s in %.0f ms\n' "$label" "$host" "${out%% *}" "$(awk -v s="${out#* }" 'BEGIN { print s * 1000 }')"
         else echo "$label ($host): no answer — $(oneline "$out")"; fi
     done
     name=$(env_get STACK_DOMAIN)
@@ -194,7 +194,7 @@ support_host_events() { # the kernel's OOM kills (7 days) and the Docker daemon'
     echo "--- the kernel: processes killed for memory, last 7 days"
     sp_list "$(sudo journalctl -k --since -7d --no-pager -o short-iso 2>&1 | grep -iE 'out of memory|oom-kill|killed process' | tail -n 100 || true)"
     echo "--- the Docker daemon: errors, last 24 hours"
-    sp_list "$(sudo journalctl -u docker --since -24h --no-pager -o short-iso -p err 2>&1 | tail -n 100 || true)"
+    sp_list "$(sudo journalctl -u docker --since -24h --no-pager -o short-iso -p err 2>&1 | grep -v '^-- No entries --$' | tail -n 100 || true)"
 }
 
 support_doctor() { timeout "$SUPPORT_WAIT" "$SCRIPT_DIR/mediastack.sh" doctor 2>&1; }
@@ -279,11 +279,19 @@ $t =~ s{\b[A-Za-z0-9._%+-]+\@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b}{ $n{"e-mails"}++; t
 sub private4 { my @o = @_; return 1 if $o[0] == 10 || $o[0] == 127 || $o[0] == 0 || $o[0] >= 224;
     return 1 if $o[0] == 172 && $o[1] >= 16 && $o[1] <= 31; return 1 if $o[0] == 192 && $o[1] == 168;
     return 1 if $o[0] == 169 && $o[1] == 254; return 1 if $o[0] == 100 && $o[1] >= 64 && $o[1] <= 127; return 0; }
+# four-number versions look like addresses (Chrome/142.0.0.0, Version=21.0.0.0, Jellyfin plugin 12.0.0.0):
+# where the context says version, their dots are hidden from the address rule below and put back after it
+sub keep { (my $v = $_[0]) =~ tr/./\x{1}/; return $v; }
+$t =~ s{(?<=[A-Za-z]/)(\d+(?:\.\d+){3})\b}{keep($1)}ge;                 # the version of a product: Chrome/142.0.0.0
+$t =~ s{(?<=Version=)(\d+(?:\.\d+){3})\b}{keep($1)}gie;                 # an assembly version
+$t =~ s{(?<=_)(\d+(?:\.\d+){3})\b}{keep($1)}ge;                         # in a name: LDAP Authentication_22.0.0.0
+$t =~ s{(\b[Pp]lugin\b[^\n]{0,120}?\s)(\d+(?:\.\d+){3})\b}{$1 . keep($2)}ge;   # on a plugin line: Loaded plugin: TMDb 12.0.0.0
 # public addresses become tokens, the same address always the same one; private ranges stay (they explain routing)
 $t =~ s{(?<![\d.])(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})(?![\d.]*\d)}{
     my @o = ($1, $2, $3, $4);
     ((grep { $_ > 255 } @o) || private4(@o)) ? $& : do { $n{addresses}++; token(\%ip, "$1.$2.$3.$4", "ip") } }ge;
 $t =~ s{(?<![\w:])([23][0-9a-f]{3}(?::[0-9a-f]{0,4}){2,7})(?![\w:])}{ $n{addresses}++; token(\%ip6, lc $1, "ip6") }gie;
+$t =~ tr/\x{1}/./;
 print $t;
 for (sort keys %n) { printf STDERR "%s\t%d\n", $_, $n{$_}; }
 '
