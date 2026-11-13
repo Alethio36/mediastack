@@ -56,7 +56,7 @@ rewired. Each row's code lives in its service's folder.
 | secret | owner | holders (rewired by) | cost |
 |---|---|---|---|
 | `AUTHENTIK_DB_PASSWORD` | authentik's PostgreSQL role | server, worker (recreated) | portal down ~1 min |
-| `AUTHENTIK_SECRET_KEY` | server, worker (compose) | — | **everyone signed out**: portal, gated tools, panel |
+| `AUTHENTIK_SECRET_KEY` | server, worker (compose) | — | the portal's own sessions (the gates' are ended below) |
 | `AUTHENTIK_API_TOKEN` | its token in authentik | the script only | — |
 | `AUTHENTIK_ADMIN_PASSWORD` (akadmin) | authentik (`sc_rotate_portal`) | — | — |
 | `AUTHENTIK_LDAP_TOKEN` | the outpost's token in authentik | LDAP outpost (recreated) | Jellyfin sign-in down ~30 s |
@@ -73,6 +73,7 @@ rewired. Each row's code lives in its service's folder.
 | `WIZARR_API_KEY` | Wizarr | the script only | see spike 5 |
 | `MEILI_MASTER_KEY` | Meilisearch (compose) | JellySearch (compose) | search down until both are back |
 | `GLUETUN_CONTROL_APIKEY` | gluetun (compose) | — | **the VPN group restarts through the leak gate** |
+| **every session** (not a secret: the run's last step) | authentik (`DELETE /core/authenticated_sessions/<uuid>/` for each) | the gates' sessions end with them (authentik tells its outposts) | **everyone signed out**: portal, gated tools, panel, household gates |
 | the generated logins (arr, qBittorrent, Deluge, Transmission, Jellyfin's admin, Pi-hole, Traefik's dashboard, Audiobookshelf's root, Kavita's admin, Navidrome's admin) | each app (`sc_rotate_*`, non-interactive) | what `set-credentials` already updates | **companion apps** using a login; the operator's saved passwords |
 
 **Not rotated**, and said so at the end: the VPN's `WIREGUARD_PRIVATE_KEY` /
@@ -81,7 +82,12 @@ rewired. Each row's code lives in its service's folder.
 accounts: where to make a new one, then the command that takes it); Wizarr's
 admin (its UI only); the panel's fallback login (only its hash is stored —
 `frontdoor-install --set-password`); people's accounts and their Navidrome
-music-app passwords.
+music-app passwords. Inside authentik's database: the gates' `cookie_secret`
+(`mediastack-gate`, each `mediastack-house-<svc>`) — no API writes it, and a
+gate's sessions live in the database, so the secret alone opens nothing; and
+the "authentik Self-signed Certificate" that signs Audiobookshelf's and
+Kavita's sign-in tokens — authentik cannot regenerate a certificate in place
+and the blueprint finds it by name (roadmap, after the MVP).
 
 ## How one secret moves — **proposed**
 
@@ -113,8 +119,9 @@ secret is proven, so a put-back is always possible.
   authentik's (DB password, secret key, API token, akadmin, LDAP token, bind
   password, client secrets), Jellyfin's key, the arrs', Prowlarr's, Bazarr's,
   LazyLibrarian's, Seerr's, Cleanuparr's, Wizarr's, Meilisearch's, gluetun's,
-  then the generated logins. authentik first: everything after it may need
-  the portal's API.
+  the generated logins, then every session ended. authentik first: everything
+  after it may need the portal's API; the sessions last, so none opened
+  during the run outlives it.
 - **Per service** — each service declares its secrets with a `<svc>_secrets`
   function (one TSV line each: title, key, holders' roles, cost words) and
   rotates them with `<svc>_secret_rotate KEY NEW OLD`, as `<svc>_logins`
@@ -168,8 +175,16 @@ logins → the `set-credentials all` hint instead of the login line).
    minutes, the built-in outpost's own sign-in to the server (same container)
    and an error-report tag — nothing stored is encrypted with it. Live on the
    test box: a new key, `up` recreated server and worker, `wire --verify`
-   clean, doctor unchanged. Rotation: `.env`, recreate both. Sign-out itself
-   is proven with the build (no session existed during the spike).
+   clean, doctor unchanged. Rotation: `.env`, recreate both.
+   **It does not sign everyone out** (found live): the portal's session went,
+   radarr's through the gate stayed — a gate keeps its own session (its
+   cookie keyed by the gate's `cookie_secret`, the session in authentik's
+   database), ended only when the portal session it came from is deleted
+   (authentik's `pre_delete` hook tells its outposts) or when it expires. A
+   new key deletes no session row. Proven live: `DELETE
+   /core/authenticated_sessions/<uuid>/` for each, then radarr — untouched
+   since — went to the portal's sign-in. So the run ends every session
+   itself, as its last step.
 2. *Done (13 Nov 2026, from its source).* **API token and LDAP outpost
    token**: `POST /core/tokens/<identifier>/set_key/` sets a new key on the
    same token (`authentik-bootstrap-token`, `ak-outpost-<pk>-api`). The
