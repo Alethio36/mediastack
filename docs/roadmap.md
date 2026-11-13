@@ -192,9 +192,10 @@ agreed first:
    Navidrome admin and a 15-minute sync, services/navidrome/people.sh); doctor seeing the apps' own sends to the hub; a
    `--dry-run` smoke test (live on the test box). Renovate's report-only
    trial moved to step 13 (Nov 2026, see there).
-2. **Run records and the support bundle** — every run to `local/runs/`,
-   rotated; the bundle redacted by allowlist and shown before it is shared.
-   Design: [design-runs.md](design-runs.md) (*agreed*, 13 Nov 2026).
+2. *Done (Nov 2026):* **Run records and the support bundle** — every run to
+   `local/runs/`, rotated; the bundle redacted by allowlist and written as one
+   file the owner proofreads before sending (no pager). Design:
+   [design-runs.md](design-runs.md).
 3. *Done (Nov 2026):* **`wire` reads a setting back** after a write that timed out —
    every API helper marks a call that got no answer; when the run ends, each role
    that had one is read back with its own `wire <role> --verify` (lib/wire.sh,

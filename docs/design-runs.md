@@ -305,5 +305,5 @@ coming back empty.
    verbs) — proven live before step 2.
 2. The failure notice from the record; doctor's unfinished runs.
 3. `support`: the system stamp, the allowlist, redaction, the final check,
-   the pager.
+   the summary and the proofread warning.
 4. Each service's facts, service by service.
