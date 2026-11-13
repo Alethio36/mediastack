@@ -22,6 +22,10 @@
 #     for directory users and never touch local accounts
 #   * the base URL is set when unset or still mediastack's, never over one
 #     set in authentik's UI
+#   * values the blueprint reads from the worker (!Env) reach authentik: wire
+#     records them (as digests) at each apply and applies again when the
+#     worker's differ — --verify and doctor report it; an apply waits for the
+#     apply it asked for, even when the file was already applied
 #   * a first start: authentik is wired before jellyfin, and wire waits
 #     (bounded) for the blueprint to be discovered — a timeout is a failure,
 #     a dry run never waits
@@ -244,6 +248,8 @@ exp=$(jq -r '.expires' <<<"$body"); want=$(date -u -d '+7 days' +%s); got=$(date
 (( got - want < 120 && want - got < 120 )) || fail_ "expires in 7 days: $exp"; pass
 
 # ---- the base URL: set when unset or still ours, never over one set in the UI ----
+# (the worker's values: as applied, unless a section below says otherwise)
+authentik_blueprint_inputs_changed() { return 1; }; authentik_blueprint_inputs_record() { :; }
 state_get() { cat "$T/state" 2>/dev/null || true; }
 state_set() { echo "$2" > "$T/state"; }
 wire_gate() { :; }; http_ready() { :; }; hr() { :; }; info() { :; }; svc_enabled() { [[ "$1" == authentik ]]; }
@@ -325,7 +331,7 @@ ak_api() { echo "$1 $2" >> "$T/calls"
     case "$1 $2" in
         "GET /managed/blueprints/?page_size=200")
             h=$BP_CUR; [[ "$BP_APPLIED" == old ]] && h=deadbeef
-            jq -cn --arg h "$h" --arg st "${BP_STATUS:-successful}" '{results:([{name:"Mediastack - Portal", status:$st, last_applied_hash:$h, pk:"bp-1"}]
+            jq -cn --arg h "$h" --arg st "${BP_STATUS:-successful}" --arg at "$BP_APPLIED" '{results:([{name:"Mediastack - Portal", status:$st, last_applied_hash:$h, last_applied:$at, pk:"bp-1"}]
                 + ($ARGS.positional | map({path: ., status: "successful"})))}' --args "${AUTHENTIK_BLUEPRINT_NEEDS[@]}" ;;   # authentik's own defaults, listed beside ours
         "POST /managed/blueprints/bp-1/apply/") BP_APPLIED=new; echo '{}' ;;
         *) echo '{}' ;;
@@ -336,6 +342,59 @@ BP_STATUS=successful
 BP_APPLIED=old; sleep() { :; }
 [[ "$(authentik_blueprint_apply)" == successful ]] || fail_ "applying on demand brings the current file in"; pass
 grep -q '^POST /managed/blueprints/bp-1/apply/' "$T/calls" || fail_ "the apply goes through authentik's API"; pass
+# an unchanged file says "successful" before the apply runs: wait for the apply asked for
+applied_after() { # applied_after POLLS -> "STATUS after N sleeps" (authentik applies after POLLS looks)
+    ( echo 0 > "$T/tick"; sleep() { echo $(( $(cat "$T/tick") + 1 )) > "$T/tick"; }
+      ak_api() { case "$1 $2" in
+          "GET /managed/blueprints/?page_size=200")
+              at=t1; (( $(cat "$T/tick") >= POLLS )) && at=t2
+              jq -cn --arg h "$BP_CUR" --arg at "$at" '{results:([{name:"Mediastack - Portal", status:"successful", last_applied_hash:$h, last_applied:$at, pk:"bp-1"}]
+                  + ($ARGS.positional | map({path: ., status: "successful"})))}' --args "${AUTHENTIK_BLUEPRINT_NEEDS[@]}" ;;
+          *) echo '{}' ;; esac; }
+      POLLS=$1; st=$(authentik_blueprint_apply); echo "$st after $(cat "$T/tick")" )
+}
+[[ "$(applied_after 3)" == "successful after 3" ]] || fail_ "the file already applied: wait for authentik to apply again, not its old status: $(applied_after 3)"; pass
+[[ "$(applied_after 9999)" == "outdated after 90" ]] || fail_ "an apply that never runs: bounded, and not a success: $(applied_after 9999)"; pass
+
+# ---- the worker's values (the blueprint's !Env) ----
+inputs() { ( sudo() { [[ "$*" == "docker inspect -f "* ]] || return 1; [[ -z "$NOWORKER" ]] || return 1; printf '%s\n' "${ENVS[@]}"; }
+             svc_cname() { echo w; }; unset -f authentik_blueprint_inputs_changed authentik_blueprint_inputs_record
+             # shellcheck disable=SC1090  # the three real functions, back from their stubs
+             source <(sed -n '/^authentik_blueprint_inputs() {/,/^}/p; /^authentik_blueprint_inputs_changed() {/,/^}/p; /^authentik_blueprint_inputs_record() {/,/^}/p' services/authentik/authentik.sh)
+             state_get() { cat "$T/st-$1" 2>/dev/null || true; }; state_set() { printf '%s\n' "$2" > "$T/st-$1"; }
+             "$@" ) }
+rm -f "$T"/st-*; NOWORKER=
+ENVS=(PATH=/bin MEDIASTACK_PORTAL_TITLE=Mediastack MEDIASTACK_LDAP_BIND_PASSWORD='s3cr=t' AUTHENTIK_SECRET_KEY=k)
+out=$(inputs authentik_blueprint_inputs)
+[[ "$(cut -d' ' -f1 <<<"$out" | paste -sd' ' -)" == "MEDIASTACK_LDAP_BIND_PASSWORD MEDIASTACK_PORTAL_TITLE" ]] || fail_ "only the MEDIASTACK_ values, sorted: $out"; pass
+! grep -qE 's3cr=t|Mediastack' <<<"$out" || fail_ "a digest per value, never the value: $out"; pass
+r=$(inputs authentik_blueprint_inputs_changed; echo "rc=$?")
+[[ "$r" == *"no record"*"rc=0" ]] || fail_ "nothing recorded (an install from before this): apply once: $r"; pass
+inputs authentik_blueprint_inputs_record
+[[ "$(inputs authentik_blueprint_inputs_changed; echo "rc=$?")" == "rc=1" ]] || fail_ "as applied: nothing to do"; pass
+ENVS=(PATH=/bin MEDIASTACK_PORTAL_TITLE=Rotatetest MEDIASTACK_LDAP_BIND_PASSWORD='s3cr=t' MEDIASTACK_KAVITA_URL=https://k)
+r=$(inputs authentik_blueprint_inputs_changed; echo "rc=$?")
+[[ "$r" == $'MEDIASTACK_KAVITA_URL MEDIASTACK_PORTAL_TITLE\nrc=0' ]] || fail_ "a changed and a new value are named, the rest not: $r"; pass
+r=$(NOWORKER=1 inputs authentik_blueprint_inputs_changed; echo "rc=$?")
+[[ "$r" == "rc=2" ]] || fail_ "no worker to read: unreadable, never 'unchanged': $r"; pass
+# wire: a changed worker is applied; --verify says so and does not call it applied
+changed_wire() { # changed_wire DRY CHANGED-RC -> "applied|not recorded|not ok-line|ok-line" (what wire did)
+    ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
+      authentik_blueprint_status() { echo successful; }
+      authentik_blueprint_inputs_changed() { (( CRC == 0 )) && echo MEDIASTACK_PORTAL_TITLE; return "$CRC"; }
+      authentik_blueprint_inputs_record() { echo recorded > "$T/rec"; }
+      authentik_blueprint_apply() { echo applied > "$T/app"; echo successful; }
+      c_state() { echo exited; }; ok() { echo "OK $*"; }
+      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_lockout_alerts() { :; }
+      wire_authentik_gate() { :; }; panel_signin_check() { :; }
+      rm -f "$T/rec" "$T/app"; WIRE_DRY=$1 CRC=$2 WIRE_FAILS=0
+      wire_authentik > "$T/wout" 2>&1   # not in $( ): WIRE_FAILS is counted in this shell
+      echo "$(cat "$T/app" 2>/dev/null || echo none) $(cat "$T/rec" 2>/dev/null || echo none) fails=$WIRE_FAILS $(grep -c 'portal setup applied' "$T/wout")$(grep -o 'values changed: [A-Z_]*' "$T/wout" | sed 's/^/ /')" )
+}
+[[ "$(changed_wire 0 0)" == "applied recorded fails=0 1" ]] || fail_ "the worker changed: applied, recorded: $(changed_wire 0 0)"; pass
+[[ "$(changed_wire 1 0)" == "none none fails=0 0 values changed: MEDIASTACK_PORTAL_TITLE" ]] || fail_ "--verify: named, nothing applied, not called applied: $(changed_wire 1 0)"; pass
+[[ "$(changed_wire 0 1)" == "none none fails=0 1" ]] || fail_ "as applied: no apply: $(changed_wire 0 1)"; pass
+[[ "$(changed_wire 0 2)" == "none none fails=1 0" ]] || fail_ "the worker unreadable: a failure: $(changed_wire 0 2)"; pass
 
 # ---- a first start: one `wire` finishes it — authentik before jellyfin, and
 #      wire waits (bounded) for the blueprint to be discovered ----
