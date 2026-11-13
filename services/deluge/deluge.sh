@@ -18,7 +18,7 @@ deluge_rpc() { # deluge_rpc METHOD PARAMS-JSON-ARRAY -> its .result (JSON); rc 1
     local out
     out=$(curl -sS -m 20 -b "$DELUGE_JAR" -c "$DELUGE_JAR" -H 'Content-Type: application/json' \
           --data "$(jq -cn --arg m "$1" --argjson p "$2" '{method: $m, params: $p, id: 1}')" \
-          "$(deluge_url)/json" 2>&1) || { echo "unreachable: $out"; return 1; }
+          "$(deluge_url)/json" 2>&1) || { api_timed_out $? && api_unanswered POST 20 || echo "unreachable: $out"; return 1; }
     jq -e '.error == null' <<<"$out" >/dev/null 2>&1 || { echo "$(jq -r '.error.message // .' <<<"$out" 2>/dev/null || echo "$out")"; return 1; }
     jq -c '.result' <<<"$out"
 }

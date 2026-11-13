@@ -13,10 +13,9 @@ CUP_CODE_F="${TMPDIR:-/tmp}/.mediastack-cup-code.$$"
 cup_code() { cat "$CUP_CODE_F" 2>/dev/null || echo 000; }
 cup_api() { # cup_api METHOD PATH AUTHHDR [json-body] -> body; rc = http 2xx
     local m="$1" p="$2" hdr="$3" b="${4:-}" out code
-    if ! out=$(curl -sS -m 20 -X "$m" ${hdr:+-H "$hdr"} -H "Content-Type: application/json" \
-          ${b:+-d "$b"} -w $'\n%{http_code}' "$(cup_url)/api$p" 2>&1); then
-        printf '000' > "$CUP_CODE_F"; echo "$out"; return 1
-    fi
+    out=$(curl -sS -m 20 -X "$m" ${hdr:+-H "$hdr"} -H "Content-Type: application/json" \
+          ${b:+-d "$b"} -w $'\n%{http_code}' "$(cup_url)/api$p" 2>&1) \
+        || { local rc=$?; printf '000' > "$CUP_CODE_F"; api_timed_out "$rc" && api_unanswered "$m" 20 || echo "$out"; return 1; }
     code=${out##*$'\n'}; printf '%s' "$code" > "$CUP_CODE_F"
     echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]

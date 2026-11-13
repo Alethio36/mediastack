@@ -22,7 +22,7 @@ transmission_rpc() { # transmission_rpc METHOD ARGUMENTS-JSON -> its .arguments 
     for _ in 1 2; do   # the first answer may be 409 with the session id to use
         out=$(curl -sS -m 20 -u "$(env_get TRANSMISSION_USER):$(env_get TRANSMISSION_PASSWORD)" \
               -H "X-Transmission-Session-Id: $TRANSMISSION_SID" -D - --data "$body" "$(transmission_url)" 2>&1) \
-            || { echo "unreachable: $out"; return 1; }
+            || { api_timed_out $? && api_unanswered POST 20 || echo "unreachable: $out"; return 1; }
         code=$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$out")
         if [[ "$code" == 409 ]]; then
             TRANSMISSION_SID=$(sed -n 's/^X-Transmission-Session-Id: *\([^[:space:]]*\).*/\1/Ip' <<<"$out" | sed -n 1p); continue

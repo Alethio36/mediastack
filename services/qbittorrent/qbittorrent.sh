@@ -50,7 +50,7 @@ qb_api() { # qb_api PATH [data...] (form-encoded) -> body on stdout, rc from htt
     local args=(); local a; for a in "$@"; do args+=(--data-urlencode "$a"); done
     local out code
     out=$(curl -sS -m 20 -b "$QB_COOKIE" "${args[@]}" -w '\n%{http_code}' \
-          "$(qb_url)/api/v2$p" 2>&1) || { echo "$out"; return 1; }
+          "$(qb_url)/api/v2$p" 2>&1) || { api_timed_out $? && api_unanswered "$( (( $# )) && echo POST || echo GET)" 20 || echo "$out"; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
 }

@@ -15,7 +15,7 @@ nd_url() { local p; p=$(svc_hostport navidrome) || return 1; echo "http://127.0.
 nd_api() { # nd_api METHOD PATH TOKEN [json] -> body; rc from HTTP (2xx)
     local out code
     out=$(curl -sS -m 30 -X "$1" -H "Content-Type: application/json" ${3:+-H "X-ND-Authorization: Bearer $3"} \
-          ${4:+-d "$4"} -w '\n%{http_code}' "$(nd_url)$2" 2>&1) || { echo "$out"; return 1; }
+          ${4:+-d "$4"} -w '\n%{http_code}' "$(nd_url)$2" 2>&1) || { api_timed_out $? && api_unanswered "$1" 30 || echo "$out"; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
 }

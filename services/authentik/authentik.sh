@@ -114,7 +114,7 @@ ak_api() { # ak_api METHOD PATH [json] -> body on stdout; rc from HTTP (authenti
     local m="$1" p="$2" b="${3:-}" out code
     out=$(curl -sS -m "${API_TIMEOUT:-20}" -X "$m" -H "Authorization: Bearer $(env_get AUTHENTIK_API_TOKEN)" \
           -H "Content-Type: application/json" ${b:+-d "$b"} -w '\n%{http_code}' "$(authentik_url)/api/v3$p" 2>&1) \
-        || { local rc=$?; if (( rc == 28 )); then api_unanswered "$m" "${API_TIMEOUT:-20}"; else echo "$out"; fi; return 1; }
+        || { local rc=$?; if api_timed_out "$rc"; then api_unanswered "$m" "${API_TIMEOUT:-20}"; else echo "$out"; fi; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
 }

@@ -14,10 +14,9 @@ SEERR_CODE_F="${TMPDIR:-/tmp}/.mediastack-seerr-code.$$"
 seerr_code() { cat "$SEERR_CODE_F" 2>/dev/null || echo 000; }
 seerr_api() { # seerr_api METHOD PATH JAR [json-body] -> body; rc = http 2xx
     local m="$1" p="$2" jar="$3" b="${4:-}" out code
-    if ! out=$(curl -sS -m 30 -X "$m" -b "$jar" -c "$jar" -H "Content-Type: application/json" \
-          ${b:+-d "$b"} -w $'\n%{http_code}' "$(seerr_url)/api/v1$p" 2>&1); then
-        printf '000' > "$SEERR_CODE_F"; echo "$out"; return 1
-    fi
+    out=$(curl -sS -m 30 -X "$m" -b "$jar" -c "$jar" -H "Content-Type: application/json" \
+          ${b:+-d "$b"} -w $'\n%{http_code}' "$(seerr_url)/api/v1$p" 2>&1) \
+        || { local rc=$?; printf '000' > "$SEERR_CODE_F"; api_timed_out "$rc" && api_unanswered "$m" 30 || echo "$out"; return 1; }
     code=${out##*$'\n'}; printf '%s' "$code" > "$SEERR_CODE_F"
     echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]

@@ -261,11 +261,10 @@ jf_code() { cat "$JF_CODE_F" 2>/dev/null || echo 000; }
 jf_url() { local p; p=$(svc_hostport jellyfin) || return 1; echo "http://127.0.0.1:$p"; }
 jf_api() { # jf_api METHOD PATH TOKEN [json-body] -> body on stdout; rc = http 2xx
     local m="$1" p="$2" tok="$3" b="${4:-}" out code
-    if ! out=$(curl -sS -m 20 -X "$m" -H "$(jf_auth_hdr "$tok")" \
+    out=$(curl -sS -m 20 -X "$m" -H "$(jf_auth_hdr "$tok")" \
           -H "Content-Type: application/json" \
-          ${b:+-d "$b"} -w $'\n%{http_code}' "$(jf_url)$p" 2>&1); then
-        printf '000' > "$JF_CODE_F"; echo "$out"; return 1
-    fi
+          ${b:+-d "$b"} -w $'\n%{http_code}' "$(jf_url)$p" 2>&1) \
+        || { local rc=$?; printf '000' > "$JF_CODE_F"; api_timed_out "$rc" && api_unanswered "$m" 20 || echo "$out"; return 1; }
     code=${out##*$'\n'}; printf '%s' "$code" > "$JF_CODE_F"
     echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]

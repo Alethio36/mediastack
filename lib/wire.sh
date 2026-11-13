@@ -31,7 +31,67 @@ WIRE_ARRS_OK=0   # wire_arrs_ready passed this run
 wire_is_blind() { local r; for r in "${WIRE_BLIND[@]}"; do [[ "$1" == "$r" ]] && return 0; done; return 1; }
 WIRE_FAIL_LIST=()   # one line per failure, named by its step, for the summary
 WIRE_STEP=""        # the step running (cmd_wire sets it)
-wfail() { fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); WIRE_FAIL_LIST+=("${WIRE_STEP:+$WIRE_STEP: }${1%%$'\n'*}"); }
+wfail() {
+    fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); WIRE_FAIL_LIST+=("${WIRE_STEP:+$WIRE_STEP: }${1%%$'\n'*}")
+    wire_unanswered_take && WIRE_FAIL_UNANSWERED+=("$(( ${#WIRE_FAIL_LIST[@]} - 1 ))")   # this failure followed a call that got no answer
+    return 0
+}
+
+# ---- a call that got no answer (MVP step 3) ----
+# The app may still have made the change, after the timeout. Every API helper
+# marks such a call (api_timed_out, from inside its $( ): a file, not a
+# variable); the failure that follows it is noted as unanswered; when the run
+# ends, each role that had one is read back with its own `wire <role> --verify`
+# in a separate process: nothing missing, and those failures are taken back.
+# A role that writes blind (WIRE_BLIND) cannot be read back: its stand.
+WIRE_UNANSWERED_F=""     # made by cmd_wire; one line per call that got no answer since the last failure
+WIRE_FAIL_UNANSWERED=()  # indexes into WIRE_FAIL_LIST of failures that followed one
+WIRE_LATE_WAIT=20        # seconds an app gets to finish late before it is read back
+api_timed_out() { # api_timed_out CURL-RC -> rc 0 when it was a timeout (marked for wire's read-back)
+    (( $1 == 28 )) || return 1
+    [[ -n "$WIRE_UNANSWERED_F" ]] && echo x >> "$WIRE_UNANSWERED_F"
+    return 0
+}
+wire_unanswered_take() { # a call got no answer since the last failure: say so once, and forget it
+    [[ -n "$WIRE_UNANSWERED_F" && -s "$WIRE_UNANSWERED_F" ]] || return 1
+    : > "$WIRE_UNANSWERED_F"
+}
+wire_unanswered_roles() { # the roles with an unanswered failure, once each
+    local i; for i in "${WIRE_FAIL_UNANSWERED[@]}"; do echo "${WIRE_FAIL_LIST[i]%%: *}"; done | sort -u
+}
+wire_unanswered_cleanup() { [[ -n "$WIRE_UNANSWERED_F" ]] && rm -f "$WIRE_UNANSWERED_F"; return 0; }
+wire_recheck() { # when the run ends: read back each role that had a call go unanswered
+    local role out rc i n
+    local -a keep=() still=()
+    (( ${#WIRE_FAIL_UNANSWERED[@]} )) || return 0
+    hr "wire: reading back what got no answer"
+    info "an app did not answer in time — it may have made the change late: waiting ${WIRE_LATE_WAIT}s, then reading back"
+    sleep "$WIRE_LATE_WAIT"
+    for role in $(wire_unanswered_roles); do
+        if wire_is_blind "$role"; then
+            warn "$role: it writes blind, so it cannot be read back — check it in its own page, or run: ./mediastack.sh wire $role"
+            continue
+        fi
+        # its own process, with the usual timeouts (not an API_TIMEOUT this run was given)
+        rc=0; out=$(env -u API_TIMEOUT MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" wire "$role" --verify 2>&1) || rc=$?
+        if (( rc == 0 )); then
+            # take this role's unanswered failures off; the others keep their place (re-indexed)
+            n=0; keep=(); still=()
+            for i in "${!WIRE_FAIL_LIST[@]}"; do
+                if [[ " ${WIRE_FAIL_UNANSWERED[*]} " == *" $i "* ]]; then
+                    if [[ "${WIRE_FAIL_LIST[i]%%: *}" == "$role" ]]; then n=$((n + 1)); continue; fi
+                    still+=("${#keep[@]}")
+                fi
+                keep+=("${WIRE_FAIL_LIST[i]}")
+            done
+            WIRE_FAIL_LIST=("${keep[@]}"); WIRE_FAIL_UNANSWERED=("${still[@]}"); WIRE_FAILS=$((WIRE_FAILS - n))
+            ok "$role: read back — everything is in place: what got no answer was done late ($n failure(s) taken back)"
+        else
+            warn "$role: read back — not everything is in place; its failure(s) stand:"
+            grep -E 'would:|FAIL' <<<"$out" | sed -n 1,8p | sed 's/^/    /' || true
+        fi
+    done
+}
 wire_apply_settings() { # wire_apply_settings "PENDING-BEFORE" — recreate what wire's own .env writes changed
     # (the stack's admin names, say: authentik's worker reserves them at start).
     # Only what became pending during this run: anything pending before is up's to apply.
@@ -66,7 +126,7 @@ w_would() { # w_would "description" -> 0 if execution should proceed
 
 api_unanswered() { # api_unanswered METHOD SECONDS -> why a call that timed out failed: unanswered, which a write may survive
     if [[ "$1" == GET ]]; then echo "no answer within ${2}s"
-    else echo "no answer within ${2}s — the change may still have been made: ./mediastack.sh wire --verify shows whether it was"; fi
+    else echo "no answer within ${2}s — the change may still have been made: wire reads it back at the end"; fi
 }
 
 api() { # api METHOD URL APIKEY [json-body] -> body on stdout, rc from http
@@ -75,7 +135,7 @@ api() { # api METHOD URL APIKEY [json-body] -> body on stdout, rc from http
     local m="$1" u="$2" k="$3" b="${4:-}" out code
     out=$(curl -sS -m "${API_TIMEOUT:-20}" -X "$m" -H "X-Api-Key: $k" -H "Content-Type: application/json" \
           ${b:+-d "$b"} -w '\n%{http_code}' "$u" 2>&1) \
-        || { local rc=$?; if (( rc == 28 )); then api_unanswered "$m" "${API_TIMEOUT:-20}"; else echo "$out"; fi; return 1; }
+        || { local rc=$?; if api_timed_out "$rc"; then api_unanswered "$m" "${API_TIMEOUT:-20}"; else echo "$out"; fi; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
 }
@@ -230,9 +290,11 @@ cmd_wire() {
     # so there is no second list to keep in sync with the one above.
     local role skipped="" pending_before=""
     (( WIRE_DRY || WIRE_VERIFY )) || pending_before=$(compose_pending)
+    WIRE_UNANSWERED_F=$(mktemp); on_exit wire_unanswered_cleanup
     if [[ "$section" == all ]]; then
         for role in "${WIRE_ROLES[@]}"; do
             if (( WIRE_VERIFY )) && wire_is_blind "$role"; then skipped+="$role "; continue; fi
+            : > "$WIRE_UNANSWERED_F"   # a timeout belongs to the role it happened in
             WIRE_STEP=$role; "wire_$role"
         done
     else
@@ -254,6 +316,7 @@ cmd_wire() {
     else
         mkdir -p "$LOCAL_DIR"; touch "$WIRED_FILE"; repo_owned "$LOCAL_DIR" "$WIRED_FILE"
         WIRE_STEP=apply; wire_apply_settings "$pending_before"; WIRE_STEP=""
+        wire_recheck
         if (( WIRE_FAILS )); then
             fail "wire finished with $WIRE_FAILS failure(s):"
             wire_fail_summary
