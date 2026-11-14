@@ -262,12 +262,22 @@ authentik_blueprint_inputs_changed() { # -> the names whose value differs from t
     [[ "$now" != "$was" ]] || return 1
     LC_ALL=C comm -3 <(printf '%s\n' "$was") <(printf '%s\n' "$now") | awk '{print $1}' | LC_ALL=C sort -u | paste -sd' ' -
 }
+authentik_applied_by_this_worker() { # authentik's last apply of the portal setup finished after this worker started: it ran on the values this worker holds
+    # (a first wire: the restore point waited out authentik's own first pass —
+    # applying again would cost minutes for nothing, found live Nov 2026)
+    local at started
+    at=$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied // empty' 2>/dev/null) || return 1
+    started=$(sudo docker inspect -f '{{.State.StartedAt}}' "$(svc_cname authentik-worker)" 2>/dev/null) || return 1
+    [[ -n "$at" && -n "$started" ]] || return 1
+    (( $(date -d "$at" +%s) > $(date -d "$started" +%s) ))
+}
 authentik_blueprint_inputs_record() { # after a successful apply: what the worker held is what authentik has
     local now; now=$(authentik_blueprint_inputs) || return 1
     state_set "$AUTHENTIK_INPUTS_STATE" "$now"
 }
 
 AUTHENTIK_DISCOVER_WAIT=300   # seconds: how long a first start may take to discover the blueprint
+AUTHENTIK_APPLY_WAIT=600      # seconds: how long one apply of the portal setup may take (4m10s seen live)
 authentik_blueprint_discovered() { # wait for authentik to discover the blueprint; -> its status ("" if it never does)
     local st waited=0
     while :; do
@@ -359,12 +369,14 @@ authentik_blueprint_apply() { # apply the current file now instead of waiting fo
     pk=$(jq -r '.pk // empty' <<<"$inst"); [[ -n "$pk" ]] || { echo ""; return 0; }
     ak_api POST "/managed/blueprints/$pk/apply/" >/dev/null || { echo "unreadable (apply refused)"; return 0; }
     local was; was=$(jq -r '.last_applied // ""' <<<"$inst")
-    for t in $(seq 1 90); do   # the apply may be queued behind other tasks: up to three minutes (found live: one was not enough)
-        # done once authentik has applied since we asked: an unchanged file
-        # already says "successful" before this apply ran
+    # done once authentik has applied since we asked (an unchanged file already
+    # says "successful" before this apply ran). An apply takes minutes: 4m10s
+    # live on a fresh install (Nov 2026), past the three this waited before.
+    for (( t = 0; t < AUTHENTIK_APPLY_WAIT; t += 2 )); do
         if [[ "$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied // ""' 2>/dev/null)" != "$was" ]]; then
             authentik_blueprint_status; return 0
         fi
+        if (( t && t % 30 == 0 )); then info "authentik is still applying mediastack's portal setup (${t}s — an apply takes minutes)..." >&2; fi
         sleep 2
     done
     echo outdated
@@ -547,7 +559,9 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
             local st; st=$(authentik_blueprint_status)
             case "$st" in
                 successful)
-                    local changed rc=0; changed=$(authentik_blueprint_inputs_changed) || rc=$?
+                    local changed rc=0
+                    if [[ -z "$(state_get "$AUTHENTIK_INPUTS_STATE")" ]] && authentik_applied_by_this_worker; then rc=1   # applied on this worker's values; wire records them
+                    else changed=$(authentik_blueprint_inputs_changed) || rc=$?; fi
                     case $rc in
                         1) ok "authentik: mediastack's portal setup applied (groups, sign-up by invitation)" ;;
                         0) warn "authentik: mediastack's portal setup was applied with other values than the worker has now ($changed) — apply them: ./mediastack.sh wire authentik" ;;
@@ -650,7 +664,12 @@ wire_authentik() {
         outdated) why="an earlier version is in place" ;;
         error)    why="its last apply failed" ;;
         successful)
-            changed=$(authentik_blueprint_inputs_changed) || rc=$?
+            if [[ -z "$(state_get "$AUTHENTIK_INPUTS_STATE")" ]] && authentik_applied_by_this_worker; then
+                rc=1   # no record, but its last apply ran on this worker: current — recorded, not applied again
+                (( WIRE_DRY )) || authentik_blueprint_inputs_record || wfail "authentik: the worker's values are unreadable — is authentik-worker running? ./mediastack.sh status"
+            else
+                changed=$(authentik_blueprint_inputs_changed) || rc=$?
+            fi
             case $rc in
                 0) why="the worker's values changed: $changed" ;;
                 2) wfail "authentik: the worker's values are unreadable — is authentik-worker running? ./mediastack.sh status"; return 0 ;;
