@@ -9,6 +9,9 @@
 #     the health gate; a daemon error dies at once with compose's message, even when
 #     the lines it interrupted mention health (found live Nov 2026: a restore waited
 #     400s and blamed gluetun for olivetin's failed mount)
+#   * pulls: what is missing is pulled first, a one-off registry refusal
+#     retried (found live Nov 2026: a throttled pull ended a first install),
+#     a lasting one stops the start; apply_up pulls its services, not up's flags
 # Sources the real entrypoint (minus its last line, main "$@"); svc_enabled,
 # svc_cname and c_health are stubs.
 #
@@ -42,7 +45,7 @@ up_race && fail_ "gluetun disabled: not the race — up stops with compose's err
 # ---- apply_up: which compose failures the health gate may adjudicate ----
 set +e +E; trap - ERR
 APPLY_VERB=restore
-apply_with() { DC() { printf '%s\n' "$COMPOSE_ERR" >&2; return 1; }; ( apply_up --remove-orphans gluetun ) 2>&1; echo "rc=$?"; }
+apply_with() { DC() { [[ "$1" == pull ]] && return 0; printf '%s\n' "$COMPOSE_ERR" >&2; return 1; }; ( apply_up --remove-orphans gluetun ) 2>&1; echo "rc=$?"; }
 COMPOSE_ERR=' Container mediastack-gluetun Error dependency failed to start: container mediastack-gluetun is unhealthy
 dependency failed to start: container mediastack-gluetun is unhealthy'
 out=$(apply_with)
@@ -58,5 +61,20 @@ COMPOSE_ERR='service "jellyfin" depends on undefined service "nope": invalid com
 out=$(apply_with); [[ "$out" == *"non-health reason"* && "$out" != *"rc=0" ]] || fail_ "a broken config: dies — $out"; pass
 COMPOSE_ERR=' Container mediastack-qbittorrent not started: condition "service_healthy" of service "gluetun" not reached: container mediastack-gluetun is unhealthy'
 out=$(apply_with); [[ "$out" == *"deferring"*"rc=0" ]] || fail_ "compose 5 words a health wait as a condition not reached: deferred — $out"; pass
+
+# ---- pulls: a registry's one-off refusal is retried, a lasting one stops the start ----
+T=$(mktemp -d); trap 'rm -f "$lib"; rm -rf "$T"' EXIT
+pm() { # pm FAILS-BEFORE-SUCCESS -> "rc=N pulls=N"
+    ( echo 0 > "$T/n"; sleep() { :; }; warn() { :; }
+      DC() { local n; n=$(( $(cat "$T/n") + 1 )); echo "$n" > "$T/n"; [[ "$*" == "pull --policy missing"* ]] || return 9; (( n > FAILS )); }
+      FAILS=$1; rc=0; pull_missing jellyfin || rc=$?; echo "rc=$rc pulls=$(cat "$T/n")" )
+}
+[[ "$(pm 0)" == "rc=0 pulls=1" ]] || fail_ "pulls fine: once: $(pm 0)"; pass
+[[ "$(pm 2)" == "rc=0 pulls=3" ]] || fail_ "two refusals, then through: retried, the start goes on: $(pm 2)"; pass
+[[ "$(pm 9)" == "rc=1 pulls=3" ]] || fail_ "refused every time: bounded, then a failure: $(pm 9)"; pass
+r=$(declare -f cmd_up); r=${r%%DC up -d*}
+[[ "$r" == *pull_missing* ]] || fail_ "up pulls, retried, before it starts anything"; pass
+r=$(DC() { echo "$*" >> "$T/args"; return 0; }; : > "$T/args"; ( apply_up -d --remove-orphans gluetun qbittorrent ) >/dev/null 2>&1; sed -n 1p "$T/args")
+[[ "$r" == "pull --policy missing gluetun qbittorrent" ]] || fail_ "update's and restore's apply pull its services first, without up's flags: $r"; pass
 
 echo "test-up-race: $checks checks passed"

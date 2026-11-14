@@ -804,7 +804,9 @@ pin_shard_to() { # pin_shard_to <primary> <tag> — the primary, and every membe
 # adjudicate; every other up failure (a daemon error, broken config, image
 # pull) still dies loudly with compose's message. Never swallow one.
 apply_up() {
-    local rerr rc
+    local rerr rc a svcs=()
+    for a in "$@"; do [[ "$a" == -* ]] || svcs+=("$a"); done   # pull takes the services, not up's flags
+    pull_missing "${svcs[@]}" || die "$APPLY_VERB: pulling the images failed $PULL_TRIES times — the registry's message is above. Nothing further was applied."
     rerr=$(mktemp)
     if DC up -d "$@" 2>"$rerr"; then
         cat "$rerr" >&2; rm -f "$rerr"; return 0

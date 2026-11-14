@@ -659,6 +659,21 @@ $(sed 's/^/  /' <<<"$found")
 }
 
 # ------------------------------------------- up/down/enable/disable/logs --
+PULL_TRIES=3; PULL_WAIT=5
+pull_missing() { # pull_missing [SVC...] — the images not on this host yet, retried: a registry's one-off refusal never stops a start
+    # Compose pulls what is missing as it starts and does not retry: one
+    # throttled pull ("retry-after: 486µs", lscr.io) ended a first install
+    # (found live Nov 2026). Missing only: an image already here is left as
+    # it is (updates are update's job).
+    local try
+    for (( try = 1; try <= PULL_TRIES; try++ )); do
+        DC pull --policy missing "$@" && return 0
+        (( try < PULL_TRIES )) || break
+        warn "an image pull failed (the registry's message is above) — trying again in ${PULL_WAIT}s (attempt $((try + 1)) of $PULL_TRIES)"
+        sleep "$PULL_WAIT"
+    done
+    return 1
+}
 up_race() { # the one start failure a retry fixes: gluetun enabled but not yet healthy after a recreate
     svc_enabled gluetun && [[ "$(c_health "$(svc_cname gluetun)")" != healthy ]]
 }
@@ -690,6 +705,9 @@ cmd_up()   {
     mapfile -t group < <(vpn_group)
     if (( ${#group[@]} )); then
         svc_enabled gluetun || die "VPN'd services are enabled (${group[*]}) but gluetun is not — enable gluetun, or move them out of the VPN (./mediastack.sh vpn)"
+    fi
+    pull_missing || die "Pulling the images failed $PULL_TRIES times — the registry's message is above. Nothing was started. Try again shortly: ./mediastack.sh up"
+    if (( ${#group[@]} )); then
         mapfile -t rest < <(svc_enabled_managed | grep -vxF -f <(printf '%s\n' "${group[@]}"))
         DC up -d --remove-orphans "${rest[@]}" \
             || die "Starting the stack failed — compose's error is above. Nothing VPN'd was started. Fix it, then: ./mediastack.sh up"

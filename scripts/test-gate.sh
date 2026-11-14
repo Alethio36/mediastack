@@ -158,18 +158,18 @@ sudo() { :; }
 leak_gate_up() { echo "gate" >> "$UP_LOG"; (( GATE_RC != 1 )) || exit 1; }
 GATE_RC=0; : > "$UP_LOG"
 (cmd_up) > /dev/null 2>&1 || fail_ "up runs through — $(cat "$UP_LOG")"; pass
-[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d --remove-orphans gluetun jellyfin|wait --recover gluetun|gate|DC up -d --remove-orphans|guard" ]] \
+[[ "$(paste -sd'|' "$UP_LOG")" == "DC pull --policy missing|DC up -d --remove-orphans gluetun jellyfin|wait --recover gluetun|gate|DC up -d --remove-orphans|guard" ]] \
     || fail_ "everything but the group, gluetun proven, then the group ($(paste -sd'|' "$UP_LOG"))"; pass
 GATE_RC=1; : > "$UP_LOG"
 (cmd_up) > /dev/null 2>&1 && fail_ "a FAIL at the gate ends up"; pass
-[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d --remove-orphans gluetun jellyfin|wait --recover gluetun|gate" ]] \
+[[ "$(paste -sd'|' "$UP_LOG")" == "DC pull --policy missing|DC up -d --remove-orphans gluetun jellyfin|wait --recover gluetun|gate" ]] \
     || fail_ "and the group is never started ($(paste -sd'|' "$UP_LOG"))"; pass
 ENABLED="qbittorrent sonarr jellyfin"; : > "$UP_LOG"
 out=$( (cmd_up) 2>&1 ) && fail_ "VPN'd services without gluetun: refused"; pass
 [[ "$out" == *"but gluetun is not"* && ! -s "$UP_LOG" ]] || fail_ "before anything starts — $out"; pass
 ENABLED="jellyfin"; : > "$UP_LOG"
 (cmd_up) > /dev/null 2>&1 || fail_ "no VPN at all: up as before"; pass
-[[ "$(paste -sd'|' "$UP_LOG")" == "DC up -d --remove-orphans|guard" ]] || fail_ "one phase, no gate ($(paste -sd'|' "$UP_LOG"))"; pass
+[[ "$(paste -sd'|' "$UP_LOG")" == "DC pull --policy missing|DC up -d --remove-orphans|guard" ]] || fail_ "one phase, no gate ($(paste -sd'|' "$UP_LOG"))"; pass
 
 # ---- the verb's arguments ----
 out=$( (cmd_leak_test --bogus) 2>&1 ) && fail_ "an unknown argument: refused"; pass
