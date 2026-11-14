@@ -191,7 +191,7 @@ agreed first:
    disabled when their portal account goes (*done, Nov 2026*: a stack-owned
    Navidrome admin and a 15-minute sync, services/navidrome/people.sh); doctor seeing the apps' own sends to the hub; a
    `--dry-run` smoke test (live on the test box). Renovate's report-only
-   trial moved to step 13 (Nov 2026, see there).
+   trial moved to step 14 (Nov 2026, see there).
 2. *Done (Nov 2026):* **Run records and the support bundle** — every run to
    `local/runs/`, rotated; the bundle redacted by allowlist and written as one
    file the owner proofreads before sending (no pager). Design:
@@ -211,22 +211,28 @@ agreed first:
 8. **VPN depth** — provider by provider, from gluetun's wiki.
 9. **The household's look** — notifications, then branding.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
-11. **The README as a chapter-style tutorial** and the built-in how-to page.
-12. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
+11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
+    repo read for inefficiencies, dead code, redundancies and needless
+    complexity (state of its own kept about another app, timings guessed),
+    each finding fixed or filed; with it, why one apply of the portal's setup
+    takes four minutes (seen live, Nov 2026). Before the README, so it
+    describes what is left.
+12. **The README as a chapter-style tutorial** and the built-in how-to page.
+13. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
     dependency layers below; Wizarr sign-in live; `restore --service
     authentik`, Kavita and Audiobookshelf restores; the household's own preset
     from an answers file.
-13. **Versions from the repo** — the final step, locking in a working
+14. **Versions from the repo** — the final step, locking in a working
     configuration, with Renovate's report-only trial; see its section.
-14. **`migrate`** — the first household.
+15. **`migrate`** — the first household.
 
-Until step 13, updates stay "update, then fix": a broken install beats one
+Until step 14, updates stay "update, then fix": a broken install beats one
 with a known hole. Hidden costs on record: step 5 changes every gated route
 (proven on a keeper install's `upgrade`); steps 8 and 10 depend on upstream
-(gluetun's providers, Dispatcharr's maturity); step 13 ships pins, Renovate
+(gluetun's providers, Dispatcharr's maturity); step 14 ships pins, Renovate
 and script auto-update together or installs freeze.
 
-**Finding hidden service dependencies** (decided Nov 8 2026; step 12) — a
+**Finding hidden service dependencies** (decided Nov 8 2026; step 13) — a
 hand-picked preset list only tests what was thought of, and the dependencies
 live in the shell code, not in compose (`svc_deps` sees only `depends_on` and
 `network_mode`). Three layers, cheapest first: (1) a static audit in CI —
