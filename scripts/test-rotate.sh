@@ -222,4 +222,10 @@ r=$( ( svc_cname() { echo mediastack-authentik-db; }
        sudo() { cat >/dev/null; echo "$*" > "$T/c"; echo 1; }; ak_db_password_opens pw >/dev/null; cat "$T/c" ) )
 [[ "$r" != *pw* && "$r" == *" mediastack-authentik-db" ]] || fail_ "the password goes on stdin, never the command line; the host is its container name: $r"; pass
 
+# the stack's own logins are set-credentials' job: the end names them, with the command
+r=$(logins_list() { printf 'x\tU\tP\n'; }; env_get() { :; }; rotate_box_lines search)
+[[ "$r" == *"the stack's own logins"*"set-credentials <target|all>"* ]] || fail_ "logins on this install: named under Not rotated, with the command: $r"; pass
+r=$(logins_list() { :; }; env_get() { :; }; rotate_box_lines search)
+[[ "$r" != *"stack's own logins"* ]] || fail_ "no logins: no line about them: $r"; pass
+
 echo "OK rotate: $checks checks"

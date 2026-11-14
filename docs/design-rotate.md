@@ -38,17 +38,18 @@ proven live; slice 2 (every key outside authentik) built and proven live; slice 
 2. **authentik's secret key and Meilisearch's master key are in.** Their
    costs (everyone signed out; JellySearch re-wired, re-indexed if the spike
    says so) are said up front, not avoided. A rarely used tool.
-3. **The stack's own logins are in when `STACK_LOGINS=generated`** — nobody
-   chose those passwords. With `unified` or `each` they are the user's: left
-   alone, and the end says `set-credentials all` changes them.
+3. **The stack's own logins stay with `set-credentials`**, generated or
+   chosen (*13 Nov, revised*: agreed first as "in when generated"; dropped
+   because those rotators cannot put a password back — a failure would leave
+   a login neither old nor new — and two verbs with one job each read
+   simpler). The end names them under "Not rotated", with the command.
 4. **A restore point first** (kind `rotate`), **the maintenance lock held**
    for the whole run (no timer, backup or update in between).
 5. **External accounts are out of scope** — the run says where to make a new
    one and what to paste where.
 6. **People's own portal accounts are never touched.**
 7. **With it:** Wizarr mode's `reset-password` through Jellyfin's API, and
-   Navidrome's admin reset through its API (the second is also the rotator
-   for Navidrome's generated login).
+   Navidrome's admin reset through its API (`set-credentials navidrome`).
 
 ## What is rotated
 
@@ -76,7 +77,6 @@ rewired. Each row's code lives in its service's folder.
 | `MEILI_MASTER_KEY` | Meilisearch (compose) | JellySearch (compose; re-indexes from Jellyfin's database at every start) | search down until both are back |
 | `GLUETUN_CONTROL_APIKEY` | gluetun (compose: `.env`, then `up` through the leak gate) | — | **the VPN group restarts through the leak gate** |
 | **every session** (not a secret: the run's last step) | authentik (`DELETE /core/authenticated_sessions/<uuid>/` for each) | the gates' sessions end with them (authentik tells its outposts) | **everyone signed out**: portal, gated tools, panel, household gates |
-| the generated logins (arr, qBittorrent, Deluge, Transmission, Jellyfin's admin, Pi-hole, Traefik's dashboard, Audiobookshelf's root, Kavita's admin, Navidrome's admin) | each app (`sc_rotate_*`, non-interactive) | what `set-credentials` already updates | **companion apps** using a login; the operator's saved passwords |
 
 **Not rotated**, and said so at the end: the VPN's `WIREGUARD_PRIVATE_KEY` /
 `NORDVPN_TOKEN`, `CF_DNS_API_TOKEN`, `CLOUDFLARE_TUNNEL_TOKEN`,
@@ -126,7 +126,7 @@ secret is proven, so a put-back is always possible.
   authentik's (DB password, secret key, API token, akadmin, LDAP token, bind
   password, client secrets), Jellyfin's key, the arrs', then Prowlarr's,
   Seerr's, Cleanuparr's, Bazarr's, LazyLibrarian's, Wizarr's, Meilisearch's,
-  gluetun's, the generated logins, then every session ended. authentik first: everything
+  gluetun's, then every session ended. authentik first: everything
   after it may need the portal's API; the sessions last, so none opened
   during the run outlives it.
 - **Per service** — each service declares its secrets with a `<svc>_secrets`
@@ -144,8 +144,8 @@ secret is proven, so a put-back is always possible.
 2. **The cost, then one confirmation.** What will change and what that
    breaks, from the declarations (only for enabled services): everyone
    signed out of the portal, each companion-app key and login that will stop
-   working, the VPN group restarting, search down for a minute, the
-   generated logins that change. `Type ROTATE to go on.`
+   working, the VPN group restarting, search down for a minute.
+   `Type ROTATE to go on.`
 3. The restore point (`backup_take rotate`), the maintenance lock.
 4. Each secret, in order. Progress says names, never values.
 5. `up` (whatever a recreate left behind), `wire --verify`, `doctor`.
@@ -298,7 +298,8 @@ Jellyfin's API.
 3. The keys outside authentik (gluetun, Meilisearch, Jellyfin, Seerr,
    Cleanuparr, the arr family) — proven live.
 4. authentik's — proven live.
-5. The generated logins and Navidrome's admin rotator — proven live.
+5. Navidrome's admin rotator, as `set-credentials navidrome` (the logins
+   stay with that verb — decision 3) — proven live.
 6. Wizarr mode's `reset-password`.
 7. README, the full proof, promote.
 

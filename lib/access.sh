@@ -84,8 +84,8 @@ credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assist
 cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, atomically
     load_env; render
     local target="${1:-}"
-    case "$target" in arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|portal|all) ;; *)
-        die "usage: set-credentials <arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|portal|all>
+    case "$target" in arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|navidrome|portal|all) ;; *)
+        die "usage: set-credentials <arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|navidrome|portal|all>
   arr             the shared login of every arr app (+ cleanuparr's account password)
   qbit            qBittorrent's WebUI login (+ every place that stores it)
   deluge          Deluge's web password (+ every download-client entry holding it)
@@ -95,6 +95,7 @@ cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, ato
   traefik         the Traefik dashboard password
   audiobookshelf  its root password (every session signed in as root ends)
   kavita          its admin password (the stack's own account)
+  navidrome       its admin password (the stack's own account)
   portal          the portal's admin (akadmin) password
   all             ONE password across all of the above except portal (usernames stay put)
 Someone else locked out of the portal: ./mediastack.sh reset-password <username>" ;; esac
@@ -168,6 +169,14 @@ Only this password and .env move."
         ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
         sc_rotate_kavita "$pass"
         ;;
+    navidrome)
+        local pass
+        explain "Rotate Navidrome's admin password" \
+"The admin is the stack's own account (people sign in with their own; with
+the portal, the people sync signs in as it). Only this password and .env move."
+        login_pass_ask "New password" NAVIDROME_ADMIN_PASSWORD; pass="$REPLY_VAL"
+        sc_rotate_navidrome "$pass"
+        ;;
     portal)
         local pass
         explain "Rotate the portal's admin password" \
@@ -184,7 +193,8 @@ shared password also sits in the arrs' and qBittorrent's settings."
 "Sets a single password on the arr login (6 apps; cleanuparr and LazyLibrarian follow),
 qBittorrent (and everything storing its login), Deluge and Transmission once
 wire has set them up (and every entry holding them), the Jellyfin admin,
-Pi-hole, the Traefik dashboard, Audiobookshelf's root and Kavita's admin.
+Pi-hole, the Traefik dashboard, Audiobookshelf's root, Kavita's admin and
+Navidrome's admin.
 Usernames stay as they are. Deliberate trade-off: one reused password
 means one leak opens everything — use a strong, stack-unique one.
 NOT covered: the portal's admin (set-credentials portal — it guards the
@@ -201,9 +211,10 @@ rest), and Wizarr's admin account — rotate that in Wizarr's UI
         sc_rotate_traefik "$pass"
         sc_rotate_audiobookshelf "$pass"
         sc_rotate_kavita "$pass"
+        if svc_enabled navidrome && [[ -n "$(env_get NAVIDROME_ADMIN_PASSWORD)" ]]; then sc_rotate_navidrome "$pass"; fi
         warn "Wizarr's admin password is NOT rotated by this — change it in Wizarr's UI."
         signin_is authentik && info "the portal's admin keeps its own password: ./mediastack.sh set-credentials portal"
-        ok "one password now covers arr + qbit + deluge/transmission (if set up) + jellyfin + pihole + traefik + audiobookshelf + kavita — view: ./mediastack.sh credentials"
+        ok "one password now covers arr + qbit + deluge/transmission (if set up) + jellyfin + pihole + traefik + audiobookshelf + kavita + navidrome — view: ./mediastack.sh credentials"
         ;;
     esac
 }

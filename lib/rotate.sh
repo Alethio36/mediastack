@@ -148,6 +148,10 @@ rotate_box_lines() { # rotate_box_lines TAGS — the closing warning's lines for
         (( any == 2 )) || { echo ---; echo "Not rotated — held outside the stack, yours to replace:"; any=2; }
         echo "• $words"
     done
+    if [[ -n "$(logins_list)" ]]; then   # the stack's own logins: set-credentials' job, generated or chosen
+        (( any == 2 )) || { echo ---; echo "Not rotated:"; any=2; }
+        echo "• the stack's own logins (the arrs', the download clients', the admins'): ./mediastack.sh set-credentials <target|all>"
+    fi
 }
 
 # ------------------------------------------------------------------- verb --

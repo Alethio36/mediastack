@@ -20,6 +20,9 @@
 #     navidrome installs it only with the portal and once the stack's admin
 #     signs in (never up, never a dry run); people-sync does nothing without
 #     them; Navidrome is published on 127.0.0.1 only
+#   * set-credentials navidrome: the stack's admin gets its new password with
+#     the current one (its own change needs both); nothing changes when
+#     refused; the old one signing in still is a failure
 #
 #   scripts/test-navidrome.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -155,5 +158,22 @@ verb_entry people-sync >/dev/null || fail_ "people-sync is a verb"; pass
     || fail_ "people-sync without the portal: nothing to do, nothing called"; pass
 grep -q '"127.0.0.1:${NAVIDROME_PORT:-4533}:4533"' services/navidrome/compose.yml || fail_ "Navidrome is published on 127.0.0.1 only (the script's way in)"; pass
 r=" ${WIRE_ROLES[*]} "; [[ "$r" == *" authentik "*" navidrome "* ]] || fail_ "navidrome is wired after authentik"; pass
+
+# ---- set-credentials navidrome: its own password, the current one with the new ----
+nr() { # nr PUT(ok|no) OLD-STILL(yes|no) -> "rc=N env=PASS" (the PUT's body in $T/put)
+    ( printf 'NAVIDROME_ADMIN_USER=admin\nNAVIDROME_ADMIN_PASSWORD=OLDPW\n' > "$ENV_FILE"; rm -f "$T/put"
+      svc_enabled() { :; }; nd_ready() { :; }; nd_login() { echo TOK; }
+      nd_api() { case "$1 $2" in
+          "GET /api/user") echo '[{"id":"u1","userName":"admin","isAdmin":true},{"id":"u2","userName":"viewer"}]' ;;
+          "PUT /api/user/u1") echo "$4" > "$T/put"; [[ "$PUT" == ok ]] ;;
+          "POST /auth/login") [[ "$4" == *OLDPW* && "$OLDS" == yes ]] ;;
+      esac; }
+      PUT=$1 OLDS=$2; rc=0; (sc_rotate_navidrome NEWPW) >/dev/null 2>&1 || rc=$?; echo "rc=$rc env=$(env_get NAVIDROME_ADMIN_PASSWORD)" )
+}
+[[ "$(nr ok no)" == "rc=0 env=NEWPW" ]] || fail_ "navidrome: the new password taken, the old refused: stored: $(nr ok no)"; pass
+jq -e '.password == "NEWPW" and .currentPassword == "OLDPW" and .id == "u1" and .userName == "admin" and .isAdmin == true' "$T/put" >/dev/null \
+    || fail_ "navidrome: the whole account goes back with the new password and the current one (its own change needs both): $(cat "$T/put")"; pass
+[[ "$(nr no no)" == "rc=1 env=OLDPW" ]] || fail_ "navidrome: the new password refused: nothing changed: $(nr no no)"; pass
+[[ "$(nr ok yes)" == "rc=1 env=NEWPW" ]] || fail_ "navidrome: the old password still signs in: a failure said: $(nr ok yes)"; pass
 
 echo "OK navidrome: $checks checks"

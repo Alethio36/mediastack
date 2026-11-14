@@ -65,3 +65,22 @@ wire_navidrome() {
     (( WIRE_DRY )) || people_timer_ensure
     navidrome_people_sync "$ND_TOKEN"
 }
+
+sc_rotate_navidrome() { # PASS — the stack's admin, through Navidrome's API (its own password: the current one goes with the new)
+    svc_enabled navidrome || die "navidrome is not enabled — there is no admin to rotate"
+    nd_ready || die "navidrome is not answering — ./mediastack.sh status navidrome"
+    local tok old user out acct
+    user=$(env_get NAVIDROME_ADMIN_USER); old=$(env_get NAVIDROME_ADMIN_PASSWORD)
+    tok=$(nd_login) || die "navidrome refuses the admin login in .env ($(oneline "$tok")) — make it sign in first: ./mediastack.sh wire navidrome"
+    out=$(nd_api GET /api/user "$tok") || die "navidrome's accounts are unreadable: $(oneline "$out")"
+    acct=$(jq -c --arg u "$user" '[.[]? | select(.userName == $u)][0] // empty' <<<"$out")
+    [[ -n "$acct" ]] || die "navidrome has no account '$user'"
+    out=$(nd_api PUT "/api/user/$(jq -r .id <<<"$acct")" "$tok" \
+          "$(jq -c --arg p "$1" --arg c "$old" '. + {password: $p, currentPassword: $c}' <<<"$acct")") \
+        || die "navidrome refused the new password: $(oneline "$out") — nothing changed"
+    env_set NAVIDROME_ADMIN_PASSWORD "$1"
+    nd_login >/dev/null || die "navidrome took the new password but does not sign in with it — .env holds the new one; check: ./mediastack.sh wire navidrome"
+    out=$(nd_api POST /auth/login "" "$(jq -cn --arg u "$user" --arg p "$old" '{username:$u, password:$p}')") \
+        && die "navidrome still signs in with the old password too — check its users (Settings → Users)"
+    ok "navidrome admin password rotated (the new one signs in, the old one does not) — view: ./mediastack.sh credentials"
+}
