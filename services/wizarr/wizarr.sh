@@ -20,6 +20,22 @@ wizarr_key_works() { # wizarr_key_works KEY — Wizarr takes it (WZ_CODE: its HT
     [[ "$WZ_CODE" =~ ^2 ]]
 }
 
+wizarr_server_problem() { # KEY -> why Wizarr's Jellyfin entry sends people the wrong way ("" when right); never fails
+    # Its API reads servers but cannot write them, so wire checks what only its
+    # UI can set. Found live Nov 2026: with no external URL Wizarr sent a new
+    # user to http://jellyfin:8096, which the LAN resolved to another server.
+    local u out want got
+    u=$(wizarr_url 2>/dev/null) || { echo "it is not reachable from this host — ./mediastack.sh status wizarr"; return 0; }
+    out=$(curl -sS -m 15 -H "X-API-Key: $1" "$u/api/servers" 2>/dev/null) || out=""
+    jq -e '.servers' <<<"$out" >/dev/null 2>&1 || { echo "its servers are unreadable — ./mediastack.sh logs wizarr"; return 0; }
+    want=$(svc_url jellyfin 2>/dev/null) || want=""
+    [[ "$(jq '[.servers[] | select(.server_type == "jellyfin")] | length' <<<"$out")" != 0 ]] \
+        || { echo "it has no Jellyfin server yet — add one: Settings → Servers → Add Server (URL http://$(svc_addr jellyfin), External URL $want)"; return 0; }
+    got=$(jq -r '[.servers[] | select(.server_type == "jellyfin")][0].external_url // ""' <<<"$out")
+    [[ "${got%/}" == "$want" ]] && return 0
+    echo "its Jellyfin server's External URL is ${got:-empty}, so people land on ${got:-its internal address} after signing up — set it to $want (Settings → Servers → edit the Jellyfin server)"
+}
+
 wire_wizarr() {
     hr "wire: wizarr"
     svc_enabled wizarr || { info "wizarr not enabled — skipped"; return 0; }
@@ -30,7 +46,7 @@ wire_wizarr() {
     local key host domain
     key=$(env_get WIZARR_API_KEY)
     if [[ -n "$key" ]]; then
-        if wizarr_key_works "$key"; then ok "API key verified — mint invites with: ./mediastack.sh invite"; return 0; fi
+        if wizarr_key_works "$key"; then ok "API key verified — mint invites with: ./mediastack.sh invite"; wizarr_server_check "$key"; return 0; fi
         [[ "$WZ_CODE" != 000 ]] || { wfail "wizarr did not answer while its API key was checked — ./mediastack.sh logs wizarr"; return 0; }
         # refused: the stored key is not Wizarr's (a paste cut short, or deleted in its UI) — a new one is asked, never the dead end of keeping it
         if (( WIRE_DRY )) || [[ ! -t 0 ]]; then
@@ -59,11 +75,17 @@ there is no automation API for this by upstream design. Once, ever:
        Name            jellyfin
        Server Type     Jellyfin
        URL (Internal)  http://$(svc_addr jellyfin)
+       External URL    $(svc_url jellyfin)   (where people land after signing up)
        API Key         $jfkey
      then Test & Add
   4. $WIZARR_KEY_WHERE -> create an API key, and paste it below
 Paste nothing to skip for now — re-run 'wire wizarr' any time."
     wizarr_key_ask
+}
+
+wizarr_server_check() { # KEY — wire: Wizarr's Jellyfin entry sends people to this stack's Jellyfin (only its UI can change it)
+    local why; why=$(wizarr_server_problem "$1")
+    if [[ -n "$why" ]]; then wfail "wizarr: $why"; else ok "wizarr: sends people to $(svc_url jellyfin) after signing up"; fi
 }
 
 wizarr_key_ask() { # wizarr_key_ask [refused] — a pasted key goes into .env only once Wizarr takes it; refused, asked again; Enter skips
@@ -75,7 +97,8 @@ wizarr_key_ask() { # wizarr_key_ask [refused] — a pasted key goes into .env on
             return 0
         fi
         if wizarr_key_works "$REPLY_VAL"; then
-            env_set WIZARR_API_KEY "$REPLY_VAL"; ok "API key verified and stored — mint invites with: ./mediastack.sh invite"; return 0
+            env_set WIZARR_API_KEY "$REPLY_VAL"; ok "API key verified and stored — mint invites with: ./mediastack.sh invite"
+            wizarr_server_check "$REPLY_VAL"; return 0
         fi
         [[ "$WZ_CODE" != 000 ]] || { wfail "wizarr did not answer while the key was checked — nothing stored; ./mediastack.sh logs wizarr"; return 0; }
         fail "wizarr refuses that key [HTTP $WZ_CODE] — nothing stored (a paste cut short?). Paste it again, or Enter to skip."
@@ -90,8 +113,14 @@ wizarr_doctor() { # doctor: apps — its stored API key works ('invite' needs it
     else
         wcode=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-API-Key: $wkey" \
                 "$(wizarr_url)/api/invitations" 2>/dev/null || echo 000)
-        [[ "$wcode" =~ ^2 ]] && ok "wizarr API key works ('invite' is ready)" \
-            || d_fail "wizarr rejected the stored API key [HTTP $wcode]" "'invite' cannot mint links" "make a new key in wizarr's $WIZARR_KEY_WHERE, then: ./mediastack.sh wire wizarr (it asks for it)"
+        if [[ "$wcode" =~ ^2 ]]; then
+            ok "wizarr API key works ('invite' is ready)"
+            local why; why=$(wizarr_server_problem "$wkey")
+            if [[ -n "$why" ]]; then d_fail "wizarr: $why" "a new user is sent somewhere other than this stack's Jellyfin" "in Wizarr's UI, as said above"
+            else ok "wizarr sends people to $(svc_url jellyfin) after signing up"; fi
+        else
+            d_fail "wizarr rejected the stored API key [HTTP $wcode]" "'invite' cannot mint links" "make a new key in wizarr's $WIZARR_KEY_WHERE, then: ./mediastack.sh wire wizarr (it asks for it)"
+        fi
     fi
 }
 

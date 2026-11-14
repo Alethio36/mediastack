@@ -21,6 +21,8 @@
 #   * Bazarr's first start: wire waits (bounded) for the key it writes
 #   * Wizarr's API key: stored only once Wizarr takes it; a refused paste is
 #     asked again, Enter skips; a refused stored key is a failure
+#   * Wizarr's Jellyfin entry sends people to the stack's Jellyfin (its
+#     External URL): checked, said how to set (only its UI can)
 #   * reset-password with Wizarr: a temporary Jellyfin password set through
 #     its API, proven by signing in (that session ended), shown once; a
 #     disabled account said, never re-enabled; the stack's admin refused
@@ -298,7 +300,7 @@ wk() { # wk "ANSWERS (space-separated, - = Enter)" [refused] -> "stored=KEY fail
     ( echo "WIZARR_API_KEY=" > "$T/wenv"; echo 0 > "$T/asks"; WIRE_FAILS=0; read -r -a ANS <<<"$1"
       env_set() { echo "$1=$2" > "$T/wenv"; }
       ask_token() { local n; n=$(cat "$T/asks"); echo $((n + 1)) > "$T/asks"; REPLY_VAL=${ANS[$n]:-}; [[ "$REPLY_VAL" == - ]] && REPLY_VAL=""; return 0; }
-      wizarr_key_works() { WZ_CODE=401; [[ "$1" == GOOD ]] && WZ_CODE=200; [[ "$1" == GOOD ]]; }
+      wizarr_key_works() { WZ_CODE=401; [[ "$1" == GOOD ]] && WZ_CODE=200; [[ "$1" == GOOD ]]; }; wizarr_server_check() { :; }
       wizarr_key_ask "${2:-}" >/dev/null 2>&1; echo "stored=$(sed -n 's/^WIZARR_API_KEY=//p' "$T/wenv") fails=$WIRE_FAILS asks=$(cat "$T/asks")" )
 }
 [[ "$(wk "GOOD")" == "stored=GOOD fails=0 asks=1" ]] || fail_ "a good key: verified, then stored: $(wk GOOD)"; pass
@@ -308,5 +310,16 @@ wk() { # wk "ANSWERS (space-separated, - = Enter)" [refused] -> "stored=KEY fail
 r=$( ( prompt_guard() { :; }; REPLY_VAL="unset"; rc=0; ask_token "x" "" optional <<<"" || rc=$?; echo "[$REPLY_VAL] rc=$rc" ) 2>/dev/null | tail -n 1 )
 [[ "$r" == "[] rc=0" ]] || fail_ "ask_token optional: Enter answers empty, never 'required': $r"; pass
 grep -n 'API Keys' services/wizarr/wizarr.sh >/dev/null && fail_ "Wizarr's keys are made in Settings → General, at the bottom — not an 'API Keys' page"; pass
+
+# ---- Wizarr's Jellyfin entry: its External URL is where a new user lands (found live: empty, they landed elsewhere) ----
+ws() { # ws SERVERS-JSON -> "rc=N why"
+    ( svc_url() { echo https://jellyfin.media.example.com; }; svc_addr() { echo jellyfin:8096; }; wizarr_url() { echo http://w; }
+      curl() { echo "$SJ"; }; SJ=$1; rc=0; why=$(wizarr_server_problem KEY) || rc=$?; echo "rc=$rc $why" )
+}
+[[ "$(ws '{"servers":[{"server_type":"jellyfin","external_url":"https://jellyfin.media.example.com/"}]}')" == "rc=0 " ]] || fail_ "the stack's Jellyfin as its External URL (a trailing slash too): right"; pass
+[[ "$(ws '{"servers":[{"server_type":"jellyfin","external_url":null}]}')" == *"External URL is empty"*"set it to https://jellyfin.media.example.com"* ]] || fail_ "no External URL: said, with the address to set"; pass
+[[ "$(ws '{"servers":[{"server_type":"jellyfin","external_url":"http://old:8096"}]}')" == *"is http://old:8096"* ]] || fail_ "another address: said"; pass
+[[ "$(ws '{"servers":[]}')" == *"no Jellyfin server yet"* ]] || fail_ "no Jellyfin server: said how to add one"; pass
+[[ "$(ws 'not json')" == "rc=0 its servers are unreadable"* ]] || fail_ "an unreadable answer: said, never right, never a failure of its own"; pass
 
 echo "OK wire: $checks checks"
