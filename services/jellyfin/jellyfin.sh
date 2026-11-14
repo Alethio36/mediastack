@@ -608,3 +608,30 @@ jellyfin_secret_rotate() { # a new stack key minted beside the old one; the old 
     rotate_proven jellyfin "$url" "$(jf_auth_hdr "$new")" "$(jf_auth_hdr "$old")" || return 2
     rotate_journal_release
 }
+
+jellyfin_reset_password() { # USER — Wizarr mode: accounts are Jellyfin's own; a temporary password through its API, proven, shown once
+    local user="$1" key users u id pw out tok
+    key=$(env_get JELLYFIN_API_KEY)
+    [[ -n "$key" ]] || die "no Jellyfin API key in .env — run: ./mediastack.sh wire jellyfin"
+    users=$(jf_api GET /Users "$key") || die "jellyfin refused its user list [HTTP $(jf_code)]: $(oneline "$users")"
+    u=$(jq -c --arg n "$user" '[.[]? | select((.Name | ascii_downcase) == ($n | ascii_downcase))][0] // empty' <<<"$users")
+    [[ -n "$u" ]] || die "jellyfin has no user '$user' — check the name in Jellyfin's dashboard (Administration → Users)"
+    [[ "$(jq -r .Name <<<"$u")" != "$(env_get JELLYFIN_ADMIN_USER)" ]] \
+        || die "'$user' is the stack's own Jellyfin admin — its password: ./mediastack.sh set-credentials jellyfin"
+    id=$(jq -r .Id <<<"$u"); pw=$(gen_secret 16)
+    # an admin (the stack's key) sets another's password without the current one
+    out=$(jf_api POST "/Users/Password?userId=$id" "$key" "$(jq -cn --arg p "$pw" '{NewPw: $p, ResetPassword: false}')") \
+        || die "jellyfin refused the new password [HTTP $(jf_code)]: $(oneline "$out") — nothing changed"
+    if [[ "$(jq -r '.Policy.IsDisabled' <<<"$u")" == true ]]; then
+        warn "'$user' is disabled in Jellyfin (too many wrong passwords, or an admin's choice) — the new password works once they are enabled again: Administration → Users → $user → untick 'Disable this user'"
+    else
+        out=$(jf_api POST /Users/AuthenticateByName "" "$(jq -cn --arg u "$(jq -r .Name <<<"$u")" --arg p "$pw" '{Username: $u, Pw: $p}')") \
+            || die "jellyfin took the new password but does not sign '$user' in with it [HTTP $(jf_code)] — check them in Jellyfin's dashboard"
+        tok=$(jq -r '.AccessToken // empty' <<<"$out")
+        [[ -z "$tok" ]] || jf_api POST /Sessions/Logout "$tok" >/dev/null || true   # the proof's own session: not left in their devices
+        ok "jellyfin: '$user' signs in with a new temporary password (proven)"
+    fi
+    echo
+    printf '  %s\n\n' "Temporary password for $user:  $pw"
+    info "Give it to them privately. They sign in with it, then change it in Jellyfin: Settings → Profile → Password."
+}

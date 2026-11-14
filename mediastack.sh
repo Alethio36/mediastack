@@ -1184,7 +1184,7 @@ VERBS=(
     "credentials~credentials~none~Connect~Show the app logins wire created/stored."
     "set-credentials~set-credentials <target|all>~max=1~Connect~Rotate a stored login everywhere it lives, atomically."
     "rotate-secrets~rotate-secrets~none~Connect~Give every secret the stack made for itself a new value, rewire what holds it, prove it (docs/design-rotate.md)."
-    "reset-password~reset-password <user>~max=1~Connect~Someone locked out of the portal: clear their login throttle, mint a single-use sign-in link."
+    "reset-password~reset-password <user>~max=1~Connect~Someone locked out: the portal's single-use sign-in link, or with Wizarr a temporary Jellyfin password."
     "set-email~set-email <user> <address> [--yes]~free~Connect~An admin changes a person's portal email; Kavita follows. A shared address warns and asks (--yes overrides)."
     "users~users~none~Connect~The portal's people: username, name, email, groups, and whether they can sign in."
     "email~email [status|test <address>]~free~Connect~The portal's outgoing email: status, or send a real test message (docs/email.md)."

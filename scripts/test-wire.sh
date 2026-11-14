@@ -19,6 +19,9 @@
 #     when the stored key fails and the arr's current key passes
 #   * --verify checks Cleanuparr with its stored key and writes nothing
 #   * Bazarr's first start: wire waits (bounded) for the key it writes
+#   * reset-password with Wizarr: a temporary Jellyfin password set through
+#     its API, proven by signing in (that session ended), shown once; a
+#     disabled account said, never re-enabled; the stack's admin refused
 #
 #   scripts/test-wire.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -264,5 +267,28 @@ bw() { # bw DRY KEY-AFTER-N-LOOKS -> "fails=N looks=N"
 [[ "$(bw 0 3)" == "fails=0 looks=4" ]] || fail_ "no key yet: wire waits for it, then goes on: $(bw 0 3)"; pass
 [[ "$(bw 0 9999)" == "fails=1 looks=$(( BAZARR_KEY_WAIT / 3 + 2 ))" ]] || fail_ "never written: bounded, then a failure: $(bw 0 9999)"; pass
 [[ "$(bw 1 9999)" == "fails=1 looks=1" ]] || fail_ "a dry run never waits: $(bw 1 9999)"; pass
+
+# ---- reset-password with Wizarr: a temporary Jellyfin password, proven, the proof's session ended ----
+jr() { # jr DISABLED(true|false) SIGNS-IN(yes|no) NAME -> "rc=N calls" (output in $T/jr)
+    ( rm -f "$T/c"; env_get() { case "$1" in JELLYFIN_API_KEY) echo KEY ;; JELLYFIN_ADMIN_USER) echo admin ;; esac; }; jf_code() { echo 200; }
+      jf_api() { echo "$1 $2" >> "$T/c"
+          case "$1 $2" in
+              "GET /Users") jq -cn --arg d "$DIS" '[{Name:"admin",Id:"a1",Policy:{IsDisabled:false}},{Name:"Viewer",Id:"v1",Policy:{IsDisabled:($d=="true")}}]' ;;
+              "POST /Users/Password?userId=v1") [[ "$3" == KEY && "$4" == *'"NewPw":"'* ]] ;;
+              "POST /Users/AuthenticateByName") [[ "$SI" == yes ]] && echo '{"AccessToken":"T1"}' ;;
+              "POST /Sessions/Logout") [[ "$3" == T1 ]] ;;
+          esac; }
+      DIS=$1 SI=$2; rc=0; (jellyfin_reset_password "$3") > "$T/jr" 2>&1 || rc=$?
+      echo "rc=$rc $(cut -d' ' -f1,2 "$T/c" 2>/dev/null | paste -sd'|' -)" )
+}
+[[ "$(jr false yes viewer)" == "rc=0 GET /Users|POST /Users/Password?userId=v1|POST /Users/AuthenticateByName|POST /Sessions/Logout" ]] \
+    || fail_ "reset-password (Wizarr): set, proven by signing in, the proof's session ended: $(jr false yes viewer)"; pass
+grep -E '^  Temporary password for viewer:  [A-Za-z0-9]{16}$' "$T/jr" >/dev/null || fail_ "the temporary password is shown once, 16 characters: $(cat "$T/jr")"; pass
+[[ "$(jr false no viewer)" == rc=1* ]] || fail_ "the new password does not sign in: a failure, not a password handed out"; pass
+! grep 'Temporary password' "$T/jr" >/dev/null || fail_ "an unproven password is never shown"; pass
+[[ "$(jr true no viewer)" == "rc=0 GET /Users|POST /Users/Password?userId=v1" ]] && grep 'disabled in Jellyfin' "$T/jr" >/dev/null \
+    || fail_ "a disabled account: the password set, the state said, nothing re-enabled: $(jr true no viewer)"; pass
+[[ "$(jr false yes admin)" == "rc=1 GET /Users" ]] || fail_ "the stack's own admin: refused (set-credentials jellyfin): $(jr false yes admin)"; pass
+[[ "$(jr false yes nobody)" == "rc=1 GET /Users" ]] || fail_ "no such user: refused, nothing written"; pass
 
 echo "OK wire: $checks checks"
