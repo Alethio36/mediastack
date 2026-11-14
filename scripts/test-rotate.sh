@@ -216,10 +216,10 @@ ss() { # ss LEFT(none|one) -> "rc=N deletes=N"
 
 # the database's password check goes where a password is asked (found live: loopback is trusted, any password passes)
 r=$(declare -f ak_db_password_opens)
-[[ "$r" != *127.0.0.1* && "$r" != *localhost* && "$r" != *"::1"* && "$r" == *'svc_host authentik-db'* ]] \
+[[ "$r" != *127.0.0.1* && "$r" != *localhost* && "$r" != *"::1"* && "$r" == *'svc_cname authentik-db'* ]] \
     || fail_ "the password is proven over the stack network, never loopback"; pass
-r=$( ( svc_cname() { echo db; }; svc_host() { echo authentik-db; }
+r=$( ( svc_cname() { echo mediastack-authentik-db; }
        sudo() { cat >/dev/null; echo "$*" > "$T/c"; echo 1; }; ak_db_password_opens pw >/dev/null; cat "$T/c" ) )
-[[ "$r" != *pw* && "$r" == *" authentik-db" ]] || fail_ "the password goes on stdin, never the command line; the host is the stack name: $r"; pass
+[[ "$r" != *pw* && "$r" == *" mediastack-authentik-db" ]] || fail_ "the password goes on stdin, never the command line; the host is its container name: $r"; pass
 
 echo "OK rotate: $checks checks"

@@ -78,10 +78,12 @@ ak_db_password_set() { # ak_db_password_set PASSWORD — the database role's pas
 ak_db_password_opens() { # ak_db_password_opens PASSWORD — a fresh connection that has to give a password takes it
     # Through the stack network, never loopback: the image trusts 127.0.0.1 and
     # ::1 (and its socket) without asking, so a check there takes any password
-    # (found live: "still takes the other password" both ways). Its own name
-    # resolves to its stack-network address: `host all all all scram-sha-256`.
-    printf '%s\n' "$1" | sudo docker exec -i "$(svc_cname authentik-db)" \
-        sh -c 'read -r p; PGPASSWORD=$p psql -h "$0" -U authentik -d authentik -tAc "select 1"' "$(svc_host authentik-db)" 2>/dev/null \
+    # (found live: "still takes the other password" both ways). Its container
+    # name resolves (Docker's DNS) to its stack-network address: `host all all
+    # all scram-sha-256`. Not svc_host: that names an address wire writes.
+    local cn; cn=$(svc_cname authentik-db)
+    printf '%s\n' "$1" | sudo docker exec -i "$cn" \
+        sh -c 'read -r p; PGPASSWORD=$p psql -h "$0" -U authentik -d authentik -tAc "select 1"' "$cn" 2>/dev/null \
         | grep -x 1 >/dev/null
 }
 ak_env_holds() { # ak_env_holds SERVICE KEY VALUE — the running container was started with KEY=VALUE
