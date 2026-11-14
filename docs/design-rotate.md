@@ -1,12 +1,15 @@
 # Design: rotate-secrets
 
-*Status: agreed (13 Nov 2026), MVP plan step 4: one verb, no arguments, every
-machine secret at once; `.env` before the holders are rewired. Spike done
-(below) save what needs another install — Wizarr mode, Prowlarr's key reaching
-indexers — and what the build proves itself (LazyLibrarian, Recyclarr); those
-move into the proof. Build: slice 1 (the framework, Meilisearch's key) built and
-proven live; slice 2 (every key outside authentik) built and proven live; slice 3
-(the portal, and every session ended) built.*
+*Status: built and proven (14 Nov 2026), MVP plan step 4. One verb, no
+arguments, every machine secret at once; `.env` before the holders are
+rewired; the stack's own logins stay with `set-credentials` (decision 3).
+Proven on a clean install from `base-cert` with the portal (18 secrets, the
+run record and a support bundle free of every old and new value, every
+sign-in working) and with Wizarr (`reset-password` through Jellyfin's API,
+Wizarr reconnected by hand as the end says). Not yet seen live: Prowlarr's
+key reaching the arrs' indexers (no indexers on the test box), and a first
+wire that records instead of re-applying the portal's setup (needs a fresh
+install with the portal).*
 
 ## Why
 
@@ -290,22 +293,38 @@ Jellyfin's API.
 - **Every session**, the run's last step: each deleted through the API, then
   checked gone — authentik tells its outposts, so the gates' sessions end too.
 
-## Build order
+## Build order — done (14 Nov 2026)
 
-1. The spike; this doc to agreed.
+1. The spike; this doc to agreed. *Done.*
 2. `lib/rotate.sh`: the verb, the cost and confirmation, the restore point
    and lock, the journal, the order, the end and its warning; doctor's
    leftover journal — with Meilisearch's key as its first secret (slice 1).
    The CI coverage check came with slice 5, once every secret had its
    rotator. Doctor runs at the end and its summary is reported, never
-   the run's verdict (its findings may predate the run).
+   the run's verdict (its findings may predate the run). *Done.*
 3. The keys outside authentik (gluetun, Meilisearch, Jellyfin, Seerr,
-   Cleanuparr, the arr family) — proven live.
-4. authentik's — proven live.
+   Cleanuparr, Bazarr, LazyLibrarian, the arr family) — proven live. *Done.*
+4. authentik's — proven live. *Done.*
 5. Navidrome's admin rotator, as `set-credentials navidrome` (the logins
-   stay with that verb — decision 3) — proven live.
-6. Wizarr mode's `reset-password`.
-7. README, the full proof, promote.
+   stay with that verb — decision 3) — proven live. *Done.*
+6. Wizarr mode's `reset-password` (a temporary Jellyfin password, proven by
+   signing in) — proven live. *Done.*
+7. README, the full proof (both account modes, above). *Done.* Promote with
+   the session's end.
+
+Found and fixed on the way, each reproduced live first: an authentik
+blueprint's `!Env` values never re-applied; Prowlarr's, Seerr's and
+Cleanuparr's copies of an arr's key create-only; Seerr's own key stored only
+at its first setup; Cleanuparr skipped by `--verify`; Bazarr's first start
+wired too soon; LazyLibrarian's key taken as proven by any JSON answer; a
+first install ended by one throttled image pull; an apply of the portal's
+setup outlasting its wait; Wizarr's key stored before it was checked, and
+its Jellyfin entry without an External URL.
+
+Later, by decision: Wizarr's own reset link (`POST
+/api/users/<id>/reset-password`, a 24-hour link where the person sets their
+own password) could replace the temporary password for people Wizarr
+invited — to decide.
 
 Hidden cost on record: a run restarts most of the stack (the VPN group
 through the leak gate), so it takes minutes and interrupts playback; one

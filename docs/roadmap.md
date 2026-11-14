@@ -200,8 +200,10 @@ agreed first:
    every API helper marks a call that got no answer; when the run ends, each role
    that had one is read back with its own `wire <role> --verify` (lib/wire.sh,
    scripts/test-wire-late.sh). A role that writes blind cannot be read back.
-4. **`rotate-secrets`** — design: [design-rotate.md](design-rotate.md)
-   (*agreed*, 13 Nov 2026; being built slice by slice); see Credential coverage.
+4. *Done (Nov 2026):* **`rotate-secrets`** — every machine secret rotated and
+   proven in one run, proven live with the portal and with Wizarr; with it
+   `set-credentials navidrome` and `reset-password` for Wizarr. Design:
+   [design-rotate.md](design-rotate.md); see Credential coverage.
 5. **Access per tool** — a live spike on LDAP app passwords first, then the
    `frontend`/`admin` rename, tiers, providers per app and grants; see Access
    per tool and LDAP app passwords.
@@ -213,10 +215,26 @@ agreed first:
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless
-    complexity (state of its own kept about another app, timings guessed),
-    each finding fixed or filed; with it, why one apply of the portal's setup
-    takes four minutes (seen live, Nov 2026). Before the README, so it
-    describes what is left.
+    complexity, each finding fixed or filed. Before the README, so it
+    describes what is left. Already noted for it (Nov 2026):
+    - **One apply of the portal's setup takes about four minutes**, an
+      unchanged one too (authentik's log, a fresh install) — every first
+      wire and every rotation of its settings waits it out. Why, and whether
+      the blueprint can be made cheaper.
+    - **State kept about another app, timings guessed** — where the bugs of
+      Nov 2026 clustered (the blueprint's applied values, the apply's wait).
+      Each such spot looked at for a simpler, app-native way.
+    - **A failure summary names its role twice** (`wizarr: wizarr: …`,
+      `authentik: authentik: …`): the summary adds the role, and the
+      messages already start with it.
+    - **A restore point's stop prints compose's progress scattered across
+      the screen** (its terminal redraws, captured line by line).
+    - **Each secret compose carries runs a full `up`** in `rotate-secrets`
+      (the leak gate's minute each); grouping them per service, as the
+      portal's settings are, could save minutes per run.
+    - **Grep the code for checks that use `grep -q` in a pipe or a `$( )`
+      that can die** — test-pipes and test-reasons caught three new ones in
+      one day; their rules belong in the contributor notes.
 12. **The README as a chapter-style tutorial** and the built-in how-to page.
 13. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
     dependency layers below; Wizarr sign-in live; `restore --service
@@ -991,6 +1009,9 @@ all built; what each still leaves open is noted below.
   shown by `credentials`, changed with `set-credentials panel`. Without the
   portal it is asked at the terminal today, so an answers-file install in
   Wizarr or no-account mode stops for it.
+  **To decide:** with Wizarr, `reset-password` could use Wizarr's own reset
+  link (`POST /api/users/<id>/reset-password`: 24 hours, the person sets their
+  own password) instead of a temporary password, for people Wizarr invited.
 - **A Jellyfin lockout tells ops** — *shipped (Oct 2026)*. The throttle,
   refusing a right password after too many wrong ones, raises
   `mediastack_jellyfin_lockout` (once per person per 6 hours); a notification

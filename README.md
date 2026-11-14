@@ -283,9 +283,9 @@ Connect
 | `wire [qbit\|deluge\|transmission\|arr\|lazylibrarian\|prowlarr\|bazarr\|apprise\|cleanuparr\|authentik\|jellyfin\|seerr\|wizarr\|audiobookshelf\|kavita\|navidrome] [--dry-run\|--verify]` | connect the apps to each other (the arrs also get their recycle bin — see below); idempotent — GUI-configured apps are never overwritten, with one exception: an address mediastack itself wrote (how one app reaches another) is re-pointed when a VPN toggle moves its target — an address you set by hand is left alone. `--dry-run` previews; `--verify` previews and exits 1 on drift (for scripts and cron; bazarr/lazylibrarian/seerr write blind and are skipped as not verifiable). An app that does not answer in time may still make the change: at the end, `wire` waits 20s and reads that app's settings back (its own `--verify`) — everything in place, and those failures are taken back; anything missing, and they stand, with what is missing shown |
 | `invite [--expires 1\|7\|30] [--email ADDRESS]` | mint an invitation and print the ready-to-share URL — with authentik: a single-use sign-up link to the portal (default: 7 days), and with `--email` the portal emails it too (needs email that passed `email test`); with Wizarr: a Wizarr invitation (default: never expires) |
 | `set-credentials <arr\|qbit\|deluge\|transmission\|jellyfin\|pihole\|traefik\|audiobookshelf\|kavita\|navidrome\|portal\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `audiobookshelf` rotates its root password and ends every root session; `kavita` its admin's; `navidrome` its admin's (through its API, the new one proven to sign in and the old one not); `portal` sets akadmin's password through authentik's API; `all` sets one password across the stack except `portal`, which guards the rest (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
-| `rotate-secrets` | give every secret the stack made for itself a new value, each all-or-nothing, after a restore point; whatever holds one is rewired and the run ends proven (`wire --verify`). Interactive; it says first what it costs (restarts, sign-outs) and ends with what outside the stack now holds a stale value. The stack's own logins — generated or chosen — stay with `set-credentials`; secrets from outside (VPN, Cloudflare, mail) are yours to replace — the end says where. With the portal it ends by signing everyone out (every session, the gates' with them). Built service by service: today the portal's own secrets (its API token, akadmin, the LDAP outpost's token, its signing key, database password, LDAP bind password and OIDC client secrets), the arrs', Prowlarr's, Bazarr's, LazyLibrarian's, Seerr's, Cleanuparr's and Jellyfin's keys, Meilisearch's master key and gluetun's control key ([design](docs/design-rotate.md)) |
+| `rotate-secrets` | give every secret the stack made for itself a new value — its API keys, the portal's tokens, signing key, database and client secrets, Meilisearch's and gluetun's keys — each proven (the new one taken, the old refused) or put back, after a restore point; whatever holds a copy is rewired and the run ends with `wire --verify`. With the portal it ends by signing everyone out of it and the tools behind it (apps with their own sign-in — Jellyfin, Navidrome — keep theirs). Interactive: it says first what it costs, and ends with a framed warning naming what outside the stack now holds a stale value and what it does not rotate — secrets from outside (VPN, Cloudflare, mail), Wizarr's API key (made in its UI), and the stack's own logins (`set-credentials`). [design](docs/design-rotate.md) |
 | `link-account <portal-user>` | an existing household's people keep their history: after someone joins the portal, their local Jellyfin, Kavita and Audiobookshelf accounts become their portal account — you confirm which account is whose, see the plan, then it links (Audiobookshelf needs them to sign in once, within 10 minutes) |
-| `reset-password <user>` | someone locked out of the portal: clears their login throttle and prints a single-use sign-in link (24 hours) to send them — they then set a new password in the portal's Settings. Not for akadmin (`set-credentials portal`). With Wizarr (accounts are Jellyfin's own): a temporary password set through Jellyfin's API, proven by signing in with it and shown once to pass on — they change it in Jellyfin (Settings → Profile → Password); a disabled account is reported, not re-enabled |
+| `reset-password <user>` | someone locked out — with the portal: clears their login throttle and prints a single-use sign-in link (24 hours) to send them — they then set a new password in the portal's Settings. Not for akadmin (`set-credentials portal`). With Wizarr (accounts are Jellyfin's own): a temporary password set through Jellyfin's API, proven by signing in with it and shown once to pass on — they change it in Jellyfin (Settings → Profile → Password); a disabled account is reported, not re-enabled |
 | `set-email <user> <address> [--yes]` | change a person's portal email — people cannot change their own (Kavita, and later ROMM, sign people in by email, so it is who they are there). Kavita's account follows the change, so their next sign-in lands on the same account. An address another person already has is warned about and asks first; `--yes` decides for scripts. Use this rather than authentik's admin page, which changes the portal only |
 | `users` | the portal's people: username, name, email, groups, and whether they can sign in (the stack's own `akadmin` and service accounts left out) |
 | `email [status\|test <address>]` | the portal's outgoing email: `status` shows the settings and whether they passed a test; `test` sends a real message through authentik and, if the server refuses, says why it usually happens; a pass turns on the sign-in page's **Forgot password?** (a reset link by email). Set up with `configure` — [docs/email.md](docs/email.md) |
@@ -874,14 +874,24 @@ For installs that chose Wizarr as the account model (with the portal,
 `invite` makes a portal sign-up link instead — see above). Wizarr turns "set
 up my account" into a link. Its first run is a one-time
 UI step: create the admin account, add Jellyfin as a server (URL
-`http://jellyfin:8096`, using the stack's Jellyfin API key — shown by
-`credentials`), and mint a Wizarr API key. `wire wizarr` walks you through
-it with the exact values to paste, and stores the key. After that:
+`http://jellyfin:8096`, its **External URL** the stack's Jellyfin address —
+where a new person lands after signing up — and the stack's Jellyfin API key,
+shown by `credentials`), and make a Wizarr API key (Settings → General, at the
+bottom). `wire wizarr` walks you through it with the exact values to paste,
+stores the key once Wizarr takes it (a paste cut short is asked again), and
+checks the External URL; doctor checks both. After that:
 
 ```bash
 ./mediastack.sh invite               # never-expiring invitation URL
 ./mediastack.sh invite --expires 7   # or 1 | 30 days
 ```
+
+Someone locked out: `./mediastack.sh reset-password <user>` sets a temporary
+Jellyfin password (accounts are Jellyfin's own with Wizarr), proves it signs
+in, and shows it once — give it to them privately; they change it in Jellyfin
+(Settings → Profile → Password). A disabled account is reported, not enabled.
+After `rotate-secrets`, paste the new Jellyfin API key into Wizarr's server
+entry (Settings → Servers): Wizarr's API cannot set it.
 
 ## Status
 
@@ -902,7 +912,8 @@ a web control panel over the safe verbs (OliveTin front door) · the portal
 their apps included) and Navidrome, invitation-only sign-up, every admin tool
 behind it · moving an existing household's accounts onto it with their
 history (`link-account`) · password reset for someone locked out
-(`reset-password`) · each person's email their own, changed by an admin
+(`reset-password`, with the portal or Wizarr) · every machine secret rotated
+and proven in one run (`rotate-secrets`) · each person's email their own, changed by an admin
 (`set-email`, `users`) · optional outgoing email for the portal (any SMTP
 service, `email test`) · deletion attribution and the media manifest · the
 arr recycle bin · restore points that keep a shard (authentik's four

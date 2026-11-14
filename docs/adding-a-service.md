@@ -166,8 +166,18 @@ is a fragment only. A service with nothing to wire (Navidrome, say) has no
 A verb that covers several services keeps its own short list of them, in the
 order it runs or prints them; a service's part lives in its folder. So far:
 `wire` (`WIRE_ROLES` in `lib/wire.sh` -> `wire_<role>`), `set-credentials`
-(the target list in `lib/access.sh` -> `sc_rotate_<target>`) and doctor's app
-checks (`DOCTOR_APPS` in `lib/doctor.sh` -> `<name>_doctor`). A verb that
+(the target list in `lib/access.sh` -> `sc_rotate_<target>`), `rotate-secrets`
+(`ROTATE_ORDER` in `lib/rotate.sh` -> `<stem>_secrets` and
+`<stem>_secret_rotate`) and doctor's app checks (`DOCTOR_APPS` in
+`lib/doctor.sh` -> `<name>_doctor`).
+
+**A secret the scripts generate needs a way to rotate.** Every `secret` row
+of a service's `env.tsv` whose writer is `script` is either a login's password
+(its `<stem>_logins` line: `set-credentials`' job), rotated by
+`rotate-secrets` (a `<stem>_secrets` line naming it, and
+`<stem>_secret_rotate` proving the new value taken and the old refused —
+[design-rotate.md](design-rotate.md)), or named in `ROTATE_NOT` with why and
+what to do. `scripts/test-rotate.sh` fails CI on one that is none of these. A verb that
 needs one service's code at one spot calls it by name — `<name>_<what>`
 (`jellyfin_sessions_active` in the update, `link_<app>_*` in link-account).
 
