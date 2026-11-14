@@ -214,4 +214,12 @@ ss() { # ss LEFT(none|one) -> "rc=N deletes=N"
 [[ "$(ss none)" == "rc=0 deletes=2" ]] || fail_ "sessions: every one ended (one opened since is not ours to fail on): $(ss none)"; pass
 [[ "$(ss one)" == "rc=1 deletes=2" ]] || fail_ "sessions: one still there after its delete: a failure: $(ss one)"; pass
 
+# the database's password check goes where a password is asked (found live: loopback is trusted, any password passes)
+r=$(declare -f ak_db_password_opens)
+[[ "$r" != *127.0.0.1* && "$r" != *localhost* && "$r" != *"::1"* && "$r" == *'svc_host authentik-db'* ]] \
+    || fail_ "the password is proven over the stack network, never loopback"; pass
+r=$( ( svc_cname() { echo db; }; svc_host() { echo authentik-db; }
+       sudo() { cat >/dev/null; echo "$*" > "$T/c"; echo 1; }; ak_db_password_opens pw >/dev/null; cat "$T/c" ) )
+[[ "$r" != *pw* && "$r" == *" authentik-db" ]] || fail_ "the password goes on stdin, never the command line; the host is the stack name: $r"; pass
+
 echo "OK rotate: $checks checks"
