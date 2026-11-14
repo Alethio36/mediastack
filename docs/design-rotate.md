@@ -5,7 +5,8 @@ machine secret at once; `.env` before the holders are rewired. Spike done
 (below) save what needs another install — Wizarr mode, Prowlarr's key reaching
 indexers — and what the build proves itself (LazyLibrarian, Recyclarr); those
 move into the proof. Build: slice 1 (the framework, Meilisearch's key) built and
-proven live; slice 2 (every key outside authentik) built.*
+proven live; slice 2 (every key outside authentik) built and proven live; slice 3
+(the portal, and every session ended) built.*
 
 ## Why
 
@@ -266,6 +267,24 @@ clean; the run record and a `support` bundle grep-clean of every old and new
 value. Then a run killed mid-secret: the journal named, `restore --all`
 brings the stack back. Wizarr mode: the same, with `reset-password` through
 Jellyfin's API.
+
+## The portal, as built (slice 3)
+
+- **Its own settings move together** (agreed 13 Nov): the signing key, the
+  database password, the LDAP bind password and both OIDC client secrets —
+  the role's password first (`ALTER ROLE` on stdin; open connections keep
+  working), then `.env`, one `up`, `wire authentik` (the blueprint applied
+  with the worker's new values). Proven by a fresh connection over TCP taking
+  the new password and refusing the old one, the server and worker both
+  running on the new signing key, and the setup applied with the worker's
+  values. Not proven: all five go back together.
+- **Its API token and the LDAP outpost's**: `set_key` on the same token; the
+  outpost restarted on it and healthy; each proven by the new key opening
+  the API and the old one refused.
+- **akadmin**: its password through the API (`set_password`); authentik's
+  answer is the proof — no sign-in flow is driven.
+- **Every session**, the run's last step: each deleted through the API, then
+  checked gone — authentik tells its outposts, so the gates' sessions end too.
 
 ## Build order
 

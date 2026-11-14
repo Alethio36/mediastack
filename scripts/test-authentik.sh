@@ -164,13 +164,13 @@ s=$(gen_secret 60)
 [[ ${#s} == 60 && "$s" =~ ^[A-Za-z0-9]+$ ]] || fail_ "a secret: 60 letters and digits, got '$s'"; pass
 ENV_FILE=$T/env; printf 'AUTHENTIK_DB_PASSWORD=keepme\n' > "$ENV_FILE"
 authentik_has_db() { return 1; }
-authentik_secrets
+authentik_secrets_make
 [[ "$(env_get AUTHENTIK_DB_PASSWORD)" == keepme ]] || fail_ "an existing secret must never be replaced"; pass
 [[ "$(env_get AUTHENTIK_SECRET_KEY | wc -c)" == 61 && "$(env_get AUTHENTIK_API_TOKEN | wc -c)" == 65 ]] \
     || fail_ "missing secrets must be generated at their lengths"; pass
 printf 'AUTHENTIK_SECRET_KEY=x\n' > "$ENV_FILE"
 authentik_has_db() { return 0; }
-out=$( (authentik_secrets) 2>&1 ) && fail_ "a database without its password must stop, not get a new one"
+out=$( (authentik_secrets_make) 2>&1 ) && fail_ "a database without its password must stop, not get a new one"
 [[ "$out" == *"AUTHENTIK_DB_PASSWORD is missing"* ]] || fail_ "the refusal must name the missing secret: $out"; pass
 [[ "$(env_get AUTHENTIK_DB_PASSWORD)" == "" ]] || fail_ "nothing may be written when refusing"; pass
 

@@ -17,6 +17,10 @@
 #     change but is not proven; Jellyfin's old key goes only once the new one
 #     opens; Bazarr's and LazyLibrarian's go back when not taken; the arrs
 #     before Prowlarr
+#   * the portal: several secrets held in flight together; its API token
+#     unchanged when the new key is refused; its settings (the database
+#     password first) all new when proven, all back when not, held when
+#     neither; every session ended and checked gone
 #
 #   scripts/test-rotate.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -166,5 +170,48 @@ lk() { ( ll_url() { echo http://l; }; curl() { echo "$A"; }; A=$1; ll_key_takes 
 [[ "$(lk '{"Success": false, "Data": "", "Error": {"Code": 401, "Message": "Incorrect API key"}}')" == refused ]] || fail_ "lazylibrarian: a wrong key's JSON: refused"; pass
 [[ "$(lk '')" == refused ]] || fail_ "lazylibrarian: no answer: refused"; pass
 declare -f ll_api_enable | grep 'll_key_takes "$key"' >/dev/null || fail_ "ll_api_enable proves the key it wrote, not any JSON answer"; pass
+
+# ---- slice 3: the portal ----
+rotate_journal_start p; rotate_journal_hold A a1 a2 B b1 b2
+[[ "$(rotate_inflight)" == "A B" ]] || fail_ "several secrets held together are all named in flight: $(rotate_inflight)"; pass
+r=$(svc_enabled() { :; }; env_get() { [[ "$1" == AUTHENTIK_LDAP_TOKEN ]] && echo t; return 0; }; authentik_secrets | cut -f1,2 | paste -sd'|' -)
+[[ "$r" == $'AUTHENTIK_API_TOKEN\t|AUTHENTIK_ADMIN_PASSWORD\takadmin|AUTHENTIK_LDAP_TOKEN\t|authentik\'s settings\tportal' ]] || fail_ "the portal's secrets, in order: $r"; pass
+r=$(svc_enabled() { :; }; env_get() { :; }; authentik_secrets | cut -f1 | paste -sd'|' -)
+[[ "$r" != *LDAP_TOKEN* ]] || fail_ "no LDAP outpost token yet: not listed"; pass
+
+at() { # at SET-KEY(ok|no) -> "rc=N env=K"
+    ( echo "AUTHENTIK_API_TOKEN=TOLD" > "$T/env"; rotate_journal_start p
+      ak_token_set_key() { [[ "$SK" == ok ]]; }; rotate_proven() { :; }; authentik_url() { echo http://a; }
+      SK=$1; rc=0; authentik_rotate_api_token >/dev/null 2>&1 || rc=$?; echo "rc=$rc env=$(env_get AUTHENTIK_API_TOKEN | cut -c1-4)" )
+}
+[[ "$(at no)" == "rc=1 env=TOLD" ]] || fail_ "API token: the new key refused: unchanged: $(at no)"; pass
+[[ "$(at ok)" != *TOLD* && "$(at ok)" == rc=0* ]] || fail_ "API token: a new key taken: .env follows: $(at ok)"; pass
+
+as() { # as DB-SET(ok|no) NEW-PROVEN(yes|no) OLD-PROVEN(yes|no) -> "rc=N secretkey=old|new dbset=calls"
+    ( : > "$T/env"; for k in AUTHENTIK_SECRET_KEY AUTHENTIK_DB_PASSWORD AUTHENTIK_LDAP_BIND_PASSWORD AUTHENTIK_ABS_CLIENT_SECRET AUTHENTIK_KAVITA_CLIENT_SECRET; do echo "$k=OLD$k" >> "$T/env"; done
+      rotate_journal_start p; rm -f "$T/c"
+      ak_db_password_set() { if [[ "$1" == OLD* ]]; then echo old >> "$T/c"; else echo new >> "$T/c"; fi; [[ "$DS" == ok ]]; }
+      rotate_up() { :; }
+      authentik_settings_proven() { if [[ "$1" == OLD* ]]; then [[ "$OP" == yes ]]; else [[ "$NP" == yes ]]; fi; }
+      DS=$1 NP=$2 OP=$3; rc=0; authentik_rotate_settings >/dev/null 2>&1 || rc=$?
+      sk=$(env_get AUTHENTIK_SECRET_KEY); [[ "$sk" == OLD* ]] && sk=old || sk=new
+      echo "rc=$rc secretkey=$sk dbset=$(paste -sd, "$T/c") inflight=$(rotate_inflight | wc -w)" )
+}
+[[ "$(as no yes yes)" == "rc=1 secretkey=old dbset=new inflight=0" ]] || fail_ "settings: the database refuses the new password: nothing changed: $(as no yes yes)"; pass
+[[ "$(as ok yes yes)" == "rc=0 secretkey=new dbset=new inflight=0" ]] || fail_ "settings: proven: all new: $(as ok yes yes)"; pass
+[[ "$(as ok no yes)" == "rc=1 secretkey=old dbset=new,old inflight=0" ]] || fail_ "settings: not proven: the database and .env back on the old: $(as ok no yes)"; pass
+[[ "$(as ok no no)" == "rc=2 secretkey=old dbset=new,old inflight=5" ]] || fail_ "settings: neither proven: stuck, all five held: $(as ok no no)"; pass
+
+ss() { # ss LEFT(none|one) -> "rc=N deletes=N"
+    ( rm -f "$T/c"; ak_api() { case "$1" in
+          GET) if [[ -f "$T/c" && "$LEFT" == one ]]; then echo '{"results":[{"uuid":"s1"}]}'
+               elif [[ -f "$T/c" ]]; then echo '{"results":[{"uuid":"s9"}]}'
+               else echo '{"results":[{"uuid":"s1"},{"uuid":"s2"}]}'; fi ;;
+          DELETE) echo "$2" >> "$T/c" ;;
+      esac; }
+      LEFT=$1; rc=0; portal_sessions_secret_rotate >/dev/null 2>&1 || rc=$?; echo "rc=$rc deletes=$(wc -l < "$T/c")" )
+}
+[[ "$(ss none)" == "rc=0 deletes=2" ]] || fail_ "sessions: every one ended (one opened since is not ours to fail on): $(ss none)"; pass
+[[ "$(ss one)" == "rc=1 deletes=2" ]] || fail_ "sessions: one still there after its delete: a failure: $(ss one)"; pass
 
 echo "OK rotate: $checks checks"

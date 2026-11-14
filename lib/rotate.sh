@@ -15,18 +15,24 @@
 # Whatever holds a copy is rewired once, by a full `wire` after the last one:
 # an owner-made key cannot go back anyway, and every holder's step follows
 # the owner's current key (desired state).
-ROTATE_ORDER=(jellyfin arr seerr cleanuparr bazarr lazylibrarian meilisearch gluetun)
+ROTATE_ORDER=(authentik jellyfin arr seerr cleanuparr bazarr lazylibrarian meilisearch gluetun portal_sessions)
 
 # What a cost tag means: said before the run (a cost), and in the closing
 # warning when the tag is set (left empty: nothing outside the stack to do).
 declare -A ROTATE_COSTS=(
+    [akadmin]="the portal's own admin (akadmin) gets a new password"
     [companion]="phone and companion apps (nzb360, LunaSea, …) and integrations you set up lose their access to the arrs, Prowlarr, Bazarr and Seerr until you give them the new keys"
+    [portal]="the portal restarts (sign-in is down for about a minute), and Jellyfin's sign-in for a few seconds while its LDAP outpost restarts"
+    [signout]="everyone is signed out of the portal and of every tool behind it, the panel included"
     [search]="search answers nothing while Meilisearch and JellySearch restart (a minute)"
     [vpn]="the VPN'd services restart through the leak gate (a minute or two)"
     [wizarr-jellyfin]="Wizarr keeps the old Jellyfin key until you paste the new one into it"
 )
 declare -A ROTATE_AFTER=(
+    [akadmin]="The portal's akadmin password changed: ./mediastack.sh credentials shows it."
     [companion]="Phone and companion apps (nzb360, LunaSea, …) and any integration you set up yourself: give them the new API keys — ./mediastack.sh credentials shows them."
+    [portal]=""
+    [signout]="Everyone was signed out of the portal: sign in again."
     [search]=""
     [vpn]=""
     [wizarr-jellyfin]="Wizarr: paste the new Jellyfin API key into its Settings → Servers (./mediastack.sh credentials shows it)."
@@ -50,16 +56,18 @@ rotate_journal_start() { # rotate_journal_start POINT — a run begins: its rest
     install -d -m 700 "$ROTATE_DIR"; repo_owned "$LOCAL_DIR" "$ROTATE_DIR"
     ( umask 077; printf 'point\t%s\n' "$1" > "$ROTATE_JOURNAL" ); repo_owned "$ROTATE_JOURNAL"
 }
-rotate_journal_hold() { # rotate_journal_hold NAME OLD NEW — written before NAME changes anywhere
+rotate_journal_hold() { # rotate_journal_hold NAME OLD NEW [NAME OLD NEW]... — written before any of them changes anywhere
     local point; point=$(rotate_journal_point)
-    ( umask 077; printf 'point\t%s\ninflight\t%s\t%s\t%s\n' "$point" "$1" "$2" "$3" > "$ROTATE_JOURNAL" )
+    ( umask 077
+      { printf 'point\t%s\n' "$point"
+        while (( $# >= 3 )); do printf 'inflight\t%s\t%s\t%s\n' "$1" "$2" "$3"; shift 3; done; } > "$ROTATE_JOURNAL" )
 }
 rotate_journal_release() { # NAME is settled (proven, or back on its old value): nothing in flight
     rotate_journal_start "$(rotate_journal_point)"
 }
 rotate_journal_end() { rm -f "$ROTATE_JOURNAL"; }   # the run finished
 rotate_journal_point() { awk -F'\t' '$1 == "point" { print $2 }' "$ROTATE_JOURNAL" 2>/dev/null || true; }
-rotate_inflight() { awk -F'\t' '$1 == "inflight" { print $2 }' "$ROTATE_JOURNAL" 2>/dev/null || true; }   # -> the name in flight, "" when none
+rotate_inflight() { awk -F'\t' '$1 == "inflight" { print $2 }' "$ROTATE_JOURNAL" 2>/dev/null | paste -sd' ' - || true; }   # -> the names in flight, "" when none
 
 # ------------------------------------------------------------ declarations --
 rotate_secrets_list() { # -> STEM<TAB>NAME<TAB>TAGS per secret this install rotates, in ROTATE_ORDER

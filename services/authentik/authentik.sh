@@ -31,7 +31,7 @@ signin_admins() { # -> the portal's admins group members (authentik's user-list 
     ak_api GET "/core/users/?groups_by_name=admins&page_size=500"
 }
 
-authentik_secrets() { # generate what is missing — never over a database that already exists
+authentik_secrets_make() { # generate what is missing — never over a database that already exists
     local k n made=0
     for k in AUTHENTIK_SECRET_KEY:60 AUTHENTIK_DB_PASSWORD:32 AUTHENTIK_ADMIN_PASSWORD:24 AUTHENTIK_API_TOKEN:64; do
         n=${k#*:}; k=${k%%:*}
@@ -209,7 +209,7 @@ authentik_prepare() { # before `up`/`enable` start it: the edge, secrets, the re
     svc_enabled traefik && [[ -n "$(env_get STACK_DOMAIN)" ]] \
         || die "authentik (the portal) is reached at https://portal.<your domain>, through Traefik — enable and set it up first:
   ./mediastack.sh enable traefik   (then: ./mediastack.sh traefik-setup)"
-    authentik_secrets
+    authentik_secrets_make
     # nobody may join the portal under a name one of the stack's own logins uses (lib/logins.sh)
     env_set AUTHENTIK_RESERVED_USERNAMES "$(logins_reserved)"
     authentik_release_check
