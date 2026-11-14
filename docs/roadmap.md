@@ -980,12 +980,17 @@ all built; what each still leaves open is noted below.
   points at Jellyfin's dashboard); (3) Wizarr's admin (no API found yet — UI
   only); (4) Navidrome's per-user Subsonic password, reset by the admin.
   *Nov 9 2026: in the MVP* (plan step 4). *13 Nov 2026:* `rotate-secrets`,
-  no arguments — every machine secret at once, plus the stack's own logins
-  when they are generated ([design-rotate.md](design-rotate.md)); proven by a
-  run, then `wire --verify` clean and every sign-in working. With it:
-  Wizarr mode's `reset-password` through Jellyfin's API, Navidrome's admin
-  reset through its API. Navidrome's music-app logins stay an upstream gap
-  (watchlist).
+  no arguments — every machine secret at once ([design-rotate.md](design-rotate.md));
+  the stack's own logins stay with `set-credentials`. *14 Nov 2026: built and
+  proven on a clean install* — (1) done (Wizarr's API key excepted: made in
+  its UI only), (2) built (`reset-password` with Wizarr sets a temporary
+  Jellyfin password), Navidrome's admin through `set-credentials navidrome`.
+  Navidrome's music-app logins stay an upstream gap (watchlist).
+  **Next (agreed 14 Nov 2026): the web panel's admin becomes one of the
+  stack's own logins** — generated, unified or typed with `STACK_LOGINS`,
+  shown by `credentials`, changed with `set-credentials panel`. Without the
+  portal it is asked at the terminal today, so an answers-file install in
+  Wizarr or no-account mode stops for it.
 - **A Jellyfin lockout tells ops** — *shipped (Oct 2026)*. The throttle,
   refusing a right password after too many wrong ones, raises
   `mediastack_jellyfin_lockout` (once per person per 6 hours); a notification
