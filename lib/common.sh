@@ -210,9 +210,10 @@ ask() { # ask VAR "prompt" "default" -> sets REPLY_VAL
     REPLY_VAL="${ans:-$def}"
 }
 
-ask_token() { # ask_token "prompt" "current" -> REPLY_VAL; pasted secrets:
+ask_token() { # ask_token "prompt" "current" [optional] -> REPLY_VAL; pasted secrets:
     # hidden input, single entry (no typo-confirm — it's pasted), Enter
-    # keeps the current value when one exists, empty is refused otherwise.
+    # keeps the current value when one exists, skips ("") when optional,
+    # and is refused otherwise.
     prompt_guard "$1"
     local a hint=""
     [[ -n "${2:-}" ]] && hint=" [Enter keeps the current one]"
@@ -221,6 +222,7 @@ ask_token() { # ask_token "prompt" "current" -> REPLY_VAL; pasted secrets:
         hidden_clean "$a"; a=$HIDDEN_VAL
         if [[ -z "$a" ]]; then
             [[ -n "${2:-}" ]] && { REPLY_VAL="$2"; info "keeping the current value"; return 0; }
+            [[ "${3:-}" == optional ]] && { REPLY_VAL=""; return 0; }
             warn "this value is required — paste it (input hidden)"
             continue
         fi

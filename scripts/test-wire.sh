@@ -19,6 +19,8 @@
 #     when the stored key fails and the arr's current key passes
 #   * --verify checks Cleanuparr with its stored key and writes nothing
 #   * Bazarr's first start: wire waits (bounded) for the key it writes
+#   * Wizarr's API key: stored only once Wizarr takes it; a refused paste is
+#     asked again, Enter skips; a refused stored key is a failure
 #   * reset-password with Wizarr: a temporary Jellyfin password set through
 #     its API, proven by signing in (that session ended), shown once; a
 #     disabled account said, never re-enabled; the stack's admin refused
@@ -290,5 +292,21 @@ grep -E '^  Temporary password for viewer:  [A-Za-z0-9]{16}$' "$T/jr" >/dev/null
     || fail_ "a disabled account: the password set, the state said, nothing re-enabled: $(jr true no viewer)"; pass
 [[ "$(jr false yes admin)" == "rc=1 GET /Users" ]] || fail_ "the stack's own admin: refused (set-credentials jellyfin): $(jr false yes admin)"; pass
 [[ "$(jr false yes nobody)" == "rc=1 GET /Users" ]] || fail_ "no such user: refused, nothing written"; pass
+
+# ---- Wizarr's key: stored only once Wizarr takes it; refused, asked again; Enter skips (found live Nov 2026) ----
+wk() { # wk "ANSWERS (space-separated, - = Enter)" [refused] -> "stored=KEY fails=N asks=N"
+    ( echo "WIZARR_API_KEY=" > "$T/wenv"; echo 0 > "$T/asks"; WIRE_FAILS=0; read -r -a ANS <<<"$1"
+      env_set() { echo "$1=$2" > "$T/wenv"; }
+      ask_token() { local n; n=$(cat "$T/asks"); echo $((n + 1)) > "$T/asks"; REPLY_VAL=${ANS[$n]:-}; [[ "$REPLY_VAL" == - ]] && REPLY_VAL=""; return 0; }
+      wizarr_key_works() { WZ_CODE=401; [[ "$1" == GOOD ]] && WZ_CODE=200; [[ "$1" == GOOD ]]; }
+      wizarr_key_ask "${2:-}" >/dev/null 2>&1; echo "stored=$(sed -n 's/^WIZARR_API_KEY=//p' "$T/wenv") fails=$WIRE_FAILS asks=$(cat "$T/asks")" )
+}
+[[ "$(wk "GOOD")" == "stored=GOOD fails=0 asks=1" ]] || fail_ "a good key: verified, then stored: $(wk GOOD)"; pass
+[[ "$(wk "GOO GOOD")" == "stored=GOOD fails=0 asks=2" ]] || fail_ "a paste cut short: nothing stored, asked again: $(wk "GOO GOOD")"; pass
+[[ "$(wk "GOO -")" == "stored= fails=0 asks=2" ]] || fail_ "refused, then Enter: nothing stored, skipped: $(wk "GOO -")"; pass
+[[ "$(wk "-" refused)" == "stored= fails=1 asks=1" ]] || fail_ "a refused stored key left as it is: a failure, not a quiet skip: $(wk "-" refused)"; pass
+r=$( ( prompt_guard() { :; }; REPLY_VAL="unset"; rc=0; ask_token "x" "" optional <<<"" || rc=$?; echo "[$REPLY_VAL] rc=$rc" ) 2>/dev/null | tail -n 1 )
+[[ "$r" == "[] rc=0" ]] || fail_ "ask_token optional: Enter answers empty, never 'required': $r"; pass
+grep -n 'API Keys' services/wizarr/wizarr.sh >/dev/null && fail_ "Wizarr's keys are made in Settings → General, at the bottom — not an 'API Keys' page"; pass
 
 echo "OK wire: $checks checks"

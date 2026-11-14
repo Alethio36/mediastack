@@ -54,7 +54,7 @@ ROTATE_EXTERNAL=(
 # CI holds every secret the scripts write (env.tsv, writer "script") to a
 # rotator, a login (set-credentials' job), or this list.
 ROTATE_NOT=(
-    "WIZARR_API_KEY|Wizarr's API key: made in Wizarr's own UI, no API makes one — a new one there (Settings → API Keys), then ./mediastack.sh wire wizarr"
+    "WIZARR_API_KEY|Wizarr's API key: made in Wizarr's own UI, no API makes one — a new one there (Settings → General, at the bottom), then ./mediastack.sh wire wizarr — it asks for it"
 )
 
 ROTATE_DIR="$LOCAL_DIR/rotate"

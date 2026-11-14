@@ -211,7 +211,7 @@ closing_todo() { # what is proven, what is still yours to do, where things are
     hr "Still yours to do"
     if signin_is authentik; then echo "  * make your own account in the portal: invite yourself (./mediastack.sh invite) — the stack's logins are not for people"; fi
     if svc_enabled prowlarr; then echo "  * add your indexers in Prowlarr: doctor reports the arrs without them until you do"; fi
-    if signin_is wizarr; then echo "  * Wizarr's API key: ./mediastack.sh wire wizarr (its UI must exist first)"; fi
+    if signin_is wizarr && [[ -z "$(env_get WIZARR_API_KEY)" ]]; then echo "  * Wizarr's API key: ./mediastack.sh wire wizarr (its UI must exist first)"; fi
     if signin_is authentik && [[ -n "$(env_get SMTP_HOST)" ]]; then echo "  * prove the portal's email: ./mediastack.sh email test <your address>"; fi
     if svc_enabled traefik; then echo "  * the LAN DNS record *.$(env_get STACK_DOMAIN) -> this host — to reach the services by name"; fi
     hr "Where things are"
