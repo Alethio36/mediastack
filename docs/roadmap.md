@@ -235,6 +235,9 @@ agreed first:
     - **Grep the code for checks that use `grep -q` in a pipe or a `$( )`
       that can die** — test-pipes and test-reasons caught three new ones in
       one day; their rules belong in the contributor notes.
+    - **The verb registry's `down` line has lost its indentation**
+      (`mediastack.sh`): harmless to the dispatcher, but a line-based reader
+      of the registry misses it (the docs check of Nov 2026 did).
 12. **The README as a chapter-style tutorial** and the built-in how-to page.
 13. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
     dependency layers below; Wizarr sign-in live; `restore --service
