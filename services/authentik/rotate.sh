@@ -14,7 +14,8 @@ authentik_secrets() {
     printf 'AUTHENTIK_API_TOKEN\t\n'
     printf 'AUTHENTIK_ADMIN_PASSWORD\takadmin\n'
     [[ -n "$(env_get AUTHENTIK_LDAP_TOKEN)" ]] && printf 'AUTHENTIK_LDAP_TOKEN\t\n'
-    printf "authentik's settings\tportal\n"
+    local e keys=""; for e in "${AUTHENTIK_ROTATE_SETTINGS[@]}"; do keys+="${keys:+,}${e%%:*}"; done
+    printf "authentik's settings\tportal\t%s\n" "$keys"
 }
 authentik_secret_rotate() {
     http_ready authentik "$(authentik_url)/-/health/ready/" '^2' || return 1   # after the restore point's restart: up before it is asked

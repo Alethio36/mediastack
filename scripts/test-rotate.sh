@@ -10,6 +10,8 @@
 #   * the closing warning: framed at one width, a line per cost that leaves
 #     work outside the stack, the outside secrets this install holds
 #   * Meilisearch's key is proven by the new one taken and the old refused
+#   * coverage: every secret the scripts write (env.tsv, writer script) is
+#     rotated, a login (set-credentials), or named in ROTATE_NOT with why
 #   * every cost tag a service uses has its words; a key is proven by the new
 #     one opening and the old refused
 #   * the keys outside authentik: an owner that makes its own (the arrs,
@@ -71,7 +73,7 @@ r=$( (cmd_rotate_secrets) 2>&1 </dev/null; echo "rc=$?")
 
 # ---- the closing warning ----
 echo "CF_DNS_API_TOKEN=x" > "$T/env"
-r=$(rotate_box_lines search)
+r=$(logins_list() { :; }; rotate_box_lines search)
 [[ "$r" == *"Nothing outside the stack held these"* ]] || fail_ "a cost with nothing to do outside: said so: $r"; pass
 [[ "$r" == *"Cloudflare's DNS token"* && "$r" != *"tunnel"* && "$r" != *"VPN's key"* ]] \
     || fail_ "the outside secrets this install holds, and only those: $r"; pass
@@ -176,6 +178,9 @@ rotate_journal_start p; rotate_journal_hold A a1 a2 B b1 b2
 [[ "$(rotate_inflight)" == "A B" ]] || fail_ "several secrets held together are all named in flight: $(rotate_inflight)"; pass
 r=$(svc_enabled() { :; }; env_get() { [[ "$1" == AUTHENTIK_LDAP_TOKEN ]] && echo t; return 0; }; authentik_secrets | cut -f1,2 | paste -sd'|' -)
 [[ "$r" == $'AUTHENTIK_API_TOKEN\t|AUTHENTIK_ADMIN_PASSWORD\takadmin|AUTHENTIK_LDAP_TOKEN\t|authentik\'s settings\tportal' ]] || fail_ "the portal's secrets, in order: $r"; pass
+r=$(svc_enabled() { :; }; env_get() { :; }; authentik_secrets | grep "^authentik's settings" | cut -f3)
+[[ "$r" == AUTHENTIK_SECRET_KEY,AUTHENTIK_DB_PASSWORD,AUTHENTIK_LDAP_BIND_PASSWORD,AUTHENTIK_ABS_CLIENT_SECRET,AUTHENTIK_KAVITA_CLIENT_SECRET ]] \
+    || fail_ "the portal's settings name the .env keys they cover: $r"; pass
 r=$(svc_enabled() { :; }; env_get() { :; }; authentik_secrets | cut -f1 | paste -sd'|' -)
 [[ "$r" != *LDAP_TOKEN* ]] || fail_ "no LDAP outpost token yet: not listed"; pass
 
@@ -227,5 +232,22 @@ r=$(logins_list() { printf 'x\tU\tP\n'; }; env_get() { :; }; rotate_box_lines se
 [[ "$r" == *"the stack's own logins"*"set-credentials <target|all>"* ]] || fail_ "logins on this install: named under Not rotated, with the command: $r"; pass
 r=$(logins_list() { :; }; env_get() { :; }; rotate_box_lines search)
 [[ "$r" != *"stack's own logins"* ]] || fail_ "no logins: no line about them: $r"; pass
+
+# ---- coverage: every secret the scripts write has a rotator, is a login, or is on ROTATE_NOT ----
+covered=$( ( svc_enabled() { :; }; signin_is() { :; }; env_get() { echo set; }; arr_instances() { echo radarr; }
+             bazarr_key() { echo k; }; ll_key() { echo k; }
+             for st in "${ROTATE_ORDER[@]}"; do "${st}_secrets"; done | awk -F'\t' '{ if ($1 ~ /^[A-Z0-9_]+$/) print $1; n = split($3, a, ","); for (i = 1; i <= n; i++) print a[i] }'
+             for f in $(grep -ho '^[a-z0-9_]*_logins()' services/*/*.sh | tr -d '()'); do "$f" | cut -f3; done   # the declarations only (never configure's step)
+             for e in "${ROTATE_NOT[@]}"; do echo "${e%%|*}"; done ) | sort -u )
+missing=""
+for f in lib/env.schema.tsv services/*/env.tsv; do
+    for k in $(awk -F'\t' '$2 == "secret" && $4 == "script" { print $1 }' "$f"); do
+        grep -qx "$k" <<<"$covered" || missing+=" $k ($f)"
+    done
+done
+[[ -z "$missing" ]] || fail_ "secrets the scripts write that nothing rotates — give each a rotator, a login, or a ROTATE_NOT line with why:$missing"; pass
+for e in "${ROTATE_NOT[@]}"; do [[ "$e" == *"|"?* ]] || fail_ "ROTATE_NOT says why and what to do: $e"; done; pass
+r=$(echo "WIZARR_API_KEY=x" > "$T/env"; logins_list() { :; }; rotate_box_lines search)
+[[ "$r" == *"Not rotated:"*"Wizarr's API key"* ]] || fail_ "a stored secret nothing rotates: the end says so, and what to do: $r"; pass
 
 echo "OK rotate: $checks checks"

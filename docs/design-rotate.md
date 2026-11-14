@@ -73,7 +73,7 @@ rewired. Each row's code lives in its service's folder.
 | `JELLYFIN_API_KEY` | Jellyfin (the old key deleted, then `wire jellyfin` mints and stores a new one) | Wizarr's server entry | Wizarr mode: see spike 4 |
 | `SEERR_API_KEY` | Seerr (`POST /settings/main/regenerate`; `wire seerr` stores it) | the script only | **companion apps** |
 | `CLEANUPARR_API_KEY` | Cleanuparr (`POST /account/api-key/regenerate`; `wire cleanuparr` stores it) | the script only | — |
-| `WIZARR_API_KEY` | Wizarr | the script only | see spike 5 |
+| `WIZARR_API_KEY` | — not rotated (`ROTATE_NOT`): made in Wizarr's UI, no API makes one; the end says how | — | — |
 | `MEILI_MASTER_KEY` | Meilisearch (compose) | JellySearch (compose; re-indexes from Jellyfin's database at every start) | search down until both are back |
 | `GLUETUN_CONTROL_APIKEY` | gluetun (compose: `.env`, then `up` through the leak gate) | — | **the VPN group restarts through the leak gate** |
 | **every session** (not a secret: the run's last step) | authentik (`DELETE /core/authenticated_sessions/<uuid>/` for each) | the gates' sessions end with them (authentik tells its outposts) | **everyone signed out**: portal, gated tools, panel, household gates |
@@ -130,11 +130,15 @@ secret is proven, so a put-back is always possible.
   after it may need the portal's API; the sessions last, so none opened
   during the run outlives it.
 - **Per service** — each service declares its secrets with a `<svc>_secrets`
-  function (one TSV line each: the name, its cost tags) and rotates each with
+  function (one TSV line each: the name, its cost tags, and — when the name
+  is not a `.env` key — the keys it covers) and rotates each with
   `<svc>_secret_rotate NAME` (rc 0 proven, 1 back on its old value, 2 left
-  changed — the run stops), as `<svc>_logins` does for logins. CI holds every `secret` row whose writer is `script` in
-  every `env.tsv` to a declaration or to the "not rotated" list in
-  `lib/rotate.sh`: a new service cannot add a secret the verb forgets.
+  changed — the run stops), as `<svc>_logins` does for logins. CI
+  (`test-rotate.sh`, built) holds every `secret` row whose writer is
+  `script` in every `env.tsv` to a rotator, a login's password
+  (`set-credentials`' job) or `ROTATE_NOT` in `lib/rotate.sh` (with why, and
+  what to do — the end prints it): a new service cannot add a secret the
+  verb forgets.
 
 ## The run — **proposed**
 
@@ -292,8 +296,8 @@ Jellyfin's API.
 2. `lib/rotate.sh`: the verb, the cost and confirmation, the restore point
    and lock, the journal, the order, the end and its warning; doctor's
    leftover journal — with Meilisearch's key as its first secret (slice 1).
-   The CI coverage check comes with the last slice, once every secret has
-   its rotator. Doctor runs at the end and its summary is reported, never
+   The CI coverage check came with slice 5, once every secret had its
+   rotator. Doctor runs at the end and its summary is reported, never
    the run's verdict (its findings may predate the run).
 3. The keys outside authentik (gluetun, Meilisearch, Jellyfin, Seerr,
    Cleanuparr, the arr family) — proven live.

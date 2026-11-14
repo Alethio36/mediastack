@@ -5,6 +5,8 @@
 # each secret's part lives with its service:
 #   <stem>_secrets              one line per secret it rotates on this install:
 #                               NAME<TAB>cost tags (comma-separated, ROTATE_COSTS)
+#                               [<TAB>the .env keys it covers, comma-separated,
+#                               when NAME is not one itself]
 #   <stem>_secret_rotate NAME   rotates NAME: rc 0 proven, 1 put back on its old
 #                               value (said why), 2 left changed (the run stops)
 # No value is ever printed: the run's output, its run record and the journal's
@@ -48,6 +50,13 @@ ROTATE_EXTERNAL=(
     "NOTIFY_USERS|the users stream's URLs: new ones from where they point, then ./mediastack.sh notify set users"
 )
 
+# Secrets mediastack stores but cannot rotate: never in the run — the end says why, and what to do.
+# CI holds every secret the scripts write (env.tsv, writer "script") to a
+# rotator, a login (set-credentials' job), or this list.
+ROTATE_NOT=(
+    "WIZARR_API_KEY|Wizarr's API key: made in Wizarr's own UI, no API makes one — a new one there (Settings → API Keys), then ./mediastack.sh wire wizarr"
+)
+
 ROTATE_DIR="$LOCAL_DIR/rotate"
 ROTATE_JOURNAL="$ROTATE_DIR/journal"   # 0600: the restore point, and the secret in flight (old and new value)
 
@@ -71,9 +80,9 @@ rotate_inflight() { awk -F'\t' '$1 == "inflight" { print $2 }' "$ROTATE_JOURNAL"
 
 # ------------------------------------------------------------ declarations --
 rotate_secrets_list() { # -> STEM<TAB>NAME<TAB>TAGS per secret this install rotates, in ROTATE_ORDER
-    local stem name tags
+    local stem name tags _
     for stem in "${ROTATE_ORDER[@]}"; do
-        while IFS=$'\t' read -r name tags; do
+        while IFS=$'\t' read -r name tags _; do
             [[ -n "$name" ]] && printf '%s\t%s\t%s\n' "$stem" "$name" "$tags"
         done < <("${stem}_secrets")
     done
@@ -146,6 +155,12 @@ rotate_box_lines() { # rotate_box_lines TAGS — the closing warning's lines for
         key=${e%%|*}; words=${e#*|}
         [[ -n "$(env_get "$key")" ]] || continue
         (( any == 2 )) || { echo ---; echo "Not rotated — held outside the stack, yours to replace:"; any=2; }
+        echo "• $words"
+    done
+    for e in "${ROTATE_NOT[@]}"; do
+        key=${e%%|*}; words=${e#*|}
+        [[ -n "$(env_get "$key")" ]] || continue
+        (( any == 2 )) || { echo ---; echo "Not rotated:"; any=2; }
         echo "• $words"
     done
     if [[ -n "$(logins_list)" ]]; then   # the stack's own logins: set-credentials' job, generated or chosen
