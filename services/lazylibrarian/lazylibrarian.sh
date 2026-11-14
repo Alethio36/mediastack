@@ -30,7 +30,7 @@ ll_api_enable() { # ll_api_enable [KEY] — api_enabled + KEY (a new one when no
     sudo chown "$own" "$f"
     DC start lazylibrarian >/dev/null 2>&1 || { wfail "lazylibrarian did not start again — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
     http_ready lazylibrarian "$(ll_url)/" '^([23][0-9][0-9]|401|403)$' || return 1
-    [[ "$(ll_api getVersion)" == "{"* ]] \
+    ll_key_takes "$key" \
         || { wfail "lazylibrarian did not take the API key written to its config.ini — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
     ok "lazylibrarian: API on, with a key of its own"
 }
@@ -138,10 +138,13 @@ wire_lazylibrarian() {
 
 # ---- rotate-secrets (lib/rotate.sh) ----
 lazylibrarian_secrets() { svc_enabled lazylibrarian && [[ -n "$(ll_key)" ]] && printf 'lazylibrarian API key\t\n'; return 0; }
-ll_key_takes() { [[ "$(curl -sS -m 15 "$(ll_url)/api?apikey=$1&cmd=getVersion" 2>/dev/null)" == "{"* ]]; }   # ll_key_takes KEY
+ll_key_takes() { # ll_key_takes KEY — LazyLibrarian answers KEY as its own (a wrong key gets JSON too: {"Success": false, … 401}, found live)
+    curl -sS -m 15 "$(ll_url)/api?apikey=$1&cmd=getVersion" 2>/dev/null | jq -e '.Success == true' >/dev/null 2>&1
+}
 lazylibrarian_secret_rotate() { # a new key into config.ini while it is stopped (ll_api_enable); Prowlarr's copy follows at the run's wire
     local old new
     old=$(ll_key); new=$(rotate_hex)
+    http_ready lazylibrarian "$(ll_url)/" '^([23][0-9][0-9]|401|403)$' || return 1   # after the restore point's restart: up before it is asked
     rotate_journal_hold "lazylibrarian API key" "$old" "$new"
     if ll_api_enable "$new" >/dev/null && ll_key_takes "$new" && ! ll_key_takes "$old"; then
         ok "lazylibrarian: takes the new key, refuses the old one"; rotate_journal_release; return 0

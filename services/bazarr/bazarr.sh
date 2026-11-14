@@ -80,6 +80,8 @@ bazarr_secrets() { svc_enabled bazarr && [[ -n "$(bazarr_key)" ]] && printf 'baz
 bazarr_secret_rotate() { # a new key through its settings form; config.yaml follows
     local old new url code
     old=$(bazarr_key); new=$(rotate_hex); url=$(arr_url bazarr)
+    # after the restore point's restart: Bazarr is the slowest to answer (found live: HTTP 000, 31s after it)
+    http_ready bazarr "$url/api/system/status" '^200$' -H "X-API-KEY: $old" || return 1
     rotate_journal_hold "bazarr API key" "$old" "$new"
     code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST -H "X-API-KEY: $old" \
            --data-urlencode "settings-auth-apikey=$new" "$url/api/system/settings" 2>/dev/null) || true

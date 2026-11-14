@@ -230,6 +230,7 @@ cleanuparr_secrets() { svc_enabled cleanuparr && [[ -n "$(env_get CLEANUPARR_API
 cleanuparr_secret_rotate() { # Cleanuparr makes its own (regenerate); .env takes it
     local old new out
     old=$(env_get CLEANUPARR_API_KEY)
+    http_ready cleanuparr "$(cup_url)/health" '^2' || return 1   # after the restore point's restart: up before it is asked
     rotate_journal_hold CLEANUPARR_API_KEY "$old" ""
     out=$(cup_api POST /account/api-key/regenerate "X-Api-Key: $old") \
         || { fail "cleanuparr: refused the regenerate [HTTP $(cup_code)] — its key is unchanged"; rotate_journal_release; return 1; }

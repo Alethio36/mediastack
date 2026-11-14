@@ -83,7 +83,7 @@ printf '[GENERAL]\nimp_preflang = en\napi_enabled = 0\n\n[LOGGING]\nlog_dir = /c
 sudo()       { "$@"; }
 DC()         { echo "DC $*" >> "$T/dc"; }
 http_ready() { :; }; render() { :; }; ll_url() { echo http://127.0.0.1:5299; }
-ll_api()     { [[ "$1" == getVersion ]] && echo '{"current_version":"x"}'; }
+curl()       { [[ "$*" == *"apikey=$(ll_key)&cmd=getVersion"* ]] && echo '{"Success": true, "current_version":"x"}' || echo '{"Success": false, "Error": {"Code": 401, "Message": "Incorrect API key"}}'; }
 out=$(ll_api_enable 2>&1) || fail_ "switching the API on runs: $out"
 [[ "$(grep -E '^DC (stop|start) ' "$T/dc")" == $'DC stop lazylibrarian\nDC start lazylibrarian' ]] || fail_ "written while stopped: $(cat "$T/dc")"; pass
 [[ "$(sed -n 2p "$ini")" == "api_enabled = 1" && "$(sed -n 3p "$ini")" =~ ^api_key\ =\ [0-9a-f]{32}$ ]] \
@@ -91,9 +91,13 @@ out=$(ll_api_enable 2>&1) || fail_ "switching the API on runs: $out"
 [[ "$(grep -c '^api_enabled' "$ini")" == 1 && "$(sed -n '/^\[LOGGING\]/,$p' "$ini" | grep -c '^api_')" == 0 ]] \
     || fail_ "the old api_enabled replaced, nothing in other sections: $(cat "$ini")"; pass
 [[ "$(ll_key)" =~ ^[0-9a-f]{32}$ ]] || fail_ "ll_key reads the key back"; pass
-ll_api() { echo 'API not enabled'; }; : > "$T/dc"
+curl() { echo 'API not enabled'; }; : > "$T/dc"
 ll_api_enable >/dev/null 2>&1 && fail_ "an API that does not answer after the write is a failure"
 (( WIRE_FAILS > 0 )) || fail_ "and it is counted"; pass
+# a wrong key gets JSON too (found live Nov 2026): only Success true proves the key written
+curl() { echo '{"Success": false, "Data": "", "Error": {"Code": 401, "Message": "Incorrect API key"}}'; }; : > "$T/dc"
+ll_api_enable >/dev/null 2>&1 && fail_ "LazyLibrarian refusing the written key (JSON, Success false) is a failure"; pass
+unset -f curl
 
 # ---- the summary names every failure by its step ----
 WIRE_FAILS=0; WIRE_FAIL_LIST=()

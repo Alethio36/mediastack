@@ -421,6 +421,7 @@ arr_secret_rotate() { # arr_secret_rotate "<svc> API key" — the app makes its 
     local name="$1" s=${1% API key} old new base _
     old=$(arr_key "$s"); [[ -n "$old" ]] || { fail "$s: no API key readable in its config.xml"; return 1; }
     base="$(arr_url "$s")/api/$(arr_apiver "$s")"
+    http_ready "$s" "$base/system/status" '^200$' -H "X-Api-Key: $old" || return 1   # after the restore point's restart: up before it is asked
     if [[ "$s" == prowlarr ]]; then   # its application entries get the arrs' new keys first: its reset's sync must reach them
         MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" wire prowlarr >/dev/null 2>&1 \
             || { fail "prowlarr: wire prowlarr failed — the arrs' new keys are not in it, so its key is left as it is (see: ./mediastack.sh wire prowlarr)"; return 1; }

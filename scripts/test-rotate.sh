@@ -85,6 +85,7 @@ mk() { ( meili_key_code() { case "$1" in NEW) echo "$A" ;; OLD) echo "$B" ;; esa
 [[ "$(svc_enabled() { :; }; meilisearch_secrets)" == $'MEILI_MASTER_KEY\tsearch' ]] || fail_ "meilisearch on: its key, tagged search"; pass
 
 # ---- slice 2: the keys outside authentik ----
+http_ready() { :; }   # each rotator's readiness wait: up, unless a check says otherwise
 for t in $(grep -hoE "printf '[^']*\\\\t[a-z,-]*\\\\n'" services/*/*.sh | sed -n "s/.*\\\\t\([a-z,-]*\)\\\\n'/\1/p" | tr ',' '\n' | sort -u); do
     [[ -n "${ROTATE_COSTS[$t]+x}" && -n "${ROTATE_AFTER[$t]+x}" ]] || fail_ "the cost tag '$t' has no words in ROTATE_COSTS and ROTATE_AFTER"
 done; pass
@@ -151,5 +152,19 @@ r=$(svc_cname() { echo g; }; sudo() { printf 'Connecting to 127.0.0.1:8008\n  HT
 [[ "$r" == 401 ]] || fail_ "gluetun: the control server's code read from wget's headers: $r"; pass
 r=$(svc_cname() { echo g; }; sudo() { return 1; }; gluetun_control_code K)
 [[ "$r" == "" ]] || fail_ "gluetun: no answer reads as none, never a code: $r"; pass
+
+# an app still starting (after the restore point's restart) is waited for; never answering, nothing changes
+r=$( ( echo "point	p" > "$ROTATE_JOURNAL"; rm -f "$T/c"; http_ready() { return 1; }; bazarr_key() { echo BOLD; }; arr_url() { echo http://b; }
+       curl() { echo POST >> "$T/c"; echo 204; }; rc=0; bazarr_secret_rotate >/dev/null 2>&1 || rc=$?; echo "rc=$rc posts=$( { cat "$T/c" 2>/dev/null || true; } | wc -l)" ) )
+[[ "$r" == "rc=1 posts=0" ]] || fail_ "an app that never answers: kept, nothing sent: $r"; pass
+for f in jellyfin_secret_rotate arr_secret_rotate seerr_secret_rotate cleanuparr_secret_rotate bazarr_secret_rotate lazylibrarian_secret_rotate; do
+    declare -f "$f" | grep 'http_ready' >/dev/null || fail_ "$f asks its app without waiting for it to be up"
+done; pass
+# LazyLibrarian answers a wrong key with JSON too: only Success true is its own (found live)
+lk() { ( ll_url() { echo http://l; }; curl() { echo "$A"; }; A=$1; ll_key_takes K && echo takes || echo refused ); }
+[[ "$(lk '{"Success": true, "current_version": "x"}')" == takes ]] || fail_ "lazylibrarian: its own key: taken"; pass
+[[ "$(lk '{"Success": false, "Data": "", "Error": {"Code": 401, "Message": "Incorrect API key"}}')" == refused ]] || fail_ "lazylibrarian: a wrong key's JSON: refused"; pass
+[[ "$(lk '')" == refused ]] || fail_ "lazylibrarian: no answer: refused"; pass
+declare -f ll_api_enable | grep 'll_key_takes "$key"' >/dev/null || fail_ "ll_api_enable proves the key it wrote, not any JSON answer"; pass
 
 echo "OK rotate: $checks checks"

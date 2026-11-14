@@ -262,6 +262,7 @@ seerr_secrets() { svc_enabled seerr && [[ -n "$(env_get SEERR_API_KEY)" ]] && pr
 seerr_secret_rotate() { # Seerr makes its own (regenerate); .env takes it
     local old new out code
     old=$(env_get SEERR_API_KEY)
+    http_ready seerr "$(seerr_url)/api/v1/settings/public" '^200$' || return 1   # after the restore point's restart: up before it is asked
     rotate_journal_hold SEERR_API_KEY "$old" ""
     out=$(curl -sS -m 20 -X POST -H "X-Api-Key: $old" -w $'\n%{http_code}' "$(seerr_url)/api/v1/settings/main/regenerate" 2>&1) || true
     code=${out##*$'\n'}; out=${out%$'\n'*}

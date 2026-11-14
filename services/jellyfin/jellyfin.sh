@@ -591,6 +591,7 @@ jellyfin_secrets() {
 jellyfin_secret_rotate() { # a new stack key minted beside the old one; the old one deleted only once the new one opens Jellyfin
     local old new keys url
     old=$(env_get JELLYFIN_API_KEY); url="$(jf_url)/System/Info"
+    http_ready jellyfin "$(jf_url)/System/Info/Public" '^200$' || return 1   # after the restore point's restart: up before it is asked
     jf_api POST "/Auth/Keys?app=mediastack" "$old" >/dev/null || { fail "jellyfin: refused a new key [HTTP $(jf_code)]"; return 1; }
     keys=$(jf_api GET /Auth/Keys "$old") \
         || { fail "jellyfin: its keys are unreadable [HTTP $(jf_code)] — a spare key named mediastack may sit in Dashboard -> API Keys"; return 1; }
