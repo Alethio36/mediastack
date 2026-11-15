@@ -12,6 +12,9 @@
 # plus the table's own integrity (verbs exist, entities exist, groups named),
 # and what a rebuild leaves behind: provision makes nothing of the panel, and
 # frontdoor-install refuses a wrong-shaped user or a file mount made a directory.
+# The panel's admin is one of the stack's own logins: its hash (argon2id, the
+# installed one kept while it is the password's), its config, what records it,
+# set-credentials panel and doctor's check (needs argon2 and openssl).
 #
 #   scripts/test-frontdoor.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -126,5 +129,69 @@ DIRPATH="" HAS_USER=1 HAS_GROUP=""; out=$(fi_run)
 [[ "$out" == *"was not made by frontdoor-install (no group of its own)"*"sudo userdel olivetin"* && "$out" != *SUDO* ]] \
     || fail_ "a user of the wrong shape: refused with the fix — $out"; pass
 grep -q "ssh-keygen .*>/dev/null </dev/null" lib/frontdoor.sh || fail_ "ssh-keygen can never wait on a prompt its hidden output would hide"; pass
+
+# ---- the panel's admin: one of the stack's own logins (14 Nov 2026) ----
+command -v argon2 >/dev/null || fail_ "argon2 is needed for the panel's hash checks (apt-get install argon2)"
+h1=$(panel_hash 'first-Pass-123'); [[ "$h1" == '$argon2id$v=19$m=65536,t=4,p=6$'* ]] || fail_ "a new hash is argon2id at the panel's cost: $h1"; pass
+[[ "$(panel_hash 'first-Pass-123' "$h1")" == "$h1" ]] || fail_ "the installed hash is kept while it is the password's (no config change, no restart)"; pass
+h2=$(panel_hash 'other-Pass-456' "$h1"); [[ "$h2" != "$h1" && "$h2" == '$argon2id$'* ]] || fail_ "another password: a new hash"; pass
+[[ "$(panel_hash 'other-Pass-456' "$h2")" == "$h2" ]] || fail_ "a hash this makes is recognised next time"; pass
+[[ "$(panel_hash 'first-Pass-123')" != "$h1" ]] || fail_ "each new hash has its own salt"; pass
+h0=$(printf '%s' 'old-Pass-789' | argon2 "$(openssl rand -base64 16)" -id -t 4 -m 16 -p 6 -l 32 -e)   # what frontdoor-install wrote before
+[[ "$(panel_hash 'old-Pass-789' "$h0")" == "$h0" ]] || fail_ "an install's hash from before is kept while it is the password's"; pass
+[[ "$(panel_hash 'old-Pass-789' 'not-a-hash')" == '$argon2id$'* ]] || fail_ "something that is not a hash: a new one, never kept"; pass
+! grep -nE 'argon2 [^|]*\$\{?(1|pass|pw)\b' services/olivetin/olivetin.sh lib/frontdoor.sh || fail_ "the password reaches argon2 on stdin, never in its argv"; pass
+! grep -nE -- 'read -rs|--set-password' lib/frontdoor.sh services/olivetin/olivetin.sh mediastack.sh || fail_ "frontdoor-install asks nothing itself, and --set-password is gone (set-credentials panel)"; pass
+
+# the config: the stack's username, quoted; read back as the install wrote it
+CF=$T/cfg/olivetin; mkdir -p "$CF"
+panel_config_render 'ops.admin' "$h1" > "$CF/config.yaml"
+grep -qxF "    - username: 'ops.admin'" "$CF/config.yaml" || fail_ "the admin's name is the login's, quoted: $(grep -n username "$CF/config.yaml")"; pass
+got=$( env_get() { echo "$T/cfg"; }; sudo() { "$@"; }; panel_installed_login )
+[[ "$got" == "ops.admin"$'\t'"$h1" ]] || fail_ "the installed admin read back (name, hash): $got"; pass
+
+# what records it: missing → recorded the stack's way; there → untouched; each, no terminal → stop
+le() { # le MODE USER PASS STACK_USER -> "rc=N user pass" (le's .env in $T/le)
+    ( printf 'STACK_LOGINS=%s\nPANEL_ADMIN_USER=%s\nPANEL_ADMIN_PASSWORD=%s\nSTACK_USER=%s\n' "$@" > "$T/le"
+      env_get() { sed -n "s/^$1=//p" "$T/le"; }; env_set() { sed -i "s/^$1=.*/$1=$2/" "$T/le"; }; info() { :; }
+      login_unified_password() { echo 'shared-Pass-1234'; }
+      rc=0; ( login_ensure "$(olivetin_logins)" ) </dev/null >/dev/null 2>&1 || rc=$?
+      echo "rc=$rc $(env_get PANEL_ADMIN_USER) $(env_get PANEL_ADMIN_PASSWORD)" )
+}
+[[ "$(le generated '' '' ops)" =~ ^rc=0\ ops\ [A-Za-z0-9]{16}$ ]] || fail_ "generated: the stack's username and a new password: $(le generated '' '' ops)"; pass
+[[ "$(le unified '' '' ops)" == "rc=0 ops shared-Pass-1234" ]] || fail_ "unified: the shared password: $(le unified '' '' ops)"; pass
+[[ "$(le generated keep keep-Pass-1234 ops)" == "rc=0 keep keep-Pass-1234" ]] || fail_ "a login there already is never changed"; pass
+[[ "$(le each keep keep-Pass-1234 ops)" == "rc=0 keep keep-Pass-1234" ]] || fail_ "each, a login there already: a re-run goes on, never stopped for it"; pass
+[[ "$(le each '' '' ops)" == "rc=1  " ]] || fail_ "each, without a terminal: stopped (configure types it), nothing recorded: $(le each '' '' ops)"; pass
+[[ "$(le generated '' '' '')" == "rc=1  " ]] || fail_ "no stack username yet: stopped (configure), nothing recorded"; pass
+# configure asks the panel first, so its login is among the ones it makes
+[[ "$( svc_enabled_managed() { echo sonarr; }; svc_pending() { echo olivetin; }; svc_label() { :; }; logins_list | grep -c "PANEL_ADMIN_PASSWORD" )" == 1 ]] \
+    || fail_ "a panel asked for now has its login listed (configure records it)"; pass
+awk '/^questionnaire_run\(\)/,/^}/' lib/questionnaire.sh | grep -A1 '_configure_panel_offer' | grep '_configure_logins' >/dev/null \
+    || fail_ "configure offers the panel right before the logins"; pass
+
+# set-credentials panel: not enabled → skipped; not installed → a failure; installed → .env, the config, a restart; no hash → nothing changed
+sp() { # sp ENABLED(0|1) INSTALLED(0|1) ARGON2-WORKS(0|1) -> "calls" ($T/sp: .env)
+    ( : > "$T/spc"; echo "PANEL_ADMIN_PASSWORD=old" > "$T/sp"; EN=$1 INST=$2 AW=$3
+      svc_enabled() { (( EN )); }; frontdoor_installed() { (( INST )); }; need_cmd() { :; }; info() { :; }; ok() { :; }; wfail() { echo wfail >> "$T/spc"; }
+      env_get() { sed -n "s/^$1=//p" "$T/sp"; }; env_set() { sed -i "s/^$1=.*/$1=$2/" "$T/sp"; echo "env $1" >> "$T/spc"; }
+      panel_hash() { (( AW )) && echo '$argon2id$x'; }
+      fd_config_write() { echo "write $1" >> "$T/spc"; }; fd_panel_restart() { echo restart >> "$T/spc"; }
+      sc_rotate_panel 'new-Pass-1234' >/dev/null 2>&1; echo "$(paste -sd'|' "$T/spc") $(env_get PANEL_ADMIN_PASSWORD)" )
+}
+[[ "$(sp 0 0 1)" == " old" ]] || fail_ "not enabled: skipped, nothing changed: $(sp 0 0 1)"; pass
+[[ "$(sp 1 0 1)" == "wfail old" ]] || fail_ "enabled, not installed: a failure, nothing changed: $(sp 1 0 1)"; pass
+[[ "$(sp 1 1 1)" == 'env PANEL_ADMIN_PASSWORD|write $argon2id$x|restart new-Pass-1234' ]] || fail_ "installed: .env, its hash written, the panel restarted: $(sp 1 1 1)"; pass
+[[ "$(sp 1 1 0)" == "wfail old" ]] || fail_ "no hash: a failure, the old password kept everywhere: $(sp 1 1 0)"; pass
+
+# doctor: the installed admin is .env's login
+dp() { # dp USER PASS -> doctor's word
+    ( env_get() { case $1 in CONFIG_ROOT) echo "$T/cfg" ;; PANEL_ADMIN_USER) echo "$DU" ;; PANEL_ADMIN_PASSWORD) echo "$DPW" ;; esac; }
+      sudo() { "$@"; }; ok() { echo "OK $*"; }; d_fail() { echo "FAIL $1"; }; DU=$1 DPW=$2; olivetin_doctor )
+}
+[[ "$(dp ops.admin first-Pass-123)" == "OK the web panel's admin is the login in .env (ops.admin)" ]] || fail_ "doctor: the installed admin is .env's: $(dp ops.admin first-Pass-123)"; pass
+[[ "$(dp ops.admin wrong-Pass-123)" == "FAIL the web panel's admin is not the login in .env" ]] || fail_ "doctor: another password: said"; pass
+[[ "$(dp admin first-Pass-123)" == "FAIL the web panel's admin is not the login in .env" ]] || fail_ "doctor: another name: said"; pass
+[[ "$(dp '' '')" == "FAIL the web panel's admin is not one of the stack's logins yet" ]] || fail_ "doctor: none in .env: said"; pass
 
 echo "OK frontdoor: $checks checks (${#PANEL[@]} buttons)"

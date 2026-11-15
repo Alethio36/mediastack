@@ -118,7 +118,7 @@ snap_case() { # snap_case CASE OUT — one fixture through the up order, outputs
         done
     fi
     if svc_enabled olivetin; then   # the panel's config follows the account model (the portal's sign-in)
-        panel_config_render '@ARGON2ID-HASH@' | normalize > "$out/olivetin-config.yaml"
+        panel_config_render '@PANEL-USER@' '@ARGON2ID-HASH@' | normalize > "$out/olivetin-config.yaml"
     fi
     DC config --format json | jq -S "$PROJECT" | normalize > "$out/compose.json"
 }
@@ -128,7 +128,7 @@ snap_host() { # snap_host OUT — what the panel and the VPN guard install, from
     # a fresh .env.example (no portal): the host's files must not depend on which case ran last
     rm -rf "$work/.env" "$work/local" "$work/custom" "$work/config"; cp "$work/.env.example" "$work/.env"; RENDERED_JSON=""
     mkdir -p "$out"
-    panel_config_render '@ARGON2ID-HASH@' | normalize > "$out/olivetin-config.yaml"
+    panel_config_render '@PANEL-USER@' '@ARGON2ID-HASH@' | normalize > "$out/olivetin-config.yaml"
     panel_theme_render | normalize > "$out/olivetin-theme.css"
     _fd_wrapper_render "$SCRIPT_DIR/mediastack.sh" | normalize > "$out/olivetin-frontdoor"
     _fd_sudoers_render "$SCRIPT_DIR/mediastack.sh" | normalize > "$out/frontdoor-sudoers"

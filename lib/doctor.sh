@@ -353,7 +353,7 @@ _doctor_backup_disk() { # restore points on the configs' own filesystem die with
 
 # the apps doctor checks, in the order it prints them; each one's check is
 # <name>_doctor in its service's folder, run when the app is enabled and up
-DOCTOR_APPS=(jellyfin seerr kavita wizarr)
+DOCTOR_APPS=(jellyfin seerr kavita wizarr olivetin)
 _doctor_apps() {
     hr "doctor: apps"
     local s

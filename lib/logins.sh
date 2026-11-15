@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # lib/logins.sh — the stack's own logins (docs/design-install.md, "The
 # stack's own logins"): the download clients', the arrs', Jellyfin's admin,
-# the roots of Audiobookshelf and Kavita, the dashboard's. One username for
+# the roots of Audiobookshelf and Kavita, the dashboard's, the web panel's. One username for
 # all (STACK_USER), the passwords generated, unified or typed for each
 # (STACK_LOGINS). Each login is declared by the service that owns it — a
 # `<stem>_logins` function in its folder; the stem is the service's name, or
@@ -10,22 +10,29 @@
 #   title  USER_KEY|-  PASS_KEY  [reserve] [pw_max=N] [user_min=N] [user_re=ERE]
 # `reserve`: a person joining the portal under this name could be taken for
 # the account (authentik refuses it at sign-up). The questionnaire asks;
-# logins_fill records what is missing without asking (up, enable). Sourced
+# logins_fill records what is missing without asking (up, enable);
+# login_ensure records one a verb is about to use (frontdoor-install). Sourced
 # by the entrypoint; relies on lib/common.sh and the service helpers.
 
 LOGIN_PW_MIN=12                  # a typed password: at least this long
 LOGIN_FORBIDDEN='[[:space:]$"'"'"'\\`]'   # whitespace and $ " ' \ ` break .env and compose's interpolation
 LOGIN_USER_RE='^[A-Za-z0-9._-]+$'         # the one username: what every login accepts
 
-logins_list() { # the enabled services' logins, one TSV line each, a shared one once
-    local s stem f
+logins_list() { # the enabled services' logins, and those of services asked for now (svc_pending), one TSV line each, a shared one once
+    local s stem
     local -A seen=()
-    for s in $(svc_enabled_managed); do
+    for s in $(svc_enabled_managed) $(svc_pending); do
         stem=$(svc_label "$s" mediastack.logins); stem=${stem:-$s}
         [[ -z "${seen[$stem]:-}" ]] || continue; seen[$stem]=1
-        f="${stem//-/_}_logins"
-        if declare -F "$f" >/dev/null; then "$f"; fi
+        logins_of "$s"
     done
+}
+
+logins_of() { # logins_of SVC — that service's own logins (its <stem>_logins), enabled or not
+    local stem f
+    stem=$(svc_label "$1" mediastack.logins); stem=${stem:-$1}
+    f="${stem//-/_}_logins"
+    if declare -F "$f" >/dev/null; then "$f"; fi
 }
 
 login_opt() { # login_opt "LINE" NAME -> the value of NAME=... in its options ("" when absent); NAME alone: "yes" when present
@@ -99,20 +106,34 @@ login_record() { # login_record "LINE" PASS — the stack's username (where the 
     [[ -n "$(env_get "$pk")" ]] || env_set "$pk" "$2"
 }
 
-logins_fill() { # the missing logins, recorded without asking (up, enable): generated, or unified with the shared password
-    local l pw mode; mode=$(env_get STACK_LOGINS)
+login_fill() { # login_fill "LINE" [ask] — records one missing login: generated, or unified with the shared password; each: typed at a terminal with ask, else stop
+    local l=$1 pw mode; mode=$(env_get STACK_LOGINS)
+    case "$mode" in
+        generated) pw=$(login_generate) ;;
+        unified)   pw=$(login_unified_password) \
+                       || die "$(cut -f1 <<<"$l") has no login yet, and the logins' passwords differ, so there is no one password to share — make them one: ./mediastack.sh set-credentials all"
+                   [[ -n "$pw" ]] || die "$(cut -f1 <<<"$l"): no login is set yet to share the unified password with — run: ./mediastack.sh configure" ;;
+        *)         [[ "${2:-}" == ask && -t 0 ]] \
+                       || die "$(cut -f1 <<<"$l") has no login yet and STACK_LOGINS=each types every one — run: ./mediastack.sh configure"
+                   login_pass_ask "Password for $(cut -f1 <<<"$l")" "$(cut -f3 <<<"$l")"; pw=$REPLY_VAL ;;
+    esac
+    login_record "$l" "$pw"
+    info "$(cut -f1 <<<"$l"): login recorded (see: ./mediastack.sh credentials)"
+}
+
+logins_fill() { # the missing logins, recorded without asking (up, enable)
+    local l
     while IFS= read -r l; do
         [[ -n "$l" ]] || continue
-        case "$mode" in
-            generated) pw=$(login_generate) ;;
-            unified)   pw=$(login_unified_password) \
-                           || die "$(cut -f1 <<<"$l") has no login yet, and the logins' passwords differ, so there is no one password to share — make them one: ./mediastack.sh set-credentials all"
-                       [[ -n "$pw" ]] || die "$(cut -f1 <<<"$l"): no login is set yet to share the unified password with — run: ./mediastack.sh configure" ;;
-            *)         die "$(cut -f1 <<<"$l") has no login yet and STACK_LOGINS=each types every one — run: ./mediastack.sh configure" ;;
-        esac
-        login_record "$l" "$pw"
-        info "$(cut -f1 <<<"$l"): login recorded (see: ./mediastack.sh credentials)"
+        login_fill "$l"
     done < <(login_missing)
+}
+
+login_ensure() { # login_ensure "LINE" — a verb about to use this login records it when missing (each: typed, at a terminal)
+    local uk pk; uk=$(cut -f2 <<<"$1"); pk=$(cut -f3 <<<"$1")
+    [[ -z "$(env_get "$pk")" || ( "$uk" != - && -z "$(env_get "$uk")" ) ]] || return 0
+    [[ "$uk" == - || -n "$(env_get STACK_USER)" ]] || die "$(cut -f1 <<<"$1"): the stack's username is not chosen yet — run: ./mediastack.sh configure"
+    login_fill "$1" ask
 }
 
 logins_reserved() { # the names a person may not join the portal under: the logins marked reserve, comma-separated

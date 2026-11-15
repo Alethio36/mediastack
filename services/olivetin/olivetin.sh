@@ -4,25 +4,85 @@
 # it (the PANEL table, the forced-command wrapper, sudoers, the pinned key and
 # host key, install and teardown) and calls only this interface:
 #
-#   panel_config_render HASH        OliveTin's config.yaml: the PANEL table as
-#                                   its actions, run over FD_SSH; HASH is the
-#                                   admin password's argon2id hash
+#   panel_config_render USER HASH   OliveTin's config.yaml: the PANEL table as
+#                                   its actions, run over FD_SSH; USER and HASH
+#                                   are its admin's name and argon2id hash
+#   panel_hash PASS [OLD-HASH]      that hash (OLD-HASH itself while it is PASS's)
 #   panel_theme_render              its theme (custom-webui/themes/mediastack)
 #   panel_passwd_render UID GID     the container's minimal passwd
 #   panel_portal_render             its sign-in through the portal (only while it runs)
 #   panel_signin_check              wire authentik's word on whether the installed
 #                                   config signs in through the portal yet
 #
-# A second panel app defines the same names. Sourced by the entrypoint (under
-# the front-door audit, like every services/*/*.sh); relies on lib/frontdoor.sh
-# (PANEL, PANEL_GROUP_NOTE, _fd_panel_argv, FRONTDOOR_USER) at call time.
+# A second panel app defines the same names. Its admin is one of the stack's
+# own logins (olivetin_logins; set-credentials panel). Sourced by the
+# entrypoint (under the front-door audit, like every services/*/*.sh); relies
+# on lib/frontdoor.sh (PANEL, PANEL_GROUP_NOTE, _fd_panel_argv, FRONTDOOR_USER,
+# fd_config_write, fd_panel_restart) at call time.
+
+olivetin_logins() { printf "the web panel's admin\tPANEL_ADMIN_USER\tPANEL_ADMIN_PASSWORD\treserve\n"; }   # lib/logins.sh — with the portal, admins sign in through it and this is the fallback
 
 # how OliveTin reaches the host: one narrow ssh call per button, landing on the
 # forced-command wrapper (lib/frontdoor.sh)
 FD_SSH='ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes olivetin@host.docker.internal'
 
-panel_config_render() { # panel_config_render HASH -> config.yaml; the hash is concatenated, never shell-expanded
-    _fd_otcfg_head; printf "      password: '%s'\n" "$1"; _fd_otcfg_tail; panel_portal_render
+panel_config_render() { # panel_config_render USER HASH -> config.yaml; both concatenated, never shell-expanded
+    # single-quoted YAML: a login's name is letters, digits and . _ - (lib/logins.sh), a hash has no quote
+    _fd_otcfg_head
+    printf "    - username: '%s'\n      usergroup: admins\n      password: '%s'\n" "$1" "$2"
+    _fd_otcfg_tail; panel_portal_render
+}
+
+PANEL_ARGON2=(-id -t 4 -m 16 -p 6 -l 32)   # the admin hash's argon2id cost (64 MiB, 4 passes)
+panel_hash() { # panel_hash PASS [OLD-HASH] -> argon2id: OLD-HASH when it is PASS's (the config unchanged, no restart), else a new salt's
+    local h salt
+    # the encoded hash keeps its salt (unpadded base64): recomputed with it, PASS gives OLD-HASH back only when it is PASS's
+    if [[ "${2:-}" =~ ^\$argon2id\$v=19\$[^$]+\$([A-Za-z0-9+/]+)\$[A-Za-z0-9+/]+$ ]]; then
+        salt=${BASH_REMATCH[1]}
+        while (( ${#salt} % 4 )); do salt+="="; done
+        if salt=$(base64 -d <<<"$salt" 2>/dev/null) && [[ -n "$salt" ]] \
+            && h=$(printf '%s' "$1" | argon2 "$salt" "${PANEL_ARGON2[@]}" -e) && [[ "$h" == "$2" ]]; then
+            echo "$2"; return 0
+        fi
+    fi
+    # the password on stdin, never in argv
+    h=$(printf '%s' "$1" | argon2 "$(openssl rand -hex 16)" "${PANEL_ARGON2[@]}" -e) || return 1
+    [[ "$h" == '$argon2id$'* ]] || return 1
+    echo "$h"
+}
+
+panel_installed_login() { # -> "USER<TAB>HASH" of the installed config's admin ("" when not installed)
+    local cfg; cfg="$(env_get CONFIG_ROOT)/olivetin/config.yaml"
+    sudo test -f "$cfg" || return 0
+    sudo awk -F"'" '/^    - username: /{u=$2} /^      password: /{print u "\t" $2; exit}' "$cfg"
+}
+
+sc_rotate_panel() { # PASS — set-credentials panel: .env, then the installed config (its hash), then the panel restarted to read it
+    local pass="$1" hash
+    svc_enabled olivetin || { info "the web panel is not enabled — skipped"; return 0; }
+    frontdoor_installed || { wfail "the web panel is enabled but not installed — nothing changed: ./mediastack.sh frontdoor-install"; return 0; }
+    need_cmd argon2; need_cmd openssl
+    hash=$(panel_hash "$pass") || { wfail "panel: argon2 made no argon2id hash — nothing changed"; return 0; }
+    env_set PANEL_ADMIN_PASSWORD "$pass"
+    fd_config_write "$hash"
+    fd_panel_restart
+    ok "the web panel's admin password changed (sign in as $(env_get PANEL_ADMIN_USER))"
+}
+
+olivetin_doctor() { # doctor: apps — the installed panel signs its admin in with the login in .env (credentials shows)
+    local got user pass
+    got=$(panel_installed_login)
+    [[ -n "$got" ]] || return 0
+    command -v argon2 >/dev/null && command -v openssl >/dev/null \
+        || { d_fail "argon2 or openssl is missing on this host" "the web panel's admin cannot be checked or changed" "./mediastack.sh install"; return 0; }
+    user=$(env_get PANEL_ADMIN_USER); pass=$(env_get PANEL_ADMIN_PASSWORD)
+    if [[ -z "$user" || -z "$pass" ]]; then
+        d_fail "the web panel's admin is not one of the stack's logins yet" "credentials cannot show it, set-credentials cannot change it" "./mediastack.sh frontdoor-install (records it as the others are)"
+    elif [[ "$(cut -f1 <<<"$got")" != "$user" ]] || [[ "$(panel_hash "$pass" "$(cut -f2 <<<"$got")")" != "$(cut -f2 <<<"$got")" ]]; then
+        d_fail "the web panel's admin is not the login in .env" "signing in with what credentials shows fails" "./mediastack.sh frontdoor-install (rewrites it from .env)"
+    else
+        ok "the web panel's admin is the login in .env ($user)"
+    fi
 }
 
 panel_portal_render() { # while the portal runs: the gate's identity headers sign people in
@@ -74,8 +134,6 @@ accessControlLists:
 authLocalUsers:
   enabled: true
   users:
-    - username: admin
-      usergroup: admins
 OTCFG_HEAD
 }
 

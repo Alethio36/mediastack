@@ -1008,11 +1008,18 @@ all built; what each still leaves open is noted below.
   Wizarr's own single-use reset link, see below), Navidrome's admin through
   `set-credentials navidrome`.
   Navidrome's music-app logins stay an upstream gap (watchlist).
-  **Next (agreed 14 Nov 2026): the web panel's admin becomes one of the
-  stack's own logins** — generated, unified or typed with `STACK_LOGINS`,
-  shown by `credentials`, changed with `set-credentials panel`. Without the
-  portal it is asked at the terminal today, so an answers-file install in
-  Wizarr or no-account mode stops for it.
+  *Built (14 Nov 2026): the web panel's admin is one of the stack's own
+  logins* — the stack's username, generated, unified or typed with
+  `STACK_LOGINS`, shown by `credentials`, changed with `set-credentials
+  panel` (also in `all`); configure offers the panel right before the logins,
+  `frontdoor-install` records the login when missing and asks nothing (an
+  answers-file install in Wizarr or no-account mode no longer stops for it);
+  the config's argon2id hash is kept while it still matches; doctor fails
+  when the installed admin is not `.env`'s. `--set-password` and the
+  portal-mode generated fallback are gone. An install from before records a
+  new panel login at its next `up` and keeps the old one until
+  `frontdoor-install` writes it (doctor says so) — accepted: no install
+  outside the test boxes predates it. Still to prove live on anzac4.
   *Decided and built (14 Nov 2026):* with Wizarr, `reset-password` prints
   Wizarr's own reset link (`POST /api/users/<id>/reset-password`: single-use,
   24 hours, a newer link voids the last; the person sets their own password,
@@ -1020,8 +1027,8 @@ all built; what each still leaves open is noted below.
   a Wizarr-invited user before building (both links, the new password taken,
   the old refused, the used link refused). Wizarr has no mailer, so the link
   is passed on by hand — email for it waits on upstream
-  ([watchlist.md](watchlist.md#email-from-wizarr)). Still to see live: a
-  Jellyfin user made outside Wizarr (does its user list import them?).
+  ([watchlist.md](watchlist.md#email-from-wizarr)). Proven live too: a
+  Jellyfin user made outside Wizarr gets a link (its user list imports them).
 - **A Jellyfin lockout tells ops** — *shipped (Oct 2026)*. The throttle,
   refusing a right password after too many wrong ones, raises
   `mediastack_jellyfin_lockout` (once per person per 6 hours); a notification

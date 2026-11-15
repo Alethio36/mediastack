@@ -21,7 +21,7 @@ accessControlLists:
 authLocalUsers:
   enabled: true
   users:
-    - username: admin
+    - username: '@PANEL-USER@'
       usergroup: admins
       password: '@ARGON2ID-HASH@'
 

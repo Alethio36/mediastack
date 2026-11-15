@@ -218,6 +218,21 @@ WantedBy=timers.target
 EOF
 }
 
+fd_config_write() { # fd_config_write HASH — the panel's config.yaml from the PANEL table and .env's admin, owned as the install leaves it; FD_CFG_CHANGED=1 when it differs
+    local cfg ctmp; cfg="$(env_get CONFIG_ROOT)/olivetin/config.yaml"; ctmp=$(mktemp)
+    panel_config_render "$(env_get PANEL_ADMIN_USER)" "$1" > "$ctmp"
+    FD_CFG_CHANGED=0; sudo cmp -s "$ctmp" "$cfg" 2>/dev/null || FD_CFG_CHANGED=1
+    sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$cfg"; rm -f "$ctmp"
+}
+
+fd_panel_restart() { # the panel's sign-in settings load only at its start (OliveTin: "requires restart"); not running: nothing to do
+    [[ "$(c_state "$(svc_cname olivetin)")" == running ]] || return 0
+    # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+    INSPECT_JSON=""
+    sudo docker restart "$(svc_cname olivetin)" >/dev/null && ok "restarted the panel: its new settings load at start" \
+        || warn "the panel's new settings need a restart: sudo docker restart $(svc_cname olivetin)"
+}
+
 cmd_frontdoor_install() {
     load_env
     need_cmd argon2; need_cmd openssl; need_cmd ssh-keygen
@@ -316,49 +331,21 @@ cmd_frontdoor_install() {
     sudo cat "$hostpub" | _fd_known_hosts_render | sudo tee "$keydir/known_hosts" >/dev/null
     ok "pinned host key for host.docker.internal (from $hostpub)"
 
-    # 7. Panel admin password. Reuse the existing hash on re-runs (so config-only
-    #    updates don't force a re-auth); prompt only on first install or when
-    #    --set-password is given. The hash is offline (OliveTin's own hasher needs
-    #    a running instance); the password is read on the terminal and piped on
-    #    stdin — never in argv or the process list.
-    local hash="" setpw=0 a
-    for a in "$@"; do [[ "$a" == --set-password ]] && setpw=1; done
-    if (( ! setpw )) && sudo test -f "$otdir/config.yaml"; then
-        hash=$(sudo sed -n "s/^ *password: '\(.*\)'\$/\1/p" "$otdir/config.yaml" | sed -n 1p)
-    fi
-    if [[ -n "$hash" ]]; then
-        ok "reusing existing admin password (change it with: frontdoor-install --set-password)"
-    else
-        local pw pw2
-        if signin_is authentik && (( ! setpw )); then
-            # the portal signs admins in to the panel; this login is only the
-            # fallback should the portal go — set one then with --set-password
-            pw=$(head -c18 /dev/urandom | base64 | tr -d '=+/')
-            info "the panel signs in through the portal — its own admin password is a generated fallback (set one: frontdoor-install --set-password)"
-        else
-            [[ -t 0 ]] || die "run frontdoor-install interactively to set the panel password."
-            hr "OliveTin admin password"
-            while true; do
-                read -rs -p "Set OliveTin admin password: " pw; echo
-                [[ -n "$pw" ]] || { fail "The password cannot be empty."; continue; }
-                read -rs -p "Confirm password: " pw2; echo
-                [[ "$pw" == "$pw2" ]] && break
-                fail "The passwords did not match — again."
-            done
-        fi
-        hash=$(printf '%s' "$pw" | argon2 "$(openssl rand -base64 16)" -id -t 4 -m 16 -p 6 -l 32 -e)
-        unset pw pw2
-        [[ "$hash" == '$argon2id$'* ]] || die "argon2 did not produce an argon2id hash — aborting."
-        ok "password hashed (argon2id)"
-    fi
+    # 7. The panel's admin: one of the stack's own logins (lib/logins.sh) — its
+    #    name and password in .env, recorded here when missing, as configure
+    #    records the others. The config holds only the password's argon2id hash,
+    #    kept while it is still that password's (no needless restart). The
+    #    password reaches argon2 on stdin, never argv or the process list.
+    login_ensure "$(logins_of olivetin)"
+    local old="" hash
+    old=$(panel_installed_login | cut -f2)
+    hash=$(panel_hash "$(env_get PANEL_ADMIN_PASSWORD)" "$old") || die "argon2 did not produce an argon2id hash — aborting."
+    if [[ -n "$old" && "$hash" == "$old" ]]; then ok "the panel's admin: unchanged ($(env_get PANEL_ADMIN_USER))"
+    else ok "the panel's admin: $(env_get PANEL_ADMIN_USER), its password hashed (argon2id)"; fi
 
-    # 8. Write the OliveTin config. Static parts via literal heredocs; the hash is
-    #    concatenated between them so its $-laden text is never shell-expanded.
+    # 8. Write the OliveTin config.
     sudo mkdir -p "$otdir" "$ent"
-    local ctmp cfg_changed=0; ctmp=$(mktemp)
-    panel_config_render "$hash" > "$ctmp"
-    sudo cmp -s "$ctmp" "$otdir/config.yaml" 2>/dev/null || cfg_changed=1
-    sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$otdir/config.yaml"; rm -f "$ctmp"
+    fd_config_write "$hash"
     ok "wrote $otdir/config.yaml"
 
     # Theme: pack the per-service status rows into a coloured, wrapping grid.
@@ -417,13 +404,7 @@ cmd_frontdoor_install() {
         || die "post-check FAILED: authorized_keys is not forced-command pinned."
     ok "both narrowings verified (forced-command key + narrow sudoers)"
 
-    # the panel's sign-in settings load only at its start (OliveTin: "requires restart")
-    if (( cfg_changed )) && [[ "$(c_state "$(svc_cname olivetin)")" == running ]]; then
-        # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
-        INSPECT_JSON=""
-        sudo docker restart "$(svc_cname olivetin)" >/dev/null && ok "restarted the panel: its new settings load at start" \
-            || warn "the panel's new settings need a restart: sudo docker restart $(svc_cname olivetin)"
-    fi
+    if (( FD_CFG_CHANGED )); then fd_panel_restart; fi
 
     echo
     hr "Front door ready"
@@ -433,8 +414,8 @@ cmd_frontdoor_install() {
         if svc_enabled traefik; then url="https://$(svc_subdomain olivetin).<your domain> — once ./mediastack.sh up has set up Traefik"
         else url="none — the panel is served through Traefik: ./mediastack.sh enable traefik"; fi
     fi
-    if signin_is authentik; then signin="Sign in through the portal (admins)."
-    else signin="Log in as 'admin' (change the password: ./mediastack.sh frontdoor-install --set-password)."; fi
+    if signin_is authentik; then signin="Sign in through the portal (admins); its own admin, $(env_get PANEL_ADMIN_USER), is the way in without it."
+    else signin="Log in as $(env_get PANEL_ADMIN_USER) — its password: ./mediastack.sh credentials (change it: set-credentials panel)."; fi
     cat <<EOT
 Bring it up:   ./mediastack.sh up        (starts the 'olivetin' container)
 Reach it:      $url  (LAN)

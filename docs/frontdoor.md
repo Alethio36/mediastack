@@ -12,16 +12,21 @@ a forced-command wrapper. The security model is documented separately in
 ./mediastack.sh frontdoor-install
 ```
 
-The first interactive run sets the panel's admin password (reused on re-runs;
-`frontdoor-install --set-password` to change it). Then bring the stack up so the
-panel container starts:
+Its admin is one of the stack's own logins: the stack's username, the password
+generated, shared or typed like the others (`STACK_LOGINS`), recorded in `.env`
+when missing — so it asks nothing, and runs from an answers file too. The
+config holds only the password's argon2id hash, kept on re-runs while it still
+matches. See it with `./mediastack.sh credentials`; change it with
+`./mediastack.sh set-credentials panel`. Then bring the stack up so the panel
+container starts:
 
 ```
 ./mediastack.sh up
 ```
 
 Reach it over HTTPS via Traefik at `https://${OLIVETIN_HOST:-panel}.<your
-domain>` on the LAN, and log in as `admin`.
+domain>` on the LAN, and log in as the panel admin `credentials` shows (with
+the portal, admins sign in through it; that login is the way in without it).
 
 With the portal (authentik), there is no second login: the gate signs you in.
 The panel trusts the portal's identity headers (`X-authentik-username`,

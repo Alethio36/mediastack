@@ -35,7 +35,7 @@ CGROUP_FILE=/proc/self/cgroup                     # scheduled_run reads it (a te
 STATE_DIR="$LOCAL_DIR/state"                      # pending work: one file per marker (state_get/state_set)
 ENV_BACKUP_DIR="$LOCAL_DIR/env-backups"           # .env before each schema migration
 ENV_BACKUP_KEEP=10                                # the oldest (your original) + the newest 9
-SCRIPT_SCHEMA=42
+SCRIPT_SCHEMA=43
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -1200,7 +1200,7 @@ VERBS=(
     "vpn~vpn [svc on|off] [--i-know]~max=3~Check~Show or change which services run behind the VPN; apply with: up."
     "fix-perms~fix-perms [svc]~max=1~Check~Repair ownership of a service's config/cache/transcode folders from the UID map."
     "new-service~new-service <name>~max=1~Other~Add your own service: asks image/port/VPN/folders, then enables and starts it."
-    "frontdoor-install~frontdoor-install [--set-password]~allow=--set-password~Other~Install the OliveTin web panel over the safe verbs."
+    "frontdoor-install~frontdoor-install~none~Other~Install the OliveTin web panel over the safe verbs."
     "uninstall~uninstall [--nuke]~allow=--nuke~Other~Remove the stack (tiered; --nuke: one confirmed shot). Media and backups are never touched."
     "menu~menu~none~Other~Interactive menu wrapping the common verbs."
     "list~list [--json]~free~Internal~Enabled services, one per line (--json: panel entity records)."

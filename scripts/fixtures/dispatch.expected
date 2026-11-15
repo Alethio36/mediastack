@@ -242,12 +242,14 @@ rc=1
 ## frontdoor-install
 CALL cmd_frontdoor_install [0]
 ## frontdoor-install --set-password
-CALL cmd_frontdoor_install [1] --set-password
+ERROR 'frontdoor-install' takes no arguments (got: --set-password)
+rc=1
 ## frontdoor-install --bogus
-ERROR unknown argument '--bogus' for 'frontdoor-install' (accepts: --set-password)
+ERROR 'frontdoor-install' takes no arguments (got: --bogus)
 rc=1
 ## frontdoor-install --set-password --set-password
-CALL cmd_frontdoor_install [2] --set-password --set-password
+ERROR 'frontdoor-install' takes no arguments (got: --set-password --set-password)
+rc=1
 ## uninstall
 CALL cmd_uninstall [0]
 ## uninstall --nuke

@@ -56,9 +56,9 @@ questionnaire_run() { # the questions, in order; each section records its own an
     _configure_download_client
     _configure_vpn
     svc_hooks questions
+    _configure_panel_offer   # before the logins: the panel's admin is one of them
     _configure_logins
     _configure_schedule
-    _configure_panel_offer
     _configure_start
 }
 
@@ -856,6 +856,10 @@ script: its own SSH key and a sudo rule for nothing else."
 
 panel_record() { # panel_record yes|no — configure installs the panel after provisioning, or not
     if [[ "$1" == yes ]]; then state_set "$PANEL_STATE" yes; else state_del "$PANEL_STATE"; fi
+}
+
+svc_pending() { # the services asked for now that their own installer enables later (the panel: frontdoor-install), one a line
+    [[ -z "$(state_get "$PANEL_STATE")" ]] || echo olivetin
 }
 
 # -------------------------------------------------------------- schedules --

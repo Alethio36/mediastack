@@ -173,6 +173,10 @@ Audiobookshelf's and Kavita's roots:
 Choice [1]:
 ```
 
+*14 Nov 2026:* the web panel's admin joined them (`olivetin_logins`, asked
+right after the panel is offered; `set-credentials panel`) — the panel no
+longer asks for a password of its own, so an answers file installs it.
+
 Each account is declared by the service that owns it (`<name>_logins`: its
 username and password keys, and its password rule), so the list is the
 enabled services', not a central one. With sign-in **none** (no portal) the

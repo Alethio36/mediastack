@@ -318,6 +318,10 @@ NAVIDROME_ADMIN_PASSWORD=
 #   yes | no — recommended: yes
 PANEL=
 
+# the web panel's admin password (configure or frontdoor-install records it; set-credentials panel)
+#   any single-line text — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+PANEL_ADMIN_PASSWORD=
+
 # ------------------------------------------------------------ pihole --
 
 # Pi-hole's web password — one of the stack's own (configure records it; set-credentials pihole)

@@ -85,8 +85,8 @@ rewired. Each row's code lives in its service's folder.
 `NORDVPN_TOKEN`, `CF_DNS_API_TOKEN`, `CLOUDFLARE_TUNNEL_TOKEN`,
 `SMTP_PASSWORD`, the Apprise URLs and an own certificate's key (external
 accounts: where to make a new one, then the command that takes it); Wizarr's
-admin (its UI only); the panel's fallback login (only its hash is stored —
-`frontdoor-install --set-password`); people's accounts and their Navidrome
+admin (its UI only); the panel's admin (one of the stack's own logins since
+14 Nov 2026 — `set-credentials panel`); people's accounts and their Navidrome
 music-app passwords. Inside authentik's database: the gates' `cookie_secret`
 (`mediastack-gate`, each `mediastack-house-<svc>`) — no API writes it, and a
 gate's sessions live in the database, so the secret alone opens nothing; and
