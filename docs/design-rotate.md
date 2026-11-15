@@ -8,8 +8,10 @@ run record and a support bundle free of every old and new value, every
 sign-in working) and with Wizarr (`reset-password` through Jellyfin's API,
 Wizarr reconnected by hand as the end says). Not yet seen live: Prowlarr's
 key reaching the arrs' indexers (no indexers on the test box), and a first
-wire that records instead of re-applying the portal's setup (needs a fresh
-install with the portal).*
+wire that records instead of re-applying the portal's setup — the fresh portal
+install of 15 Nov 2026 applied it again, because the first wire's restore
+point restarts the worker after authentik's own pass; measured from the
+worker's creation since, to see on the next fresh portal install.*
 
 ## Why
 

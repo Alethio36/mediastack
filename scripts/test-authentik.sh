@@ -414,16 +414,19 @@ nr_wire() { # nr_wire DRY BY-THIS-WORKER(yes|no) -> "applied|none recorded|none"
 [[ "$(nr_wire 0 yes)" == "none recorded" ]] || fail_ "applied on this worker already: recorded, not applied again: $(nr_wire 0 yes)"; pass
 [[ "$(nr_wire 1 yes)" == "none none" ]] || fail_ "a dry run: no drift, nothing written: $(nr_wire 1 yes)"; pass
 [[ "$(nr_wire 0 no)" == "applied recorded" ]] || fail_ "no record and an older apply: applied, then recorded: $(nr_wire 0 no)"; pass
-abw() { # abw LAST-APPLIED STARTED -> yes|no
+abw() { # abw LAST-APPLIED CREATED [STARTED] -> yes|no
     ( authentik_blueprint_instance() { jq -cn --arg a "$A" '{last_applied: $a}'; }
-      sudo() { echo "$S"; }; svc_cname() { echo w; }; A=$1 S=$2
+      sudo() { case "$*" in *'{{.Created}}'*) echo "$S" ;; *'{{.State.StartedAt}}'*) echo "$R" ;; esac; }
+      svc_cname() { echo w; }; A=$1 S=$2 R=${3:-$2}
       authentik_applied_by_this_worker && echo yes || echo no )
 }
 unset -f authentik_applied_by_this_worker
 # shellcheck disable=SC1090  # the real one, back from its stub
 source <(sed -n '/^authentik_applied_by_this_worker() {/,/^}/p' services/authentik/authentik.sh)
-[[ "$(abw 2026-11-14T07:12:13.904Z 2026-11-14T07:05:46.123456789Z)" == yes ]] || fail_ "applied after the worker started: its values"; pass
-[[ "$(abw 2026-11-14T07:00:00Z 2026-11-14T07:05:46Z)" == no ]] || fail_ "applied before the worker started: maybe another's values"; pass
+[[ "$(abw 2026-11-14T07:12:13.904Z 2026-11-14T07:05:46.123456789Z)" == yes ]] || fail_ "applied after the worker was created: its values"; pass
+[[ "$(abw 2026-11-14T07:00:00Z 2026-11-14T07:05:46Z)" == no ]] || fail_ "applied before the worker was created: maybe another's values"; pass
+[[ "$(abw 2026-11-15T10:28:40Z 2026-11-15T10:24:57.30760565Z 2026-11-15T10:31:36.037480597Z)" == yes ]] \
+    || fail_ "restarted after the apply (the first wire's restore point): still its values, never applied twice (found live 15 Nov 2026)"; pass
 [[ "$(abw '' 2026-11-14T07:05:46Z)" == no ]] || fail_ "never applied: not current"; pass
 authentik_applied_by_this_worker() { return 1; }
 

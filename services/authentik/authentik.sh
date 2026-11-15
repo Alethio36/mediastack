@@ -262,14 +262,18 @@ authentik_blueprint_inputs_changed() { # -> the names whose value differs from t
     [[ "$now" != "$was" ]] || return 1
     LC_ALL=C comm -3 <(printf '%s\n' "$was") <(printf '%s\n' "$now") | awk '{print $1}' | LC_ALL=C sort -u | paste -sd' ' -
 }
-authentik_applied_by_this_worker() { # authentik's last apply of the portal setup finished after this worker started: it ran on the values this worker holds
+authentik_applied_by_this_worker() { # authentik's last apply of the portal setup finished after this worker was created: it ran on the values this worker holds
     # (a first wire: the restore point waited out authentik's own first pass —
-    # applying again would cost minutes for nothing, found live Nov 2026)
-    local at started
+    # applying again would cost minutes for nothing, found live Nov 2026).
+    # Created, not started: a container's values are fixed when it is created,
+    # and that restore point restarts the worker after the apply — measured
+    # from its start, every first portal install applied twice (found live
+    # 15 Nov 2026: created 10:24:57, the apply, restarted 10:31:36)
+    local at created
     at=$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied // empty' 2>/dev/null) || return 1
-    started=$(sudo docker inspect -f '{{.State.StartedAt}}' "$(svc_cname authentik-worker)" 2>/dev/null) || return 1
-    [[ -n "$at" && -n "$started" ]] || return 1
-    (( $(date -d "$at" +%s) > $(date -d "$started" +%s) ))
+    created=$(sudo docker inspect -f '{{.Created}}' "$(svc_cname authentik-worker)" 2>/dev/null) || return 1
+    [[ -n "$at" && -n "$created" ]] || return 1
+    (( $(date -d "$at" +%s) > $(date -d "$created" +%s) ))
 }
 authentik_blueprint_inputs_record() { # after a successful apply: what the worker held is what authentik has
     local now; now=$(authentik_blueprint_inputs) || return 1

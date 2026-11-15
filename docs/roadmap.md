@@ -238,6 +238,11 @@ agreed first:
     - **The verb registry's `down` line has lost its indentation**
       (`mediastack.sh`): harmless to the dispatcher, but a line-based reader
       of the registry misses it (the docs check of Nov 2026 did).
+    - **The same answers file run again is refused** once a one-shot answer
+      is done (`PANEL=yes` with the panel installed, `NOTIFY_*` once the hub
+      holds them — seen live 15 Nov 2026): loud and nothing written, but an
+      unattended install that dropped after its first step cannot simply be
+      run again. An answer that matches what is already done should pass.
 12. **The README as a chapter-style tutorial** and the built-in how-to page.
 13. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
     dependency layers below; Wizarr sign-in live; `restore --service
