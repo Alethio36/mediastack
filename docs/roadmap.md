@@ -204,9 +204,11 @@ agreed first:
    proven in one run, proven live with the portal and with Wizarr; with it
    `set-credentials navidrome` and `reset-password` for Wizarr. Design:
    [design-rotate.md](design-rotate.md); see Credential coverage.
-5. **Access per tool** — a live spike on LDAP app passwords first, then the
-   `frontend`/`admin` rename, tiers, providers per app and grants; see Access
-   per tool and LDAP app passwords.
+5. **Access per tool** — [design-access.md](design-access.md). The spike on
+   LDAP app passwords is done (15 Nov 2026) and part 1 agreed: the portal's
+   website refuses app passwords, a switch `LDAP_APP_PASSWORDS` (off by
+   default), `signout <user>`. Then part 2: the `frontend`/`admin` rename,
+   tiers, providers per app and grants (details to agree first).
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions
    pending.
@@ -984,6 +986,10 @@ all built; what each still leaves open is noted below.
   authentik 2026.8 before designing further: ordinary users can create them,
   a direct bind accepts one, revoking stops the next bind. Then a switch
   (`LDAP_APP_PASSWORDS`).
+  *Proven 15 Nov 2026* (all three, plus: a day's limit raised to a year by a
+  group attribute; a signed-in Jellyfin device survives the deletion; the
+  portal's **website** accepts an app password too — closed regardless of
+  the switch). Decisions and build: [design-access.md](design-access.md).
 - **Email for authentik** — *SMTP shipped (Oct 2026)*: the portal sends
   through any SMTP server (`configure`, `email test`, docs/email.md). What
   email is for stays the standard: (1) a user resets their own forgotten
