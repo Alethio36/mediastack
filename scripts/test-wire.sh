@@ -332,7 +332,9 @@ ws() { # ws SERVERS-JSON -> "rc=N why"
 }
 [[ "$(ws '{"servers":[{"server_type":"jellyfin","external_url":"https://jellyfin.media.example.com/"}]}')" == "rc=0 " ]] || fail_ "the stack's Jellyfin as its External URL (a trailing slash too): right"; pass
 [[ "$(ws '{"servers":[{"server_type":"jellyfin","external_url":null}]}')" == *"External URL is empty"*"set it to https://jellyfin.media.example.com"* ]] || fail_ "no External URL: said, with the address to set"; pass
-[[ "$(ws '{"servers":[{"server_type":"jellyfin","external_url":"http://old:8096"}]}')" == *"is http://old:8096"* ]] || fail_ "another address: said"; pass
+[[ "$(ws '{"servers":[{"server_type":"jellyfin","external_url":"http://old:8096"}]}')" == *'is "http://old:8096", so'* ]] || fail_ "another address: said, quoted"; pass
+r=$(ws '{"servers":[{"server_type":"jellyfin","external_url":" https://jellyfin.media.example.com"}]}')
+[[ "$r" == *'is " https://jellyfin.media.example.com" — it has spaces around it'* ]] || fail_ "a pasted space: still wrong, and said so visibly (found live Nov 2026): $r"; pass
 [[ "$(ws '{"servers":[]}')" == *"no Jellyfin server yet"* ]] || fail_ "no Jellyfin server: said how to add one"; pass
 [[ "$(ws 'not json')" == "rc=0 its servers are unreadable"* ]] || fail_ "an unreadable answer: said, never right, never a failure of its own"; pass
 

@@ -39,7 +39,14 @@ wizarr_server_problem() { # KEY -> why Wizarr's Jellyfin entry sends people the 
         || { echo "it has no Jellyfin server yet — add one: Settings → Servers → Add Server (URL http://$(svc_addr jellyfin), External URL $want)"; return 0; }
     got=$(jq -r '[.servers[] | select(.server_type == "jellyfin")][0].external_url // ""' <<<"$out")
     [[ "${got%/}" == "$want" ]] && return 0
-    echo "its Jellyfin server's External URL is ${got:-empty}, so people land on ${got:-its internal address} after signing up — set it to $want (Settings → Servers → edit the Jellyfin server)"
+    # quoted: a space pasted around the address is invisible otherwise (found live Nov 2026)
+    local stray=""
+    [[ "$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//' <<<"$got")" != "$got" ]] && stray=" — it has spaces around it"
+    if [[ -z "$got" ]]; then
+        echo "its Jellyfin server's External URL is empty, so people land on its internal address after signing up — set it to $want (Settings → Servers → edit the Jellyfin server)"
+    else
+        echo "its Jellyfin server's External URL is \"$got\"$stray, so people are sent there after signing up — set it to exactly $want (Settings → Servers → edit the Jellyfin server)"
+    fi
 }
 
 wire_wizarr() {
