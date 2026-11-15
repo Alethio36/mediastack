@@ -1004,17 +1004,24 @@ all built; what each still leaves open is noted below.
   no arguments — every machine secret at once ([design-rotate.md](design-rotate.md));
   the stack's own logins stay with `set-credentials`. *14 Nov 2026: built and
   proven on a clean install* — (1) done (Wizarr's API key excepted: made in
-  its UI only), (2) built (`reset-password` with Wizarr sets a temporary
-  Jellyfin password), Navidrome's admin through `set-credentials navidrome`.
+  its UI only), (2) built (`reset-password` with Wizarr — since 14 Nov 2026
+  Wizarr's own single-use reset link, see below), Navidrome's admin through
+  `set-credentials navidrome`.
   Navidrome's music-app logins stay an upstream gap (watchlist).
   **Next (agreed 14 Nov 2026): the web panel's admin becomes one of the
   stack's own logins** — generated, unified or typed with `STACK_LOGINS`,
   shown by `credentials`, changed with `set-credentials panel`. Without the
   portal it is asked at the terminal today, so an answers-file install in
   Wizarr or no-account mode stops for it.
-  **To decide:** with Wizarr, `reset-password` could use Wizarr's own reset
-  link (`POST /api/users/<id>/reset-password`: 24 hours, the person sets their
-  own password) instead of a temporary password, for people Wizarr invited.
+  *Decided and built (14 Nov 2026):* with Wizarr, `reset-password` prints
+  Wizarr's own reset link (`POST /api/users/<id>/reset-password`: single-use,
+  24 hours, a newer link voids the last; the person sets their own password,
+  so no one else sees it) in place of the temporary password. Proven live on
+  a Wizarr-invited user before building (both links, the new password taken,
+  the old refused, the used link refused). Wizarr has no mailer, so the link
+  is passed on by hand — email for it waits on upstream
+  ([watchlist.md](watchlist.md#email-from-wizarr)). Still to see live: a
+  Jellyfin user made outside Wizarr (does its user list import them?).
 - **A Jellyfin lockout tells ops** — *shipped (Oct 2026)*. The throttle,
   refusing a right password after too many wrong ones, raises
   `mediastack_jellyfin_lockout` (once per person per 6 hours); a notification

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # services/wizarr/wizarr.sh — Wizarr's address, its `wire wizarr` role and its
-# half of `invite` (wizarr_invite; the verb itself is lib/access.sh).
+# halves of `invite` and `reset-password` (wizarr_invite, wizarr_reset_link;
+# the verbs themselves are lib/access.sh).
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
 
@@ -10,6 +11,11 @@
 # the UI, then wire holds the API key and './mediastack.sh invite' does the
 # rest forever.
 wizarr_url() { local p; p=$(svc_hostport wizarr) || return 1; echo "http://127.0.0.1:$p"; }
+wizarr_public_base() { # where people open Wizarr's links: its subdomain, or this host's LAN address without a domain
+    local domain; domain=$(env_get STACK_DOMAIN)
+    if [[ -n "$domain" ]]; then echo "https://$(svc_subdomain wizarr).$domain"
+    else echo "http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_hostport wizarr)"; fi
+}
 
 WIZARR_KEY_WHERE="Settings → General, at the bottom of the page"   # where its UI makes API keys
 WZ_CODE=""   # wizarr_key_works' last answer (a global: a $( ) would lose it)
@@ -125,7 +131,7 @@ wizarr_doctor() { # doctor: apps — its stored API key works ('invite' needs it
 }
 
 wizarr_invite() { # wizarr_invite [EXPIRES-DAYS] — mint a Wizarr invitation and print the ready-to-share URL
-    local expires="${1:-}" host domain base key
+    local expires="${1:-}" key
     [[ "$(c_state "$(svc_cname wizarr)")" == running ]] || die "wizarr is not running: ./mediastack.sh up"
     key=$(env_get WIZARR_API_KEY)
     [[ -n "$key" ]] || die "No wizarr API key stored yet — run: ./mediastack.sh wire wizarr"
@@ -150,12 +156,50 @@ wizarr_invite() { # wizarr_invite [EXPIRES-DAYS] — mint a Wizarr invitation an
     [[ "$code" =~ ^2 ]] || die "invitation rejected [HTTP $code]: $(head -c200 <<<"$out")"
     url=$(jq -r '.invitation.url // empty' <<<"$out")
     [[ -n "$url" ]] || die "invitation created but no URL in the reply: $(head -c300 <<<"$out")"
-    host=$(svc_subdomain wizarr); domain=$(env_get STACK_DOMAIN)
-    if [[ -n "$domain" ]]; then base="https://$host.$domain"
-    else base="http://$(hostname -I 2>/dev/null | awk '{print $1}'):$(svc_hostport wizarr)"; fi
     exp_line="never expires"
     [[ -n "$expires" ]] && exp_line="expires in $expires day(s)"
     hr "Invitation ready"
-    echo "  ${base}${url}"
+    echo "  $(wizarr_public_base)${url}"
     echo "  ($exp_line — manage or revoke in wizarr's UI)"
+}
+
+wizarr_reset_link() { # wizarr_reset_link USER — Wizarr's single-use reset link (24 h): the person chooses their own password
+    local user="$1" key admin out code all u n link exp when
+    [[ "$(c_state "$(svc_cname wizarr)")" == running ]] || die "wizarr is not running: ./mediastack.sh up"
+    key=$(env_get WIZARR_API_KEY)
+    [[ -n "$key" ]] || die "No wizarr API key stored yet — run: ./mediastack.sh wire wizarr"
+    admin=$(env_get JELLYFIN_ADMIN_USER)
+    [[ "${user,,}" != "${admin,,}" ]] \
+        || die "'$user' is the stack's own Jellyfin admin — its password: ./mediastack.sh set-credentials jellyfin"
+    # Wizarr's id, not Jellyfin's; its list syncs from Jellyfin when stale, so a slow answer is normal
+    out=$(curl -sS -m 60 -H "X-API-Key: $key" -w $'\n%{http_code}' "$(wizarr_url)/api/users" 2>&1) \
+        || die "wizarr unreachable: $(oneline "$out")"
+    code=${out##*$'\n'}; all=${out%$'\n'*}
+    [[ "$code" =~ ^2 ]] || die "wizarr refused its user list [HTTP $code]: $(oneline "$all")  (401 = stale API key: ./mediastack.sh wire wizarr)"
+    u=$(jq -c --arg n "${user,,}" '[.users[]? | select(.server_type == "jellyfin" and (.username | ascii_downcase) == $n)]' <<<"$all") \
+        || die "wizarr's user list is unreadable: $(oneline "$all")"
+    n=$(jq length <<<"$u")
+    case "$n" in
+        1) ;;
+        0) die "wizarr has no Jellyfin user '$user' — check the name in Wizarr: Users" ;;
+        *) die "wizarr lists $n Jellyfin users named '$user' — reset this one in Wizarr's UI: Users" ;;
+    esac
+    # asked before the link exists: a new link voids the person's last one
+    local disabled=0; jellyfin_disabled "$user" && disabled=1
+    out=$(curl -sS -m 15 -X POST -H "X-API-Key: $key" -w $'\n%{http_code}' \
+          "$(wizarr_url)/api/users/$(jq -r '.[0].id' <<<"$u")/reset-password" 2>&1) \
+        || die "wizarr unreachable while making the link: $(oneline "$out")"
+    code=${out##*$'\n'}; out=${out%$'\n'*}
+    [[ "$code" =~ ^2 ]] || die "wizarr refused to make a reset link [HTTP $code]: $(oneline "$out")"
+    link=$(jq -r '.url // empty' <<<"$out"); exp=$(jq -r '.expires_at // empty' <<<"$out")
+    [[ "$link" == /reset/* && -n "$exp" ]] || die "wizarr made a link but its reply has no /reset/ path or expiry: $(oneline "$out")"
+    [[ "$exp" =~ (Z|[+-][0-9]{2}:?[0-9]{2})$ ]] || exp+=Z   # Wizarr keeps its times in UTC; one without an offset is UTC
+    when=$(date -d "$exp" '+%Y-%m-%d %H:%M %Z') || die "wizarr's expiry is not a time: $exp"
+    if (( disabled )); then
+        warn "'$user' is disabled in Jellyfin (too many wrong passwords, or an admin's choice) — the link sets a password, but they sign in only once enabled again: Administration → Users → $user → untick 'Disable this user'"
+    fi
+    hr "Reset link for $(jq -r '.[0].username' <<<"$u")"
+    echo "  $(wizarr_public_base)${link}"
+    echo "  (single-use, until $when — a newer link voids this one)"
+    info "Send it to them privately. They choose their own password; no one else sees it."
 }

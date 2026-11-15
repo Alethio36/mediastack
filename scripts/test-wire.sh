@@ -23,9 +23,10 @@
 #     asked again, Enter skips; a refused stored key is a failure
 #   * Wizarr's Jellyfin entry sends people to the stack's Jellyfin (its
 #     External URL): checked, said how to set (only its UI can)
-#   * reset-password with Wizarr: a temporary Jellyfin password set through
-#     its API, proven by signing in (that session ended), shown once; a
-#     disabled account said, never re-enabled; the stack's admin refused
+#   * reset-password with Wizarr: Wizarr's single-use reset link, its id
+#     found case-insensitively among its Jellyfin users; the stack's admin,
+#     an unknown or doubled name refused before any link exists; a disabled
+#     account said (asked first), never re-enabled; a reply off-contract fails
 #
 #   scripts/test-wire.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -272,28 +273,41 @@ bw() { # bw DRY KEY-AFTER-N-LOOKS -> "fails=N looks=N"
 [[ "$(bw 0 9999)" == "fails=1 looks=$(( BAZARR_KEY_WAIT / 3 + 2 ))" ]] || fail_ "never written: bounded, then a failure: $(bw 0 9999)"; pass
 [[ "$(bw 1 9999)" == "fails=1 looks=1" ]] || fail_ "a dry run never waits: $(bw 1 9999)"; pass
 
-# ---- reset-password with Wizarr: a temporary Jellyfin password, proven, the proof's session ended ----
-jr() { # jr DISABLED(true|false) SIGNS-IN(yes|no) NAME -> "rc=N calls" (output in $T/jr)
-    ( rm -f "$T/c"; env_get() { case "$1" in JELLYFIN_API_KEY) echo KEY ;; JELLYFIN_ADMIN_USER) echo admin ;; esac; }; jf_code() { echo 200; }
-      jf_api() { echo "$1 $2" >> "$T/c"
-          case "$1 $2" in
-              "GET /Users") jq -cn --arg d "$DIS" '[{Name:"admin",Id:"a1",Policy:{IsDisabled:false}},{Name:"Viewer",Id:"v1",Policy:{IsDisabled:($d=="true")}}]' ;;
-              "POST /Users/Password?userId=v1") [[ "$3" == KEY && "$4" == *'"NewPw":"'* ]] ;;
-              "POST /Users/AuthenticateByName") [[ "$SI" == yes ]] && echo '{"AccessToken":"T1"}' ;;
-              "POST /Sessions/Logout") [[ "$3" == T1 ]] ;;
+# ---- reset-password with Wizarr: Wizarr's own single-use link (decided 14 Nov 2026, proven live first) ----
+wr() { # wr USERS-JSON RESET-REPLY DISABLED(0|1) NAME -> "rc=N calls" (output in $T/wr)
+    ( rm -f "$T/c"; UJ=$1 RJ=$2 DIS=$3
+      env_get() { case "$1" in WIZARR_API_KEY) echo KEY ;; JELLYFIN_ADMIN_USER) echo Admin ;; STACK_DOMAIN) echo media.example.com ;; esac; }
+      c_state() { echo running; }; svc_cname() { echo "c-$1"; }; wizarr_url() { echo http://w; }; svc_subdomain() { echo invites; }
+      jellyfin_disabled() { echo "jf-disabled $1" >> "$T/c"; (( DIS )); }
+      curl() { local m=GET a; for a in "$@"; do [[ "$a" == POST ]] && m=POST; done
+          [[ " $* " == *" X-API-Key: KEY "* ]] || { printf '{}\n401'; return 0; }
+          case "$m ${*: -1}" in
+              "GET http://w/api/users") echo "GET users" >> "$T/c"; printf '%s\n200' "$UJ" ;;
+              "POST http://w/api/users/"*"/reset-password") a=${*: -1}; a=${a#http://w/api/users/}; echo "POST ${a%%/*}" >> "$T/c"; printf '%s\n200' "$RJ" ;;
           esac; }
-      DIS=$1 SI=$2; rc=0; (jellyfin_reset_password "$3") > "$T/jr" 2>&1 || rc=$?
-      echo "rc=$rc $(cut -d' ' -f1,2 "$T/c" 2>/dev/null | paste -sd'|' -)" )
+      rc=0; (wizarr_reset_link "$4") > "$T/wr" 2>&1 || rc=$?
+      echo "rc=$rc $(paste -sd'|' "$T/c" 2>/dev/null)" )
 }
-[[ "$(jr false yes viewer)" == "rc=0 GET /Users|POST /Users/Password?userId=v1|POST /Users/AuthenticateByName|POST /Sessions/Logout" ]] \
-    || fail_ "reset-password (Wizarr): set, proven by signing in, the proof's session ended: $(jr false yes viewer)"; pass
-grep -E '^  Temporary password for viewer:  [A-Za-z0-9]{16}$' "$T/jr" >/dev/null || fail_ "the temporary password is shown once, 16 characters: $(cat "$T/jr")"; pass
-[[ "$(jr false no viewer)" == rc=1* ]] || fail_ "the new password does not sign in: a failure, not a password handed out"; pass
-! grep 'Temporary password' "$T/jr" >/dev/null || fail_ "an unproven password is never shown"; pass
-[[ "$(jr true no viewer)" == "rc=0 GET /Users|POST /Users/Password?userId=v1" ]] && grep 'disabled in Jellyfin' "$T/jr" >/dev/null \
-    || fail_ "a disabled account: the password set, the state said, nothing re-enabled: $(jr true no viewer)"; pass
-[[ "$(jr false yes admin)" == "rc=1 GET /Users" ]] || fail_ "the stack's own admin: refused (set-credentials jellyfin): $(jr false yes admin)"; pass
-[[ "$(jr false yes nobody)" == "rc=1 GET /Users" ]] || fail_ "no such user: refused, nothing written"; pass
+US='{"users":[{"id":3,"username":"admin","server_type":"jellyfin"},{"id":7,"username":"Viewer","server_type":"jellyfin"},{"id":9,"username":"viewer","server_type":"plex"}]}'
+RR='{"url":"/reset/ABCDE12345","code":"ABCDE12345","expires_at":"2026-11-15T03:12:44.123456+00:00"}'
+[[ "$(wr "$US" "$RR" 0 viewer)" == "rc=0 GET users|jf-disabled viewer|POST 7" ]] \
+    || fail_ "reset-password (Wizarr): its Jellyfin user found (any case, Jellyfin's only), then one link: $(wr "$US" "$RR" 0 viewer)"; pass
+grep -qxF '  https://invites.media.example.com/reset/ABCDE12345' "$T/wr" || fail_ "the link printed once, on the public address: $(cat "$T/wr")"; pass
+grep -q 'single-use, until 2026-11-1[45] ' "$T/wr" || fail_ "its expiry said, as a time: $(cat "$T/wr")"; pass
+[[ "$(wr "$US" "$RR" 1 viewer)" == "rc=0 GET users|jf-disabled viewer|POST 7" ]] && grep -q 'disabled in Jellyfin' "$T/wr" \
+    || fail_ "a disabled account: the link made, the state said, nothing re-enabled: $(cat "$T/wr")"; pass
+[[ "$(wr "$US" "$RR" 0 admin)" == "rc=1 " ]] || fail_ "the stack's own admin (any case): refused before Wizarr is asked: $(wr "$US" "$RR" 0 admin)"; pass
+[[ "$(wr "$US" "$RR" 0 nobody)" == "rc=1 GET users" ]] && grep -q "has no Jellyfin user 'nobody'" "$T/wr" \
+    || fail_ "an unknown name: refused, no link made: $(cat "$T/wr")"; pass
+D='{"users":[{"id":7,"username":"viewer","server_type":"jellyfin"},{"id":8,"username":"Viewer","server_type":"jellyfin"}]}'
+[[ "$(wr "$D" "$RR" 0 viewer)" == "rc=1 GET users" ]] || fail_ "two Jellyfin users of that name: refused, never a guess: $(wr "$D" "$RR" 0 viewer)"; pass
+[[ "$(wr "$US" '{"url":"/r/X","expires_at":"2026-11-15T03:12:44+00:00"}' 0 viewer)" == rc=1* ]] \
+    || fail_ "a reply without a /reset/ path: a failure, nothing printed as a link"; pass
+! grep -q '^  http.*/r/X' "$T/wr" || fail_ "an off-contract link is never shown as one: $(cat "$T/wr")"; pass
+[[ "$(wr "$US" '{"url":"/reset/ABCDE12345"}' 0 viewer)" == rc=1* ]] || fail_ "a reply without its expiry: a failure"; pass
+o=$( ( export TZ=America/Los_Angeles; wr "$US" '{"url":"/reset/ABCDE12345","expires_at":"2026-11-15T03:12:44"}' 0 viewer >/dev/null; grep 'single-use' "$T/wr" ) )
+[[ "$o" == *"until 2026-11-14 19:12 PST"* ]] || fail_ "an expiry without an offset is read as UTC (Wizarr's times are), shown in the stack's time: $o"; pass
+grep -n 'jellyfin_reset_password\|Temporary password' mediastack.sh lib/*.sh services/*/*.sh >/dev/null && fail_ "the temporary-password reset is gone (Wizarr's link replaced it)"; pass
 
 # ---- Wizarr's key: stored only once Wizarr takes it; refused, asked again; Enter skips (found live Nov 2026) ----
 wk() { # wk "ANSWERS (space-separated, - = Enter)" [refused] -> "stored=KEY fails=N asks=N"

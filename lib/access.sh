@@ -219,13 +219,13 @@ rest), and Wizarr's admin account — rotate that in Wizarr's UI
     esac
 }
 
-cmd_reset_password() { # someone locked out: the portal's single-use sign-in link, or (Wizarr) a temporary Jellyfin password
+cmd_reset_password() { # someone locked out: a single-use link — the portal's sign-in link, or (Wizarr) Wizarr's reset link
     load_env; render
     local user="${1:-}"
     [[ -n "$user" ]] || die "usage: reset-password <username>"
     if signin_is wizarr; then
         [[ "$(c_health "$(svc_cname jellyfin)")" == healthy ]] || die "jellyfin is not healthy yet — ./mediastack.sh status jellyfin"
-        jellyfin_reset_password "$user"; return 0
+        wizarr_reset_link "$user"; return 0
     fi
     signin_is authentik || die "Neither account model is enabled — there are no accounts to reset."
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"

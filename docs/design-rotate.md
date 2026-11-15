@@ -321,10 +321,10 @@ first install ended by one throttled image pull; an apply of the portal's
 setup outlasting its wait; Wizarr's key stored before it was checked, and
 its Jellyfin entry without an External URL.
 
-Later, by decision: Wizarr's own reset link (`POST
-/api/users/<id>/reset-password`, a 24-hour link where the person sets their
-own password) could replace the temporary password for people Wizarr
-invited — to decide.
+Later, by decision (14 Nov 2026): Wizarr's own reset link (`POST
+/api/users/<id>/reset-password`, a single-use 24-hour link where the person
+sets their own password) replaced the temporary password — see the roadmap's
+Credential coverage.
 
 Hidden cost on record: a run restarts most of the stack (the VPN group
 through the leak gate), so it takes minutes and interrupts playback; one

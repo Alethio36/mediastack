@@ -285,7 +285,7 @@ Connect
 | `set-credentials <arr\|qbit\|deluge\|transmission\|jellyfin\|pihole\|traefik\|audiobookshelf\|kavita\|navidrome\|portal\|all>` | rotate a stored login everywhere it lives — apps, dependents, and `.env` — atomically; `audiobookshelf` rotates its root password and ends every root session; `kavita` its admin's; `navidrome` its admin's (through its API, the new one proven to sign in and the old one not); `portal` sets akadmin's password through authentik's API; `all` sets one password across the stack except `portal`, which guards the rest (Wizarr's admin is its own account — rotate it in Wizarr's UI) |
 | `rotate-secrets` | give every secret the stack made for itself a new value — its API keys, the portal's tokens, signing key, database and client secrets, Meilisearch's and gluetun's keys — each proven (the new one taken, the old refused) or put back, after a restore point; whatever holds a copy is rewired and the run ends with `wire --verify`. With the portal it ends by signing everyone out of it and the tools behind it (apps with their own sign-in — Jellyfin, Navidrome — keep theirs). Interactive: it says first what it costs, and ends with a framed warning naming what outside the stack now holds a stale value and what it does not rotate — secrets from outside (VPN, Cloudflare, mail), Wizarr's API key (made in its UI), and the stack's own logins (`set-credentials`). [design](docs/design-rotate.md) |
 | `link-account <portal-user>` | an existing household's people keep their history: after someone joins the portal, their local Jellyfin, Kavita and Audiobookshelf accounts become their portal account — you confirm which account is whose, see the plan, then it links (Audiobookshelf needs them to sign in once, within 10 minutes) |
-| `reset-password <user>` | someone locked out — with the portal: clears their login throttle and prints a single-use sign-in link (24 hours) to send them — they then set a new password in the portal's Settings. Not for akadmin (`set-credentials portal`). With Wizarr (accounts are Jellyfin's own): a temporary password set through Jellyfin's API, proven by signing in with it and shown once to pass on — they change it in Jellyfin (Settings → Profile → Password); a disabled account is reported, not re-enabled |
+| `reset-password <user>` | someone locked out — with the portal: clears their login throttle and prints a single-use sign-in link (24 hours) to send them — they then set a new password in the portal's Settings. Not for akadmin (`set-credentials portal`). With Wizarr: Wizarr's single-use reset link (24 hours) to send them privately — they choose their own password on it, so no one else ever sees it; a newer link voids the last; a disabled Jellyfin account is reported, not re-enabled. Wizarr has no email, so you pass the link on yourself |
 | `set-email <user> <address> [--yes]` | change a person's portal email — people cannot change their own (Kavita, and later ROMM, sign people in by email, so it is who they are there). Kavita's account follows the change, so their next sign-in lands on the same account. An address another person already has is warned about and asks first; `--yes` decides for scripts. Use this rather than authentik's admin page, which changes the portal only |
 | `users` | the portal's people: username, name, email, groups, and whether they can sign in (the stack's own `akadmin` and service accounts left out) |
 | `email [status\|test <address>]` | the portal's outgoing email: `status` shows the settings and whether they passed a test; `test` sends a real message through authentik and, if the server refuses, says why it usually happens; a pass turns on the sign-in page's **Forgot password?** (a reset link by email). Set up with `configure` — [docs/email.md](docs/email.md) |
@@ -886,10 +886,11 @@ checks the External URL; doctor checks both. After that:
 ./mediastack.sh invite --expires 7   # or 1 | 30 days
 ```
 
-Someone locked out: `./mediastack.sh reset-password <user>` sets a temporary
-Jellyfin password (accounts are Jellyfin's own with Wizarr), proves it signs
-in, and shows it once — give it to them privately; they change it in Jellyfin
-(Settings → Profile → Password). A disabled account is reported, not enabled.
+Someone locked out: `./mediastack.sh reset-password <user>` prints Wizarr's
+single-use reset link (valid 24 hours) — send it to them privately; they
+choose their own password on it. A newer link voids the last. Wizarr sends no
+email, so the link is yours to pass on. A disabled Jellyfin account is
+reported, not enabled.
 After `rotate-secrets`, paste the new Jellyfin API key into Wizarr's server
 entry (Settings → Servers): Wizarr's API cannot set it.
 

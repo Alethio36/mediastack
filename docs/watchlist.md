@@ -201,6 +201,21 @@ beside Jellyfin's, and `defer_while_streaming` asks them all.
 **Revisit when:** an app's API reports live sessions reliably and the
 household actually uses it at the hours updates and backups run.
 
+### Email from Wizarr
+
+**Verdict:** parked (Nov 2026). With Wizarr, `reset-password` prints Wizarr's reset link
+and the operator passes it on; `invite` likewise. Wizarr has no mailer at all
+(its source, Nov 2026: no SMTP code; the reset API returns a path only), so
+emailing those links would mean mediastack sending mail itself — a second
+mail path beside the portal's (authentik sends its own), with its own
+security, auth and error handling to maintain, for one account model.
+
+**Revisit when:** Wizarr ships its own email (SMTP settings or a send API).
+Then wire carries the stack's `SMTP_*` into it, configure's Email step and
+`email test` cover Wizarr mode, and links are emailed only once the settings
+pass `email test` (the `SMTP_TESTED` fingerprint, as the portal's "Forgot
+password?" is gated today) — without proven email, the link is printed as now.
+
 ## Deferred services
 
 Services assessed for the stack and consciously *not* shipped yet. Adding any
