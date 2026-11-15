@@ -94,12 +94,19 @@ From authentik's source (`version-2026.8`), which explains the table:
 anzac4 — doctor failed, wire removed it, doctor passed, a second wire wrote
 nothing; an app password refused at the website and the main password taken
 there, the app password still taken by Jellyfin). The default password stage
-belongs to authentik's own default blueprint, which re-applies when an
-authentik upgrade changes it — two blueprints owning one object would fight.
-So `wire authentik` sets its backends through the API (read, drop
-`TokenBackend`, write back only if it was there), and doctor fails while
-`TokenBackend` is in it ("an app password signs into the portal's website").
-An upgrade that puts it back is caught by doctor and undone by the next wire.
+belongs to authentik's own default blueprint. `wire authentik` sets its
+backends through the API (read, drop `TokenBackend`, write back only if it
+was there), and doctor fails while `TokenBackend` is in it ("an app password
+signs into the portal's website").
+*Found live during slice 2's proof (15 Nov 2026):* every apply of our
+blueprint put it back — ours applies authentik's default brand first (for a
+first start's order), and the default brand applies the default sign-in
+flow. A wire undid it seconds later, but an apply the worker makes on its own
+(a changed blueprint file after an `up`) left the website taking app
+passwords until the next wire. So our blueprint now sets that stage's
+backends itself, after the default brand (the other three as authentik lists
+them); wire and doctor remain for authentik's default flow applied alone, on
+an authentik upgrade.
 *Proof:* an app password refused at the website; the main password still
 signs in; an LDAP bind with the app password still accepted (the switch's
 job, not this slice's).

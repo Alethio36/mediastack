@@ -41,6 +41,24 @@ entries:
         path: system/providers-oauth2.yaml
       required: true
 
+  # -- the portal's website refuses app passwords (docs/design-access.md) --
+  # authentik's sign-in checks passwords with TokenBackend too, so a device's
+  # app password signed into the website as its owner. The default brand
+  # above applies authentik's default sign-in flow again, putting it back on
+  # every apply of this blueprint (found live 15 Nov 2026) — so it is taken
+  # out here, after it; the other backends as authentik's default lists them.
+  # An authentik upgrade that applies its default flow by itself puts it back
+  # until the next `wire authentik` (wire_authentik_web_tokens), which doctor
+  # asks for.
+  - model: authentik_stages_password.passwordstage
+    identifiers:
+      name: default-authentication-password
+    attrs:
+      backends:
+        - authentik.core.auth.InbuiltBackend
+        - authentik.sources.kerberos.auth.KerberosBackend
+        - authentik.sources.ldap.auth.LDAPBackend
+
   # -- groups -------------------------------------------------------------
   - model: authentik_core.group
     id: group-media-users

@@ -811,8 +811,8 @@ authentik_web_backends() { # -> "PK<TAB>BACKENDS-JSON" of authentik's own sign-i
 wire_authentik_web_tokens() { # the portal's website refuses app passwords (docs/design-access.md, decision 1): only the LDAP bind may take them
     # authentik's default sign-in checks passwords with TokenBackend too, so a
     # device's app password signed into the website as its owner (found live,
-    # 15 Nov 2026). Set through the API on every wire, not the blueprint: the
-    # step is authentik's own, and its default blueprint re-applies on upgrade.
+    # 15 Nov 2026). Our blueprint takes it out on each of its applies; this
+    # catches authentik's own default flow applied alone (an upgrade).
     local cur pk backends keep out
     cur=$(authentik_web_backends) || { wfail "authentik: its sign-in password step is unreadable — app passwords not checked"; return 0; }
     if [[ -z "$cur" ]]; then

@@ -1521,6 +1521,15 @@ WN='["authentik.core.auth.InbuiltBackend","authentik.sources.kerberos.auth.Kerbe
     || fail_ "no answer, read back as not made: a failure: $(PATCH_DROP=1 webtok "$WT")"; pass
 grep -q 'wire_authentik_web_tokens' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik makes the website refuse app passwords"; pass
 grep -q 'an app password signs into the portal.s website' <(awk '/^_doctor_accounts\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "doctor fails while the website takes app passwords"; pass
+# our blueprint applies authentik's default brand, which applies its default sign-in flow and with it
+# TokenBackend on the website (found live 15 Nov 2026): our blueprint takes it out again, after that
+bpf=services/authentik/blueprints/mediastack-portal.yaml
+wpw=$(awk '/name: default-authentication-password/{f=1} f && /^  - model:/{exit} f' "$bpf")
+[[ -n "$wpw" ]] && ! grep -q 'TokenBackend' <<<"$wpw" && grep -q 'authentik.core.auth.InbuiltBackend' <<<"$wpw" \
+    || fail_ "our blueprint sets the website's password step without TokenBackend: $wpw"; pass
+(( $(grep -n 'name: default-authentication-password' "$bpf" | cut -d: -f1) > $(grep -n 'path: default/default-brand.yaml' "$bpf" | cut -d: -f1) )) \
+    || fail_ "...after the default brand is applied (which puts it back)"; pass
+
 # ---- LDAP_APP_PASSWORDS (docs/design-access.md, slice 2) ----
 # the blueprint: the LDAP bind's step takes app passwords only with the switch, read through !If on the value up writes
 bp=$(awk '/id: stage-ldap-password/,/model: authentik_stages_identification/' services/authentik/blueprints/mediastack-portal.yaml)
