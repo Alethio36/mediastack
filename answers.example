@@ -256,6 +256,10 @@ SMTP_PASSWORD=
 #   an e-mail address — optional: blank leaves it unset
 SMTP_FROM=
 
+# Jellyfin takes a person's app passwords (one per device, made in the portal, up to a year) as well as their password; the portal's website never does (docs/design-access.md)
+#   yes | no — recommended: no
+LDAP_APP_PASSWORDS=
+
 # ------------------------------------------------------------ cloudflared --
 
 # Cloudflare tunnel token (cloudflared)

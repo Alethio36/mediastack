@@ -386,7 +386,7 @@ changed_wire() { # changed_wire DRY CHANGED-RC -> "applied|not recorded|not ok-l
       authentik_blueprint_inputs_record() { echo recorded > "$T/rec"; }
       authentik_blueprint_apply() { echo applied > "$T/app"; echo successful; }
       c_state() { echo exited; }; ok() { echo "OK $*"; }
-      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_lockout_alerts() { :; }
+      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_app_password_lifetime() { :; }; wire_authentik_lockout_alerts() { :; }
       wire_authentik_gate() { :; }; panel_signin_check() { :; }
       rm -f "$T/rec" "$T/app"; WIRE_DRY=$1 CRC=$2 WIRE_FAILS=0
       wire_authentik > "$T/wout" 2>&1   # not in $( ): WIRE_FAILS is counted in this shell
@@ -405,7 +405,7 @@ nr_wire() { # nr_wire DRY BY-THIS-WORKER(yes|no) -> "applied|none recorded|none"
       authentik_blueprint_inputs_record() { echo recorded > "$T/rec"; }
       authentik_blueprint_apply() { echo applied > "$T/app"; echo successful; }
       c_state() { echo exited; }; ok() { :; }
-      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_lockout_alerts() { :; }
+      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_app_password_lifetime() { :; }; wire_authentik_lockout_alerts() { :; }
       wire_authentik_gate() { :; }; panel_signin_check() { :; }
       rm -f "$T/rec" "$T/app"; WIRE_DRY=$1 BY=$2 WIRE_FAILS=0
       wire_authentik > /dev/null 2>&1
@@ -452,7 +452,7 @@ first_start() { # first_start DRY DISCOVERED -> what wire_authentik did: "gate|n
     ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
       authentik_blueprint_status() { echo ""; }
       authentik_blueprint_discovered() { echo waited > "$T/waited"; echo "$DISC"; }
-      wire_authentik_gate() { echo gate > "$T/gated"; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_lockout_alerts() { :; }   # their own sections below
+      wire_authentik_gate() { echo gate > "$T/gated"; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_app_password_lifetime() { :; }; wire_authentik_lockout_alerts() { :; }   # their own sections below
       rm -f "$T/waited" "$T/gated"; WIRE_DRY=$1 DISC=$2 WIRE_FAILS=0
       wire_authentik >/dev/null 2>&1
       echo "$(cat "$T/gated" 2>/dev/null || echo nogate) fails=$WIRE_FAILS $(cat "$T/waited" 2>/dev/null || echo nowait)" )
@@ -476,7 +476,7 @@ first_pass() { # first_pass STATUS-AFTER-THE-WAIT -> "forced|waited-only fails=N
       authentik_blueprint_instance() { echo '{"last_applied_hash":""}'; }
       authentik_first_pass_wait() { echo "$AFTER"; }
       authentik_blueprint_apply() { echo forced > "$T/forced"; echo successful; }
-      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_lockout_alerts() { :; }
+      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_app_password_lifetime() { :; }; wire_authentik_lockout_alerts() { :; }
       wire_authentik_gate() { echo gate > "$T/gated"; }; panel_signin_check() { :; }
       rm -f "$T/forced" "$T/gated"; WIRE_DRY=0 AFTER=$1 WIRE_FAILS=0
       wire_authentik >/dev/null 2>&1
@@ -1521,9 +1521,65 @@ WN='["authentik.core.auth.InbuiltBackend","authentik.sources.kerberos.auth.Kerbe
     || fail_ "no answer, read back as not made: a failure: $(PATCH_DROP=1 webtok "$WT")"; pass
 grep -q 'wire_authentik_web_tokens' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik makes the website refuse app passwords"; pass
 grep -q 'an app password signs into the portal.s website' <(awk '/^_doctor_accounts\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "doctor fails while the website takes app passwords"; pass
-# the LDAP bind keeps its own password step: the switch (LDAP_APP_PASSWORDS) decides app passwords there, not this
-grep -A6 'id: stage-ldap-password' services/authentik/blueprints/mediastack-portal.yaml | grep 'authentik.core.auth.TokenBackend' >/dev/null \
-    || fail_ "the LDAP bind's password step still takes app passwords until the switch exists"; pass
+# ---- LDAP_APP_PASSWORDS (docs/design-access.md, slice 2) ----
+# the blueprint: the LDAP bind's step takes app passwords only with the switch, read through !If on the value up writes
+bp=$(awk '/id: stage-ldap-password/,/model: authentik_stages_identification/' services/authentik/blueprints/mediastack-portal.yaml)
+grep -q 'backends: !If' <<<"$bp" && grep -q '!Env \[MEDIASTACK_LDAP_APP_PASSWORDS, ""\]' <<<"$bp" \
+    && grep -qF '[authentik.core.auth.InbuiltBackend, authentik.core.auth.TokenBackend]' <<<"$bp" \
+    && grep -qxF '        - [authentik.core.auth.InbuiltBackend]' <<<"$bp" \
+    || fail_ "the LDAP bind's backends follow MEDIASTACK_LDAP_APP_PASSWORDS (token backend only when set): $bp"; pass
+grep -q 'MEDIASTACK_LDAP_APP_PASSWORDS: ${AUTHENTIK_LDAP_APP_PASSWORDS:-}' services/authentik/compose.yml \
+    || fail_ "the worker gets the switch as a blueprint input"; pass
+# up writes the blueprint's input: "yes", or empty — !If reads any text as true, "no" included
+ap() { ( E=$1; env_get() { [[ "$1" == LDAP_APP_PASSWORDS ]] && echo "$E"; }; env_set() { [[ "$1" == AUTHENTIK_LDAP_APP_PASSWORDS ]] && echo "[$2]"; }
+         eval "$(awk '/^authentik_prepare\(\)/,/^}/' services/authentik/authentik.sh | grep 'AUTHENTIK_LDAP_APP_PASSWORDS')" ) }
+[[ "$(ap yes)" == "[yes]" && "$(ap no)" == "[]" && "$(ap "")" == "[]" ]] || fail_ "the input: yes, else empty: $(ap yes) $(ap no) $(ap '')"; pass
+# wire: the groups' app-password lifetime, merged into what an admin set, read back
+alt() { # alt SWITCH ATTRS-media-users ATTRS-admins [DRY] -> PATCH bodies, WFAIL, then both groups' attributes after
+    ( echo "$2" > "$T/g-media-users"; echo "$3" > "$T/g-admins"; rm -f "$T/calls"; WIRE_DRY=${4:-0}; SW=$1
+      env_get() { [[ "$1" == LDAP_APP_PASSWORDS ]] && echo "$SW"; }
+      ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+          local g
+          case "$1 $2" in
+              "GET /core/groups/?name="*) g=${2#*name=}; g=${g%%&*}
+                  jq -cn --arg n "$g" --argjson a "$(cat "$T/g-$g")" '{results:[{name:$n, pk:("pk-"+$n), attributes:$a}]}' ;;
+              "GET /core/groups/pk-"*) g=${2#/core/groups/pk-}; g=${g%%/*}
+                  jq -cn --arg n "$g" --argjson a "$(cat "$T/g-$g")" '{name:$n, pk:("pk-"+$n), attributes:$a}' ;;
+              "PATCH /core/groups/pk-"*) g=${2#/core/groups/pk-}; g=${g%/}
+                  [[ -n "${PATCH_DROP:-}" ]] && { echo "no answer"; return 1; }
+                  jq -c '.attributes' <<<"$3" > "$T/g-$g"; echo '{}' ;;
+          esac; }
+      wfail() { echo "WFAIL $*" >> "$T/calls"; }; ok() { :; }
+      wire_authentik_app_password_lifetime >/dev/null 2>&1
+      { grep -E '^(PATCH|WFAIL)' "$T/calls" || true; } | sed 's# /core/groups/pk-# #'
+      echo "after=$(cat "$T/g-media-users") $(cat "$T/g-admins")" )
+}
+L='goauthentik.io/user/token-maximum-lifetime'
+r=$(alt yes '{"theme":"dark"}' '{}')
+[[ "$r" == *"after={\"theme\":\"dark\",\"$L\":\"days=365\"} {\"$L\":\"days=365\"}" && "$r" != *WFAIL* ]] \
+    || fail_ "yes: a year on both groups, an admin's own attribute kept: $r"; pass
+r=$(alt no "{\"theme\":\"dark\",\"$L\":\"days=365\"}" "{\"$L\":\"days=365\"}")
+[[ "$r" == *"after={\"theme\":\"dark\"} {}" && "$r" != *WFAIL* ]] || fail_ "no: the lifetime removed, nothing else: $r"; pass
+r=$(alt yes "{\"$L\":\"days=365\"}" "{\"$L\":\"days=365\"}")
+[[ "$r" != *PATCH* && "$r" != *WFAIL* ]] || fail_ "already as wanted: nothing written: $r"; pass
+r=$(alt no '{}' '{}'); [[ "$r" != *PATCH* ]] || fail_ "no and nothing set: nothing written: $r"; pass
+r=$(alt yes '{}' '{}' 1); [[ "$r" != *PATCH* && "$r" != *WFAIL* && "$r" == *"after={} {}" ]] || fail_ "a dry run writes nothing, fails nothing: $r"; pass
+r=$(PATCH_DROP=1 alt yes '{}' '{}'); [[ "$r" == *"WFAIL authentik did not take the app-password lifetime on media-users,admins"* ]] \
+    || fail_ "a write not made: a failure naming the groups: $r"; pass
+grep -q 'wire_authentik_app_password_lifetime' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik sets the lifetime"; pass
+grep -q 'authentik_app_passwords_doctor' <(awk '/^_doctor_accounts\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "doctor checks the switch against authentik"; pass
+# doctor: the live step and groups against the switch
+apd() { # apd SWITCH LDAP-BACKENDS-JSON LIFETIME(-|days=365) -> doctor's word
+    ( SW=$1 LB=$2 LT=$3; env_get() { [[ "$1" == LDAP_APP_PASSWORDS ]] && echo "$SW"; }
+      authentik_ldap_backends() { echo "$LB"; }; authentik_group_lifetimes() { printf 'media-users\tp1\t%s\nadmins\tp2\t%s\n' "$LT" "$LT"; }
+      ok() { echo "OK $*"; }; warn() { echo "WARN $*"; }; d_fail() { echo "FAIL $1"; }; authentik_app_passwords_doctor )
+}
+TB='["authentik.core.auth.InbuiltBackend","authentik.core.auth.TokenBackend"]'; IB='["authentik.core.auth.InbuiltBackend"]'
+[[ "$(apd no "$IB" -)" == "OK authentik: app passwords refused by Jellyfin (LDAP_APP_PASSWORDS=no)" ]] || fail_ "doctor: no, as applied: OK"; pass
+[[ "$(apd yes "$TB" days=365)" == "OK authentik: app passwords taken by Jellyfin, for up to a year" ]] || fail_ "doctor: yes, as applied: OK"; pass
+[[ "$(apd no "$TB" -)" == "FAIL authentik: Jellyfin's sign-in takes app passwords, but LDAP_APP_PASSWORDS=no" ]] || fail_ "doctor: no, but the bind takes them: $(apd no "$TB" -)"; pass
+[[ "$(apd yes "$IB" days=365)" == "FAIL authentik: Jellyfin's sign-in refuses app passwords, but LDAP_APP_PASSWORDS=yes" ]] || fail_ "doctor: yes, not applied yet"; pass
+[[ "$(apd yes "$TB" -)" == "FAIL authentik: how long an app password may last does not match LDAP_APP_PASSWORDS=yes" ]] || fail_ "doctor: yes, a day only"; pass
 
 # authentik took 22s to save the stage on a first start (found live Nov 2026): the write waits longer than a read
 showpw false "" >/dev/null; [[ "$(cat "$T/patch-wait")" == "$AUTHENTIK_STAGE_WAIT" ]] && (( AUTHENTIK_STAGE_WAIT >= 60 )) \

@@ -132,6 +132,7 @@ services:
       # the stack's own accounts in the apps: nobody may sign up with these names
       MEDIASTACK_TRAEFIK_ADDRESS: ${TRAEFIK_ADDRESS:-172.31.250.2}   # the LDAP throttle counts the Jellyfin path by it
       MEDIASTACK_RESERVED_USERNAMES: ${AUTHENTIK_RESERVED_USERNAMES:-}   # up writes it from the logins marked reserve (lib/logins.sh)
+      MEDIASTACK_LDAP_APP_PASSWORDS: ${AUTHENTIK_LDAP_APP_PASSWORDS:-}   # up writes it from LDAP_APP_PASSWORDS: "yes" or empty
     volumes:
       - ${CONFIG_ROOT}/authentik/data:/data
       - ${CONFIG_ROOT}/authentik/templates:/templates

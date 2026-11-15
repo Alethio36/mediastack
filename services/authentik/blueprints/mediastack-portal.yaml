@@ -488,9 +488,13 @@ entries:
     identifiers:
       name: mediastack-ldap-password
     attrs:
-      backends:
-        - authentik.core.auth.InbuiltBackend
-        - authentik.core.auth.TokenBackend
+      # app passwords (TokenBackend) only with LDAP_APP_PASSWORDS=yes
+      # (docs/design-access.md): !If reads the empty value up writes for no as
+      # false (!Condition cannot compare text: it compares truthiness)
+      backends: !If
+        - !Env [MEDIASTACK_LDAP_APP_PASSWORDS, ""]
+        - [authentik.core.auth.InbuiltBackend, authentik.core.auth.TokenBackend]
+        - [authentik.core.auth.InbuiltBackend]
   - model: authentik_stages_identification.identificationstage
     id: stage-ldap-identification
     identifiers:

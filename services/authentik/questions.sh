@@ -26,5 +26,28 @@ on the login and sign-up pages (\"Join <name>\")."
         done
         env_set PORTAL_TITLE "$REPLY_VAL"
     fi
+    authentik_app_passwords_question
     authentik_configure_email
+}
+
+authentik_app_passwords_question() { # LDAP_APP_PASSWORDS: Jellyfin takes per-device app passwords, or not (docs/design-access.md)
+    local cur; cur=$(env_get LDAP_APP_PASSWORDS)
+    if answer LDAP_APP_PASSWORDS; then
+        env_set LDAP_APP_PASSWORDS "$REPLY_VAL"; q_answered "App passwords for Jellyfin" "$REPLY_VAL"
+    elif q_quick; then
+        env_set LDAP_APP_PASSWORDS "$cur"; q_took "App passwords for Jellyfin" "$cur"
+    elif answers_checking; then
+        q_unasked "App passwords for Jellyfin" LDAP_APP_PASSWORDS
+    else
+        explain "App passwords for Jellyfin (optional)" \
+"A person can make an extra password for each device — a TV, a phone — in the
+portal (Settings -> Tokens and App passwords, up to a year), so the device
+never holds their real one; deleting it stops that device signing in again
+(./mediastack.sh signout <user> ends what is already signed in). With this
+off, Jellyfin refuses them. The portal's website never takes them."
+        if [[ "$cur" == yes ]]; then
+            if confirm_yes "Let Jellyfin take app passwords?"; then cur=yes; else cur=no; fi
+        elif confirm "Let Jellyfin take app passwords?"; then cur=yes; else cur=no; fi
+        env_set LDAP_APP_PASSWORDS "$cur"
+    fi
 }

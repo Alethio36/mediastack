@@ -761,7 +761,11 @@ authentik's UI, it stays off). The portal's website takes only a person's
 password, never an app password (Settings → Tokens and App passwords):
 authentik's own sign-in would let one in as its owner, so `wire authentik`
 turns that off and `doctor` fails if an authentik upgrade turns it back on
-([docs/design-access.md](docs/design-access.md)). Someone locked out — a forgotten
+([docs/design-access.md](docs/design-access.md)). Jellyfin takes app
+passwords only with `LDAP_APP_PASSWORDS=yes` (a full `configure` asks; off by
+default): then a person can give each device — a TV, a phone — its own
+password, up to a year, so the device never holds their real one, and
+deleting it stops that device signing in again. Someone locked out — a forgotten
 password, or too many wrong ones from the Jellyfin app — helps themselves
 once email works: the sign-in page's **Forgot password?** emails them a link
 (30 minutes, single use) to choose a new one, which clears their login

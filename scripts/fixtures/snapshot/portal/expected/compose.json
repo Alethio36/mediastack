@@ -320,6 +320,7 @@
         "MEDIASTACK_DOMAIN": "media.example.com",
         "MEDIASTACK_KAVITA_CLIENT_SECRET": "",
         "MEDIASTACK_KAVITA_URL": "https://books.media.example.com",
+        "MEDIASTACK_LDAP_APP_PASSWORDS": "",
         "MEDIASTACK_LDAP_BIND_PASSWORD": "fixture-secret-ldap-bind",
         "MEDIASTACK_PORTAL_TITLE": "Tom & Jo's <Media> {Portal}",
         "MEDIASTACK_PORTAL_URL": "https://portal.media.example.com",

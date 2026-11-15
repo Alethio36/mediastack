@@ -212,6 +212,8 @@ authentik_prepare() { # before `up`/`enable` start it: the edge, secrets, the re
     authentik_secrets_make
     # nobody may join the portal under a name one of the stack's own logins uses (lib/logins.sh)
     env_set AUTHENTIK_RESERVED_USERNAMES "$(logins_reserved)"
+    # the blueprint's switch for app passwords at the LDAP bind: "yes", or empty for no
+    env_set AUTHENTIK_LDAP_APP_PASSWORDS "$( [[ "$(env_get LDAP_APP_PASSWORDS)" == yes ]] && echo yes || true )"
     authentik_release_check
     authentik_blueprints_sync
     authentik_templates_sync
@@ -606,6 +608,7 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                         "./mediastack.sh wire authentik"
                 else ok "authentik: the portal's website refuses app passwords"; fi
             fi
+            authentik_app_passwords_doctor
             if [[ -z "$(env_get AUTHENTIK_LDAP_TOKEN)" ]]; then
                 warn "authentik's LDAP outpost has no token yet (it keeps restarting until it does): ./mediastack.sh wire authentik"
             fi
@@ -712,6 +715,7 @@ wire_authentik() {
     wire_authentik_recovery
     wire_authentik_show_password
     wire_authentik_web_tokens
+    wire_authentik_app_password_lifetime
     wire_authentik_lockout_alerts
     wire_authentik_gate
     panel_signin_check
@@ -829,6 +833,67 @@ wire_authentik_web_tokens() { # the portal's website refuses app passwords (docs
     else
         wfail "authentik did not stop its website taking app passwords: $(oneline "$out")"
     fi
+}
+
+AUTHENTIK_TOKEN_LIFETIME_ATTR=goauthentik.io/user/token-maximum-lifetime   # a group's: the longest an app password its people make may last
+AUTHENTIK_APP_PASSWORD_LIFETIME=days=365   # with LDAP_APP_PASSWORDS=yes; authentik's own limit is a day
+AUTHENTIK_APP_PASSWORD_GROUPS=(media-users admins)
+authentik_group_lifetimes() { # -> "NAME<TAB>PK<TAB>LIFETIME" per group in AUTHENTIK_APP_PASSWORD_GROUPS (LIFETIME "-" when unset); rc 1 unreadable or a group missing
+    local g out line
+    for g in "${AUTHENTIK_APP_PASSWORD_GROUPS[@]}"; do
+        out=$(ak_api GET "/core/groups/?name=$g&include_users=false") || return 1
+        line=$(jq -r --arg n "$g" --arg a "$AUTHENTIK_TOKEN_LIFETIME_ATTR" \
+            '[.results[] | select(.name == $n)][0] // empty | "\(.name)\t\(.pk)\t\(.attributes[$a] // "-")"' <<<"$out") || return 1
+        [[ -n "$line" ]] || return 1
+        echo "$line"
+    done
+}
+
+wire_authentik_app_password_lifetime() { # with LDAP_APP_PASSWORDS=yes, a person's app passwords may last a year; with no, authentik's own day
+    # A group attribute, merged in through the API: the blueprint would set a
+    # group's attributes whole, over any an admin added (docs/design-access.md).
+    local want lines name pk have out attrs
+    want=-; [[ "$(env_get LDAP_APP_PASSWORDS)" == yes ]] && want=$AUTHENTIK_APP_PASSWORD_LIFETIME
+    lines=$(authentik_group_lifetimes) || { wfail "authentik: the groups $(IFS=,; echo "${AUTHENTIK_APP_PASSWORD_GROUPS[*]}") are unreadable — app passwords' lifetime not checked"; return 0; }
+    while IFS=$'\t' read -r name pk have; do
+        [[ "$have" == "$want" ]] && continue
+        w_would "authentik: $name: app passwords may last $( [[ "$want" == - ]] && echo "a day (authentik's own limit)" || echo "a year")" || continue
+        out=$(ak_api GET "/core/groups/$pk/?include_users=false") || { wfail "authentik: group $name unreadable: $(oneline "$out")"; continue; }
+        attrs=$(jq -c --arg a "$AUTHENTIK_TOKEN_LIFETIME_ATTR" --arg v "$want" \
+            '.attributes // {} | if $v == "-" then del(.[$a]) else .[$a] = $v end | {attributes: .}' <<<"$out")
+        out=$(ak_api PATCH "/core/groups/$pk/" "$attrs") || true
+    done <<<"$lines"
+    # read back: what authentik holds is the answer, whatever the writes said
+    lines=$(authentik_group_lifetimes) || { wfail "authentik: the groups are unreadable after the change: $(oneline "${out:-}")"; return 0; }
+    if awk -F'\t' -v w="$want" '$3 != w { bad=1 } END { exit !bad }' <<<"$lines"; then
+        (( WIRE_DRY )) || wfail "authentik did not take the app-password lifetime on $(awk -F'\t' -v w="$want" '$3 != w { print $1 }' <<<"$lines" | paste -sd, -): $(oneline "${out:-}")"
+    else
+        ok "authentik: app passwords $( [[ "$want" == - ]] && echo "refused by Jellyfin; any made last a day at most" || echo "taken by Jellyfin, for up to a year")"
+    fi
+}
+
+authentik_ldap_backends() { # -> the BACKENDS-JSON of the LDAP bind's own password step ("" when missing); rc 1 unreadable
+    local out
+    out=$(ak_api GET "/stages/password/?name=mediastack-ldap-password") || return 1
+    jq -c '[.results[] | select(.name == "mediastack-ldap-password")][0].backends // empty' <<<"$out" || return 1
+}
+
+authentik_app_passwords_doctor() { # doctor: Jellyfin's sign-in and the groups' lifetime follow LDAP_APP_PASSWORDS
+    local lb lt want_b=false want_l=-
+    [[ "$(env_get LDAP_APP_PASSWORDS)" == yes ]] && { want_b=true; want_l=$AUTHENTIK_APP_PASSWORD_LIFETIME; }
+    if ! lb=$(authentik_ldap_backends) || ! lt=$(authentik_group_lifetimes); then
+        warn "authentik: Jellyfin's sign-in step or the groups are unreadable — app passwords not checked"; return 0
+    fi
+    [[ -n "$lb" ]] || return 0   # no LDAP bind step yet: the portal's setup reports that
+    if [[ "$(jq --arg t "$AUTHENTIK_TOKEN_BACKEND" 'index($t) != null' <<<"$lb")" != "$want_b" ]]; then
+        d_fail "authentik: Jellyfin's sign-in $( [[ "$want_b" == true ]] && echo refuses || echo takes) app passwords, but LDAP_APP_PASSWORDS=$(env_get LDAP_APP_PASSWORDS)" \
+            "the portal's setup has not been applied with the current setting" \
+            "./mediastack.sh up, then ./mediastack.sh wire authentik"
+    elif awk -F'\t' -v w="$want_l" '$3 != w { bad=1 } END { exit !bad }' <<<"$lt"; then
+        d_fail "authentik: how long an app password may last does not match LDAP_APP_PASSWORDS=$(env_get LDAP_APP_PASSWORDS)" \
+            "$( [[ "$want_b" == true ]] && echo "a person's app passwords last a day at most" || echo "a group allows more than authentik's own day, for passwords Jellyfin refuses")" \
+            "./mediastack.sh wire authentik"
+    else ok "authentik: app passwords $( [[ "$want_b" == true ]] && echo "taken by Jellyfin, for up to a year" || echo "refused by Jellyfin (LDAP_APP_PASSWORDS=no)")"; fi
 }
 
 authentik_email_ready() { smtp_configured && [[ "$(state_get SMTP_TESTED)" == "$(smtp_fingerprint)" ]]; }   # the current settings passed `email test`

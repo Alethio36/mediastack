@@ -1,8 +1,9 @@
 # Design: access per tool, and app passwords
 
 *Status: MVP plan step 5. Part 1 (app passwords) **agreed** 15 Nov 2026
-after a live spike; slice 1 (the website refuses them) built 15 Nov 2026,
-to prove live; slices 2–4 not built yet. Part 2 (tiers, an authentik provider per
+after a live spike; slice 1 (the website refuses them) built and proven
+live 15 Nov 2026; slice 2 (the switch) built 15 Nov 2026, to prove live;
+slices 3–4 not built yet. Part 2 (tiers, an authentik provider per
 app, grants) designed in outline 9 Nov 2026 (roadmap, "Access per tool") — its
 details are agreed here before it is built. Portal mode only: with Wizarr or
 no accounts, each app keeps its own logins and none of this applies, except
@@ -88,9 +89,11 @@ From authentik's source (`version-2026.8`), which explains the table:
 
 ### How it is built — **proposed**
 
-**Slice 1 — the website refuses app passwords** (*built 15 Nov 2026*:
-`wire_authentik_web_tokens`, doctor's check in `_doctor_accounts`; the LDAP
-bind's own step untouched until slice 2). The default password stage
+**Slice 1 — the website refuses app passwords** (*built and proven 15 Nov
+2026*: `wire_authentik_web_tokens`, doctor's check in `_doctor_accounts`;
+anzac4 — doctor failed, wire removed it, doctor passed, a second wire wrote
+nothing; an app password refused at the website and the main password taken
+there, the app password still taken by Jellyfin). The default password stage
 belongs to authentik's own default blueprint, which re-applies when an
 authentik upgrade changes it — two blueprints owning one object would fight.
 So `wire authentik` sets its backends through the API (read, drop
@@ -101,13 +104,24 @@ An upgrade that puts it back is caught by doctor and undone by the next wire.
 signs in; an LDAP bind with the app password still accepted (the switch's
 job, not this slice's).
 
-**Slice 2 — the switch.** `LDAP_APP_PASSWORDS` in authentik's `env.tsv`
-(recommended `no`; asked by a full configure, and an answers key).
-The blueprint takes it as an input like its others: the LDAP password stage's
-backends with or without `TokenBackend`, and the two groups' attribute set or
-removed. A change re-applies the blueprint (about four minutes — the known
-cost, step 11's audit). doctor reads the live stage and groups and names a
-mismatch with the switch.
+**Slice 2 — the switch** (*built 15 Nov 2026*, schema 44).
+`LDAP_APP_PASSWORDS` in authentik's `env.tsv` (`enum:yes|no`, default and
+recommended `no`; asked by a full configure, and an answers key). Two ways
+in, each where its object is owned:
+- The LDAP bind's password step is mediastack's own blueprint object: its
+  backends come from `!If` on a blueprint input, `MEDIASTACK_LDAP_APP_PASSWORDS`,
+  which `up` writes as `yes` or empty (`AUTHENTIK_LDAP_APP_PASSWORDS`) —
+  authentik's `!If` takes any text as true, and `!Condition` compares
+  truthiness, not text, so "no" cannot be passed through. A change re-applies
+  the blueprint (about four minutes — the known cost, step 11's audit).
+- The year's limit is a group attribute, which the blueprint would set as a
+  group's whole `attributes`, over any an admin added: so `wire authentik`
+  merges it in through the API (set with yes, removed with no) and reads it
+  back.
+
+doctor reads the live step and both groups and names a mismatch with the
+switch. The migration adds the key empty (no): an install that never asked
+stops taking app passwords at Jellyfin, said once at the upgrade.
 *Proof:* off — bind refused, Jellyfin refused; on — a year accepted in the
 form, bind and Jellyfin accepted; deleting the password refuses the next
 bind and the next Jellyfin sign-in.
