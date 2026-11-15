@@ -598,6 +598,14 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                         "anyone could take another person's email, and with it their account in Kavita (and ROMM)" \
                         "./mediastack.sh wire authentik"
             fi
+            local web
+            if web=$(authentik_web_backends) && [[ -n "$web" ]]; then
+                if jq -e --arg t "$AUTHENTIK_TOKEN_BACKEND" 'index($t)' <<<"${web#*$'\t'}" >/dev/null; then
+                    d_fail "authentik: an app password signs into the portal's website" \
+                        "a device's password (a TV's) opens its owner's whole account: their password, their other app passwords" \
+                        "./mediastack.sh wire authentik"
+                else ok "authentik: the portal's website refuses app passwords"; fi
+            fi
             if [[ -z "$(env_get AUTHENTIK_LDAP_TOKEN)" ]]; then
                 warn "authentik's LDAP outpost has no token yet (it keeps restarting until it does): ./mediastack.sh wire authentik"
             fi
@@ -703,6 +711,7 @@ wire_authentik() {
     wire_authentik_identity
     wire_authentik_recovery
     wire_authentik_show_password
+    wire_authentik_web_tokens
     wire_authentik_lockout_alerts
     wire_authentik_gate
     panel_signin_check
@@ -786,6 +795,40 @@ wire_authentik_show_password() { # a show-password button at sign-in, set once: 
     elif [[ "$(ak_api GET "/stages/password/?name=$AUTHENTIK_SIGNIN_PASSWORD" 2>/dev/null | jq -r --arg n "$AUTHENTIK_SIGNIN_PASSWORD" '[.results[] | select(.name == $n)][0].allow_show_password' 2>/dev/null || true)" == true ]]; then
         state_set AUTHENTIK_SHOW_PASSWORD 1; ok "authentik: show-password button added at sign-in (its answer came late — read back)"
     else wfail "authentik did not take the show-password button: $(oneline "$out")"; fi
+}
+
+AUTHENTIK_TOKEN_BACKEND=authentik.core.auth.TokenBackend   # the password check that also takes app passwords
+authentik_web_backends() { # -> "PK<TAB>BACKENDS-JSON" of authentik's own sign-in password step (nothing when there is none); rc 1 unreadable
+    local out
+    out=$(ak_api GET "/stages/password/?name=$AUTHENTIK_SIGNIN_PASSWORD") || return 1
+    jq -r --arg n "$AUTHENTIK_SIGNIN_PASSWORD" '[.results[] | select(.name == $n)][0] // empty | "\(.pk)\t\(.backends | tojson)"' <<<"$out" || return 1
+}
+
+wire_authentik_web_tokens() { # the portal's website refuses app passwords (docs/design-access.md, decision 1): only the LDAP bind may take them
+    # authentik's default sign-in checks passwords with TokenBackend too, so a
+    # device's app password signed into the website as its owner (found live,
+    # 15 Nov 2026). Set through the API on every wire, not the blueprint: the
+    # step is authentik's own, and its default blueprint re-applies on upgrade.
+    local cur pk backends keep out
+    cur=$(authentik_web_backends) || { wfail "authentik: its sign-in password step is unreadable — app passwords not checked"; return 0; }
+    if [[ -z "$cur" ]]; then
+        info "authentik: no sign-in password step named $AUTHENTIK_SIGNIN_PASSWORD (a sign-in of your own) — make sure it does not take app passwords ($AUTHENTIK_TOKEN_BACKEND)"
+        return 0
+    fi
+    pk=${cur%%$'\t'*}; backends=${cur#*$'\t'}
+    if ! jq -e --arg t "$AUTHENTIK_TOKEN_BACKEND" 'index($t)' <<<"$backends" >/dev/null; then
+        ok "authentik: the portal's website refuses app passwords"; return 0
+    fi
+    w_would "authentik: make the portal's website refuse app passwords (only Jellyfin's sign-in may take them)" || return 0
+    keep=$(jq -c --arg t "$AUTHENTIK_TOKEN_BACKEND" '{backends: map(select(. != $t))}' <<<"$backends")
+    out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api PATCH "/stages/password/$pk/" "$keep") || true
+    # read back either way: a write with no answer may still have been made (found live Nov 2026)
+    cur=$(authentik_web_backends 2>/dev/null) || cur=""
+    if [[ -n "$cur" ]] && ! jq -e --arg t "$AUTHENTIK_TOKEN_BACKEND" 'index($t)' <<<"${cur#*$'\t'}" >/dev/null; then
+        ok "authentik: the portal's website now refuses app passwords"
+    else
+        wfail "authentik did not stop its website taking app passwords: $(oneline "$out")"
+    fi
 }
 
 authentik_email_ready() { smtp_configured && [[ "$(state_get SMTP_TESTED)" == "$(smtp_fingerprint)" ]]; }   # the current settings passed `email test`

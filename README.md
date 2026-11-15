@@ -757,7 +757,11 @@ apps would confuse: the stack's own accounts there (Audiobookshelf's root,
 Jellyfin's local admin) and an existing person's name in a different case.
 The sign-in page has a show-password button, so a mistyped password can be
 seen before it is sent (`wire authentik` adds it once; switched off in
-authentik's UI, it stays off). Someone locked out — a forgotten
+authentik's UI, it stays off). The portal's website takes only a person's
+password, never an app password (Settings → Tokens and App passwords):
+authentik's own sign-in would let one in as its owner, so `wire authentik`
+turns that off and `doctor` fails if an authentik upgrade turns it back on
+([docs/design-access.md](docs/design-access.md)). Someone locked out — a forgotten
 password, or too many wrong ones from the Jellyfin app — helps themselves
 once email works: the sign-in page's **Forgot password?** emails them a link
 (30 minutes, single use) to choose a new one, which clears their login

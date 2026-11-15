@@ -1,7 +1,8 @@
 # Design: access per tool, and app passwords
 
 *Status: MVP plan step 5. Part 1 (app passwords) **agreed** 15 Nov 2026
-after a live spike; not built yet. Part 2 (tiers, an authentik provider per
+after a live spike; slice 1 (the website refuses them) built 15 Nov 2026,
+to prove live; slices 2–4 not built yet. Part 2 (tiers, an authentik provider per
 app, grants) designed in outline 9 Nov 2026 (roadmap, "Access per tool") — its
 details are agreed here before it is built. Portal mode only: with Wizarr or
 no accounts, each app keeps its own logins and none of this applies, except
@@ -87,7 +88,9 @@ From authentik's source (`version-2026.8`), which explains the table:
 
 ### How it is built — **proposed**
 
-**Slice 1 — the website refuses app passwords.** The default password stage
+**Slice 1 — the website refuses app passwords** (*built 15 Nov 2026*:
+`wire_authentik_web_tokens`, doctor's check in `_doctor_accounts`; the LDAP
+bind's own step untouched until slice 2). The default password stage
 belongs to authentik's own default blueprint, which re-applies when an
 authentik upgrade changes it — two blueprints owning one object would fight.
 So `wire authentik` sets its backends through the API (read, drop

@@ -386,7 +386,7 @@ changed_wire() { # changed_wire DRY CHANGED-RC -> "applied|not recorded|not ok-l
       authentik_blueprint_inputs_record() { echo recorded > "$T/rec"; }
       authentik_blueprint_apply() { echo applied > "$T/app"; echo successful; }
       c_state() { echo exited; }; ok() { echo "OK $*"; }
-      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_lockout_alerts() { :; }
+      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_lockout_alerts() { :; }
       wire_authentik_gate() { :; }; panel_signin_check() { :; }
       rm -f "$T/rec" "$T/app"; WIRE_DRY=$1 CRC=$2 WIRE_FAILS=0
       wire_authentik > "$T/wout" 2>&1   # not in $( ): WIRE_FAILS is counted in this shell
@@ -405,7 +405,7 @@ nr_wire() { # nr_wire DRY BY-THIS-WORKER(yes|no) -> "applied|none recorded|none"
       authentik_blueprint_inputs_record() { echo recorded > "$T/rec"; }
       authentik_blueprint_apply() { echo applied > "$T/app"; echo successful; }
       c_state() { echo exited; }; ok() { :; }
-      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_lockout_alerts() { :; }
+      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_lockout_alerts() { :; }
       wire_authentik_gate() { :; }; panel_signin_check() { :; }
       rm -f "$T/rec" "$T/app"; WIRE_DRY=$1 BY=$2 WIRE_FAILS=0
       wire_authentik > /dev/null 2>&1
@@ -452,7 +452,7 @@ first_start() { # first_start DRY DISCOVERED -> what wire_authentik did: "gate|n
     ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
       authentik_blueprint_status() { echo ""; }
       authentik_blueprint_discovered() { echo waited > "$T/waited"; echo "$DISC"; }
-      wire_authentik_gate() { echo gate > "$T/gated"; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_lockout_alerts() { :; }   # their own sections below
+      wire_authentik_gate() { echo gate > "$T/gated"; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_lockout_alerts() { :; }   # their own sections below
       rm -f "$T/waited" "$T/gated"; WIRE_DRY=$1 DISC=$2 WIRE_FAILS=0
       wire_authentik >/dev/null 2>&1
       echo "$(cat "$T/gated" 2>/dev/null || echo nogate) fails=$WIRE_FAILS $(cat "$T/waited" 2>/dev/null || echo nowait)" )
@@ -476,7 +476,7 @@ first_pass() { # first_pass STATUS-AFTER-THE-WAIT -> "forced|waited-only fails=N
       authentik_blueprint_instance() { echo '{"last_applied_hash":""}'; }
       authentik_first_pass_wait() { echo "$AFTER"; }
       authentik_blueprint_apply() { echo forced > "$T/forced"; echo successful; }
-      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_lockout_alerts() { :; }
+      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_lockout_alerts() { :; }
       wire_authentik_gate() { echo gate > "$T/gated"; }; panel_signin_check() { :; }
       rm -f "$T/forced" "$T/gated"; WIRE_DRY=0 AFTER=$1 WIRE_FAILS=0
       wire_authentik >/dev/null 2>&1
@@ -1487,6 +1487,44 @@ showpw() { # showpw CURRENT SEEDED -> the PATCH calls made, then the state
 [[ "$(PATCH_LATE=false showpw false "")" == *"WFAIL authentik did not take the show-password button: no answer within 90s"*"seeded=" ]] \
     || fail_ "show password: no answer, read back as not made — a failure, not called rejected: $(PATCH_LATE=false showpw false "")"; pass
 grep -q 'wire_authentik_show_password' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik sets the show-password button"; pass
+# the portal's website refuses app passwords (docs/design-access.md, decision 1; found live 15 Nov 2026: a TV's app password signed into the website)
+webtok() { # webtok BACKENDS-JSON|none|unreadable [DRY] -> the PATCH bodies sent, WFAIL lines, then the step's backends after
+    ( echo "$1" > "$T/wt-cur"; rm -f "$T/calls"; WIRE_DRY=${2:-0}
+      ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+          case "$1 $2" in
+              "GET /stages/password/?name=default-authentication-password")
+                  case "$(cat "$T/wt-cur")" in
+                      none) echo '{"results":[{"pk":"OTHER","name":"someone-elses","backends":[]}]}' ;;
+                      unreadable) echo "connection refused"; return 1 ;;
+                      *) jq -cn --argjson b "$(cat "$T/wt-cur")" '{results:[{pk:"P1", name:"default-authentication-password", backends:$b}]}' ;;
+                  esac ;;
+              "PATCH /stages/password/P1/")
+                  [[ -n "${PATCH_DROP:-}" ]] && { echo "no answer within 90s"; return 1; }
+                  jq -c '.backends' <<<"$3" > "$T/wt-cur"
+                  [[ -n "${PATCH_LATE:-}" ]] && { echo "no answer within 90s"; return 1; }
+                  echo '{}' ;;
+          esac; }
+      wfail() { echo "WFAIL $*" >> "$T/calls"; }
+      wire_authentik_web_tokens >/dev/null 2>&1
+      { grep -E '^(PATCH|WFAIL)' "$T/calls" || true; } | sed 's#^PATCH /stages/password/P1/ #PATCH #'
+      echo "after=$(cat "$T/wt-cur")" )
+}
+WT='["authentik.core.auth.InbuiltBackend","authentik.sources.kerberos.auth.KerberosBackend","authentik.sources.ldap.auth.LDAPBackend","authentik.core.auth.TokenBackend"]'
+WN='["authentik.core.auth.InbuiltBackend","authentik.sources.kerberos.auth.KerberosBackend","authentik.sources.ldap.auth.LDAPBackend"]'
+[[ "$(webtok "$WT")" == "PATCH {\"backends\":$WN}"$'\n'"after=$WN" ]] || fail_ "web sign-in with TokenBackend: only it removed, the rest kept in order: $(webtok "$WT")"; pass
+[[ "$(webtok "$WN")" == "after=$WN" ]] || fail_ "web sign-in already refusing app passwords: nothing written"; pass
+[[ "$(webtok none)" == "after=none" ]] || fail_ "no sign-in password step of authentik's own: said, nothing written, no failure"; pass
+[[ "$(webtok unreadable)" == "WFAIL "*"unreadable"*"after=unreadable" ]] || fail_ "the step unreadable: a failure, never assumed fine: $(webtok unreadable)"; pass
+[[ "$(webtok "$WT" 1)" == "after=$WT" ]] || fail_ "a dry run writes nothing"; pass
+[[ "$(PATCH_LATE=1 webtok "$WT")" == "PATCH {\"backends\":$WN}"$'\n'"after=$WN" ]] || fail_ "no answer, read back as made: no failure: $(PATCH_LATE=1 webtok "$WT")"; pass
+[[ "$(PATCH_DROP=1 webtok "$WT")" == *"WFAIL authentik did not stop its website taking app passwords: no answer within 90s"*"after=$WT" ]] \
+    || fail_ "no answer, read back as not made: a failure: $(PATCH_DROP=1 webtok "$WT")"; pass
+grep -q 'wire_authentik_web_tokens' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik makes the website refuse app passwords"; pass
+grep -q 'an app password signs into the portal.s website' <(awk '/^_doctor_accounts\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "doctor fails while the website takes app passwords"; pass
+# the LDAP bind keeps its own password step: the switch (LDAP_APP_PASSWORDS) decides app passwords there, not this
+grep -A6 'id: stage-ldap-password' services/authentik/blueprints/mediastack-portal.yaml | grep 'authentik.core.auth.TokenBackend' >/dev/null \
+    || fail_ "the LDAP bind's password step still takes app passwords until the switch exists"; pass
+
 # authentik took 22s to save the stage on a first start (found live Nov 2026): the write waits longer than a read
 showpw false "" >/dev/null; [[ "$(cat "$T/patch-wait")" == "$AUTHENTIK_STAGE_WAIT" ]] && (( AUTHENTIK_STAGE_WAIT >= 60 )) \
     || fail_ "show password: its write waits AUTHENTIK_STAGE_WAIT ($(cat "$T/patch-wait"))"; pass
