@@ -322,6 +322,12 @@ admin rights only while the admin group exists. The upgrade (schema 45)
 says the rename once. A group by the new name made by hand before the
 rename makes the rename fail (names are unique): authentik reports the
 blueprint failed, doctor shows it.
+*First live try (16 Nov 2026) failed:* the rename entry found the old group
+by its name, and authentik's importer merges an entry's identifiers over its
+attrs — the old name was written back, and the next entry made `frontend`
+and `admin` new and empty beside the old (spikeuser left in `media-users`).
+The entry now finds the old group by its pk; `wire` and doctor fail while a
+group still has an old name (nothing had checked the rename happened).
 *Slice 4 also:* a grant's or revoke's change of groups is followed by one
 save of the person — proven live (16 Nov 2026): it clears authentik's
 day-long list of their apps (the card appears or goes on their next load). **Slice 3 — tiers and `access`**

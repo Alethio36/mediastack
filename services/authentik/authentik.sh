@@ -34,6 +34,12 @@ signin_people() { # -> every portal account (authentik's user-list JSON); rc != 
 PORTAL_FRONTEND="frontend"
 PORTAL_ADMIN="admin"
 
+PORTAL_GROUPS_OLD=(media-users admins)   # their names before Nov 2026: none may exist once the blueprint applied
+authentik_old_groups() { # -> the groups still under an old name (nothing when renamed); rc 1 when unreadable
+    local g pk
+    for g in "${PORTAL_GROUPS_OLD[@]}"; do pk=$(ak_group_pk "$g") || return 1; [[ -z "$pk" ]] || echo "$g"; done
+}
+
 signin_admins() { # -> the portal's admin group's members (authentik's user-list JSON); rc != 0 when unreadable
     # an unknown group name is refused (400), never answered with nobody:
     # a sync reading this cannot take everyone's admin rights away
@@ -628,6 +634,7 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
             if [[ -n "$(authentik_gated)" ]]; then
                 local hg=""; for g in $(authentik_household); do [[ -n "$(svc_label "$g" mediastack.auth.group)" ]] && hg+="$g "; done
                 [[ -n "$hg" ]] && ok "authentik: household gate — ${hg}ask the portal first ($PORTAL_FRONTEND and $PORTAL_ADMIN)"
+                authentik_rename_check d_fail
                 authentik_app_gates_doctor
                 if authentik_gate_attached; then ok "authentik: the gate is up — $(authentik_gated | tr '\n' ' ')ask the portal first ($PORTAL_ADMIN only)"
                 else d_fail "authentik: the gate is not on its built-in outpost" "routes marked gate ($(authentik_gated | tr '\n' ' '| sed 's/ $//')) refuse everyone" "./mediastack.sh wire authentik"; fi
@@ -712,7 +719,8 @@ wire_authentik() {
         sudo docker restart "$(svc_cname authentik-ldap)" >/dev/null && ok "authentik: LDAP outpost restarted on the new setup (its bind cache cleared)"
     fi
     case "$st" in
-        successful) if (( applied )) || [[ -z "$why" ]]; then ok "authentik: mediastack's portal setup applied ($PORTAL_FRONTEND, $PORTAL_ADMIN, sign-up by invitation)"; fi ;;
+        successful) if (( applied )) || [[ -z "$why" ]]; then ok "authentik: mediastack's portal setup applied ($PORTAL_FRONTEND, $PORTAL_ADMIN, sign-up by invitation)"; fi
+            authentik_rename_check wfail ;;
         "") if (( WIRE_DRY )); then info "authentik: mediastack's portal setup not discovered yet — the real run waits for it"
             else wfail "authentik: mediastack's portal setup was not discovered within $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes — ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; fi
             return 0 ;;
@@ -1055,6 +1063,17 @@ authentik_outpost_add() { # authentik_outpost_add PROVIDER-PK LABEL — beside w
     w_would "authentik: put $2 on its built-in outpost" || return 0
     ak_api PATCH "/outposts/instances/$outpost/" "$(jq -cn --argjson ps "$provs" --argjson p "$1" '{providers: ($ps + [$p])}')" >/dev/null \
         && ok "authentik: $2 attached" || { wfail "authentik refused to attach $2 to its outpost"; return 1; }
+}
+
+authentik_rename_check() { # authentik_rename_check wfail|d_fail — a group still under its old name: the rename did not happen
+    local old
+    old=$(authentik_old_groups) || { warn "authentik: its groups are unreadable — the rename to $PORTAL_FRONTEND/$PORTAL_ADMIN unchecked"; return 0; }
+    [[ -n "$old" ]] || return 0
+    local what why
+    what="authentik: the portal's groups are not renamed — still there: $(paste -sd' ' - <<<"$old")"
+    why="people in it are not in $PORTAL_FRONTEND/$PORTAL_ADMIN: refused by Jellyfin, the gates and the panel"
+    if [[ "$1" == d_fail ]]; then d_fail "$what" "$why" "./mediastack.sh logs authentik --no-follow | grep -i blueprint"
+    else wfail "$what — $why (the blueprint's log: ./mediastack.sh logs authentik --no-follow | grep -i blueprint)"; fi
 }
 
 authentik_app_gates_doctor() { # doctor: each gated app on its own gate; none of our cards both gated and unbound (open to everyone signed in)

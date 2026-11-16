@@ -66,12 +66,16 @@ entries:
   # finds it. A fresh install skips the rename. Entries apply in order, in
   # one transaction (authentik's importer). Names: PORTAL_FRONTEND and
   # PORTAL_ADMIN in services/authentik/authentik.sh (a test holds them equal).
+  # The old group is found by its pk, never by its name: the importer merges
+  # an entry's identifiers OVER its attrs, so `identifiers: name: media-users`
+  # would write the old name back (found live, 16 Nov 2026 — the new groups
+  # were made empty beside the old).
   - model: authentik_core.group
     id: group-rename-media-users
     conditions:
       - !Find [authentik_core.group, [name, media-users]]
     identifiers:
-      name: media-users
+      pk: !Find [authentik_core.group, [name, media-users]]
     attrs:
       name: frontend
   - model: authentik_core.group
@@ -79,7 +83,7 @@ entries:
     conditions:
       - !Find [authentik_core.group, [name, admins]]
     identifiers:
-      name: admins
+      pk: !Find [authentik_core.group, [name, admins]]
     attrs:
       name: admin
   - model: authentik_core.group

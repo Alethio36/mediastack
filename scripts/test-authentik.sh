@@ -224,9 +224,23 @@ r=$(awk '/^  - model:/{m=$0} /id: group-rename-media-users$|id: group-rename-adm
 for pair in "media-users frontend" "admins admin"; do
     set -- $pair
     blk=$(sed -n "/id: group-rename-$1\$/,/^  - model:/p" "$bp")
-    grep -qF -- "- !Find [authentik_core.group, [name, $1]]" <<<"$blk" && grep -qE "^      name: $1\$" <<<"$blk" && grep -qE "^      name: $2\$" <<<"$blk" \
-        || fail_ "the rename of $1: only while it exists, found by its old name, given the new: $blk"; pass
+    # authentik's importer merges an entry's identifiers OVER its attrs: found by
+    # its name, the group would get the old name back (found live, 16 Nov 2026)
+    grep -qF -- "- !Find [authentik_core.group, [name, $1]]" <<<"$blk" \
+        && grep -qF -- "pk: !Find [authentik_core.group, [name, $1]]" <<<"$blk" \
+        && ! grep -qE '^      name:' <<<"$(sed -n '/identifiers:/,/attrs:/p' <<<"$blk")" \
+        && [[ "$(sed -n '/attrs:/,$p' <<<"$blk" | grep -cE "^      name: $2\$")" == 1 ]] \
+        || fail_ "the rename of $1: only while it exists, found by its pk (never its name), given the new name: $blk"; pass
 done
+# wire and doctor: a group still under its old name fails, named
+rc() { ( OLD=$1; ak_group_pk() { [[ " $OLD " == *" $1 "* ]] && echo "pk-$1"; return 0; }
+         wfail() { echo "WFAIL $*"; }; d_fail() { echo "DFAIL $1"; }; warn() { echo "WARN $*"; }
+         authentik_rename_check "$2" ) }
+[[ -z "$(rc '' wfail)" ]] || fail_ "renamed: nothing said"; pass
+[[ "$(rc 'media-users admins' d_fail)" == "DFAIL authentik: the portal's groups are not renamed — still there: media-users admins" ]] \
+    || fail_ "doctor: both old groups still there, named: $(rc 'media-users admins' d_fail)"; pass
+[[ "$(rc 'admins' wfail)" == "WFAIL authentik: the portal's groups are not renamed — still there: admins"* ]] || fail_ "wire: one left, a failure naming it: $(rc admins wfail)"; pass
+grep -q 'authentik_rename_check d_fail' <(awk '/^_doctor_accounts\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "doctor runs the rename check"; pass
 ! grep -qE 'KeyOf group-(media-users|admins)\b' "$bp" || fail_ "nothing in the blueprint points at the old groups' entries"; pass
 grep -q 'continue_flow_without_invitation: false' <<<"$(sed -n '/name: mediastack-join-invitation/,/^  - /p' "$bp")" \
     || fail_ "sign-up must need an invitation"; pass
