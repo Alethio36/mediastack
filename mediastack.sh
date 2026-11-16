@@ -190,7 +190,9 @@ DC() { # compose wrapper: project dir pinned, your files, the VPN overlay and pi
     if [[ ! -t 1 ]]; then
         case "${1:-}" in up) set -- up --quiet-pull "${@:2}" ;; pull) set -- pull --quiet "${@:2}" ;; esac
     fi
-    sudo docker compose --project-directory "$SCRIPT_DIR" "${files[@]}" "$@"
+    # compose takes an exported TZ over .env's, and sudo passes TZ through by
+    # default: unset here, or the login shell's zone beats the stack's
+    ( unset TZ; sudo docker compose --project-directory "$SCRIPT_DIR" "${files[@]}" "$@" )
 }
 
 compose_renders() { DC config >/dev/null; } # rc-only; compose errors pass through

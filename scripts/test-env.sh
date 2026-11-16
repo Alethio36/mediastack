@@ -213,4 +213,16 @@ migrate_env
 ); pass
 [[ "$(awk -F'\t' '$1=="TRAEFIK_DOMAIN" {print $2}' lib/env.schema.tsv)" == retired:36 ]] || fail_ "TRAEFIK_DOMAIN is retired in the schema (doctor names a leftover)"; pass
 
+# ---- a key the login shell can shadow ----
+# compose takes an exported variable over .env's, and sudo keeps these by
+# default (env_keep, env_check, the ones it sets): a setting named like one
+# would follow the shell. TZ is the one there is, and DC strips it.
+for k in $(env_schema_rows | cut -f1); do
+    case $k in
+        TZ) grep -q '( unset TZ; sudo docker compose' mediastack.sh || fail_ "DC strips TZ, or the shell's zone beats .env's" ;;
+        COLORTERM|LANG|LANGUAGE|LC_*|LINGUAS|TERM|COLORS|DISPLAY|HOSTNAME|KRB5CCNAME|LS_COLORS|PATH|PS1|PS2|XAUTHORITY|XAUTHORIZATION|XDG_CURRENT_DESKTOP|HOME|LOGNAME|SHELL|USER|MAIL|SUDO_*)
+            fail_ "$k: sudo passes it through, so the shell's value beats .env's — name the setting otherwise, or strip it in DC" ;;
+    esac
+done; pass
+
 echo "OK env: $checks checks"

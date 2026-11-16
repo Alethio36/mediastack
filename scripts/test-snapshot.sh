@@ -68,6 +68,8 @@ t_fail() { echo "ERROR $*" >&2; exit 1; }
 # written to out/ and never reach systemd
 sudo() { "$@"; }
 systemctl() { :; }
+# a zone no fixture uses: the render must take .env's TZ, never the shell's
+export TZ=Pacific/Chatham
 
 normalize() { sed "s#$work#@REPO@#g"; }
 
