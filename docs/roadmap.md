@@ -208,7 +208,9 @@ agreed first:
    (16 Nov 2026)*, slices 1–3 proven live: the portal's website refuses app
    passwords, a switch `LDAP_APP_PASSWORDS` (off by default), `signout <user>`,
    the README's how-to. Then part 2: the `frontend`/`admin` rename,
-   tiers, providers per app and grants (details to agree first).
+   tiers, providers per app and grants — its decisions agreed 16 Nov 2026
+   (the rename in place inside the blueprint; revoking ends portal sessions,
+   proven needed live), built only after a keeper install from `stable`.
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions
    pending.

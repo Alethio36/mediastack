@@ -178,7 +178,7 @@ one per device; its name says which), revoking one (delete it, then
 person, not an app); automatic `signout` on deletion (needs an event
 listener); changing the form's starting date.
 
-## Part 2 — access per tool (outline of 9 Nov 2026; details to agree next)
+## Part 2 — access per tool (outline of 9 Nov 2026; decisions **agreed** 16 Nov 2026)
 
 Two tiers, **`frontend`** and **`admin`** — the groups, renamed from
 `media-users`/`admins` by an `upgrade` migration, and each service's default
@@ -194,9 +194,62 @@ Every gated route changes, so it is proven on a keeper install's `upgrade`
 (a portal install made from `stable` before this lands), not only a clean
 install.
 
-To settle before building it: the rename's reach (Jellyfin's LDAP filter,
-Navidrome's household gate, the panel's portal sign-in, `reset-password`,
-`invite`, doctor and every message that names the groups); what a person
-removed from a tier keeps until their next sign-in (the outpost's sessions);
-the order of the upgrade migration against a running portal; and whether
-app passwords (part 1) follow the tiers (`frontend` only?) once they exist.
+### Decisions, **agreed** (16 Nov 2026)
+
+Read in authentik 2026.8.5's source and checked live on anzac4 first.
+
+1. **The rename happens inside the blueprint, in place.** Our blueprint
+   finds each group by its name, so a blueprint that simply said `frontend`
+   would make a new, empty group and bind the gate and the LDAP bind to it:
+   every admin locked out of the tools, every Jellyfin sign-in refused.
+   Instead each group gets one entry more, before its own: with a per-entry
+   condition (`conditions:` — skipped while false; `!Find` gives nothing when
+   no object matches), *a group named `media-users` exists → rename it to
+   `frontend`*; likewise `admins` → `admin`. Same group object, so its
+   members, its bindings, its attributes (part 1's year limit) and anything
+   an admin bound to it in authentik's UI stay. A fresh install skips the
+   rename and gets the new names. The rename entries stay; they cost nothing.
+2. **The rename's reach — one patch, together:** the blueprint (groups, the
+   admin gate's binding, the LDAP bindings, sign-up's group); Jellyfin's LDAP
+   filters and admin sync; the admin syncs of Kavita, Audiobookshelf and
+   Navidrome; the panel's `matchUsergroups`; Navidrome's household gate
+   label; doctor, messages, tests, fixtures and docs. Outside the stack,
+   anything set up by hand that matches a group by its *name* (a user's own
+   LDAP or OIDC app) — the upgrade says so once.
+   **Every reader of a group by name checks the group exists first and fails
+   loudly if not.** authentik's user list already refuses an unknown group
+   name (`groups_by_name` is a validated choice), but Navidrome's 15-minute
+   sync reads each person's group names: between `upgrade` (new code on disk)
+   and the rename's apply it would find nobody in `admin` and demote every
+   Navidrome admin, silently.
+3. **Order against a running portal:** `upgrade` changes nothing in
+   authentik — the blueprint reaches the worker only when `up` or `wire`
+   copies it into the config root (`authentik_blueprints_sync`; the worker
+   watches only that folder). The rename lands in that apply; `wire` waits
+   for it, then rewrites Jellyfin's filter and the panel's groups in the
+   same run. New Jellyfin sign-ins are refused only between the rename and
+   `wire jellyfin` (seconds); sessions already open are untouched.
+4. **Taking access away ends the person's portal sessions.** *Live
+   (16 Nov 2026, anzac4, Navidrome's household gate):* spikeuser removed from
+   `media-users` with Navidrome open — Navidrome kept working, also after two
+   minutes; their portal sessions deleted (authentik's admin: the user →
+   Sessions) — the next request was refused. The outpost decides when a
+   session starts, and ending the authentik session ends the outpost's. So
+   `access revoke`, `access tier` moving someone's access away, and taking
+   a person out of a tier end that person's portal sessions through
+   authentik's API; when the change takes Jellyfin away, `signout` too.
+   They sign in again to whatever they still have. A group changed by hand
+   in authentik's UI ends no session — the README says to end them there too
+   (the user → Sessions).
+5. **App passwords and tiers: no new rule.** An app password opens only
+   Jellyfin's LDAP bind, which admits whoever Jellyfin admits. The year
+   limit goes on every group that admits Jellyfin: `frontend`, `admin`, and
+   `app-jellyfin`.
+6. **`admin` includes everything `frontend` has** — as today, where Jellyfin
+   and Navidrome's household gate admit both groups. An admin is a household
+   member who also gets the tools; nobody needs to be in both, and taking
+   someone out of `frontend` never leaves an admin locked out of Jellyfin.
+
+Still to design before building: the `access` verb's output and messages,
+and the per-app providers' names and their migration from the one
+domain-wide provider (the first slice).
