@@ -2,7 +2,7 @@
 
 *Status: MVP plan step 5. Part 1 (app passwords) **agreed** 15 Nov 2026
 after a live spike; slice 1 (the website refuses them) built and proven
-live 15 Nov 2026; slice 2 (the switch) built 15 Nov 2026, to prove live;
+live 15 Nov 2026; slice 2 (the switch) built and proven live 15 Nov 2026;
 slices 3–4 not built yet. Part 2 (tiers, an authentik provider per
 app, grants) designed in outline 9 Nov 2026 (roadmap, "Access per tool") — its
 details are agreed here before it is built. Portal mode only: with Wizarr or
@@ -111,7 +111,7 @@ an authentik upgrade.
 signs in; an LDAP bind with the app password still accepted (the switch's
 job, not this slice's).
 
-**Slice 2 — the switch** (*built 15 Nov 2026*, schema 44).
+**Slice 2 — the switch** (*built and proven live 15 Nov 2026*, schema 44).
 `LDAP_APP_PASSWORDS` in authentik's `env.tsv` (`enum:yes|no`, default and
 recommended `no`; asked by a full configure, and an answers key). Two ways
 in, each where its object is owned:
@@ -132,6 +132,11 @@ stops taking app passwords at Jellyfin, said once at the upgrade.
 *Proof:* off — bind refused, Jellyfin refused; on — a year accepted in the
 form, bind and Jellyfin accepted; deleting the password refuses the next
 bind and the next Jellyfin sign-in.
+*Proven live (15 Nov 2026, anzac4 at 34c14d8):* off — the bind refused (LDAP
+result 49), Jellyfin refused; on — a year accepted in the form, the bind and
+Jellyfin took the password, and `wire` afterwards printed no "now" (nothing
+left to change); revoked — the bind refused (49), a fresh Jellyfin sign-in
+refused.
 
 **Slice 3 — `signout <user>`.** Jellyfin's API: the person's devices
 (`GET /Devices?userId=`), each removed (`DELETE /Devices?id=`), which ends

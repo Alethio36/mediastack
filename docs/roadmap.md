@@ -245,6 +245,9 @@ agreed first:
       holds them — seen live 15 Nov 2026): loud and nothing written, but an
       unattended install that dropped after its first step cannot simply be
       run again. An answer that matches what is already done should pass.
+    - **`scripts/test-runs.sh` failed once in CI** (lint #528 on 31fed10,
+      15 Nov 2026) and never since; not reproduced locally (22 runs, 10 under
+      full CPU load). If it fails again, save the step's log before re-running.
 12. **The README as a chapter-style tutorial** and the built-in how-to page.
 13. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
     dependency layers below; Wizarr sign-in live; `restore --service
