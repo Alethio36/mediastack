@@ -204,10 +204,10 @@ agreed first:
    proven in one run, proven live with the portal and with Wizarr; with it
    `set-credentials navidrome` and `reset-password` for Wizarr. Design:
    [design-rotate.md](design-rotate.md); see Credential coverage.
-5. **Access per tool** — [design-access.md](design-access.md). The spike on
-   LDAP app passwords is done (15 Nov 2026) and part 1 agreed: the portal's
-   website refuses app passwords, a switch `LDAP_APP_PASSWORDS` (off by
-   default), `signout <user>`. Then part 2: the `frontend`/`admin` rename,
+5. **Access per tool** — [design-access.md](design-access.md). Part 1 *done
+   (16 Nov 2026)*, slices 1–3 proven live: the portal's website refuses app
+   passwords, a switch `LDAP_APP_PASSWORDS` (off by default), `signout <user>`,
+   the README's how-to. Then part 2: the `frontend`/`admin` rename,
    tiers, providers per app and grants (details to agree first).
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions

@@ -255,7 +255,7 @@ cmd_signout() { # someone's Jellyfin sign-ins end on every device (any account m
     svc_enabled jellyfin || die "signout ends Jellyfin sign-ins, and Jellyfin is not enabled"
     [[ "$(c_health "$(svc_cname jellyfin)")" == healthy ]] || die "jellyfin is not healthy yet — ./mediastack.sh status jellyfin"
     jellyfin_signout "$user"
-    if signin_is authentik; then info "their portal password and any device password still sign in — delete a device's password first (the portal: Settings → Tokens and App passwords)"
+    if signin_is authentik; then info "their portal password and any device password still sign in — delete a device's password first (the portal: Settings → Credentials → Tokens and App passwords)"
     elif signin_is wizarr; then info "their password still signs in — a new one: ./mediastack.sh reset-password $user"
     else info "their password still signs in — change it in Jellyfin's dashboard → Users"; fi
 }

@@ -759,14 +759,15 @@ Jellyfin's local admin) and an existing person's name in a different case.
 The sign-in page has a show-password button, so a mistyped password can be
 seen before it is sent (`wire authentik` adds it once; switched off in
 authentik's UI, it stays off). The portal's website takes only a person's
-password, never an app password (Settings → Tokens and App passwords):
+password, never an app password (Settings → Credentials → Tokens and App passwords):
 authentik's own sign-in would let one in as its owner, so `wire authentik`
 turns that off and `doctor` fails if an authentik upgrade turns it back on
 ([docs/design-access.md](docs/design-access.md)). Jellyfin takes app
 passwords only with `LDAP_APP_PASSWORDS=yes` (a full `configure` asks; off by
 default): then a person can give each device — a TV, a phone — its own
 password, up to a year, so the device never holds their real one, and
-deleting it stops that device signing in again. Someone locked out — a forgotten
+deleting it stops that device signing in again (how: "A device's own
+password" below). Someone locked out — a forgotten
 password, or too many wrong ones from the Jellyfin app — helps themselves
 once email works: the sign-in page's **Forgot password?** emails them a link
 (30 minutes, single use) to choose a new one, which clears their login
@@ -836,6 +837,31 @@ clears it at once (**Forgot password?** on the portal's sign-in page, or
 own page do not count toward it. Jellyfin refuses a locked-out person exactly
 as it refuses a wrong password, even when they typed the right one; authentik's
 log names each such refusal (`./mediastack.sh logs authentik --no-follow | grep throttled`).
+
+**A device's own password** (Jellyfin only, with `LDAP_APP_PASSWORDS=yes`). A
+TV or a phone can sign in to Jellyfin with a password made just for it, so it
+never holds the person's real one. The person makes it themselves:
+1. In the portal: Settings (⚙) → Credentials → Tokens and App passwords →
+   **New App Password**. Name it after the device (`living-room-tv`), one per
+   device, so each can be taken away on its own.
+2. Set its expiry: the form starts at 30 minutes from now, so change it —
+   up to a year.
+3. On the device, sign in to Jellyfin with the portal username and that
+   password.
+
+The portal's own website refuses these passwords: they open Jellyfin and
+nothing else. When one expires, that device's next sign-in is refused; a
+device already signed in stays signed in. To take a device's access away:
+delete its password in the same list (its next sign-in is refused at once),
+then `./mediastack.sh signout <user>`, which ends the sign-ins Jellyfin
+already holds. `signout` signs the person out of Jellyfin on **every**
+device, so their other devices sign in again, each with its own password. A
+browser goes to the sign-in page on its next click; a phone app may spin
+until it is closed and reopened. With `LDAP_APP_PASSWORDS=no` (the default)
+Jellyfin takes only the real password. To change it: a full
+`./mediastack.sh configure`, or `.env`, then `./mediastack.sh up` and
+`./mediastack.sh wire authentik` (the portal's setup takes about four
+minutes to apply).
 
 Audiobookshelf signs people in through the portal (OIDC): its login page goes
 straight to the portal (the app shows a "Log in with <portal name>" button);

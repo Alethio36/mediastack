@@ -3,8 +3,8 @@
 *Status: MVP plan step 5. Part 1 (app passwords) **agreed** 15 Nov 2026
 after a live spike; slice 1 (the website refuses them) built and proven
 live 15 Nov 2026; slice 2 (the switch) built and proven live 15 Nov 2026;
-slice 3 (`signout`) built 16 Nov 2026 after its live check, to prove live;
-slice 4 not built yet. Part 2 (tiers, an authentik provider per
+slice 3 (`signout`) built and proven live 16 Nov 2026; slice 4 (the how-to)
+written 16 Nov 2026 — part 1 done. Part 2 (tiers, an authentik provider per
 app, grants) designed in outline 9 Nov 2026 (roadmap, "Access per tool") — its
 details are agreed here before it is built. Portal mode only: with Wizarr or
 no accounts, each app keeps its own logins and none of this applies, except
@@ -139,7 +139,7 @@ Jellyfin took the password, and `wire` afterwards printed no "now" (nothing
 left to change); revoked — the bind refused (49), a fresh Jellyfin sign-in
 refused.
 
-**Slice 3 — `signout <user>`** (*built 16 Nov 2026*, to prove live). Any
+**Slice 3 — `signout <user>`** (*built and proven live 16 Nov 2026*). Any
 account model: Jellyfin's users are there in each.
 *Live check first (16 Nov 2026, anzac4, spikeuser on Chrome and Jellyfin for
 Android):* `DELETE /Devices?id=` (204) ends exactly that device's session —
@@ -162,10 +162,15 @@ person signed in, which `signout` exists to end). The stack's own Jellyfin
 admin is refused (Seerr and wire sign in as it); none signed in is not a
 failure. The password is not changed, and the closing line says what does
 keep them out in that account model.
-*To prove live:* `signout spikeuser` with Chrome and the phone signed in —
-both out, the admin's two devices kept, the count 2.
+*Proven live (16 Nov 2026, anzac4 at fe1d3d7):* first, `?userId=` for
+spikeuser listed the admin's Seerr and `mediastack-wire` devices too — the
+source read was right. `signout spikeuser` with Chrome and the phone signed
+in: "signed out of 2 device(s)", the admin's two devices kept (so the device
+list's `LastUserId` matches `/Users`' `Id`), Chrome at sign-in on its next
+click, the phone at sign-in on reopening; `signout admin` refused.
 
-**Slice 4 — the how-to.** README: making a device's password (set the expiry;
+**Slice 4 — the how-to** (*written 16 Nov 2026*, README, "A device's own
+password"): making a device's password (set the expiry;
 one per device; its name says which), revoking one (delete it, then
 `signout`), what `LDAP_APP_PASSWORDS` changes.
 
