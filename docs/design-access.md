@@ -328,6 +328,15 @@ attrs — the old name was written back, and the next entry made `frontend`
 and `admin` new and empty beside the old (spikeuser left in `media-users`).
 The entry now finds the old group by its pk; `wire` and doctor fail while a
 group still has an old name (nothing had checked the rename happened).
+*Second try (16 Nov 2026):* the rename held (spikeuser in `frontend`), but
+right after the apply authentik answered three writes after more than 20 s —
+two outpost writes and Navidrome's rename were reported refused, and had
+landed (the next `wire` found them done; doctor agreed). Each outpost write
+sends the whole provider list, so writes one after another could undo each
+other when an answer is late. Now: every gate goes onto the outpost in one
+write once all the cards are done; the outpost and provider writes wait as
+long as authentik's slow writes (`AUTHENTIK_STAGE_WAIT`), and a write with no
+answer is read back before it counts as a failure.
 *Slice 4 also:* a grant's or revoke's change of groups is followed by one
 save of the person — proven live (16 Nov 2026): it clears authentik's
 day-long list of their apps (the card appears or goes on their next load). **Slice 3 — tiers and `access`**

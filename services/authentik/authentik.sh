@@ -988,7 +988,7 @@ wire_authentik_gate() { # the gate on the built-in outpost, the first admin in t
     prov=$(jq -r '.results[0].pk // empty' <<<"$out")
     [[ -n "$prov" ]] || { wfail "authentik: the gate provider (mediastack-gate) is missing — the blueprint creates it: ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; return 0; }
     if authentik_gate_attached; then ok "authentik: the gate is on its built-in outpost"
-    else authentik_outpost_add "$prov" "the gate" || true; fi   # a failure is counted (wfail); the step goes on
+    else authentik_outpost_add "the gate" "$prov" || true; fi   # a failure is counted (wfail); the step goes on
     # 1b. where that outpost sends browsers to sign in
     authentik_outpost_host
     # 2. the first admin joins the admin group once — after that, membership is yours to manage
@@ -1054,15 +1054,26 @@ authentik_outpost_host() { # the built-in outpost sends browsers to the portal t
     return 0
 }
 
-authentik_outpost_add() { # authentik_outpost_add PROVIDER-PK LABEL — beside what is on the built-in outpost, never replacing it
-    local out outpost provs
-    out=$(ak_api GET "/outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") || { wfail "authentik: built-in outpost unreadable"; return 1; }
+authentik_outpost_add() { # authentik_outpost_add LABEL PROVIDER-PK... — beside what is on the built-in outpost, never replacing it; one write
+    # One write for them all: each write sends the whole list, so writes one
+    # after another could each undo the last when an answer comes late (seen
+    # live 16 Nov 2026: writes answered after 20s, and landed). A write with no
+    # answer is read back before it counts as a failure.
+    local label="$1" out outpost provs missing; shift
+    out=$(ak_api GET "/outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") || { wfail "authentik: built-in outpost unreadable: $(oneline "$out")"; return 1; }
     outpost=$(jq -r '.results[0].pk // empty' <<<"$out"); provs=$(jq -c '.results[0].providers // []' <<<"$out")
     [[ -n "$outpost" ]] || { wfail "authentik: its built-in outpost is missing"; return 1; }
-    jq -e --argjson p "$1" 'index($p) != null' <<<"$provs" >/dev/null && return 0
-    w_would "authentik: put $2 on its built-in outpost" || return 0
-    ak_api PATCH "/outposts/instances/$outpost/" "$(jq -cn --argjson ps "$provs" --argjson p "$1" '{providers: ($ps + [$p])}')" >/dev/null \
-        && ok "authentik: $2 attached" || { wfail "authentik refused to attach $2 to its outpost"; return 1; }
+    missing=$(printf '%s\n' "$@" | jq -sc --argjson ps "$provs" 'map(tonumber) | unique | map(select(. as $p | $ps | index($p) | not))')
+    [[ "$missing" == "[]" ]] && return 0
+    w_would "authentik: put $label on its built-in outpost" || return 0
+    if out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api PATCH "/outposts/instances/$outpost/" "$(jq -cn --argjson ps "$provs" --argjson m "$missing" '{providers: ($ps + $m)}')"); then
+        ok "authentik: $label attached"; return 0
+    fi
+    if ak_api GET "/outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded" 2>/dev/null \
+        | jq -e --argjson m "$missing" '.results[0].providers as $ps | all($m[]; . as $p | $ps | index($p) != null)' >/dev/null 2>&1; then
+        ok "authentik: $label attached (its answer came late — read back)"; return 0
+    fi
+    wfail "authentik did not attach $label to its outpost: $(oneline "$out")"; return 1
 }
 
 authentik_rename_check() { # authentik_rename_check wfail|d_fail — a group still under its old name: the rename did not happen
@@ -1097,6 +1108,10 @@ authentik_app_gates_doctor() { # doctor: each gated app on its own gate; none of
     else ok "authentik: every gated app has a gate of its own, its card saying who may open it"; fi
 }
 
+ak_app_provider_read() { # ak_app_provider_read NAME FIELD -> that field of the proxy provider so named (empty: none, or unreadable)
+    ak_api GET "/providers/proxy/?name__iexact=$1" 2>/dev/null | jq -r --arg f "$2" '.results[0][$f] // empty | tostring' 2>/dev/null || true
+}
+
 authentik_app_provider() { # authentik_app_provider SVC -> APP_PK: the app's own gate (forward auth for its one address) — not put on the outpost here
     # the pk comes back in APP_PK (not stdout: a $(…) subshell would lose wire's failure count)
     APP_PK=""
@@ -1113,8 +1128,9 @@ authentik_app_provider() { # authentik_app_provider SVC -> APP_PK: the app's own
         pk=$(jq -r '.results[0].pk // empty' <<<"$out")
         if [[ -n "$pk" ]]; then
             w_would "authentik: $s's household gate becomes its own gate ($name)" || return 1
-            out=$(ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg n "$name" --arg u "$url" '{name:$n, mode:"forward_single", external_host:$u}')") \
-                || { wfail "authentik refused to rename $s's household gate: $(oneline "$out")"; return 1; }
+            out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg n "$name" --arg u "$url" '{name:$n, mode:"forward_single", external_host:$u}')") \
+                || [[ "$(ak_app_provider_read "$name" pk)" == "$pk" ]] \
+                || { wfail "authentik did not rename $s's household gate: $(oneline "$out")"; return 1; }
             host=$url
         fi
     fi
@@ -1123,14 +1139,18 @@ authentik_app_provider() { # authentik_app_provider SVC -> APP_PK: the app's own
         w_would "authentik: a gate of its own for $s ($url)" || return 1
         az=$(ak_flow_pk default-provider-authorization-implicit-consent); inv=$(ak_flow_pk default-provider-invalidation-flow)
         [[ -n "$az" && -n "$inv" ]] || { wfail "authentik: its default provider flows are missing"; return 1; }
-        out=$(ak_api POST /providers/proxy/ "$(jq -cn --arg n "$name" --arg u "$url" --arg a "$az" --arg i "$inv" \
-            '{name:$n, mode:"forward_single", external_host:$u, authorization_flow:$a, invalidation_flow:$i}')") \
-            || { wfail "authentik refused $s's gate: $(head -c160 <<<"$out")"; return 1; }
-        pk=$(jq -r '.pk' <<<"$out")
+        if out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api POST /providers/proxy/ "$(jq -cn --arg n "$name" --arg u "$url" --arg a "$az" --arg i "$inv" \
+            '{name:$n, mode:"forward_single", external_host:$u, authorization_flow:$a, invalidation_flow:$i}')"); then
+            pk=$(jq -r '.pk // empty' <<<"$out")
+        else
+            pk=$(ak_app_provider_read "$name" pk)   # made after all, its answer late (read back, never made twice)
+            [[ -n "$pk" ]] || { wfail "authentik did not make $s's gate: $(oneline "$out")"; return 1; }
+        fi
     elif [[ "$host" != "$url" ]]; then
         w_would "authentik: move $s's gate to $url (its address changed)" || return 1
-        out=$(ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg u "$url" '{mode:"forward_single", external_host:$u}')") \
-            || { wfail "authentik refused to update $s's gate: $(oneline "$out")"; return 1; }
+        out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg u "$url" '{mode:"forward_single", external_host:$u}')") \
+            || [[ "$(ak_app_provider_read "$name" external_host)" == "$url" ]] \
+            || { wfail "authentik did not move $s's gate: $(oneline "$out")"; return 1; }
     fi
     APP_PK=$pk
 }
@@ -1157,6 +1177,19 @@ ak_card_bound() { # ak_card_bound SLUG GROUP-PK... -> 0 when the card exists and
     for g in "${@:2}"; do jq -e --arg g "$g" 'any(.results[]?; .group == $g)' <<<"$bind" >/dev/null || return 1; done
 }
 
+authentik_gates_attach() { # the gates collected in APP_GATES onto the built-in outpost, in one write — those not on it yet, named
+    (( ${#APP_GATES[@]} )) || return 0
+    local out provs g names="" pks=()
+    out=$(ak_api GET "/outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") || { wfail "authentik: built-in outpost unreadable: $(oneline "$out")"; return 0; }
+    provs=$(jq -c '.results[0].providers // []' <<<"$out")
+    for g in "${APP_GATES[@]}"; do
+        jq -e --argjson p "${g#*=}" 'index($p) != null' <<<"$provs" >/dev/null && continue
+        names+="${names:+, }${g%%=*}"; pks+=("${g#*=}")
+    done
+    (( ${#pks[@]} )) || return 0
+    authentik_outpost_add "the gates of $names" "${pks[@]}" || true
+}
+
 ak_app_gate() { # ak_app_gate ALL SVC SECTION GROUP-PK... — the app's own gate, its card carrying the rule, on the outpost last
     # an authentik application with no binding admits everyone signed in: the
     # provider reaches the outpost only once its card's bindings are read back
@@ -1167,7 +1200,7 @@ ak_app_gate() { # ak_app_gate ALL SVC SECTION GROUP-PK... — the app's own gate
     if (( ! WIRE_DRY )) && ! ak_card_bound "mediastack-app-$s" "$@" "$APP_GROUP"; then
         wfail "authentik: $s's card does not carry its rule — its gate stays off the outpost (the admin gate keeps deciding)"; return 0
     fi
-    authentik_outpost_add "$APP_PK" "$s's gate" || true
+    APP_GATES+=("$s=$APP_PK")   # put on the outpost together, once every card is done (wire_authentik_cards)
 }
 
 ak_card() { # ak_card ALL SLUG NAME URL DESC SECTION PROVIDER GROUP-PK... — a dashboard card only those groups see
@@ -1207,6 +1240,7 @@ ak_card_prune() { # ak_card_prune ALL PREFIX WANTED... — cards mediastack made
 
 wire_authentik_cards() { # every gated app its own gate and card; household apps for the household (and admins); ours only, by slug prefix
     local all adm mu s prov
+    APP_GATES=()   # name=provider-pk of every gate whose card's rule is in: ak_app_gate fills it
     all=$(ak_api GET "/core/applications/?superuser_full_list=true&page_size=500") || { wfail "authentik: applications unreadable"; return 0; }
     adm=$(ak_group_pk "$PORTAL_ADMIN"); mu=$(ak_group_pk "$PORTAL_FRONTEND")
     [[ -n "$adm" && -n "$mu" ]] || { wfail "authentik: groups '$PORTAL_ADMIN'/'$PORTAL_FRONTEND' missing (the blueprint makes them — has it applied? ./mediastack.sh doctor)"; return 0; }
@@ -1219,6 +1253,7 @@ wire_authentik_cards() { # every gated app its own gate and card; household apps
         prov=$(jq -r '.results[0].pk // empty' <<<"$op")
         ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Media" "$prov" "$mu" "$adm"
     done
+    authentik_gates_attach
     # the admin tools' cards before Nov 2026 (links only; the gate decided): every one leaves
     ak_card_prune "$all" mediastack-tool-
     # shellcheck disable=SC2046  # service names, one word each

@@ -712,7 +712,7 @@ AK_APPS='{"results":[
   {"slug":"mediastack-app-navidrome","pk":"a-nav","provider":42,"meta_launch_url":"https://navidrome.media.example.com"}]}'
 gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards against a stateful authentik; calls in $T/calls
     ( WIRE_DRY=${1:-0} WIRE_FAILS=0 NOBIND=${2:-0}
-      rm -f "$T/calls"; printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: the household and its admins
+      rm -f "$T/calls" "$T/made"; printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: the household and its admins
       printf 'admin g-adm\nfrontend g-mu\n' > "$T/groups"; echo '[6]' > "$T/op"; : > "$T/apps"
       ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
         case "$1 $2" in
@@ -720,9 +720,9 @@ gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards again
           "GET /core/groups/?search="*) awk -v q="${2#*=}" 'index($1,q){printf "%s{\"name\":\"%s\",\"pk\":\"%s\"}", (n++?",":""), $1, $2} BEGIN{printf "{\"results\":["} END{print "]}"}' "$T/groups" ;;
           "POST /core/groups/") n=$(jq -r .name <<<"$3"); echo "$n g-$n" >> "$T/groups"; echo "{\"pk\":\"g-$n\"}" ;;
           "GET /providers/proxy/?name__iexact=mediastack-house-navidrome") echo '{"results":[{"pk":42,"external_host":"https://navidrome.media.example.com"}]}' ;;
-          "GET /providers/proxy/?name__iexact=mediastack-app-sonarr") (( ${MOVED:-0} )) && echo '{"results":[{"pk":50,"external_host":"https://old.example.com"}]}' || echo '{"results":[]}' ;;
+          "GET /providers/proxy/?name__iexact=mediastack-app-sonarr") if [[ -f "$T/made" || -n "${MOVED:-}" ]]; then echo '{"results":[{"pk":50,"external_host":"https://old.example.com"}]}'; else echo '{"results":[]}'; fi ;;
           "GET /providers/proxy/?name__iexact="*) echo '{"results":[]}' ;;
-          "POST /providers/proxy/") echo '{"pk":50}' ;;
+          "POST /providers/proxy/") echo made > "$T/made"; [[ -n "${LATE:-}" ]] && { echo 'no answer within 90s'; return 1; }; echo '{"pk":50}' ;;
           "PATCH /providers/proxy/"*)   # authentik checks a partial update as a full proxy unless mode says otherwise
               jq -e '.mode == "forward_single"' <<<"$3" >/dev/null || { echo '{"internal_host":["Internal host cannot be empty when forward auth is disabled."]}'; return 1; }
               echo '{}' ;;
@@ -736,7 +736,8 @@ gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards again
               awk -v t="$t" '$1==t{printf "%s{\"group\":\"%s\"}", (n++?",":""), $2} BEGIN{printf "{\"results\":["} END{print "]}"}' "$T/bind" 2>/dev/null || echo '{"results":[]}' ;;
           "POST /policies/bindings/") (( NOBIND )) && return 1; echo "$(jq -r .target <<<"$3") $(jq -r .group <<<"$3")" >> "$T/bind"; echo '{}' ;;
           "GET /outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") echo "{\"results\":[{\"pk\":\"op-1\",\"providers\":$(cat "$T/op")}]}" ;;
-          "PATCH /outposts/instances/op-1/") jq -c .providers <<<"$3" > "$T/op"; echo '{}' ;;
+          "PATCH /outposts/instances/op-1/") [[ -n "${LOST:-}" ]] && { echo 'no answer within 90s'; return 1; }
+              jq -c .providers <<<"$3" > "$T/op"; [[ -n "${LATE:-}" ]] && { echo 'no answer within 90s'; return 1; }; echo '{}' ;;
           *) echo '{}' ;;
         esac; }
       wire_authentik_cards >/dev/null 2>&1; echo "fails=$WIRE_FAILS" )
@@ -755,7 +756,9 @@ grep -q '^POST /core/applications/ .*"slug":"mediastack-app-sonarr".*"group":"Ad
 [[ "$(awk '$1=="a-nav"{print $2}' "$T/bind" | sort | paste -sd, -)" == "g-adm,g-app-navidrome,g-mu" ]] \
     && [[ "$(grep -c 'POST /policies/bindings/ .*"target":"a-nav"' "$T/calls")" == 1 ]] \
     || fail_ "Navidrome keeps the household and admin groups and gains its own group, one binding added: $(awk '$1=="a-nav"' "$T/bind" | paste -sd' ' -)"; pass
-[[ "$(cat "$T/op")" == "[6,50,42]" ]] || fail_ "both gates join the outpost beside what is there: $(cat "$T/op")"; pass
+[[ "$(cat "$T/op")" == "[6,42,50]" ]] || fail_ "both gates join the outpost beside what is there: $(cat "$T/op")"; pass
+[[ "$(grep -c '^PATCH /outposts/instances/op-1/' "$T/calls")" == 1 ]] \
+    || fail_ "one outpost write for every gate (writes one after another can undo each other): $(grep -c '^PATCH /outposts' "$T/calls")"; pass
 b=$(grep -n 'POST /policies/bindings/ .*a-mediastack-app-sonarr' "$T/calls" | tail -1 | cut -d: -f1)
 o=$(grep -n 'PATCH /outposts/instances/op-1/ .*50' "$T/calls" | sed -n 1p | cut -d: -f1)
 [[ -n "$b" && -n "$o" ]] && (( b < o )) || fail_ "the gate reaches the outpost only after its card's rule is in (bindings line $b, outpost line $o)"; pass
@@ -768,6 +771,10 @@ grep -q '^DELETE /core/applications/mediastack-app-kavita/' "$T/calls" || fail_ 
 [[ "$(gates_run 0 1)" != fails=0 ]] && [[ "$(cat "$T/op")" == "[6]" ]] \
     || fail_ "bindings refused: no gate reaches the outpost (an unbound card would admit everyone): $(cat "$T/op")"; pass
 gates_run 1 >/dev/null; ! grep -qE '^(POST|PATCH|DELETE) ' "$T/calls" || fail_ "a dry run writes nothing: $(grep -E '^(POST|PATCH|DELETE) ' "$T/calls")"; pass
+[[ "$(LATE=1 gates_run)" == fails=0 && "$(cat "$T/op")" == "[6,42,50]" ]] && [[ "$(grep -c '^POST /providers/proxy/' "$T/calls")" == 1 ]] \
+    || fail_ "authentik slow to answer: the gate made once, read back; the outpost write read back — no failure: $(LATE=1 gates_run) $(cat "$T/op")"; pass
+[[ "$(LOST=1 gates_run)" == fails=1 && "$(cat "$T/op")" == "[6]" ]] \
+    || fail_ "an outpost write that never landed: one failure, nothing assumed: $(LOST=1 gates_run) $(cat "$T/op")"; pass
 [[ "$(MOVED=1 gates_run)" == fails=0 ]] && grep -qF 'PATCH /providers/proxy/50/ {"mode":"forward_single","external_host":"https://sonarr.media.example.com"}' "$T/calls" \
     || fail_ "an app's address changed: its gate follows, the update saying its mode (authentik refuses one without): $(grep 'PATCH /providers/proxy/50' "$T/calls")"; pass
 
