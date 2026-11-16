@@ -250,6 +250,11 @@ agreed first:
     - **`scripts/test-runs.sh` failed once in CI** (lint #528 on 31fed10,
       15 Nov 2026) and never since; not reproduced locally (22 runs, 10 under
       full CPU load). If it fails again, save the step's log before re-running.
+      *Again 16 Nov 2026*, locally, in a full run of every CI step: "the
+      panel's" check (the record's `by:` line), while the record it dumped
+      said `by: panel` — the message read the record a second time, so what
+      the check saw was lost; 0 failures in 40 runs under full CPU load after.
+      The checks now print what they read and the records folder then.
 12. **The README as a chapter-style tutorial** and the built-in how-to page.
 13. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
     dependency layers below; Wizarr sign-in live; `restore --service

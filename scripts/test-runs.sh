@@ -160,10 +160,11 @@ reset; mkdir -p "$T/local/runs"; out=$(bash -c "source \"\$T/fx.sh\"; _doctor_ru
 
 # ---- who started it ----
 by() { sed -n 4p "$(rec fx)"; }
+seen() { printf '%s (records: %s)' "$1" "$(ls -l --time-style=+%T.%N "$T"/local/runs/ 2>&1 | tr '\n' ';')"; }   # what the check itself read, and the folder then
 reset; echo "0::/system.slice/mediastack-people.service" > "$T/cgroup"; run fx > /dev/null 2>&1
-[[ "$(by)" == "by:       systemd mediastack-people" ]] || fail_ "a timer's run names its unit: $(by)"; pass
+r=$(by); [[ "$r" == "by:       systemd mediastack-people" ]] || fail_ "a timer's run names its unit: $(seen "$r")"; pass
 reset; SUDO_USER=olivetin run fx > /dev/null 2>&1 < /dev/null
-[[ "$(by)" == "by:       panel" ]] || fail_ "the panel's: $(by)"; pass
+r=$(by); [[ "$r" == "by:       panel" ]] || fail_ "the panel's: $(seen "$r")"; pass
 
 # ---- one EXIT trap; the keepalive lets go ----
 traps=$(grep -rnE '^[[:space:]]*\(?[[:space:]]*trap .*EXIT' mediastack.sh lib services | grep -vE '^lib/common\.sh:.*trap run_exit_hooks EXIT' || true)
