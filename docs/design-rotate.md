@@ -90,7 +90,7 @@ accounts: where to make a new one, then the command that takes it); Wizarr's
 admin (its UI only); the panel's admin (one of the stack's own logins since
 14 Nov 2026 — `set-credentials panel`); people's accounts and their Navidrome
 music-app passwords. Inside authentik's database: the gates' `cookie_secret`
-(`mediastack-gate`, each `mediastack-house-<svc>`) — no API writes it, and a
+(`mediastack-gate`, each `mediastack-app-<svc>`) — no API writes it, and a
 gate's sessions live in the database, so the secret alone opens nothing; and
 the "authentik Self-signed Certificate" that signs Audiobookshelf's and
 Kavita's sign-in tokens — authentik cannot regenerate a certificate in place

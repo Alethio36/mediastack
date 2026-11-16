@@ -619,6 +619,7 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
             if [[ -n "$(authentik_gated)" ]]; then
                 local hg=""; for g in $(authentik_household); do [[ -n "$(svc_label "$g" mediastack.auth.group)" ]] && hg+="$g "; done
                 [[ -n "$hg" ]] && ok "authentik: household gate — ${hg}ask the portal first (media-users and admins)"
+                authentik_app_gates_doctor
                 if authentik_gate_attached; then ok "authentik: the gate is up — $(authentik_gated | tr '\n' ' ')ask the portal first (admins only)"
                 else d_fail "authentik: the gate is not on its built-in outpost" "routes marked gate ($(authentik_gated | tr '\n' ' '| sed 's/ $//')) refuse everyone" "./mediastack.sh wire authentik"; fi
                 local oh; oh=$(authentik_outpost_host_get || echo "(unreadable)")
@@ -1046,28 +1047,95 @@ authentik_outpost_add() { # authentik_outpost_add PROVIDER-PK LABEL — beside w
         && ok "authentik: $2 attached" || { wfail "authentik refused to attach $2 to its outpost"; return 1; }
 }
 
-authentik_house_provider() { # authentik_house_provider SVC -> HOUSE_PK: its household gate (forward auth for its one address)
-    # the pk comes back in HOUSE_PK (not stdout: a $(…) subshell would lose wire's failure count)
-    HOUSE_PK=""
-    local s="$1" name="mediastack-house-$1" url out pk az inv
+authentik_app_gates_doctor() { # doctor: each gated app on its own gate; none of our cards both gated and unbound (open to everyone signed in)
+    local out apps provs s missing="" open="" a pk
+    out=$(ak_api GET "/outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") || { warn "authentik: its built-in outpost is unreadable — the apps' gates unchecked"; return 0; }
+    provs=$(jq -c '.results[0].providers // []' <<<"$out")
+    apps=$(ak_api GET "/core/applications/?superuser_full_list=true&page_size=500") || { warn "authentik: applications unreadable — the apps' gates unchecked"; return 0; }
+    for s in $(authentik_gated) $(for a in $(authentik_household); do [[ -n "$(svc_label "$a" mediastack.auth.group)" ]] && echo "$a"; done); do
+        pk=$(jq -r --arg sl "mediastack-app-$s" '[.results[] | select(.slug == $sl)][0].provider // empty' <<<"$apps")
+        [[ -n "$pk" ]] && jq -e --argjson p "$pk" 'index($p) != null' <<<"$provs" >/dev/null || missing+="$s "
+    done
+    for a in $(jq -r '.results[] | select((.slug | startswith("mediastack-app-")) and .provider != null) | "\(.slug)=\(.pk)"' <<<"$apps"); do
+        out=$(ak_api GET "/policies/bindings/?target=${a#*=}") || { warn "authentik: ${a%%=*}'s rule is unreadable"; continue; }
+        [[ "$(jq '.results | length' <<<"$out")" -gt 0 ]] || open+="${a%%=*} "
+    done
+    [[ -z "$open" ]] || d_fail "authentik: cards with no rule: ${open% }" \
+        "an application with no binding lets everyone signed in to the portal through" "./mediastack.sh wire authentik"
+    if [[ -n "$missing" ]]; then
+        d_fail "authentik: not on a gate of their own: ${missing% }" \
+            "the admin gate decides for them instead: admins only — the household is refused a household app" "./mediastack.sh wire authentik"
+    else ok "authentik: every gated app has a gate of its own, its card saying who may open it"; fi
+}
+
+authentik_app_provider() { # authentik_app_provider SVC -> APP_PK: the app's own gate (forward auth for its one address) — not put on the outpost here
+    # the pk comes back in APP_PK (not stdout: a $(…) subshell would lose wire's failure count)
+    APP_PK=""
+    local s="$1" name="mediastack-app-$1" url out pk host
     url=$(svc_url "$s")
     out=$(ak_api GET "/providers/proxy/?name__iexact=$name") || { wfail "authentik: providers unreadable"; return 1; }
-    pk=$(jq -r '.results[0].pk // empty' <<<"$out")
+    pk=$(jq -r '.results[0].pk // empty' <<<"$out"); host=$(jq -r '.results[0].external_host // empty' <<<"$out")
     if [[ -z "$pk" ]]; then
-        w_would "authentik: a household gate for $s ($url — media-users get through)" || return 1
+        # Navidrome's household gate before Nov 2026: the same provider, renamed in place (its sessions kept)
+        out=$(ak_api GET "/providers/proxy/?name__iexact=mediastack-house-$s") || { wfail "authentik: providers unreadable"; return 1; }
+        pk=$(jq -r '.results[0].pk // empty' <<<"$out")
+        if [[ -n "$pk" ]]; then
+            w_would "authentik: $s's household gate becomes its own gate ($name)" || return 1
+            ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg n "$name" --arg u "$url" '{name:$n, external_host:$u}')" >/dev/null \
+                || { wfail "authentik refused to rename $s's household gate"; return 1; }
+            host=$url
+        fi
+    fi
+    if [[ -z "$pk" ]]; then
+        local az inv
+        w_would "authentik: a gate of its own for $s ($url)" || return 1
         az=$(ak_flow_pk default-provider-authorization-implicit-consent); inv=$(ak_flow_pk default-provider-invalidation-flow)
         [[ -n "$az" && -n "$inv" ]] || { wfail "authentik: its default provider flows are missing"; return 1; }
         out=$(ak_api POST /providers/proxy/ "$(jq -cn --arg n "$name" --arg u "$url" --arg a "$az" --arg i "$inv" \
             '{name:$n, mode:"forward_single", external_host:$u, authorization_flow:$a, invalidation_flow:$i}')") \
-            || { wfail "authentik refused $s's household gate: $(head -c160 <<<"$out")"; return 1; }
+            || { wfail "authentik refused $s's gate: $(head -c160 <<<"$out")"; return 1; }
         pk=$(jq -r '.pk' <<<"$out")
-    elif [[ "$(jq -r '.results[0].external_host' <<<"$out")" != "$url" ]]; then
-        w_would "authentik: move $s's household gate to $url (its address changed)" || return 1
+    elif [[ "$host" != "$url" ]]; then
+        w_would "authentik: move $s's gate to $url (its address changed)" || return 1
         ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg u "$url" '{external_host:$u}')" >/dev/null \
-            || { wfail "authentik refused to update $s's household gate"; return 1; }
+            || { wfail "authentik refused to update $s's gate"; return 1; }
     fi
-    authentik_outpost_add "$pk" "$s's household gate" || return 1
-    HOUSE_PK=$pk
+    APP_PK=$pk
+}
+
+ak_app_group() { # ak_app_group SVC -> APP_GROUP: the pk of app-<svc>, made when missing — the people given that one app
+    APP_GROUP=""
+    local n="app-$1" pk out
+    pk=$(ak_group_pk "$n") || { wfail "authentik: groups unreadable"; return 1; }
+    if [[ -z "$pk" ]]; then
+        w_would "authentik: a group $n (for people given $1 on its own)" || return 1
+        out=$(ak_api POST /core/groups/ "$(jq -cn --arg n "$n" '{name:$n, is_superuser:false}')") \
+            || { wfail "authentik refused the group $n: $(head -c160 <<<"$out")"; return 1; }
+        pk=$(jq -r '.pk // empty' <<<"$out")
+        [[ -n "$pk" ]] || { wfail "authentik made the group $n but gave no pk back"; return 1; }
+    fi
+    APP_GROUP=$pk
+}
+
+ak_card_bound() { # ak_card_bound SLUG GROUP-PK... -> 0 when the card exists and each group is bound to it (read back, not assumed)
+    local app pk bind g
+    app=$(ak_api GET "/core/applications/$1/") || return 1
+    pk=$(jq -r '.pk // empty' <<<"$app"); [[ -n "$pk" ]] || return 1
+    bind=$(ak_api GET "/policies/bindings/?target=$pk") || return 1
+    for g in "${@:2}"; do jq -e --arg g "$g" 'any(.results[]?; .group == $g)' <<<"$bind" >/dev/null || return 1; done
+}
+
+ak_app_gate() { # ak_app_gate ALL SVC SECTION GROUP-PK... — the app's own gate, its card carrying the rule, on the outpost last
+    # an authentik application with no binding admits everyone signed in: the
+    # provider reaches the outpost only once its card's bindings are read back
+    local all="$1" s="$2" section="$3"; shift 3
+    ak_app_group "$s" || return 0
+    authentik_app_provider "$s" || return 0
+    ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "$section" "$APP_PK" "$@" "$APP_GROUP"
+    if (( ! WIRE_DRY )) && ! ak_card_bound "mediastack-app-$s" "$@" "$APP_GROUP"; then
+        wfail "authentik: $s's card does not carry its rule — its gate stays off the outpost (the admin gate keeps deciding)"; return 0
+    fi
+    authentik_outpost_add "$APP_PK" "$s's gate" || true
 }
 
 ak_card() { # ak_card ALL SLUG NAME URL DESC SECTION PROVIDER GROUP-PK... — a dashboard card only those groups see
@@ -1099,35 +1167,30 @@ ak_card_prune() { # ak_card_prune ALL PREFIX WANTED... — cards mediastack made
     local all="$1" prefix="$2" slug; shift 2
     for slug in $(jq -r --arg p "$prefix" '.results[].slug | select(startswith($p))' <<<"$all"); do
         [[ " $* " == *" ${slug#"$prefix"} "* ]] && continue
-        w_would "authentik: remove the card for ${slug#"$prefix"}" || continue
-        ak_api DELETE "/core/applications/$slug/" >/dev/null && ok "authentik: ${slug#"$prefix"} card removed" \
-            || wfail "authentik refused to remove ${slug#"$prefix"}'s card"
+        w_would "authentik: remove the card $slug (${slug#"$prefix"} is not served this way any more)" || continue
+        ak_api DELETE "/core/applications/$slug/" >/dev/null && ok "authentik: card $slug removed" \
+            || wfail "authentik refused to remove the card $slug"
     done
 }
 
-wire_authentik_cards() { # admin tools for admins; household apps for media-users (and admins); ours only, by slug prefix
+wire_authentik_cards() { # every gated app its own gate and card; household apps for media-users (and admins); ours only, by slug prefix
     local all adm mu s prov
     all=$(ak_api GET "/core/applications/?superuser_full_list=true&page_size=500") || { wfail "authentik: applications unreadable"; return 0; }
     adm=$(ak_group_pk admins); mu=$(ak_group_pk media-users)
     [[ -n "$adm" && -n "$mu" ]] || { wfail "authentik: groups 'admins'/'media-users' missing (the blueprint creates them)"; return 0; }
-    for s in $(authentik_gated); do
-        ak_card "$all" "mediastack-tool-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Admin tools" "" "$adm"
-    done
+    for s in $(authentik_gated); do ak_app_gate "$all" "$s" "Admin tools" "$adm"; done
     for s in $(authentik_household); do
-        prov=""
-        # a household app behind the household gate: its card carries the gate's rule
-        if [[ -n "$(svc_label "$s" mediastack.auth.group)" ]]; then authentik_house_provider "$s" || continue; prov=$HOUSE_PK
-        else
-            # an app that logs in through OIDC: its card is the provider's application
-            local op; op=$(ak_api GET "/providers/oauth2/?client_id=mediastack-$s") || { wfail "authentik: providers unreadable"; continue; }
-            prov=$(jq -r '.results[0].pk // empty' <<<"$op")
-        fi
+        # a household app behind the household gate: its own gate, for media-users and admins
+        if [[ -n "$(svc_label "$s" mediastack.auth.group)" ]]; then ak_app_gate "$all" "$s" Media "$mu" "$adm"; continue; fi
+        # an app that logs in through OIDC: its card is the provider's application
+        local op; op=$(ak_api GET "/providers/oauth2/?client_id=mediastack-$s") || { wfail "authentik: providers unreadable"; continue; }
+        prov=$(jq -r '.results[0].pk // empty' <<<"$op")
         ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Media" "$prov" "$mu" "$adm"
     done
+    # the admin tools' cards before Nov 2026 (links only; the gate decided): every one leaves
+    ak_card_prune "$all" mediastack-tool-
     # shellcheck disable=SC2046  # service names, one word each
-    ak_card_prune "$all" mediastack-tool- $(authentik_gated)
-    # shellcheck disable=SC2046
-    ak_card_prune "$all" mediastack-app- $(authentik_household)
+    ak_card_prune "$all" mediastack-app- $(authentik_gated) $(authentik_household)
     return 0
 }
 

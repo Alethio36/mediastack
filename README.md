@@ -810,6 +810,12 @@ The **gate**: every web interface declares who logs it in —
 `mediastack.auth: gate` (behind the portal), `native` (its own login) or `open`.
 A gated interface's domain address asks the portal first: not logged in → the
 portal's login, then straight back; logged in but not in `admins` → refused.
+Each gated app has a gate of its own — an authentik provider for its one
+address, with its dashboard card saying who may open it (`admins` and
+`app-<svc>` for a tool) — and the domain-wide gate stays behind them as the
+catch-all: an address without a gate of its own admits admins only. `doctor`
+fails a card of ours that has a gate but no rule (authentik would let everyone
+signed in through it).
 Gated: the panel, Apprise, every admin tool (the arrs, Prowlarr, Bazarr, the
 download clients, LazyLibrarian, Cleanuparr, WatchState, Pi-hole, ErsatzTV) and
 Traefik's dashboard. Navidrome sits behind a *household* gate: anyone in

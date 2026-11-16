@@ -290,7 +290,7 @@ r=$(edge_route_labels "" sonarr sonarr 8989 SONARR gate "" "")
 [[ "$r" == *'routers.sonarr.middlewares: "mediastack-gate@file"'* ]] || fail_ "its own login: the gate, as before: $r"; pass
 
 # the provider is ADDED to the built-in outpost, never replacing what is there;
-# akadmin joins admins once; cards: one per gated tool, admins only, stale ones go
+# akadmin joins admins once (the cards: the next block)
 svc_enabled() { [[ "$1" == authentik ]]; }
 authentik_gated() { printf '%s\n' apprise olivetin; }
 authentik_household() { :; }
@@ -318,11 +318,6 @@ grep -qF "PATCH /outposts/instances/op-1/ {\"config\":{\"log_level\":\"info\",\"
     || fail_ "the outpost sends sign-ins to the portal, the rest of its config kept: $(grep 'PATCH.*config' "$T/calls")"; pass
 rm -f "$T/calls"; wire_authentik_gate >/dev/null
 ! grep -q 'add_user' "$T/calls" || fail_ "akadmin is added once — after that, 'admins' is yours"; pass
-[[ "$(grep -c '^POST /core/applications/' "$T/calls")" == 1 ]] && grep -q '"slug":"mediastack-tool-olivetin"' "$T/calls" \
-    || fail_ "a card for the gated tool that has none (olivetin), none for one that has (apprise)"; pass
-grep -qF 'POST /policies/bindings/ {"target":"a-new","group":"g-adm","order":0}' "$T/calls" || fail_ "the new card is admins-only"; pass
-grep -q '^DELETE /core/applications/mediastack-tool-oldsvc/' "$T/calls" || fail_ "a card for a tool no longer gated leaves"; pass
-! grep -q 'my-own-app' <(grep -E '^(DELETE|PATCH)' "$T/calls") || fail_ "an application you made is never touched"; pass
 
 # ---- "successful" counts only for the current file (found live: right after
 #      an update, the status still described the previous version) ----
@@ -672,30 +667,71 @@ unset -f authentik_gated authentik_household
 source <(sed -n '/^authentik_gated() {/,/^}/p; /^authentik_household() {/,/^}/p' services/authentik/authentik.sh)
 [[ "$(authentik_gated | tr '\n' ' ')" == "sonarr " ]] || fail_ "the household-gated app is not an admin tool: $(authentik_gated)"; pass
 [[ "$(authentik_household | tr '\n' ' ')" == "navidrome jellyfin " ]] || fail_ "household apps by mediastack.user_facing"; pass
-rm -f "$T/calls"
-ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
-    case "$1 $2" in
-        "GET /core/applications/?superuser_full_list=true&page_size=500") echo '{"results":[{"slug":"mediastack-app-kavita","pk":"a-k"}]}' ;;
-        "GET /core/groups/?search=admins") echo '{"results":[{"pk":"g-adm","name":"admins"}]}' ;;
-        "GET /core/groups/?search=media-users") echo '{"results":[{"pk":"g-mu","name":"media-users"}]}' ;;
-        "GET /providers/proxy/?name__iexact=mediastack-house-navidrome") echo '{"results":[]}' ;;
-        "GET /flows/instances/?slug="*) echo '{"results":[{"pk":"flow-x"}]}' ;;
-        "POST /providers/proxy/") echo '{"pk":42}' ;;
-        "GET /outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") echo '{"results":[{"pk":"op-1","providers":[6]}]}' ;;
-        "POST /core/applications/") echo '{"pk":"a-new"}' ;;
-        "GET /policies/bindings/?target=a-new") echo '{"results":[]}' ;;
-        *) echo '{}' ;;
-    esac; }
-wire_authentik_cards >/dev/null
-grep -q '^POST /providers/proxy/ .*"name":"mediastack-house-navidrome".*"mode":"forward_single".*"external_host":"https://navidrome.media.example.com"' "$T/calls" \
-    || fail_ "Navidrome's household gate: forward auth for its one address"; pass
-grep -qF 'PATCH /outposts/instances/op-1/ {"providers":[6,42]}' "$T/calls" || fail_ "the household gate joins the outpost beside the admin gate"; pass
-grep -q '^POST /core/applications/ .*"slug":"mediastack-app-navidrome".*"provider":42' "$T/calls" || fail_ "Navidrome's card carries its gate"; pass
+# ---- every gated app its own gate (decision 7, docs/design-access.md): its
+#      group, its provider, its card carrying the rule — on the outpost only
+#      once the card's bindings read back (an unbound application admits
+#      everyone signed in) ----
+AK_APPS='{"results":[
+  {"slug":"mediastack-tool-sonarr","pk":"a-ts","meta_launch_url":"https://sonarr.media.example.com"},
+  {"slug":"mediastack-tool-oldsvc","pk":"a-to"},
+  {"slug":"my-own-app","pk":"a-mine"},
+  {"slug":"mediastack-app-kavita","pk":"a-k"},
+  {"slug":"mediastack-app-navidrome","pk":"a-nav","provider":42,"meta_launch_url":"https://navidrome.media.example.com"}]}'
+gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards against a stateful authentik; calls in $T/calls
+    ( WIRE_DRY=${1:-0} WIRE_FAILS=0 NOBIND=${2:-0}
+      rm -f "$T/calls"; printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: media-users and admins
+      printf 'admins g-adm\nmedia-users g-mu\n' > "$T/groups"; echo '[6]' > "$T/op"; : > "$T/apps"
+      ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
+        case "$1 $2" in
+          "GET /core/applications/?superuser_full_list=true&page_size=500") echo "$AK_APPS" ;;
+          "GET /core/groups/?search="*) awk -v q="${2#*=}" 'index($1,q){printf "%s{\"name\":\"%s\",\"pk\":\"%s\"}", (n++?",":""), $1, $2} BEGIN{printf "{\"results\":["} END{print "]}"}' "$T/groups" ;;
+          "POST /core/groups/") n=$(jq -r .name <<<"$3"); echo "$n g-$n" >> "$T/groups"; echo "{\"pk\":\"g-$n\"}" ;;
+          "GET /providers/proxy/?name__iexact=mediastack-house-navidrome") echo '{"results":[{"pk":42,"external_host":"https://navidrome.media.example.com"}]}' ;;
+          "GET /providers/proxy/?name__iexact="*) echo '{"results":[]}' ;;
+          "POST /providers/proxy/") echo '{"pk":50}' ;;
+          "PATCH /providers/proxy/"*) echo '{}' ;;
+          "GET /flows/instances/?slug="*) echo '{"results":[{"pk":"flow-x"}]}' ;;
+          "GET /providers/oauth2/?client_id="*) echo '{"results":[]}' ;;
+          "POST /core/applications/") sl=$(jq -r .slug <<<"$3"); echo "$sl a-$sl" >> "$T/apps"; echo "{\"pk\":\"a-$sl\"}" ;;
+          "GET /core/applications/"*/) sl=${2#/core/applications/}; sl=${sl%/}
+              pk=$(awk -v s="$sl" '$1==s{print $2}' "$T/apps"); [[ "$sl" == mediastack-app-navidrome ]] && pk="a-nav"
+              [[ -n "$pk" ]] && echo "{\"pk\":\"$pk\"}" || { echo '{"detail":"Not found."}'; return 1; } ;;
+          "GET /policies/bindings/?target="*) t=${2#*=}
+              awk -v t="$t" '$1==t{printf "%s{\"group\":\"%s\"}", (n++?",":""), $2} BEGIN{printf "{\"results\":["} END{print "]}"}' "$T/bind" 2>/dev/null || echo '{"results":[]}' ;;
+          "POST /policies/bindings/") (( NOBIND )) && return 1; echo "$(jq -r .target <<<"$3") $(jq -r .group <<<"$3")" >> "$T/bind"; echo '{}' ;;
+          "GET /outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") echo "{\"results\":[{\"pk\":\"op-1\",\"providers\":$(cat "$T/op")}]}" ;;
+          "PATCH /outposts/instances/op-1/") jq -c .providers <<<"$3" > "$T/op"; echo '{}' ;;
+          *) echo '{}' ;;
+        esac; }
+      wire_authentik_cards >/dev/null 2>&1; echo "fails=$WIRE_FAILS" )
+}
+[[ "$(gates_run)" == fails=0 ]] || fail_ "every gated app wired without a failure: $(gates_run)"; pass
+grep -q '^POST /core/groups/ .*"name":"app-sonarr"' "$T/calls" && grep -q '^POST /core/groups/ .*"name":"app-navidrome"' "$T/calls" \
+    || fail_ "each gated app gets its own app-<svc> group"; pass
+grep -q '^POST /providers/proxy/ .*"name":"mediastack-app-sonarr".*"mode":"forward_single".*"external_host":"https://sonarr.media.example.com"' "$T/calls" \
+    || fail_ "an admin tool gets a gate of its own: forward auth for its one address"; pass
+grep -qF 'PATCH /providers/proxy/42/ {"name":"mediastack-app-navidrome","external_host":"https://navidrome.media.example.com"}' "$T/calls" \
+    && ! grep -q '^POST /providers/proxy/ .*mediastack-app-navidrome' "$T/calls" || fail_ "Navidrome's household gate is renamed in place, not made anew"; pass
+grep -q '^POST /core/applications/ .*"slug":"mediastack-app-sonarr".*"group":"Admin tools".*"provider":50' "$T/calls" \
+    || fail_ "the tool's card carries its gate: $(grep 'POST /core/applications/' "$T/calls")"; pass
+[[ "$(awk '$1=="a-mediastack-app-sonarr"{print $2}' "$T/bind" | sort | paste -sd, -)" == "g-adm,g-app-sonarr" ]] \
+    || fail_ "a tool: admins and its own group, nobody else: $(cat "$T/bind")"; pass
+[[ "$(awk '$1=="a-nav"{print $2}' "$T/bind" | sort | paste -sd, -)" == "g-adm,g-app-navidrome,g-mu" ]] \
+    && [[ "$(grep -c 'POST /policies/bindings/ .*"target":"a-nav"' "$T/calls")" == 1 ]] \
+    || fail_ "Navidrome keeps media-users and admins and gains its own group, one binding added: $(awk '$1=="a-nav"' "$T/bind" | paste -sd' ' -)"; pass
+[[ "$(cat "$T/op")" == "[6,50,42]" ]] || fail_ "both gates join the outpost beside what is there: $(cat "$T/op")"; pass
+b=$(grep -n 'POST /policies/bindings/ .*a-mediastack-app-sonarr' "$T/calls" | tail -1 | cut -d: -f1)
+o=$(grep -n 'PATCH /outposts/instances/op-1/ .*50' "$T/calls" | sed -n 1p | cut -d: -f1)
+[[ -n "$b" && -n "$o" ]] && (( b < o )) || fail_ "the gate reaches the outpost only after its card's rule is in (bindings line $b, outpost line $o)"; pass
 grep -q '^POST /core/applications/ .*"slug":"mediastack-app-jellyfin".*"group":"Media"' "$T/calls" \
     && ! grep -q '"slug":"mediastack-app-jellyfin".*"provider"' "$T/calls" || fail_ "Jellyfin: a plain Media card (its own login)"; pass
-[[ "$(grep -c '^POST /policies/bindings/ .*"group":"g-mu"' "$T/calls")" == 2 && "$(grep -c '^POST /policies/bindings/ .*"group":"g-adm"' "$T/calls")" == 3 ]] \
-    || fail_ "household cards: media-users and admins; admin tools: admins"; pass
-grep -q '^DELETE /core/applications/mediastack-app-kavita/' "$T/calls" || fail_ "a household card for an app no longer enabled leaves"; pass
+grep -q '^DELETE /core/applications/mediastack-tool-sonarr/' "$T/calls" && grep -q '^DELETE /core/applications/mediastack-tool-oldsvc/' "$T/calls" \
+    || fail_ "the tools' old link cards leave"; pass
+grep -q '^DELETE /core/applications/mediastack-app-kavita/' "$T/calls" || fail_ "a card for an app no longer enabled leaves"; pass
+! grep -q 'my-own-app' <(grep -E '^(DELETE|PATCH)' "$T/calls") || fail_ "an application you made is never touched"; pass
+[[ "$(gates_run 0 1)" != fails=0 ]] && [[ "$(cat "$T/op")" == "[6]" ]] \
+    || fail_ "bindings refused: no gate reaches the outpost (an unbound card would admit everyone): $(cat "$T/op")"; pass
+gates_run 1 >/dev/null; ! grep -qE '^(POST|PATCH|DELETE) ' "$T/calls" || fail_ "a dry run writes nothing: $(grep -E '^(POST|PATCH|DELETE) ' "$T/calls")"; pass
 
 # ---- LDAP: the outpost gets its token from authentik; the route answers the stack only ----
 rm -f "$T/calls"; printf '' > "$ENV_FILE"
@@ -1654,5 +1690,28 @@ grep -q '^PATCH /events/transports/T1/ .*"webhook_url":"http://apprise:8000/noti
 grep -q '^PATCH /events/rules/R1/ {"transports":\[\]}' <<<"$(lk 0 "" 0)" || fail_ "no hub: the rule's transports are emptied (no send to nowhere)"; pass
 grep -q 'hub_notify_url' services/authentik/authentik.sh && ! grep -q '/notify/mediastack' services/authentik/authentik.sh \
     || fail_ "authentik posts to the hub through the hub interface (hub_notify_url), not a written-out address"; pass
+
+# ---- doctor: each gated app on a gate of its own; a card with a gate and no rule fails ----
+gd() { # gd OUTPOST-PROVIDERS-JSON APPS-JSON UNBOUND-PK -> doctor's lines
+    ( OP=$1 APPS=$2 UNB=$3
+      authentik_gated() { echo sonarr; }; authentik_household() { echo navidrome; echo jellyfin; }
+      svc_label() { [[ "$1:$2" == navidrome:mediastack.auth.group ]] && echo media-users; return 0; }
+      ok() { echo "OK $*"; }; warn() { echo "WARN $*"; }; d_fail() { echo "FAIL $1"; }
+      ak_api() { case "$1 $2" in
+          "GET /outposts/instances/"*) echo "{\"results\":[{\"providers\":$OP}]}" ;;
+          "GET /core/applications/"*) echo "$APPS" ;;
+          "GET /policies/bindings/?target=$UNB") echo '{"results":[]}' ;;
+          "GET /policies/bindings/"*) echo '{"results":[{"group":"g"}]}' ;;
+        esac; }
+      authentik_app_gates_doctor )
+}
+GA='{"results":[{"slug":"mediastack-app-sonarr","pk":"a-s","provider":50},{"slug":"mediastack-app-navidrome","pk":"a-n","provider":42},{"slug":"mediastack-app-jellyfin","pk":"a-j"}]}'
+[[ "$(gd '[6,50,42]' "$GA" none)" == "OK authentik: every gated app has a gate of its own, its card saying who may open it" ]] \
+    || fail_ "doctor: every gated app on its own gate: $(gd '[6,50,42]' "$GA" none)"; pass
+[[ "$(gd '[6,50]' "$GA" none)" == "FAIL authentik: not on a gate of their own: navidrome" ]] \
+    || fail_ "doctor: a gate missing from the outpost fails, named: $(gd '[6,50]' "$GA" none)"; pass
+[[ "$(gd '[6,50,42]' "$GA" a-s | sed -n 1p)" == "FAIL authentik: cards with no rule: mediastack-app-sonarr" ]] \
+    || fail_ "doctor: our card with a gate and no binding (open to everyone signed in) fails: $(gd '[6,50,42]' "$GA" a-s)"; pass
+grep -q 'authentik_app_gates_doctor' <(awk '/^_doctor_accounts\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "doctor runs the per-app gate check"; pass
 
 echo "OK authentik: $checks checks"

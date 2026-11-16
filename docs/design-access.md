@@ -250,6 +250,49 @@ Read in authentik 2026.8.5's source and checked live on anzac4 first.
    member who also gets the tools; nobody needs to be in both, and taking
    someone out of `frontend` never leaves an admin locked out of Jellyfin.
 
-Still to design before building: the `access` verb's output and messages,
-and the per-app providers' names and their migration from the one
-domain-wide provider (the first slice).
+7. **A provider per gated app, `mediastack-app-<svc>`** — forward auth for
+   that app's one address, the kind Navidrome's household gate already is
+   (`mediastack-house-navidrome`, renamed to it in place). Its rule lives on
+   the app's dashboard card (an authentik application, slug
+   `mediastack-app-<svc>` for every app; the tools' old `mediastack-tool-*`
+   cards go): the provider plus bindings to its tier's group and
+   `app-<svc>`. One object says both who may open the app and whose
+   dashboard shows it. The `app-<svc>` groups are made by `wire`, one per
+   gated app, empty until a grant. Traefik does not change: the outpost picks
+   the provider by address (proven live: a non-admin opened Navidrome while
+   the domain-wide gate admits admins only). The domain-wide `mediastack-gate`
+   stays as the catch-all: an address without a provider of its own admits
+   admins only — a gap refuses, it never opens. Apps that sign in their own
+   way follow the same rule later: Kavita's and Audiobookshelf's OIDC
+   applications get the same bindings; Jellyfin's filter becomes `frontend`,
+   `admin` or `app-jellyfin`; Seerr follows Jellyfin.
+   **An authentik application with no bindings admits everyone signed in.**
+   So per app, in this order: the provider made (not on the outpost); the
+   card given the provider and its bindings; the bindings read back; only
+   then the provider put on the outpost. doctor fails any of our cards that
+   carries a provider and has no binding.
+8. **`access`, the verb.** `access list` — every gated app: tier, who has it
+   by grant, address. `access list <user>` — what that person can open and
+   why (tier or grant). `access grant <user> <svc>` — into `app-<svc>`;
+   says "spikeuser can now open Sonarr (granted)". `access revoke <user>
+   <svc>` — out of it, their portal sessions ended (and `signout` for
+   Jellyfin); refused, and said why, when the person has the app through
+   their tier. `access tier <svc> frontend|admin` — the choice kept in `.env`
+   as `<SVC>_TIER` (a family key; the service folder's label is the default);
+   a download or settings tool moved to `frontend` warns what the household
+   could then do and asks (`--yes` for no question); a move to `admin` ends
+   the portal sessions of everyone who loses the app, and says how many.
+
+### How it is built
+
+**Slice 1 — a provider per gated app, nobody's access changed** (*built
+16 Nov 2026*, to prove on the keeper's upgrade). Every
+gated tool and Navidrome get the shape of decision 7 with today's groups —
+the tools `admins` (+ `app-<svc>`), Navidrome `media-users` and `admins`
+(+ `app-navidrome`). Proven on the keeper's `upgrade`: each app still opens
+for exactly whom it did, and a person put in `app-<svc>` by hand gets that
+one app.
+
+**Slice 2 — the rename** (decisions 1–3). **Slice 3 — tiers and `access`**
+(decisions 6, 8). **Slice 4 — grants and taking access away** (decisions 4,
+5, 8).
