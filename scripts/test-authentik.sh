@@ -687,9 +687,12 @@ gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards again
           "GET /core/groups/?search="*) awk -v q="${2#*=}" 'index($1,q){printf "%s{\"name\":\"%s\",\"pk\":\"%s\"}", (n++?",":""), $1, $2} BEGIN{printf "{\"results\":["} END{print "]}"}' "$T/groups" ;;
           "POST /core/groups/") n=$(jq -r .name <<<"$3"); echo "$n g-$n" >> "$T/groups"; echo "{\"pk\":\"g-$n\"}" ;;
           "GET /providers/proxy/?name__iexact=mediastack-house-navidrome") echo '{"results":[{"pk":42,"external_host":"https://navidrome.media.example.com"}]}' ;;
+          "GET /providers/proxy/?name__iexact=mediastack-app-sonarr") (( ${MOVED:-0} )) && echo '{"results":[{"pk":50,"external_host":"https://old.example.com"}]}' || echo '{"results":[]}' ;;
           "GET /providers/proxy/?name__iexact="*) echo '{"results":[]}' ;;
           "POST /providers/proxy/") echo '{"pk":50}' ;;
-          "PATCH /providers/proxy/"*) echo '{}' ;;
+          "PATCH /providers/proxy/"*)   # authentik checks a partial update as a full proxy unless mode says otherwise
+              jq -e '.mode == "forward_single"' <<<"$3" >/dev/null || { echo '{"internal_host":["Internal host cannot be empty when forward auth is disabled."]}'; return 1; }
+              echo '{}' ;;
           "GET /flows/instances/?slug="*) echo '{"results":[{"pk":"flow-x"}]}' ;;
           "GET /providers/oauth2/?client_id="*) echo '{"results":[]}' ;;
           "POST /core/applications/") sl=$(jq -r .slug <<<"$3"); echo "$sl a-$sl" >> "$T/apps"; echo "{\"pk\":\"a-$sl\"}" ;;
@@ -710,7 +713,7 @@ grep -q '^POST /core/groups/ .*"name":"app-sonarr"' "$T/calls" && grep -q '^POST
     || fail_ "each gated app gets its own app-<svc> group"; pass
 grep -q '^POST /providers/proxy/ .*"name":"mediastack-app-sonarr".*"mode":"forward_single".*"external_host":"https://sonarr.media.example.com"' "$T/calls" \
     || fail_ "an admin tool gets a gate of its own: forward auth for its one address"; pass
-grep -qF 'PATCH /providers/proxy/42/ {"name":"mediastack-app-navidrome","external_host":"https://navidrome.media.example.com"}' "$T/calls" \
+grep -qF 'PATCH /providers/proxy/42/ {"name":"mediastack-app-navidrome","mode":"forward_single","external_host":"https://navidrome.media.example.com"}' "$T/calls" \
     && ! grep -q '^POST /providers/proxy/ .*mediastack-app-navidrome' "$T/calls" || fail_ "Navidrome's household gate is renamed in place, not made anew"; pass
 grep -q '^POST /core/applications/ .*"slug":"mediastack-app-sonarr".*"group":"Admin tools".*"provider":50' "$T/calls" \
     || fail_ "the tool's card carries its gate: $(grep 'POST /core/applications/' "$T/calls")"; pass
@@ -732,6 +735,8 @@ grep -q '^DELETE /core/applications/mediastack-app-kavita/' "$T/calls" || fail_ 
 [[ "$(gates_run 0 1)" != fails=0 ]] && [[ "$(cat "$T/op")" == "[6]" ]] \
     || fail_ "bindings refused: no gate reaches the outpost (an unbound card would admit everyone): $(cat "$T/op")"; pass
 gates_run 1 >/dev/null; ! grep -qE '^(POST|PATCH|DELETE) ' "$T/calls" || fail_ "a dry run writes nothing: $(grep -E '^(POST|PATCH|DELETE) ' "$T/calls")"; pass
+[[ "$(MOVED=1 gates_run)" == fails=0 ]] && grep -qF 'PATCH /providers/proxy/50/ {"mode":"forward_single","external_host":"https://sonarr.media.example.com"}' "$T/calls" \
+    || fail_ "an app's address changed: its gate follows, the update saying its mode (authentik refuses one without): $(grep 'PATCH /providers/proxy/50' "$T/calls")"; pass
 
 # ---- LDAP: the outpost gets its token from authentik; the route answers the stack only ----
 rm -f "$T/calls"; printf '' > "$ENV_FILE"

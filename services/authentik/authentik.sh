@@ -1071,6 +1071,9 @@ authentik_app_gates_doctor() { # doctor: each gated app on its own gate; none of
 authentik_app_provider() { # authentik_app_provider SVC -> APP_PK: the app's own gate (forward auth for its one address) — not put on the outpost here
     # the pk comes back in APP_PK (not stdout: a $(…) subshell would lose wire's failure count)
     APP_PK=""
+    # every update carries mode: authentik checks a partial update as if the
+    # provider were a full proxy (mode defaults to it) and asks for an internal
+    # host (its ProxyProviderSerializer.validate; refused live, 16 Nov 2026)
     local s="$1" name="mediastack-app-$1" url out pk host
     url=$(svc_url "$s")
     out=$(ak_api GET "/providers/proxy/?name__iexact=$name") || { wfail "authentik: providers unreadable"; return 1; }
@@ -1081,8 +1084,8 @@ authentik_app_provider() { # authentik_app_provider SVC -> APP_PK: the app's own
         pk=$(jq -r '.results[0].pk // empty' <<<"$out")
         if [[ -n "$pk" ]]; then
             w_would "authentik: $s's household gate becomes its own gate ($name)" || return 1
-            ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg n "$name" --arg u "$url" '{name:$n, external_host:$u}')" >/dev/null \
-                || { wfail "authentik refused to rename $s's household gate"; return 1; }
+            out=$(ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg n "$name" --arg u "$url" '{name:$n, mode:"forward_single", external_host:$u}')") \
+                || { wfail "authentik refused to rename $s's household gate: $(oneline "$out")"; return 1; }
             host=$url
         fi
     fi
@@ -1097,8 +1100,8 @@ authentik_app_provider() { # authentik_app_provider SVC -> APP_PK: the app's own
         pk=$(jq -r '.pk' <<<"$out")
     elif [[ "$host" != "$url" ]]; then
         w_would "authentik: move $s's gate to $url (its address changed)" || return 1
-        ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg u "$url" '{external_host:$u}')" >/dev/null \
-            || { wfail "authentik refused to update $s's gate"; return 1; }
+        out=$(ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg u "$url" '{mode:"forward_single", external_host:$u}')") \
+            || { wfail "authentik refused to update $s's gate: $(oneline "$out")"; return 1; }
     fi
     APP_PK=$pk
 }
