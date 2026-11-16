@@ -27,6 +27,9 @@
 #     found case-insensitively among its Jellyfin users; the stack's admin,
 #     an unknown or doubled name refused before any link exists; a disabled
 #     account said (asked first), never re-enabled; a reply off-contract fails
+#   * signout: the person's own sign-ins only (each device entry's owner,
+#     never ?userId=), IDs URL-encoded, read back after; the stack's admin
+#     refused; a shared device names the other person; none is not a failure
 #
 #   scripts/test-wire.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -308,6 +311,39 @@ D='{"users":[{"id":7,"username":"viewer","server_type":"jellyfin"},{"id":8,"user
 o=$( ( export TZ=America/Los_Angeles; wr "$US" '{"url":"/reset/ABCDE12345","expires_at":"2026-11-15T03:12:44"}' 0 viewer >/dev/null; grep 'single-use' "$T/wr" ) )
 [[ "$o" == *"until 2026-11-14 19:12 PST"* ]] || fail_ "an expiry without an offset is read as UTC (Wizarr's times are), shown in the stack's time: $o"; pass
 grep -n 'jellyfin_reset_password\|Temporary password' mediastack.sh lib/*.sh services/*/*.sh >/dev/null && fail_ "the temporary-password reset is gone (Wizarr's link replaced it)"; pass
+
+# ---- signout: a person's own sign-ins end, nobody else's (proven live 16 Nov 2026;
+#      ?userId= lists every device the person MAY use — never used for this) ----
+so() { # so NAME [STUCK-ID] -> "rc=N calls" (output in $T/so); devices in $T/dev: encoded<TAB>id<TAB>ownerId<TAB>ownerName
+    ( rm -f "$T/c"; STUCK=${2:-}
+      env_get() { case "$1" in JELLYFIN_API_KEY) echo KEY ;; JELLYFIN_ADMIN_USER) echo Admin ;; esac; }
+      jf_code() { cat "$T/code" 2>/dev/null; }
+      jf_api() { echo "$1 $2" >> "$T/c"; echo 200 > "$T/code"
+          case "$1 $2" in
+              "GET /Users") echo '[{"Name":"Admin","Id":"a0"},{"Name":"SpikeUser","Id":"u1"},{"Name":"bob","Id":"u2"}]' ;;
+              "GET /Devices") jq -Rn '{Items: [inputs | split("\t") | {Id: .[1], LastUserId: .[2], LastUserName: .[3]}]}' < "$T/dev" ;;
+              "DELETE /Devices?id="*)
+                  [[ "${2#*=}" == "$STUCK" ]] && { echo 500 > "$T/code"; echo '{"error":"boom"}'; return 1; }
+                  awk -F'\t' -v e="${2#*=}" '$1 != e' "$T/dev" > "$T/dev.n"; mv "$T/dev.n" "$T/dev"; echo 204 > "$T/code" ;;
+              *) echo 404 > "$T/code"; return 1 ;;
+          esac; }
+      rc=0; (jellyfin_signout "$1") > "$T/so" 2>&1 || rc=$?
+      echo "rc=$rc $(paste -sd'|' "$T/c" 2>/dev/null)" )
+}
+devs() { printf '%s\t%s\t%s\t%s\n' web1 web1 u1 SpikeUser 'a%2Bb%2Fc%3D' 'a+b/c=' u1 SpikeUser BOT_seerr BOT_seerr a0 Admin \
+    mediastack-wire mediastack-wire a0 Admin tv tv u1 SpikeUser tv tv u2 bob > "$T/dev"; }
+devs; r=$(so spikeuser)
+[[ "$r" == "rc=0 GET /Users|GET /Devices|DELETE /Devices?id=a%2Bb%2Fc%3D|DELETE /Devices?id=tv|DELETE /Devices?id=web1|GET /Devices" ]] \
+    || fail_ "signout: the person found in any case, each of their own devices removed once (the ID URL-encoded), then read back: $r"; pass
+[[ "$(cut -f1 "$T/dev" | paste -sd, -)" == "BOT_seerr,mediastack-wire" ]] || fail_ "signout: the admin's devices (Seerr, wire) are never touched: $(cut -f1 "$T/dev" | paste -sd, -)"; pass
+grep -q 'shared — signed out for bob too' "$T/so" && grep -q 'signed out of 3 device(s)' "$T/so" \
+    || fail_ "signout: a shared device names the other person; the count is the person's devices: $(cat "$T/so")"; pass
+r=$(so ADMIN); [[ "$r" == "rc=1 " ]] && grep -q "stack's own Jellyfin admin" "$T/so" || fail_ "signout: the stack's admin is refused (any case) before any call: $r"; pass
+[[ "$(so nobody)" == "rc=1 GET /Users" ]] && grep -q "jellyfin has no user 'nobody'" "$T/so" || fail_ "signout: an unknown name stops, said: $(cat "$T/so")"; pass
+[[ "$(so bob)" == "rc=0 GET /Users|GET /Devices" ]] && grep -q 'signed in on no device' "$T/so" || fail_ "signout: no devices is not a failure: $(cat "$T/so")"; pass
+devs; [[ "$(so spikeuser web1)" == rc=1* ]] && grep -q 'still signed in on 1 of 3 device(s) — Jellyfin said: 500' "$T/so" \
+    || fail_ "signout: a device that stays is a failure, with Jellyfin's code: $(cat "$T/so")"; pass
+! grep -q 'userId=' "$T/c" || fail_ "signout never lists by ?userId= (that is every device the person may use)"; pass
 
 # ---- Wizarr's key: stored only once Wizarr takes it; refused, asked again; Enter skips (found live Nov 2026) ----
 wk() { # wk "ANSWERS (space-separated, - = Enter)" [refused] -> "stored=KEY fails=N asks=N"

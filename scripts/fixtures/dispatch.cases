@@ -114,6 +114,10 @@ set-credentials a b c d
 reset-password
 reset-password someone
 reset-password a b
+# signout  (max=1)
+signout
+signout someone
+signout a b
 # link-account  (max=1)
 link-account
 link-account someone

@@ -616,3 +616,40 @@ jellyfin_disabled() { # NAME — rc 0 when Jellyfin has NAME disabled (reset-pas
     users=$(jf_api GET /Users "$key") || die "jellyfin refused its user list [HTTP $(jf_code)]: $(oneline "$users")"
     jq -e --arg n "${1,,}" 'any(.[]?; (.Name | ascii_downcase) == $n and .Policy.IsDisabled == true)' <<<"$users" >/dev/null
 }
+
+# signout: Jellyfin's devices, as its API has them (read in v12.4's source and
+# proven live 16 Nov 2026). Each /Devices entry is one sign-in, owned by its
+# LastUserId; ?userId= is NOT that — it lists every device the person may use
+# (all of them, by default). Removing a device ID ends every sign-in on it
+# (the person's next request goes to sign-in), whoever's — so a device two
+# people share is signed out for both, and the other is named.
+jf_devices() { # KEY -> "deviceId<TAB>ownerId<TAB>ownerName" per sign-in; rc 1 (Jellyfin's answer on stdout) when refused
+    local out
+    out=$(jf_api GET /Devices "$1") || { echo "$out"; return 1; }
+    jq -r '.Items[]? | [.Id, .LastUserId, .LastUserName] | @tsv' <<<"$out"
+}
+jellyfin_signout() { # NAME — every Jellyfin sign-in NAME has ends; their password is untouched
+    local key admin users uid list ids d other n left out codes=""
+    key=$(env_get JELLYFIN_API_KEY)
+    [[ -n "$key" ]] || die "no Jellyfin API key in .env — run: ./mediastack.sh wire jellyfin"
+    admin=$(env_get JELLYFIN_ADMIN_USER)
+    [[ -z "$admin" || "${1,,}" != "${admin,,}" ]] \
+        || die "'$1' is the stack's own Jellyfin admin — Seerr and wire sign in as it, so it is never signed out"
+    users=$(jf_api GET /Users "$key") || die "jellyfin refused its user list [HTTP $(jf_code)]: $(oneline "$users")"
+    uid=$(jq -r --arg n "${1,,}" 'first(.[]? | select((.Name | ascii_downcase) == $n) | .Id) // empty' <<<"$users")
+    [[ -n "$uid" ]] || die "jellyfin has no user '$1' (its users: Jellyfin's dashboard → Users)"
+    list=$(jf_devices "$key") || die "jellyfin refused its device list [HTTP $(jf_code)]: $(oneline "$list")"
+    ids=$(awk -F'\t' -v u="$uid" '$2 == u {print $1}' <<<"$list" | sort -u)
+    [[ -n "$ids" ]] || { ok "jellyfin: $1 is signed in on no device — nothing to sign out"; return 0; }
+    n=$(wc -l <<<"$ids")
+    while IFS= read -r d; do
+        other=$(awk -F'\t' -v d="$d" -v u="$uid" '$1 == d && $2 != u {print $3}' <<<"$list" | sort -u | paste -sd, -)
+        [[ -z "$other" ]] || warn "jellyfin: one of $1's devices is shared — signed out for $other too"
+        out=$(jf_api DELETE "/Devices?id=$(jq -rn --arg s "$d" '$s | @uri')" "$key") || codes+=" $(jf_code): $(oneline "$out");"
+    done <<<"$ids"
+    # read back: the person's own sign-ins, not what each call answered
+    list=$(jf_devices "$key") || die "jellyfin refused its device list after the sign-out [HTTP $(jf_code)]: $(oneline "$list")"
+    left=$(awk -F'\t' -v u="$uid" '$2 == u' <<<"$list" | wc -l)
+    (( left == 0 )) || die "jellyfin: $1 is still signed in on $left of $n device(s)${codes:+ — Jellyfin said:${codes%;}}"
+    ok "jellyfin: $1 signed out of $n device(s) — each goes to sign-in on its next request (an app may spin until reopened)"
+}

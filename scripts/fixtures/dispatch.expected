@@ -154,6 +154,13 @@ CALL cmd_reset_password [1] someone
 ## reset-password a b
 ERROR 'reset-password' takes at most 1 argument(s) (got: a b)
 rc=1
+## signout
+CALL cmd_signout [0]
+## signout someone
+CALL cmd_signout [1] someone
+## signout a b
+ERROR 'signout' takes at most 1 argument(s) (got: a b)
+rc=1
 ## link-account
 CALL cmd_link_account [0]
 ## link-account someone

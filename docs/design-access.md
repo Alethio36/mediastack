@@ -3,7 +3,8 @@
 *Status: MVP plan step 5. Part 1 (app passwords) **agreed** 15 Nov 2026
 after a live spike; slice 1 (the website refuses them) built and proven
 live 15 Nov 2026; slice 2 (the switch) built and proven live 15 Nov 2026;
-slices 3–4 not built yet. Part 2 (tiers, an authentik provider per
+slice 3 (`signout`) built 16 Nov 2026 after its live check, to prove live;
+slice 4 not built yet. Part 2 (tiers, an authentik provider per
 app, grants) designed in outline 9 Nov 2026 (roadmap, "Access per tool") — its
 details are agreed here before it is built. Portal mode only: with Wizarr or
 no accounts, each app keeps its own logins and none of this applies, except
@@ -138,12 +139,31 @@ Jellyfin took the password, and `wire` afterwards printed no "now" (nothing
 left to change); revoked — the bind refused (49), a fresh Jellyfin sign-in
 refused.
 
-**Slice 3 — `signout <user>`.** Jellyfin's API: the person's devices
-(`GET /Devices?userId=`), each removed (`DELETE /Devices?id=`), which ends
-its session. The stack's own Jellyfin admin is refused (Seerr signs in as it).
-Reports how many devices were signed out; none is not a failure.
-*To prove first, live:* removing a device ends that device's session on its
-next request (web and one app), and touches no other person's.
+**Slice 3 — `signout <user>`** (*built 16 Nov 2026*, to prove live). Any
+account model: Jellyfin's users are there in each.
+*Live check first (16 Nov 2026, anzac4, spikeuser on Chrome and Jellyfin for
+Android):* `DELETE /Devices?id=` (204) ends exactly that device's session —
+Chrome went to sign-in on its next click while the phone, same person, kept
+working; the phone's own removal left it refused (its session never came
+back), spinning until the app was closed and reopened, then at sign-in; the
+admin's Seerr and `mediastack-wire` devices untouched; signing in again works.
+*Read in Jellyfin's source (v12.4), before building:* `GET /Devices?userId=`
+is **not** the person's devices — it lists every device they may use, which
+by default is all of them, so "list by userId, remove each" would have signed
+out everyone, Seerr included. Each `/Devices` entry is one sign-in, owned by
+its `LastUserId`. And removing a device ID ends every sign-in on that ID,
+whoever's.
+*Built:* the whole list, the person's own entries (their `LastUserId`), each
+device ID removed once (URL-encoded: a browser's ID is base64 and may hold
+`+ / =`), then the list read back — any of theirs left is a failure with
+Jellyfin's code. A device ID that also holds someone else's sign-in is
+removed anyway and the other person named (skipping it would leave the
+person signed in, which `signout` exists to end). The stack's own Jellyfin
+admin is refused (Seerr and wire sign in as it); none signed in is not a
+failure. The password is not changed, and the closing line says what does
+keep them out in that account model.
+*To prove live:* `signout spikeuser` with Chrome and the phone signed in —
+both out, the admin's two devices kept, the count 2.
 
 **Slice 4 — the how-to.** README: making a device's password (set the expiry;
 one per device; its name says which), revoking one (delete it, then

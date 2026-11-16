@@ -248,6 +248,18 @@ cmd_reset_password() { # someone locked out: a single-use link — the portal's 
     authentik_recover "$user"
 }
 
+cmd_signout() { # someone's Jellyfin sign-ins end on every device (any account model); the password is not changed
+    load_env; render
+    local user="${1:-}"
+    [[ -n "$user" ]] || die "usage: signout <username>"
+    svc_enabled jellyfin || die "signout ends Jellyfin sign-ins, and Jellyfin is not enabled"
+    [[ "$(c_health "$(svc_cname jellyfin)")" == healthy ]] || die "jellyfin is not healthy yet — ./mediastack.sh status jellyfin"
+    jellyfin_signout "$user"
+    if signin_is authentik; then info "their portal password and any device password still sign in — delete a device's password first (the portal: Settings → Tokens and App passwords)"
+    elif signin_is wizarr; then info "their password still signs in — a new one: ./mediastack.sh reset-password $user"
+    else info "their password still signs in — change it in Jellyfin's dashboard → Users"; fi
+}
+
 cmd_users() { # the portal's people, as authentik has them
     load_env; render
     signin_is authentik || die "the portal (authentik) is not enabled — with Wizarr, people are Jellyfin's own (its dashboard → Users)"
