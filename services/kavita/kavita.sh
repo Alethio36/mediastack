@@ -44,6 +44,24 @@ kav_oidc_holds() { # kav_oidc_holds SETTINGS-JSON WANT-JSON -> 0 when every mana
 }
 kav_secret_mark() { sha256sum <<<"$(env_get AUTHENTIK_KAVITA_CLIENT_SECRET)" | cut -c1-16; }
 
+kav_stats_off() { # TOKEN — Kavita's anonymous stats (sent daily), off once: turned back on in its UI, they stay on
+    local tok="$1" cur out
+    cur=$(kav_api GET /api/settings "$tok") || { wfail "kavita: its settings are unreadable: $(oneline "$cur")"; return 0; }
+    case "$(jq -r '.allowStatCollection' <<<"$cur")" in
+        false) [[ -n "$(state_get KAVITA_STATS_OFF)" ]] || state_set KAVITA_STATS_OFF 1; ok "kavita: no usage stats sent"; return 0 ;;
+        true)  [[ -z "$(state_get KAVITA_STATS_OFF)" ]] || { ok "kavita: usage stats were turned on in its UI — untouched"; return 0; } ;;
+        *)     wfail "kavita: its stats setting is unreadable: $(oneline "$cur")"; return 0 ;;
+    esac
+    # Kavita tells its stats server once that this install opted out (its own behaviour)
+    w_would "kavita: stop its anonymous usage stats (sent daily to Kavita's server)" || return 0
+    # the whole settings object goes back: Kavita keeps a masked OIDC secret as it was
+    out=$(kav_api POST /api/settings "$tok" "$(jq -c '.allowStatCollection = false' <<<"$cur")") \
+        || { wfail "kavita refused to stop its usage stats: $(oneline "$out")"; return 0; }
+    cur=$(kav_api GET /api/settings "$tok") || { wfail "kavita: its settings are unreadable after the change: $(oneline "$cur")"; return 0; }
+    [[ "$(jq -r '.allowStatCollection' <<<"$cur")" == false ]] || { wfail "kavita answered but still sends usage stats"; return 0; }
+    state_set KAVITA_STATS_OFF 1; ok "kavita: usage stats stopped"
+}
+
 kav_oidc() { # Kavita signs people in through the portal; one restart when its start-up settings change
     local tok="$1" cur libs want new restart=0 miss pub
     cur=$(kav_api GET /api/settings "$tok") || { wfail "kavita: its settings are unreadable: $(oneline "$cur")"; return 1; }
@@ -171,6 +189,7 @@ wire_kavita() {
     tok=$(jq -r '.token // empty' <<<"$out")
     [[ -n "$tok" ]] || { wfail "kavita login returned no token"; return 0; }
     ok "kavita: admin login works"
+    kav_stats_off "$tok"
     signin_is authentik || return 0
     kav_admin_email_check "$tok"
     if ! certs_trusted; then

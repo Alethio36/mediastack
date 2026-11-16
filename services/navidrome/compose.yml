@@ -27,6 +27,7 @@ services:
       - ND_SCANSCHEDULE=1h
       - ND_LOGLEVEL=info
       - ND_SESSIONTIMEOUT=24h
+      - ND_ENABLEINSIGHTSCOLLECTOR=false   # no telemetry: its daily usage report to insights.navidrome.org
       # served behind traefik under its own hostname
       - ND_BASEURL=
       - TZ=${TZ:-Etc/UTC}

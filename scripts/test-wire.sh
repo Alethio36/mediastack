@@ -27,6 +27,8 @@
 #     found case-insensitively among its Jellyfin users; the stack's admin,
 #     an unknown or doubled name refused before any link exists; a disabled
 #     account said (asked first), never re-enabled; a reply off-contract fails
+#   * telemetry: Bazarr's analytics and Kavita's stats turned off once, read
+#     back, remembered — turned back on in the app, left on
 #   * signout: the person's own sign-ins only (each device entry's owner,
 #     never ?userId=), IDs URL-encoded, read back after; the stack's admin
 #     refused; a shared device names the other person; none is not a failure
@@ -269,7 +271,7 @@ bw() { # bw DRY KEY-AFTER-N-LOOKS -> "fails=N looks=N"
     ( WIRE_DRY=$1 WIRE_FAILS=0 AFTER=$2; echo 0 > "$T/looks"
       svc_enabled() { [[ "$1" == bazarr ]]; }; wire_gate() { :; }; hr() { :; }; sleep() { :; }
       bazarr_key() { n=$(( $(cat "$T/looks") + 1 )); echo "$n" > "$T/looks"; (( n > AFTER )) && echo BK; return 0; }
-      arr_url() { echo http://b; }; curl() { echo 200; }   # past the key: the rest is not this check's
+      arr_url() { echo http://b; }; curl() { echo 200; }; bazarr_analytics_off() { :; }   # past the key: the rest is not this check's
       wire_bazarr >/dev/null 2>&1; echo "fails=$WIRE_FAILS looks=$(cat "$T/looks")" )
 }
 [[ "$(bw 0 3)" == "fails=0 looks=4" ]] || fail_ "no key yet: wire waits for it, then goes on: $(bw 0 3)"; pass
@@ -311,6 +313,40 @@ D='{"users":[{"id":7,"username":"viewer","server_type":"jellyfin"},{"id":8,"user
 o=$( ( export TZ=America/Los_Angeles; wr "$US" '{"url":"/reset/ABCDE12345","expires_at":"2026-11-15T03:12:44"}' 0 viewer >/dev/null; grep 'single-use' "$T/wr" ) )
 [[ "$o" == *"until 2026-11-14 19:12 PST"* ]] || fail_ "an expiry without an offset is read as UTC (Wizarr's times are), shown in the stack's time: $o"; pass
 grep -n 'jellyfin_reset_password\|Temporary password' mediastack.sh lib/*.sh services/*/*.sh >/dev/null && fail_ "the temporary-password reset is gone (Wizarr's link replaced it)"; pass
+
+# ---- telemetry off by default (Nov 2026): Bazarr's and Kavita's live in their own
+#      settings, so wire turns them off once; turned back on in the UI, they stay on ----
+ba() { # ba MARKED(0|1) ENABLED(true|false) DRY NOTAKE -> "fails=N posts=N now=V marked=M"
+    ( WIRE_DRY=$3 WIRE_FAILS=0 NOTAKE=$4 STATE_DIR="$T/st-ba"; rm -rf "$STATE_DIR" "$T/bp"; mkdir -p "$STATE_DIR"
+      (( $1 )) && echo 1 > "$STATE_DIR/BAZARR_ANALYTICS_OFF"; echo "$2" > "$T/bv"
+      curl() { if [[ " $* " == *" -X POST "* ]]; then echo p >> "$T/bp"
+                   [[ " $* " == *" settings-analytics-enabled=false "* ]] && (( ! NOTAKE )) && echo false > "$T/bv"; echo 200
+               else printf '{"analytics":{"enabled":%s},"general":{}}' "$(cat "$T/bv")"; fi; }
+      bazarr_analytics_off KEY http://b >/dev/null 2>&1
+      echo "fails=$WIRE_FAILS posts=$( [[ -f "$T/bp" ]] && wc -l < "$T/bp" || echo 0) now=$(cat "$T/bv") marked=$(cat "$STATE_DIR/BAZARR_ANALYTICS_OFF" 2>/dev/null || echo -)" )
+}
+[[ "$(ba 0 true 0 0)" == "fails=0 posts=1 now=false marked=1" ]] || fail_ "bazarr: analytics on, never set: turned off, read back, remembered: $(ba 0 true 0 0)"; pass
+[[ "$(ba 1 true 0 0)" == "fails=0 posts=0 now=true marked=1" ]] || fail_ "bazarr: turned back on in its UI after wire set it: left on: $(ba 1 true 0 0)"; pass
+[[ "$(ba 0 false 0 0)" == "fails=0 posts=0 now=false marked=1" ]] || fail_ "bazarr: already off: nothing written, remembered: $(ba 0 false 0 0)"; pass
+[[ "$(ba 0 true 1 0)" == "fails=0 posts=0 now=true marked=-" ]] || fail_ "bazarr: a dry run writes nothing: $(ba 0 true 1 0)"; pass
+[[ "$(ba 0 true 0 1)" == "fails=1 posts=1 now=true marked=-" ]] || fail_ "bazarr: a write that did not take is a failure, not remembered: $(ba 0 true 0 1)"; pass
+
+ks() { # ks MARKED(0|1) ALLOW(true|false) DRY NOTAKE -> "fails=N posts=N now=V marked=M secret=S"
+    ( WIRE_DRY=$3 WIRE_FAILS=0 NOTAKE=$4 STATE_DIR="$T/st-ks"; rm -rf "$STATE_DIR" "$T/kp"; mkdir -p "$STATE_DIR"
+      (( $1 )) && echo 1 > "$STATE_DIR/KAVITA_STATS_OFF"
+      printf '{"allowStatCollection":%s,"totalBackups":7,"oidcConfig":{"secret":"****"}}' "$2" > "$T/kv"
+      kav_api() { case "$1 $2" in
+          "GET /api/settings") cat "$T/kv" ;;
+          "POST /api/settings") echo p >> "$T/kp"; (( NOTAKE )) || printf '%s' "$4" > "$T/kv"; echo '{}' ;;
+          *) return 1 ;; esac; }
+      kav_stats_off TOK >/dev/null 2>&1
+      echo "fails=$WIRE_FAILS posts=$( [[ -f "$T/kp" ]] && wc -l < "$T/kp" || echo 0) now=$(jq -r .allowStatCollection "$T/kv") marked=$(cat "$STATE_DIR/KAVITA_STATS_OFF" 2>/dev/null || echo -) rest=$(jq -c '[.totalBackups, .oidcConfig.secret]' "$T/kv")" )
+}
+[[ "$(ks 0 true 0 0)" == 'fails=0 posts=1 now=false marked=1 rest=[7,"****"]' ]] || fail_ "kavita: stats on, never set: off, the rest of its settings sent back as read: $(ks 0 true 0 0)"; pass
+[[ "$(ks 1 true 0 0)" == 'fails=0 posts=0 now=true marked=1 rest=[7,"****"]' ]] || fail_ "kavita: turned back on in its UI after wire set it: left on: $(ks 1 true 0 0)"; pass
+[[ "$(ks 0 false 0 0)" == 'fails=0 posts=0 now=false marked=1 rest=[7,"****"]' ]] || fail_ "kavita: already off: nothing written, remembered: $(ks 0 false 0 0)"; pass
+[[ "$(ks 0 true 1 0)" == 'fails=0 posts=0 now=true marked=- rest=[7,"****"]' ]] || fail_ "kavita: a dry run writes nothing: $(ks 0 true 1 0)"; pass
+[[ "$(ks 0 true 0 1)" == 'fails=1 posts=1 now=true marked=- rest=[7,"****"]' ]] || fail_ "kavita: a write that did not take is a failure, not remembered: $(ks 0 true 0 1)"; pass
 
 # ---- signout: a person's own sign-ins end, nobody else's (proven live 16 Nov 2026;
 #      ?userId= lists every device the person MAY use — never used for this) ----

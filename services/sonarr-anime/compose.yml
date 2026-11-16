@@ -17,6 +17,7 @@ services:
       - PGID=${MEDIA_GROUP_GID:-13000}
       - UMASK=002
       - TZ=${TZ:-Etc/UTC}
+      - SONARR__LOG__ANALYTICSENABLED=false   # no telemetry: Sentry, the web UI's Piwik, usage sent with update checks
     volumes:
       - ${CONFIG_ROOT}/sonarr-anime:/config
       - ${DATA_ROOT}:/data

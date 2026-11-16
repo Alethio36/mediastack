@@ -156,6 +156,8 @@
         "."
       ],
       "environment": {
+        "AUTHENTIK_DISABLE_STARTUP_ANALYTICS": "true",
+        "AUTHENTIK_DISABLE_UPDATE_CHECK": "true",
         "AUTHENTIK_EMAIL__FROM": "authentik@localhost",
         "AUTHENTIK_EMAIL__HOST": "localhost",
         "AUTHENTIK_EMAIL__PASSWORD": "",
@@ -301,6 +303,8 @@
       "environment": {
         "AUTHENTIK_BOOTSTRAP_PASSWORD": "",
         "AUTHENTIK_BOOTSTRAP_TOKEN": "",
+        "AUTHENTIK_DISABLE_STARTUP_ANALYTICS": "true",
+        "AUTHENTIK_DISABLE_UPDATE_CHECK": "true",
         "AUTHENTIK_EMAIL__FROM": "authentik@localhost",
         "AUTHENTIK_EMAIL__HOST": "localhost",
         "AUTHENTIK_EMAIL__PASSWORD": "",
@@ -563,6 +567,7 @@
         "SERVER_HOSTNAMES": "",
         "TZ": "Etc/UTC",
         "UPDATER_PERIOD": "24h",
+        "VERSION_INFORMATION": "off",
         "VPN_SERVICE_PROVIDER": "nordvpn",
         "VPN_TYPE": "wireguard",
         "WIREGUARD_ADDRESSES": "10.5.0.2/32",
@@ -989,6 +994,7 @@
         "gluetun": "service_healthy"
       },
       "environment": {
+        "LIDARR__LOG__ANALYTICSENABLED": "false",
         "PGID": "13000",
         "PUID": "13003",
         "TZ": "Etc/UTC",
@@ -1075,6 +1081,7 @@
       "environment": {
         "ND_BASEURL": "",
         "ND_DATAFOLDER": "/data",
+        "ND_ENABLEINSIGHTSCOLLECTOR": "false",
         "ND_EXTAUTH_TRUSTEDSOURCES": "172.31.250.2/32",
         "ND_EXTAUTH_USERHEADER": "X-authentik-username",
         "ND_LOGLEVEL": "info",
@@ -1275,6 +1282,7 @@
       },
       "environment": {
         "PGID": "13000",
+        "PROWLARR__LOG__ANALYTICSENABLED": "false",
         "PUID": "13006",
         "TZ": "Etc/UTC",
         "UMASK": "002"
@@ -1357,6 +1365,7 @@
       "environment": {
         "PGID": "13000",
         "PUID": "13002",
+        "RADARR__LOG__ANALYTICSENABLED": "false",
         "TZ": "Etc/UTC",
         "UMASK": "002"
       },
@@ -1403,6 +1412,7 @@
       "environment": {
         "PGID": "13000",
         "PUID": "13018",
+        "RADARR__LOG__ANALYTICSENABLED": "false",
         "TZ": "Etc/UTC",
         "UMASK": "002"
       },
@@ -1510,6 +1520,7 @@
       "environment": {
         "PGID": "13000",
         "PUID": "13001",
+        "SONARR__LOG__ANALYTICSENABLED": "false",
         "TZ": "Etc/UTC",
         "UMASK": "002"
       },
@@ -1556,6 +1567,7 @@
       "environment": {
         "PGID": "13000",
         "PUID": "13019",
+        "SONARR__LOG__ANALYTICSENABLED": "false",
         "TZ": "Etc/UTC",
         "UMASK": "002"
       },

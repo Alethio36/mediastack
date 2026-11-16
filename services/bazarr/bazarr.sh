@@ -38,6 +38,7 @@ wire_bazarr() {
             sleep 3; waited=$((waited+3))
         done
     fi
+    bazarr_analytics_off "$bkey" "$burl"
     local pairs=() t skey
     for t in sonarr radarr; do
         svc_enabled "$t" || continue
@@ -73,6 +74,29 @@ wire_bazarr() {
      pair manually meanwhile (Settings -> Sonarr/Radarr) and paste the above"
         fi
     fi
+}
+
+bazarr_analytics_read() { # KEY URL -> true|false (anything else: Bazarr's answer, rc 1)
+    local out v
+    out=$(curl -sS -m 20 -H "X-API-KEY: $1" "$2/api/system/settings" 2>&1) || { echo "$out"; return 1; }
+    v=$(jq -r '.analytics.enabled' <<<"$out" 2>/dev/null) || v=""
+    [[ "$v" == true || "$v" == false ]] || { echo "$out"; return 1; }
+    echo "$v"
+}
+bazarr_analytics_off() { # KEY URL — Bazarr's Google Analytics (an event per subtitle download), off once: turned back on in its UI, it stays on
+    local cur code
+    cur=$(bazarr_analytics_read "$1" "$2") || { wfail "bazarr: its analytics setting is unreadable: $(oneline "$cur")"; return 0; }
+    if [[ "$cur" == false ]]; then
+        [[ -n "$(state_get BAZARR_ANALYTICS_OFF)" ]] || state_set BAZARR_ANALYTICS_OFF 1
+        ok "bazarr: no analytics sent"; return 0
+    fi
+    [[ -z "$(state_get BAZARR_ANALYTICS_OFF)" ]] || { ok "bazarr: analytics were turned on in its UI — untouched"; return 0; }
+    w_would "bazarr: stop its analytics (Google Analytics: an event for every subtitle download)" || return 0
+    code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST -H "X-API-KEY: $1" \
+           --data-urlencode "settings-analytics-enabled=false" "$2/api/system/settings" 2>/dev/null) || true
+    cur=$(bazarr_analytics_read "$1" "$2") || cur=""
+    [[ "$cur" == false ]] || { wfail "bazarr did not stop its analytics (HTTP ${code:-000}; it reads: ${cur:-unreadable})"; return 0; }
+    state_set BAZARR_ANALYTICS_OFF 1; ok "bazarr: analytics stopped"
 }
 
 # ---- rotate-secrets (lib/rotate.sh) ----

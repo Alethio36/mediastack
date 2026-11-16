@@ -18,6 +18,7 @@ services:
       - PGID=${MEDIA_GROUP_GID:-13000}
       - UMASK=002
       - TZ=${TZ:-Etc/UTC}
+      - RADARR__LOG__ANALYTICSENABLED=false   # no telemetry: Sentry, the web UI's Piwik, usage sent with update checks
     volumes:
       - ${CONFIG_ROOT}/radarr-4k:/config
       - ${DATA_ROOT}:/data

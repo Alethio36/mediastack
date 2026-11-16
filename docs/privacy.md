@@ -68,6 +68,40 @@ self-hosted service instead (`notify set ops`).
 it got there — the same as any media server. Sending Jellyfin's and Seerr's
 lookups through the VPN is on the roadmap (Security & access).
 
+## Telemetry — off by default
+
+Apps that report to their makers — how they are used, their errors, that
+they are installed — have it switched off by the stack (checked in each
+app's source, Nov 2026):
+
+| App | What it would send | Switched off by |
+|---|---|---|
+| Sonarr, Radarr, Lidarr, Prowlarr | error reports (Sentry), the web UI's page views (Piwik), whether the install is active, with each update check | `<APP>__LOG__ANALYTICSENABLED=false` in its compose file |
+| Bazarr | a Google Analytics event for every subtitle download and provider throttle | `wire bazarr`, once |
+| Navidrome | a daily usage report to insights.navidrome.org | `ND_ENABLEINSIGHTSCOLLECTOR=false` |
+| Kavita | daily anonymous stats to Kavita's server | `wire kavita`, once — Kavita then tells its server once that this install opted out |
+| authentik | a "pageview" to goauthentik.io at every start; error reports | `AUTHENTIK_DISABLE_STARTUP_ANALYTICS`, `AUTHENTIK_ERROR_REPORTING__ENABLED=false` |
+| Meilisearch | usage analytics | `MEILI_NO_ANALYTICS=true` |
+
+Version checks — asking the maker's server whether a newer version exists,
+which tells it a copy runs and from where — are off where the app has a
+switch, because the stack owns updates: authentik (`AUTHENTIK_DISABLE_UPDATE_CHECK`),
+Traefik (`checkNewVersion: false`), gluetun (`VERSION_INFORMATION=off`).
+OliveTin's is off by its own default. **These have no switch, and still ask**,
+from whichever address the app uses (an app inside the VPN asks through it):
+the arrs and Prowlarr (their update server; without analytics it learns only
+the version and platform), Seerr (GitHub), Wizarr (update.wizarr.dev, its
+version in the request), Kavita (GitHub), Pi-hole (GitHub, daily) — and
+Audiobookshelf's web page, which asks GitHub from each visitor's own browser.
+
+Bazarr's and Kavita's switches live in their own settings, not in a file the
+stack writes, so `wire` sets them once and remembers it: turn one back on in
+the app's UI and wire leaves it on. The switches in compose files can be
+turned back on in `custom/` (an override file).
+
+Not telemetry, and left on: the apps' lookups of metadata and artwork, and
+Navidrome's optional music services (Last.fm, ListenBrainz, Deezer artwork).
+
 ## How `leak-test` keeps your two addresses apart
 
 - **Your home side**, from the host: RIPEstat is asked for your address, its

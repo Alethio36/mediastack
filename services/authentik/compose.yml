@@ -25,6 +25,9 @@ x-authentik-env: &authentik-env
   AUTHENTIK_POSTGRESQL__USER: authentik
   AUTHENTIK_POSTGRESQL__PASSWORD: ${AUTHENTIK_DB_PASSWORD}
   AUTHENTIK_ERROR_REPORTING__ENABLED: "false"
+  # no telemetry: the "pageview" posted to goauthentik.io at every start, and the version check
+  AUTHENTIK_DISABLE_STARTUP_ANALYTICS: "true"
+  AUTHENTIK_DISABLE_UPDATE_CHECK: "true"
   # outgoing email (docs/email.md) — authentik's defaults when unset: none sent
   AUTHENTIK_EMAIL__HOST: ${SMTP_HOST:-localhost}
   AUTHENTIK_EMAIL__PORT: ${SMTP_PORT:-25}

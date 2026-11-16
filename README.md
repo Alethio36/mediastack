@@ -406,6 +406,13 @@ frontdoor-install`. See [docs/frontdoor.md](docs/frontdoor.md) for usage and
   `vpn` command and audited by the tooling — see
   [docs/vpn-membership.md](docs/vpn-membership.md); what leaves your box, and
   to whom: [docs/privacy.md](docs/privacy.md).
+* **No telemetry by default.** Every app that reports usage, errors or its
+  own installation to its makers has it switched off: the arrs and Prowlarr,
+  Bazarr, Navidrome, Kavita, authentik and Meilisearch; the version checks of
+  authentik, Traefik and gluetun too (the stack owns updates). Bazarr's and
+  Kavita's live in their own settings, so `wire` turns them off once and a
+  choice you make in their UI afterwards stays. What is left — version checks
+  with no switch — is in [docs/privacy.md](docs/privacy.md).
 * **Containers ignore the host's search domain.** A bare name inside the
   stack means a sibling container and nothing else — never
   `<name>.<your-domain>`, which a wildcard DNS record would answer with a

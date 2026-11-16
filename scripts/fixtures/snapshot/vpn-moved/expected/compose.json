@@ -168,6 +168,7 @@
         "SERVER_HOSTNAMES": "",
         "TZ": "Etc/UTC",
         "UPDATER_PERIOD": "24h",
+        "VERSION_INFORMATION": "off",
         "VPN_SERVICE_PROVIDER": "nordvpn",
         "VPN_TYPE": "wireguard",
         "WIREGUARD_ADDRESSES": "10.5.0.2/32",
@@ -438,6 +439,7 @@
       },
       "environment": {
         "PGID": "13000",
+        "PROWLARR__LOG__ANALYTICSENABLED": "false",
         "PUID": "13006",
         "TZ": "Etc/UTC",
         "UMASK": "002"
@@ -520,6 +522,7 @@
       "environment": {
         "PGID": "13000",
         "PUID": "13002",
+        "RADARR__LOG__ANALYTICSENABLED": "false",
         "TZ": "Etc/UTC",
         "UMASK": "002"
       },
@@ -566,6 +569,7 @@
       "environment": {
         "PGID": "13000",
         "PUID": "13001",
+        "SONARR__LOG__ANALYTICSENABLED": "false",
         "TZ": "Etc/UTC",
         "UMASK": "002"
       },

@@ -32,6 +32,7 @@ services:
       - TZ=${TZ:-Etc/UTC}
       - VPN_SERVICE_PROVIDER=${VPN_PROVIDER:-nordvpn}
       - VPN_TYPE=wireguard
+      - VERSION_INFORMATION=off   # no phone-home: its check of GitHub for a newer gluetun (the stack owns updates)
       - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
       - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES:-10.5.0.2/32}
       # Server selection: comma-separated, leave unused ones empty.
