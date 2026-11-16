@@ -286,12 +286,28 @@ Read in authentik 2026.8.5's source and checked live on anzac4 first.
 ### How it is built
 
 **Slice 1 — a provider per gated app, nobody's access changed** (*built
-16 Nov 2026*, to prove on the keeper's upgrade). Every
+and proven live 16 Nov 2026*). Every
 gated tool and Navidrome get the shape of decision 7 with today's groups —
 the tools `admins` (+ `app-<svc>`), Navidrome `media-users` and `admins`
 (+ `app-navidrome`). Proven on the keeper's `upgrade`: each app still opens
 for exactly whom it did, and a person put in `app-<svc>` by hand gets that
 one app.
+*Proven live (16 Nov 2026, the keeper from `stable` 8e8e03f, upgraded to
+`unstable` 85bad35):* `wire` gave every tool its gate, renamed Navidrome's
+household gate in place and removed the old cards, with no failure; doctor:
+every gated app on a gate of its own. akadmin opened every tool (Bazarr and
+qBittorrent then show their own login — step 6's work, as before); spikeuser
+was refused Sonarr and opened Navidrome and Jellyfin; put in `app-sonarr` by
+hand, spikeuser opened Sonarr; taken out again with their sessions ended,
+refused. *Found on the way:* the first try was refused by authentik — a
+partial update of a proxy provider is checked as a full proxy unless it
+names its mode (now always sent). And spikeuser's dashboard showed no Sonarr
+card after the grant: authentik keeps each person's list of apps for 24
+hours, cleared when a user, group, application or binding is saved — a
+change of group membership alone saves neither (read in 2026.8.5's source).
+So **slice 4's grant and revoke save the person once after changing their
+groups**, which clears it; a grant made by hand in authentik's UI shows on
+their dashboard only after that, or a day later (the README says so).
 
 **Slice 2 — the rename** (decisions 1–3). **Slice 3 — tiers and `access`**
 (decisions 6, 8). **Slice 4 — grants and taking access away** (decisions 4,
