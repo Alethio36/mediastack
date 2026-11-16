@@ -150,6 +150,24 @@ grep -qxF "    - username: 'ops.admin'" "$CF/config.yaml" || fail_ "the admin's 
 got=$( env_get() { echo "$T/cfg"; }; sudo() { "$@"; }; panel_installed_login )
 [[ "$got" == "ops.admin"$'\t'"$h1" ]] || fail_ "the installed admin read back (name, hash): $got"; pass
 
+# wire: the installed config follows the stack's — the groups' rename (Nov 2026)
+# left the installed list naming 'admins': every admin shut out of the panel
+pcf() { # pcf DRY -> "fails=N restarts=N user=… group=…" (the config in $CF)
+    ( WIRE_DRY=$1 WIRE_FAILS=0; rm -f "$T/restarts"
+      env_get() { case "$1" in CONFIG_ROOT) echo "$T/cfg" ;; PANEL_ADMIN_USER) echo someone.else ;; esac; }
+      sudo() { if [[ "$1" == install ]]; then cp "${@: -2:1}" "${@: -1}"; else "$@"; fi; }
+      svc_enabled() { [[ "$1" == olivetin ]]; }; ok() { :; }; info() { :; }
+      fd_panel_restart() { echo r >> "$T/restarts"; }
+      panel_config_follow >/dev/null 2>&1
+      echo "fails=$WIRE_FAILS restarts=$( [[ -f "$T/restarts" ]] && wc -l < "$T/restarts" || echo 0) user=$(panel_installed_login | cut -f1) group=$(grep -oP 'matchUsergroups: \[\K[^]]+' "$CF/config.yaml")" )
+}
+sed -i "s/matchUsergroups: \[$PORTAL_ADMIN\]/matchUsergroups: [admins]/; s/usergroup: $PORTAL_ADMIN\$/usergroup: admins/" "$CF/config.yaml"   # as installed before the rename
+[[ "$(pcf 1)" == "fails=0 restarts=0 user=ops.admin group=admins" ]] || fail_ "a dry run changes nothing: $(pcf 1)"; pass
+[[ "$(pcf 0)" == "fails=0 restarts=1 user=ops.admin group=$PORTAL_ADMIN" ]] \
+    || fail_ "the panel's list follows the portal's admin group, its installed admin kept (not .env's), one restart: $(pcf 0)"; pass
+grep -qF "$h1" "$CF/config.yaml" || fail_ "the installed password hash kept"; pass
+[[ "$(pcf 0)" == "fails=0 restarts=0 user=ops.admin group=$PORTAL_ADMIN" ]] || fail_ "as the stack writes it already: nothing, no restart: $(pcf 0)"; pass
+
 # what records it: missing → recorded the stack's way; there → untouched; each, no terminal → stop
 le() { # le MODE USER PASS STACK_USER -> "rc=N user pass" (le's .env in $T/le)
     ( printf 'STACK_LOGINS=%s\nPANEL_ADMIN_USER=%s\nPANEL_ADMIN_PASSWORD=%s\nSTACK_USER=%s\n' "$@" > "$T/le"

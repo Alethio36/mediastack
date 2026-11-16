@@ -10,8 +10,8 @@ showNavigateOnStartIcons: false
 # Everyone must log in; the panel can change the stack, so no guest access.
 authRequireGuestsToLogin: true
 accessControlLists:
-  - name: admins
-    matchUsergroups: [admins]
+  - name: admin
+    matchUsergroups: [admin]
     permissions:
       view: true
       exec: true
@@ -22,7 +22,7 @@ authLocalUsers:
   enabled: true
   users:
     - username: '@PANEL-USER@'
-      usergroup: admins
+      usergroup: admin
       password: '@ARGON2ID-HASH@'
 
 # Service lists backing the dropdowns; refreshed on the host by the timer

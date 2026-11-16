@@ -309,6 +309,21 @@ So **slice 4's grant and revoke save the person once after changing their
 groups**, which clears it; a grant made by hand in authentik's UI shows on
 their dashboard only after that, or a day later (the README says so).
 
-**Slice 2 — the rename** (decisions 1–3). **Slice 3 — tiers and `access`**
+**Slice 2 — the rename** (decisions 1–3; *built 16 Nov 2026*, to prove on
+the keeper's upgrade). The blueprint renames each group in place by a
+conditioned entry before the entry that finds it by its new name (its
+importer applies entries in order, in one transaction); every reader goes
+through `PORTAL_FRONTEND` / `PORTAL_ADMIN` (a test holds the blueprint's
+names to them, another refuses the old names in code). `wire authentik`
+rewrites the panel's config when it differs from what the stack writes for
+the login it holds — the installed list named `admins`, which would have
+shut every admin out of the panel after the rename. Navidrome's sync moves
+admin rights only while the admin group exists. The upgrade (schema 45)
+says the rename once. A group by the new name made by hand before the
+rename makes the rename fail (names are unique): authentik reports the
+blueprint failed, doctor shows it.
+*Slice 4 also:* a grant's or revoke's change of groups is followed by one
+save of the person — proven live (16 Nov 2026): it clears authentik's
+day-long list of their apps (the card appears or goes on their next load). **Slice 3 — tiers and `access`**
 (decisions 6, 8). **Slice 4 — grants and taking access away** (decisions 4,
 5, 8).

@@ -1095,7 +1095,7 @@
         "com.centurylinklabs.watchtower.enable": "false",
         "mediastack.auth": "gate",
         "mediastack.auth.bypass": "/rest/ /share/",
-        "mediastack.auth.group": "media-users",
+        "mediastack.auth.group": "frontend",
         "mediastack.config": "true",
         "mediastack.desc": "music server (Subsonic API) over lidarr's library",
         "mediastack.managed": "true",

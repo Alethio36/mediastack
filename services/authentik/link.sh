@@ -35,9 +35,9 @@ link_pick() { # link_pick APP CANDIDATES-JSON PORTAL-USER -> LINK_PICK: the chos
 link_admin_note() { # link_admin_note APP CANDIDATE PORTAL-USER — what the next admin sync does to them
     local was; was=$(jq -r '.admin' <<<"$2")
     if [[ "$was" == true && "$LINK_ADMINS" != *" $3 "* ]]; then
-        warn "    '$(jq -r '.name' <<<"$2")' is a $1 admin and $3 is not in the portal's admins — they lose admin (add $3 to admins first to keep it)"
+        warn "    '$(jq -r '.name' <<<"$2")' is a $1 admin and $3 is not in the portal's $PORTAL_ADMIN group — they lose admin (add $3 to it first to keep it)"
     elif [[ "$was" != true && "$LINK_ADMINS" == *" $3 "* ]]; then
-        info "    $3 is in the portal's admins — they become a $1 admin"
+        info "    $3 is in the portal's $PORTAL_ADMIN group — they become a $1 admin"
     fi
 }
 
@@ -56,7 +56,7 @@ cmd_link_account() {
     email=$(jq -r '.email // ""' <<<"$pu")
     portal=$(ak_api GET "/core/users/?type=internal&page_size=500") || die "authentik refused the user list: $(oneline "$portal")"
     names=$(jq -c '[.results[].username]' <<<"$portal")
-    out=$(signin_admins) || die "authentik refused the admins lookup"
+    out=$(signin_admins) || die "authentik refused the $PORTAL_ADMIN group lookup: $(oneline "$out")"
     LINK_ADMINS=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
 
     hr "link-account: which accounts are $who's"

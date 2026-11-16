@@ -14,11 +14,11 @@
 #     primary's profile)
 #   * a service an upgrade adds gets its UID before it first starts
 #   * the portal's blueprint: sign-up needs an invitation, makes internal users
-#     in media-users, requires an email; the worker gets its values and mount
+#     in frontend, requires an email; the worker gets its values and mount
 #   * invitations: single use, bound to the sign-up flow, 7 days by default
 #   * Jellyfin through LDAP: LDAPS to ldap.<domain> through Traefik, checking
-#     on with production certificates, media-users or admins, every library;
-#     only mediastack's plugin settings change; admin rights follow `admins`
+#     on with production certificates, frontend or admin, every library;
+#     only mediastack's plugin settings change; admin rights follow the admin group
 #     for directory users and never touch local accounts
 #   * the base URL is set when unset or still mediastack's, never over one
 #     set in authentik's UI
@@ -34,20 +34,20 @@
 #   * a tool with no login of its own (Apprise): through the portal, or — with
 #     no portal — refused at Traefik and reached on this host only
 #   * the gate: Traefik's middleware asks authentik only when it runs; wire
-#     adds the gate beside the outpost's providers, puts akadmin in admins
-#     once, keeps one admins-only card per gated tool and never touches
+#     adds the gate beside the outpost's providers, puts akadmin in admin
+#     once, keeps one admin-only card per gated tool and never touches
 #     applications it did not make
 #   * gated ports listen on 127.0.0.1 while the portal runs; an arr trusts the
 #     portal only when it is gated AND unreachable by IP, its own login otherwise
 #   * the stack network keeps Traefik on a fixed address outside the pool;
 #     only that address may name a user (Navidrome), and every route past a
 #     gate strips the portal's headers
-#   * household apps get Media cards for media-users; Navidrome's carries its
+#   * household apps get Media cards for the household; Navidrome's carries its
 #     own household gate (forward auth for its one address)
 #   * Audiobookshelf through OIDC: never matched to an existing account, the
 #     settings read back after a write, a root linked to the portal unlinked
 #     and its password rotated (ends its sessions); admin rights follow
-#     `admins`, a guest outside it stays a guest
+#     the admin group, a guest outside it stays a guest
 #   * sign-up refuses a username the apps would confuse: the stack's own app
 #     accounts (any case) and an existing person's name in another case
 #   * Kavita: published on 127.0.0.1; its OIDC provider; the stack's admin with
@@ -208,11 +208,26 @@ grep -q '^    _configure_selfheal' <(sed -n '/^provision() {/,/^}/p' mediastack.
 bp=services/authentik/blueprints/mediastack-portal.yaml
 grep -q "^  name: $AUTHENTIK_BLUEPRINT\$" "$bp" || fail_ "the blueprint's name must be AUTHENTIK_BLUEPRINT ($AUTHENTIK_BLUEPRINT)"; pass
 grep -q "^      slug: $AUTHENTIK_JOIN_FLOW\$" "$bp" || fail_ "the sign-up flow's slug must be AUTHENTIK_JOIN_FLOW"; pass
-# household members are internal (external users never see the app dashboard), in media-users
+# household members are internal (external users never see the app dashboard), in frontend
 grep -q 'name: mediastack-join-write' <<<"$(grep -A4 'model: authentik_stages_user_write.userwritestage' "$bp")" \
     && grep -q 'user_type: internal' <<<"$(sed -n '/name: mediastack-join-write/,/^  - /p' "$bp")" \
-    && grep -q 'create_users_group: !KeyOf group-media-users' <<<"$(sed -n '/name: mediastack-join-write/,/^  - /p' "$bp")" \
-    || fail_ "sign-up must create internal users in media-users"; pass
+    && grep -q 'create_users_group: !KeyOf group-frontend' <<<"$(sed -n '/name: mediastack-join-write/,/^  - /p' "$bp")" \
+    || fail_ "sign-up must create internal users in frontend"; pass
+# the groups' names: the blueprint writes them out, the code reads PORTAL_* — held equal
+[[ "$(awk '/id: group-frontend$/{f=1} f && /name:/{print $2; exit}' "$bp") $(awk '/id: group-admin$/{f=1} f && /name:/{print $2; exit}' "$bp")" == "$PORTAL_FRONTEND $PORTAL_ADMIN" ]] \
+    || fail_ "the blueprint's group names are PORTAL_FRONTEND and PORTAL_ADMIN"; pass
+[[ "$(grep -oP 'mediastack.auth.group: "\K[^"]+' services/navidrome/compose.yml)" == "$PORTAL_FRONTEND" ]] \
+    || fail_ "Navidrome's household gate names PORTAL_FRONTEND"; pass
+# the rename, in place and only while the old group exists — before the entries that find the new names
+r=$(awk '/^  - model:/{m=$0} /id: group-rename-media-users$|id: group-rename-admins$|id: group-frontend$|id: group-admin$/{print $2}' "$bp" | paste -sd' ' -)
+[[ "$r" == "group-rename-media-users group-rename-admins group-frontend group-admin" ]] || fail_ "the rename entries come first: $r"; pass
+for pair in "media-users frontend" "admins admin"; do
+    set -- $pair
+    blk=$(sed -n "/id: group-rename-$1\$/,/^  - model:/p" "$bp")
+    grep -qF -- "- !Find [authentik_core.group, [name, $1]]" <<<"$blk" && grep -qE "^      name: $1\$" <<<"$blk" && grep -qE "^      name: $2\$" <<<"$blk" \
+        || fail_ "the rename of $1: only while it exists, found by its old name, given the new: $blk"; pass
+done
+! grep -qE 'KeyOf group-(media-users|admins)\b' "$bp" || fail_ "nothing in the blueprint points at the old groups' entries"; pass
 grep -q 'continue_flow_without_invitation: false' <<<"$(sed -n '/name: mediastack-join-invitation/,/^  - /p' "$bp")" \
     || fail_ "sign-up must need an invitation"; pass
 grep -q 'required: true' <<<"$(sed -n '/name: mediastack-join-email/,/^  - /p' "$bp")" || fail_ "email is required at sign-up"; pass
@@ -301,8 +316,8 @@ ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
     case "$1 $2" in
         "GET /providers/proxy/?name__iexact=mediastack-gate") echo '{"results":[{"pk":7}]}' ;;
         "GET /outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") echo '{"results":[{"pk":"op-1","providers":[3],"config":{"log_level":"info","authentik_host":""}}]}' ;;
-        "GET /core/groups/?search=admins") echo '{"results":[{"pk":"g-adm","name":"admins"},{"pk":"g-x","name":"superadmins"}]}' ;;
-        "GET /core/groups/?search=media-users") echo '{"results":[{"pk":"g-mu","name":"media-users"}]}' ;;
+        "GET /core/groups/?search=admin") echo '{"results":[{"pk":"g-adm","name":"admin"},{"pk":"g-x","name":"superadmin"}]}' ;;
+        "GET /core/groups/?search=frontend") echo '{"results":[{"pk":"g-mu","name":"frontend"}]}' ;;
         "GET /core/users/?username=akadmin") echo '{"results":[{"pk":1}]}' ;;
         "GET /core/applications/?superuser_full_list=true&page_size=500")
             echo '{"results":[{"slug":"mediastack-tool-apprise","pk":"a-1","meta_launch_url":"https://apprise.media.example.com"},{"slug":"mediastack-tool-oldsvc","pk":"a-9"},{"slug":"my-own-app","pk":"a-5"}]}' ;;
@@ -313,7 +328,7 @@ ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
     esac; }
 wire_authentik_gate >/dev/null
 grep -qF 'PATCH /outposts/instances/op-1/ {"providers":[3,7]}' "$T/calls" || fail_ "the gate is added beside the outpost's providers: $(grep PATCH "$T/calls")"; pass
-grep -qF 'POST /core/groups/g-adm/add_user/ {"pk":1}' "$T/calls" || fail_ "akadmin joins 'admins' (not a lookalike group)"; pass
+grep -qF 'POST /core/groups/g-adm/add_user/ {"pk":1}' "$T/calls" || fail_ "akadmin joins '$PORTAL_ADMIN' (not a lookalike group)"; pass
 grep -qF "PATCH /outposts/instances/op-1/ {\"config\":{\"log_level\":\"info\",\"authentik_host\":\"$(authentik_portal)\"}}" "$T/calls" \
     || fail_ "the outpost sends sign-ins to the portal, the rest of its config kept: $(grep 'PATCH.*config' "$T/calls")"; pass
 rm -f "$T/calls"; wire_authentik_gate >/dev/null
@@ -549,6 +564,10 @@ while IFS= read -r f; do
             want=system/providers-oauth2.yaml ;;
         '!Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]')
             continue ;;   # made at start (authentik/crypto/apps.py, self_signed), before any blueprint
+        '!Find [authentik_core.group, [name, media-users]]'|'!Find [authentik_core.group, [name, admins]]')
+            # the groups' rename (Nov 2026): a condition, where finding nothing is the answer (a fresh install)
+            grep -qF -- "- $f" services/authentik/blueprints/mediastack-portal.yaml || fail_ "$f outside a rename's conditions"
+            continue ;;
         *) fail_ "the blueprint looks up $f: add the blueprint that makes it to the prerequisites" ;;
     esac
     [[ " ${AUTHENTIK_BLUEPRINT_NEEDS[*]} " == *" $want "* ]] || fail_ "$f comes from $want, which is not a prerequisite"
@@ -658,7 +677,7 @@ done
 svc_enabled_managed() { printf '%s\n' sonarr navidrome jellyfin; }
 svc_label() { case "$1:$2" in
     sonarr:mediastack.auth) echo gate ;; navidrome:mediastack.auth) echo gate ;;
-    navidrome:mediastack.auth.group) echo media-users ;;
+    navidrome:mediastack.auth.group) echo frontend ;;
     navidrome:mediastack.user_facing|jellyfin:mediastack.user_facing) echo true ;;
     authentik:mediastack.subdomain) echo portal ;;
     *:mediastack.desc) echo "desc of ${1%%:*}" ;; esac; }
@@ -679,8 +698,8 @@ AK_APPS='{"results":[
   {"slug":"mediastack-app-navidrome","pk":"a-nav","provider":42,"meta_launch_url":"https://navidrome.media.example.com"}]}'
 gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards against a stateful authentik; calls in $T/calls
     ( WIRE_DRY=${1:-0} WIRE_FAILS=0 NOBIND=${2:-0}
-      rm -f "$T/calls"; printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: media-users and admins
-      printf 'admins g-adm\nmedia-users g-mu\n' > "$T/groups"; echo '[6]' > "$T/op"; : > "$T/apps"
+      rm -f "$T/calls"; printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: the household and its admins
+      printf 'admin g-adm\nfrontend g-mu\n' > "$T/groups"; echo '[6]' > "$T/op"; : > "$T/apps"
       ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
         case "$1 $2" in
           "GET /core/applications/?superuser_full_list=true&page_size=500") echo "$AK_APPS" ;;
@@ -721,7 +740,7 @@ grep -q '^POST /core/applications/ .*"slug":"mediastack-app-sonarr".*"group":"Ad
     || fail_ "a tool: admins and its own group, nobody else: $(cat "$T/bind")"; pass
 [[ "$(awk '$1=="a-nav"{print $2}' "$T/bind" | sort | paste -sd, -)" == "g-adm,g-app-navidrome,g-mu" ]] \
     && [[ "$(grep -c 'POST /policies/bindings/ .*"target":"a-nav"' "$T/calls")" == 1 ]] \
-    || fail_ "Navidrome keeps media-users and admins and gains its own group, one binding added: $(awk '$1=="a-nav"' "$T/bind" | paste -sd' ' -)"; pass
+    || fail_ "Navidrome keeps the household and admin groups and gains its own group, one binding added: $(awk '$1=="a-nav"' "$T/bind" | paste -sd' ' -)"; pass
 [[ "$(cat "$T/op")" == "[6,50,42]" ]] || fail_ "both gates join the outpost beside what is there: $(cat "$T/op")"; pass
 b=$(grep -n 'POST /policies/bindings/ .*a-mediastack-app-sonarr' "$T/calls" | tail -1 | cut -d: -f1)
 o=$(grep -n 'PATCH /outposts/instances/op-1/ .*50' "$T/calls" | sed -n 1p | cut -d: -f1)
@@ -867,8 +886,8 @@ w=$(jf_ldap_want)
 [[ "$(jq -r '.SkipSslVerify' <<<"$w")" == true ]] || fail_ "staging certificates: checking off"; pass
 printf 'STACK_DOMAIN=media.example.com\nACME_ENV=production\n' > "$ENV_FILE"
 [[ "$(jf_ldap_want | jq -r '.SkipSslVerify')" == false ]] || fail_ "production certificates: checking on"; pass
-[[ "$(jq -r '.LdapSearchFilter' <<<"$w")" == "(|(memberOf=cn=media-users,ou=groups,dc=ldap,dc=mediastack)(memberOf=cn=admins,ou=groups,dc=ldap,dc=mediastack))" ]] \
-    || fail_ "media-users or admins may sign in"; pass
+[[ "$(jq -r '.LdapSearchFilter' <<<"$w")" == "(|(memberOf=cn=frontend,ou=groups,dc=ldap,dc=mediastack)(memberOf=cn=admin,ou=groups,dc=ldap,dc=mediastack))" ]] \
+    || fail_ "frontend or admin may sign in"; pass
 [[ "$(jq -r '.CreateUsersFromLdap and .EnableAllFolders' <<<"$w")" == true ]] || fail_ "created on first sign-in, every library"; pass
 # configure: managed settings merged over the rest; unchanged: no write
 rm -f "$T/calls"
@@ -1585,8 +1604,8 @@ ap() { ( E=$1; env_get() { [[ "$1" == LDAP_APP_PASSWORDS ]] && echo "$E"; }; env
          eval "$(awk '/^authentik_prepare\(\)/,/^}/' services/authentik/authentik.sh | grep 'AUTHENTIK_LDAP_APP_PASSWORDS')" ) }
 [[ "$(ap yes)" == "[yes]" && "$(ap no)" == "[]" && "$(ap "")" == "[]" ]] || fail_ "the input: yes, else empty: $(ap yes) $(ap no) $(ap '')"; pass
 # wire: the groups' app-password lifetime, merged into what an admin set, read back
-alt() { # alt SWITCH ATTRS-media-users ATTRS-admins [DRY] -> PATCH bodies, WFAIL, then both groups' attributes after
-    ( echo "$2" > "$T/g-media-users"; echo "$3" > "$T/g-admins"; rm -f "$T/calls"; WIRE_DRY=${4:-0}; SW=$1
+alt() { # alt SWITCH ATTRS-frontend ATTRS-admin [DRY] -> PATCH bodies, WFAIL, then both groups' attributes after
+    ( echo "$2" > "$T/g-frontend"; echo "$3" > "$T/g-admin"; rm -f "$T/calls"; WIRE_DRY=${4:-0}; SW=$1
       env_get() { [[ "$1" == LDAP_APP_PASSWORDS ]] && echo "$SW"; }
       ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
           local g
@@ -1602,7 +1621,7 @@ alt() { # alt SWITCH ATTRS-media-users ATTRS-admins [DRY] -> PATCH bodies, WFAIL
       wfail() { echo "WFAIL $*" >> "$T/calls"; }; ok() { :; }
       wire_authentik_app_password_lifetime >/dev/null 2>&1
       { grep -E '^(PATCH|WFAIL)' "$T/calls" || true; } | sed 's# /core/groups/pk-# #'
-      echo "after=$(cat "$T/g-media-users") $(cat "$T/g-admins")" )
+      echo "after=$(cat "$T/g-frontend") $(cat "$T/g-admin")" )
 }
 L='goauthentik.io/user/token-maximum-lifetime'
 r=$(alt yes '{"theme":"dark"}' '{}')
@@ -1614,14 +1633,14 @@ r=$(alt yes "{\"$L\":\"days=365\"}" "{\"$L\":\"days=365\"}")
 [[ "$r" != *PATCH* && "$r" != *WFAIL* ]] || fail_ "already as wanted: nothing written: $r"; pass
 r=$(alt no '{}' '{}'); [[ "$r" != *PATCH* ]] || fail_ "no and nothing set: nothing written: $r"; pass
 r=$(alt yes '{}' '{}' 1); [[ "$r" != *PATCH* && "$r" != *WFAIL* && "$r" == *"after={} {}" ]] || fail_ "a dry run writes nothing, fails nothing: $r"; pass
-r=$(PATCH_DROP=1 alt yes '{}' '{}'); [[ "$r" == *"WFAIL authentik did not take the app-password lifetime on media-users,admins"* ]] \
+r=$(PATCH_DROP=1 alt yes '{}' '{}'); [[ "$r" == *"WFAIL authentik did not take the app-password lifetime on frontend,admin"* ]] \
     || fail_ "a write not made: a failure naming the groups: $r"; pass
 grep -q 'wire_authentik_app_password_lifetime' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik sets the lifetime"; pass
 grep -q 'authentik_app_passwords_doctor' <(awk '/^_doctor_accounts\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "doctor checks the switch against authentik"; pass
 # doctor: the live step and groups against the switch
 apd() { # apd SWITCH LDAP-BACKENDS-JSON LIFETIME(-|days=365) -> doctor's word
     ( SW=$1 LB=$2 LT=$3; env_get() { [[ "$1" == LDAP_APP_PASSWORDS ]] && echo "$SW"; }
-      authentik_ldap_backends() { echo "$LB"; }; authentik_group_lifetimes() { printf 'media-users\tp1\t%s\nadmins\tp2\t%s\n' "$LT" "$LT"; }
+      authentik_ldap_backends() { echo "$LB"; }; authentik_group_lifetimes() { printf 'frontend\tp1\t%s\nadmin\tp2\t%s\n' "$LT" "$LT"; }
       ok() { echo "OK $*"; }; warn() { echo "WARN $*"; }; d_fail() { echo "FAIL $1"; }; authentik_app_passwords_doctor )
 }
 TB='["authentik.core.auth.InbuiltBackend","authentik.core.auth.TokenBackend"]'; IB='["authentik.core.auth.InbuiltBackend"]'
@@ -1660,8 +1679,11 @@ leak=$(grep -rnE 'svc_enabled (authentik|wizarr)' mediastack.sh lib services --i
         | grep -vE '^lib/access\.sh:[0-9]+:\s+(el)?if svc_enabled (authentik|wizarr); then echo (authentik|wizarr)$' \
         | grep -vE '^mediastack\.sh:[0-9]+:.*authentik_release_record|^lib/lifecycle\.sh:[0-9]+:.*services/authentik/\(blueprints' || true)
 [[ -z "$leak" ]] || fail_ "the account model asked by a service's name (use signin_is): $leak"; pass
-copies=$(grep -rn 'groups_by_name=admins' mediastack.sh lib services --include=*.sh | grep -vc '^services/authentik/' || true)
-[[ "$copies" == 0 ]] || fail_ "the admins lookup is copied outside signin_admins ($copies)"; pass
+copies=$(grep -rn 'groups_by_name=' mediastack.sh lib services --include=*.sh | grep -vc '^services/authentik/' || true)
+[[ "$copies" == 0 ]] || fail_ "the admin group lookup is copied outside signin_admins ($copies)"; pass
+olds=$(grep -rnE "[\"'(\[ ]media-users[\"') ,]|[\"'(\[ ]admins[\"') ,\]]|cn=admins|cn=media-users" mediastack.sh lib services --include=*.sh --include=*.yml \
+       | grep -vE 'lib/migrations\.sh|# |blueprints/' || true)
+[[ -z "$olds" ]] || fail_ "the old group names read in code (use PORTAL_FRONTEND / PORTAL_ADMIN): $olds"; pass
 api=$(grep -rnE '\bak_api\b|wizarr_url|/api/invitations' mediastack.sh lib --include=*.sh || true)
 [[ -z "$api" ]] || fail_ "a sign-in provider's API spoken from lib/ (it belongs in services/authentik or services/wizarr): $api"; pass
 for m in authentik wizarr none; do
@@ -1700,7 +1722,7 @@ grep -q 'hub_notify_url' services/authentik/authentik.sh && ! grep -q '/notify/m
 gd() { # gd OUTPOST-PROVIDERS-JSON APPS-JSON UNBOUND-PK -> doctor's lines
     ( OP=$1 APPS=$2 UNB=$3
       authentik_gated() { echo sonarr; }; authentik_household() { echo navidrome; echo jellyfin; }
-      svc_label() { [[ "$1:$2" == navidrome:mediastack.auth.group ]] && echo media-users; return 0; }
+      svc_label() { [[ "$1:$2" == navidrome:mediastack.auth.group ]] && echo frontend; return 0; }
       ok() { echo "OK $*"; }; warn() { echo "WARN $*"; }; d_fail() { echo "FAIL $1"; }
       ak_api() { case "$1 $2" in
           "GET /outposts/instances/"*) echo "{\"results\":[{\"providers\":$OP}]}" ;;

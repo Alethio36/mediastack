@@ -101,9 +101,9 @@ abs_root_unlink() { # the root account is the stack's, never a portal identity �
     return 0
 }
 
-abs_admin_sync() { # portal-linked accounts follow `admins`; the root account (the stack's) is never touched
+abs_admin_sync() { # portal-linked accounts follow the admin group; the root account (the stack's) is never touched
     local tok="$1" out admins u want
-    out=$(signin_admins) || { wfail "authentik: admins unreadable — Audiobookshelf rights not synced"; return 0; }
+    out=$(signin_admins) || { wfail "authentik: the $PORTAL_ADMIN group is unreadable — Audiobookshelf rights not synced: $(oneline "$out")"; return 0; }
     admins=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
     out=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 0; }
     while IFS= read -r u; do

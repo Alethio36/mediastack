@@ -28,8 +28,10 @@ FD_SSH='ssh -i /config/ssh/id_ed25519 -o UserKnownHostsFile=/config/ssh/known_ho
 
 panel_config_render() { # panel_config_render USER HASH -> config.yaml; both concatenated, never shell-expanded
     # single-quoted YAML: a login's name is letters, digits and . _ - (lib/logins.sh), a hash has no quote
-    _fd_otcfg_head
-    printf "    - username: '%s'\n      usergroup: admins\n      password: '%s'\n" "$1" "$2"
+    # the panel's users and the portal's admin group share one name: the
+    # portal sends a person's groups, and the list below lets that one in
+    _fd_otcfg_head | sed "s/@ADMIN_GROUP@/$PORTAL_ADMIN/g"
+    printf "    - username: '%s'\n      usergroup: %s\n      password: '%s'\n" "$1" "$PORTAL_ADMIN" "$2"
     _fd_otcfg_tail; panel_portal_render
 }
 
@@ -92,13 +94,31 @@ panel_portal_render() { # while the portal runs: the gate's identity headers sig
 # Signed in through the portal: on the panel's route the gate (Traefik asking
 # authentik) replaces these headers on every request, and the panel's network
 # (mediastack-panel) holds only the edge, so no other container can reach the
-# panel to send them. authentik joins a person's groups with "|"; "admins"
-# (the list above) decides. The local admin above stays: without the portal it
+# panel to send them. authentik joins a person's groups with "|"; the
+# portal's admin group (the list above) decides. The local admin above stays: without the portal it
 # is the only way in. Takes effect at OliveTin's start.
 authHttpHeaderUsername: X-authentik-username
 authHttpHeaderUserGroup: X-authentik-groups
 authHttpHeaderUserGroupSep: "|"
 EOF
+}
+
+panel_config_follow() { # wire: the installed config is the one the stack writes today, for the login it holds — so who may use it follows the portal's groups
+    svc_enabled olivetin || return 0
+    local cfg got user hash ctmp
+    cfg="$(env_get CONFIG_ROOT)/olivetin/config.yaml"
+    sudo test -f "$cfg" || return 0   # the panel is not installed
+    got=$(panel_installed_login)
+    [[ -n "$got" ]] || { wfail "the panel's config holds no admin login — ./mediastack.sh frontdoor-install"; return 0; }
+    user=${got%%$'\t'*}; hash=${got#*$'\t'}
+    ctmp=$(mktemp); panel_config_render "$user" "$hash" > "$ctmp"
+    if sudo cmp -s "$ctmp" "$cfg"; then rm -f "$ctmp"; return 0; fi
+    rm -f "$ctmp"
+    # after the groups' rename (Nov 2026) the installed list still named 'admins': every admin shut out
+    w_would "the panel's config follows the stack's (who may use it: the portal's '$PORTAL_ADMIN' group) — one panel restart" || return 0
+    fd_config_write "$hash" "$user"
+    fd_panel_restart
+    ok "the panel's config follows the stack's (its admin, $user, kept)"
 }
 
 panel_signin_check() { # the installed config signs in through the portal, or says how to make it
@@ -123,8 +143,8 @@ showNavigateOnStartIcons: false
 # Everyone must log in; the panel can change the stack, so no guest access.
 authRequireGuestsToLogin: true
 accessControlLists:
-  - name: admins
-    matchUsergroups: [admins]
+  - name: @ADMIN_GROUP@
+    matchUsergroups: [@ADMIN_GROUP@]
     permissions:
       view: true
       exec: true

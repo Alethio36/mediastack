@@ -10,8 +10,8 @@ showNavigateOnStartIcons: false
 # Everyone must log in; the panel can change the stack, so no guest access.
 authRequireGuestsToLogin: true
 accessControlLists:
-  - name: admins
-    matchUsergroups: [admins]
+  - name: admin
+    matchUsergroups: [admin]
     permissions:
       view: true
       exec: true
@@ -22,7 +22,7 @@ authLocalUsers:
   enabled: true
   users:
     - username: '@PANEL-USER@'
-      usergroup: admins
+      usergroup: admin
       password: '@ARGON2ID-HASH@'
 
 # Service lists backing the dropdowns; refreshed on the host by the timer
@@ -281,8 +281,8 @@ dashboards:
 # Signed in through the portal: on the panel's route the gate (Traefik asking
 # authentik) replaces these headers on every request, and the panel's network
 # (mediastack-panel) holds only the edge, so no other container can reach the
-# panel to send them. authentik joins a person's groups with "|"; "admins"
-# (the list above) decides. The local admin above stays: without the portal it
+# panel to send them. authentik joins a person's groups with "|"; the
+# portal's admin group (the list above) decides. The local admin above stays: without the portal it
 # is the only way in. Takes effect at OliveTin's start.
 authHttpHeaderUsername: X-authentik-username
 authHttpHeaderUserGroup: X-authentik-groups

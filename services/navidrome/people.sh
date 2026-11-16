@@ -15,7 +15,7 @@
 # Only accounts the portal was seen behind are touched (recorded in
 # NAVIDROME_PEOPLE); a Navidrome account of its own (made before the portal,
 # or by hand) is reported and left alone, as is the stack's admin. Admin
-# rights follow the portal's `admins` group. Runs in `wire navidrome` and
+# rights follow the portal's admin group. Runs in `wire navidrome` and
 # every 15 minutes (people-sync, mediastack-people.timer).
 # Sourced by the entrypoint; relies on navidrome.sh, the portal's
 # signin_people and the entrypoint's helpers at call time.
@@ -46,6 +46,11 @@ nd_user_change() { # nd_user_change TOKEN USER-JSON JQ-FILTER [jq args...] — w
 navidrome_people_sync() { # navidrome_people_sync TOKEN — Navidrome's people follow the portal (see the top of this file)
     local tok=$1 portal nd stack u name pu st want has why new
     portal=$(signin_people) || { wfail "authentik: its people are unreadable — Navidrome's not checked: $(oneline "$portal")"; return 0; }
+    # admin rights come from a group's name: with no such group (an upgrade
+    # whose rename is not applied yet) nobody would be in it — everyone
+    # demoted, unasked. So rights move only while the group exists.
+    local adm_group; adm_group=$(ak_group_pk "$PORTAL_ADMIN") || adm_group=""
+    [[ -n "$adm_group" ]] || wfail "authentik has no '$PORTAL_ADMIN' group (has the portal's setup applied? ./mediastack.sh doctor) — Navidrome's admin rights left as they are"
     nd=$(nd_api GET /api/user "$tok") || { wfail "navidrome: its users are unreadable: $(oneline "$nd")"; return 0; }
     stack=$(env_get NAVIDROME_ADMIN_USER)
     while IFS= read -r u; do
@@ -60,9 +65,10 @@ navidrome_people_sync() { # navidrome_people_sync TOKEN — Navidrome's people f
                 [[ "$st" == off ]] && ok "navidrome: '$name' is back on the portal — signs in again; their music apps need a new password (set in Navidrome)"
                 (( WIRE_DRY )) || nd_people_set "$name" on
             fi
-            want=$(jq '[.groups_obj[]?.name] | index("admins") != null' <<<"$pu"); has=$(jq '.isAdmin' <<<"$u")
+            [[ -n "$adm_group" ]] || continue
+            want=$(jq --arg g "$PORTAL_ADMIN" '[.groups_obj[]?.name] | index($g) != null' <<<"$pu"); has=$(jq '.isAdmin' <<<"$u")
             [[ "$want" == "$has" ]] && continue
-            w_would "navidrome: '$name' $( [[ $want == true ]] && echo becomes || echo 'is no longer' ) admin (the portal's admins group)" || continue
+            w_would "navidrome: '$name' $( [[ $want == true ]] && echo becomes || echo 'is no longer' ) admin (the portal's $PORTAL_ADMIN group)" || continue
             if why=$(nd_user_change "$tok" "$u" '.isAdmin = $w' --argjson w "$want"); then
                 ok "navidrome: '$name' $( [[ $want == true ]] && echo 'is admin' || echo 'is no longer admin' )"
             else wfail "navidrome: '$name' admin rights — $why"; fi

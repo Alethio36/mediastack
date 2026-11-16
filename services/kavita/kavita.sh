@@ -28,7 +28,7 @@ kav_oidc_want() { # kav_oidc_want LIBRARY-IDS-JSON -> the sign-in settings media
         # it can send mail, so a verified-email requirement would refuse everyone
         provisionAccounts: true, requireVerifiedEmail: false,
         # rights stay Kavita-side: new people get these, wire keeps Admin in
-        # step with the portal admins group, restrictions set in its UI are kept
+        # step with the portal admin group, restrictions set in its UI are kept
         syncUserSettings: false,
         defaultRoles: ["Login", "Download", "Bookmark"],
         defaultLibraries: ($l | sort), defaultAgeRestriction: -1, defaultIncludeUnknowns: true,
@@ -126,9 +126,9 @@ kav_email_move() { # kav_email_move OLD NEW — the Kavita account signed in by 
     ok "kavita: $(jq -r '.username' <<<"$u") now answers to $2 (same account, same reading progress)"
 }
 
-kav_admin_sync() { # portal accounts follow `admins`; the stack's admin and local accounts are never touched
+kav_admin_sync() { # portal accounts follow the admin group; the stack's admin and local accounts are never touched
     local tok="$1" out admins u body want has back
-    out=$(signin_admins) || { wfail "authentik: admins unreadable — Kavita rights not synced"; return 0; }
+    out=$(signin_admins) || { wfail "authentik: the $PORTAL_ADMIN group is unreadable — Kavita rights not synced: $(oneline "$out")"; return 0; }
     admins=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
     # people made through the portal have no confirmed email (authentik cannot
     # vouch for one yet): Kavita lists them only with includePending

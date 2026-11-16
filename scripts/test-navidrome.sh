@@ -67,6 +67,7 @@ nd_api() { # METHOD PATH TOKEN [json]
 nd_user() { jq -cn --arg i "$1" --arg n "$2" --argjson a "${3:-false}" '{id:$i, userName:$n, name:$n, email:"", isAdmin:$a, updatedAt:"before"}'; }
 portal_user() { jq -cn --arg n "$1" --argjson a "$2" --argjson g "${3:-[]}" '{username:$n, is_active:$a, groups_obj:($g | map({name:.}))}'; }
 signin_people() { jq -cn --slurpfile p "$T/portal.ndjson" '{results:$p}'; }
+ak_group_pk() { [[ "$1" == "$PORTAL_ADMIN" && -z "${NO_ADMIN_GROUP:-}" ]] && echo g-adm; return 0; }   # the admin group exists unless a check says not
 fresh() { # fresh — an empty record, nothing called yet
     rm -rf "$T/local" "$T/calls" "$T/puts" "$T/notified"; mkdir -p "$T/local"
     WIRE_FAILS=0; WIRE_DRY=0; WIRE_CHANGES=0
@@ -88,10 +89,10 @@ fresh; out=$(WIRE_DRY=1 ND_HAS_ADMIN='' ND_EMPTY=1 nd_admin_ensure; echo "rc=$?"
 D=$(date +%Y%m%d)
 fresh
 nd_set "$(nd_user 1 admin true)" "$(nd_user 2 Alice)" "$(nd_user 3 bob true)" "$(nd_user 4 carol)" "$(nd_user 5 dave)"
-portal_set "$(portal_user alice true '["media-users","admins"]')" "$(portal_user bob true '["media-users"]')" "$(portal_user carol true)"
+portal_set "$(portal_user alice true '["frontend","admin"]')" "$(portal_user bob true '["frontend"]')" "$(portal_user carol true)"
 navidrome_people_sync tok-1 > "$T/out"
 [[ "$(sort "$NAVIDROME_PEOPLE" | cut -f1,2 | tr '\t\n' ': ')" == "Alice:on bob:on carol:on " ]] || fail_ "the portal's people recorded, any case: $(cat "$NAVIDROME_PEOPLE")"; pass
-[[ "$(user_field Alice isAdmin) $(user_field bob isAdmin)" == "true false" ]] || fail_ "admin rights follow the admins group, both ways"; pass
+[[ "$(user_field Alice isAdmin) $(user_field bob isAdmin)" == "true false" ]] || fail_ "admin rights follow the admin group, both ways"; pass
 grep -qF "'dave' is not tied to a portal account" "$T/out" && [[ "$(user_field admin isAdmin)" == true ]] || fail_ "dave (never on the portal) and the stack's admin: left alone"; pass
 ! grep -qF "'admin'" "$T/out" || fail_ "the stack's admin is not even looked at: $(grep -F "'admin'" "$T/out")"; pass
 [[ "$(wc -l < "$T/puts")" == 2 && "$WIRE_FAILS" == 0 ]] || fail_ "two writes, no failure: $(cat "$T/puts")"; pass
@@ -99,7 +100,7 @@ grep -qF "'dave' is not tied to a portal account" "$T/out" && [[ "$(user_field a
 # bob deactivated, carol deleted
 fresh_keep() { rm -f "$T/calls" "$T/puts" "$T/notified"; WIRE_FAILS=0; WIRE_DRY=0; }
 fresh_keep
-portal_set "$(portal_user alice true '["admins"]')" "$(portal_user bob false '["media-users"]')"
+portal_set "$(portal_user alice true '["admin"]')" "$(portal_user bob false '["frontend"]')"
 WIRE_DRY=1 navidrome_people_sync tok-1 > "$T/out"
 [[ ! -e "$T/puts" && "$(nd_people_get bob)" == on ]] && grep -qF "would: navidrome: 'bob' (portal account deactivated)" "$T/out" \
     || fail_ "a dry run says what it would do and writes nothing"; pass
@@ -117,12 +118,12 @@ fresh_keep; navidrome_people_sync tok-1 > "$T/out"
 [[ ! -e "$T/puts" ]] && ! grep -q "removed-carol" "$T/out" || fail_ "the next run: nothing written again, the renamed account not looked at"; pass
 
 # bob comes back
-fresh_keep; portal_set "$(portal_user alice true '["admins"]')" "$(portal_user bob true '["media-users"]')"
+fresh_keep; portal_set "$(portal_user alice true '["admin"]')" "$(portal_user bob true '["frontend"]')"
 navidrome_people_sync tok-1 > "$T/out"
 [[ "$(nd_people_get bob)" == on && ! -e "$T/puts" ]] && grep -qF "'bob' is back on the portal" "$T/out" || fail_ "reactivated: recorded again, nothing written"; pass
 
 # a write that does not hold
-fresh_keep; portal_set "$(portal_user alice true '["admins"]')" "$(portal_user bob false)"
+fresh_keep; portal_set "$(portal_user alice true '["admin"]')" "$(portal_user bob false)"
 ND_IGNORE=1 navidrome_people_sync tok-1 > "$T/out"
 [[ "$WIRE_FAILS" == 1 && "$(nd_people_get bob)" == on ]] && grep -qF "'bob' (portal account deactivated) still plays music — it answered, but the change did not hold" "$T/out" \
     || fail_ "a change that did not hold: a failure, nothing recorded: $(cat "$T/out")"; pass
@@ -176,4 +177,12 @@ jq -e '.password == "NEWPW" and .currentPassword == "OLDPW" and .id == "u1" and 
 [[ "$(nr no no)" == "rc=1 env=OLDPW" ]] || fail_ "navidrome: the new password refused: nothing changed: $(nr no no)"; pass
 [[ "$(nr ok yes)" == "rc=1 env=NEWPW" ]] || fail_ "navidrome: the old password still signs in: a failure said: $(nr ok yes)"; pass
 
+# the admin group missing (an upgrade whose rename is not applied yet): nobody demoted, said
+signin_people() { jq -cn --slurpfile p "$T/portal.ndjson" '{results:$p}'; }   # readable again (a check above made it fail)
+fresh
+nd_set "$(nd_user 1 admin true)" "$(nd_user 2 Alice true)" "$(nd_user 3 bob)"
+portal_set "$(portal_user alice true '["media-users","admins"]')" "$(portal_user bob true '["media-users"]')"
+NO_ADMIN_GROUP=1 navidrome_people_sync tok-1 > "$T/out"
+[[ "$(user_field Alice isAdmin)" == true && ! -s "$T/puts" && "$WIRE_FAILS" == 1 ]] && grep -qF "authentik has no '$PORTAL_ADMIN' group" "$T/out" \
+    || fail_ "no admin group: admin rights left as they are, a failure says why: fails=$WIRE_FAILS puts=$(cat "$T/puts" 2>/dev/null) $(cat "$T/out")"; pass
 echo "OK navidrome: $checks checks"

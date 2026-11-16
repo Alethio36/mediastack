@@ -26,14 +26,14 @@ container starts:
 
 Reach it over HTTPS via Traefik at `https://${OLIVETIN_HOST:-panel}.<your
 domain>` on the LAN, and log in as the panel admin `credentials` shows (with
-the portal, admins sign in through it; that login is the way in without it).
+the portal, its `admin` group signs in through it; that login is the way in without it).
 
 With the portal (authentik), there is no second login: the gate signs you in.
 The panel trusts the portal's identity headers (`X-authentik-username`,
 `X-authentik-groups`) while the portal runs — the gate replaces them on every
 request — and it sits on its own network, `mediastack-panel`, which only the
 edge (Traefik or NPM) joins, so no other container can reach it to send them.
-Members of `admins` get every button. The local `admin` login stays as the way
+Members of `admin` get every button. The local `admin` login stays as the way
 in without the portal. A change of account model takes effect after
 `./mediastack.sh frontdoor-install` (it restarts the panel); `wire authentik`
 says when it is still needed.

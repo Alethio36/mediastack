@@ -4,8 +4,8 @@
 #
 # Household members are INTERNAL users without admin rights: authentik shows
 # its app dashboard to internal users only (external users are sent to one
-# default app). They join by invitation and land in `media-users`; `admins`
-# is the group the gate lets into the admin tools.
+# default app). They join by invitation and land in `frontend`; `admin`
+# is the group the gate lets into the admin tools (and everything frontend has).
 version: 1
 metadata:
   name: Mediastack - Portal
@@ -60,16 +60,38 @@ entries:
         - authentik.sources.ldap.auth.LDAPBackend
 
   # -- groups -------------------------------------------------------------
+  # Renamed in Nov 2026 (media-users -> frontend, admins -> admin), in place:
+  # while a group by the old name exists, it is renamed (the same group: its
+  # members, bindings and attributes stay); then the entry by the new name
+  # finds it. A fresh install skips the rename. Entries apply in order, in
+  # one transaction (authentik's importer). Names: PORTAL_FRONTEND and
+  # PORTAL_ADMIN in services/authentik/authentik.sh (a test holds them equal).
   - model: authentik_core.group
-    id: group-media-users
+    id: group-rename-media-users
+    conditions:
+      - !Find [authentik_core.group, [name, media-users]]
     identifiers:
       name: media-users
     attrs:
-      is_superuser: false
+      name: frontend
   - model: authentik_core.group
-    id: group-admins
+    id: group-rename-admins
+    conditions:
+      - !Find [authentik_core.group, [name, admins]]
     identifiers:
       name: admins
+    attrs:
+      name: admin
+  - model: authentik_core.group
+    id: group-frontend
+    identifiers:
+      name: frontend
+    attrs:
+      is_superuser: false
+  - model: authentik_core.group
+    id: group-admin
+    identifiers:
+      name: admin
     attrs:
       is_superuser: false
 
@@ -223,7 +245,7 @@ entries:
       user_creation_mode: always_create
       user_type: internal
       user_path_template: users/household
-      create_users_group: !KeyOf group-media-users
+      create_users_group: !KeyOf group-frontend
   - model: authentik_stages_user_login.userloginstage
     id: stage-login
     identifiers:
@@ -427,7 +449,7 @@ entries:
   # Traefik asks authentik (the forward-auth provider, attached to the
   # built-in outpost by `wire authentik`) about every request to a route
   # marked mediastack.auth: gate. Domain-wide: one login covers them all; the
-  # application's binding lets `admins` through and nobody else.
+  # application's binding lets `admin` through and nobody else.
   - model: authentik_providers_proxy.proxyprovider
     id: provider-gate
     identifiers:
@@ -451,7 +473,7 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf app-gate
-      group: !KeyOf group-admins
+      group: !KeyOf group-admin
       order: 0
 
   # -- LDAP: how Jellyfin checks a password -------------------------------
@@ -459,7 +481,7 @@ entries:
   # the shard). Binds run a flow with no MFA step — TV and phone apps send a
   # username and password and cannot answer a prompt — throttled against
   # password guessing. Only the search account may list the directory; only
-  # media-users and admins may bind.
+  # frontend and admin may bind.
   #
   # The throttle: authentik keeps a score per person AND address, -1 for a
   # failed sign-in, +1 for a good one, floored at -5. Every bind arrives from
@@ -606,12 +628,12 @@ entries:
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf app-ldap
-      group: !KeyOf group-media-users
+      group: !KeyOf group-frontend
       order: 0
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf app-ldap
-      group: !KeyOf group-admins
+      group: !KeyOf group-admin
       order: 1
   - model: authentik_policies.policybinding
     identifiers:
@@ -725,7 +747,7 @@ entries:
       name: mediastack-jellyfin-lockout
     attrs:
       severity: warning
-      destination_group: !KeyOf group-admins
+      destination_group: !KeyOf group-admin
   - model: authentik_policies.policybinding
     identifiers:
       policy: !KeyOf policy-lockout-event

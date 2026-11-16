@@ -230,7 +230,7 @@ service needs is refused with an explanation.
 | seerr | request/discovery site for your users |
 | bazarr | subtitle automation |
 | wizarr | invitation links — "set up my account" becomes a URL (the simple account model; each app keeps its own accounts) |
-| authentik | the portal (`portal.<domain>`): one login for every app, sign-up by invitation, groups as permissions (the full account model — authentik *or* Wizarr, never both). Its own PostgreSQL and worker run in the same shard; the admin login is in `credentials`. It is also the **gate**: a web interface marked `mediastack.auth: gate` (so far the panel and Apprise) asks the portal first, and only the `admins` group gets through — see "The gate" below |
+| authentik | the portal (`portal.<domain>`): one login for every app, sign-up by invitation, groups as permissions (the full account model — authentik *or* Wizarr, never both). Its own PostgreSQL and worker run in the same shard; the admin login is in `credentials`. It is also the **gate**: a web interface marked `mediastack.auth: gate` (every admin tool, the panel and Apprise) asks the portal first, and only the `admin` group (or someone given that app) gets through — see "The gate" below |
 | apprise | one notification hub for the whole stack (ops/users) |
 | cleanuparr | strikes stalled downloads, cleans the queue |
 | watchstate | syncs + backs up per-user watch state across media servers |
@@ -725,7 +725,7 @@ serves, lidarr owns the files. Its first account is the stack's own admin:
 portal, that admin adds people in Navidrome (Settings → Users). With the
 portal, nobody creates one: the portal signs people in and Navidrome makes
 their account on the first visit (see "The portal and the gate"); admin
-rights follow the portal's `admins` group. Their music apps sign in with
+rights follow the portal's `admin` group. Their music apps sign in with
 their Navidrome password, which each person sets once in Navidrome's own
 change-password form (Navidrome has no separate app password; the
 current-password field stays blank — nobody ever chose the first one). The
@@ -758,9 +758,12 @@ state lives here, and two instances means two divergent truths.
 With authentik enabled, `portal.<domain>` is where your users join (by
 invitation: `./mediastack.sh invite`, or `invite --email <address>` to have the
 portal send it) and log in; its dashboard shows each person
-the apps they may use. Two groups decide access: `media-users` (everyone who
-joins) and `admins` (you — `wire authentik` puts the first admin there; add
-others in authentik's Directory → Groups). Sign-up refuses a username the
+the apps they may use. Two groups decide access: `frontend` (everyone who
+joins) and `admin` (you — `wire authentik` puts the first admin there; add
+others in authentik's Directory → Groups; before Nov 2026 they were named
+`media-users` and `admins` — an upgrade renames them in place, members and
+access kept; a group changed by hand there ends nobody's session, so end the
+person's sessions too: Directory → Users → the person → Sessions). Sign-up refuses a username the
 apps would confuse: the stack's own accounts there (Audiobookshelf's root,
 Jellyfin's local admin) and an existing person's name in a different case.
 The sign-in page has a show-password button, so a mistyped password can be
@@ -800,7 +803,7 @@ accounts to the portal one — same accounts, so watch history, reading and
 listening progress and Seerr requests stay. You pick which local account is
 theirs in each app (never guessed from a name or an email) and confirm a plan
 that says what changes, including admin rights: those follow the portal's
-`admins` group from then on, so put them there first to keep them. Jellyfin
+`admin` group from then on, so put them there first to keep them. Jellyfin
 and Kavita are done at once; Audiobookshelf's own API cannot link an account,
 so for one sign-in it matches by username — only after checking no other
 account could be claimed that way, and closed again as soon as they sign in
@@ -809,17 +812,17 @@ account could be claimed that way, and closed again as soon as they sign in
 The **gate**: every web interface declares who logs it in —
 `mediastack.auth: gate` (behind the portal), `native` (its own login) or `open`.
 A gated interface's domain address asks the portal first: not logged in → the
-portal's login, then straight back; logged in but not in `admins` → refused.
+portal's login, then straight back; logged in but not in `admin` → refused.
 Each gated app has a gate of its own — an authentik provider for its one
-address, with its dashboard card saying who may open it (`admins` and
+address, with its dashboard card saying who may open it (`admin` and
 `app-<svc>` for a tool) — and the domain-wide gate stays behind them as the
-catch-all: an address without a gate of its own admits admins only. `doctor`
+catch-all: an address without a gate of its own admits `admin` only. `doctor`
 fails a card of ours that has a gate but no rule (authentik would let everyone
 signed in through it).
 Gated: the panel, Apprise, every admin tool (the arrs, Prowlarr, Bazarr, the
 download clients, LazyLibrarian, Cleanuparr, WatchState, Pi-hole, ErsatzTV) and
 Traefik's dashboard. Navidrome sits behind a *household* gate: anyone in
-`media-users` gets in, and the portal tells Navidrome who they are (it creates
+`frontend` gets in, and the portal tells Navidrome who they are (it creates
 them on their first visit); music apps use `/rest/` with a password each user
 sets once in Navidrome's settings, taken back when their portal account goes
 (see "Music (Navidrome)"). The panel needs no login of its own past
@@ -832,11 +835,11 @@ your LAN — the first `up` after the change recreates the network once). Your
 household apps appear on everyone's dashboard under Media.
 
 Jellyfin checks passwords against the portal (LDAP, through Traefik on
-`ldap.<domain>`, reachable from the stack only): anyone in `media-users` or
-`admins` signs in to Jellyfin — the web, the TV and phone apps — with their
+`ldap.<domain>`, reachable from the stack only): anyone in `frontend` or
+`admin` signs in to Jellyfin — the web, the TV and phone apps — with their
 portal username and password, and gets a Jellyfin account with every library on
 their first sign-in. `wire jellyfin` sets this up (one Jellyfin restart) and
-keeps Jellyfin administrator rights in step with the portal's `admins` group.
+keeps Jellyfin administrator rights in step with the portal's `admin` group.
 The stack's own Jellyfin admin (in `credentials`) stays a local account: it is
 what the script uses, and your way in if the portal is ever down.
 
@@ -887,7 +890,7 @@ Audiobookshelf app signs in the same way. `wire audiobookshelf` does its first
 run itself — the root account it creates is the stack's own (in `credentials`,
 also the way in if the portal is down; its name is the stack's username,
 which the portal refuses to anyone joining) — sets up the sign-in, and keeps admin
-rights in step with the portal's `admins` group. An Audiobookshelf set up by
+rights in step with the portal's `admin` group. An Audiobookshelf set up by
 hand is never taken over: put its root login in `.env`, or start it fresh
 (wire prints how). Its libraries are yours to add in its UI.
 
@@ -896,7 +899,7 @@ account is made on the first sign-in, and `wire kavita` does its first run
 (the stack's own admin, whose password form is behind
 `https://books.<domain>/login?skipAutoLogin=true`, in `credentials`), sets up
 the sign-in (one Kavita restart, the household warned) and keeps admin rights
-in step with `admins`. New people get every library that exists when they
+in step with `admin`. New people get every library that exists when they
 first sign in; a library added later reaches existing people only when you
 grant it in Kavita (Settings → Users) — `doctor` lists who lacks one, and wire
 never changes anyone's access, so restrictions you set there stay. Kavita

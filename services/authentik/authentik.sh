@@ -27,8 +27,17 @@ signin_people() { # -> every portal account (authentik's user-list JSON); rc != 
     ak_api GET "/core/users/?page_size=1000"
 }
 
-signin_admins() { # -> the portal's admins group members (authentik's user-list JSON); rc != 0 when unreadable
-    ak_api GET "/core/users/?groups_by_name=admins&page_size=500"
+# The portal's two groups (docs/design-access.md): the household, and its
+# admins, who have everything the household has and the tools. Renamed from
+# media-users / admins in Nov 2026, in place by the blueprint (which writes
+# them out; a test holds the two equal). Every reader goes through these.
+PORTAL_FRONTEND="frontend"
+PORTAL_ADMIN="admin"
+
+signin_admins() { # -> the portal's admin group's members (authentik's user-list JSON); rc != 0 when unreadable
+    # an unknown group name is refused (400), never answered with nobody:
+    # a sync reading this cannot take everyone's admin rights away
+    ak_api GET "/core/users/?groups_by_name=$PORTAL_ADMIN&page_size=500"
 }
 
 authentik_secrets_make() { # generate what is missing — never over a database that already exists
@@ -404,7 +413,7 @@ authentik_gated() { # the enabled admin tools behind the gate (mediastack.auth: 
     return 0
 }
 
-authentik_household() { # the enabled household apps (mediastack.user_facing) — each gets a card for media-users
+authentik_household() { # the enabled household apps (mediastack.user_facing) — each gets a card for the household
     local s
     for s in $(svc_enabled_managed); do
         [[ "$(svc_label "$s" mediastack.user_facing)" == true ]] && echo "$s"
@@ -618,9 +627,9 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
                 "their host ports are not bound to 127.0.0.1 yet" "./mediastack.sh up"   # addr-ok: host bind, not app-to-app
             if [[ -n "$(authentik_gated)" ]]; then
                 local hg=""; for g in $(authentik_household); do [[ -n "$(svc_label "$g" mediastack.auth.group)" ]] && hg+="$g "; done
-                [[ -n "$hg" ]] && ok "authentik: household gate — ${hg}ask the portal first (media-users and admins)"
+                [[ -n "$hg" ]] && ok "authentik: household gate — ${hg}ask the portal first ($PORTAL_FRONTEND and $PORTAL_ADMIN)"
                 authentik_app_gates_doctor
-                if authentik_gate_attached; then ok "authentik: the gate is up — $(authentik_gated | tr '\n' ' ')ask the portal first (admins only)"
+                if authentik_gate_attached; then ok "authentik: the gate is up — $(authentik_gated | tr '\n' ' ')ask the portal first ($PORTAL_ADMIN only)"
                 else d_fail "authentik: the gate is not on its built-in outpost" "routes marked gate ($(authentik_gated | tr '\n' ' '| sed 's/ $//')) refuse everyone" "./mediastack.sh wire authentik"; fi
                 local oh; oh=$(authentik_outpost_host_get || echo "(unreadable)")
                 if [[ "$oh" == "$(authentik_portal)" ]]; then ok "authentik: the gates send sign-ins to $oh"
@@ -703,7 +712,7 @@ wire_authentik() {
         sudo docker restart "$(svc_cname authentik-ldap)" >/dev/null && ok "authentik: LDAP outpost restarted on the new setup (its bind cache cleared)"
     fi
     case "$st" in
-        successful) if (( applied )) || [[ -z "$why" ]]; then ok "authentik: mediastack's portal setup applied (media-users, admins, sign-up by invitation)"; fi ;;
+        successful) if (( applied )) || [[ -z "$why" ]]; then ok "authentik: mediastack's portal setup applied ($PORTAL_FRONTEND, $PORTAL_ADMIN, sign-up by invitation)"; fi ;;
         "") if (( WIRE_DRY )); then info "authentik: mediastack's portal setup not discovered yet — the real run waits for it"
             else wfail "authentik: mediastack's portal setup was not discovered within $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes — ./mediastack.sh logs authentik --no-follow | grep -i blueprint"; fi
             return 0 ;;
@@ -719,6 +728,7 @@ wire_authentik() {
     wire_authentik_app_password_lifetime
     wire_authentik_lockout_alerts
     wire_authentik_gate
+    panel_config_follow
     panel_signin_check
 }
 
@@ -838,7 +848,7 @@ wire_authentik_web_tokens() { # the portal's website refuses app passwords (docs
 
 AUTHENTIK_TOKEN_LIFETIME_ATTR=goauthentik.io/user/token-maximum-lifetime   # a group's: the longest an app password its people make may last
 AUTHENTIK_APP_PASSWORD_LIFETIME=days=365   # with LDAP_APP_PASSWORDS=yes; authentik's own limit is a day
-AUTHENTIK_APP_PASSWORD_GROUPS=(media-users admins)
+AUTHENTIK_APP_PASSWORD_GROUPS=("$PORTAL_FRONTEND" "$PORTAL_ADMIN")
 authentik_group_lifetimes() { # -> "NAME<TAB>PK<TAB>LIFETIME" per group in AUTHENTIK_APP_PASSWORD_GROUPS (LIFETIME "-" when unset); rc 1 unreadable or a group missing
     local g out line
     for g in "${AUTHENTIK_APP_PASSWORD_GROUPS[@]}"; do
@@ -963,7 +973,7 @@ authentik_recovery_refresh() { # outside wire (email test, configure): the reset
     wire_authentik_recovery
 }
 
-wire_authentik_gate() { # the gate on the built-in outpost, the first admin in `admins`, the dashboard cards
+wire_authentik_gate() { # the gate on the built-in outpost, the first admin in the admin group, the dashboard cards
     # 1. the gate's provider on the built-in outpost — added to what is there, never replacing it
     local out prov
     out=$(ak_api GET "/providers/proxy/?name__iexact=mediastack-gate") || { wfail "authentik: gate provider unreadable"; return 0; }
@@ -973,16 +983,16 @@ wire_authentik_gate() { # the gate on the built-in outpost, the first admin in `
     else authentik_outpost_add "$prov" "the gate" || true; fi   # a failure is counted (wfail); the step goes on
     # 1b. where that outpost sends browsers to sign in
     authentik_outpost_host
-    # 2. the first admin joins `admins` once — after that, membership is yours to manage
-    if [[ -z "$(state_get AUTHENTIK_ADMINS_SEEDED)" ]] && w_would "authentik: put akadmin in 'admins' (the gate lets admins through)"; then
+    # 2. the first admin joins the admin group once — after that, membership is yours to manage
+    if [[ -z "$(state_get AUTHENTIK_ADMINS_SEEDED)" ]] && w_would "authentik: put akadmin in '$PORTAL_ADMIN' (the gate lets admins through)"; then
         local g u
-        g=$(ak_api GET "/core/groups/?search=admins") && g=$(jq -r '[.results[] | select(.name == "admins") | .pk][0] // empty' <<<"$g")
+        g=$(ak_group_pk "$PORTAL_ADMIN")
         u=$(ak_api GET "/core/users/?username=akadmin") && u=$(jq -r '.results[0].pk // empty' <<<"$u")
         if [[ -n "$g" && -n "$u" ]] && ak_api POST "/core/groups/$g/add_user/" "$(jq -cn --argjson u "$u" '{pk:$u}')" >/dev/null; then
-            state_set AUTHENTIK_ADMINS_SEEDED 1; ok "authentik: akadmin is in 'admins'"
-        else wfail "authentik: could not add akadmin to 'admins'"; fi
+            state_set AUTHENTIK_ADMINS_SEEDED 1; ok "authentik: akadmin is in '$PORTAL_ADMIN'"
+        else wfail "authentik: could not add akadmin to '$PORTAL_ADMIN'"; fi
     fi
-    # 3. dashboard cards: admin tools (admins), household apps (media-users) — slugs mediastack-*: ours
+    # 3. dashboard cards: admin tools (the admin group), household apps (the household) — slugs mediastack-*: ours
     wire_authentik_cards
     # 4. the LDAP outpost's token: the outpost can only start with it
     wire_authentik_ldap_token
@@ -1064,7 +1074,7 @@ authentik_app_gates_doctor() { # doctor: each gated app on its own gate; none of
         "an application with no binding lets everyone signed in to the portal through" "./mediastack.sh wire authentik"
     if [[ -n "$missing" ]]; then
         d_fail "authentik: not on a gate of their own: ${missing% }" \
-            "the admin gate decides for them instead: admins only — the household is refused a household app" "./mediastack.sh wire authentik"
+            "the admin gate decides for them instead: $PORTAL_ADMIN only — the household is refused a household app" "./mediastack.sh wire authentik"
     else ok "authentik: every gated app has a gate of its own, its card saying who may open it"; fi
 }
 
@@ -1176,14 +1186,14 @@ ak_card_prune() { # ak_card_prune ALL PREFIX WANTED... — cards mediastack made
     done
 }
 
-wire_authentik_cards() { # every gated app its own gate and card; household apps for media-users (and admins); ours only, by slug prefix
+wire_authentik_cards() { # every gated app its own gate and card; household apps for the household (and admins); ours only, by slug prefix
     local all adm mu s prov
     all=$(ak_api GET "/core/applications/?superuser_full_list=true&page_size=500") || { wfail "authentik: applications unreadable"; return 0; }
-    adm=$(ak_group_pk admins); mu=$(ak_group_pk media-users)
-    [[ -n "$adm" && -n "$mu" ]] || { wfail "authentik: groups 'admins'/'media-users' missing (the blueprint creates them)"; return 0; }
+    adm=$(ak_group_pk "$PORTAL_ADMIN"); mu=$(ak_group_pk "$PORTAL_FRONTEND")
+    [[ -n "$adm" && -n "$mu" ]] || { wfail "authentik: groups '$PORTAL_ADMIN'/'$PORTAL_FRONTEND' missing (the blueprint makes them — has it applied? ./mediastack.sh doctor)"; return 0; }
     for s in $(authentik_gated); do ak_app_gate "$all" "$s" "Admin tools" "$adm"; done
     for s in $(authentik_household); do
-        # a household app behind the household gate: its own gate, for media-users and admins
+        # a household app behind the household gate: its own gate, for the household and its admins
         if [[ -n "$(svc_label "$s" mediastack.auth.group)" ]]; then ak_app_gate "$all" "$s" Media "$mu" "$adm"; continue; fi
         # an app that logs in through OIDC: its card is the provider's application
         local op; op=$(ak_api GET "/providers/oauth2/?client_id=mediastack-$s") || { wfail "authentik: providers unreadable"; continue; }

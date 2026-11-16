@@ -33,7 +33,7 @@ cmd_credentials() {
     printf '%-22s %s\n' "Traefik dash password" "$(env_or_note TRAEFIK_DASH_PASSWORD '(traefik not configured)')"
     printf '%-22s %s\n' "Jellyfin admin user"   "$(env_or_note JELLYFIN_ADMIN_USER '(not set — run wire)')"
     printf '%-22s %s\n' "Jellyfin admin password" "$(env_or_note JELLYFIN_ADMIN_PASSWORD '(not set — run wire)')"
-    signin_is authentik && info "With the portal, that Jellyfin admin is the stack's own local account (and the emergency login) — people sign in with their portal accounts; admins get Jellyfin administrator rights from the portal's 'admins' group."
+    signin_is authentik && info "With the portal, that Jellyfin admin is the stack's own local account (and the emergency login) — people sign in with their portal accounts; Jellyfin administrator rights follow the portal's $PORTAL_ADMIN group."
     printf '%-22s %s\n' "Jellyfin API key"      "$(env_or_note JELLYFIN_API_KEY '(not set — run wire jellyfin)')"
     if svc_enabled audiobookshelf; then
         printf '%-22s %s\n' "Audiobookshelf root"   "$(env_or_note ABS_ADMIN_USER '(not set — run wire audiobookshelf)')"
@@ -48,12 +48,12 @@ cmd_credentials() {
     if svc_enabled navidrome; then
         printf '%-22s %s\n' "Navidrome admin"       "$(env_or_note NAVIDROME_ADMIN_USER '(not set — run wire navidrome)')"
         printf '%-22s %s\n' "Navidrome admin pw"    "$(env_or_note NAVIDROME_ADMIN_PASSWORD '(not set — run wire navidrome)')"
-        signin_is authentik && info "With the portal, that Navidrome admin is the stack's own (used on this host only) — people sign in through the portal; admins get Navidrome admin rights from the portal's 'admins' group."
+        signin_is authentik && info "With the portal, that Navidrome admin is the stack's own (used on this host only) — people sign in through the portal; Navidrome admin rights follow the portal's $PORTAL_ADMIN group."
     fi
     if svc_enabled olivetin; then
         printf '%-22s %s\n' "Panel admin"           "$(env_or_note PANEL_ADMIN_USER '(not set — run frontdoor-install)')"
         printf '%-22s %s\n' "Panel admin pw"        "$(env_or_note PANEL_ADMIN_PASSWORD '(not set — run frontdoor-install)')"
-        signin_is authentik && info "With the portal, admins sign in to the panel through it — that panel admin is the way in without the portal."
+        signin_is authentik && info "With the portal, the admin group signs in to the panel through it — that panel admin is the way in without the portal."
     fi
     if signin_is authentik; then
         printf '%-22s %s\n' "Portal admin user"     "akadmin"

@@ -218,9 +218,9 @@ WantedBy=timers.target
 EOF
 }
 
-fd_config_write() { # fd_config_write HASH — the panel's config.yaml from the PANEL table and .env's admin, owned as the install leaves it; FD_CFG_CHANGED=1 when it differs
+fd_config_write() { # fd_config_write HASH [USER] — the panel's config.yaml from the PANEL table and its admin (.env's unless named), owned as the install leaves it; FD_CFG_CHANGED=1 when it differs
     local cfg ctmp; cfg="$(env_get CONFIG_ROOT)/olivetin/config.yaml"; ctmp=$(mktemp)
-    panel_config_render "$(env_get PANEL_ADMIN_USER)" "$1" > "$ctmp"
+    panel_config_render "${2:-$(env_get PANEL_ADMIN_USER)}" "$1" > "$ctmp"
     FD_CFG_CHANGED=0; sudo cmp -s "$ctmp" "$cfg" 2>/dev/null || FD_CFG_CHANGED=1
     sudo install -m 0640 -o "$FRONTDOOR_USER" -g "$FRONTDOOR_USER" "$ctmp" "$cfg"; rm -f "$ctmp"
 }
@@ -414,7 +414,7 @@ cmd_frontdoor_install() {
         if svc_enabled traefik; then url="https://$(svc_subdomain olivetin).<your domain> — once ./mediastack.sh up has set up Traefik"
         else url="none — the panel is served through Traefik: ./mediastack.sh enable traefik"; fi
     fi
-    if signin_is authentik; then signin="Sign in through the portal (admins); its own admin, $(env_get PANEL_ADMIN_USER), is the way in without it."
+    if signin_is authentik; then signin="Sign in through the portal ($PORTAL_ADMIN group); its own admin, $(env_get PANEL_ADMIN_USER), is the way in without it."
     else signin="Log in as $(env_get PANEL_ADMIN_USER) — its password: ./mediastack.sh credentials (change it: set-credentials panel)."; fi
     cat <<EOT
 Bring it up:   ./mediastack.sh up        (starts the 'olivetin' container)

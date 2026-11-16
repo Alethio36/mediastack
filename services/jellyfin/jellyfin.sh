@@ -83,12 +83,13 @@ jf_ldap_want() { # the LDAP plugin's settings mediastack manages, as JSON (the r
     host="$(env_get AUTHENTIK_LDAP_HOST).$(env_get STACK_DOMAIN)"
     # a staging certificate is not trusted inside Jellyfin: checking waits for a trusted one
     certs_trusted || skip=true
-    jq -cn --arg host "$host" --arg dn "$dn" --arg pw "$(env_get AUTHENTIK_LDAP_BIND_PASSWORD)" --argjson skip "$skip" '{
+    jq -cn --arg host "$host" --arg dn "$dn" --arg pw "$(env_get AUTHENTIK_LDAP_BIND_PASSWORD)" --argjson skip "$skip" \
+        --arg fe "$PORTAL_FRONTEND" --arg ad "$PORTAL_ADMIN" '{
         LdapServer: $host, LdapPort: 443, UseSsl: true, UseStartTls: false, SkipSslVerify: $skip,
         LdapBindUser: ("cn=mediastack-ldap-search,ou=users," + $dn), LdapBindPassword: $pw,
         LdapBaseDn: $dn, LdapAdminBaseDn: $dn,
-        LdapSearchFilter: ("(|(memberOf=cn=media-users,ou=groups," + $dn + ")(memberOf=cn=admins,ou=groups," + $dn + "))"),
-        LdapAdminFilter: ("(memberOf=cn=admins,ou=groups," + $dn + ")"),
+        LdapSearchFilter: ("(|(memberOf=cn=" + $fe + ",ou=groups," + $dn + ")(memberOf=cn=" + $ad + ",ou=groups," + $dn + "))"),
+        LdapAdminFilter: ("(memberOf=cn=" + $ad + ",ou=groups," + $dn + ")"),
         LdapSearchAttributes: "uid, cn, mail, displayName", LdapUidAttribute: "uid", LdapUsernameAttribute: "cn",
         CreateUsersFromLdap: true, EnableAllFolders: true, AllowPassChange: false }'
 }
@@ -102,18 +103,18 @@ jf_ldap_configure() { # point the LDAP plugin at authentik's outpost — only th
         ok "LDAP plugin points at the portal ($(jq -r '.LdapServer' <<<"$want"), certificate checking $( [[ "$(jq -r '.SkipSslVerify' <<<"$want")" == true ]] && echo "off until production certificates" || echo on))"
         return 0
     fi
-    w_would "point Jellyfin's LDAP plugin at the portal: $(jq -r '.LdapServer' <<<"$want"):443 (LDAPS), media-users and admins may sign in, new users get every library" || return 0
+    w_would "point Jellyfin's LDAP plugin at the portal: $(jq -r '.LdapServer' <<<"$want"):443 (LDAPS), $PORTAL_FRONTEND and $PORTAL_ADMIN may sign in, new users get every library" || return 0
     merged=$(jq -c --argjson w "$want" '. + $w' <<<"$cur")
     jf_api POST "/Plugins/$JF_LDAP_GUID/Configuration" "$tok" "$merged" >/dev/null \
         && ok "LDAP plugin configured — portal accounts sign in to Jellyfin (created on their first sign-in)" \
         || wfail "Jellyfin rejected the LDAP plugin's settings [HTTP $(jf_code)]"
 }
 
-jf_admin_sync() { # directory users in authentik's `admins` are Jellyfin administrators; other directory users are not
+jf_admin_sync() { # directory users in the portal's admin group are Jellyfin administrators; other directory users are not
     # (the plugin sets this only when it creates a user). Local accounts — the
     # stack's own admin above all — are never touched.
     local tok="$1" out admins users u name id pol want
-    out=$(signin_admins) || { wfail "authentik: admins unreadable — Jellyfin admin rights not synced"; return 1; }
+    out=$(signin_admins) || { wfail "authentik: the $PORTAL_ADMIN group is unreadable — Jellyfin admin rights not synced: $(oneline "$out")"; return 1; }
     admins=" $(jq -r '[.results[].username] | join(" ")' <<<"$out") "
     users=$(jf_api GET /Users "$tok") || { wfail "could not list jellyfin users [HTTP $(jf_code)]"; return 1; }
     while IFS= read -r u; do
@@ -121,7 +122,7 @@ jf_admin_sync() { # directory users in authentik's `admins` are Jellyfin adminis
         name=$(jq -r '.Name' <<<"$u"); id=$(jq -r '.Id' <<<"$u")
         want=false; [[ "$admins" == *" $name "* ]] && want=true
         [[ "$(jq -r '.Policy.IsAdministrator' <<<"$u")" == "$want" ]] && continue
-        w_would "Jellyfin: $name $( [[ $want == true ]] && echo "becomes an administrator (in admins)" || echo "is no longer an administrator (not in admins)")" || continue
+        w_would "Jellyfin: $name $( [[ $want == true ]] && echo "becomes an administrator (in $PORTAL_ADMIN)" || echo "is no longer an administrator (not in $PORTAL_ADMIN)")" || continue
         pol=$(jq -c --argjson w "$want" '.Policy | .IsAdministrator = $w' <<<"$u")
         jf_api POST "/Users/$id/Policy" "$tok" "$pol" >/dev/null && ok "Jellyfin: $name administrator = $want" \
             || wfail "Jellyfin rejected $name's admin change [HTTP $(jf_code)]"
@@ -129,7 +130,7 @@ jf_admin_sync() { # directory users in authentik's `admins` are Jellyfin adminis
     return 0
 }
 
-jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admin rights follow `admins`
+jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admin rights follow the admin group
     local tok="$1"
     signin_is authentik || return 0
     [[ -n "$(env_get AUTHENTIK_LDAP_TOKEN)" ]] || { info "the portal's LDAP outpost has no token yet — run 'wire authentik' first, then 'wire jellyfin'"; return 0; }
