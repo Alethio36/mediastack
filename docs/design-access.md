@@ -426,8 +426,8 @@ error. nzb360 with the header (a new device password, spikeuser granted
 by hand) connected, without it refused, with it again connected; the
 device password deleted — refused about 6 s later.
 
-**Slice 4 — grants and taking access away** (decisions 4, 8; *built 16
-Nov 2026*, to prove on anzac4). `access grant <user> <app>` — into
+**Slice 4 — grants and taking access away** (decisions 4, 8; *built and
+proven live 16 Nov 2026*). `access grant <user> <app>` — into
 `app-<svc>` (stopping first when the group or the card's binding to it is
 missing: `wire` makes them), read back, then one save of the person so
 their dashboard follows; no session to end — the next request to that app
@@ -443,3 +443,12 @@ session ended. `access tier` now reports only the cards it changed, and
 (Jellyfin, Seerr, Kavita, Audiobookshelf) — everyone in the portal has
 them today; `app-jellyfin`, its year limit (decision 5) and `signout` on
 its revoke come with them (decision 7's "later").
+*Proven live (16 Nov 2026, anzac4, `upgrade` to 03c58c9):* `access grant
+spikeuser sonarr` — the card on their open dashboard at the next refresh,
+no new sign-in, Sonarr opened; `access list` named them. `access revoke`
+with Sonarr open — sessions ended (1); the open tab could no longer
+search, the dashboard asked to sign in, then showed no Sonarr card and the
+address was refused. Twice over, the same. Revoke again: nothing to take
+away; Navidrome (their tier) and akadmin (`admin`): refused, each told
+how. `access tier navidrome admin`, then `frontend`: only Navidrome's
+card reported.
