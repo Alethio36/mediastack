@@ -16,7 +16,8 @@
 #   6. every web interface declares mediastack.auth, and exactly the gated
 #      ones' routes carry the mediastack-gate middleware — or, for a tool with
 #      no login of its own (mediastack.auth.ownlogin: false, Apprise),
-#      mediastack-portal-only, with its host port on 127.0.0.1 only
+#      mediastack-portal-only, with its host port on 127.0.0.1 only; and no
+#      /api path skips the gate (one key everybody shares)
 #   7. no container inherits the host's search domain: every service with its
 #      own network declares dns_search ["."] (fragment or vpn_gen), and none
 #      sharing another's network carries one (Docker refuses it)
@@ -129,7 +130,11 @@ for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.su
     else [[ "$mw" != *mediastack-gate@file* ]] || t_fail "$s is $auth but its route carries the gate"; fi
 done
 grep -q 'mediastack.auth.ownlogin: "false"' services/apprise/compose.yml || t_fail "Apprise has no login of its own: it says so"
-# an API that skips the gate: only on a gated tool, as its own router without the gate
+# an API guarded by one shared key never skips the gate: everyone who ever
+# opened the app could read that key (docs/design-access.md, decision 9)
+bad=$(grep -lE 'mediastack\.auth\.bypass: *"[^"]*/api' services/*/compose.yml || true)
+[[ -z "$bad" ]] || t_fail "an /api path skips the gate (one key everybody shares): $(tr '\n' ' ' <<<"$bad")"
+# a path that skips the gate: only on a gated tool, as its own router without the gate
 for s in $(jq -r '.services | to_entries[] | select(.value.labels["mediastack.auth.bypass"] != null) | .key' <<<"$RENDERED_JSON"); do
     [[ "$(jq -r --arg s "$s" '.services[$s].labels["mediastack.auth"]' <<<"$RENDERED_JSON")" == gate ]] || t_fail "$s: a gate bypass on a service that is not gated"
     r=$(edge_router_name "$s")

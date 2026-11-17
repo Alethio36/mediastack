@@ -245,6 +245,9 @@ Read in authentik 2026.8.5's source and checked live on anzac4 first.
    Jellyfin's LDAP bind, which admits whoever Jellyfin admits. The year
    limit goes on every group that admits Jellyfin: `frontend`, `admin`, and
    `app-jellyfin`.
+   *Corrected by decision 9 (16 Nov 2026):* the gate takes them too, sent
+   as HTTP Basic, for whatever their owner may open — so the same rule
+   holds: an app password reaches what its owner reaches, no more.
 6. **`admin` includes everything `frontend` has** — as today, where Jellyfin
    and Navidrome's household gate admit both groups. An admin is a household
    member who also gets the tools; nobody needs to be in both, and taking
@@ -282,6 +285,43 @@ Read in authentik 2026.8.5's source and checked live on anzac4 first.
    a download or settings tool moved to `frontend` warns what the household
    could then do and asks (`--yes` for no question); a move to `admin` ends
    the portal sessions of everyone who loses the app, and says how many.
+
+9. **The arrs' API goes behind the gate** (*agreed 16 Nov 2026*, after the
+   spike below). Until now the `/api` path of the arrs, Prowlarr and Bazarr
+   skipped the gate (`mediastack.auth.bypass`) so companion apps worked with
+   the API key alone. That key is one secret for everybody: the app's own
+   page holds it, so anyone who ever opened the app could keep it and use it
+   from anywhere, whatever `access` later says. *Found live (16 Nov 2026,
+   slice 3):* spikeuser, moved off Sonarr by `access tier sonarr admin`
+   with Sonarr open, added a show from the tab already open — the page's
+   own calls go to `/api` with the key — until a reload met the gate. So
+   the bypass goes from those seven (sonarr, sonarr-anime, radarr,
+   radarr-4k, lidarr, prowlarr, bazarr); their whole address is behind the
+   gate. A phone app sends the API key and a **device password as HTTP
+   Basic** (`Authorization: Basic <username:app password>`, any app with a
+   custom-header setting), checked like the page: the card's bindings, so
+   `access` decides the API too. Navidrome's `/rest/ /share/` stays past
+   the gate: each music app signs in as its own person there, and a share
+   is meant to be open — no shared secret. The stack's own calls (the
+   script on `127.0.0.1:<port>`, the apps on `<container>:<port>`) never
+   pass Traefik. A test refuses any `/api` bypass; `safety-live` proves each
+   gated app's `/api` sends a signed-out caller to sign in.
+   **Costs:** an app with no custom-header setting cannot reach the arrs
+   from outside (no fallback, by design: rotating the key when someone
+   leaves is the answer for that one app). A device password lasts a year
+   only with `LDAP_APP_PASSWORDS=yes` (the switch also sets every group's
+   app-password lifetime); with `no`, a day. Taking access away reaches a
+   phone within 60 s (the outpost keeps a Basic sign-in that long), with
+   no session to end. And an app password now opens more than Jellyfin: an
+   admin's TV password opens the arrs' API — one per device, deleted with it.
+   *Spike (16 Nov 2026, anzac4, authentik 2026.8.5, unstable 6548781,
+   Sonarr's bypass removed by hand):* the API key alone — 302 to sign-in,
+   from curl and from nzb360; key and Basic with spikeuser's app password
+   and the grant — 200, and nzb360 connected (a custom header); the real
+   password as Basic — 302 (app passwords only); grant taken away —
+   refused 31 s later (curl) and 32–47 s later (nzb360); a Basic sign-in
+   leaves no cookie; Sonarr's web page works with `/api` gated; doctor
+   and `wire prowlarr` unchanged.
 
 ### How it is built
 
@@ -351,8 +391,8 @@ password.
 save of the person — proven live (16 Nov 2026): it clears authentik's
 day-long list of their apps (the card appears or goes on their next load).
 
-**Slice 3 — tiers and `access`** (decisions 6, 8; *built 16 Nov 2026*, to
-prove on the keeper's upgrade). `<SVC>_TIER` (schema 46) over the service's
+**Slice 3 — tiers and `access`** (decisions 6, 8; *built and proven live
+16 Nov 2026*). `<SVC>_TIER` (schema 46) over the service's
 `mediastack.tier` label over its kind (the household gate's apps frontend,
 the tools admin); `wire` binds each app's card by its tier (frontend: the
 household and its admins, the Media shelf; admin: admins only, the tools —
@@ -362,5 +402,21 @@ rule first, then ends the portal sessions of the household members who lose
 it (`bulk_delete`, the admin UI's own deletion). A binding's change clears
 every person's cached list of apps (authentik's signals), so a tier needs no
 save of each person.
+
+*Proven live (16 Nov 2026, anzac4, `upgrade` from schema 45 to 46):*
+`access tier navidrome admin` ended spikeuser's session (1) and took the
+card away; signed in again, refused; `access tier navidrome frontend`
+gave both back. `access tier sonarr frontend` asked, then gave spikeuser
+Sonarr's card and the app without a new sign-in; back to `admin`, the next
+reload was sent to sign in and then refused — but the tab already open had
+added a show in between, through `/api` (decision 9).
+
+**Slice 3b — the arrs' API behind the gate** (decision 9; *built 16 Nov
+2026*, to prove on anzac4). The seven bypass labels go; the upgrade
+(schema 47) says so once; the README's how-to for phone apps; `credentials`
+says it. To prove: each arr's `/api` signed out sent to sign in
+(`safety-live`); nzb360 with the header connects, without it refused; a
+tab left open after `access tier <svc> admin` can no longer change
+anything; a deleted device password refused within a minute.
 
 **Slice 4 — grants and taking access away** (decisions 4, 5, 8).

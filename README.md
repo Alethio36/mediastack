@@ -871,8 +871,10 @@ never holds the person's real one. The person makes it themselves:
 3. On the device, sign in to Jellyfin with the portal username and that
    password.
 
-The portal's own website refuses these passwords: they open Jellyfin and
-nothing else. When one expires, that device's next sign-in is refused; a
+The portal's own website refuses these passwords. They open Jellyfin, and,
+sent by an app as a header, the apps behind the portal their owner may open
+(next how-to): an admin's TV password opens the arrs' API too, so keep one
+per device and delete it with the device. When one expires, that device's next sign-in is refused; a
 device already signed in stays signed in. To take a device's access away:
 delete its password in the same list (its next sign-in is refused at once),
 then `./mediastack.sh signout <user>`, which ends the sign-ins Jellyfin
@@ -884,6 +886,35 @@ Jellyfin takes only the real password. To change it: a full
 `./mediastack.sh configure`, or `.env`, then `./mediastack.sh up` and
 `./mediastack.sh wire authentik` (the portal's setup takes about four
 minutes to apply).
+
+**A phone app for the arrs** (nzb360 and the like, with the portal). The
+arrs', Prowlarr's and Bazarr's API is behind the portal's gate, like their
+pages: their API key is one key that everyone who ever opened the app could
+read, so on its own it opens nothing. A phone app sends the key *and* a
+device password, which the gate checks against who may open that app
+(`./mediastack.sh access list <user>`). The person makes it:
+1. A device password as above (Settings → Credentials → Tokens and App
+   passwords), named after the phone and the app (`phone-nzb360`), expiry up
+   to a year. Needs `LDAP_APP_PASSWORDS=yes`: with `no`, an app password lasts
+   at most a day.
+2. Turn it into the header's value, on any machine with bash (Git Bash on
+   Windows) — it does not echo the password:
+   ```bash
+   read -rp 'portal username: ' U; read -rsp 'device password: ' AP; echo
+   printf 'Basic %s\n' "$(printf '%s:%s' "$U" "$AP" | base64 -w0)"; unset U AP
+   ```
+   The printed line *is* the password, only encoded: treat it as one.
+3. In the app, for each of the arrs: the https address and API key from
+   `./mediastack.sh credentials`, and one custom header — name
+   `Authorization`, value the whole printed line, starting `Basic ` (nzb360:
+   the service's settings → Custom Headers).
+
+Without the header the app reports it cannot reach the server. An app with
+no custom-header setting cannot reach the arrs from outside. Taking the app
+away from the person (`access tier`, or out of a group) or deleting the
+password refuses the phone within a minute: the gate checks the password
+afresh after that long, with no session to end. The stack's own calls between the apps never
+pass the gate.
 
 Audiobookshelf signs people in through the portal (OIDC): its login page goes
 straight to the portal (the app shows a "Log in with <portal name>" button);
@@ -914,8 +945,9 @@ gets an address nobody can sign up with; a hand-made admin with a real address
 gets a warning from wire (change it in Kavita). While the portal runs, their host ports listen on 127.0.0.1 only —
 the domain address is the way in — and the arrs trust the portal (one login;
 `wire arr` switches them, never before their ports are closed). Companion apps
-(nzb360, LunaSea, Home Assistant…) use the domain address: the arrs' and
-Bazarr's `/api` skips the gate and still demands their API key. The others
+(nzb360, Home Assistant…) use the domain address, and their API is behind the
+gate like their pages: an app sends its API key *and* a device password, so
+the key alone opens nothing (how: "A phone app for the arrs" above). The others
 still ask for their own login behind the portal for now. Disabling authentik
 gives every arr its own login back — verified — before the ports reopen.
 Apprise has no login of its own, so it is served only through the portal:

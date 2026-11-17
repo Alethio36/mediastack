@@ -34,7 +34,6 @@ services:
       mediastack.config: "true"
       mediastack.subdomain: "radarr-4k"
       mediastack.auth: "gate"   # an admin tool: behind the portal (mediastack-gate)
-      mediastack.auth.bypass: "/api"   # companion apps: its API still demands its own API key
       mediastack.port: "7879"
       mediastack.appport: "7879"      # in-app port seeded pre-first-boot: two
                                       # radarrs share gluetun's namespace

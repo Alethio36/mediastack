@@ -11,7 +11,8 @@
 #            the control server, the kill-switch rules — an UNPROVEN check
 #            fails this too), and every enabled torrent client bound to tun0
 #   gate     with the portal on: each gated tool, signed out, is sent to sign
-#            in; its API path (a gate bypass) is answered by the app instead;
+#            in, its /api too; a path the gate lets through (Navidrome's
+#            music apps) is answered by the app instead;
 #            the dashboard always asks for a login
 #   ports    with the portal on: no gated tool listens beyond 127.0.0.1, and
 #            its port refuses a connection on this box's LAN address
@@ -85,11 +86,18 @@ if (( portal && edge )); then
         if [[ "$code" == 302 && ( "$to" == *outpost.goauthentik.io* || "$to" == *"$(svc_subdomain authentik).$domain"* ) ]]; then
             pass "$s: signed out, sent to sign in"
         else flunk "$s: https://$h/ answered $code ${to:-(no redirect)} — want 302 to the portal's sign-in"; fi
-        for p in $(svc_label "$s" mediastack.auth.bypass); do
+        by=$(svc_label "$s" mediastack.auth.bypass)
+        for p in $by; do
             read -r code to <<<"$(https "$h" "$p")"
             if [[ "$code" != 000 && "$code" != 302 ]]; then pass "$s: $p answered by the app ($code), past the gate"
             else flunk "$s: https://$h$p answered $code ${to:-} — its gate bypass is not reaching the app"; fi
         done
+        # an API guarded by one shared key is behind the gate too (design-access.md, decision 9)
+        if [[ " $by " != *" /api"* ]]; then
+            read -r code to <<<"$(https "$h" /api)"
+            if [[ "$code" == 302 ]]; then pass "$s: /api, signed out, sent to sign in"
+            else flunk "$s: https://$h/api answered $code ${to:-(no redirect)} — want 302: its API must not skip the gate"; fi
+        fi
     done
 fi
 if (( edge )); then

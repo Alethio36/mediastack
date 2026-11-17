@@ -82,7 +82,7 @@ credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assist
     hr "API keys (companion apps)"
     printf '%s' "$rows"
     if signin_is authentik; then
-        info "Give an app the https address and the key: behind the portal the /api path skips its login, the key still guards it."
+        info "Give an app the https address and the key. Behind the portal the arrs', Prowlarr's and Bazarr's API pass the gate too: the app also sends a device password as a header (README: \"A phone app for the arrs\"). Seerr's API is not behind the gate."
     fi
 }
 

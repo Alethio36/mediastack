@@ -211,6 +211,9 @@ agreed first:
    tiers, providers per app and grants — its decisions agreed 16 Nov 2026
    (the rename in place inside the blueprint; revoking ends portal sessions,
    proven needed live), built only after a keeper install from `stable`.
+   Decision 9 (16 Nov 2026): the arrs' `/api` goes behind the gate — phone
+   apps send a device password as a header (spiked live with nzb360); then
+   slice 4, the grants.
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions
    pending.
@@ -255,6 +258,12 @@ agreed first:
       said `by: panel` — the message read the record a second time, so what
       the check saw was lost; 0 failures in 40 runs under full CPU load after.
       The checks now print what they read and the records folder then.
+    - **The leak gate closed once on `up` right after gluetun was recreated**
+      (16 Nov 2026, anzac4, 18:55): a FAIL, not shown because the run's
+      output was discarded; `leak-test` passed minutes later and every
+      `up` since. gluetun's log: the tunnel up at 18:55:16, DNS ready only
+      at :23 — perhaps the gate ran inside that window. If it recurs, keep
+      the FAIL line (the ops notification quotes it).
 12. **The README as a chapter-style tutorial** and the built-in how-to page.
 13. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
     dependency layers below; Wizarr sign-in live; `restore --service

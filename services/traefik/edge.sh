@@ -315,9 +315,11 @@ edge_route_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass> 
     # mediastack.auth.ownlogin: false -> no login of its own: the portal, or nobody
     if [[ "$auth" == gate && "$ownlogin" == false ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-portal-only@file\""
     elif [[ "$auth" == gate ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-gate@file\""; fi
-    # mediastack.auth.bypass: a path (the API) that skips the gate — only for a
-    # tool whose API demands its own key, so companion apps keep working. The
-    # longer rule wins in Traefik, so this router takes that path.
+    # mediastack.auth.bypass: a path that skips the gate — only where each
+    # client signs in as its own person (Navidrome's music apps) or nobody
+    # needs to (its public shares). Never an API guarded by one key: everyone
+    # who ever opened the app could read that key (docs/design-access.md,
+    # decision 9). The longer rule wins in Traefik, so this router takes that path.
     if [[ "$auth" == gate && -n "$bypass" ]]; then
         local p paths=""
         for p in $bypass; do paths+="${paths:+ || }PathPrefix(\`$p\`)"; done

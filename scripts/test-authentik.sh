@@ -660,7 +660,7 @@ grep -qE '^sonarr +https://sonarr.media.example.com +SONKEY$' <<<"$out" || fail_
 grep -qE '^bazarr +https://bazarr.media.example.com +BAZKEY$' <<<"$out" || fail_ "bazarr's key"; pass
 grep -qE '^prowlarr .*not created yet' <<<"$out" || fail_ "a key not minted yet says so"; pass
 ! grep -q '^radarr' <<<"$out" || fail_ "a service that is not enabled is not listed"; pass
-grep -q 'the /api path skips its login' <<<"$out" || fail_ "behind the portal: how the app gets through"; pass
+grep -q 'also sends a device password as a header' <<<"$out" || fail_ "behind the portal: how the app gets through"; pass
 
 # ---- the stack network: Traefik's fixed address outside the pool ----
 cidr_has 172.31.250.0/24 172.31.250.2 && ! cidr_has 172.31.250.128/25 172.31.250.2 && cidr_has 10.0.0.0/8 10.200.3.4 \

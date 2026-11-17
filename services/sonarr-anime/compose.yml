@@ -33,7 +33,6 @@ services:
       mediastack.config: "true"
       mediastack.subdomain: "sonarr-anime"
       mediastack.auth: "gate"   # an admin tool: behind the portal (mediastack-gate)
-      mediastack.auth.bypass: "/api"   # companion apps: its API still demands its own API key
       mediastack.port: "8990"
       mediastack.appport: "8990"
       mediastack.arrtype: "sonarr"
