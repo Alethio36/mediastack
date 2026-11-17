@@ -154,6 +154,15 @@ CALL cmd_reset_password [1] someone
 ## reset-password a b
 ERROR 'reset-password' takes at most 1 argument(s) (got: a b)
 rc=1
+## access
+CALL cmd_access [0]
+## access list someone
+CALL cmd_access [2] list someone
+## access tier sonarr frontend --yes
+CALL cmd_access [4] tier sonarr frontend --yes
+## access tier a b c d e
+ERROR 'access' takes at most 4 argument(s) (got: tier a b c d e)
+rc=1
 ## signout
 CALL cmd_signout [0]
 ## signout someone

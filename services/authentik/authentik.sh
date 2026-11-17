@@ -40,6 +40,36 @@ authentik_old_groups() { # -> the groups still under an old name (nothing when r
     for g in "${PORTAL_GROUPS_OLD[@]}"; do pk=$(ak_group_pk "$g") || return 1; [[ -z "$pk" ]] || echo "$g"; done
 }
 
+# Tiers (docs/design-access.md): who may open an app behind the gate — the
+# household (frontend: it and its admins) or admins only. .env's <SVC>_TIER,
+# written by `access tier` only where it differs from the service's default
+# (its mediastack.tier label; else frontend for the household gate's apps,
+# admin for the tools).
+svc_tier_default() { # svc_tier_default SVC -> frontend|admin
+    local t; t=$(svc_label "$1" mediastack.tier)
+    [[ -n "$t" ]] && { echo "$t"; return; }
+    if [[ -n "$(svc_label "$1" mediastack.auth.group)" ]]; then echo frontend; else echo admin; fi
+}
+svc_tier() { # svc_tier SVC -> frontend|admin: .env's choice over the default
+    local t; t=$(env_get "$(uvar "$1")_TIER"); echo "${t:-$(svc_tier_default "$1")}"
+}
+authentik_gate_apps() { # every enabled app behind the portal's gate: the tools, then the household gate's apps
+    local a
+    authentik_gated
+    for a in $(authentik_household); do [[ -n "$(svc_label "$a" mediastack.auth.group)" ]] && echo "$a"; done
+    return 0
+}
+
+signin_sessions_end() { # signin_sessions_end USER-PK... -> how many portal sessions ended; rc != 0 (authentik's answer) when refused
+    # the same deletion as the admin's Directory → Users → Sessions (its signal
+    # included); the gate decides when a session begins, so only this makes
+    # a person's next visit ask again (proven live, 16 Nov 2026)
+    local q="" p out
+    for p in "$@"; do q+="${q:+&}user_pks=$p"; done
+    out=$(ak_api DELETE "/core/authenticated_sessions/bulk_delete/?$q") || { echo "$out"; return 1; }
+    jq -r '.deleted // 0' <<<"$out"
+}
+
 signin_admins() { # -> the portal's admin group's members (authentik's user-list JSON); rc != 0 when unreadable
     # an unknown group name is refused (400), never answered with nobody:
     # a sync reading this cannot take everyone's admin rights away
@@ -1213,7 +1243,8 @@ ak_card() { # ak_card ALL SLUG NAME URL DESC SECTION PROVIDER GROUP-PK... — a 
     if [[ -z "$have" ]]; then
         w_would "authentik: add the $section card for $name" || return 0
         app=$(ak_api POST /core/applications/ "$body") || { wfail "authentik refused the card for $name: $(head -c160 <<<"$app")"; return 0; }
-    elif [[ "$(jq -r '.meta_launch_url' <<<"$have")" != "$url" || "$(jq -r '.provider // "" | tostring' <<<"$have" | sed 's/^null$//')" != "$prov" ]]; then
+    elif [[ "$(jq -r '.meta_launch_url' <<<"$have")" != "$url" || "$(jq -r '.provider // "" | tostring' <<<"$have" | sed 's/^null$//')" != "$prov" \
+            || "$(jq -r '.group // ""' <<<"$have")" != "$section" ]]; then
         w_would "authentik: update $name's card" || return 0
         app=$(ak_api PATCH "/core/applications/$slug/" "$body") || { wfail "authentik refused to update $name's card"; return 0; }
     else
@@ -1226,6 +1257,18 @@ ak_card() { # ak_card ALL SLUG NAME URL DESC SECTION PROVIDER GROUP-PK... — a 
             || { wfail "authentik: could not limit $name's card"; return 0; }
     done
     ok "authentik: $name card ($section)"
+}
+
+ak_card_unbind() { # ak_card_unbind SLUG GROUP-PK — that group's binding off our card (its app's tier moved away from it)
+    local app pk bind b
+    app=$(ak_api GET "/core/applications/$1/") || return 0   # no card yet: nothing bound
+    pk=$(jq -r '.pk // empty' <<<"$app"); [[ -n "$pk" ]] || return 0
+    bind=$(ak_api GET "/policies/bindings/?target=$pk") || { wfail "authentik: ${1#mediastack-app-}'s rule is unreadable: $(oneline "$bind")"; return 0; }
+    for b in $(jq -r --arg g "$2" '.results[]? | select(.group == $g) | .pk' <<<"$bind"); do
+        w_would "authentik: ${1#mediastack-app-} is for $PORTAL_ADMIN only — the household's binding goes" || return 0
+        ak_api DELETE "/policies/bindings/$b/" >/dev/null || { wfail "authentik refused to take the household off ${1#mediastack-app-}"; return 0; }
+        ok "authentik: ${1#mediastack-app-} — the household's binding removed (its tier: $PORTAL_ADMIN)"
+    done
 }
 
 ak_card_prune() { # ak_card_prune ALL PREFIX WANTED... — cards mediastack made for services no longer wanted leave
@@ -1244,10 +1287,14 @@ wire_authentik_cards() { # every gated app its own gate and card; household apps
     all=$(ak_api GET "/core/applications/?superuser_full_list=true&page_size=500") || { wfail "authentik: applications unreadable"; return 0; }
     adm=$(ak_group_pk "$PORTAL_ADMIN"); mu=$(ak_group_pk "$PORTAL_FRONTEND")
     [[ -n "$adm" && -n "$mu" ]] || { wfail "authentik: groups '$PORTAL_ADMIN'/'$PORTAL_FRONTEND' missing (the blueprint makes them — has it applied? ./mediastack.sh doctor)"; return 0; }
-    for s in $(authentik_gated); do ak_app_gate "$all" "$s" "Admin tools" "$adm"; done
+    # every app behind the gate by its tier: frontend — the household and its
+    # admins, on the Media shelf; admin — admins only, with the tools
+    for s in $(authentik_gate_apps); do
+        if [[ "$(svc_tier "$s")" == frontend ]]; then ak_app_gate "$all" "$s" Media "$mu" "$adm"
+        else ak_app_gate "$all" "$s" "Admin tools" "$adm"; ak_card_unbind "mediastack-app-$s" "$mu"; fi
+    done
     for s in $(authentik_household); do
-        # a household app behind the household gate: its own gate, for the household and its admins
-        if [[ -n "$(svc_label "$s" mediastack.auth.group)" ]]; then ak_app_gate "$all" "$s" Media "$mu" "$adm"; continue; fi
+        [[ -n "$(svc_label "$s" mediastack.auth.group)" ]] && continue   # behind the gate: above
         # an app that logs in through OIDC: its card is the provider's application
         local op; op=$(ak_api GET "/providers/oauth2/?client_id=mediastack-$s") || { wfail "authentik: providers unreadable"; continue; }
         prov=$(jq -r '.results[0].pk // empty' <<<"$op")
@@ -1257,7 +1304,7 @@ wire_authentik_cards() { # every gated app its own gate and card; household apps
     # the admin tools' cards before Nov 2026 (links only; the gate decided): every one leaves
     ak_card_prune "$all" mediastack-tool-
     # shellcheck disable=SC2046  # service names, one word each
-    ak_card_prune "$all" mediastack-app- $(authentik_gated) $(authentik_household)
+    ak_card_prune "$all" mediastack-app- $(authentik_gate_apps) $(authentik_household)
     return 0
 }
 

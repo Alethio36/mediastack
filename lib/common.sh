@@ -104,6 +104,11 @@ ask_hidden() { # ask_hidden "prompt" -> REPLY_VAL, typed without echo; empty is 
     echo; hidden_clean "$a"; REPLY_VAL=$HIDDEN_VAL
 }
 
+table_print() { # TSV on stdin, its first line the heading -> columns aligned, two spaces apart
+    awk -F'\t' '{ for (i = 1; i <= NF; i++) { c[NR, i] = $i; if (length($i) > w[i]) w[i] = length($i) } n = NR; if (NF > f) f = NF }
+        END { for (r = 1; r <= n; r++) { line = ""; for (i = 1; i <= f; i++) line = line sprintf(i < f ? "%-" w[i] + 2 "s" : "%s", c[r, i]); print line } }'
+}
+
 confirm() { # confirm "question" -> 0 yes / 1 no
     prompt_guard "$1"
     local ans

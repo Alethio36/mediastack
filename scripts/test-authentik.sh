@@ -709,10 +709,10 @@ AK_APPS='{"results":[
   {"slug":"mediastack-tool-oldsvc","pk":"a-to"},
   {"slug":"my-own-app","pk":"a-mine"},
   {"slug":"mediastack-app-kavita","pk":"a-k"},
-  {"slug":"mediastack-app-navidrome","pk":"a-nav","provider":42,"meta_launch_url":"https://navidrome.media.example.com"}]}'
+  {"slug":"mediastack-app-navidrome","pk":"a-nav","provider":42,"group":"Media","meta_launch_url":"https://navidrome.media.example.com"}]}'
 gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards against a stateful authentik; calls in $T/calls
     ( WIRE_DRY=${1:-0} WIRE_FAILS=0 NOBIND=${2:-0}
-      rm -f "$T/calls" "$T/made"; printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: the household and its admins
+      rm -f "$T/calls" "$T/made" "$T/patched"; printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: the household and its admins
       printf 'admin g-adm\nfrontend g-mu\n' > "$T/groups"; echo '[6]' > "$T/op"; : > "$T/apps"
       ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
         case "$1 $2" in
@@ -729,17 +729,21 @@ gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards again
           "GET /flows/instances/?slug="*) echo '{"results":[{"pk":"flow-x"}]}' ;;
           "GET /providers/oauth2/?client_id="*) echo '{"results":[]}' ;;
           "POST /core/applications/") sl=$(jq -r .slug <<<"$3"); echo "$sl a-$sl" >> "$T/apps"; echo "{\"pk\":\"a-$sl\"}" ;;
+          "PATCH /core/applications/"*/) sl=${2#/core/applications/}; sl=${sl%/}; echo "$sl" >> "$T/patched"   # authentik answers with the application
+              pk=$(awk -v s="$sl" '$1==s{print $2}' "$T/apps"); [[ "$sl" == mediastack-app-navidrome ]] && pk="a-nav"; echo "{\"pk\":\"$pk\"}" ;;
           "GET /core/applications/"*/) sl=${2#/core/applications/}; sl=${sl%/}
               pk=$(awk -v s="$sl" '$1==s{print $2}' "$T/apps"); [[ "$sl" == mediastack-app-navidrome ]] && pk="a-nav"
               [[ -n "$pk" ]] && echo "{\"pk\":\"$pk\"}" || { echo '{"detail":"Not found."}'; return 1; } ;;
           "GET /policies/bindings/?target="*) t=${2#*=}
-              awk -v t="$t" '$1==t{printf "%s{\"group\":\"%s\"}", (n++?",":""), $2} BEGIN{printf "{\"results\":["} END{print "]}"}' "$T/bind" 2>/dev/null || echo '{"results":[]}' ;;
+              awk -v t="$t" '$1==t{printf "%s{\"group\":\"%s\",\"pk\":\"%s~%s\"}", (n++?",":""), $2, $1, $2} BEGIN{printf "{\"results\":["} END{print "]}"}' "$T/bind" 2>/dev/null || echo '{"results":[]}' ;;
+          "DELETE /policies/bindings/"*/) b=${2#/policies/bindings/}; b=${b%/}; awk -v t="${b%%~*}" -v g="${b#*~}" '!($1==t && $2==g)' "$T/bind" > "$T/bind.n"; mv "$T/bind.n" "$T/bind"; echo '' ;;
           "POST /policies/bindings/") (( NOBIND )) && return 1; echo "$(jq -r .target <<<"$3") $(jq -r .group <<<"$3")" >> "$T/bind"; echo '{}' ;;
           "GET /outposts/instances/?managed__iexact=goauthentik.io/outposts/embedded") echo "{\"results\":[{\"pk\":\"op-1\",\"providers\":$(cat "$T/op")}]}" ;;
           "PATCH /outposts/instances/op-1/") [[ -n "${LOST:-}" ]] && { echo 'no answer within 90s'; return 1; }
               jq -c .providers <<<"$3" > "$T/op"; [[ -n "${LATE:-}" ]] && { echo 'no answer within 90s'; return 1; }; echo '{}' ;;
           *) echo '{}' ;;
         esac; }
+      svc_tier() { case "$1" in sonarr) echo "${ST:-admin}" ;; navidrome) echo "${NT:-frontend}" ;; *) echo admin ;; esac; }
       wire_authentik_cards >/dev/null 2>&1; echo "fails=$WIRE_FAILS" )
 }
 [[ "$(gates_run)" == fails=0 ]] || fail_ "every gated app wired without a failure: $(gates_run)"; pass
@@ -775,6 +779,16 @@ gates_run 1 >/dev/null; ! grep -qE '^(POST|PATCH|DELETE) ' "$T/calls" || fail_ "
     || fail_ "authentik slow to answer: the gate made once, read back; the outpost write read back — no failure: $(LATE=1 gates_run) $(cat "$T/op")"; pass
 [[ "$(LOST=1 gates_run)" == fails=1 && "$(cat "$T/op")" == "[6]" ]] \
     || fail_ "an outpost write that never landed: one failure, nothing assumed: $(LOST=1 gates_run) $(cat "$T/op")"; pass
+# tiers: frontend — the household and its admins, on the Media shelf; admin —
+# admins only, with the tools, the household's binding taken off
+[[ "$(ST=frontend gates_run)" == fails=0 ]] && grep -q '^POST /core/applications/ .*"slug":"mediastack-app-sonarr".*"group":"Media"' "$T/calls" \
+    && [[ "$(awk '$1=="a-mediastack-app-sonarr"{print $2}' "$T/bind" | sort | paste -sd, -)" == "g-adm,g-app-sonarr,g-mu" ]] \
+    || fail_ "sonarr in frontend: on the Media shelf, for the household, admins and its own group: $(awk '$1=="a-mediastack-app-sonarr"' "$T/bind" | paste -sd' ' -)"; pass
+[[ "$(NT="admin" gates_run)" == fails=0 ]] && grep -q '^PATCH /core/applications/mediastack-app-navidrome/ .*"group":"Admin tools"' "$T/calls" \
+    && grep -qx 'DELETE /policies/bindings/a-nav~g-mu/ ' "$T/calls" \
+    && [[ "$(awk '$1=="a-nav"{print $2}' "$T/bind" | sort | paste -sd, -)" == "g-adm,g-app-navidrome" ]] \
+    || fail_ "navidrome in admin: moved to the tools, the household's binding removed, admins and its own group kept: $(awk '$1=="a-nav"' "$T/bind" | paste -sd' ' -) $(grep -c DELETE "$T/calls")"; pass
+[[ "$(NT="admin" gates_run 1)" == fails=0 ]] && ! grep -qE '^(POST|PATCH|DELETE) ' "$T/calls" || fail_ "a dry run of a tier move writes nothing"; pass
 [[ "$(MOVED=1 gates_run)" == fails=0 ]] && grep -qF 'PATCH /providers/proxy/50/ {"mode":"forward_single","external_host":"https://sonarr.media.example.com"}' "$T/calls" \
     || fail_ "an app's address changed: its gate follows, the update saying its mode (authentik refuses one without): $(grep 'PATCH /providers/proxy/50' "$T/calls")"; pass
 
@@ -1738,6 +1752,71 @@ grep -q '^PATCH /events/transports/T1/ .*"webhook_url":"http://apprise:8000/noti
 grep -q '^PATCH /events/rules/R1/ {"transports":\[\]}' <<<"$(lk 0 "" 0)" || fail_ "no hub: the rule's transports are emptied (no send to nowhere)"; pass
 grep -q 'hub_notify_url' services/authentik/authentik.sh && ! grep -q '/notify/mediastack' services/authentik/authentik.sh \
     || fail_ "authentik posts to the hub through the hub interface (hub_notify_url), not a written-out address"; pass
+
+# ---- tiers: .env's <SVC>_TIER over the service's mediastack.tier label over its kind ----
+tr_() { ( E=$2 L=$3 G=$4; env_get() { [[ "$1" == "$(uvar "$S")_TIER" ]] && echo "$E"; return 0; }
+          svc_label() { case "$2" in mediastack.tier) echo "$L" ;; mediastack.auth.group) echo "$G" ;; esac; return 0; }
+          S=$1; svc_tier "$1" ) }
+[[ "$(tr_ sonarr '' '' '')" == admin && "$(tr_ navidrome '' '' frontend)" == frontend ]] || fail_ "a tool is admin, a household gate's app frontend, by default"; pass
+[[ "$(tr_ sonarr '' frontend '')" == frontend ]] || fail_ "a service's label sets its default tier"; pass
+[[ "$(tr_ sonarr-anime frontend '' '')" == frontend && "$(tr_ navidrome admin '' frontend)" == admin ]] || fail_ ".env's <SVC>_TIER wins (a hyphenated name too)"; pass
+
+# ---- access: list, one person, tier moves (docs/design-access.md decision 8) ----
+AP='{"results":[
+ {"pk":1,"username":"alice","is_active":true,"groups_obj":[{"name":"admin"}]},
+ {"pk":2,"username":"bob","is_active":true,"groups_obj":[{"name":"frontend"}]},
+ {"pk":3,"username":"carol","is_active":true,"groups_obj":[{"name":"frontend"},{"name":"app-sonarr"}]},
+ {"pk":4,"username":"dave","is_active":false,"groups_obj":[]},
+ {"pk":5,"username":"erin","is_active":true,"groups_obj":[{"name":"frontend"},{"name":"admin"}]}]}'
+acc() { # acc FUNCTION ARGS... -> its output and rc; .env in $T/aenv, calls in $T/acalls
+    ( signin_people() { echo "$AP"; }
+      authentik_gate_apps() { printf '%s\n' sonarr navidrome; }
+      svc_url() { echo "https://$1.x"; }
+      svc_label() { [[ "$1:$2" == navidrome:mediastack.auth.group ]] && echo frontend; return 0; }
+      env_get() { awk -F= -v k="$1" '$1==k{print substr($0, index($0,"=")+1)}' "$T/aenv"; }
+      env_set() { env_del "$1"; echo "$1=$2" >> "$T/aenv"; echo "env_set $1=$2" >> "$T/acalls"; }
+      env_del() { awk -F= -v k="$1" '$1!=k' "$T/aenv" > "$T/aenv.n"; mv "$T/aenv.n" "$T/aenv"; echo "env_del $1" >> "$T/acalls"; }
+      wire_authentik_cards() { echo "wire cards (sonarr $(svc_tier sonarr), navidrome $(svc_tier navidrome))" >> "$T/acalls"; (( ${WFAIL:-0} )) && WIRE_FAILS=1; return 0; }
+      ak_api() { echo "$1 $2" >> "$T/acalls"; echo '{"deleted":3}'; }
+      confirm() { echo "asked: $1" >> "$T/acalls"; [[ "${ANS:-n}" == y ]]; }
+      warn() { echo "WARN $*"; }; ok() { echo "OK $*"; }; info() { echo ":: $*"; }
+      rc=0; ( "$@" ) 2>&1 || rc=$?; echo "rc=$rc" )
+}
+: > "$T/aenv"; rm -f "$T/acalls"
+o=$(acc access_list)
+grep -qE '^sonarr +admin +carol +https://sonarr.x$' <<<"$o" && grep -qE '^navidrome +frontend +- +https://navidrome.x$' <<<"$o" \
+    || fail_ "access list: each app's tier, who has it on its own, its address: $o"; pass
+[[ "$(acc access_list_user alice | grep -cE '^(sonarr|navidrome) +admin ')" == 2 ]] || fail_ "an admin may open every app: $(acc access_list_user alice)"; pass
+o=$(acc access_list_user CAROL)
+grep -qE '^sonarr +given on its own \(app-sonarr\)' <<<"$o" && grep -qE '^navidrome +frontend \(its tier\)' <<<"$o" \
+    || fail_ "carol (any case): sonarr given on its own, navidrome by her tier: $o"; pass
+o=$(acc access_list_user bob); grep -qE '^navidrome ' <<<"$o" && ! grep -qE '^sonarr ' <<<"$o" || fail_ "bob: navidrome only: $o"; pass
+o=$(acc access_list_user dave); grep -q 'may open none' <<<"$o" && grep -q "account is off" <<<"$o" || fail_ "dave: nothing, and his account is off: $o"; pass
+o=$(acc access_list_user nobody); grep -q "the portal has no user 'nobody'" <<<"$o" && grep -q 'rc=1' <<<"$o" || fail_ "an unknown name stops: $o"; pass
+# tier: the checks before anything changes
+o=$(acc access_tier sonarr everyone); grep -q "frontend (the household and its admins) or admin" <<<"$o" && grep -q rc=1 <<<"$o" || fail_ "an unknown tier stops: $o"; pass
+o=$(acc access_tier jellyfin admin); grep -q "not an app behind the portal's gate — those are: sonarr navidrome" <<<"$o" || fail_ "an app not behind the gate stops, the gated ones named: $o"; pass
+o=$(acc access_tier sonarr admin); grep -q "sonarr is admin already" <<<"$o" && [[ ! -f "$T/acalls" ]] || fail_ "already there: nothing done: $o"; pass
+# to frontend: warned and asked; no means nothing changes
+o=$(acc access_tier sonarr frontend); grep -q "nothing changed: sonarr stays admin" <<<"$o" && ! grep -q 'env_set\|wire' "$T/acalls" \
+    || fail_ "opening a tool to the household asks first; no changes nothing: $o $(cat "$T/acalls")"; pass
+rm -f "$T/acalls"; o=$(ANS=y acc access_tier sonarr frontend)
+grep -qx 'env_set SONARR_TIER=frontend' "$T/acalls" && grep -qx 'wire cards (sonarr frontend, navidrome frontend)' "$T/acalls" \
+    && ! grep -q bulk_delete "$T/acalls" && grep -q 'OK access: sonarr is frontend now' <<<"$o" \
+    || fail_ "yes: kept in .env (it differs from the default), the rule applied, nobody signed out: $o $(cat "$T/acalls")"; pass
+rm -f "$T/acalls"; o=$(acc access_tier sonarr admin --yes)
+grep -qx 'env_del SONARR_TIER' "$T/acalls" || fail_ "back to its default: the .env line goes: $(cat "$T/acalls")"; pass
+# to admin: who loses it (the household, not admins, not those given it) signed out
+rm -f "$T/acalls"; : > "$T/aenv"; o=$(acc access_tier navidrome admin)
+grep -qx 'env_set NAVIDROME_TIER=admin' "$T/acalls" && grep -qx 'DELETE /core/authenticated_sessions/bulk_delete/?user_pks=2&user_pks=3' "$T/acalls" \
+    && grep -q '2 of the household lost it (bob,carol); their portal sessions ended (3)' <<<"$o" && ! grep -q asked "$T/acalls" \
+    || fail_ "navidrome to admin: no question, bob and carol signed out of the portal, alice and erin (an admin, in both groups) kept: $o $(cat "$T/acalls")"; pass
+b=$(grep -n '^wire cards' "$T/acalls" | cut -d: -f1); d=$(grep -n bulk_delete "$T/acalls" | cut -d: -f1)
+(( b < d )) || fail_ "the rule first, then the sessions (a new sign-in must already hear no)"; pass
+rm -f "$T/acalls"; : > "$T/aenv"; o=$(WFAIL=1 acc access_tier navidrome admin)
+grep -q "navidrome's rule did not take" <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q bulk_delete "$T/acalls" \
+    || fail_ "the rule refused: stop, say so, nobody signed out: $o"; pass
+: > "$T/aenv"
 
 # ---- doctor: each gated app on a gate of its own; a card with a gate and no rule fails ----
 gd() { # gd OUTPOST-PROVIDERS-JSON APPS-JSON UNBOUND-PK -> doctor's lines

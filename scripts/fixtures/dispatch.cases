@@ -114,6 +114,11 @@ set-credentials a b c d
 reset-password
 reset-password someone
 reset-password a b
+# access  (max=4)
+access
+access list someone
+access tier sonarr frontend --yes
+access tier a b c d e
 # signout  (max=1)
 signout
 signout someone

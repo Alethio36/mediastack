@@ -270,9 +270,100 @@ cmd_users() { # the portal's people, as authentik has them
       jq -r '.results[] | select(.type == "internal" and .username != "akadmin" and .username != "mediastack-ldap-search")
         | [.username, (.name // "-" | if . == "" then "-" else . end), (.email // "" | if . == "" then "-" else . end),
            ([.groups_obj[]?.name] | if length == 0 then "-" else join(",") end), (if .is_active then "yes" else "off" end)] | @tsv' <<<"$out"
-    } | awk -F'\t' '{ for (i = 1; i <= NF; i++) { c[NR, i] = $i; if (length($i) > w[i]) w[i] = length($i) } n = NR; f = NF }
-        END { for (r = 1; r <= n; r++) { line = ""; for (i = 1; i <= f; i++) line = line sprintf(i < f ? "%-" w[i] + 2 "s" : "%s", c[r, i]); print line } }'
+    } | table_print
     info "the stack's own accounts (akadmin, mediastack-ldap-search) are left out; change an email: ./mediastack.sh set-email <user> <address>"
+}
+
+# ---- access: who may open which app behind the portal's gate (docs/design-access.md) ----
+cmd_access() { # access [list [user]] | access tier <app> frontend|admin [--yes]
+    load_env; render
+    signin_is authentik || die "access is the portal's (authentik), and it is not enabled — with Wizarr, each app keeps its own login"
+    [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
+    local sub="${1:-list}"; (( $# )) && shift
+    case "$sub" in
+        list) (( $# <= 1 )) || die "usage: access list [user]"
+              if (( $# )); then access_list_user "$1"; else access_list; fi ;;
+        tier) access_tier "$@" ;;
+        *) die "usage: ./mediastack.sh access [list [user]]  |  access tier <app> frontend|admin [--yes]" ;;
+    esac
+}
+
+access_people() { # -> the portal's people (authentik's user list), or the stop says why
+    local out; out=$(signin_people) || die "authentik refused the user list: $(oneline "$out")"
+    echo "$out"
+}
+
+access_list() { # every app behind the gate: its tier, who has it on its own, its address
+    local people s
+    people=$(access_people)
+    { printf 'APP\tTIER\tGIVEN ON ITS OWN TO\tADDRESS\n'
+      for s in $(authentik_gate_apps); do
+          printf '%s\t%s\t%s\t%s\n' "$s" "$(svc_tier "$s")" \
+              "$(jq -r --arg g "app-$s" '[.results[] | select(any(.groups_obj[]?; .name == $g)) | .username] | if length == 0 then "-" else join(",") end' <<<"$people")" \
+              "$(svc_url "$s")"
+      done
+    } | table_print
+    info "frontend: the household ($PORTAL_FRONTEND) and its admins; admin: $PORTAL_ADMIN only. Move one: ./mediastack.sh access tier <app> frontend|admin"
+    info "Jellyfin, Seerr, Kavita and Audiobookshelf sign people in themselves — everyone in the portal (./mediastack.sh users)"
+}
+
+access_list_user() { # access_list_user NAME — what that person may open behind the gate, and why
+    local people u s why n=0
+    people=$(access_people)
+    u=$(jq -c --arg n "${1,,}" 'first(.results[] | select((.username | ascii_downcase) == $n)) // empty' <<<"$people")
+    [[ -n "$u" ]] || die "the portal has no user '$1' (its people: ./mediastack.sh users)"
+    in_group() { jq -e --arg g "$1" 'any(.groups_obj[]?; .name == $g)' <<<"$u" >/dev/null; }
+    { printf 'APP\tWHY\tADDRESS\n'
+      for s in $(authentik_gate_apps); do
+          if in_group "$PORTAL_ADMIN"; then why="$PORTAL_ADMIN"
+          elif [[ "$(svc_tier "$s")" == frontend ]] && in_group "$PORTAL_FRONTEND"; then why="$PORTAL_FRONTEND (its tier)"
+          elif in_group "app-$s"; then why="given on its own (app-$s)"
+          else continue; fi
+          printf '%s\t%s\t%s\n' "$s" "$why" "$(svc_url "$s")"; n=$((n + 1))
+      done
+    } | table_print
+    (( n )) || info "$(jq -r .username <<<"$u") may open none of the apps behind the gate"
+    jq -e '.is_active' <<<"$u" >/dev/null || warn "$(jq -r .username <<<"$u")'s portal account is off — they sign in to nothing"
+}
+
+access_tier() { # access_tier APP frontend|admin [--yes] — kept in .env; the card's rule applied now; who loses it signed out of the portal
+    local yes=0 args=() s t cur def stem people losers=() lost
+    while (( $# )); do case "$1" in --yes) yes=1; shift ;; -*) die "Unknown access tier arg '$1'" ;; *) args+=("$1"); shift ;; esac; done
+    (( ${#args[@]} == 2 )) || die "usage: access tier <app> frontend|admin [--yes]"
+    s=${args[0]}; t=${args[1]}
+    [[ "$t" == frontend || "$t" == admin ]] || die "access tier: '$t' — frontend (the household and its admins) or admin (admins only)"
+    [[ " $(authentik_gate_apps | tr '\n' ' ') " == *" $s "* ]] \
+        || die "'$s' is not an app behind the portal's gate — those are: $(authentik_gate_apps | paste -sd' ' -)"
+    cur=$(svc_tier "$s")
+    [[ "$cur" != "$t" ]] || { ok "access: $s is $t already"; return 0; }
+    if [[ "$t" == frontend ]]; then
+        warn "access: $s for the household — everyone in '$PORTAL_FRONTEND' can then open it and do what it does there (in a download or settings tool: add, change and delete what it holds)"
+        (( yes )) || confirm "Open $s to the household?" || { info "nothing changed: $s stays $cur"; return 0; }
+    fi
+    if [[ "$t" == admin ]]; then
+        # who loses it: the household, but not admins and not those given it on its own
+        people=$(access_people)
+        mapfile -t losers < <(jq -r --arg fe "$PORTAL_FRONTEND" --arg ad "$PORTAL_ADMIN" --arg g "app-$s" '.results[]
+            | select([.groups_obj[]?.name] as $n | ($n | index($fe)) != null and ($n | index($ad)) == null and ($n | index($g)) == null)
+            | "\(.pk)\t\(.username)"' <<<"$people")
+    fi
+    def=$(svc_tier_default "$s"); stem=$(uvar "$s")
+    if [[ "$t" == "$def" ]]; then env_del "${stem}_TIER"; else env_set "${stem}_TIER" "$t"; fi
+    WIRE_FAILS=0
+    # shellcheck disable=SC2034  # read by the wire steps (lib/wire.sh)
+    WIRE_DRY=0
+    wire_authentik_cards
+    (( ! WIRE_FAILS )) || die "access: $s's rule did not take ($WIRE_FAILS failure(s) above) — .env says $t; ./mediastack.sh wire authentik tries again"
+    if (( ${#losers[@]} )); then
+        # the gate decided when each session began: only a new sign-in hears no (proven live, 16 Nov 2026)
+        local pks=() l
+        for l in "${losers[@]}"; do pks+=("${l%%$'\t'*}"); done
+        lost=$(signin_sessions_end "${pks[@]}") \
+            || die "access: $s is admin-only now, but authentik refused to end the sessions of those who lost it: $(oneline "$lost")"
+        ok "access: $s is admin-only — ${#losers[@]} of the household lost it ($(printf '%s\n' "${losers[@]}" | cut -f2 | paste -sd, -)); their portal sessions ended ($lost), so their next visit asks again"
+    else
+        ok "access: $s is $t now"
+    fi
 }
 
 cmd_set_email() { # an admin changes a person's portal email; Kavita follows; a shared address warns, --yes overrides

@@ -349,6 +349,18 @@ Jellyfin on the web and the phone with the portal password and with the app
 password.
 *Slice 4 also:* a grant's or revoke's change of groups is followed by one
 save of the person — proven live (16 Nov 2026): it clears authentik's
-day-long list of their apps (the card appears or goes on their next load). **Slice 3 — tiers and `access`**
-(decisions 6, 8). **Slice 4 — grants and taking access away** (decisions 4,
-5, 8).
+day-long list of their apps (the card appears or goes on their next load).
+
+**Slice 3 — tiers and `access`** (decisions 6, 8; *built 16 Nov 2026*, to
+prove on the keeper's upgrade). `<SVC>_TIER` (schema 46) over the service's
+`mediastack.tier` label over its kind (the household gate's apps frontend,
+the tools admin); `wire` binds each app's card by its tier (frontend: the
+household and its admins, the Media shelf; admin: admins only, the tools —
+the household's binding taken off). `access list [user]`, `access tier`:
+opening an app to the household warns and asks; a move to admin applies the
+rule first, then ends the portal sessions of the household members who lose
+it (`bulk_delete`, the admin UI's own deletion). A binding's change clears
+every person's cached list of apps (authentik's signals), so a tier needs no
+save of each person.
+
+**Slice 4 — grants and taking access away** (decisions 4, 5, 8).

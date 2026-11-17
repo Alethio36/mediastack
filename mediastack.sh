@@ -35,7 +35,7 @@ CGROUP_FILE=/proc/self/cgroup                     # scheduled_run reads it (a te
 STATE_DIR="$LOCAL_DIR/state"                      # pending work: one file per marker (state_get/state_set)
 ENV_BACKUP_DIR="$LOCAL_DIR/env-backups"           # .env before each schema migration
 ENV_BACKUP_KEEP=10                                # the oldest (your original) + the newest 9
-SCRIPT_SCHEMA=45
+SCRIPT_SCHEMA=46
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -1188,6 +1188,7 @@ VERBS=(
     "rotate-secrets~rotate-secrets~none~Connect~Give every secret the stack made for itself a new value, rewire what holds it, prove it (docs/design-rotate.md)."
     "reset-password~reset-password <user>~max=1~Connect~Someone locked out: the portal's single-use sign-in link, or with Wizarr its single-use reset link."
     "signout~signout <user>~max=1~Connect~Sign someone out of Jellyfin on every device (each goes to sign-in on its next request); their password is not changed."
+    "access~access [list [user]] | access tier <app> frontend|admin [--yes]~max=4~Connect~Who may open which app behind the portal: list them (or one person's), or move an app between the household (frontend) and admins only (admin)."
     "set-email~set-email <user> <address> [--yes]~free~Connect~An admin changes a person's portal email; Kavita follows. A shared address warns and asks (--yes overrides)."
     "users~users~none~Connect~The portal's people: username, name, email, groups, and whether they can sign in."
     "email~email [status|test <address>]~free~Connect~The portal's outgoing email: status, or send a real test message (docs/email.md)."
