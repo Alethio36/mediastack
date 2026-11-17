@@ -309,8 +309,8 @@ So **slice 4's grant and revoke save the person once after changing their
 groups**, which clears it; a grant made by hand in authentik's UI shows on
 their dashboard only after that, or a day later (the README says so).
 
-**Slice 2 — the rename** (decisions 1–3; *built 16 Nov 2026*, to prove on
-the keeper's upgrade). The blueprint renames each group in place by a
+**Slice 2 — the rename** (decisions 1–3; *built and proven live 16 Nov
+2026*). The blueprint renames each group in place by a
 conditioned entry before the entry that finds it by its new name (its
 importer applies entries in order, in one transaction); every reader goes
 through `PORTAL_FRONTEND` / `PORTAL_ADMIN` (a test holds the blueprint's
@@ -337,6 +337,16 @@ other when an answer is late. Now: every gate goes onto the outpost in one
 write once all the cards are done; the outpost and provider writes wait as
 long as authentik's slow writes (`AUTHENTIK_STAGE_WAIT`), and a write with no
 answer is read back before it counts as a failure.
+*Proven live (16 Nov 2026, the keeper from `stable` 8e8e03f, `upgrade` to
+`unstable` 2aef583 pulling for real):* schema 44 → 45 said the rename once;
+`wire` renamed both groups in place (spikeuser in `frontend`; no
+`media-users` or `admins` left; `frontend` kept its year limit), put every
+gate on the outpost in one write, rewrote the panel's list for `admin`
+(its admin kept) and Jellyfin's filter, with no failure; doctor: every gated
+app on its own gate. akadmin opened the panel (status, leak test) and the
+tools; spikeuser was refused Sonarr, opened Navidrome, and signed in to
+Jellyfin on the web and the phone with the portal password and with the app
+password.
 *Slice 4 also:* a grant's or revoke's change of groups is followed by one
 save of the person — proven live (16 Nov 2026): it clears authentik's
 day-long list of their apps (the card appears or goes on their next load). **Slice 3 — tiers and `access`**
