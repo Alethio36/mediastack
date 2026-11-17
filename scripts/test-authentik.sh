@@ -1763,11 +1763,13 @@ tr_() { ( E=$2 L=$3 G=$4; env_get() { [[ "$1" == "$(uvar "$S")_TIER" ]] && echo 
 
 # ---- access: list, one person, tier moves (docs/design-access.md decision 8) ----
 AP='{"results":[
- {"pk":1,"username":"alice","is_active":true,"groups_obj":[{"name":"admin"}]},
- {"pk":2,"username":"bob","is_active":true,"groups_obj":[{"name":"frontend"}]},
- {"pk":3,"username":"carol","is_active":true,"groups_obj":[{"name":"frontend"},{"name":"app-sonarr"}]},
- {"pk":4,"username":"dave","is_active":false,"groups_obj":[]},
- {"pk":5,"username":"erin","is_active":true,"groups_obj":[{"name":"frontend"},{"name":"admin"}]}]}'
+ {"pk":1,"username":"alice","type":"internal","is_active":true,"groups_obj":[{"name":"admin"}]},
+ {"pk":2,"username":"bob","type":"internal","is_active":true,"groups_obj":[{"name":"frontend"}]},
+ {"pk":3,"username":"carol","type":"internal","is_active":true,"groups_obj":[{"name":"frontend"},{"name":"app-sonarr"}]},
+ {"pk":4,"username":"dave","type":"internal","is_active":false,"groups_obj":[]},
+ {"pk":5,"username":"erin","type":"internal","is_active":true,"groups_obj":[{"name":"frontend"},{"name":"admin"}]},
+ {"pk":6,"username":"fay","type":"internal","is_active":true,"groups_obj":[{"name":"frontend"},{"name":"app-navidrome"}]},
+ {"pk":7,"username":"bot","type":"service_account","is_active":true,"groups_obj":[]}]}'
 acc() { # acc FUNCTION ARGS... -> its output and rc; .env in $T/aenv, calls in $T/acalls
     ( signin_people() { echo "$AP"; }
       authentik_gate_apps() { printf '%s\n' sonarr navidrome; }
@@ -1777,14 +1779,16 @@ acc() { # acc FUNCTION ARGS... -> its output and rc; .env in $T/aenv, calls in $
       env_set() { env_del "$1"; echo "$1=$2" >> "$T/aenv"; echo "env_set $1=$2" >> "$T/acalls"; }
       env_del() { awk -F= -v k="$1" '$1!=k' "$T/aenv" > "$T/aenv.n"; mv "$T/aenv.n" "$T/aenv"; echo "env_del $1" >> "$T/acalls"; }
       wire_authentik_cards() { echo "wire cards (sonarr $(svc_tier sonarr), navidrome $(svc_tier navidrome))" >> "$T/acalls"; (( ${WFAIL:-0} )) && WIRE_FAILS=1; return 0; }
-      ak_api() { echo "$1 $2" >> "$T/acalls"; echo '{"deleted":3}'; }
+      ak_api() { echo "$1 $2" >> "$T/acalls"; echo "{\"deleted\":${DEL:-3}}"; }
+      signin_app_group_ready() { [[ -z "${NOTREADY:-}" ]] || { echo "the group app-$1 does not exist yet"; return 1; }; }
+      signin_group_change() { echo "group $1 $2 $3" >> "$T/acalls"; [[ -z "${GCFAIL:-}" ]] || { echo "refused"; return 1; }; }
       confirm() { echo "asked: $1" >> "$T/acalls"; [[ "${ANS:-n}" == y ]]; }
       warn() { echo "WARN $*"; }; ok() { echo "OK $*"; }; info() { echo ":: $*"; }
       rc=0; ( "$@" ) 2>&1 || rc=$?; echo "rc=$rc" )
 }
 : > "$T/aenv"; rm -f "$T/acalls"
 o=$(acc access_list)
-grep -qE '^sonarr +admin +carol +https://sonarr.x$' <<<"$o" && grep -qE '^navidrome +frontend +- +https://navidrome.x$' <<<"$o" \
+grep -qE '^sonarr +admin +carol +https://sonarr.x$' <<<"$o" && grep -qE '^navidrome +frontend +fay +https://navidrome.x$' <<<"$o" \
     || fail_ "access list: each app's tier, who has it on its own, its address: $o"; pass
 [[ "$(acc access_list_user alice | grep -cE '^(sonarr|navidrome) +admin ')" == 2 ]] || fail_ "an admin may open every app: $(acc access_list_user alice)"; pass
 o=$(acc access_list_user CAROL)
@@ -1812,12 +1816,85 @@ grep -qx 'env_del SONARR_TIER' "$T/acalls" || fail_ "back to its default: the .e
 rm -f "$T/acalls"; : > "$T/aenv"; o=$(acc access_tier navidrome admin)
 grep -qx 'env_set NAVIDROME_TIER=admin' "$T/acalls" && grep -qx 'DELETE /core/authenticated_sessions/bulk_delete/?user_pks=2&user_pks=3' "$T/acalls" \
     && grep -q '2 of the household lost it (bob,carol); their portal sessions ended (3)' <<<"$o" && ! grep -q asked "$T/acalls" \
-    || fail_ "navidrome to admin: no question, bob and carol signed out of the portal, alice and erin (an admin, in both groups) kept: $o $(cat "$T/acalls")"; pass
+    || fail_ "navidrome to admin: no question, bob and carol signed out of the portal, alice and erin (an admin, in both groups) and fay (granted) kept: $o $(cat "$T/acalls")"; pass
 b=$(grep -n '^wire cards' "$T/acalls" | cut -d: -f1); d=$(grep -n bulk_delete "$T/acalls" | cut -d: -f1)
 (( b < d )) || fail_ "the rule first, then the sessions (a new sign-in must already hear no)"; pass
 rm -f "$T/acalls"; : > "$T/aenv"; o=$(WFAIL=1 acc access_tier navidrome admin)
 grep -q "navidrome's rule did not take" <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q bulk_delete "$T/acalls" \
     || fail_ "the rule refused: stop, say so, nobody signed out: $o"; pass
+rm -f "$T/acalls"; : > "$T/aenv"; o=$(DEL=0 acc access_tier navidrome admin)
+grep -q '2 of the household lost it (bob,carol); no portal session of theirs was open' <<<"$o" \
+    || fail_ "nobody's session was open: said so, not 'ended (0)': $o"; pass
+: > "$T/aenv"
+# grant: into app-<svc>, the person saved (their dashboard follows) — no session to end
+rm -f "$T/acalls"; o=$(acc access_grant BOB sonarr)
+grep -qx 'group add 2 app-sonarr' "$T/acalls" && grep -q 'OK access: bob can now open sonarr (granted)' <<<"$o" && ! grep -q bulk_delete "$T/acalls" \
+    || fail_ "grant: bob (any case) into app-sonarr, said so, nobody signed out: $o $(cat "$T/acalls")"; pass
+rm -f "$T/acalls"; o=$(acc access_grant carol sonarr); grep -q 'carol has sonarr granted already' <<<"$o" && [[ ! -f "$T/acalls" ]] \
+    || fail_ "granted already: nothing done: $o"; pass
+o=$(acc access_grant bob navidrome); grep -q 'they could already open it through frontend (its tier); the grant keeps it if that changes' <<<"$o" \
+    || fail_ "a grant beside the tier: made, and said what it adds: $o"; pass
+o=$(acc access_grant dave sonarr); grep -q "dave's portal account is off" <<<"$o" && grep -q rc=0 <<<"$o" || fail_ "a grant to an account that is off: made, and warned: $o"; pass
+for a in "bot sonarr:is not a person's account" "bob jellyfin:not an app behind the portal's gate" "nobody sonarr:the portal has no user 'nobody'" "bob:usage: access grant"; do
+    rm -f "$T/acalls"; read -ra w <<<"${a%%:*}"; o=$(acc access_grant "${w[@]}")
+    grep -q "${a#*:}" <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q '^group' "$T/acalls" 2>/dev/null || fail_ "grant ${a%%:*}: stops (${a#*:}), nothing changed: $o"; pass
+done
+rm -f "$T/acalls"; o=$(NOTREADY=1 acc access_grant bob sonarr)
+grep -q 'the group app-sonarr does not exist yet — ./mediastack.sh wire authentik makes it' <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q '^group' "$T/acalls" 2>/dev/null \
+    || fail_ "the app's group or its card's rule missing: stop before changing anyone: $o"; pass
+o=$(GCFAIL=1 acc access_grant bob sonarr); grep -q 'authentik did not grant bob sonarr: refused' <<<"$o" && grep -q rc=1 <<<"$o" || fail_ "a refused grant stops, authentik's answer shown: $o"; pass
+# revoke: out of app-<svc>; when that takes the app away, their portal sessions end — after the change
+rm -f "$T/acalls"; o=$(acc access_revoke carol sonarr)
+grep -qx 'group remove 3 app-sonarr' "$T/acalls" && grep -qx 'DELETE /core/authenticated_sessions/bulk_delete/?user_pks=3' "$T/acalls" \
+    && grep -q 'carol can no longer open sonarr — their portal sessions ended (3)' <<<"$o" \
+    || fail_ "revoke: carol out of app-sonarr, her portal sessions ended: $o $(cat "$T/acalls")"; pass
+[[ "$(grep -n '^group remove' "$T/acalls" | cut -d: -f1)" -lt "$(grep -n bulk_delete "$T/acalls" | cut -d: -f1)" ]] \
+    || fail_ "the group first, then the sessions (a new sign-in must already hear no)"; pass
+o=$(DEL=0 acc access_revoke carol sonarr); grep -q 'no portal session of theirs was open' <<<"$o" || fail_ "revoke, no session open: said so: $o"; pass
+rm -f "$T/acalls"; o=$(acc access_revoke fay navidrome)
+grep -qx 'group remove 6 app-navidrome' "$T/acalls" && ! grep -q bulk_delete "$T/acalls" && grep -q 'still open it through frontend (its tier)' <<<"$o" \
+    || fail_ "a grant beside the tier: removed, nobody signed out, told they keep it: $o $(cat "$T/acalls")"; pass
+rm -f "$T/acalls"; o=$(acc access_revoke bob sonarr); grep -q 'bob has no grant of sonarr — nothing to take away' <<<"$o" && grep -q rc=0 <<<"$o" && [[ ! -f "$T/acalls" ]] \
+    || fail_ "no grant: nothing done: $o"; pass
+o=$(acc access_revoke alice sonarr); grep -q "alice opens sonarr as one of 'admin', not by a grant" <<<"$o" && grep -q rc=1 <<<"$o" \
+    || fail_ "an admin: refused, and said how: $o"; pass
+o=$(acc access_revoke bob navidrome); grep -q 'through its tier (frontend), not by a grant — for admins only: ./mediastack.sh access tier navidrome admin' <<<"$o" && grep -q rc=1 <<<"$o" \
+    || fail_ "the household's tier: refused, and said how: $o"; pass
+rm -f "$T/acalls"; o=$(GCFAIL=1 acc access_revoke carol sonarr); grep -q 'authentik did not take sonarr from carol' <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q bulk_delete "$T/acalls" \
+    || fail_ "a refused revoke stops before ending anyone's session: $o"; pass
+
+# ---- signin_group_change: the membership changed, read back, then the person saved ----
+gc() { # gc add|remove USER GROUP -> rc and the calls; HAS: what the read-back shows
+    ( ak_api() { echo "$1 $2 ${3:-}" >> "$T/gcalls"
+        case "$1 $2" in
+          "GET /core/groups/?search=app-sonarr") echo '{"results":[{"name":"app-sonarr","pk":"g-s"},{"name":"app-sonarr-anime","pk":"g-sa"}]}' ;;
+          "GET /core/groups/?search="*) echo '{"results":[]}' ;;
+          "POST /core/groups/"*) [[ -z "${REF:-}" ]] || { echo '{"detail":"no"}'; return 1; }; echo '' ;;
+          "GET /core/users/2/") echo "{\"pk\":2,\"name\":\"Bob B\",\"groups_obj\":[${HAS:-}]}" ;;
+          "PATCH /core/users/2/") echo '{}' ;;
+        esac; }
+      rm -f "$T/gcalls"; rc=0; signin_group_change "$@" || rc=$?; echo "rc=$rc" )
+}
+o=$(HAS='{"name":"app-sonarr"}' gc add 2 app-sonarr)
+[[ "$o" == rc=0 ]] && grep -qx 'POST /core/groups/g-s/add_user/ {"pk":2}' "$T/gcalls" && grep -qx 'PATCH /core/users/2/ {"name":"Bob B"}' "$T/gcalls" \
+    || fail_ "add: the exact group (not a lookalike), read back, then the person saved as they are: $o $(cat "$T/gcalls")"; pass
+o=$(HAS='' gc remove 2 app-sonarr); [[ "$o" == rc=0 ]] && grep -q '^POST /core/groups/g-s/remove_user/' "$T/gcalls" || fail_ "remove: read back gone: $o"; pass
+o=$(HAS='' gc add 2 app-sonarr); grep -q 'their groups did not change' <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q '^PATCH' "$T/gcalls" \
+    || fail_ "authentik said yes but nothing changed: a failure, not assumed: $o"; pass
+o=$(REF=1 gc add 2 app-sonarr); grep -q '"detail":"no"' <<<"$o" && grep -q rc=1 <<<"$o" || fail_ "refused: authentik's answer shown: $o"; pass
+o=$(gc add 2 app-nothing); grep -q "there is no group 'app-nothing'" <<<"$o" && ! grep -q '^POST' "$T/gcalls" || fail_ "no such group: stop before writing: $o"; pass
+
+# ---- ak_card: AK_CARDS_QUIET=1 reports only a card that changed (access tier) ----
+kc() { # kc QUIET URL -> ak_card's output for a card whose stored address is https://s.x, its group bound
+    ( AK_CARDS_QUIET=$1 WIRE_DRY=0
+      ak_api() { case "$1 $2" in "GET /policies/bindings/"*) echo '{"results":[{"group":"g1"}]}' ;; *) echo '{"pk":"a1"}' ;; esac; }
+      ok() { echo "OK $*"; }; info() { :; }
+      ak_card '{"results":[{"slug":"mediastack-app-s","pk":"a1","meta_launch_url":"https://s.x","provider":5,"group":"Media"}]}' \
+          mediastack-app-s s "$2" d Media 5 g1 )
+}
+[[ -z "$(kc 1 https://s.x)" ]] || fail_ "quiet: an unchanged card says nothing: $(kc 1 https://s.x)"; pass
+[[ "$(kc 1 https://new.x)" == "OK authentik: s card (Media)" ]] || fail_ "quiet: a changed card is reported: $(kc 1 https://new.x)"; pass
+[[ "$(kc 0 https://s.x)" == "OK authentik: s card (Media)" ]] || fail_ "wire: every card reported, as before: $(kc 0 https://s.x)"; pass
 : > "$T/aenv"
 
 # ---- doctor: each gated app on a gate of its own; a card with a gate and no rule fails ----

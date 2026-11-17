@@ -212,8 +212,9 @@ agreed first:
    (the rename in place inside the blueprint; revoking ends portal sessions,
    proven needed live), built only after a keeper install from `stable`.
    Decision 9 (16 Nov 2026, proven live): the arrs' `/api` is behind the
-   gate — phone apps send a device password as a header (nzb360). Next:
-   slice 4, the grants.
+   gate — phone apps send a device password as a header (nzb360). Slice 4,
+   `access grant|revoke` for the apps behind the gate, built 16 Nov 2026;
+   grants for Jellyfin and the other apps with their own sign-in later.
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions
    pending.

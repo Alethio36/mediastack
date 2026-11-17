@@ -1188,7 +1188,7 @@ VERBS=(
     "rotate-secrets~rotate-secrets~none~Connect~Give every secret the stack made for itself a new value, rewire what holds it, prove it (docs/design-rotate.md)."
     "reset-password~reset-password <user>~max=1~Connect~Someone locked out: the portal's single-use sign-in link, or with Wizarr its single-use reset link."
     "signout~signout <user>~max=1~Connect~Sign someone out of Jellyfin on every device (each goes to sign-in on its next request); their password is not changed."
-    "access~access [list [user]] | access tier <app> frontend|admin [--yes]~max=4~Connect~Who may open which app behind the portal: list them (or one person's), or move an app between the household (frontend) and admins only (admin)."
+    "access~access [list [user]] | access tier <app> frontend|admin [--yes] | access grant|revoke <user> <app>~max=4~Connect~Who may open which app behind the portal: list them (or one person's), move an app between the household (frontend) and admins only (admin), or give one person one app (grant) and take it back (revoke)."
     "set-email~set-email <user> <address> [--yes]~free~Connect~An admin changes a person's portal email; Kavita follows. A shared address warns and asks (--yes overrides)."
     "users~users~none~Connect~The portal's people: username, name, email, groups, and whether they can sign in."
     "email~email [status|test <address>]~free~Connect~The portal's outgoing email: status, or send a real test message (docs/email.md)."

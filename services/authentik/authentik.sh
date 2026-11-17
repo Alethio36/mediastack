@@ -70,6 +70,30 @@ signin_sessions_end() { # signin_sessions_end USER-PK... -> how many portal sess
     jq -r '.deleted // 0' <<<"$out"
 }
 
+signin_group_change() { # signin_group_change add|remove USER-PK GROUP -> rc != 0 (what went wrong) when refused or not read back
+    # then one save of the person: authentik keeps each person's list of apps
+    # for a day, cleared when the user is saved and not when their groups
+    # change (2026.8.5's source; proven live 16 Nov 2026) — so their
+    # dashboard's card follows at once
+    local op=$1 u=$2 g=$3 gpk out want=true
+    [[ "$op" == remove ]] && want=false
+    gpk=$(ak_group_pk "$g") || { echo "the groups are unreadable"; return 1; }
+    [[ -n "$gpk" ]] || { echo "there is no group '$g'"; return 1; }
+    out=$(ak_api POST "/core/groups/$gpk/${op}_user/" "$(jq -cn --argjson p "$u" '{pk:$p}')") || { echo "$out"; return 1; }
+    out=$(ak_api GET "/core/users/$u/") || { echo "the person is unreadable: $out"; return 1; }
+    [[ "$(jq -r --arg g "$g" 'any(.groups_obj[]?; .name == $g)' <<<"$out")" == "$want" ]] \
+        || { echo "authentik answered, but their groups did not change"; return 1; }
+    out=$(ak_api PATCH "/core/users/$u/" "$(jq -c '{name}' <<<"$out")") \
+        || { echo "their groups changed, but the save that updates their dashboard was refused: $out"; return 1; }
+}
+
+signin_app_group_ready() { # signin_app_group_ready SVC -> rc 0 when app-<svc> exists and the app's card admits it; else says what is missing
+    local pk
+    pk=$(ak_group_pk "app-$1") || { echo "authentik's groups are unreadable"; return 1; }
+    [[ -n "$pk" ]] || { echo "the group app-$1 does not exist yet"; return 1; }
+    ak_card_bound "mediastack-app-$1" "$pk" || { echo "$1's card does not admit app-$1 yet"; return 1; }
+}
+
 signin_admins() { # -> the portal's admin group's members (authentik's user-list JSON); rc != 0 when unreadable
     # an unknown group name is refused (400), never answered with nobody:
     # a sync reading this cannot take everyone's admin rights away
@@ -1234,7 +1258,8 @@ ak_app_gate() { # ak_app_gate ALL SVC SECTION GROUP-PK... — the app's own gate
 }
 
 ak_card() { # ak_card ALL SLUG NAME URL DESC SECTION PROVIDER GROUP-PK... — a dashboard card only those groups see
-    local all="$1" slug="$2" name="$3" url="$4" desc="$5" section="$6" prov="$7" have body app bind g
+    # AK_CARDS_QUIET=1: only a card that changed is reported (access tier)
+    local all="$1" slug="$2" name="$3" url="$4" desc="$5" section="$6" prov="$7" have body app bind g changed=0
     shift 7
     body=$(jq -cn --arg n "$name" --arg sl "$slug" --arg u "$url" --arg d "$desc" --arg sec "$section" --arg p "$prov" \
         '{name:$n, slug:$sl, meta_launch_url:$u, meta_description:$d, meta_publisher:"mediastack", group:$sec,
@@ -1243,10 +1268,12 @@ ak_card() { # ak_card ALL SLUG NAME URL DESC SECTION PROVIDER GROUP-PK... — a 
     if [[ -z "$have" ]]; then
         w_would "authentik: add the $section card for $name" || return 0
         app=$(ak_api POST /core/applications/ "$body") || { wfail "authentik refused the card for $name: $(head -c160 <<<"$app")"; return 0; }
+        changed=1
     elif [[ "$(jq -r '.meta_launch_url' <<<"$have")" != "$url" || "$(jq -r '.provider // "" | tostring' <<<"$have" | sed 's/^null$//')" != "$prov" \
             || "$(jq -r '.group // ""' <<<"$have")" != "$section" ]]; then
         w_would "authentik: update $name's card" || return 0
         app=$(ak_api PATCH "/core/applications/$slug/" "$body") || { wfail "authentik refused to update $name's card"; return 0; }
+        changed=1
     else
         app=$have
     fi
@@ -1255,8 +1282,9 @@ ak_card() { # ak_card ALL SLUG NAME URL DESC SECTION PROVIDER GROUP-PK... — a 
         jq -e --arg g "$g" '.results[] | select(.group == $g)' <<<"$bind" >/dev/null && continue
         ak_api POST /policies/bindings/ "$(jq -cn --arg t "$(jq -r '.pk' <<<"$app")" --arg g "$g" '{target:$t, group:$g, order:0}')" >/dev/null \
             || { wfail "authentik: could not limit $name's card"; return 0; }
+        changed=1
     done
-    ok "authentik: $name card ($section)"
+    if (( changed || ! ${AK_CARDS_QUIET:-0} )); then ok "authentik: $name card ($section)"; fi
 }
 
 ak_card_unbind() { # ak_card_unbind SLUG GROUP-PK — that group's binding off our card (its app's tier moved away from it)

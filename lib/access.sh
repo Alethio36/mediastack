@@ -275,7 +275,8 @@ cmd_users() { # the portal's people, as authentik has them
 }
 
 # ---- access: who may open which app behind the portal's gate (docs/design-access.md) ----
-cmd_access() { # access [list [user]] | access tier <app> frontend|admin [--yes]
+ACCESS_USAGE="access [list [user]]  |  access tier <app> frontend|admin [--yes]  |  access grant|revoke <user> <app>"
+cmd_access() { # access [list [user]] | access tier <app> frontend|admin [--yes] | access grant|revoke <user> <app>
     load_env; render
     signin_is authentik || die "access is the portal's (authentik), and it is not enabled — with Wizarr, each app keeps its own login"
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
@@ -284,13 +285,40 @@ cmd_access() { # access [list [user]] | access tier <app> frontend|admin [--yes]
         list) (( $# <= 1 )) || die "usage: access list [user]"
               if (( $# )); then access_list_user "$1"; else access_list; fi ;;
         tier) access_tier "$@" ;;
-        *) die "usage: ./mediastack.sh access [list [user]]  |  access tier <app> frontend|admin [--yes]" ;;
+        grant) access_grant "$@" ;;
+        revoke) access_revoke "$@" ;;
+        *) die "usage: ./mediastack.sh $ACCESS_USAGE" ;;
     esac
 }
 
 access_people() { # -> the portal's people (authentik's user list), or the stop says why
     local out; out=$(signin_people) || die "authentik refused the user list: $(oneline "$out")"
     echo "$out"
+}
+
+access_person() { # access_person NAME -> ACC_PERSON: that person's entry (the name in any case); stops when there is none
+    local people
+    people=$(access_people)
+    ACC_PERSON=$(jq -c --arg n "${1,,}" 'first(.results[] | select((.username | ascii_downcase) == $n)) // empty' <<<"$people")
+    [[ -n "$ACC_PERSON" ]] || die "the portal has no user '$1' (its people: ./mediastack.sh users)"
+}
+
+access_in() { jq -e --arg g "$2" 'any(.groups_obj[]?; .name == $g)' <<<"$1" >/dev/null; }   # access_in PERSON GROUP
+
+access_why() { # access_why PERSON SVC -> the group that gives them the app, a grant aside; nothing when none does
+    if access_in "$1" "$PORTAL_ADMIN"; then echo "$PORTAL_ADMIN"
+    elif [[ "$(svc_tier "$2")" == frontend ]] && access_in "$1" "$PORTAL_FRONTEND"; then echo "$PORTAL_FRONTEND (its tier)"; fi
+    return 0
+}
+
+access_app() { # access_app SVC — stops unless it is an app behind the portal's gate
+    [[ " $(authentik_gate_apps | tr '\n' ' ') " == *" $1 "* ]] \
+        || die "'$1' is not an app behind the portal's gate — those are: $(authentik_gate_apps | paste -sd' ' -) (Jellyfin, Seerr, Kavita and Audiobookshelf admit everyone in the portal)"
+}
+
+access_sessions_said() { # access_sessions_said N -> the sentence for N portal sessions ended
+    if [[ "$1" == 0 ]]; then echo "no portal session of theirs was open"
+    else echo "their portal sessions ended ($1), so their next visit asks again"; fi
 }
 
 access_list() { # every app behind the gate: its tier, who has it on its own, its address
@@ -304,26 +332,23 @@ access_list() { # every app behind the gate: its tier, who has it on its own, it
       done
     } | table_print
     info "frontend: the household and its admins; admin: admins only (the portal's '$PORTAL_ADMIN' group). Move one: ./mediastack.sh access tier <app> frontend|admin"
+    info "Give one person one app: ./mediastack.sh access grant <user> <app> (take it back: access revoke)"
     info "Jellyfin, Seerr, Kavita and Audiobookshelf sign people in themselves — everyone in the portal (./mediastack.sh users)"
 }
 
 access_list_user() { # access_list_user NAME — what that person may open behind the gate, and why
-    local people u s why rows=""
-    people=$(access_people)
-    u=$(jq -c --arg n "${1,,}" 'first(.results[] | select((.username | ascii_downcase) == $n)) // empty' <<<"$people")
-    [[ -n "$u" ]] || die "the portal has no user '$1' (its people: ./mediastack.sh users)"
-    in_group() { jq -e --arg g "$1" 'any(.groups_obj[]?; .name == $g)' <<<"$u" >/dev/null; }
+    local u s why rows="" name
+    access_person "$1"; u=$ACC_PERSON; name=$(jq -r .username <<<"$u")
     # the rows gathered first: a count kept inside a pipe's block stays there (a subshell)
     for s in $(authentik_gate_apps); do
-        if in_group "$PORTAL_ADMIN"; then why="$PORTAL_ADMIN"
-        elif [[ "$(svc_tier "$s")" == frontend ]] && in_group "$PORTAL_FRONTEND"; then why="$PORTAL_FRONTEND (its tier)"
-        elif in_group "app-$s"; then why="given on its own (app-$s)"
-        else continue; fi
+        why=$(access_why "$u" "$s")
+        if [[ -z "$why" ]] && access_in "$u" "app-$s"; then why="given on its own (app-$s)"; fi
+        [[ -n "$why" ]] || continue
         rows+="$s"$'\t'"$why"$'\t'"$(svc_url "$s")"$'\n'
     done
     if [[ -n "$rows" ]]; then printf 'APP\tWHY\tADDRESS\n%s' "$rows" | table_print
-    else info "$(jq -r .username <<<"$u") may open none of the apps behind the gate"; fi
-    jq -e '.is_active' <<<"$u" >/dev/null || warn "$(jq -r .username <<<"$u")'s portal account is off — they sign in to nothing"
+    else info "$name may open none of the apps behind the gate"; fi
+    jq -e '.is_active' <<<"$u" >/dev/null || warn "$name's portal account is off — they sign in to nothing"
 }
 
 access_tier() { # access_tier APP frontend|admin [--yes] — kept in .env; the card's rule applied now; who loses it signed out of the portal
@@ -332,8 +357,7 @@ access_tier() { # access_tier APP frontend|admin [--yes] — kept in .env; the c
     (( ${#args[@]} == 2 )) || die "usage: access tier <app> frontend|admin [--yes]"
     s=${args[0]}; t=${args[1]}
     [[ "$t" == frontend || "$t" == admin ]] || die "access tier: '$t' — frontend (the household and its admins) or admin (admins only)"
-    [[ " $(authentik_gate_apps | tr '\n' ' ') " == *" $s "* ]] \
-        || die "'$s' is not an app behind the portal's gate — those are: $(authentik_gate_apps | paste -sd' ' -)"
+    access_app "$s"
     cur=$(svc_tier "$s")
     [[ "$cur" != "$t" ]] || { ok "access: $s is $t already"; return 0; }
     if [[ "$t" == frontend ]]; then
@@ -350,8 +374,8 @@ access_tier() { # access_tier APP frontend|admin [--yes] — kept in .env; the c
     def=$(svc_tier_default "$s"); stem=$(uvar "$s")
     if [[ "$t" == "$def" ]]; then env_del "${stem}_TIER"; else env_set "${stem}_TIER" "$t"; fi
     WIRE_FAILS=0
-    # shellcheck disable=SC2034  # read by the wire steps (lib/wire.sh)
-    WIRE_DRY=0
+    # shellcheck disable=SC2034  # read by the wire steps (lib/wire.sh) and ak_card
+    WIRE_DRY=0 AK_CARDS_QUIET=1
     wire_authentik_cards
     (( ! WIRE_FAILS )) || die "access: $s's rule did not take ($WIRE_FAILS failure(s) above) — .env says $t; ./mediastack.sh wire authentik tries again"
     if (( ${#losers[@]} )); then
@@ -360,10 +384,45 @@ access_tier() { # access_tier APP frontend|admin [--yes] — kept in .env; the c
         for l in "${losers[@]}"; do pks+=("${l%%$'\t'*}"); done
         lost=$(signin_sessions_end "${pks[@]}") \
             || die "access: $s is admin-only now, but authentik refused to end the sessions of those who lost it: $(oneline "$lost")"
-        ok "access: $s is admin-only — ${#losers[@]} of the household lost it ($(printf '%s\n' "${losers[@]}" | cut -f2 | paste -sd, -)); their portal sessions ended ($lost), so their next visit asks again"
+        ok "access: $s is admin-only — ${#losers[@]} of the household lost it ($(printf '%s\n' "${losers[@]}" | cut -f2 | paste -sd, -)); $(access_sessions_said "$lost")"
     else
         ok "access: $s is $t now"
     fi
+}
+
+access_grant() { # access_grant USER APP — into app-<app>: they may open it whatever its tier
+    (( $# == 2 )) || die "usage: access grant <user> <app>"
+    local s=$2 u name why out
+    access_app "$s"; access_person "$1"; u=$ACC_PERSON; name=$(jq -r .username <<<"$u")
+    [[ "$(jq -r .type <<<"$u")" == internal ]] || die "access: '$name' is not a person's account"
+    access_in "$u" "app-$s" && { ok "access: $name has $s granted already"; return 0; }
+    out=$(signin_app_group_ready "$s") || die "access: $out — ./mediastack.sh wire authentik makes it; then grant again"
+    out=$(signin_group_change add "$(jq -r .pk <<<"$u")" "app-$s") || die "access: authentik did not grant $name $s: $(oneline "$out")"
+    why=$(access_why "$u" "$s")
+    if [[ -n "$why" ]]; then ok "access: $s granted to $name — they could already open it through $why; the grant keeps it if that changes"
+    else ok "access: $name can now open $s (granted)"; fi
+    jq -e '.is_active' <<<"$u" >/dev/null || warn "$name's portal account is off — they sign in to nothing until it is on"
+}
+
+access_revoke() { # access_revoke USER APP — out of app-<app>; when that takes the app away, their portal sessions end
+    (( $# == 2 )) || die "usage: access revoke <user> <app>"
+    local s=$2 u name why out n
+    access_app "$s"; access_person "$1"; u=$ACC_PERSON; name=$(jq -r .username <<<"$u")
+    why=$(access_why "$u" "$s")
+    if ! access_in "$u" "app-$s"; then
+        case "$why" in
+            "") ok "access: $name has no grant of $s — nothing to take away" ;;
+            "$PORTAL_ADMIN") die "access: $name opens $s as one of '$PORTAL_ADMIN', not by a grant — take them out of that group in authentik (Directory → Groups), then end their sessions (the user → Sessions)" ;;
+            *) die "access: $name opens $s through its tier ($PORTAL_FRONTEND), not by a grant — for admins only: ./mediastack.sh access tier $s admin" ;;
+        esac
+        return 0
+    fi
+    out=$(signin_group_change remove "$(jq -r .pk <<<"$u")" "app-$s") || die "access: authentik did not take $s from $name: $(oneline "$out")"
+    if [[ -n "$why" ]]; then ok "access: $name's grant of $s is gone — they still open it through $why"; return 0; fi
+    # the gate decided when each session began: only a new sign-in hears no (proven live, 16 Nov 2026)
+    n=$(signin_sessions_end "$(jq -r .pk <<<"$u")") \
+        || die "access: $name lost $s, but authentik refused to end their portal sessions: $(oneline "$n") — end them by hand (the user → Sessions)"
+    ok "access: $name can no longer open $s — $(access_sessions_said "$n"); a device password of theirs stops within a minute"
 }
 
 cmd_set_email() { # an admin changes a person's portal email; Kavita follows; a shared address warns, --yes overrides

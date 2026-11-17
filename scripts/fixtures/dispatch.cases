@@ -118,6 +118,8 @@ reset-password a b
 access
 access list someone
 access tier sonarr frontend --yes
+access grant someone sonarr
+access revoke someone sonarr
 access tier a b c d e
 # signout  (max=1)
 signout

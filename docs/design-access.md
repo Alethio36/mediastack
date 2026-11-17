@@ -426,4 +426,20 @@ error. nzb360 with the header (a new device password, spikeuser granted
 by hand) connected, without it refused, with it again connected; the
 device password deleted — refused about 6 s later.
 
-**Slice 4 — grants and taking access away** (decisions 4, 5, 8).
+**Slice 4 — grants and taking access away** (decisions 4, 8; *built 16
+Nov 2026*, to prove on anzac4). `access grant <user> <app>` — into
+`app-<svc>` (stopping first when the group or the card's binding to it is
+missing: `wire` makes them), read back, then one save of the person so
+their dashboard follows; no session to end — the next request to that app
+starts one. `access revoke <user> <app>` — out of it, read back, saved,
+then their portal sessions ended; a device password of theirs stops within
+a minute (decision 9). Refused, and told how, when they have the app
+through `admin` or the app's `frontend` tier and no grant. *Changed from
+decision 8:* a grant **beside** the tier is removed (it would come back to
+life if the tier moved), with "they still open it through …" and no
+session ended. `access tier` now reports only the cards it changed, and
+"no portal session of theirs was open" in place of "ended (0)".
+*Not in this slice:* grants for the apps that sign people in themselves
+(Jellyfin, Seerr, Kavita, Audiobookshelf) — everyone in the portal has
+them today; `app-jellyfin`, its year limit (decision 5) and `signout` on
+its revoke come with them (decision 7's "later").
