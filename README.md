@@ -678,7 +678,12 @@ changes are respected — wire only ever creates what's missing, and the
 wizard gate closes itself after the first run.
 
 Seerr has no logins of its own: everyone signs in with their Jellyfin
-account. `wire seerr` bootstraps an uninitialised Seerr (owner = the
+account. It asks Jellyfin only at sign-in and keeps its own session: someone
+whose Jellyfin access you take away (or whose portal account you turn off)
+cannot sign in to Seerr again, but a Seerr page they already have open keeps
+working until its session expires — they can still make requests there (not
+watch) ([docs/design-access.md](docs/design-access.md), decision 14).
+`wire seerr` bootstraps an uninitialised Seerr (owner = the
 Jellyfin admin, libraries enabled, every arr connected with its TRaSH
 profile); an initialised Seerr is never touched.
 

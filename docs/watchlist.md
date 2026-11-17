@@ -201,6 +201,26 @@ beside Jellyfin's, and `defer_while_streaming` asks them all.
 **Revisit when:** an app's API reports live sessions reliably and the
 household actually uses it at the hours updates and backups run.
 
+### Ending a person's Seerr session *(Nov 2026)*
+
+Taking Jellyfin away from someone (or turning their portal account off)
+stops new Seerr sign-ins, but a Seerr session already open keeps working
+until it expires — they can still make requests in it. Seerr asks Jellyfin
+only at sign-in, keeps its own session, and has no disabled state for a
+person (spiked live 16 Nov 2026: disabled in Jellyfin, still in Seerr).
+Weighed and not taken: Seerr behind the gate (a second sign-in for anyone
+arriving without a portal session) and deleting their rows in Seerr's
+database (another app's private tables). OIDC sign-in in Seerr (only in its
+`preview-new-oidc` branch, not a release, Nov 2026) would put the sign-in
+under the portal's rule, as Kavita's is — but alone it does not end a
+session already open; that needs a switch Seerr checks on every request.
+[design-access.md](design-access.md), decision 14.
+
+**Revisit when:** a Seerr release can disable a person or end their
+sessions (an admin API, or a state it checks per request) — then it joins
+`people-sync` like Kavita — or ships OIDC, which moves its sign-in onto the
+portal's rule.
+
 ### Email from Wizarr
 
 **Verdict:** parked (Nov 2026). With Wizarr, `reset-password` prints Wizarr's reset link

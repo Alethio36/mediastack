@@ -452,3 +452,100 @@ address was refused. Twice over, the same. Revoke again: nothing to take
 away; Navidrome (their tier) and akadmin (`admin`): refused, each told
 how. `access tier navidrome admin`, then `frontend`: only Navidrome's
 card reported.
+
+## Part 3 — every app, not only the gated ones (decisions **agreed** 16 Nov 2026)
+
+Part 2 decides who may open each app behind the gate. Jellyfin, Kavita,
+Audiobookshelf and Seerr sign people in themselves, and each keeps a session
+of its own that no portal change reaches: today everyone in the portal has
+them, and a person turned off in the portal keeps an open session until it
+expires. Part 3 puts them under the same rule, and makes taking an app away
+reach a session already open.
+
+*Spike (16 Nov 2026, anzac4, unstable 954f849):*
+- **Navidrome's music apps ignore `access`** (found reading
+  `services/navidrome/people.sh`, then proven): with Navidrome `admin`-only
+  and spikeuser in `frontend` alone, `/rest/ping` with spikeuser's
+  Navidrome password answered `ok`. `people-sync` takes that password only
+  when the portal account is turned off or deleted, never when access moves.
+- **Jellyfin:** spikeuser disabled in Jellyfin's dashboard — the open
+  session's next requests refused (the web page spins; a reload goes to
+  sign-in), and a new sign-in refused as not authorized (not as a wrong
+  password). Re-enabled, back.
+- **Kavita:** spikeuser's `Login` role removed — clicks in the tab already
+  open kept working; its reload 2½ minutes later went to sign-in; a new
+  portal sign-in refused by Kavita — and, because the portal still allowed
+  it, Kavita's login page sent them to the portal and the portal back, in a
+  loop. (With the portal's rule and Kavita's switch changed together, the
+  portal refuses first, on its own page — to prove in its slice.)
+- **Seerr:** spikeuser disabled in Jellyfin — Seerr kept them signed in
+  through clicks and reloads. Seerr asks Jellyfin only at sign-in, keeps its
+  own session, and has no disabled state for a person.
+- **Audiobookshelf:** not enabled on the test box. Its source refuses a
+  portal sign-in for an inactive account; whether an open session dies is
+  spiked in its slice.
+- **Found on the way:** Jellyfin's, Kavita's and Audiobookshelf's admin
+  rights follow the portal's `admin` group only when `wire` runs — akadmin's
+  Kavita account, made by a sign-in after the last wire, had none until
+  `wire kavita`.
+
+10. **One rule for every app.** A person may open an app when their portal
+    account is on and they are in `admin`, or the app's tier is `frontend`
+    and they are in `frontend`, or they were granted it (`app-<svc>`).
+    `access tier|grant|revoke` cover Jellyfin, Kavita and Audiobookshelf.
+    Seerr signs in through Jellyfin, so it follows Jellyfin's rule: no tier
+    or grant of its own, its card bound like Jellyfin's.
+11. **Where each app checks it at sign-in.** The gated apps: their card
+    (done). Kavita and Audiobookshelf: their card is their OIDC application
+    — wire binds it by tier and `app-<svc>`, the gated apps' code. Jellyfin:
+    the LDAP application's bindings and Jellyfin's LDAP search filter both
+    gain `app-jellyfin`; the `frontend` binding moves from the blueprint to
+    wire (a re-applied blueprint would put back what a tier move took off);
+    the blueprint keeps `admin`'s and the search account's.
+12. **Taking it away reaches an open session: each app's own switch, kept in
+    step with the rule.** Jellyfin — the person disabled, then `signout`
+    (their apps go to sign-in instead of spinning); Kavita — `Login` taken
+    off; Audiobookshelf — inactive; Navidrome — its music password
+    scrambled, as for a turned-off account today. On again when they may
+    again. Only accounts tied to the portal; the stack's own and local ones
+    never (as the admin syncs). Only an account the stack turned off is
+    turned back on — someone an admin disabled by hand in the app stays
+    disabled — so each app keeps a record of whom it turned off
+    (Navidrome's `navidrome-people` already does).
+13. **When it runs.** At once for the people an `access` command changes; in
+    `wire`; and every 15 minutes in `people-sync`, made from Navidrome's into
+    every app's — so a change made by hand in authentik (a group, an account
+    turned off) reaches the apps without anyone running a command. Admin
+    rights ride the same sync, so they follow within 15 minutes too. A new
+    app with accounts of its own adds one function, `<svc>_people_follow`.
+14. **Seerr's open session is a known gap, kept** (*decided 16 Nov 2026*).
+    Taking Jellyfin away stops new Seerr sign-ins (Jellyfin refuses them);
+    a Seerr session already open runs until it expires, and in it the
+    person can still make requests (they cannot watch). Weighed: Seerr
+    behind the gate (taking access away ends the portal session, the gate
+    refuses — proven on Sonarr; rejected: a second sign-in for anyone
+    arriving without a portal session); deleting their rows in Seerr's own
+    database (rejected: another app's private tables, silently broken by an
+    update). The README says so; the watchlist holds what would close it.
+
+**Costs:** a change made by hand in authentik reaches open sessions within
+15 minutes (an `access` command: at once); Kavita's open tab until its next
+reload; one more record per app of whom the stack turned off; six apps, so
+several slices.
+
+### How it is built
+
+**Slice A — `people-sync` for every app; Navidrome first.** The sync
+generalised (decision 13), Navidrome's people following the rule
+(decision 12) — its hole closed — and the admin syncs of Jellyfin, Kavita
+and Audiobookshelf moved into it.
+
+**Slice B — Jellyfin.** `app-jellyfin`, its tier and grants; the LDAP
+rule (decision 11); disabled and signed out on loss (decision 12); Seerr's
+card follows Jellyfin's rule.
+
+**Slice C — Kavita.** Its card by the rule; `Login` on loss; proven: no
+loop, and when an open tab is cut off.
+
+**Slice D — Audiobookshelf.** Spike first (enabled on the test box), then
+the same.
