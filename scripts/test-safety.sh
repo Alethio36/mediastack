@@ -203,7 +203,7 @@ broken() { # broken RULE -> a portal copy (plus the host files) with exactly tha
         torrent)   jq '.services.qbittorrent.network_mode = null' "$c" ;;
         edge)      jq '.services.jellyfin.ports += [{"published":"443","target":8096}]' "$c" ;;
         gated)     jq '(.services.gluetun.ports[] | select(.target == 7878)) |= del(.host_ip)' "$c" ;;
-        strip)     jq '(.services.gluetun.labels["traefik.http.routers.radarr-api.middlewares"]) = "something-else@file"' "$c" ;;
+        strip)     jq '(.services.navidrome.labels["traefik.http.routers.navidrome-api.middlewares"]) = "something-else@file"' "$c" ;;
         trust)     jq '.services.navidrome.environment.ND_EXTAUTH_TRUSTEDSOURCES = "0.0.0.0/0"' "$c" ;;
         dashboard) sed -i 's/middlewares: \[mediastack-gate\]/middlewares: []/' "$b/expected/traefik/dynamic/00-mediastack.yml"; cat "$c" ;;
         ldap)      sed -i 's|sourceRange: \["172.31.250.0/24"\]|sourceRange: ["0.0.0.0/0"]|' "$b/expected/traefik/dynamic/00-mediastack.yml"; cat "$c" ;;
