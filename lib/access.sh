@@ -303,26 +303,26 @@ access_list() { # every app behind the gate: its tier, who has it on its own, it
               "$(svc_url "$s")"
       done
     } | table_print
-    info "frontend: the household ($PORTAL_FRONTEND) and its admins; admin: $PORTAL_ADMIN only. Move one: ./mediastack.sh access tier <app> frontend|admin"
+    info "frontend: the household and its admins; admin: admins only (the portal's '$PORTAL_ADMIN' group). Move one: ./mediastack.sh access tier <app> frontend|admin"
     info "Jellyfin, Seerr, Kavita and Audiobookshelf sign people in themselves — everyone in the portal (./mediastack.sh users)"
 }
 
 access_list_user() { # access_list_user NAME — what that person may open behind the gate, and why
-    local people u s why n=0
+    local people u s why rows=""
     people=$(access_people)
     u=$(jq -c --arg n "${1,,}" 'first(.results[] | select((.username | ascii_downcase) == $n)) // empty' <<<"$people")
     [[ -n "$u" ]] || die "the portal has no user '$1' (its people: ./mediastack.sh users)"
     in_group() { jq -e --arg g "$1" 'any(.groups_obj[]?; .name == $g)' <<<"$u" >/dev/null; }
-    { printf 'APP\tWHY\tADDRESS\n'
-      for s in $(authentik_gate_apps); do
-          if in_group "$PORTAL_ADMIN"; then why="$PORTAL_ADMIN"
-          elif [[ "$(svc_tier "$s")" == frontend ]] && in_group "$PORTAL_FRONTEND"; then why="$PORTAL_FRONTEND (its tier)"
-          elif in_group "app-$s"; then why="given on its own (app-$s)"
-          else continue; fi
-          printf '%s\t%s\t%s\n' "$s" "$why" "$(svc_url "$s")"; n=$((n + 1))
-      done
-    } | table_print
-    (( n )) || info "$(jq -r .username <<<"$u") may open none of the apps behind the gate"
+    # the rows gathered first: a count kept inside a pipe's block stays there (a subshell)
+    for s in $(authentik_gate_apps); do
+        if in_group "$PORTAL_ADMIN"; then why="$PORTAL_ADMIN"
+        elif [[ "$(svc_tier "$s")" == frontend ]] && in_group "$PORTAL_FRONTEND"; then why="$PORTAL_FRONTEND (its tier)"
+        elif in_group "app-$s"; then why="given on its own (app-$s)"
+        else continue; fi
+        rows+="$s"$'\t'"$why"$'\t'"$(svc_url "$s")"$'\n'
+    done
+    if [[ -n "$rows" ]]; then printf 'APP\tWHY\tADDRESS\n%s' "$rows" | table_print
+    else info "$(jq -r .username <<<"$u") may open none of the apps behind the gate"; fi
     jq -e '.is_active' <<<"$u" >/dev/null || warn "$(jq -r .username <<<"$u")'s portal account is off — they sign in to nothing"
 }
 

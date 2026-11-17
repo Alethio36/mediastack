@@ -1790,8 +1790,10 @@ grep -qE '^sonarr +admin +carol +https://sonarr.x$' <<<"$o" && grep -qE '^navidr
 o=$(acc access_list_user CAROL)
 grep -qE '^sonarr +given on its own \(app-sonarr\)' <<<"$o" && grep -qE '^navidrome +frontend \(its tier\)' <<<"$o" \
     || fail_ "carol (any case): sonarr given on its own, navidrome by her tier: $o"; pass
-o=$(acc access_list_user bob); grep -qE '^navidrome ' <<<"$o" && ! grep -qE '^sonarr ' <<<"$o" || fail_ "bob: navidrome only: $o"; pass
-o=$(acc access_list_user dave); grep -q 'may open none' <<<"$o" && grep -q "account is off" <<<"$o" || fail_ "dave: nothing, and his account is off: $o"; pass
+o=$(acc access_list_user bob); grep -qE '^navidrome ' <<<"$o" && ! grep -qE '^sonarr ' <<<"$o" && ! grep -q 'may open none' <<<"$o" \
+    || fail_ "bob: navidrome only — and not also told he may open none (seen live): $o"; pass
+o=$(acc access_list_user dave); grep -q 'may open none' <<<"$o" && grep -q "account is off" <<<"$o" && ! grep -q '^APP' <<<"$o" \
+    || fail_ "dave: nothing (no empty table), and his account is off: $o"; pass
 o=$(acc access_list_user nobody); grep -q "the portal has no user 'nobody'" <<<"$o" && grep -q 'rc=1' <<<"$o" || fail_ "an unknown name stops: $o"; pass
 # tier: the checks before anything changes
 o=$(acc access_tier sonarr everyone); grep -q "frontend (the household and its admins) or admin" <<<"$o" && grep -q rc=1 <<<"$o" || fail_ "an unknown tier stops: $o"; pass
