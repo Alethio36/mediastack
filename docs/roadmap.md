@@ -211,8 +211,8 @@ agreed first:
    tiers, providers per app and grants — its decisions agreed 16 Nov 2026
    (the rename in place inside the blueprint; revoking ends portal sessions,
    proven needed live), built only after a keeper install from `stable`.
-   Decision 9 (16 Nov 2026): the arrs' `/api` goes behind the gate — phone
-   apps send a device password as a header (spiked live with nzb360); then
+   Decision 9 (16 Nov 2026, proven live): the arrs' `/api` is behind the
+   gate — phone apps send a device password as a header (nzb360). Next:
    slice 4, the grants.
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions

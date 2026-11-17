@@ -411,12 +411,19 @@ Sonarr's card and the app without a new sign-in; back to `admin`, the next
 reload was sent to sign in and then refused — but the tab already open had
 added a show in between, through `/api` (decision 9).
 
-**Slice 3b — the arrs' API behind the gate** (decision 9; *built 16 Nov
-2026*, to prove on anzac4). The seven bypass labels go; the upgrade
+**Slice 3b — the arrs' API behind the gate** (decision 9; *built and
+proven live 16 Nov 2026*). The seven bypass labels go; the upgrade
 (schema 47) says so once; the README's how-to for phone apps; `credentials`
-says it. To prove: each arr's `/api` signed out sent to sign in
-(`safety-live`); nzb360 with the header connects, without it refused; a
-tab left open after `access tier <svc> admin` can no longer change
-anything; a deleted device password refused within a minute.
+says it.
+*Proven live (16 Nov 2026, anzac4, `upgrade` from 6548781 to 7c76ca7):*
+schema 46 → 47 said it once; `up` recreated only the VPN group and gluetun
+(it carries their routes), the leak gate passed; `safety-live`: every
+gated app's `/api`, signed out, sent to sign in; doctor unchanged. The
+hole closed: with Sonarr open as spikeuser (`access tier sonarr
+frontend`), `access tier sonarr admin` ended their session — the tab
+already open could no longer search, and its status page showed an API
+error. nzb360 with the header (a new device password, spikeuser granted
+by hand) connected, without it refused, with it again connected; the
+device password deleted — refused about 6 s later.
 
 **Slice 4 — grants and taking access away** (decisions 4, 5, 8).
