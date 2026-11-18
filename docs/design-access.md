@@ -626,3 +626,9 @@ again only when the stack turned it off; a deleted person's account renamed
 `removed-<name>-<date>` (its usernames are unique — a newcomer under that
 name could not register otherwise; it links by the portal's id, never by
 name). `abs_login` is the one way in as root (it was copied five times).
+*Proven live 18 Nov 2026 (b3c71fb):* `access tier audiobookshelf admin`
+turned spikeuser off and their open tab died at its next click; a reload
+went to the portal's refusal; the tier back turned them on again; spikedel3,
+deleted in authentik, became `removed-spikedel3-20261118`, inactive. Part 3
+is done: every app under one rule, Seerr's and Kavita's open sessions the
+kept gaps (decisions 14, 15).
