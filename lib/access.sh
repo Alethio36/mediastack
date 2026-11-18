@@ -275,8 +275,8 @@ cmd_users() { # the portal's people, as authentik has them
 }
 
 # ---- access: who may open which app behind the portal's gate (docs/design-access.md) ----
-ACCESS_USAGE="access [list [user]]  |  access tier <app> frontend|admin [--yes]  |  access grant|revoke <user> <app>"
-cmd_access() { # access [list [user]] | access tier <app> frontend|admin [--yes] | access grant|revoke <user> <app>
+ACCESS_USAGE="access [list [user]]  |  access tier <app> frontend|admin [--yes]  |  access grant|revoke <user> <app>  |  access admin <user> on|off"
+cmd_access() { # access [list [user]] | access tier <app> frontend|admin [--yes] | access grant|revoke <user> <app> | access admin <user> on|off
     load_env; render
     signin_is authentik || die "access is the portal's (authentik), and it is not enabled — with Wizarr, each app keeps its own login"
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
@@ -287,6 +287,7 @@ cmd_access() { # access [list [user]] | access tier <app> frontend|admin [--yes]
         tier) access_tier "$@" ;;
         grant) access_grant "$@" ;;
         revoke) access_revoke "$@" ;;
+        admin) access_admin "$@" ;;
         *) die "usage: ./mediastack.sh $ACCESS_USAGE" ;;
     esac
 }
@@ -419,7 +420,7 @@ access_revoke() { # access_revoke USER APP — out of app-<app>; when that takes
     if ! access_in "$u" "app-$s"; then
         case "$why" in
             "") ok "access: $name has no grant of $s — nothing to take away" ;;
-            "$PORTAL_ADMIN") die "access: $name opens $s as one of '$PORTAL_ADMIN', not by a grant — take them out of that group in authentik (Directory → Groups), then end their sessions (the user → Sessions)" ;;
+            "$PORTAL_ADMIN") die "access: $name opens $s as one of '$PORTAL_ADMIN', not by a grant — ./mediastack.sh access admin $name off" ;;
             *) die "access: $name opens $s through its tier ($PORTAL_FRONTEND), not by a grant — for admins only: ./mediastack.sh access tier $s admin" ;;
         esac
         return 0
@@ -434,6 +435,30 @@ access_revoke() { # access_revoke USER APP — out of app-<app>; when that takes
         || die "access: $name lost $s, but authentik refused to end their portal sessions: $(oneline "$n") — end them by hand (the user → Sessions)"
     ok "access: $name can no longer open $s — $(access_sessions_said "$n"); a device password of theirs stops within a minute"
     people_follow_now "$s"
+}
+
+access_admin() { # access_admin USER on|off — into or out of the portal's admin group: every app, and admin rights where an app signs people in itself
+    (( $# == 2 )) || die "usage: access admin <user> on|off"
+    local want=$2 u name pk out n s
+    [[ "$want" == on || "$want" == off ]] || die "access admin: '$want' — on or off"
+    access_person "$1"; u=$ACC_PERSON; name=$(jq -r .username <<<"$u"); pk=$(jq -r .pk <<<"$u")
+    # authentik's own superuser, an admin from its first start: the way in when no person is one
+    [[ "$name" != akadmin ]] || die "access: akadmin is authentik's own superuser and stays an admin — use it only when no one else can get in"
+    [[ "$(jq -r .type <<<"$u")" == internal ]] || die "access: '$name' is not a person's account"
+    if [[ "$want" == on ]]; then
+        access_in "$u" "$PORTAL_ADMIN" && { ok "access: $name is an admin already"; return 0; }
+        out=$(signin_group_change add "$pk" "$PORTAL_ADMIN") || die "access: authentik did not make $name an admin: $(oneline "$out")"
+        ok "access: $name is an admin — every app behind the gate, and admin rights in those that sign people in themselves"
+        jq -e '.is_active' <<<"$u" >/dev/null || warn "$name's portal account is off — they sign in to nothing until it is on"
+    else
+        access_in "$u" "$PORTAL_ADMIN" || { ok "access: $name is not an admin — nothing to take away"; return 0; }
+        out=$(signin_group_change remove "$pk" "$PORTAL_ADMIN") || die "access: authentik did not take $name out of '$PORTAL_ADMIN': $(oneline "$out")"
+        # the gate decided when each session began: only a new sign-in hears no (proven live, 16 Nov 2026)
+        n=$(signin_sessions_end "$pk") \
+            || die "access: $name is no longer an admin, but authentik refused to end their portal sessions: $(oneline "$n") — end them by hand (the user → Sessions)"
+        ok "access: $name is no longer an admin — $(access_sessions_said "$n"); what they keep: ./mediastack.sh access list $name"
+    fi
+    for s in "${PEOPLE_APPS[@]}"; do people_follow_now "$s"; done   # admin rights in the apps with accounts of their own follow now
 }
 
 cmd_set_email() { # an admin changes a person's portal email; Kavita follows; a shared address warns, --yes overrides

@@ -134,7 +134,7 @@ fresh; state_set "$PEOPLE_FOLLOWED" navidrome; RUNNING="" now_run navidrome
 FOLLOW_FAIL=1 now_run navidrome
 [[ "$(cat "$T/rc")" != 0 ]] && grep -q "access: the portal changed, but navidrome's accounts did not follow (1 failure(s) above) — people-sync tries again" "$T/out" \
     || fail_ "it failed: the command fails, saying the timer tries again: $(cat "$T/out")"; pass
-for f in access_tier access_grant access_revoke; do
+for f in access_tier access_grant access_revoke access_admin; do
     awk "/^$f\\(\\)/,/^}/" lib/access.sh | grep 'people_follow_now "$s"' >/dev/null || fail_ "$f: the app's accounts follow at once"; pass
 done
 

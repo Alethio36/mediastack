@@ -1897,12 +1897,41 @@ grep -qx 'group remove 6 app-navidrome' "$T/acalls" && ! grep -q bulk_delete "$T
     || fail_ "a grant beside the tier: removed, nobody signed out, told they keep it: $o $(cat "$T/acalls")"; pass
 rm -f "$T/acalls"; o=$(acc access_revoke bob sonarr); grep -q 'bob has no grant of sonarr — nothing to take away' <<<"$o" && grep -q rc=0 <<<"$o" && [[ ! -f "$T/acalls" ]] \
     || fail_ "no grant: nothing done: $o"; pass
-o=$(acc access_revoke alice sonarr); grep -q "alice opens sonarr as one of 'admin', not by a grant" <<<"$o" && grep -q rc=1 <<<"$o" \
+o=$(acc access_revoke alice sonarr); grep -q "alice opens sonarr as one of 'admin', not by a grant — ./mediastack.sh access admin alice off" <<<"$o" && grep -q rc=1 <<<"$o" \
     || fail_ "an admin: refused, and said how: $o"; pass
 o=$(acc access_revoke bob navidrome); grep -q 'through its tier (frontend), not by a grant — for admins only: ./mediastack.sh access tier navidrome admin' <<<"$o" && grep -q rc=1 <<<"$o" \
     || fail_ "the household's tier: refused, and said how: $o"; pass
 rm -f "$T/acalls"; o=$(GCFAIL=1 acc access_revoke carol sonarr); grep -q 'authentik did not take sonarr from carol' <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q bulk_delete "$T/acalls" \
     || fail_ "a refused revoke stops before ending anyone's session: $o"; pass
+
+# admin: into or out of the portal's admin group; the apps with accounts of their own follow, losing it ends portal sessions
+rm -f "$T/acalls"; o=$(acc access_admin BOB on)
+grep -qx 'group add 2 admin' "$T/acalls" && ! grep -q bulk_delete "$T/acalls" && grep -q 'OK access: bob is an admin — every app behind the gate' <<<"$o" \
+    && [[ "$(grep '^follow' "$T/acalls" | paste -sd' ' -)" == "follow jellyfin follow kavita follow audiobookshelf follow navidrome" ]] \
+    || fail_ "admin on: bob (any case) into admin, nobody signed out, every app with accounts of its own follows: $o $(cat "$T/acalls")"; pass
+rm -f "$T/acalls"; o=$(acc access_admin alice on); grep -q 'alice is an admin already' <<<"$o" && grep -q rc=0 <<<"$o" && [[ ! -f "$T/acalls" ]] \
+    || fail_ "admin on, an admin already: nothing done: $o"; pass
+o=$(acc access_admin dave on); grep -q "dave's portal account is off" <<<"$o" && grep -q rc=0 <<<"$o" || fail_ "admin on, an account that is off: made, and warned: $o"; pass
+rm -f "$T/acalls"; o=$(acc access_admin erin off)
+grep -qx 'group remove 5 admin' "$T/acalls" && grep -qx 'DELETE /core/authenticated_sessions/bulk_delete/?user_pks=5' "$T/acalls" \
+    && grep -q 'erin is no longer an admin — their portal sessions ended (3), so their next visit asks again; what they keep: ./mediastack.sh access list erin' <<<"$o" \
+    && [[ "$(grep -c '^follow' "$T/acalls")" == 4 ]] \
+    || fail_ "admin off: erin out of admin, her portal sessions ended, the apps follow: $o $(cat "$T/acalls")"; pass
+g=$(grep -n '^group remove' "$T/acalls" | cut -d: -f1); d=$(grep -n bulk_delete "$T/acalls" | cut -d: -f1); f=$(grep -n '^follow' "$T/acalls" | sed -n 1p | cut -d: -f1)
+(( g < d && d < f )) || fail_ "admin off: the group first, then the sessions, then the apps"; pass
+o=$(DEL=0 acc access_admin erin off); grep -q 'no portal session of theirs was open' <<<"$o" || fail_ "admin off, no session open: said so: $o"; pass
+rm -f "$T/acalls"; o=$(acc access_admin bob off); grep -q 'bob is not an admin — nothing to take away' <<<"$o" && grep -q rc=0 <<<"$o" && [[ ! -f "$T/acalls" ]] \
+    || fail_ "admin off, not an admin: nothing done: $o"; pass
+rm -f "$T/acalls"; o=$(GCFAIL=1 acc access_admin erin off); grep -q "authentik did not take erin out of 'admin': refused" <<<"$o" && grep -q rc=1 <<<"$o" \
+    && ! grep -q bulk_delete "$T/acalls" && ! grep -q '^follow' "$T/acalls" \
+    || fail_ "admin off refused: stop before ending sessions or following: $o"; pass
+AKP='{"results":[{"pk":9,"username":"akadmin","type":"internal","is_active":true,"groups_obj":[{"name":"admin"}]}]}'
+rm -f "$T/acalls"; o=$(AP=$AKP acc access_admin akadmin off); grep -q "akadmin is authentik's own superuser and stays an admin" <<<"$o" && grep -q rc=1 <<<"$o" && [[ ! -f "$T/acalls" ]] \
+    || fail_ "akadmin: refused, kept as it is: $o"; pass
+for a in "bot on:is not a person's account" "bob yes:access admin: 'yes' — on or off" "nobody on:the portal has no user 'nobody'" "bob:usage: access admin"; do
+    rm -f "$T/acalls"; read -ra w <<<"${a%%:*}"; o=$(acc access_admin "${w[@]}")
+    grep -q "${a#*:}" <<<"$o" && grep -q rc=1 <<<"$o" && [[ ! -f "$T/acalls" ]] || fail_ "admin ${a%%:*}: stops (${a#*:}), nothing changed: $o"; pass
+done
 
 # Jellyfin signs people in itself (slice B): no portal session decides it —
 # its own switch does, through its accounts' follow, after the rule changed

@@ -538,6 +538,17 @@ reach a session already open.
     (rejected: OPDS readers and reading apps would need device passwords
     sent as headers, which some cannot). The README says so; the watchlist
     holds what would close it.
+16. **`access admin <user> on|off`: a person made an admin by the verb**
+    (*decided 18 Nov 2026*). Until then the only way into the `admin` group
+    was authentik's Directory → Groups, signed in as akadmin, so akadmin
+    became the everyday admin account. The household's admin is their own
+    portal account; akadmin is authentik's own superuser, kept as it is — an
+    admin from its first start, refused by the verb, used only when no one
+    else can get in. The stack's own logins stay the bots' (`set-credentials
+    all` leaves akadmin out). `on` adds and saves the person, like a grant;
+    `off` removes them and ends their portal sessions (decision 4); both
+    run the apps' follow at once, so Jellyfin, Kavita, Audiobookshelf and
+    Navidrome admin rights change with the group.
 
 **Costs:** a change made by hand in authentik reaches open sessions within
 15 minutes (an `access` command: at once); Kavita's open tab until its next
