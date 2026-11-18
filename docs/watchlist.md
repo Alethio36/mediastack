@@ -742,6 +742,33 @@ service by label — `mediastack.auth: native | gate | open`, plus exception pat
   stable release, Android verified (upstream or by us), it survives a Jellyfin
   update, and more than one active maintainer — then run the trial, which must
   show a linked account keeps its LDAP password.
+  *JellyfinSecurity (ZL154) — read Nov 2026, parked until after the MVP.*
+  One MIT plugin for 2FA (TOTP, passkeys, email codes), OIDC sign-in
+  (authentik among its sources), brute-force bans (10 failures in 10 minutes:
+  a 24-hour IP ban; a per-user lockout), sessions an admin can list and end,
+  and a QR sign-in for TVs; Jellyfin 10.11 and 12. It layers on Jellyfin's own
+  sign-in as middleware: an account stays on its provider (LDAP for us) unless
+  it is linked by OIDC or a passkey, or makes one of the plugin's app
+  passwords — those move it to the plugin's own provider. What it would buy:
+  a browser signs in with one click (Jellyfin's page stays, its password goes),
+  a QR flow on TVs, 2FA and IP bans for Jellyfin. Against it, read in its
+  README and wiki: authentik is asked only at sign-in (allowed groups, role →
+  library mapping) — nothing re-checks, so `access` and `people-sync`
+  (design-access.md, decisions 11–13) stop reaching an OIDC-linked account;
+  its admin rights from groups are grant-only; its own app passwords are not
+  authentik's, so revoking access does not stop them; it enforces 2FA on
+  every session, so a TV on an authentik device password is blocked until
+  paired or given the plugin's app password (off LDAP again); its trust
+  cookie lasts 30 days and is not bound to an IP; LDAP is never mentioned;
+  one main maintainer, its last commit 25 Sep 2026, 31 open pull requests.
+  Its SECURITY.md (the full threat model) not read yet. The IP bans are the
+  part worth having whatever is decided — weigh them against a ban at the
+  edge (Traefik), which would cover every app, not only Jellyfin. **Revisit
+  when:** the MVP is done and the Jellyfin plugin lock (roadmap, "Versions
+  from the repo", third phase) exists to pin it — then a trial on the test
+  box: SECURITY.md first; an LDAP account with its TOTP keeps signing in;
+  `access revoke` still reaches someone who signed in through it; a TV on an
+  authentik device password can be exempted without leaving LDAP.
 - **Seerr** — "Sign in with Jellyfin", so it inherits the same users. Its own
   OIDC is still an experimental preview image (`preview-new-oidc`).
 - **Audiobookshelf** — native OIDC: auto-register, optional matching of
