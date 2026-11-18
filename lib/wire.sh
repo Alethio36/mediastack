@@ -247,15 +247,17 @@ cmd_wire() {
     # apps wire talks to); inside one — up's re-point during an update — it is
     # already held, and maint_lock lets it through
     maint_lock wire 0
-    local section="all"
+    local section="all" given=""
     while [[ $# -gt 0 ]]; do case "$1" in
         --dry-run) WIRE_DRY=1; shift ;;
         --verify)  WIRE_DRY=1; WIRE_VERIFY=1; shift ;;
-        all) section="all"; shift ;;
         *)  local r matched=""
+            [[ "$1" == all ]] && matched=1
             for r in "${WIRE_ROLES[@]}"; do [[ "$1" == "$r" ]] && { matched=1; break; }; done
             [[ -n "$matched" ]] || wire_usage
-            section="$1"; shift ;;
+            # one section: a second one used to replace the first, unsaid (found live, 17 Nov 2026)
+            [[ -z "$given" ]] || die "wire takes one app at a time — '$given' and '$1' were both given. Run it once per app, or ./mediastack.sh wire for all of them"
+            given=$1; section="$1"; shift ;;
     esac; done
     if (( WIRE_VERIFY )); then
         hr "wire --verify: checking for drift, touching nothing"

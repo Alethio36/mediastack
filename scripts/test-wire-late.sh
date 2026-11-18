@@ -9,6 +9,7 @@
 #     `wire <role> --verify`: nothing missing -> its unanswered failures are
 #     taken back (others stay); drift -> they stand, what is missing shown;
 #     a role that writes blind cannot be read back and its stand
+#   * wire takes one app: a second is refused, naming both — never dropped
 # Sources the real entrypoint (minus its last line, main "$@"); curl and the
 # read-back's `mediastack.sh` are stubs.
 #
@@ -99,5 +100,14 @@ out=$(wire_recheck 2>&1; echo "FAILS=$WIRE_FAILS"; printf 'LIST=%s\n' "${WIRE_FA
    && "$out" == *"LIST=seerr: settings — no answer"* && "$out" != *"LIST=arr:"* && "$out" != *"LIST=authentik: the gate"* ]] \
     || fail_ "what stands: the other failure of a clean role, the drift, the blind one: $out"; pass
 fresh; out=$(wire_recheck 2>&1); [[ -z "$out" ]] || fail_ "nothing got no answer: no read-back, no wait: $out"; pass
+
+# ---- one app at a time: a second one is refused, never dropped (found live, 17 Nov 2026) ----
+wargs() { ( load_env() { :; }; render() { :; }; maint_lock() { :; }; wire_navidrome() { echo RAN-navidrome; }
+            WIRED_FILE=$T/wired; state_get() { echo yes; }; compose_pending() { :; }; wire_apply_settings() { :; }; wire_recheck() { :; }
+            WIRE_DRY=0 WIRE_VERIFY=0 cmd_wire "$@" ) 2>&1; }
+out=$(wargs kavita navidrome); [[ "$out" == *"wire takes one app at a time — 'kavita' and 'navidrome' were both given"* && "$out" != *RAN-* ]] \
+    || fail_ "two apps: refused, naming both, nothing run: $out"; pass
+out=$(wargs all navidrome); [[ "$out" == *"'all' and 'navidrome' were both given"* && "$out" != *RAN-* ]] || fail_ "all and an app: refused: $out"; pass
+out=$(wargs navidrome); [[ "$out" == *RAN-navidrome* ]] || fail_ "one app: runs it: $out"; pass
 
 echo "OK wire-late: $checks checks"
