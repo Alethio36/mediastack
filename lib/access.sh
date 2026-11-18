@@ -315,7 +315,7 @@ access_apps() { authentik_gate_apps; authentik_native_ruled; }   # every app acc
 access_native() { [[ " $(authentik_native_ruled | tr '\n' ' ') " == *" $1 "* ]]; }   # access_native SVC — it signs people in itself (its own switch, not the portal's sessions)
 access_app() { # access_app SVC — stops unless access covers it
     [[ " $(access_apps | tr '\n' ' ') " == *" $1 "* ]] \
-        || die "'$1' is not an app access covers — those are: $(access_apps | paste -sd' ' -) (Seerr follows Jellyfin's rule; Audiobookshelf admits everyone in the portal)"
+        || die "'$1' is not an app access covers — those are: $(access_apps | paste -sd' ' -) (Seerr follows Jellyfin's rule)"
 }
 
 access_sessions_said() { # access_sessions_said N -> the sentence for N portal sessions ended
@@ -335,7 +335,7 @@ access_list() { # every app behind the gate: its tier, who has it on its own, it
     } | table_print
     info "frontend: the household and its admins; admin: admins only (the portal's '$PORTAL_ADMIN' group). Move one: ./mediastack.sh access tier <app> frontend|admin"
     info "Give one person one app: ./mediastack.sh access grant <user> <app> (take it back: access revoke)"
-    info "Seerr signs people in through Jellyfin and follows its rule; Audiobookshelf admits everyone in the portal (./mediastack.sh users)"
+    info "Seerr signs people in through Jellyfin and follows its rule (./mediastack.sh users)"
 }
 
 access_list_user() { # access_list_user NAME — what that person may open of the apps access covers, and why

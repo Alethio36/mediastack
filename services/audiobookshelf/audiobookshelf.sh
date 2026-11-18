@@ -16,6 +16,15 @@ abs_api() { # abs_api METHOD PATH TOKEN [json] -> body; rc from HTTP
     [[ "$code" =~ ^2 ]]
 }
 
+abs_login() { # abs_login [USER PASS] -> a token for the stack's root account (or USER); rc 1, the reason in its place — the one way in (wire, people-sync, link-account, rotation)
+    local u=${1-$(env_get ABS_ADMIN_USER)} p=${2-$(env_get ABS_ADMIN_PASSWORD)} out tok
+    out=$(abs_api POST /login "" "$(jq -cn --arg u "$u" --arg p "$p" '{username:$u, password:$p}')") \
+        || { echo "audiobookshelf rejected the root login from .env: $(oneline "$out")"; return 1; }
+    tok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
+    [[ -n "$tok" ]] || { echo "audiobookshelf's login returned no token"; return 1; }
+    echo "$tok"
+}
+
 abs_oidc_want() { # the sign-in settings mediastack manages in Audiobookshelf (JSON)
     local base issuer
     base=$(authentik_portal); issuer=$(authentik_oidc_issuer audiobookshelf)
@@ -73,15 +82,12 @@ abs_root_rotate() { # abs_root_rotate NEW-PASSWORD — root's password, and with
     local new="$1" user old out tok
     user=$(env_get ABS_ADMIN_USER); old=$(env_get ABS_ADMIN_PASSWORD)
     [[ -n "$user" && -n "$old" ]] || { fail "no Audiobookshelf root login in .env — run: ./mediastack.sh wire audiobookshelf"; return 1; }
-    out=$(abs_api POST /login "" "$(jq -cn --arg u "$user" --arg p "$old" '{username:$u, password:$p}')") \
-        || { fail "audiobookshelf rejected the root login from .env: $(oneline "$out")"; return 1; }
-    tok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
-    [[ -n "$tok" ]] || { fail "audiobookshelf login returned no token"; return 1; }
+    tok=$(abs_login "$user" "$old") || { fail "$tok"; return 1; }
     out=$(abs_api PATCH /api/me/password "$tok" "$(jq -cn --arg c "$old" --arg n "$new" '{password:$c, newPassword:$n}')") \
         || { fail "audiobookshelf refused the password change: $(oneline "$out")"; return 1; }
     env_set ABS_ADMIN_PASSWORD "$new"   # changed: the new one is the truth from here, verified or not
-    out=$(abs_api POST /login "" "$(jq -cn --arg u "$user" --arg p "$new" '{username:$u, password:$p}')") \
-        || { fail "audiobookshelf's root password changed (stored in .env), but signing in with it failed: $(oneline "$out")"; return 1; }
+    out=$(abs_login "$user" "$new") \
+        || { fail "audiobookshelf's root password changed (stored in .env), but signing in with it failed: $out"; return 1; }
     return 0
 }
 
@@ -140,10 +146,7 @@ wire_audiobookshelf() {
         return 0
     fi
     (( WIRE_DRY )) && [[ -z "$(env_get ABS_ADMIN_PASSWORD)" ]] && return 0
-    out=$(abs_api POST /login "" "$(jq -cn --arg u "$(env_get ABS_ADMIN_USER)" --arg p "$(env_get ABS_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { wfail "audiobookshelf rejected the root login from .env — set up by hand? Put its root login there (ABS_ADMIN_USER / ABS_ADMIN_PASSWORD)"; return 0; }
-    tok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
-    [[ -n "$tok" ]] || { wfail "audiobookshelf login returned no token"; return 0; }
+    tok=$(abs_login) || { wfail "$tok — set up by hand? Put its root login in .env (ABS_ADMIN_USER / ABS_ADMIN_PASSWORD)"; return 0; }
     ok "audiobookshelf: root login works"
     signin_is authentik || return 0
     abs_oidc "$tok" || return 0
@@ -152,13 +155,78 @@ wire_audiobookshelf() {
     abs_admin_sync "$tok"
 }
 
-audiobookshelf_people_follow() { # lib/people.sh: the root account signs in, then portal-linked accounts' rights follow
-    local out tok
-    out=$(abs_api POST /login "" "$(jq -cn --arg u "$(env_get ABS_ADMIN_USER)" --arg p "$(env_get ABS_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { wfail "audiobookshelf rejected the root login from .env — ./mediastack.sh wire audiobookshelf says why"; return 0; }
-    tok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
-    [[ -n "$tok" ]] || { wfail "audiobookshelf: its login gave no token"; return 0; }
+audiobookshelf_people_follow() { # lib/people.sh: the root account signs in, then who may sign in, then admin rights
+    local tok
+    tok=$(abs_login) || { wfail "$tok — ./mediastack.sh wire audiobookshelf says why"; return 0; }
+    abs_people_access "$tok"
     abs_admin_sync "$tok"
+}
+
+# who may sign in (docs/design-access.md, decisions 11-12): the portal refuses
+# a sign-in first (Audiobookshelf's card is its OIDC application, bound by the
+# rule). An account the portal no longer lets open it is made inactive, which
+# Audiobookshelf checks on every request: an open tab is cut at its next click
+# (proven live 18 Nov 2026: "socket disconnected", then its login page).
+# Allowed again, only someone the stack made inactive (local/audiobookshelf-
+# people) is made active again; someone an admin turned off stays off. A
+# person deleted from the portal is also renamed removed-<name>-<date>:
+# Audiobookshelf's usernames are unique, so a newcomer under that name could
+# not otherwise be registered (it links by the portal's id, never by name).
+# Portal-linked accounts only; the root account (the stack's) never.
+abs_person_set() { # abs_person_set TOKEN USER-JSON PATCH-JSON CHECK — the account changed, then read back (CHECK on it)
+    local id out
+    id=$(jq -r '.id' <<<"$2")
+    out=$(abs_api PATCH "/api/users/$id" "$1" "$3") || { echo "Audiobookshelf refused it: $(oneline "$out")"; return 1; }
+    out=$(abs_api GET "/api/users/$id" "$1") || { echo "it answered, but the account is unreadable now"; return 1; }
+    jq -e "$4" <<<"$out" >/dev/null || { echo "it answered, but the change did not hold"; return 1; }
+}
+
+abs_people_access() { # abs_people_access TOKEN — portal-linked accounts follow the rule (see above)
+    local tok=$1 portal users u name pu st why out new
+    portal=$(signin_people) || { wfail "authentik: its people are unreadable — Audiobookshelf's sign-ins not checked: $(oneline "$portal")"; return 0; }
+    # a group the rule reads missing: nobody would be in it — everyone turned off, unasked
+    why=$(people_rule_ready) || { wfail "$why — Audiobookshelf's sign-ins left as they are"; return 0; }
+    users=$(abs_api GET /api/users "$tok") || { wfail "audiobookshelf: users unreadable"; return 0; }
+    while IFS= read -r u; do
+        [[ -n "$u" ]] || continue
+        name=$(jq -r '.username' <<<"$u")
+        st=$(people_get audiobookshelf "$name")
+        [[ "$st" == removed ]] && continue   # a deleted person's, renamed: never looked at again
+        pu=$(jq -c --arg n "${name,,}" '[.results[]? | select((.username | ascii_downcase) == $n)][0] // empty' <<<"$portal")
+        if [[ -n "$pu" ]] && people_may "$pu" audiobookshelf; then
+            [[ "$st" == off ]] || continue
+            if [[ "$(jq -r '.isActive' <<<"$u")" == true ]]; then (( WIRE_DRY )) || people_set audiobookshelf "$name" ""; continue; fi   # an admin turned them on already
+            w_would "audiobookshelf: '$name' may sign in again" || continue
+            if out=$(abs_person_set "$tok" "$u" '{"isActive":true}' '.isActive == true'); then
+                people_set audiobookshelf "$name" ""
+                ok "audiobookshelf: '$name' may sign in again — through the portal, their listening as they left it"
+            else wfail "audiobookshelf: '$name' may open Audiobookshelf again, but is still turned off — $out"; fi
+            continue
+        fi
+        if [[ -z "$pu" ]]; then   # deleted from the portal: off, then renamed — even one an admin had turned off (the name is the risk)
+            new="removed-$name-$(date +%Y%m%d)"
+            w_would "audiobookshelf: '$name' (portal account deleted) is turned off and kept as '$new' — their listening stays, the name free for someone new" || continue
+            if ! out=$(abs_person_set "$tok" "$u" "$(jq -cn --arg n "$new" '{isActive:false, username:$n}')" \
+                       ".isActive == false and .username == $(jq -cn --arg n "$new" '$n')"); then
+                wfail "audiobookshelf: '$name' (portal account deleted) still signs in — $out"; continue
+            fi
+            people_set audiobookshelf "$name" ""; people_set audiobookshelf "$new" removed
+            ok "audiobookshelf: '$name' can no longer sign in (portal account deleted) — kept as '$new'"
+            notify ops "Audiobookshelf" "$name can no longer sign in to Audiobookshelf: their portal account was deleted. Their account is kept as $new." info
+            continue
+        fi
+        [[ "$(jq -r '.isActive' <<<"$u")" == true ]] || continue   # off already: the stack's (recorded) or an admin's (left)
+        if [[ "$(jq -r '.is_active' <<<"$pu")" != true ]]; then why="portal account deactivated"
+        else why="may no longer open Audiobookshelf"; fi
+        w_would "audiobookshelf: '$name' ($why) is turned off — an open tab ends at its next click; their listening stays" || continue
+        if ! out=$(abs_person_set "$tok" "$u" '{"isActive":false}' '.isActive == false'); then
+            wfail "audiobookshelf: '$name' ($why) still signs in — $out"; continue
+        fi
+        people_set audiobookshelf "$name" off
+        ok "audiobookshelf: '$name' can no longer sign in ($why) — an open tab ends at its next click"
+        notify ops "Audiobookshelf" "$name can no longer sign in to Audiobookshelf: $why. Allowed again, they sign in through the portal as before." info
+    done < <(jq -c '.users[]? | select(.hasOpenIDLink == true and .type != "root")' <<<"$users")
+    return 0
 }
 
 sc_rotate_audiobookshelf() { # PASS — its root account; every root session ends

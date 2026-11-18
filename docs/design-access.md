@@ -613,4 +613,16 @@ newcomer would take over. `kav_login` is the one way in as the stack's own
 admin (it was copied five times).
 
 **Slice D — Audiobookshelf.** Spike first (enabled on the test box), then
-the same.
+the same. *Spiked 18 Nov 2026 (anzac4):* `isActive: false` cut
+spikeuser's open tab at its next click ("socket disconnected", then its login
+page) — Audiobookshelf checks the account on every request, so no open-tab
+gap here, and a demoted admin's rights go at once too. A portal account's
+default permissions: download only (no update, delete, upload, explicit
+content); its folders stay writable (podcast downloads, admin uploads and
+metadata) — the permissions, checked per request, are the guard. *Built 18
+Nov 2026, to prove live:* its tier label puts it under the rule (its card is
+its OIDC application); `abs_people_access` turns an account off on loss, on
+again only when the stack turned it off; a deleted person's account renamed
+`removed-<name>-<date>` (its usernames are unique — a newcomer under that
+name could not register otherwise; it links by the portal's id, never by
+name). `abs_login` is the one way in as root (it was copied five times).

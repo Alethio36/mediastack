@@ -15,8 +15,9 @@
 #     the run (ops hears it)
 #   * an access command on a followed app: its accounts follow at once; a
 #     failure says people-sync tries again
-#   * Jellyfin and Kavita: who may sign in follows the rule — off on loss
-#     (disabled and signed out / Login taken), on again only when the stack
+#   * Jellyfin, Kavita and Audiobookshelf: who may sign in follows the rule —
+#     off on loss (disabled and signed out / Login taken / inactive), on again
+#     only when the stack
 #     turned it off; a deleted person's account renamed, never looked at again
 #   * each app's part signs in as the stack's own first: refused, a failure
 #   * the 47 -> 48 step keeps Navidrome followed where it was
@@ -299,6 +300,52 @@ unset -f kav_api
 m=$(grep -E 'DATA_ROOT\}/media/' services/kavita/compose.yml)
 [[ -n "$m" ]] && ! grep -v ':ro$' <<<"$m" >/dev/null || fail_ "Kavita's libraries mounted read-only: no account, an open tab included, changes a book (decision 15): $m"; pass
 
+# ---- Audiobookshelf: who may sign in (slice D, decision 12) ----
+abu() { jq -cn --arg i "$1" --arg n "$2" --argjson a "${3:-true}" --arg t "${4:-user}" --argjson l "${5:-true}" '{id:$i, username:$n, type:$t, isActive:$a, hasOpenIDLink:$l}'; }
+abs_api() { # a fake Audiobookshelf: people in $T/ab.json
+    echo "$1 $2" >> "$T/acalls"
+    case "$1 $2" in
+        "GET /api/users") jq -c '{users:.}' "$T/ab.json" ;;
+        "GET /api/users/"*) jq -c --arg i "${2##*/}" '.[] | select(.id == $i)' "$T/ab.json" ;;
+        "PATCH /api/users/"*) echo "$4" >> "$T/aupd"; [[ -n "${AB_IGNORE:-}" ]] && return 0
+            jq -c --arg i "${2##*/}" --argjson p "$4" 'map(if .id == $i then . + $p else . end)' "$T/ab.json" > "$T/ab.n"; mv "$T/ab.n" "$T/ab.json" ;;
+        *) echo "unexpected $1 $2" >&2; return 1 ;;
+    esac
+}
+active() { jq -r --arg n "$1" '.[] | select(.username == $n) | .isActive' "$T/ab.json"; }
+afresh() { rm -f "$T/acalls" "$T/aupd" "$T/notified"; WIRE_FAILS=0; WIRE_DRY=0; }
+fresh; afresh
+printf '%s\n' "$(abu a1 aalice true admin)" "$(abu a2 abob)" "$(abu a3 acarol)" "$(abu a4 adave)" "$(abu a5 aerin false)" \
+    "$(abu a6 admin true root)" "$(abu a7 alocal true user false)" | jq -sc . > "$T/ab.json"
+printf '%s\n' "$(pu aalice true '["admin"]')" "$(pu abob true '["frontend"]')" "$(pu acarol false '["frontend"]')" "$(pu aerin true '["frontend"]')" > "$T/portal.ndjson"
+TIER="frontend"; abs_people_access tok > "$T/out" 2>&1
+[[ "$(active acarol) $(people_get audiobookshelf acarol)" == "false off" ]] && grep -qF "'acarol' can no longer sign in (portal account deactivated) — an open tab ends at its next click" "$T/out" \
+    || fail_ "deactivated: turned off (inactive), recorded off: $(cat "$T/out")"; pass
+[[ "$(active "removed-adave-$D") $(people_get audiobookshelf "removed-adave-$D") $(people_get audiobookshelf adave)" == "false removed " ]] \
+    && grep -qF "'adave' can no longer sign in (portal account deleted) — kept as 'removed-adave-$D'" "$T/out" \
+    || fail_ "deleted: turned off and renamed (its usernames are unique: a newcomer under that name could not register): $(cat "$T/out")"; pass
+[[ "$(active abob) $(active aalice) $(active aerin) $(active admin) $(active alocal)" == "true true false true true" && -z "$(people_get audiobookshelf aerin)" ]] \
+    || fail_ "may: untouched; aerin, turned off by hand: left so, never recorded; root and a local account: untouched"; pass
+! grep -qE 'PATCH /api/users/a(6|7)' "$T/acalls" || fail_ "the root account and local accounts are never written"; pass
+[[ "$(grep -c '^ops|' "$T/notified")" == 2 ]] || fail_ "ops hears each"; pass
+afresh; abs_people_access tok > "$T/out" 2>&1; [[ ! -e "$T/aupd" ]] && ! grep -q removed-adave "$T/out" || fail_ "the next run: nothing written, the renamed account not looked at"; pass
+afresh; TIER="admin"; WIRE_DRY=1 abs_people_access tok > "$T/out" 2>&1
+[[ ! -e "$T/aupd" ]] && grep -qF "would: audiobookshelf: 'abob' (may no longer open Audiobookshelf) is turned off" "$T/out" || fail_ "a dry run says it, writes nothing: $(cat "$T/out")"; pass
+afresh; abs_people_access tok > "$T/out" 2>&1
+[[ "$(active abob) $(people_get audiobookshelf abob)" == "false off" ]] || fail_ "tier admin: abob (frontend only) turned off, recorded"; pass
+printf '%s\n' "$(pu aalice true '["admin"]')" "$(pu abob true '["frontend","app-audiobookshelf"]')" "$(pu acarol false '["frontend"]')" "$(pu aerin true '["frontend","app-audiobookshelf"]')" > "$T/portal.ndjson"
+afresh; abs_people_access tok > "$T/out" 2>&1
+[[ "$(active abob) $(people_get audiobookshelf abob)" == "true " ]] && grep -qF "'abob' may sign in again — through the portal, their listening as they left it" "$T/out" \
+    || fail_ "granted: the stack's own turned off comes back on, the record forgotten: $(cat "$T/out")"; pass
+[[ "$(active aerin)" == false ]] || fail_ "aerin granted too, but turned off by hand: stays off"; pass
+printf '%s\n' "$(pu aalice true '["admin"]')" "$(pu aerin true '["frontend","app-audiobookshelf"]')" > "$T/portal.ndjson"
+afresh; AB_IGNORE=1 abs_people_access tok > "$T/out" 2>&1
+[[ "$WIRE_FAILS" -ge 1 && -z "$(people_get audiobookshelf abob)" ]] && grep -qF "'abob' (portal account deleted) still signs in — it answered, but the change did not hold" "$T/out" \
+    || fail_ "a change that did not hold: a failure, nothing recorded: $(cat "$T/out")"; pass
+afresh; NO_GROUPS=1 abs_people_access tok > "$T/out" 2>&1
+[[ ! -e "$T/aupd" && "$WIRE_FAILS" == 1 ]] && grep -qF "authentik has no 'admin' group" "$T/out" || fail_ "a group missing: nobody touched, a failure says why: $(cat "$T/out")"; pass
+unset -f abs_api
+
 # ---- each app's part: the stack's own signs in first ----
 part() { # part APP -> its output; the login refused
     ( WIRE_FAILS=0
@@ -313,6 +360,9 @@ printf 'JELLYFIN_API_KEY=k\n' > "$ENV_FILE"; [[ "$(part jellyfin | tr '\n' ' ')"
 [[ "$( ( WIRE_FAILS=0; kav_login() { echo KTOK; }; kav_people_access() { echo "access $1"; }; kav_admin_sync() { echo "synced $1"; }; kavita_people_follow ) | tr '\n' ' ')" == "access KTOK synced KTOK " ]] \
     || fail_ "kavita: the stack's admin signs in, then who may sign in, then admin rights"; pass
 [[ "$(grep -rh 'kav_api POST /api/account/login' services lib | wc -l)" == 1 ]] || fail_ "Kavita's admin login lives in kav_login alone (wire, doctor, people-sync, link-account, rotation use it)"; pass
+[[ "$( ( WIRE_FAILS=0; abs_login() { echo ATOK; }; abs_people_access() { echo "access $1"; }; abs_admin_sync() { echo "synced $1"; }; audiobookshelf_people_follow ) | tr '\n' ' ')" == "access ATOK synced ATOK " ]] \
+    || fail_ "audiobookshelf: root signs in, then who may sign in, then admin rights"; pass
+[[ "$(grep -rh 'abs_api POST /login' services lib | wc -l)" == 1 ]] || fail_ "Audiobookshelf's root login lives in abs_login alone (wire, people-sync, link-account, rotation use it)"; pass
 [[ "$(part audiobookshelf)" == *"audiobookshelf rejected the root login"*"fails=1" && "$(part audiobookshelf)" != *synced* ]] || fail_ "audiobookshelf refused: a failure, nothing synced"; pass
 [[ "$(part navidrome)" == *"the stack's admin does not sign in"*"fails=1" && "$(part navidrome)" != *synced* ]] || fail_ "navidrome refused: a failure, nothing synced"; pass
 

@@ -221,8 +221,9 @@ agreed first:
    following) *proven live 18 Nov 2026*; slice C, Kavita (its tier and
    grants, `Login` on loss, a deleted person's account renamed with an
    unusable email) *proven live 18 Nov 2026* — its open tab a kept gap
-   (decision 15), its libraries read-only; then
-   Audiobookshelf; Seerr's open session a kept gap (watchlist). A person
+   (decision 15), its libraries read-only; slice D, Audiobookshelf (spiked:
+   inactive cuts an open tab at once) *built 18 Nov 2026, to prove live*;
+   Seerr's open session a kept gap (watchlist). A person
    deleted from the portal: their Jellyfin account renamed
    `removed-<name>-<date>`, as Navidrome's (decided 18 Nov 2026).
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.

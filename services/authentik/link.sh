@@ -80,9 +80,7 @@ cmd_link_account() {
         fi
     fi
     if svc_enabled audiobookshelf && [[ -n "$(env_get ABS_ADMIN_PASSWORD)" ]]; then
-        out=$(abs_api POST /login "" "$(jq -cn --arg u "$(env_get ABS_ADMIN_USER)" --arg p "$(env_get ABS_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-            || die "audiobookshelf rejected the root login from .env: $(oneline "$out")"
-        atok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
+        atok=$(abs_login) || die "$atok"
         ausers=$(abs_api GET /api/users "$atok") || die "audiobookshelf: users unreadable"
         link_pick audiobookshelf "$(link_abs_candidates "$ausers")" "$who"; ab=$LINK_PICK
         if [[ -n "$ab" ]]; then out=$(link_abs_conflict "$ausers" "$ab" "$who" "$names"); [[ -z "$out" ]] || die "$out."; fi

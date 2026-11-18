@@ -68,6 +68,7 @@
         "mediastack.managed": "true",
         "mediastack.port": "13378",
         "mediastack.subdomain": "audiobooks",
+        "mediastack.tier": "frontend",
         "mediastack.user_facing": "true",
         "mediastack.vpn": "true",
         "mediastack.vpntoggle": "true"

@@ -49,6 +49,7 @@ services:
       mediastack.cache: "true"
       mediastack.subdomain: "audiobooks"
       mediastack.auth: "native"   # handles its own login
+      mediastack.tier: "frontend"   # who may open it (access tier audiobookshelf): its card (its OIDC application) and its accounts follow the rule
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:13378/healthcheck || exit 1"]
       interval: 30s

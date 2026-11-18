@@ -1907,7 +1907,7 @@ rm -f "$T/acalls"; o=$(GCFAIL=1 acc access_revoke carol sonarr); grep -q 'authen
 # Jellyfin signs people in itself (slice B): no portal session decides it —
 # its own switch does, through its accounts' follow, after the rule changed
 : > "$T/aenv"; o=$(acc access_list)
-grep -qE '^jellyfin +frontend +- +https://jellyfin.x$' <<<"$o" && grep -q 'Seerr signs people in through Jellyfin and follows its rule; Audiobookshelf admits everyone' <<<"$o" \
+grep -qE '^jellyfin +frontend +- +https://jellyfin.x$' <<<"$o" && grep -q 'Seerr signs people in through Jellyfin and follows its rule (./mediastack.sh users)' <<<"$o" \
     || fail_ "access list: Jellyfin with its tier; Seerr said to follow it: $o"; pass
 rm -f "$T/acalls"; o=$(acc access_tier jellyfin admin)
 grep -qx 'env_set JELLYFIN_TIER=admin' "$T/acalls" && ! grep -q bulk_delete "$T/acalls" && grep -qx 'follow jellyfin' "$T/acalls" \
