@@ -219,11 +219,9 @@ agreed first:
    `access`) *proven live 17 Nov 2026*; slice B, Jellyfin (its tier and
    grants, the LDAP rule, disabled and signed out on loss, Seerr's card
    following) *proven live 18 Nov 2026*; then Kavita,
-   Audiobookshelf; Seerr's open session a kept gap (watchlist). Open: a
-   person deleted from the portal keeps their Jellyfin account, disabled —
-   someone who later signs up under the same name would take it over once
-   allowed (it was so before slice B too); Navidrome renames such an account
-   `removed-<name>-<date>`. Decide whether Jellyfin does the same.
+   Audiobookshelf; Seerr's open session a kept gap (watchlist). A person
+   deleted from the portal: their Jellyfin account renamed
+   `removed-<name>-<date>`, as Navidrome's (decided 18 Nov 2026).
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions
    pending.

@@ -576,9 +576,9 @@ blueprint's admin and search-account bindings. Its accounts follow in
 who may sign in (`jf_people_access`: disabled, then signed out of every
 device; turned back on only when the stack turned it off), then admin rights.
 `access` on Jellyfin ends no portal session — the follow is what reaches an
-open one. A person deleted from the portal is disabled, not renamed (unlike
-Navidrome): a later sign-up under the same name would take over the old
-account once allowed — open, see the roadmap.
+open one. A person deleted from the portal is disabled and renamed
+`removed-<name>-<date>`, as Navidrome's (decided 18 Nov 2026): a later
+sign-up under the same name gets a fresh account instead of the old one.
 
 **Slice C — Kavita.** Its card by the rule; `Login` on loss; proven: no
 loop, and when an open tab is cut off.

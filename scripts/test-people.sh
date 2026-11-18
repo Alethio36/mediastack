@@ -154,6 +154,8 @@ jf_api() { # a fake Jellyfin: users in $T/jf.json, devices in $T/dev.tsv (id own
             jq -c --arg i "$i" --argjson p "$4" 'map(if .Id == $i then .Policy = $p else . end)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json"
             # Jellyfin 12.4 ends a disabled person's sign-ins itself (proven live, 18 Nov 2026)
             if [[ -n "${JF_REVOKES:-}" && "$(jq -r .IsDisabled <<<"$4")" == true ]]; then awk -v u="$i" '$2 != u' "$T/dev.tsv" > "$T/dev.n"; mv "$T/dev.n" "$T/dev.tsv"; fi ;;
+        "POST /Users?userId="*) [[ -n "${JF_NO_RENAME:-}" ]] && { echo 'bad name'; return 1; }; echo "$4" >> "$T/jren"
+            jq -c --arg i "${2#*=}" --argjson d "$4" 'map(if .Id == $i then .Name = $d.Name else . end)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json" ;;
         "GET /Devices") [[ -n "${DEV_FAIL:-}" ]] && return 1
             jq -Rsc 'split("\n") | map(select(length > 0) | split(" ") | {Id:.[0], LastUserId:.[1], LastUserName:.[2]}) | {Items:.}' "$T/dev.tsv" ;;
         "DELETE /Devices?id="*) [[ -n "${DEV_KEEP:-}" ]] && return 0; awk -v d="${2#*=}" '$1 != d' "$T/dev.tsv" > "$T/dev.n"; mv "$T/dev.n" "$T/dev.tsv" ;;
@@ -165,17 +167,20 @@ notify() { echo "$1|$3" >> "$T/notified"; }
 ak_group_pk() { [[ -n "${NO_GROUPS:-}" ]] || echo "g-$1"; return 0; }
 pu() { jq -cn --arg n "$1" --argjson a "$2" --argjson g "${3:-[]}" '{username:$n, is_active:$a, groups_obj:($g | map({name:.}))}'; }
 signin_people() { jq -cn --slurpfile p "$T/portal.ndjson" '{results:$p}'; }
-jfresh() { rm -f "$T/jcalls" "$T/jpol" "$T/notified"; WIRE_FAILS=0; WIRE_DRY=0; }
+jfresh() { rm -f "$T/jcalls" "$T/jpol" "$T/jren" "$T/notified"; WIRE_FAILS=0; WIRE_DRY=0; }
+D=$(date +%Y%m%d)
 disabled() { jq -r --arg n "$1" '.[] | select(.Name == $n) | .Policy.IsDisabled' "$T/jf.json"; }
 fresh; jfresh
 printf '%s\n' "$(jfu 1 akadmin)" "$(jfu 2 bob)" "$(jfu 3 carol)" "$(jfu 4 dave)" "$(jfu 5 erin true)" "$(jfu 6 mediastack false Local)" | jq -sc . > "$T/jf.json"
 printf 'd1 2 bob\nd2 3 carol\nd3 3 carol\nd4 2 bob\n' > "$T/dev.tsv"
 printf '%s\n' "$(pu akadmin true '["admin"]')" "$(pu bob true '["frontend"]')" "$(pu carol false '["frontend"]')" "$(pu erin true '["frontend"]')" > "$T/portal.ndjson"
 TIER="frontend"; jf_people_access tok > "$T/out" 2>&1
-[[ "$(disabled carol) $(disabled dave) $(people_get jellyfin carol) $(people_get jellyfin dave)" == "true true off off" ]] \
-    && grep -qF "'carol' can no longer sign in (portal account deactivated) — signed out of 2 device(s)" "$T/out" \
-    && grep -qF "'dave' can no longer sign in (portal account deleted) — signed out of 0 device(s)" "$T/out" \
-    || fail_ "deactivated and deleted: disabled, signed out of their own devices, recorded off: $(cat "$T/out")"; pass
+[[ "$(disabled carol) $(people_get jellyfin carol)" == "true off" ]] && grep -qF "'carol' can no longer sign in (portal account deactivated) — signed out of 2 device(s)" "$T/out" \
+    || fail_ "deactivated: disabled, signed out of her own devices, recorded off: $(cat "$T/out")"; pass
+[[ "$(disabled "removed-dave-$D") $(people_get jellyfin "removed-dave-$D") $(people_get jellyfin dave)" == "true removed " ]] \
+    && grep -qF "'dave' can no longer sign in (portal account deleted) — signed out of 0 device(s)" "$T/out" && grep -qF "'dave' (portal account deleted) kept as 'removed-dave-$D'" "$T/out" \
+    || fail_ "deleted: disabled, signed out, renamed removed-<name>-<date> (the name free for someone new), the old name forgotten: $(cat "$T/out")"; pass
+grep -qF "dave can no longer sign in to Jellyfin: their portal account was deleted. Their Jellyfin account is kept as removed-dave-$D." "$T/notified" || fail_ "ops hears the new name"; pass
 [[ "$(cut -d' ' -f2 "$T/dev.tsv" | sort -u | paste -sd, -)" == 2 ]] || fail_ "only their devices signed out: $(cat "$T/dev.tsv")"; pass
 [[ "$(disabled bob) $(disabled akadmin) $(disabled erin)" == "false false true" && -z "$(people_get jellyfin erin)" ]] \
     || fail_ "bob and an admin may: untouched; erin, disabled by hand: left so, never recorded (only the stack's own turned back on)"; pass
@@ -183,7 +188,7 @@ TIER="frontend"; jf_people_access tok > "$T/out" 2>&1
 [[ "$(grep -c '^ops|' "$T/notified")" == 2 ]] && grep -qF "carol can no longer sign in to Jellyfin: portal account deactivated" "$T/notified" || fail_ "ops hears each, with why"; pass
 d=$(grep -n 'POST /Users/3/Policy' "$T/jcalls" | cut -d: -f1); o=$(grep -n 'DELETE /Devices' "$T/jcalls" | sed -n 1p | cut -d: -f1)
 (( d < o )) || fail_ "disabled first, then signed out (decision 12)"; pass
-jfresh; jf_people_access tok > "$T/out" 2>&1; [[ ! -e "$T/jpol" ]] || fail_ "the next run: nothing written again"; pass
+jfresh; jf_people_access tok > "$T/out" 2>&1; [[ ! -e "$T/jpol" && ! -e "$T/jren" ]] && ! grep -q "removed-dave" "$T/out" || fail_ "the next run: nothing written again, the renamed account not looked at"; pass
 jfresh; TIER="admin"; WIRE_DRY=1 jf_people_access tok > "$T/out" 2>&1
 [[ ! -e "$T/jpol" && "$(disabled bob)" == false ]] && grep -qF "would: jellyfin: 'bob' (may no longer open Jellyfin) is disabled and signed out" "$T/out" \
     || fail_ "a dry run says it and writes nothing: $(cat "$T/out")"; pass
@@ -216,8 +221,21 @@ jfresh; JF_IGNORE=1 jf_people_access tok > "$T/out" 2>&1
     || fail_ "a disable that did not hold: a failure, nothing recorded: $(cat "$T/out")"; pass
 printf 'd9 3 carol\n' > "$T/dev.tsv"
 jfresh; DEV_KEEP=1 jf_people_access tok > "$T/out" 2>&1
-[[ "$WIRE_FAILS" == 1 && "$(people_get jellyfin carol)" == off ]] && grep -qF "'carol' is disabled (portal account deleted), but still signed in somewhere — still signed in on 1 of 1 device(s)" "$T/out" \
-    || fail_ "signed out did not hold: disabled and recorded, a failure says what is left: $(cat "$T/out")"; pass
+[[ "$WIRE_FAILS" == 1 && "$(people_get jellyfin "removed-carol-$D")" == removed ]] && grep -qF "'carol' is disabled (portal account deleted), but still signed in somewhere — still signed in on 1 of 1 device(s)" "$T/out" \
+    || fail_ "signed out did not hold: disabled and renamed still, a failure says what is left: $(cat "$T/out")"; pass
+# deleted, and an admin had disabled them by hand: renamed all the same (the name is the risk), no policy written
+printf '%s\n' "$(jfu 11 frank true)" "$(jfu 12 gina)" | jq -sc . > "$T/jf.json"; : > "$T/dev.tsv"
+printf '%s\n' "$(pu gina true '["frontend"]')" > "$T/portal.ndjson"; TIER="frontend"
+jfresh; jf_people_access tok > "$T/out" 2>&1
+[[ "$(people_get jellyfin "removed-frank-$D")" == removed && ! -e "$T/jpol" ]] && grep -qF "'frank' (portal account deleted) kept as 'removed-frank-$D'" "$T/out" \
+    || fail_ "deleted, disabled by hand: renamed, nothing else written: $(cat "$T/out")"; pass
+# the rename refused: disabled and recorded off, the name kept, a failure; the next run renames it
+printf '%s\n' "$(jfu 13 hank)" | jq -sc . > "$T/jf.json"; : > "$T/portal.ndjson"
+jfresh; JF_NO_RENAME=1 jf_people_access tok > "$T/out" 2>&1
+[[ "$(disabled hank) $(people_get jellyfin hank) $WIRE_FAILS" == "true off 1" ]] && grep -qF "'hank' (portal account deleted) is disabled, but keeps its name — Jellyfin refused the new name" "$T/out" \
+    || fail_ "rename refused: off and recorded, a failure says so: $(cat "$T/out")"; pass
+jfresh; jf_people_access tok > "$T/out" 2>&1
+[[ "$(people_get jellyfin "removed-hank-$D") $WIRE_FAILS" == "removed 0" && ! -e "$T/jpol" ]] || fail_ "the next run renames it, nothing disabled twice: $(cat "$T/out")"; pass
 # a group the rule reads missing: nobody judged
 jq -c 'map(.Policy.IsDisabled = false)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json"
 jfresh; NO_GROUPS=1 jf_people_access tok > "$T/out" 2>&1

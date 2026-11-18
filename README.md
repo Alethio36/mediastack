@@ -862,7 +862,9 @@ Taking Jellyfin away (`access tier jellyfin admin`, `access revoke`, or their
 portal account turned off or deleted, even by hand in authentik) disables
 their Jellyfin account and signs them out of every device — at once from
 `access`, within 15 minutes otherwise (`people-sync`); their history stays,
-and getting it back turns the account on again. Someone you disabled yourself
+and getting it back turns the account on again. A person deleted from the
+portal also has their Jellyfin account renamed `removed-<name>-<date>` (as
+Navidrome does), so someone who later signs up under that name starts fresh. Someone you disabled yourself
 in Jellyfin's dashboard stays disabled. Seerr's card follows Jellyfin's rule
 and Seerr signs people in through Jellyfin, so a new Seerr sign-in is refused
 too — but a Seerr session already open runs until it expires (Seerr has no
