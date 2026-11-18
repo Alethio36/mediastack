@@ -276,6 +276,20 @@ agreed first:
       at :23 — perhaps the gate ran inside that window. If it recurs, keep
       the FAIL line (the ops notification quotes it).
 12. **The README as a chapter-style tutorial** and the built-in how-to page.
+    *Agreed 18 Nov 2026:* documentation split by audience — each
+    `services/<name>/README.md` the reference for that service (what it is,
+    how mediastack wires it, sign-in and access, known gaps linking the
+    watchlist, what it stores where, credentials, troubleshooting), next to
+    its code so code and notes change in one commit; the root README the
+    journey (install, the everyday verbs, the portal, backups), linking out
+    instead of carrying each service's detail; `docs/` the cross-cutting
+    designs, watchlist and roadmap. `check-registries` fails on a service
+    folder without a README, or one without a "Known gaps" heading — a new
+    service's folder brings its page. Done with this step (with the docs
+    audit), not before: the per-service detail is the root README's middle
+    third, rewritten rather than copied, and doing it while slices still
+    change those services would do it twice. ~33 pages from one template;
+    first batch Navidrome, Jellyfin, Seerr, Kavita.
 13. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
     dependency layers below; Wizarr sign-in live; `restore --service
     authentik`, Kavita and Audiobookshelf restores; the household's own preset
