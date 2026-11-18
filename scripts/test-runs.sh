@@ -58,10 +58,14 @@ cp "$T/after.sh" "$T/child.sh"; sed -i 's/exit 3/return 0/; s/after exec/child/'
 printf 'TZ=America/Los_Angeles\nARR_PASSWORD=hunter2hunter2\n' > "$T/env"
 
 reset() { rm -rf "$T/local" "$T/cgroup"; mkdir -p "$T/local"; }
+started() { # started — wait (up to 10s) until fxsleep's record says it is running: a signal before that finds no handler yet (a fixed sleep did, under load)
+    local i; for (( i = 0; i < 100; i++ )); do grep -qs ' started$' "$T"/local/runs/*-fxsleep-*.log && return 0; sleep 0.1; done
+    echo "FAIL: fxsleep never started (10s)" >&2; return 1
+}
 run() { bash -c "source \"\$T/fx.sh\"; main $*"; }   # run VERB ARG... — stdout and stderr where the caller sends them
 rec() { ls "$T"/local/runs/*-"$1"-*.log 2>/dev/null | tail -n 1; }
 footer() { # footer FILE -> its exit line, once the stamper has written it (it may come a moment after the run)
-    local i; for (( i = 0; i < 40; i++ )); do [[ "$(tail -n 1 "$1")" == exit:* ]] && break; sleep 0.05; done
+    local i; for (( i = 0; i < 200; i++ )); do [[ "$(tail -n 1 "$1")" == exit:* ]] && break; sleep 0.05; done   # up to 10s: a loaded machine
     tail -n 1 "$1"
 }
 
@@ -108,14 +112,14 @@ f=$(rec fxchild); [[ $(ls "$T"/local/runs/*.log | wc -l) == 1 && "$(footer "$f")
 # ---- how a run ends ----
 for s in TERM:143 HUP:129; do
     reset; bash -c "source \"\$T/fx.sh\"; main fxsleep" > /dev/null 2>&1 & p=$!
-    sleep 0.6; kill -"${s%%:*}" "$p"; pkill -"${s%%:*}" -P "$p" sleep 2>/dev/null || true; wait "$p" 2>/dev/null || true
+    started; kill -"${s%%:*}" "$p"; pkill -"${s%%:*}" -P "$p" sleep 2>/dev/null || true; wait "$p" 2>/dev/null || true
     [[ "$(footer "$(rec fxsleep)")" == "exit:     ${s#*:} after "* ]] || fail_ "SIG${s%%:*} ends the record with ${s#*:}"; pass
 done
-reset; (sleep 0.8; printf '\003'; sleep 1) | script -qec "bash -c 'source \"$T/fx.sh\"; main fxsleep'" /dev/null > /dev/null 2>&1 || true
+reset; (started; printf '\003'; sleep 1) | script -qec "bash -c 'source \"$T/fx.sh\"; main fxsleep'" /dev/null > /dev/null 2>&1 || true
 f=$(rec fxsleep); [[ "$(footer "$f")" == "exit:     130 after "* ]] && grep -qx 'by:       terminal' "$f" \
     || fail_ "Ctrl-C at a terminal ends the record with 130"; pass
 reset; bash -c "source \"\$T/fx.sh\"; main fxsleep" > /dev/null 2>&1 & p=$!
-sleep 0.6; kill -KILL "$p"; wait "$p" 2>/dev/null || true; sleep 0.5
+started; kill -KILL "$p"; wait "$p" 2>/dev/null || true; sleep 0.5
 f=$(rec fxsleep); grep -q 'started' "$f" && ! grep -q '^exit:' "$f" || fail_ "a killed run has no footer: it never finished"; pass
 
 # ---- verbs whose output is not recorded ----
@@ -159,7 +163,7 @@ reset; mkdir -p "$T/local/runs"; out=$(bash -c "source \"\$T/fx.sh\"; _doctor_ru
 [[ "$out" == *"every run of the last 7 days finished"* ]] || fail_ "none unfinished: said so: $out"; pass
 
 # ---- who started it ----
-by() { sed -n 4p "$(rec fx)"; }
+by() { local f; f=$(rec fx); footer "$f" >/dev/null; sed -n 4p "$f"; }   # read once finished: its last step rewrites it (the scrub), and a read then found it empty
 seen() { printf '%s (records: %s)' "$1" "$(ls -l --time-style=+%T.%N "$T"/local/runs/ 2>&1 | tr '\n' ';')"; }   # what the check itself read, and the folder then
 reset; echo "0::/system.slice/mediastack-people.service" > "$T/cgroup"; run fx > /dev/null 2>&1
 r=$(by); [[ "$r" == "by:       systemd mediastack-people" ]] || fail_ "a timer's run names its unit: $(seen "$r")"; pass
