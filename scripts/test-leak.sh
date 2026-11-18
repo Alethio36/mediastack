@@ -208,17 +208,22 @@ fw "${GOOD/-A OUTPUT -d 86.104.249.45\/32 -o eth0 -p udp -m udp --dport 51820 -j
 [[ $(lt_exit_code) == 2 ]] || fail_ "no VPN server among the rules: UNPROVEN — $(cat "$T/out")"; pass
 
 # ---- the traffic: what the host tracks from gluetun ----
-CT_OUT="" CT_OUT2="" ON_SUDO_PATH="conntrack tcpdump"
+CT_OUT="" CT_OUT2="" ON_SUDO_PATH="conntrack tcpdump" WATCH="" WATCH_LISTENING=1
 sudo() {
     case "$*" in
         "sh -c"*) [[ " $ON_SUDO_PATH " == *" ${*: -1} "* ]] ;;   # command -v, as root sees the path
         conntrack*) # the first read, then CT_OUT2 for every later one (a re-read after the wait)
             if [[ -e "$T/ct_read" ]]; then printf '%s\n' "${CT_OUT2-$CT_OUT}"; else : > "$T/ct_read"; printf '%s\n' "$CT_OUT"; fi ;;
         *"ip -o -4 addr"*) echo "$ADDR_OUT" ;;
+        timeout*tcpdump*) # the wait's capture: the filter kept, WATCH as what it saw
+            echo "${*: -1}" > "$T/watch_filter"
+            (( WATCH_LISTENING )) && echo "tcpdump: listening on any, link-type LINUX_SLL2" >&2
+            [[ -n "$WATCH" ]] && printf '%s\n' "$WATCH"
+            return 124 ;;
     esac
 }
-sleep() { echo "$1" >> "$T/slept"; }
-fl() { CT_OUT=$1; LT_ENDPOINTS=${2-86.104.249.45 }; LT_TUNNEL_PORTS=${FL_PORTS-udp/51820 }; rm -f "$T/ct_read" "$T/slept"; lt_reset; lt_flows mediastack-gluetun > "$T/out" 2>&1; }
+sleep() { if [[ "$1" == 0.5 ]]; then command sleep 0.05; else echo "$1" >> "$T/slept"; fi; }   # the capture's start poll runs for real
+fl() { CT_OUT=$1; LT_ENDPOINTS=${2-86.104.249.45 }; LT_TUNNEL_PORTS=${FL_PORTS-udp/51820 }; rm -f "$T/ct_read" "$T/slept" "$T/watch_filter"; lt_reset; lt_flows mediastack-gluetun > "$T/out" 2>&1; }
 fl 'udp      17 179 src=172.31.250.131 dst=86.104.249.45 sport=51820 dport=51820 src=86.104.249.45 dst=192.168.70.36 sport=51820 dport=51820 [ASSURED] mark=0 use=1
 tcp      6 86390 ESTABLISHED src=172.31.250.131 dst=172.31.250.134 sport=40122 dport=8096 src=172.31.250.134 dst=172.31.250.131 sport=8096 dport=40122 [ASSURED] mark=0 use=1'
 [[ $(lt_exit_code) == 0 ]] || fail_ "the tunnel and the stack network (anzac4's live flow): PASS — $(cat "$T/out")"; pass
@@ -231,8 +236,31 @@ OLD='udp      17 104 src=172.31.250.138 dst=187.15.144.4 sport=51820 dport=51820
 CT_OUT2=$CUR; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
 [[ $(lt_exit_code) == 0 ]] && grep -q "the old session to udp 187.15.144.4:51820 ended" "$T/out" || fail_ "an old session that expires: PASS, named — $(cat "$T/out")"; pass
 [[ "$(cat "$T/slept")" == 109 ]] || fail_ "waited its timeout out, plus 5s ($(cat "$T/slept" 2>/dev/null))"; pass
-CT_OUT2="$CUR"$'\n'"$OLD"; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
-[[ $(lt_exit_code) == 1 ]] && grep -q "still talks to udp 187.15.144.4:51820 .* refreshed" "$T/out" || fail_ "still tracked after its timeout: refreshed, a live path — FAIL — $(cat "$T/out")"; pass
+# still tracked after its wait (anzac4's boot after a Docker upgrade, 17 Nov 2026): who renewed it decides
+IN1='21:01:30.100000 veth3c2d Out IP 187.15.144.4.51820 > 172.31.250.131.51820: UDP, length 32'
+NAT='21:01:30.100000 ens18 Out IP 192.168.70.36.51820 > 187.15.144.4.51820: UDP, length 32'
+OUT1='21:01:31.200000 veth3c2d In  IP 172.31.250.131.51820 > 187.15.144.4.51820: UDP, length 148'
+CT_OUT2="$CUR"$'\n'"$OLD"; WATCH="$IN1"$'\n'"$IN1"$'\n'"$NAT"; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
+[[ $(lt_exit_code) == 0 ]] && grep -q "stays tracked, but gluetun's address sent it nothing .* renewed from its side" "$T/out" \
+    || fail_ "renewed only by the old server calling in: PASS, said so — $(cat "$T/out")"; pass
+grep -q "104s left before the wait, 104s after; captured: 0 out from gluetun's address, 2 in to it" "$T/out" \
+    || fail_ "the evidence in the line: both times left and the capture each way (the host's own translated address is not gluetun) — $(cat "$T/out")"; pass
+[[ "$(cat "$T/watch_filter")" == "udp and host 172.31.250.131 and (host 187.15.144.4)" ]] || fail_ "the capture: gluetun's address and the old server only ($(cat "$T/watch_filter"))"; pass
+[[ "$(cat "$T/slept")" == 109 ]] || fail_ "the capture runs inside the same wait, not a second one ($(cat "$T/slept"))"; pass
+WATCH="$IN1"$'\n'"$OUT1"; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
+[[ $(lt_exit_code) == 1 ]] && grep -q "gluetun's address sent to udp 187.15.144.4:51820 past the current VPN server while it was waited out" "$T/out" \
+    && grep -q "1 out from gluetun's address, 1 in to it.*172.31.250.131.51820 > 187.15.144.4.51820" "$T/out" \
+    || fail_ "gluetun's address sending to the old server: FAIL, the packet shown — $(cat "$T/out")"; pass
+CT_OUT2=$CUR; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
+[[ $(lt_exit_code) == 1 ]] && grep -q "gone after; captured: 1 out" "$T/out" || fail_ "sent to the old server, then expired: still FAIL — $(cat "$T/out")"; pass
+CT_OUT2="$CUR"$'\n'"$OLD"; WATCH=""; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
+[[ $(lt_exit_code) == 0 ]] && grep -q "no packet either way" "$T/out" || fail_ "tracked, nothing captured either way: nothing sent, PASS — $(cat "$T/out")"; pass
+ON_SUDO_PATH="conntrack"; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "; ON_SUDO_PATH="conntrack tcpdump"
+[[ $(lt_exit_code) == 1 ]] && grep -q "still talks to udp 187.15.144.4:51820 .* refreshed.*no capture: tcpdump is not installed" "$T/out" \
+    || fail_ "no tcpdump: a renewal stays a live path — FAIL, saying why — $(cat "$T/out")"; pass
+WATCH_LISTENING=0; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "; WATCH_LISTENING=1
+[[ $(lt_exit_code) == 1 ]] && grep -q "refreshed.*no capture: the capture did not start" "$T/out" \
+    || fail_ "a capture that never started: a renewal stays a live path — FAIL — $(cat "$T/out")"; pass
 CT_OUT2="$CUR"$'\n''udp 17 60 src=172.31.250.138 dst=203.0.113.50 sport=51820 dport=51820 [ASSURED]'; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
 [[ $(lt_exit_code) == 2 ]] && grep -q "changed servers again while this waited" "$T/out" || fail_ "another server switch during the wait: UNPROVEN — $(cat "$T/out")"; pass
 CT_OUT2="$CUR"$'\n''udp 17 20 src=172.31.250.138 dst=192.168.69.1 sport=40000 dport=53'; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "

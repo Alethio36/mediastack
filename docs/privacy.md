@@ -119,8 +119,12 @@ Navidrome's optional music services (Last.fm, ListenBrainz, Deezer artwork).
   tools are added by `install` and removed by uninstall — unless they were
   already on the host. gluetun changes servers on its own, and the old
   server's connection stays tracked for up to ~2 minutes: it is excused only
-  on the tunnel's own port and only once it expires, so the test may wait
-  that long; refreshed, or on any other port, it is a leak.
+  on the tunnel's own port, so the test may wait that long while it watches
+  (tcpdump, on the host) what gluetun's address sends that server. A packet
+  from gluetun's address to it is a leak; the old server still calling in is
+  not (it renews the tracked connection, but nothing leaves). On any other
+  port it is a leak at once. Without a capture, a connection still tracked
+  after the wait is a leak.
 - **The comparison is local.** A VPN-side address that is one of yours, or
   inside your network's blocks, is a leak (`FAIL`); a resolver in your own
   network is a leak. None of these parties is told about the other side.

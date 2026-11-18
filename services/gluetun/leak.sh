@@ -320,9 +320,13 @@ lt_firewall() { # lt_firewall GLUETUN — every way out of the namespace: the po
 # restarts), the old server's entry stays tracked until its timeout runs out
 # (~2 min for UDP) while the firewall already names the new one. Such an entry
 # is excused only when it cannot be a leak: the tunnel's own protocol and
-# port, and gone once its timeout has passed. A live path is refreshed and
-# stays; anything else — even a one-off that expires, which is what a leaked
-# DNS query looks like — is a FAIL.
+# port, and nothing sent to it while it is waited out. A tracked entry is
+# renewed by a packet either way, so it alone cannot say who is talking (a
+# boot after a Docker upgrade, 17 Nov 2026: the gate stopped on an entry it
+# could not explain): the wait is watched on the host, before Docker's
+# address translation, and a packet from gluetun's address to the old server
+# is the FAIL. Anything off the tunnel's port — even a one-off that expires,
+# which is what a leaked DNS query looks like — is a FAIL at once.
 LT_FLOW_WAIT_MAX=180   # seconds: an entry tracked longer cannot be waited out
 lt_flows_read() { # lt_flows_read GIP -> "proto dst dport timeout" per destination (its longest timeout)
     local out
@@ -350,8 +354,38 @@ lt_flow_allowed() { # lt_flow_allowed DST SUBNET -> 0 when DST is a VPN server t
     ip4_cidr_inside "$1" "$2"
 }
 
+LT_WATCH_PID="" LT_WATCH_CAP="" LT_WATCH_ERR="" LT_WATCH_WHY="" LT_WATCH_OUT="" LT_WATCH_IN="" LT_WATCH_FIRST=""
+lt_flows_watch() { # lt_flows_watch GIP SECONDS "proto dst dport"... — capture what passes between gluetun's address and these servers
+    # gluetun's own address only shows before Docker's address translation
+    # (its bridge and veth), so a line from it is gluetun sending; the same
+    # packet after translation carries the host's address and is not matched.
+    local gip=$1 secs=$2 f p d dp hosts="" n; shift 2
+    LT_WATCH_PID="" LT_WATCH_WHY="" LT_WATCH_OUT="" LT_WATCH_IN="" LT_WATCH_FIRST=""
+    sudo sh -c 'command -v "$1"' _ tcpdump >/dev/null 2>&1 || { LT_WATCH_WHY="tcpdump is not installed — ./mediastack.sh install adds it"; return 0; }
+    for f in "$@"; do read -r p d dp <<<"$f"; hosts+="${hosts:+ or }host $d"; done
+    LT_WATCH_CAP=$(mktemp); LT_WATCH_ERR=$(mktemp)
+    # shellcheck disable=SC2024  # the capture lands in our own temp files, read by lt_flows_watched
+    sudo timeout "$secs" tcpdump -lni any "udp and host $gip and ($hosts)" >"$LT_WATCH_CAP" 2>"$LT_WATCH_ERR" & LT_WATCH_PID=$!
+    for n in 1 2 3 4 5 6 7 8 9 10; do grep -q 'listening on' "$LT_WATCH_ERR" && return 0; sleep 0.5; done
+    LT_WATCH_WHY="the capture did not start ($(oneline "$(cat "$LT_WATCH_ERR")"))"
+    wait "$LT_WATCH_PID" 2>/dev/null || true; LT_WATCH_PID=""; rm -f "$LT_WATCH_CAP" "$LT_WATCH_ERR"
+}
+lt_flows_watched() { # lt_flows_watched GIP "proto dst dport"... — the capture's count each way (LT_WATCH_OUT/IN, LT_WATCH_FIRST: the first line out)
+    local gip=$1 f p d dp olds=""; shift
+    [[ -n "$LT_WATCH_PID" ]] || return 0
+    wait "$LT_WATCH_PID" 2>/dev/null || true   # timeout ends it: exit 124
+    for f in "$@"; do read -r p d dp <<<"$f"; olds+="$d "; done
+    # "<time> <iface> <In|Out> IP <src>.<port> > <dst>.<port>: UDP, ..." — a line from the bridge and the veth alike
+    read -r LT_WATCH_OUT LT_WATCH_IN < <(awk -v g="$gip" -v o=" $olds" '
+        { for (i = 2; i < NF; i++) if ($i == ">") { s = $(i-1); d = $(i+1); sub(/\.[0-9]+$/, "", s); sub(/\.[0-9]+:?$/, "", d)
+              if (s == g && index(o, " " d " ")) out++; else if (d == g && index(o, " " s " ")) in_++; break } }
+        END { print out + 0, in_ + 0 }' "$LT_WATCH_CAP")
+    LT_WATCH_FIRST=$(awk -v g="$gip" '{ for (i = 2; i < NF; i++) if ($i == ">") { s = $(i-1); sub(/\.[0-9]+$/, "", s); if (s == g) { print; exit } break } }' "$LT_WATCH_CAP")
+    LT_WATCH_FIRST=$(oneline "$LT_WATCH_FIRST")
+    LT_WATCH_PID=""; rm -f "$LT_WATCH_CAP" "$LT_WATCH_ERR"
+}
 lt_flows() { # lt_flows GLUETUN — the connections the host tracks from gluetun go only to the VPN server and the stack network
-    local gcn=$1 gip sub flows now bad=() old=() newold=() kept=() proto dst dport t wait=0 k o seen
+    local gcn=$1 gip sub flows now bad=() old=() newold=() kept=() proto dst dport t wait=0 left2=0 k o seen ev
     leak_tool conntrack "traffic" || return 0
     [[ -n "$LT_ENDPOINTS" ]] || { lt_unproven "traffic: no VPN server known (the firewall check could not name one)"; return 0; }
     sub=$(lt_ns_subnet "$gcn"); gip=$(sudo docker exec "$gcn" ip -o -4 addr show dev eth0 2>/dev/null | awk 'NR == 1 { split($4, a, "/"); print a[1] }')
@@ -369,8 +403,10 @@ lt_flows() { # lt_flows GLUETUN — the connections the host tracks from gluetun
             lt_unproven "traffic: $(lt_flow_names "${old[@]}") on the tunnel's own port is not the current VPN server and stays tracked ${wait}s — too long to tell an old session from a live one"
             return 0
         fi
-        info "traffic: $(lt_flow_names "${old[@]}") is on the tunnel's own port but not the current VPN server — waiting $(( wait + 5 ))s: an old session expires, a live one is refreshed"
+        lt_flows_watch "$gip" $(( wait + 5 )) "${old[@]}"
+        info "traffic: $(lt_flow_names "${old[@]}") is on the tunnel's own port but not the current VPN server — waiting $(( wait + 5 ))s, $( [[ -n "$LT_WATCH_PID" ]] && echo "watching what gluetun's address sends it" || echo "with no capture (${LT_WATCH_WHY}): a renewal counts as a live path")"
         sleep $(( wait + 5 ))
+        lt_flows_watched "$gip" "${old[@]}"
         now=$(lt_flows_read "$gip")
         while read -r proto dst dport t; do
             [[ -n "$proto" ]] || continue
@@ -379,13 +415,24 @@ lt_flows() { # lt_flows GLUETUN — the connections the host tracks from gluetun
             if [[ " $LT_TUNNEL_PORTS " != *" $proto/$dport "* ]]; then bad+=("$proto $dst:$dport")
             else
                 seen=0; for o in "${old[@]}"; do [[ "$o" == "$k" ]] && seen=1; done
-                if (( seen )); then kept+=("$k"); else newold+=("$k"); fi
+                if (( seen )); then kept+=("$k"); left2=$(( t > left2 ? t : left2 )); else newold+=("$k"); fi
             fi
         done <<<"$now"
+        ev="${wait}s left before the wait, $( (( ${#kept[@]} )) && echo "${left2}s after" || echo "gone after")"
+        [[ -n "$LT_WATCH_OUT" ]] && ev+="; captured: $LT_WATCH_OUT out from gluetun's address, $LT_WATCH_IN in to it"
         if (( ${#bad[@]} )); then lt_fail "traffic: gluetun's address is talking past the tunnel — ${bad[*]}"; return 0; fi
-        if (( ${#kept[@]} )); then lt_fail "traffic: gluetun's address still talks to $(lt_flow_names "${kept[@]}") past the current VPN server — refreshed, not an old session"; return 0; fi
+        if [[ -n "$LT_WATCH_OUT" ]] && (( LT_WATCH_OUT > 0 )); then
+            lt_fail "traffic: gluetun's address sent to $(lt_flow_names "${old[@]}") past the current VPN server while it was waited out ($ev): $LT_WATCH_FIRST"; return 0
+        fi
+        if (( ${#kept[@]} )) && [[ -z "$LT_WATCH_OUT" ]]; then
+            lt_fail "traffic: gluetun's address still talks to $(lt_flow_names "${kept[@]}") past the current VPN server — refreshed, not an old session ($ev; no capture: ${LT_WATCH_WHY})"; return 0
+        fi
         if (( ${#newold[@]} )); then lt_unproven "traffic: gluetun changed servers again while this waited ($(lt_flow_names "${newold[@]}")) — run leak-test again"; return 0; fi
-        lt_pass "traffic: every connection the host tracks from gluetun goes to the VPN server or the stack's own network ($(wc -l <<<"$flows") seen); the old session to $(lt_flow_names "${old[@]}") ended (gluetun changed servers)"
+        if (( ${#kept[@]} )); then
+            lt_pass "traffic: every connection the host tracks from gluetun goes to the VPN server or the stack's own network ($(wc -l <<<"$flows") seen); the old session to $(lt_flow_names "${kept[@]}") stays tracked, but gluetun's address sent it nothing while it was waited out — $( (( LT_WATCH_IN > 0 )) && echo "renewed from its side" || echo "no packet either way") ($ev)"
+            return 0
+        fi
+        lt_pass "traffic: every connection the host tracks from gluetun goes to the VPN server or the stack's own network ($(wc -l <<<"$flows") seen); the old session to $(lt_flow_names "${old[@]}") ended (gluetun changed servers; $ev)"
         return 0
     fi
     lt_pass "traffic: every connection the host tracks from gluetun goes to the VPN server or the stack's own network ($(wc -l <<<"$flows") seen)"
