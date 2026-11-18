@@ -528,6 +528,17 @@ reach a session already open.
     database (rejected: another app's private tables, silently broken by an
     update). The README says so; the watchlist holds what would close it.
 
+15. **Kavita's open tab is a known gap, kept** (*decided 18 Nov 2026*).
+    Its slice proved a tab already open keeps reading until it reloads
+    (15 minutes and more with `Login` gone) and that Kavita lets an admin
+    end no one else's session. A new sign-in and every reload are refused
+    at once, by the portal on its own page. Its libraries mounted read-only
+    in the same change, so no Kavita account — an open tab, a demoted
+    admin's — can change or delete a book. Weighed: Kavita behind the gate
+    (rejected: OPDS readers and reading apps would need device passwords
+    sent as headers, which some cannot). The README says so; the watchlist
+    holds what would close it.
+
 **Costs:** a change made by hand in authentik reaches open sessions within
 15 minutes (an `access` command: at once); Kavita's open tab until its next
 reload; one more record per app of whom the stack turned off; six apps, so
@@ -584,7 +595,12 @@ sign-up under the same name gets a fresh account instead of the old one.
 the next run left it alone.
 
 **Slice C — Kavita.** Its card by the rule; `Login` on loss; proven: no
-loop, and when an open tab is cut off. *Built 18 Nov 2026, to prove live.*
+loop, and when an open tab is cut off. *Proven live 18 Nov 2026 (ce8ebb6):*
+`access tier kavita admin` took spikeuser's `Login` at once; a reload went
+to the portal's own "permission denied" page — no loop; grant, revoke and the
+tier back each followed; spikedel2, deleted in authentik, became
+`removed-spikedel2-20261118` with its new email. The open tab kept working
+past 15 minutes — decision 15.
 Its tier label (`mediastack.tier: frontend`) puts it under the rule; its card
 is its OIDC application, so the portal refuses a sign-in first, on its own
 page. Its accounts follow in `kavita_people_follow`: who may sign in

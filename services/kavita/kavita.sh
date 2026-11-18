@@ -215,10 +215,11 @@ kavita_people_follow() { # lib/people.sh: the stack's admin signs in, then who m
 
 # who may sign in (docs/design-access.md, decisions 11-12): the portal refuses
 # a sign-in first (Kavita's card is its OIDC application, bound by the rule).
-# An account already made keeps its session until Kavita next checks it, so
-# its Login role goes: Kavita then refuses it (its open tab at the next reload,
-# proven in the spike) — and Kavita never syncs roles from the portal
-# (syncUserSettings off), so the change holds. Allowed again, only someone the
+# Its Login role goes too, so Kavita refuses them wherever they come from —
+# and Kavita never syncs roles from the portal (syncUserSettings off), so the
+# change holds. A tab already open keeps reading until it reloads: Kavita
+# re-checks no role while it runs (15 minutes and more, proven live) and lets
+# an admin end no one else's session (decision 15, a known gap kept). Allowed again, only someone the
 # stack took it from (local/kavita-people) gets Login back; someone an admin
 # shut out by hand stays out. A person deleted from the portal is also renamed
 # removed-<name>-<date> and given an email nobody can sign up with: Kavita
@@ -260,7 +261,7 @@ kav_people_access() { # kav_people_access TOKEN — portal accounts follow the r
             new="removed-$name-$(date +%Y%m%d)"
             w_would "kavita: '$name' (portal account deleted) cannot sign in, kept as '$new' — their reading stays, the name and email free for someone new" || continue
             if ! out=$(kav_person_set "$tok" "$u" ".roles = [.roles[] | select(. != \"$lr\" and . != \"$KAV_ADMIN_ROLE\")] | .username = \"$new\" | .email = \"$new@removed.invalid\"" \
-                       ".username == \"$new\" and ([.roles[]?] | index(\"$lr\") == null)"); then
+                       ".username == \"$new\" and .email == \"$new@removed.invalid\" and ([.roles[]?] | index(\"$lr\") == null)"); then
                 wfail "kavita: '$name' (portal account deleted) still signs in — $out"; continue
             fi
             people_set kavita "$name" ""; people_set kavita "$new" removed

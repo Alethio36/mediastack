@@ -898,16 +898,19 @@
           "type": "bind"
         },
         {
+          "read_only": true,
           "source": "@REPO@/services/kavita/data/media/books",
           "target": "/books",
           "type": "bind"
         },
         {
+          "read_only": true,
           "source": "@REPO@/services/kavita/data/media/comics",
           "target": "/comics",
           "type": "bind"
         },
         {
+          "read_only": true,
           "source": "@REPO@/services/kavita/data/media/manga",
           "target": "/manga",
           "type": "bind"

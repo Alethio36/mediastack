@@ -296,6 +296,8 @@ kfresh; KV_IGNORE=1 kav_people_access tok > "$T/out" 2>&1
 kfresh; NO_GROUPS=1 kav_people_access tok > "$T/out" 2>&1
 [[ ! -e "$T/kupd" && "$WIRE_FAILS" == 1 ]] && grep -qF "authentik has no 'admin' group" "$T/out" || fail_ "a group missing: nobody touched, a failure says why: $(cat "$T/out")"; pass
 unset -f kav_api
+m=$(grep -E 'DATA_ROOT\}/media/' services/kavita/compose.yml)
+[[ -n "$m" ]] && ! grep -v ':ro$' <<<"$m" >/dev/null || fail_ "Kavita's libraries mounted read-only: no account, an open tab included, changes a book (decision 15): $m"; pass
 
 # ---- each app's part: the stack's own signs in first ----
 part() { # part APP -> its output; the login refused

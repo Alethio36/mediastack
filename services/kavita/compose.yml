@@ -31,9 +31,12 @@ services:
       - "127.0.0.1:${KAVITA_PORT:-5000}:5000"
     volumes:
       - ${CONFIG_ROOT}/kavita:/kavita/config
-      - ${DATA_ROOT}/media/books:/books
-      - ${DATA_ROOT}/media/comics:/comics
-      - ${DATA_ROOT}/media/manga:/manga
+      # read-only: Kavita reads its libraries (covers, bookmarks and backups
+      # live in its config) — and no Kavita account, admin or not, an open tab
+      # included, can change or delete a book (decided 18 Nov 2026)
+      - ${DATA_ROOT}/media/books:/books:ro
+      - ${DATA_ROOT}/media/comics:/comics:ro
+      - ${DATA_ROOT}/media/manga:/manga:ro
     labels:
       <<: *no-foreign-watchtower
       mediastack.managed: "true"

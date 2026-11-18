@@ -221,6 +221,30 @@ sessions (an admin API, or a state it checks per request) — then it joins
 `people-sync` like Kavita — or ships OIDC, which moves its sign-in onto the
 portal's rule.
 
+### Ending a person's Kavita session *(Nov 2026)*
+
+Taking Kavita away from someone (or turning their portal account off) stops
+every new sign-in and every reload at once — the portal refuses on its own
+page — and takes their `Login` role. A Kavita tab already open keeps reading
+until it reloads: Kavita re-checks no role while it runs (spikeuser's tab
+kept working 15 minutes and more after `Login` went, proven live 18 Nov 2026),
+and an admin can end no one else's session — `DELETE
+/api/device/client/device` is scoped to the caller's own devices
+(`DeleteDeviceAsync(userId, deviceId)` answered `client-device-doesnt-exist`
+for spikeuser's), and the auth-key and OIDC-link calls act on the caller only.
+What an open tab can still do: read and download (its roles); it cannot
+change or delete a book (the libraries are mounted read-only). Roles ride in
+Kavita's sign-in token, so an admin demoted with a tab open may keep admin
+rights in it until it reloads — Kavita's own database (libraries, settings,
+people) is what that tab could still change. Weighed and not taken: Kavita
+behind the gate (an instant cut, but OPDS readers and the Mihon/Tachiyomi
+extension would need a device password as a header, which some cannot send).
+[design-access.md](design-access.md), decision 15.
+
+**Revisit when:** a Kavita release lets an admin end another person's
+sessions (a device delete that works across people, a sign-out-everywhere,
+or roles re-checked per request) — then the follow calls it on loss.
+
 ### Email from Wizarr
 
 **Verdict:** parked (Nov 2026). With Wizarr, `reset-password` prints Wizarr's reset link

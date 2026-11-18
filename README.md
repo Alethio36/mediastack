@@ -970,7 +970,13 @@ the same rule as Jellyfin (`access tier kavita`, `access grant`): the portal
 refuses anyone else at sign-in, and losing it takes their `Login` role in
 Kavita away — an open tab ends at its next reload — at once from `access`,
 within 15 minutes otherwise; getting it back gives it back (only if the stack
-took it). Someone you shut out yourself in Kavita stays out. A person deleted
+took it). Someone you shut out yourself in Kavita stays out. A tab already
+open keeps reading until it is reloaded or closed — Kavita has no way for an
+admin to end someone else's session (docs/watchlist.md). In it they can read
+and download, but not change or delete a book: Kavita's libraries are mounted
+read-only. Libraries, settings and people are for Kavita's `Admin` role,
+which the household does not get — though an admin you demote keeps admin
+rights in a tab they already have open until it reloads. A person deleted
 from the portal has their Kavita account renamed `removed-<name>-<date>` with
 an email nobody can sign up with, so a newcomer with their name or email
 starts fresh. While the portal runs, their host ports listen on 127.0.0.1 only —
