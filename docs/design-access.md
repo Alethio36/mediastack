@@ -579,9 +579,22 @@ device; turned back on only when the stack turned it off), then admin rights.
 open one. A person deleted from the portal is disabled and renamed
 `removed-<name>-<date>`, as Navidrome's (decided 18 Nov 2026): a later
 sign-up under the same name gets a fresh account instead of the old one.
+*Proven live 18 Nov 2026 (5931bdc):* spikedel, deleted in authentik, became
+`removed-spikedel-20261118` — disabled, signed out of its one device — and
+the next run left it alone.
 
 **Slice C — Kavita.** Its card by the rule; `Login` on loss; proven: no
-loop, and when an open tab is cut off.
+loop, and when an open tab is cut off. *Built 18 Nov 2026, to prove live.*
+Its tier label (`mediastack.tier: frontend`) puts it under the rule; its card
+is its OIDC application, so the portal refuses a sign-in first, on its own
+page. Its accounts follow in `kavita_people_follow`: who may sign in
+(`kav_people_access`: `Login` off on loss, back only when the stack took it —
+Kavita never syncs roles from the portal, `syncUserSettings` off), then
+admin rights. A person deleted from the portal is renamed
+`removed-<name>-<date>` with the email `<that>@removed.invalid`: Kavita
+links a portal sign-in by email, so the email, more than the name, is what a
+newcomer would take over. `kav_login` is the one way in as the stack's own
+admin (it was copied five times).
 
 **Slice D — Audiobookshelf.** Spike first (enabled on the test box), then
 the same.

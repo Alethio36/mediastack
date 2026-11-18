@@ -867,6 +867,7 @@
         "mediastack.managed": "true",
         "mediastack.port": "5000",
         "mediastack.subdomain": "books",
+        "mediastack.tier": "frontend",
         "mediastack.user_facing": "true",
         "mediastack.vpn": "false",
         "traefik.enable": "true",

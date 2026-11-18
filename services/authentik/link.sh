@@ -69,9 +69,7 @@ cmd_link_account() {
             [[ -z "$out" ]] || die "jellyfin already has an account named '$out' (made when $who signed in through the portal?). If it holds nothing, delete it in Jellyfin's dashboard, then run this again."; fi
     fi
     if svc_enabled kavita && [[ -n "$(env_get KAVITA_ADMIN_PASSWORD)" ]]; then
-        out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-            || die "kavita rejected the stored admin login: $(oneline "$out")"
-        ktok=$(jq -r '.token // empty' <<<"$out")
+        ktok=$(kav_login) || die "$ktok"
         kusers=$(kav_api GET "/api/users?includePending=true" "$ktok") || die "kavita: users unreadable"
         link_pick kavita "$(link_kav_candidates "$kusers")" "$who"; kv=$LINK_PICK
         if [[ -n "$kv" ]]; then

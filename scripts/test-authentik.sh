@@ -689,21 +689,21 @@ for AK_ON in 1 ''; do
 done
 
 # ---- household apps: their own cards; Navidrome's carries its household gate ----
-svc_enabled_managed() { printf '%s\n' sonarr navidrome jellyfin seerr; }
+svc_enabled_managed() { printf '%s\n' sonarr navidrome jellyfin seerr kavita; }
 svc_label() { case "$1:$2" in
     sonarr:mediastack.auth) echo gate ;; navidrome:mediastack.auth) echo gate ;;
     navidrome:mediastack.auth.group) echo frontend ;;
-    navidrome:mediastack.user_facing|jellyfin:mediastack.user_facing|seerr:mediastack.user_facing) echo true ;;
-    jellyfin:mediastack.auth|seerr:mediastack.auth) echo native ;;
-    jellyfin:mediastack.tier) echo frontend ;; seerr:mediastack.access.of) echo jellyfin ;;
+    navidrome:mediastack.user_facing|jellyfin:mediastack.user_facing|seerr:mediastack.user_facing|kavita:mediastack.user_facing) echo true ;;
+    jellyfin:mediastack.auth|seerr:mediastack.auth|kavita:mediastack.auth) echo native ;;
+    jellyfin:mediastack.tier|kavita:mediastack.tier) echo frontend ;; seerr:mediastack.access.of) echo jellyfin ;;
     authentik:mediastack.subdomain) echo portal ;;
     *:mediastack.desc) echo "desc of ${1%%:*}" ;; esac; }
 unset -f authentik_gated authentik_household
 # shellcheck disable=SC1090  # the two real functions, back from their stubs
 source <(sed -n '/^authentik_gated() {/,/^}/p; /^authentik_household() {/,/^}/p' services/authentik/authentik.sh)
 [[ "$(authentik_gated | tr '\n' ' ')" == "sonarr " ]] || fail_ "the household-gated app is not an admin tool: $(authentik_gated)"; pass
-[[ "$(authentik_household | tr '\n' ' ')" == "navidrome jellyfin seerr " ]] || fail_ "household apps by mediastack.user_facing"; pass
-[[ "$(svc_enabled() { :; }; authentik_native_ruled | tr '\n' ' ')" == "jellyfin " ]] || fail_ "under the rule, signing people in itself: Jellyfin (a tier label) — not Seerr, not the gated"; pass
+[[ "$(authentik_household | tr '\n' ' ')" == "navidrome jellyfin seerr kavita " ]] || fail_ "household apps by mediastack.user_facing"; pass
+[[ "$(svc_enabled() { :; }; authentik_native_ruled | tr '\n' ' ')" == "jellyfin kavita " ]] || fail_ "under the rule, signing people in themselves: Jellyfin and Kavita (a tier label) — not Seerr, not the gated"; pass
 [[ "$(svc_enabled() { :; }; svc_access_of seerr) $(svc_enabled() { :; }; svc_access_of jellyfin) $(svc_enabled() { :; }; svc_access_of navidrome)" == "jellyfin jellyfin " ]] \
     || fail_ "whose rule a card follows: Seerr Jellyfin's, Jellyfin its own, others none here"; pass
 [[ -z "$(svc_enabled() { [[ "$1" != jellyfin ]]; }; svc_access_of seerr)" ]] || fail_ "Seerr with Jellyfin off: no rule to follow"; pass
@@ -715,14 +715,14 @@ AK_APPS='{"results":[
   {"slug":"mediastack-tool-sonarr","pk":"a-ts","meta_launch_url":"https://sonarr.media.example.com"},
   {"slug":"mediastack-tool-oldsvc","pk":"a-to"},
   {"slug":"my-own-app","pk":"a-mine"},
-  {"slug":"mediastack-app-kavita","pk":"a-k"},
+  {"slug":"mediastack-app-audiobookshelf","pk":"a-k"},
   {"slug":"mediastack-app-navidrome","pk":"a-nav","provider":42,"group":"Media","meta_launch_url":"https://navidrome.media.example.com"}]}'
 gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards against a stateful authentik; calls in $T/calls
     ( WIRE_DRY=${1:-0} WIRE_FAILS=0 NOBIND=${2:-0}
       rm -f "$T/calls" "$T/made" "$T/patched"; printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: the household and its admins
       printf 'a-ldap g-mu\na-ldap g-adm\n' >> "$T/bind"   # the LDAP application, as the blueprint bound it before slice B
       printf 'admin g-adm\nfrontend g-mu\n' > "$T/groups"; echo '[6]' > "$T/op"; echo 'mediastack-ldap a-ldap' > "$T/apps"
-      svc_enabled() { [[ " sonarr navidrome jellyfin seerr " == *" $1 "* ]]; }
+      svc_enabled() { [[ " sonarr navidrome jellyfin seerr kavita " == *" $1 "* ]]; }
       ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
         case "$1 $2" in
           "GET /core/applications/?superuser_full_list=true&page_size=500") echo "$AK_APPS" ;;
@@ -736,6 +736,7 @@ gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards again
               jq -e '.mode == "forward_single"' <<<"$3" >/dev/null || { echo '{"internal_host":["Internal host cannot be empty when forward auth is disabled."]}'; return 1; }
               echo '{}' ;;
           "GET /flows/instances/?slug="*) echo '{"results":[{"pk":"flow-x"}]}' ;;
+          "GET /providers/oauth2/?client_id=mediastack-kavita") echo '{"results":[{"pk":77}]}' ;;   # Kavita signs in through OIDC: its card is that application
           "GET /providers/oauth2/?client_id="*) echo '{"results":[]}' ;;
           "POST /core/applications/") sl=$(jq -r .slug <<<"$3"); echo "$sl a-$sl" >> "$T/apps"; echo "{\"pk\":\"a-$sl\"}" ;;
           "PATCH /core/applications/"*/) sl=${2#/core/applications/}; sl=${sl%/}; echo "$sl" >> "$T/patched"   # authentik answers with the application
@@ -752,7 +753,7 @@ gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards again
               jq -c .providers <<<"$3" > "$T/op"; [[ -n "${LATE:-}" ]] && { echo 'no answer within 90s'; return 1; }; echo '{}' ;;
           *) echo '{}' ;;
         esac; }
-      svc_tier() { case "$1" in sonarr) echo "${ST:-admin}" ;; navidrome) echo "${NT:-frontend}" ;; jellyfin) echo "${JT:-frontend}" ;; *) echo admin ;; esac; }
+      svc_tier() { case "$1" in sonarr) echo "${ST:-admin}" ;; navidrome) echo "${NT:-frontend}" ;; jellyfin) echo "${JT:-frontend}" ;; kavita) echo "${KT:-frontend}" ;; *) echo admin ;; esac; }
       wire_authentik_cards >/dev/null 2>&1; echo "fails=$WIRE_FAILS" )
 }
 binds() { awk -v t="$1" '$1==t{print $2}' "$T/bind" | sort | paste -sd, -; }
@@ -780,7 +781,7 @@ grep -q '^POST /core/applications/ .*"slug":"mediastack-app-jellyfin".*"group":"
     && ! grep -q '"slug":"mediastack-app-jellyfin".*"provider"' "$T/calls" || fail_ "Jellyfin: a plain Media card (its own login)"; pass
 grep -q '^DELETE /core/applications/mediastack-tool-sonarr/' "$T/calls" && grep -q '^DELETE /core/applications/mediastack-tool-oldsvc/' "$T/calls" \
     || fail_ "the tools' old link cards leave"; pass
-grep -q '^DELETE /core/applications/mediastack-app-kavita/' "$T/calls" || fail_ "a card for an app no longer enabled leaves"; pass
+grep -q '^DELETE /core/applications/mediastack-app-audiobookshelf/' "$T/calls" || fail_ "a card for an app no longer enabled leaves"; pass
 ! grep -q 'my-own-app' <(grep -E '^(DELETE|PATCH)' "$T/calls") || fail_ "an application you made is never touched"; pass
 [[ "$(gates_run 0 1)" != fails=0 ]] && [[ "$(cat "$T/op")" == "[6]" ]] \
     || fail_ "bindings refused: no gate reaches the outpost (an unbound card would admit everyone): $(cat "$T/op")"; pass
@@ -814,6 +815,12 @@ grep -q '^POST /core/groups/ .*"name":"app-jellyfin"' "$T/calls" && ! grep -q '"
     && grep -q '^POST /core/applications/ .*"slug":"mediastack-app-seerr".*"group":"Admin tools"' "$T/calls" \
     || fail_ "tier admin: Jellyfin's and Seerr's cards with the tools, for admins and app-jellyfin: $(binds a-mediastack-app-jellyfin) / $(binds a-mediastack-app-seerr)"; pass
 [[ "$(JT="admin" gates_run 1)" == fails=0 ]] && ! grep -qE '^(POST|PATCH|DELETE) ' "$T/calls" || fail_ "a dry run of Jellyfin's tier move writes nothing"; pass
+# Kavita (slice C): its card is its OIDC application — bound by the rule, the portal refuses at sign-in, before Kavita
+[[ "$(gates_run)" == fails=0 ]] && grep -q '^POST /core/applications/ .*"slug":"mediastack-app-kavita".*"provider":77' "$T/calls" \
+    && [[ "$(binds a-mediastack-app-kavita)" == "g-adm,g-app-kavita,g-mu" ]] \
+    || fail_ "tier frontend: Kavita's sign-in application admits the household, admins, app-kavita: $(binds a-mediastack-app-kavita)"; pass
+[[ "$(KT="admin" gates_run)" == fails=0 && "$(binds a-mediastack-app-kavita)" == "g-adm,g-app-kavita" ]] && [[ "$(binds a-ldap)" == "g-adm,g-app-jellyfin,g-mu" ]] \
+    || fail_ "Kavita to admin: the household off its sign-in; Jellyfin's left as it was: $(binds a-mediastack-app-kavita) / $(binds a-ldap)"; pass
 [[ "$(MOVED=1 gates_run)" == fails=0 ]] && grep -qF 'PATCH /providers/proxy/50/ {"mode":"forward_single","external_host":"https://sonarr.media.example.com"}' "$T/calls" \
     || fail_ "an app's address changed: its gate follows, the update saying its mode (authentik refuses one without): $(grep 'PATCH /providers/proxy/50' "$T/calls")"; pass
 
@@ -1900,7 +1907,7 @@ rm -f "$T/acalls"; o=$(GCFAIL=1 acc access_revoke carol sonarr); grep -q 'authen
 # Jellyfin signs people in itself (slice B): no portal session decides it —
 # its own switch does, through its accounts' follow, after the rule changed
 : > "$T/aenv"; o=$(acc access_list)
-grep -qE '^jellyfin +frontend +- +https://jellyfin.x$' <<<"$o" && grep -q 'Seerr signs people in through Jellyfin and follows its rule' <<<"$o" \
+grep -qE '^jellyfin +frontend +- +https://jellyfin.x$' <<<"$o" && grep -q 'Seerr signs people in through Jellyfin and follows its rule; Audiobookshelf admits everyone' <<<"$o" \
     || fail_ "access list: Jellyfin with its tier; Seerr said to follow it: $o"; pass
 rm -f "$T/acalls"; o=$(acc access_tier jellyfin admin)
 grep -qx 'env_set JELLYFIN_TIER=admin' "$T/acalls" && ! grep -q bulk_delete "$T/acalls" && grep -qx 'follow jellyfin' "$T/acalls" \

@@ -15,6 +15,9 @@
 #     the run (ops hears it)
 #   * an access command on a followed app: its accounts follow at once; a
 #     failure says people-sync tries again
+#   * Jellyfin and Kavita: who may sign in follows the rule — off on loss
+#     (disabled and signed out / Login taken), on again only when the stack
+#     turned it off; a deleted person's account renamed, never looked at again
 #   * each app's part signs in as the stack's own first: refused, a failure
 #   * the 47 -> 48 step keeps Navidrome followed where it was
 #
@@ -246,6 +249,54 @@ jfc() { ( jf_api() { echo "{\"LdapSearchFilter\":\"$CUR\"}"; }; jf_ldap_want() {
 [[ "$(CUR=WANT jfc)" == "" && "$(CUR=OLD jfc)" == configured ]] || fail_ "the filter: rewritten only when the rule moved"; pass
 unset -f jf_api jf_code jf_ldap_configure
 
+# ---- Kavita: who may sign in (slice C, decision 12) ----
+kvu() { jq -cn --argjson i "$1" --arg n "$2" --argjson r "$3" --argjson p "${4:-1}" '{id:$i, username:$n, email:($n + "@x.org"), identityProvider:$p, roles:$r, libraries:[{id:1}], ageRestriction:null}'; }
+kav_api() { # a fake Kavita: people in $T/kv.json
+    echo "$1 $2" >> "$T/kcalls"
+    case "$1 $2" in
+        "GET /api/users?includePending=true") cat "$T/kv.json" ;;
+        "POST /api/account/update") echo "$4" >> "$T/kupd"; [[ -n "${KV_IGNORE:-}" ]] && return 0
+            jq -c --argjson b "$4" 'map(if .id == $b.userId then .roles = $b.roles | .username = $b.username | .email = $b.email else . end)' "$T/kv.json" > "$T/kv.n"; mv "$T/kv.n" "$T/kv.json" ;;
+        *) echo "unexpected $1 $2" >&2; return 1 ;;
+    esac
+}
+roles() { jq -r --arg n "$1" '.[] | select(.username == $n) | .roles | join(",")' "$T/kv.json"; }
+kfresh() { rm -f "$T/kcalls" "$T/kupd" "$T/notified"; WIRE_FAILS=0; WIRE_DRY=0; }
+fresh; kfresh
+printf '%s\n' "$(kvu 1 kalice '["Login","Admin"]')" "$(kvu 2 kbob '["Login","Download"]')" "$(kvu 3 kcarol '["Login"]')" "$(kvu 4 kdave '["Login","Admin"]')" \
+    "$(kvu 5 kerin '["Download"]')" "$(kvu 6 admin '["Login","Admin"]' 0)" | jq -sc . > "$T/kv.json"
+printf '%s\n' "$(pu kalice true '["admin"]')" "$(pu kbob true '["frontend"]')" "$(pu kcarol false '["frontend"]')" "$(pu kerin true '["frontend"]')" > "$T/portal.ndjson"
+TIER="frontend"; kav_people_access tok > "$T/out" 2>&1
+[[ "$(roles kcarol) $(people_get kavita kcarol)" == " off" ]] && grep -qF "'kcarol' can no longer sign in (portal account deactivated) — an open tab ends at its next reload" "$T/out" \
+    || fail_ "deactivated: Login taken, recorded off: $(cat "$T/out")"; pass
+[[ "$(roles "removed-kdave-$D") $(people_get kavita "removed-kdave-$D") $(people_get kavita kdave)" == " removed " ]] \
+    && [[ "$(jq -r '.[] | select(.id == 4) | .email' "$T/kv.json")" == "removed-kdave-$D@removed.invalid" ]] \
+    && grep -qF "'kdave' can no longer sign in (portal account deleted) — kept as 'removed-kdave-$D'" "$T/out" \
+    || fail_ "deleted: Login and Admin gone, renamed, an email nobody can sign up with (Kavita links a sign-in by email): $(cat "$T/out")"; pass
+[[ "$(roles kbob) $(roles kalice) $(roles kerin) $(roles admin)" == "Login,Download Login,Admin Download Login,Admin" && -z "$(people_get kavita kerin)" ]] \
+    || fail_ "may: untouched; kerin, shut out by hand: left so, never recorded; the stack's own (local): untouched"; pass
+[[ "$(jq -c '[.[] | select(.id == 3)][0].libraries' "$T/kv.json")" == '[{"id":1}]' ]] && jq -e 'select(.userId == 3) | .libraries == [1] and .ageRestriction.ageRating == -1' "$T/kupd" >/dev/null \
+    || fail_ "the whole account sent back as it was, one field changed (Kavita resets what is left out)"; pass
+[[ "$(grep -c '^ops|' "$T/notified")" == 2 ]] || fail_ "ops hears each"; pass
+kfresh; kav_people_access tok > "$T/out" 2>&1; [[ ! -e "$T/kupd" ]] && ! grep -q removed-kdave "$T/out" || fail_ "the next run: nothing written, the renamed account not looked at"; pass
+kfresh; TIER="admin"; WIRE_DRY=1 kav_people_access tok > "$T/out" 2>&1
+[[ ! -e "$T/kupd" ]] && grep -qF "would: kavita: 'kbob' (may no longer open Kavita) cannot sign in from now on" "$T/out" || fail_ "a dry run says it, writes nothing: $(cat "$T/out")"; pass
+kfresh; kav_people_access tok > "$T/out" 2>&1
+[[ "$(roles kbob) $(people_get kavita kbob)" == "Download off" ]] || fail_ "tier admin: kbob (frontend only) loses Login, recorded off"; pass
+printf '%s\n' "$(pu kalice true '["admin"]')" "$(pu kbob true '["frontend","app-kavita"]')" "$(pu kcarol false '["frontend"]')" "$(pu kerin true '["frontend","app-kavita"]')" > "$T/portal.ndjson"
+kfresh; kav_people_access tok > "$T/out" 2>&1
+[[ "$(roles kbob) $(people_get kavita kbob)" == "Download,Login " ]] && grep -qF "'kbob' may sign in again — through the portal, their reading as they left it" "$T/out" \
+    || fail_ "granted: the stack's own taken Login comes back, the record forgotten: $(cat "$T/out")"; pass
+[[ "$(roles kerin)" == Download ]] || fail_ "kerin granted too, but shut out by hand: stays out"; pass
+# failures: a change that does not hold; a group missing
+printf '%s\n' "$(pu kalice true '["admin"]')" "$(pu kerin true '["frontend","app-kavita"]')" > "$T/portal.ndjson"
+kfresh; KV_IGNORE=1 kav_people_access tok > "$T/out" 2>&1
+[[ "$WIRE_FAILS" -ge 1 && -z "$(people_get kavita kbob)" ]] && grep -qF "'kbob' (portal account deleted) still signs in — it answered, but the change did not hold" "$T/out" \
+    || fail_ "a change that did not hold: a failure, nothing recorded: $(cat "$T/out")"; pass
+kfresh; NO_GROUPS=1 kav_people_access tok > "$T/out" 2>&1
+[[ ! -e "$T/kupd" && "$WIRE_FAILS" == 1 ]] && grep -qF "authentik has no 'admin' group" "$T/out" || fail_ "a group missing: nobody touched, a failure says why: $(cat "$T/out")"; pass
+unset -f kav_api
+
 # ---- each app's part: the stack's own signs in first ----
 part() { # part APP -> its output; the login refused
     ( WIRE_FAILS=0
@@ -257,6 +308,9 @@ part() { # part APP -> its output; the login refused
 [[ "$(part jellyfin)" == *"no API key in .env (JELLYFIN_API_KEY)"*"fails=1" ]] || fail_ "jellyfin with no key: a failure"; pass
 printf 'JELLYFIN_API_KEY=k\n' > "$ENV_FILE"; [[ "$(part jellyfin | tr '\n' ' ')" == "filter access synced fails=0 " ]] || fail_ "jellyfin: its key, then the filter, who may sign in, admin rights: $(part jellyfin)"; pass
 [[ "$(part kavita)" == *"kavita rejected the stored admin login"*"fails=1" && "$(part kavita)" != *synced* ]] || fail_ "kavita refused: a failure, nothing synced"; pass
+[[ "$( ( WIRE_FAILS=0; kav_login() { echo KTOK; }; kav_people_access() { echo "access $1"; }; kav_admin_sync() { echo "synced $1"; }; kavita_people_follow ) | tr '\n' ' ')" == "access KTOK synced KTOK " ]] \
+    || fail_ "kavita: the stack's admin signs in, then who may sign in, then admin rights"; pass
+[[ "$(grep -rh 'kav_api POST /api/account/login' services lib | wc -l)" == 1 ]] || fail_ "Kavita's admin login lives in kav_login alone (wire, doctor, people-sync, link-account, rotation use it)"; pass
 [[ "$(part audiobookshelf)" == *"audiobookshelf rejected the root login"*"fails=1" && "$(part audiobookshelf)" != *synced* ]] || fail_ "audiobookshelf refused: a failure, nothing synced"; pass
 [[ "$(part navidrome)" == *"the stack's admin does not sign in"*"fails=1" && "$(part navidrome)" != *synced* ]] || fail_ "navidrome refused: a failure, nothing synced"; pass
 

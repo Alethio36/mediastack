@@ -20,6 +20,14 @@ kav_api() { # kav_api METHOD PATH TOKEN [json] -> body; rc from HTTP
     [[ "$code" =~ ^2 ]]
 }
 kav_ready() { http_ready kavita "$(kav_url)/api/health" '^200$'; }
+kav_login() { # kav_login [USER PASS] -> a token for the stack's own admin (or USER); rc 1, the reason in its place — the one way in (wire, doctor, people-sync, link-account, rotation)
+    local u=${1-$(env_get KAVITA_ADMIN_USER)} p=${2-$(env_get KAVITA_ADMIN_PASSWORD)} out tok
+    out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$u" --arg p "$p" '{username:$u, password:$p}')") \
+        || { echo "kavita rejected the stored admin login: $(oneline "$out")"; return 1; }
+    tok=$(jq -r '.token // empty' <<<"$out")
+    [[ -n "$tok" ]] || { echo "kavita's login returned no token"; return 1; }
+    echo "$tok"
+}
 
 kav_oidc_want() { # kav_oidc_want LIBRARY-IDS-JSON -> the sign-in settings mediastack manages (Kavita's oidcConfig keys)
     jq -cn --arg i "$(authentik_oidc_issuer kavita)" --arg t "$(env_get PORTAL_TITLE)" --argjson l "$1" '{
@@ -112,9 +120,7 @@ kav_account_body() { # kav_account_body USER-JSON -> its account update, everyth
 
 kav_email_move() { # kav_email_move OLD NEW — the Kavita account signed in by OLD now answers to NEW; rc 1 after saying why
     local out tok u back
-    out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { fail "kavita rejected the stored admin login: $(oneline "$out")"; return 1; }
-    tok=$(jq -r '.token // empty' <<<"$out"); [[ -n "$tok" ]] || { fail "kavita login returned no token"; return 1; }
+    tok=$(kav_login) || { fail "$tok"; return 1; }
     out=$(kav_api GET "/api/users?includePending=true" "$tok") || { fail "kavita: users unreadable: $(oneline "$out")"; return 1; }
     u=$(jq -c --arg e "${1,,}" '[.[] | select((.email // "" | ascii_downcase) == $e)] | first // empty' <<<"$out")
     [[ -n "$u" ]] || { info "kavita: no account answers to the old email — nothing to move"; return 0; }
@@ -184,10 +190,7 @@ wire_kavita() {
         return 0
     fi
     (( WIRE_DRY )) && [[ -z "$(env_get KAVITA_ADMIN_PASSWORD)" ]] && return 0
-    out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { wfail "kavita rejected the admin login from .env: $(oneline "$out") — set up by hand? Put its admin login there (KAVITA_ADMIN_USER / KAVITA_ADMIN_PASSWORD)"; return 0; }
-    tok=$(jq -r '.token // empty' <<<"$out")
-    [[ -n "$tok" ]] || { wfail "kavita login returned no token"; return 0; }
+    tok=$(kav_login) || { wfail "$tok — set up by hand? Put its admin login in .env (KAVITA_ADMIN_USER / KAVITA_ADMIN_PASSWORD)"; return 0; }
     ok "kavita: admin login works"
     kav_stats_off "$tok"
     signin_is authentik || return 0
@@ -203,13 +206,80 @@ wire_kavita() {
     kav_admin_sync "$tok"
 }
 
-kavita_people_follow() { # lib/people.sh: the stack's admin signs in, then portal accounts' admin rights follow
-    local out tok
-    out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { wfail "kavita rejected the stored admin login: $(oneline "$out") — ./mediastack.sh wire kavita says why"; return 0; }
-    tok=$(jq -r '.token // empty' <<<"$out")
-    [[ -n "$tok" ]] || { wfail "kavita: its login gave no token"; return 0; }
+kavita_people_follow() { # lib/people.sh: the stack's admin signs in, then who may sign in, then admin rights
+    local tok
+    tok=$(kav_login) || { wfail "$tok — ./mediastack.sh wire kavita says why"; return 0; }
+    kav_people_access "$tok"
     kav_admin_sync "$tok"
+}
+
+# who may sign in (docs/design-access.md, decisions 11-12): the portal refuses
+# a sign-in first (Kavita's card is its OIDC application, bound by the rule).
+# An account already made keeps its session until Kavita next checks it, so
+# its Login role goes: Kavita then refuses it (its open tab at the next reload,
+# proven in the spike) — and Kavita never syncs roles from the portal
+# (syncUserSettings off), so the change holds. Allowed again, only someone the
+# stack took it from (local/kavita-people) gets Login back; someone an admin
+# shut out by hand stays out. A person deleted from the portal is also renamed
+# removed-<name>-<date> and given an email nobody can sign up with: Kavita
+# links a portal sign-in by email, so a newcomer with that email would
+# otherwise take the old account over. Portal accounts only (identityProvider
+# 1); the stack's admin and local accounts are never touched.
+KAV_LOGIN_ROLE="Login"
+kav_person_set() { # kav_person_set TOKEN USER-JSON JQ-EDIT CHECK — the account changed (KAV_BODY's edit), then read back (CHECK on it)
+    local out back
+    out=$(kav_api POST /api/account/update "$1" "$(kav_account_body "$2" | jq -c "$3")") || { echo "Kavita refused it: $(oneline "$out")"; return 1; }
+    back=$(kav_api GET "/api/users?includePending=true" "$1") || { echo "it answered, but its people are unreadable now"; return 1; }
+    jq -e --argjson i "$(jq '.id' <<<"$2")" ".[] | select(.id == \$i) | $4" <<<"$back" >/dev/null || { echo "it answered, but the change did not hold"; return 1; }
+}
+
+kav_people_access() { # kav_people_access TOKEN — portal accounts follow the rule (see above)
+    local tok=$1 portal users u name pu st why out new lr=$KAV_LOGIN_ROLE has
+    portal=$(signin_people) || { wfail "authentik: its people are unreadable — Kavita's sign-ins not checked: $(oneline "$portal")"; return 0; }
+    # a group the rule reads missing: nobody would be in it — everyone shut out, unasked
+    why=$(people_rule_ready) || { wfail "$why — Kavita's sign-ins left as they are"; return 0; }
+    users=$(kav_api GET "/api/users?includePending=true" "$tok") || { wfail "kavita: users unreadable: $(oneline "$users")"; return 0; }
+    while IFS= read -r u; do
+        [[ -n "$u" ]] || continue
+        name=$(jq -r '.username' <<<"$u")
+        st=$(people_get kavita "$name")
+        [[ "$st" == removed ]] && continue   # a deleted person's, renamed: never looked at again
+        has=$(jq --arg r "$lr" '[.roles[]?] | index($r) != null' <<<"$u")
+        pu=$(jq -c --arg n "${name,,}" '[.results[]? | select((.username | ascii_downcase) == $n)][0] // empty' <<<"$portal")
+        if [[ -n "$pu" ]] && people_may "$pu" kavita; then
+            [[ "$st" == off ]] || continue
+            if [[ "$has" == true ]]; then (( WIRE_DRY )) || people_set kavita "$name" ""; continue; fi   # an admin gave it back already
+            w_would "kavita: '$name' may sign in again" || continue
+            if out=$(kav_person_set "$tok" "$u" ".roles = (.roles + [\"$lr\"] | unique)" "([.roles[]?] | index(\"$lr\") != null)"); then
+                people_set kavita "$name" ""
+                ok "kavita: '$name' may sign in again — through the portal, their reading as they left it"
+            else wfail "kavita: '$name' may open Kavita again, but still cannot sign in — $out"; fi
+            continue
+        fi
+        if [[ -z "$pu" ]]; then   # deleted from the portal: shut out, then renamed with an email nobody can sign up with
+            new="removed-$name-$(date +%Y%m%d)"
+            w_would "kavita: '$name' (portal account deleted) cannot sign in, kept as '$new' — their reading stays, the name and email free for someone new" || continue
+            if ! out=$(kav_person_set "$tok" "$u" ".roles = [.roles[] | select(. != \"$lr\" and . != \"$KAV_ADMIN_ROLE\")] | .username = \"$new\" | .email = \"$new@removed.invalid\"" \
+                       ".username == \"$new\" and ([.roles[]?] | index(\"$lr\") == null)"); then
+                wfail "kavita: '$name' (portal account deleted) still signs in — $out"; continue
+            fi
+            people_set kavita "$name" ""; people_set kavita "$new" removed
+            ok "kavita: '$name' can no longer sign in (portal account deleted) — kept as '$new'"
+            notify ops "Kavita" "$name can no longer sign in to Kavita: their portal account was deleted. Their Kavita account is kept as $new." info
+            continue
+        fi
+        [[ "$has" == true ]] || continue   # shut out already: the stack's (recorded) or an admin's (left)
+        if [[ "$(jq -r '.is_active' <<<"$pu")" != true ]]; then why="portal account deactivated"
+        else why="may no longer open Kavita"; fi
+        w_would "kavita: '$name' ($why) cannot sign in from now on — an open tab ends at its next reload; their reading stays" || continue
+        if ! out=$(kav_person_set "$tok" "$u" ".roles = [.roles[] | select(. != \"$lr\")]" "([.roles[]?] | index(\"$lr\") == null)"); then
+            wfail "kavita: '$name' ($why) still signs in — $out"; continue
+        fi
+        people_set kavita "$name" off
+        ok "kavita: '$name' can no longer sign in ($why) — an open tab ends at its next reload"
+        notify ops "Kavita" "$name can no longer sign in to Kavita: $why. Allowed again, they sign in through the portal as before." info
+    done < <(jq -c '.[] | select(.identityProvider == 1)' <<<"$users")
+    return 0
 }
 
 sc_rotate_kavita() { # PASS — its admin (the stack's own), changed with the old one, then proven
@@ -217,13 +287,11 @@ sc_rotate_kavita() { # PASS — its admin (the stack's own), changed with the ol
         local new="$1" user old out tok
         user=$(env_get KAVITA_ADMIN_USER); old=$(env_get KAVITA_ADMIN_PASSWORD)
         [[ -n "$user" && -n "$old" ]] || die "no Kavita admin stored — run 'wire kavita' first"
-        out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$user" --arg p "$old" '{username:$u, password:$p}')") \
-            || die "Kavita rejected the stored admin login: $(oneline "$out") — is .env stale?"
-        tok=$(jq -r '.token // empty' <<<"$out"); [[ -n "$tok" ]] || die "Kavita's login returned no token"
+        tok=$(kav_login "$user" "$old") || die "$tok — is .env stale?"
         out=$(kav_api POST /api/account/reset-password "$tok" "$(jq -cn --arg u "$user" --arg c "$old" --arg n "$new" '{userName:$u, oldPassword:$c, password:$n}')") \
             || die "Kavita refused the password change: $(oneline "$out")"
         env_set KAVITA_ADMIN_PASSWORD "$new"   # changed: the new one is the truth from here, verified or not
-        kav_api POST /api/account/login "" "$(jq -cn --arg u "$user" --arg p "$new" '{username:$u, password:$p}')" >/dev/null \
+        kav_login "$user" "$new" >/dev/null \
             || die "Kavita's admin password changed (stored in .env), but signing in with it failed"
         ok "Kavita admin password rotated and verified"
 }
@@ -234,9 +302,7 @@ kavita_doctor() { # claimed; with the portal, who among its people lacks a libra
     [[ "$ex" == true ]] || { d_fail "kavita has no admin yet" "an unclaimed Kavita lets any visitor create the admin account" "./mediastack.sh wire kavita"; return 0; }
     ok "kavita has its admin"
     signin_is authentik && [[ -n "$(env_get KAVITA_ADMIN_PASSWORD)" ]] || return 0
-    out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
-        || { d_fail "kavita rejects the stored admin login" "wire and doctor cannot manage it" "./mediastack.sh credentials  # then check the admin in Kavita"; return 0; }
-    tok=$(jq -r '.token // empty' <<<"$out")
+    tok=$(kav_login) || { d_fail "kavita rejects the stored admin login" "wire and doctor cannot manage it" "./mediastack.sh credentials  # then check the admin in Kavita"; return 0; }
     libs=$(kav_api GET /api/library/libraries "$tok") && users=$(kav_api GET "/api/users?includePending=true" "$tok") \
         || { warn "kavita: libraries or users unreadable"; return 0; }
     # a library added after someone joined reaches only admins until granted —
