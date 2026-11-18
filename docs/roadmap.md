@@ -216,7 +216,7 @@ agreed first:
    `access grant|revoke` for the apps behind the gate, proven live 16 Nov 2026.
    Part 3 (agreed 16 Nov 2026): every app under the same rule — slice A
    `people-sync` for every app (Navidrome's music apps first: they ignored
-   `access`) *built 17 Nov 2026, to prove live*, then Jellyfin, Kavita,
+   `access`) *proven live 17 Nov 2026*, then Jellyfin, Kavita,
    Audiobookshelf; Seerr's open session a kept gap (watchlist).
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions

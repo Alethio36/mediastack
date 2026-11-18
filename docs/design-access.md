@@ -538,7 +538,12 @@ several slices.
 **Slice A — `people-sync` for every app; Navidrome first.** The sync
 generalised (decision 13), Navidrome's people following the rule
 (decision 12) — its hole closed — and the admin syncs of Jellyfin, Kavita
-and Audiobookshelf moved into it. *Built 17 Nov 2026, to prove live.*
+and Audiobookshelf moved into it. *Proven live 17 Nov 2026 (anzac4,
+c0029da):* spikeuser's music app answered `/rest/ping` before; `access tier
+navidrome admin` cut it at once (`failed`); grant, revoke and the tier back
+each followed at once; the timer's run waited for authentik, Jellyfin, Kavita
+and Navidrome and passed. Found on the way: `wire a b c` ran only `c` —
+fixed, a second app is refused.
 `lib/people.sh` holds the rule (`people_may`), the record of whom the stack
 turned off (`local/<app>-people`; Navidrome's file as before) and the timer;
 each app's part is `<app>_people_follow` in its folder, listed in
