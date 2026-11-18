@@ -286,7 +286,7 @@ Connect
 | `rotate-secrets` | give every secret the stack made for itself a new value — its API keys, the portal's tokens, signing key, database and client secrets, Meilisearch's and gluetun's keys — each proven (the new one taken, the old refused) or put back, after a restore point; whatever holds a copy is rewired and the run ends with `wire --verify`. With the portal it ends by signing everyone out of it and the tools behind it (apps with their own sign-in — Jellyfin, Navidrome — keep theirs). Interactive: it says first what it costs, and ends with a framed warning naming what outside the stack now holds a stale value and what it does not rotate — secrets from outside (VPN, Cloudflare, mail), Wizarr's API key (made in its UI), and the stack's own logins (`set-credentials`). [design](docs/design-rotate.md) |
 | `link-account <portal-user>` | an existing household's people keep their history: after someone joins the portal, their local Jellyfin, Kavita and Audiobookshelf accounts become their portal account — you confirm which account is whose, see the plan, then it links (Audiobookshelf needs them to sign in once, within 10 minutes) |
 | `reset-password <user>` | someone locked out — with the portal: clears their login throttle and prints a single-use sign-in link (24 hours) to send them — they then set a new password in the portal's Settings. Not for akadmin (`set-credentials portal`). With Wizarr: Wizarr's single-use reset link (24 hours) to send them privately — they choose their own password on it, so no one else ever sees it; a newer link voids the last; a disabled Jellyfin account is reported, not re-enabled. Wizarr has no email, so you pass the link on yourself |
-| `access [list [user]]` / `access tier <app> frontend\|admin [--yes]` / `access grant\|revoke <user> <app>` | who may open which app behind the portal: the list (each app's tier, who has it on its own), one person's (what they may open, and why), or move an app between the household (`frontend`: the household and its admins) and `admin` (admins only). Opening a tool to the household warns and asks; moving an app to `admin` ends the portal sessions of the household members who lose it. Kept in `.env` (`<APP>_TIER`, only where it differs from the app's default). `grant` gives one person one app whatever its tier (its card shows on their dashboard at once); `revoke` takes that back and ends their portal sessions — refused, and told how, when they have the app through their group instead |
+| `access [list [user]]` / `access tier <app> frontend\|admin [--yes]` / `access grant\|revoke <user> <app>` | who may open which app — those behind the portal's gate, and Jellyfin (Seerr follows Jellyfin's rule): the list (each app's tier, who has it on its own), one person's (what they may open, and why), or move an app between the household (`frontend`: the household and its admins) and `admin` (admins only). Opening a tool to the household warns and asks; moving an app to `admin` ends the portal sessions of the household members who lose it. Kept in `.env` (`<APP>_TIER`, only where it differs from the app's default). `grant` gives one person one app whatever its tier (its card shows on their dashboard at once); `revoke` takes that back and ends their portal sessions — refused, and told how, when they have the app through their group instead. On Jellyfin, which signs people in itself, losing it disables their Jellyfin account and signs them out of every device instead, and getting it back turns it on again (only an account the stack turned off) |
 | `signout <user>` | ends someone's Jellyfin sign-ins on every device — a browser goes to sign-in on its next click; an app may spin until it is closed and reopened, then asks. Their password is not changed, so it does not keep them out alone: with the portal, delete a device's password first; otherwise change their password. Works with any account model; never the stack's own Jellyfin admin (Seerr signs in as it). A device two people share is signed out for both, and the other is named |
 | `set-email <user> <address> [--yes]` | change a person's portal email — people cannot change their own (Kavita, and later ROMM, sign people in by email, so it is who they are there). Kavita's account follows the change, so their next sign-in lands on the same account. An address another person already has is warned about and asks first; `--yes` decides for scripts. Use this rather than authentik's admin page, which changes the portal only |
 | `users` | the portal's people: username, name, email, groups, and whether they can sign in (the stack's own `akadmin` and service accounts left out) |
@@ -333,7 +333,7 @@ Internal (called by the panel, timers and units — not meant for hand use)
 | `questionnaire [--fresh] [--answers FILE] \| --for SVC...` | `configure`'s questions (`--for`: those of the services `enable` brings), run as their own process ([docs/design-install.md](docs/design-install.md)): they record the answers in `.env` and `local/state` and do nothing else. Exit 0: all answered; 130: cancelled; 3: no terminal to ask on (and no answers file); 4: the answers file's problems, listed |
 | `host-identity` | refresh the record of this host's own address (RIPEstat) that `leak-test` compares the tunnel against — once a day at a random time (`mediastack-hostid.timer`), never inside a leak-test, so no run asks about both of your addresses at once. `configure` makes the first record; by hand when leak-test reports it missing or stale |
 | `unit-failed <unit>` | tell the `ops` stream that a scheduled or boot run failed — its result, exit status and last lines (systemd's OnFailure hook; once per unit per 6 hours) |
-| `people-sync` | every 15 minutes (`mediastack-people.timer`, with the portal; each app is followed from its first `wire` that reaches the portal, which starts the timer): the apps' own accounts follow the portal — Navidrome's music apps stop for anyone it no longer lets open Navidrome (account deactivated or deleted, its tier, a grant taken away; see "Music (Navidrome)"; ops hears each one), and Jellyfin, Kavita and Audiobookshelf admin rights follow its `admin` group. Waits for authentik and each app first; also run at once by `access` on Navidrome |
+| `people-sync` | every 15 minutes (`mediastack-people.timer`, with the portal; each app is followed from its first `wire` that reaches the portal, which starts the timer): the apps' own accounts follow the portal — Navidrome's music apps stop for anyone it no longer lets open Navidrome (account deactivated or deleted, its tier, a grant taken away; see "Music (Navidrome)"), Jellyfin disables and signs out anyone it no longer lets open Jellyfin (the same reasons) and turns back on only those it turned off — ops hears each one; Jellyfin, Kavita and Audiobookshelf admin rights follow its `admin` group. Waits for authentik and each app first; also run at once by `access` on Navidrome and Jellyfin |
 | `audit-extract` | hourly (timer): copy new deletion events from auditd's rotating log into `BACKUP_ROOT/audit/`, prune it to `AUDIT_KEEP_DAYS`, flag a gap if auditd rotated first |
 
 Every verb rejects arguments it does not accept — a typo or an unsupported
@@ -829,8 +829,8 @@ fails a card of ours that has a gate but no rule (authentik would let everyone
 signed in through it).
 **Tiers:** each app behind the gate is for the household (`frontend` — the
 household and its admins; on the dashboard's Media shelf) or for admins only
-(`admin`; with the tools). The tools start as `admin`, Navidrome as
-`frontend`; `./mediastack.sh access` lists them and `access tier <app>
+(`admin`; with the tools). The tools start as `admin`, Navidrome and Jellyfin
+as `frontend`; `./mediastack.sh access` lists them and `access tier <app>
 frontend|admin` moves one. One person, one app: `access grant <user> <app>`
 (and `access revoke`) — the `app-<svc>` group. A grant made by hand in
 authentik's admin shows on that person's dashboard only once the person is
@@ -852,11 +852,21 @@ your LAN — the first `up` after the change recreates the network once). Your
 household apps appear on everyone's dashboard under Media.
 
 Jellyfin checks passwords against the portal (LDAP, through Traefik on
-`ldap.<domain>`, reachable from the stack only): anyone in `frontend` or
-`admin` signs in to Jellyfin — the web, the TV and phone apps — with their
+`ldap.<domain>`, reachable from the stack only): anyone who may open Jellyfin
+— `admin`, those granted it (`app-jellyfin`), and `frontend` while its tier is
+`frontend` — signs in to Jellyfin (the web, the TV and phone apps) with their
 portal username and password, and gets a Jellyfin account with every library on
 their first sign-in. `wire jellyfin` sets this up (one Jellyfin restart) and
 keeps Jellyfin administrator rights in step with the portal's `admin` group.
+Taking Jellyfin away (`access tier jellyfin admin`, `access revoke`, or their
+portal account turned off or deleted, even by hand in authentik) disables
+their Jellyfin account and signs them out of every device — at once from
+`access`, within 15 minutes otherwise (`people-sync`); their history stays,
+and getting it back turns the account on again. Someone you disabled yourself
+in Jellyfin's dashboard stays disabled. Seerr's card follows Jellyfin's rule
+and Seerr signs people in through Jellyfin, so a new Seerr sign-in is refused
+too — but a Seerr session already open runs until it expires (Seerr has no
+switch to turn a person off; docs/watchlist.md).
 The stack's own Jellyfin admin (in `credentials`) stays a local account: it is
 what the script uses, and your way in if the portal is ever down.
 

@@ -140,15 +140,91 @@ for w in "services/jellyfin/jellyfin.sh people_follow_on jellyfin jf_admin_sync"
     [[ "$(grep -A1 "^    $on $app\$" "$f" | sed -n 2p)" == "    $sy \"\$"* ]] || fail_ "$f: $on $app, then $sy"; pass
 done
 
+# ---- Jellyfin: who may sign in (slice B, decision 12) ----
+JFL=$JF_LDAP_PROVIDER
+jfu() { jq -cn --arg i "$1" --arg n "$2" --argjson d "${3:-false}" --arg p "${4:-$JFL}" '{Id:$i, Name:$n, Policy:{IsDisabled:$d, IsAdministrator:false, AuthenticationProviderId:$p}}'; }
+jf_api() { # a fake Jellyfin: users in $T/jf.json, devices in $T/dev.tsv (id owner name)
+    echo "$1 $2" >> "$T/jcalls"
+    case "$1 $2" in
+        "GET /Users") cat "$T/jf.json" ;;
+        "GET /Users/"*) jq -c --arg i "${2##*/}" '.[] | select(.Id == $i)' "$T/jf.json" ;;
+        "POST /Users/"*/Policy) local i=${2#/Users/}; i=${i%/Policy}; echo "$4" >> "$T/jpol"
+            [[ -n "${JF_IGNORE:-}" ]] && return 0
+            jq -c --arg i "$i" --argjson p "$4" 'map(if .Id == $i then .Policy = $p else . end)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json" ;;
+        "GET /Devices") [[ -n "${DEV_FAIL:-}" ]] && return 1
+            jq -Rsc 'split("\n") | map(select(length > 0) | split(" ") | {Id:.[0], LastUserId:.[1], LastUserName:.[2]}) | {Items:.}' "$T/dev.tsv" ;;
+        "DELETE /Devices?id="*) [[ -n "${DEV_KEEP:-}" ]] && return 0; awk -v d="${2#*=}" '$1 != d' "$T/dev.tsv" > "$T/dev.n"; mv "$T/dev.n" "$T/dev.tsv" ;;
+        *) echo "unexpected $1 $2" >&2; return 1 ;;
+    esac
+}
+jf_code() { echo 200; }
+notify() { echo "$1|$3" >> "$T/notified"; }
+ak_group_pk() { [[ -n "${NO_GROUPS:-}" ]] || echo "g-$1"; return 0; }
+pu() { jq -cn --arg n "$1" --argjson a "$2" --argjson g "${3:-[]}" '{username:$n, is_active:$a, groups_obj:($g | map({name:.}))}'; }
+signin_people() { jq -cn --slurpfile p "$T/portal.ndjson" '{results:$p}'; }
+jfresh() { rm -f "$T/jcalls" "$T/jpol" "$T/notified"; WIRE_FAILS=0; WIRE_DRY=0; }
+disabled() { jq -r --arg n "$1" '.[] | select(.Name == $n) | .Policy.IsDisabled' "$T/jf.json"; }
+fresh; jfresh
+printf '%s\n' "$(jfu 1 akadmin)" "$(jfu 2 bob)" "$(jfu 3 carol)" "$(jfu 4 dave)" "$(jfu 5 erin true)" "$(jfu 6 mediastack false Local)" | jq -sc . > "$T/jf.json"
+printf 'd1 2 bob\nd2 3 carol\nd3 3 carol\nd4 2 bob\n' > "$T/dev.tsv"
+printf '%s\n' "$(pu akadmin true '["admin"]')" "$(pu bob true '["frontend"]')" "$(pu carol false '["frontend"]')" "$(pu erin true '["frontend"]')" > "$T/portal.ndjson"
+TIER="frontend"; jf_people_access tok > "$T/out" 2>&1
+[[ "$(disabled carol) $(disabled dave) $(people_get jellyfin carol) $(people_get jellyfin dave)" == "true true off off" ]] \
+    && grep -qF "'carol' can no longer sign in (portal account deactivated) — signed out of 2 device(s)" "$T/out" \
+    && grep -qF "'dave' can no longer sign in (portal account deleted) — signed out of 0 device(s)" "$T/out" \
+    || fail_ "deactivated and deleted: disabled, signed out of their own devices, recorded off: $(cat "$T/out")"; pass
+[[ "$(cut -d' ' -f2 "$T/dev.tsv" | sort -u | paste -sd, -)" == 2 ]] || fail_ "only their devices signed out: $(cat "$T/dev.tsv")"; pass
+[[ "$(disabled bob) $(disabled akadmin) $(disabled erin)" == "false false true" && -z "$(people_get jellyfin erin)" ]] \
+    || fail_ "bob and an admin may: untouched; erin, disabled by hand: left so, never recorded (only the stack's own turned back on)"; pass
+! grep -q '/Users/6/' "$T/jcalls" || fail_ "the stack's own local admin is never touched"; pass
+[[ "$(grep -c '^ops|' "$T/notified")" == 2 ]] && grep -qF "carol can no longer sign in to Jellyfin: portal account deactivated" "$T/notified" || fail_ "ops hears each, with why"; pass
+d=$(grep -n 'POST /Users/3/Policy' "$T/jcalls" | cut -d: -f1); o=$(grep -n 'DELETE /Devices' "$T/jcalls" | sed -n 1p | cut -d: -f1)
+(( d < o )) || fail_ "disabled first, then signed out (decision 12)"; pass
+jfresh; jf_people_access tok > "$T/out" 2>&1; [[ ! -e "$T/jpol" ]] || fail_ "the next run: nothing written again"; pass
+jfresh; TIER="admin"; WIRE_DRY=1 jf_people_access tok > "$T/out" 2>&1
+[[ ! -e "$T/jpol" && "$(disabled bob)" == false ]] && grep -qF "would: jellyfin: 'bob' (may no longer open Jellyfin) is disabled and signed out" "$T/out" \
+    || fail_ "a dry run says it and writes nothing: $(cat "$T/out")"; pass
+jfresh; jf_people_access tok > "$T/out" 2>&1
+[[ "$(disabled bob) $(people_get jellyfin bob)" == "true off" && ! -s "$T/dev.tsv" ]] || fail_ "tier admin: bob (frontend only) disabled and signed out"; pass
+printf '%s\n' "$(pu akadmin true '["admin"]')" "$(pu bob true '["frontend","app-jellyfin"]')" "$(pu carol false '["frontend"]')" "$(pu erin true '["frontend","app-jellyfin"]')" > "$T/portal.ndjson"
+jfresh; jf_people_access tok > "$T/out" 2>&1
+[[ "$(disabled bob) $(people_get jellyfin bob)" == "false " ]] && grep -qF "'bob' may sign in again — their portal password, as before" "$T/out" \
+    || fail_ "granted: the stack's own turned back on, the record forgotten: $(cat "$T/out")"; pass
+[[ "$(disabled erin)" == true ]] || fail_ "erin granted too, but an admin disabled her by hand: stays disabled"; pass
+[[ "$(disabled carol)" == true ]] || fail_ "carol's account still off: stays disabled"; pass
+# someone an admin turned back on by hand: the record goes, nothing written
+jq -c 'map(if .Name == "carol" then .Policy.IsDisabled = false else . end)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json"
+printf '%s\n' "$(pu akadmin true '["admin"]')" "$(pu bob true '["frontend","app-jellyfin"]')" "$(pu carol true '["frontend","app-jellyfin"]')" "$(pu erin true '["frontend","app-jellyfin"]')" > "$T/portal.ndjson"
+jfresh; jf_people_access tok > "$T/out" 2>&1; ! grep -q 'POST /Users/3/' "$T/jcalls" && [[ -z "$(people_get jellyfin carol)" ]] || fail_ "turned on by hand, and may: forgotten, nothing written: $(cat "$T/jcalls")"; pass
+# failures: a write that does not hold; devices that stay
+printf '%s\n' "$(pu akadmin true '["admin"]')" > "$T/portal.ndjson"
+jfresh; JF_IGNORE=1 jf_people_access tok > "$T/out" 2>&1
+[[ "$WIRE_FAILS" -ge 1 && -z "$(people_get jellyfin carol)" ]] && grep -qF "'carol' (portal account deleted) still signs in — it answered, but the change did not hold" "$T/out" \
+    || fail_ "a disable that did not hold: a failure, nothing recorded: $(cat "$T/out")"; pass
+printf 'd9 3 carol\n' > "$T/dev.tsv"
+jfresh; DEV_KEEP=1 jf_people_access tok > "$T/out" 2>&1
+[[ "$WIRE_FAILS" == 1 && "$(people_get jellyfin carol)" == off ]] && grep -qF "'carol' is disabled (portal account deleted), but still signed in somewhere — still signed in on 1 of 1 device(s)" "$T/out" \
+    || fail_ "signed out did not hold: disabled and recorded, a failure says what is left: $(cat "$T/out")"; pass
+# a group the rule reads missing: nobody judged
+jq -c 'map(.Policy.IsDisabled = false)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json"
+jfresh; NO_GROUPS=1 jf_people_access tok > "$T/out" 2>&1
+[[ ! -e "$T/jpol" && "$WIRE_FAILS" == 1 ]] && grep -qF "authentik has no 'admin' group" "$T/out" || fail_ "a group missing: nobody touched, a failure says why: $(cat "$T/out")"; pass
+# the filter follows a tier moved since wire; silent when it matches
+jf_ldap_configure() { echo configured; }
+jfc() { ( jf_api() { echo "{\"LdapSearchFilter\":\"$CUR\"}"; }; jf_ldap_want() { echo '{"LdapSearchFilter":"WANT"}'; }; jf_ldap_filter_follow tok ); }
+[[ "$(CUR=WANT jfc)" == "" && "$(CUR=OLD jfc)" == configured ]] || fail_ "the filter: rewritten only when the rule moved"; pass
+unset -f jf_api jf_code jf_ldap_configure
+
 # ---- each app's part: the stack's own signs in first ----
 part() { # part APP -> its output; the login refused
     ( WIRE_FAILS=0
       kav_api() { echo '{"title":"Unauthorized"}'; return 1; }; abs_api() { echo 'Unauthorized'; return 1; }; nd_login() { echo 'Invalid username or password'; return 1; }
       kav_admin_sync() { echo synced; }; abs_admin_sync() { echo synced; }; navidrome_people_sync() { echo synced; }; jf_admin_sync() { echo synced; }
+      jf_ldap_filter_follow() { echo filter; }; jf_people_access() { echo access; }
       "${1}_people_follow"; echo "fails=$WIRE_FAILS" ) 2>&1
 }
 [[ "$(part jellyfin)" == *"no API key in .env (JELLYFIN_API_KEY)"*"fails=1" ]] || fail_ "jellyfin with no key: a failure"; pass
-printf 'JELLYFIN_API_KEY=k\n' > "$ENV_FILE"; [[ "$(part jellyfin)" == *synced*"fails=0" ]] || fail_ "jellyfin: its key, then the sync"; pass
+printf 'JELLYFIN_API_KEY=k\n' > "$ENV_FILE"; [[ "$(part jellyfin | tr '\n' ' ')" == "filter access synced fails=0 " ]] || fail_ "jellyfin: its key, then the filter, who may sign in, admin rights: $(part jellyfin)"; pass
 [[ "$(part kavita)" == *"kavita rejected the stored admin login"*"fails=1" && "$(part kavita)" != *synced* ]] || fail_ "kavita refused: a failure, nothing synced"; pass
 [[ "$(part audiobookshelf)" == *"audiobookshelf rejected the root login"*"fails=1" && "$(part audiobookshelf)" != *synced* ]] || fail_ "audiobookshelf refused: a failure, nothing synced"; pass
 [[ "$(part navidrome)" == *"the stack's admin does not sign in"*"fails=1" && "$(part navidrome)" != *synced* ]] || fail_ "navidrome refused: a failure, nothing synced"; pass

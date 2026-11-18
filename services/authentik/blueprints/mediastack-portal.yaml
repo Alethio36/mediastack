@@ -484,8 +484,11 @@ entries:
   # authentik's own LDAP front door (the mediastack-ldap outpost, a member of
   # the shard). Binds run a flow with no MFA step — TV and phone apps send a
   # username and password and cannot answer a prompt — throttled against
-  # password guessing. Only the search account may list the directory; only
-  # frontend and admin may bind.
+  # password guessing. Only the search account may list the directory. Who
+  # may bind is who may open Jellyfin (docs/design-access.md, decision 11):
+  # here the admin group and the search account; the household (while
+  # Jellyfin's tier is frontend) and app-jellyfin are wire's (ak_ldap_rule) —
+  # a binding here would come back with every apply, undoing a tier move.
   #
   # The throttle: authentik keeps a score per person AND address, -1 for a
   # failed sign-in, +1 for a good one, floored at -5. Every bind arrives from
@@ -629,11 +632,6 @@ entries:
       provider: !KeyOf provider-ldap
       meta_launch_url: blank://blank
       policy_engine_mode: any
-  - model: authentik_policies.policybinding
-    identifiers:
-      target: !KeyOf app-ldap
-      group: !KeyOf group-frontend
-      order: 0
   - model: authentik_policies.policybinding
     identifiers:
       target: !KeyOf app-ldap

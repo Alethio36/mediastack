@@ -311,9 +311,11 @@ access_why() { # access_why PERSON SVC -> the group that gives them the app, a g
     return 0
 }
 
-access_app() { # access_app SVC — stops unless it is an app behind the portal's gate
-    [[ " $(authentik_gate_apps | tr '\n' ' ') " == *" $1 "* ]] \
-        || die "'$1' is not an app behind the portal's gate — those are: $(authentik_gate_apps | paste -sd' ' -) (Jellyfin, Seerr, Kavita and Audiobookshelf admit everyone in the portal)"
+access_apps() { authentik_gate_apps; authentik_native_ruled; }   # every app access covers: behind the gate, then those that sign people in themselves
+access_native() { [[ " $(authentik_native_ruled | tr '\n' ' ') " == *" $1 "* ]]; }   # access_native SVC — it signs people in itself (its own switch, not the portal's sessions)
+access_app() { # access_app SVC — stops unless access covers it
+    [[ " $(access_apps | tr '\n' ' ') " == *" $1 "* ]] \
+        || die "'$1' is not an app access covers — those are: $(access_apps | paste -sd' ' -) (Seerr follows Jellyfin's rule; Kavita and Audiobookshelf admit everyone in the portal)"
 }
 
 access_sessions_said() { # access_sessions_said N -> the sentence for N portal sessions ended
@@ -325,7 +327,7 @@ access_list() { # every app behind the gate: its tier, who has it on its own, it
     local people s
     people=$(access_people)
     { printf 'APP\tTIER\tGIVEN ON ITS OWN TO\tADDRESS\n'
-      for s in $(authentik_gate_apps); do
+      for s in $(access_apps); do
           printf '%s\t%s\t%s\t%s\n' "$s" "$(svc_tier "$s")" \
               "$(jq -r --arg g "app-$s" '[.results[] | select(any(.groups_obj[]?; .name == $g)) | .username] | if length == 0 then "-" else join(",") end' <<<"$people")" \
               "$(svc_url "$s")"
@@ -333,21 +335,21 @@ access_list() { # every app behind the gate: its tier, who has it on its own, it
     } | table_print
     info "frontend: the household and its admins; admin: admins only (the portal's '$PORTAL_ADMIN' group). Move one: ./mediastack.sh access tier <app> frontend|admin"
     info "Give one person one app: ./mediastack.sh access grant <user> <app> (take it back: access revoke)"
-    info "Jellyfin, Seerr, Kavita and Audiobookshelf sign people in themselves — everyone in the portal (./mediastack.sh users)"
+    info "Seerr signs people in through Jellyfin and follows its rule; Kavita and Audiobookshelf admit everyone in the portal (./mediastack.sh users)"
 }
 
-access_list_user() { # access_list_user NAME — what that person may open behind the gate, and why
+access_list_user() { # access_list_user NAME — what that person may open of the apps access covers, and why
     local u s why rows="" name
     access_person "$1"; u=$ACC_PERSON; name=$(jq -r .username <<<"$u")
     # the rows gathered first: a count kept inside a pipe's block stays there (a subshell)
-    for s in $(authentik_gate_apps); do
+    for s in $(access_apps); do
         why=$(access_why "$u" "$s")
         if [[ -z "$why" ]] && access_in "$u" "app-$s"; then why="given on its own (app-$s)"; fi
         [[ -n "$why" ]] || continue
         rows+="$s"$'\t'"$why"$'\t'"$(svc_url "$s")"$'\n'
     done
     if [[ -n "$rows" ]]; then printf 'APP\tWHY\tADDRESS\n%s' "$rows" | table_print
-    else info "$name may open none of the apps behind the gate"; fi
+    else info "$name may open none of the apps access covers"; fi
     jq -e '.is_active' <<<"$u" >/dev/null || warn "$name's portal account is off — they sign in to nothing"
 }
 
@@ -378,7 +380,10 @@ access_tier() { # access_tier APP frontend|admin [--yes] — kept in .env; the c
     WIRE_DRY=0 AK_CARDS_QUIET=1
     wire_authentik_cards
     (( ! WIRE_FAILS )) || die "access: $s's rule did not take ($WIRE_FAILS failure(s) above) — .env says $t; ./mediastack.sh wire authentik tries again"
-    if (( ${#losers[@]} )); then
+    if (( ${#losers[@]} )) && access_native "$s"; then
+        # it signs people in itself: its own switch (the follow below) ends their sign-ins, not the portal's sessions
+        ok "access: $s is admin-only — ${#losers[@]} of the household lost it ($(printf '%s\n' "${losers[@]}" | cut -f2 | paste -sd, -))"
+    elif (( ${#losers[@]} )); then
         # the gate decided when each session began: only a new sign-in hears no (proven live, 16 Nov 2026)
         local pks=() l
         for l in "${losers[@]}"; do pks+=("${l%%$'\t'*}"); done
@@ -388,7 +393,7 @@ access_tier() { # access_tier APP frontend|admin [--yes] — kept in .env; the c
     else
         ok "access: $s is $t now"
     fi
-    people_follow_now "$s"   # an app with accounts of its own (Navidrome's music apps) follows now
+    people_follow_now "$s"   # an app with accounts of its own follows now (Navidrome's music apps, Jellyfin's sign-ins)
 }
 
 access_grant() { # access_grant USER APP — into app-<app>: they may open it whatever its tier
@@ -421,6 +426,9 @@ access_revoke() { # access_revoke USER APP — out of app-<app>; when that takes
     fi
     out=$(signin_group_change remove "$(jq -r .pk <<<"$u")" "app-$s") || die "access: authentik did not take $s from $name: $(oneline "$out")"
     if [[ -n "$why" ]]; then ok "access: $name's grant of $s is gone — they still open it through $why"; return 0; fi
+    if access_native "$s"; then   # its own switch ends their sign-ins (the follow below)
+        ok "access: $name can no longer open $s"; people_follow_now "$s"; return 0
+    fi
     # the gate decided when each session began: only a new sign-in hears no (proven live, 16 Nov 2026)
     n=$(signin_sessions_end "$(jq -r .pk <<<"$u")") \
         || die "access: $name lost $s, but authentik refused to end their portal sessions: $(oneline "$n") — end them by hand (the user → Sessions)"

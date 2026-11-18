@@ -557,7 +557,20 @@ A group the rule reads missing: nobody judged, a failure says why.
 
 **Slice B — Jellyfin.** `app-jellyfin`, its tier and grants; the LDAP
 rule (decision 11); disabled and signed out on loss (decision 12); Seerr's
-card follows Jellyfin's rule.
+card follows Jellyfin's rule. *Built 17 Nov 2026, to prove live.* Labels put it
+under the rule: Jellyfin's `mediastack.tier: frontend` (`authentik_native_ruled`:
+an app with its own login and a tier label — `access` covers it) and Seerr's
+`mediastack.access.of: jellyfin` (its card by Jellyfin's tier, with
+`app-jellyfin`). The LDAP application's household binding left the blueprint;
+`ak_ldap_rule` keeps it by the tier, with `app-jellyfin` beside the
+blueprint's admin and search-account bindings. Its accounts follow in
+`jellyfin_people_follow`: the search filter (rewritten when a tier moved),
+who may sign in (`jf_people_access`: disabled, then signed out of every
+device; turned back on only when the stack turned it off), then admin rights.
+`access` on Jellyfin ends no portal session — the follow is what reaches an
+open one. A person deleted from the portal is disabled, not renamed (unlike
+Navidrome): a later sign-up under the same name would take over the old
+account once allowed — open, see the roadmap.
 
 **Slice C — Kavita.** Its card by the rule; `Login` on loss; proven: no
 loop, and when an open tab is cut off.

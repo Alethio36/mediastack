@@ -53,6 +53,20 @@ svc_tier_default() { # svc_tier_default SVC -> frontend|admin
 svc_tier() { # svc_tier SVC -> frontend|admin: .env's choice over the default
     local t; t=$(env_get "$(uvar "$1")_TIER"); echo "${t:-$(svc_tier_default "$1")}"
 }
+authentik_native_ruled() { # the enabled apps that sign people in themselves under the rule (auth native, a tier label) — access covers them
+    local s
+    for s in $(authentik_household); do
+        [[ "$(svc_label "$s" mediastack.auth)" == native && -n "$(svc_label "$s" mediastack.tier)" ]] && echo "$s"
+    done
+    return 0
+}
+svc_access_of() { # svc_access_of SVC -> the app whose rule decides who sees SVC's card: itself (a tier label), the one it signs in through, else nothing
+    local o
+    [[ -n "$(svc_label "$1" mediastack.tier)" ]] && { echo "$1"; return 0; }
+    o=$(svc_label "$1" mediastack.access.of)
+    [[ -n "$o" ]] && svc_enabled "$o" && echo "$o"
+    return 0
+}
 authentik_gate_apps() { # every enabled app behind the portal's gate: the tools, then the household gate's apps
     local a
     authentik_gated
@@ -92,6 +106,7 @@ signin_app_group_ready() { # signin_app_group_ready SVC -> rc 0 when app-<svc> e
     pk=$(ak_group_pk "app-$1") || { echo "authentik's groups are unreadable"; return 1; }
     [[ -n "$pk" ]] || { echo "the group app-$1 does not exist yet"; return 1; }
     ak_card_bound "mediastack-app-$1" "$pk" || { echo "$1's card does not admit app-$1 yet"; return 1; }
+    [[ "$1" != jellyfin ]] || ak_card_bound "$AK_LDAP_APP" "$pk" || { echo "Jellyfin's sign-in (the LDAP application) does not admit app-jellyfin yet"; return 1; }
 }
 
 signin_admins() { # -> the portal's admin group's members (authentik's user-list JSON); rc != 0 when unreadable
@@ -1287,16 +1302,43 @@ ak_card() { # ak_card ALL SLUG NAME URL DESC SECTION PROVIDER GROUP-PK... — a 
     if (( changed || ! ${AK_CARDS_QUIET:-0} )); then ok "authentik: $name card ($section)"; fi
 }
 
-ak_card_unbind() { # ak_card_unbind SLUG GROUP-PK — that group's binding off our card (its app's tier moved away from it)
-    local app pk bind b
+ak_card_unbind() { # ak_card_unbind SLUG GROUP-PK [NAME] — that group's binding off our application (its app's tier moved away from it)
+    local app pk bind b n=${3:-${1#mediastack-app-}}
     app=$(ak_api GET "/core/applications/$1/") || return 0   # no card yet: nothing bound
     pk=$(jq -r '.pk // empty' <<<"$app"); [[ -n "$pk" ]] || return 0
-    bind=$(ak_api GET "/policies/bindings/?target=$pk") || { wfail "authentik: ${1#mediastack-app-}'s rule is unreadable: $(oneline "$bind")"; return 0; }
+    bind=$(ak_api GET "/policies/bindings/?target=$pk") || { wfail "authentik: $n's rule is unreadable: $(oneline "$bind")"; return 0; }
     for b in $(jq -r --arg g "$2" '.results[]? | select(.group == $g) | .pk' <<<"$bind"); do
-        w_would "authentik: ${1#mediastack-app-} is for $PORTAL_ADMIN only — the household's binding goes" || return 0
-        ak_api DELETE "/policies/bindings/$b/" >/dev/null || { wfail "authentik refused to take the household off ${1#mediastack-app-}"; return 0; }
-        ok "authentik: ${1#mediastack-app-} — the household's binding removed (its tier: $PORTAL_ADMIN)"
+        w_would "authentik: $n is for $PORTAL_ADMIN only — the household's binding goes" || return 0
+        ak_api DELETE "/policies/bindings/$b/" >/dev/null || { wfail "authentik refused to take the household off $n"; return 0; }
+        ok "authentik: $n — the household's binding removed (its tier: $PORTAL_ADMIN)"
     done
+}
+
+AK_LDAP_APP=mediastack-ldap   # the LDAP application Jellyfin signs people in through (the blueprint's app-ldap)
+ak_rule_bind() { # ak_rule_bind SLUG NAME GROUP-PK... — each group bound to an application that exists (read back), the rest left
+    local app pk bind g
+    app=$(ak_api GET "/core/applications/$1/") || { wfail "authentik: $2 is unreadable (has the portal's setup applied? ./mediastack.sh doctor): $(oneline "$app")"; return 1; }
+    pk=$(jq -r '.pk // empty' <<<"$app"); [[ -n "$pk" ]] || { wfail "authentik: $2 has no application yet"; return 1; }
+    bind=$(ak_api GET "/policies/bindings/?target=$pk") || { wfail "authentik: $2's rule is unreadable: $(oneline "$bind")"; return 1; }
+    for g in "${@:3}"; do
+        jq -e --arg g "$g" 'any(.results[]?; .group == $g)' <<<"$bind" >/dev/null && continue
+        w_would "authentik: $2 admits one more group (its rule)" || continue
+        ak_api POST /policies/bindings/ "$(jq -cn --arg t "$pk" --arg g "$g" '{target:$t, group:$g, order:0}')" >/dev/null \
+            || { wfail "authentik refused a group on $2"; return 1; }
+        ok "authentik: $2 admits one more group (its rule)"
+    done
+    (( WIRE_DRY )) || ak_card_bound "$1" "${@:3}" || { wfail "authentik answered, but $2 does not carry its rule"; return 1; }
+}
+
+ak_ldap_rule() { # ak_ldap_rule ADMIN-PK FRONTEND-PK — Jellyfin's sign-in (the LDAP application) admits who may open Jellyfin (decision 11)
+    # the blueprint keeps the admin group's and the search account's
+    # bindings; the household's is wire's, by Jellyfin's tier (a re-applied
+    # blueprint would put back what a tier move took off)
+    svc_enabled jellyfin || return 0
+    ak_app_group jellyfin || return 0
+    if [[ "$(svc_tier jellyfin)" == frontend ]]; then ak_rule_bind "$AK_LDAP_APP" "Jellyfin's sign-in" "$1" "$2" "$APP_GROUP"
+    else ak_rule_bind "$AK_LDAP_APP" "Jellyfin's sign-in" "$1" "$APP_GROUP" && ak_card_unbind "$AK_LDAP_APP" "$2" "Jellyfin's sign-in"; fi
+    return 0
 }
 
 ak_card_prune() { # ak_card_prune ALL PREFIX WANTED... — cards mediastack made for services no longer wanted leave
@@ -1321,13 +1363,28 @@ wire_authentik_cards() { # every gated app its own gate and card; household apps
         if [[ "$(svc_tier "$s")" == frontend ]]; then ak_app_gate "$all" "$s" Media "$mu" "$adm"
         else ak_app_gate "$all" "$s" "Admin tools" "$adm"; ak_card_unbind "mediastack-app-$s" "$mu"; fi
     done
+    local r
     for s in $(authentik_household); do
         [[ -n "$(svc_label "$s" mediastack.auth.group)" ]] && continue   # behind the gate: above
         # an app that logs in through OIDC: its card is the provider's application
         local op; op=$(ak_api GET "/providers/oauth2/?client_id=mediastack-$s") || { wfail "authentik: providers unreadable"; continue; }
         prov=$(jq -r '.results[0].pk // empty' <<<"$op")
-        ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Media" "$prov" "$mu" "$adm"
+        # an app under the rule (its own tier, or the app it signs in through):
+        # by that tier, with that app's own group; the rest — the household
+        r=$(svc_access_of "$s")
+        if [[ -z "$r" ]]; then
+            ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Media" "$prov" "$mu" "$adm"
+            continue
+        fi
+        ak_app_group "$r" || continue
+        if [[ "$(svc_tier "$r")" == frontend ]]; then
+            ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Media" "$prov" "$mu" "$adm" "$APP_GROUP"
+        else
+            ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Admin tools" "$prov" "$adm" "$APP_GROUP"
+            ak_card_unbind "mediastack-app-$s" "$mu"
+        fi
     done
+    ak_ldap_rule "$adm" "$mu"
     authentik_gates_attach
     # the admin tools' cards before Nov 2026 (links only; the gate decided): every one leaves
     ak_card_prune "$all" mediastack-tool-

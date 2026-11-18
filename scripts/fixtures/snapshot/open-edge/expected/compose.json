@@ -259,6 +259,7 @@
         "mediastack.port": "8096",
         "mediastack.preset": "standard",
         "mediastack.subdomain": "jellyfin",
+        "mediastack.tier": "frontend",
         "mediastack.transcode": "true",
         "mediastack.user_facing": "true",
         "mediastack.vpn": "false",
@@ -510,6 +511,7 @@
       "image": "ghcr.io/seerr-team/seerr:latest",
       "labels": {
         "com.centurylinklabs.watchtower.enable": "false",
+        "mediastack.access.of": "jellyfin",
         "mediastack.auth": "native",
         "mediastack.cache": "true",
         "mediastack.config": "true",

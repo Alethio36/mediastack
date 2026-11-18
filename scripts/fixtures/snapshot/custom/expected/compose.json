@@ -254,6 +254,7 @@
         "mediastack.port": "8096",
         "mediastack.preset": "standard",
         "mediastack.subdomain": "jellyfin",
+        "mediastack.tier": "frontend",
         "mediastack.transcode": "true",
         "mediastack.user_facing": "true",
         "mediastack.vpn": "false",

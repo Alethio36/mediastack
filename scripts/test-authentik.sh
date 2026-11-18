@@ -689,18 +689,24 @@ for AK_ON in 1 ''; do
 done
 
 # ---- household apps: their own cards; Navidrome's carries its household gate ----
-svc_enabled_managed() { printf '%s\n' sonarr navidrome jellyfin; }
+svc_enabled_managed() { printf '%s\n' sonarr navidrome jellyfin seerr; }
 svc_label() { case "$1:$2" in
     sonarr:mediastack.auth) echo gate ;; navidrome:mediastack.auth) echo gate ;;
     navidrome:mediastack.auth.group) echo frontend ;;
-    navidrome:mediastack.user_facing|jellyfin:mediastack.user_facing) echo true ;;
+    navidrome:mediastack.user_facing|jellyfin:mediastack.user_facing|seerr:mediastack.user_facing) echo true ;;
+    jellyfin:mediastack.auth|seerr:mediastack.auth) echo native ;;
+    jellyfin:mediastack.tier) echo frontend ;; seerr:mediastack.access.of) echo jellyfin ;;
     authentik:mediastack.subdomain) echo portal ;;
     *:mediastack.desc) echo "desc of ${1%%:*}" ;; esac; }
 unset -f authentik_gated authentik_household
 # shellcheck disable=SC1090  # the two real functions, back from their stubs
 source <(sed -n '/^authentik_gated() {/,/^}/p; /^authentik_household() {/,/^}/p' services/authentik/authentik.sh)
 [[ "$(authentik_gated | tr '\n' ' ')" == "sonarr " ]] || fail_ "the household-gated app is not an admin tool: $(authentik_gated)"; pass
-[[ "$(authentik_household | tr '\n' ' ')" == "navidrome jellyfin " ]] || fail_ "household apps by mediastack.user_facing"; pass
+[[ "$(authentik_household | tr '\n' ' ')" == "navidrome jellyfin seerr " ]] || fail_ "household apps by mediastack.user_facing"; pass
+[[ "$(svc_enabled() { :; }; authentik_native_ruled | tr '\n' ' ')" == "jellyfin " ]] || fail_ "under the rule, signing people in itself: Jellyfin (a tier label) — not Seerr, not the gated"; pass
+[[ "$(svc_enabled() { :; }; svc_access_of seerr) $(svc_enabled() { :; }; svc_access_of jellyfin) $(svc_enabled() { :; }; svc_access_of navidrome)" == "jellyfin jellyfin " ]] \
+    || fail_ "whose rule a card follows: Seerr Jellyfin's, Jellyfin its own, others none here"; pass
+[[ -z "$(svc_enabled() { [[ "$1" != jellyfin ]]; }; svc_access_of seerr)" ]] || fail_ "Seerr with Jellyfin off: no rule to follow"; pass
 # ---- every gated app its own gate (decision 7, docs/design-access.md): its
 #      group, its provider, its card carrying the rule — on the outpost only
 #      once the card's bindings read back (an unbound application admits
@@ -714,7 +720,9 @@ AK_APPS='{"results":[
 gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards against a stateful authentik; calls in $T/calls
     ( WIRE_DRY=${1:-0} WIRE_FAILS=0 NOBIND=${2:-0}
       rm -f "$T/calls" "$T/made" "$T/patched"; printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: the household and its admins
-      printf 'admin g-adm\nfrontend g-mu\n' > "$T/groups"; echo '[6]' > "$T/op"; : > "$T/apps"
+      printf 'a-ldap g-mu\na-ldap g-adm\n' >> "$T/bind"   # the LDAP application, as the blueprint bound it before slice B
+      printf 'admin g-adm\nfrontend g-mu\n' > "$T/groups"; echo '[6]' > "$T/op"; echo 'mediastack-ldap a-ldap' > "$T/apps"
+      svc_enabled() { [[ " sonarr navidrome jellyfin seerr " == *" $1 "* ]]; }
       ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
         case "$1 $2" in
           "GET /core/applications/?superuser_full_list=true&page_size=500") echo "$AK_APPS" ;;
@@ -744,9 +752,10 @@ gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards again
               jq -c .providers <<<"$3" > "$T/op"; [[ -n "${LATE:-}" ]] && { echo 'no answer within 90s'; return 1; }; echo '{}' ;;
           *) echo '{}' ;;
         esac; }
-      svc_tier() { case "$1" in sonarr) echo "${ST:-admin}" ;; navidrome) echo "${NT:-frontend}" ;; *) echo admin ;; esac; }
+      svc_tier() { case "$1" in sonarr) echo "${ST:-admin}" ;; navidrome) echo "${NT:-frontend}" ;; jellyfin) echo "${JT:-frontend}" ;; *) echo admin ;; esac; }
       wire_authentik_cards >/dev/null 2>&1; echo "fails=$WIRE_FAILS" )
 }
+binds() { awk -v t="$1" '$1==t{print $2}' "$T/bind" | sort | paste -sd, -; }
 [[ "$(gates_run)" == fails=0 ]] || fail_ "every gated app wired without a failure: $(gates_run)"; pass
 grep -q '^POST /core/groups/ .*"name":"app-sonarr"' "$T/calls" && grep -q '^POST /core/groups/ .*"name":"app-navidrome"' "$T/calls" \
     || fail_ "each gated app gets its own app-<svc> group"; pass
@@ -790,6 +799,21 @@ gates_run 1 >/dev/null; ! grep -qE '^(POST|PATCH|DELETE) ' "$T/calls" || fail_ "
     && [[ "$(awk '$1=="a-nav"{print $2}' "$T/bind" | sort | paste -sd, -)" == "g-adm,g-app-navidrome" ]] \
     || fail_ "navidrome in admin: moved to the tools, the household's binding removed, admins and its own group kept: $(awk '$1=="a-nav"' "$T/bind" | paste -sd' ' -) $(grep -c DELETE "$T/calls")"; pass
 [[ "$(NT="admin" gates_run 1)" == fails=0 ]] && ! grep -qE '^(POST|PATCH|DELETE) ' "$T/calls" || fail_ "a dry run of a tier move writes nothing"; pass
+# Jellyfin under the rule (slice B): its card, Seerr's (it signs in through
+# Jellyfin) and Jellyfin's sign-in — the LDAP application — say who may open it
+[[ "$(gates_run)" == fails=0 ]] || fail_ "with Jellyfin and Seerr: no failure"; pass
+grep -q '^POST /core/groups/ .*"name":"app-jellyfin"' "$T/calls" && ! grep -q '"name":"app-seerr"' "$T/calls" || fail_ "Jellyfin gets app-jellyfin; Seerr no group of its own"; pass
+[[ "$(binds a-mediastack-app-jellyfin)" == "g-adm,g-app-jellyfin,g-mu" && "$(binds a-mediastack-app-seerr)" == "g-adm,g-app-jellyfin,g-mu" ]] \
+    || fail_ "tier frontend: Jellyfin's and Seerr's cards — the household, admins, app-jellyfin: $(binds a-mediastack-app-jellyfin) / $(binds a-mediastack-app-seerr)"; pass
+[[ "$(binds a-ldap)" == "g-adm,g-app-jellyfin,g-mu" ]] && [[ "$(grep -c 'POST /policies/bindings/ .*"target":"a-ldap"' "$T/calls")" == 1 ]] \
+    || fail_ "tier frontend: the LDAP application keeps the household and admins, gains app-jellyfin (one binding): $(binds a-ldap)"; pass
+[[ "$(JT="admin" gates_run)" == fails=0 ]] || fail_ "Jellyfin to admin: no failure"; pass
+[[ "$(binds a-ldap)" == "g-adm,g-app-jellyfin" ]] && grep -qx 'DELETE /policies/bindings/a-ldap~g-mu/ ' "$T/calls" \
+    || fail_ "tier admin: the household off Jellyfin's sign-in, admins and app-jellyfin kept: $(binds a-ldap)"; pass
+[[ "$(binds a-mediastack-app-jellyfin)" == "g-adm,g-app-jellyfin" && "$(binds a-mediastack-app-seerr)" == "g-adm,g-app-jellyfin" ]] \
+    && grep -q '^POST /core/applications/ .*"slug":"mediastack-app-seerr".*"group":"Admin tools"' "$T/calls" \
+    || fail_ "tier admin: Jellyfin's and Seerr's cards with the tools, for admins and app-jellyfin: $(binds a-mediastack-app-jellyfin) / $(binds a-mediastack-app-seerr)"; pass
+[[ "$(JT="admin" gates_run 1)" == fails=0 ]] && ! grep -qE '^(POST|PATCH|DELETE) ' "$T/calls" || fail_ "a dry run of Jellyfin's tier move writes nothing"; pass
 [[ "$(MOVED=1 gates_run)" == fails=0 ]] && grep -qF 'PATCH /providers/proxy/50/ {"mode":"forward_single","external_host":"https://sonarr.media.example.com"}' "$T/calls" \
     || fail_ "an app's address changed: its gate follows, the update saying its mode (authentik refuses one without): $(grep 'PATCH /providers/proxy/50' "$T/calls")"; pass
 
@@ -888,7 +912,9 @@ PY
 [[ "$(throttle_says milo '')" == allow ]] || fail_ "no score at all: let in"; pass
 ! grep -q 'ak_message' <<<"$expr" || fail_ "throttle: no ak_message — on a stage binding it is shown nowhere (found live); the server log tells the admin"; pass
 grep -q 're_evaluate_policies: true' <<<"$(sed -n '/stage: !KeyOf stage-ldap-login/,/^  - /p' "$bp")" || fail_ "the login step re-checks once the user is known"; pass
-[[ "$(grep -c 'target: !KeyOf app-ldap' "$bp")" == 3 ]] || fail_ "binds: media-users, admins, the search account — nobody else"; pass
+lb=$(grep -A2 'target: !KeyOf app-ldap' "$bp")
+[[ "$(grep -c 'target: !KeyOf app-ldap' "$bp")" == 2 ]] && [[ "$lb" == *'group: !KeyOf group-admin'* && "$lb" != *group-frontend* ]] \
+    || fail_ "binds here: admin and the search account only — the household's is wire's (a re-applied blueprint would undo a tier move)"; pass
 
 # ---- update --to: the outpost and worker move with the server, the database stays ----
 svc_members() { printf '%s\n' authentik-db authentik-ldap authentik-worker; }
@@ -916,14 +942,19 @@ ids=$(jf_plugin_ids '[{"Name":"LDAP-Auth","Id":"958aad6637844d2ab89aa7b6fab6e25c
 [[ "$ids" == *"|$(jf_guid "$JF_LDAP_GUID")|"* && "$ids" == *"|$(jf_guid 71552A5A-5C5C-4350-A2AE-EBE451A30173)|"* ]] \
     || fail_ "plugins matched by ID, with or without dashes, any case: $ids"; pass
 printf 'STACK_DOMAIN=media.example.com\nAUTHENTIK_LDAP_BIND_PASSWORD=BINDPW\nACME_ENV=staging\n' > "$ENV_FILE"
+svc_tier() { echo frontend; }   # Jellyfin's tier as its label sets it (no render here)
 w=$(jf_ldap_want)
 [[ "$(jq -r '.LdapServer + ":" + (.LdapPort|tostring) + " ssl=" + (.UseSsl|tostring)' <<<"$w")" == "ldap.media.example.com:443 ssl=true" ]] \
     || fail_ "LDAPS to ldap.<domain>:443 through Traefik: $w"; pass
 [[ "$(jq -r '.SkipSslVerify' <<<"$w")" == true ]] || fail_ "staging certificates: checking off"; pass
 printf 'STACK_DOMAIN=media.example.com\nACME_ENV=production\n' > "$ENV_FILE"
 [[ "$(jf_ldap_want | jq -r '.SkipSslVerify')" == false ]] || fail_ "production certificates: checking on"; pass
-[[ "$(jq -r '.LdapSearchFilter' <<<"$w")" == "(|(memberOf=cn=frontend,ou=groups,dc=ldap,dc=mediastack)(memberOf=cn=admin,ou=groups,dc=ldap,dc=mediastack))" ]] \
-    || fail_ "frontend or admin may sign in"; pass
+[[ "$(jq -r '.LdapSearchFilter' <<<"$w")" == "(|(memberOf=cn=frontend,ou=groups,dc=ldap,dc=mediastack)(memberOf=cn=admin,ou=groups,dc=ldap,dc=mediastack)(memberOf=cn=app-jellyfin,ou=groups,dc=ldap,dc=mediastack))" ]] \
+    || fail_ "tier frontend: the household, admins and those granted Jellyfin may sign in: $(jq -r '.LdapSearchFilter' <<<"$w")"; pass
+[[ "$(svc_tier() { echo admin; }; jf_ldap_want | jq -r '.LdapSearchFilter')" == "(|(memberOf=cn=admin,ou=groups,dc=ldap,dc=mediastack)(memberOf=cn=app-jellyfin,ou=groups,dc=ldap,dc=mediastack))" ]] \
+    || fail_ "tier admin: admins and those granted Jellyfin only"; pass
+# shellcheck disable=SC1090  # the real one, back from its stub
+source <(sed -n '/^svc_tier() {/,/^}/p' services/authentik/authentik.sh)
 [[ "$(jq -r '.CreateUsersFromLdap and .EnableAllFolders' <<<"$w")" == true ]] || fail_ "created on first sign-in, every library"; pass
 # configure: managed settings merged over the rest; unchanged: no write
 rm -f "$T/calls"
@@ -1774,8 +1805,10 @@ AP='{"results":[
 acc() { # acc FUNCTION ARGS... -> its output and rc; .env in $T/aenv, calls in $T/acalls
     ( signin_people() { echo "$AP"; }
       authentik_gate_apps() { printf '%s\n' sonarr navidrome; }
+      authentik_native_ruled() { echo jellyfin; }   # signs people in itself, under the rule (its tier label)
+      people_follow_now() { echo "follow $1" >> "$T/acalls"; }
       svc_url() { echo "https://$1.x"; }
-      svc_label() { [[ "$1:$2" == navidrome:mediastack.auth.group ]] && echo frontend; return 0; }
+      svc_label() { case "$1:$2" in navidrome:mediastack.auth.group|jellyfin:mediastack.tier) echo frontend ;; esac; return 0; }
       env_get() { awk -F= -v k="$1" '$1==k{print substr($0, index($0,"=")+1)}' "$T/aenv"; }
       env_set() { env_del "$1"; echo "$1=$2" >> "$T/aenv"; echo "env_set $1=$2" >> "$T/acalls"; }
       env_del() { awk -F= -v k="$1" '$1!=k' "$T/aenv" > "$T/aenv.n"; mv "$T/aenv.n" "$T/aenv"; echo "env_del $1" >> "$T/acalls"; }
@@ -1802,7 +1835,7 @@ o=$(acc access_list_user dave); grep -q 'may open none' <<<"$o" && grep -q "acco
 o=$(acc access_list_user nobody); grep -q "the portal has no user 'nobody'" <<<"$o" && grep -q 'rc=1' <<<"$o" || fail_ "an unknown name stops: $o"; pass
 # tier: the checks before anything changes
 o=$(acc access_tier sonarr everyone); grep -q "frontend (the household and its admins) or admin" <<<"$o" && grep -q rc=1 <<<"$o" || fail_ "an unknown tier stops: $o"; pass
-o=$(acc access_tier jellyfin admin); grep -q "not an app behind the portal's gate — those are: sonarr navidrome" <<<"$o" || fail_ "an app not behind the gate stops, the gated ones named: $o"; pass
+o=$(acc access_tier kavita admin); grep -q "not an app access covers — those are: sonarr navidrome jellyfin" <<<"$o" || fail_ "an app access does not cover stops, those it covers named: $o"; pass
 o=$(acc access_tier sonarr admin); grep -q "sonarr is admin already" <<<"$o" && [[ ! -f "$T/acalls" ]] || fail_ "already there: nothing done: $o"; pass
 # to frontend: warned and asked; no means nothing changes
 o=$(acc access_tier sonarr frontend); grep -q "nothing changed: sonarr stays admin" <<<"$o" && ! grep -q 'env_set\|wire' "$T/acalls" \
@@ -1836,7 +1869,7 @@ rm -f "$T/acalls"; o=$(acc access_grant carol sonarr); grep -q 'carol has sonarr
 o=$(acc access_grant bob navidrome); grep -q 'they could already open it through frontend (its tier); the grant keeps it if that changes' <<<"$o" \
     || fail_ "a grant beside the tier: made, and said what it adds: $o"; pass
 o=$(acc access_grant dave sonarr); grep -q "dave's portal account is off" <<<"$o" && grep -q rc=0 <<<"$o" || fail_ "a grant to an account that is off: made, and warned: $o"; pass
-for a in "bot sonarr:is not a person's account" "bob jellyfin:not an app behind the portal's gate" "nobody sonarr:the portal has no user 'nobody'" "bob:usage: access grant"; do
+for a in "bot sonarr:is not a person's account" "bob kavita:not an app access covers" "nobody sonarr:the portal has no user 'nobody'" "bob:usage: access grant"; do
     rm -f "$T/acalls"; read -ra w <<<"${a%%:*}"; o=$(acc access_grant "${w[@]}")
     grep -q "${a#*:}" <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q '^group' "$T/acalls" 2>/dev/null || fail_ "grant ${a%%:*}: stops (${a#*:}), nothing changed: $o"; pass
 done
@@ -1863,6 +1896,28 @@ o=$(acc access_revoke bob navidrome); grep -q 'through its tier (frontend), not 
     || fail_ "the household's tier: refused, and said how: $o"; pass
 rm -f "$T/acalls"; o=$(GCFAIL=1 acc access_revoke carol sonarr); grep -q 'authentik did not take sonarr from carol' <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q bulk_delete "$T/acalls" \
     || fail_ "a refused revoke stops before ending anyone's session: $o"; pass
+
+# Jellyfin signs people in itself (slice B): no portal session decides it —
+# its own switch does, through its accounts' follow, after the rule changed
+: > "$T/aenv"; o=$(acc access_list)
+grep -qE '^jellyfin +frontend +- +https://jellyfin.x$' <<<"$o" && grep -q 'Seerr signs people in through Jellyfin and follows its rule' <<<"$o" \
+    || fail_ "access list: Jellyfin with its tier; Seerr said to follow it: $o"; pass
+rm -f "$T/acalls"; o=$(acc access_tier jellyfin admin)
+grep -qx 'env_set JELLYFIN_TIER=admin' "$T/acalls" && ! grep -q bulk_delete "$T/acalls" && grep -qx 'follow jellyfin' "$T/acalls" \
+    && grep -q 'OK access: jellyfin is admin-only — 3 of the household lost it (bob,carol,fay)$' <<<"$o" \
+    || fail_ "jellyfin to admin: no portal session ended, its accounts follow (they turn its own switch): $o $(cat "$T/acalls")"; pass
+b=$(grep -n '^wire cards' "$T/acalls" | cut -d: -f1); d=$(grep -n '^follow jellyfin' "$T/acalls" | cut -d: -f1)
+(( b < d )) || fail_ "the rule first, then the accounts"; pass
+: > "$T/aenv"; rm -f "$T/acalls"; o=$(acc access_grant bob jellyfin)
+grep -qx 'group add 2 app-jellyfin' "$T/acalls" && grep -qx 'follow jellyfin' "$T/acalls" || fail_ "grant jellyfin: into app-jellyfin, then its accounts follow (back on, if the stack turned them off): $o"; pass
+rm -f "$T/acalls"; o=$(acc access_revoke carol jellyfin); grep -q "carol opens jellyfin through its tier (frontend), not by a grant" <<<"$o" && ! grep -q '^follow' "$T/acalls" 2>/dev/null \
+    || fail_ "revoke where the tier gives it: refused, said how, nothing followed: $o"; pass
+AP=${AP/'{"name":"app-sonarr"}'/'{"name":"app-sonarr"},{"name":"app-jellyfin"}'}; echo 'JELLYFIN_TIER=admin' > "$T/aenv"
+rm -f "$T/acalls"; o=$(acc access_revoke carol jellyfin)
+grep -qx 'group remove 3 app-jellyfin' "$T/acalls" && ! grep -q bulk_delete "$T/acalls" && grep -qx 'follow jellyfin' "$T/acalls" \
+    && grep -q 'OK access: carol can no longer open jellyfin$' <<<"$o" \
+    || fail_ "revoke jellyfin: out of app-jellyfin, no portal session ended, its accounts follow: $o $(cat "$T/acalls")"; pass
+: > "$T/aenv"
 
 # ---- signin_group_change: the membership changed, read back, then the person saved ----
 gc() { # gc add|remove USER GROUP -> rc and the calls; HAS: what the read-back shows

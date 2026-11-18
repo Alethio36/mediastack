@@ -216,8 +216,14 @@ agreed first:
    `access grant|revoke` for the apps behind the gate, proven live 16 Nov 2026.
    Part 3 (agreed 16 Nov 2026): every app under the same rule — slice A
    `people-sync` for every app (Navidrome's music apps first: they ignored
-   `access`) *proven live 17 Nov 2026*, then Jellyfin, Kavita,
-   Audiobookshelf; Seerr's open session a kept gap (watchlist).
+   `access`) *proven live 17 Nov 2026*; slice B, Jellyfin (its tier and
+   grants, the LDAP rule, disabled and signed out on loss, Seerr's card
+   following) *built 17 Nov 2026, to prove live*; then Kavita,
+   Audiobookshelf; Seerr's open session a kept gap (watchlist). Open: a
+   person deleted from the portal keeps their Jellyfin account, disabled —
+   someone who later signs up under the same name would take it over once
+   allowed (it was so before slice B too); Navidrome renames such an account
+   `removed-<name>-<date>`. Decide whether Jellyfin does the same.
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions
    pending.

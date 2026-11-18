@@ -79,16 +79,21 @@ jf_plugin_webhook() { # its only consumer is WatchState (the hub hears Seerr, no
 }
 
 jf_ldap_want() { # the LDAP plugin's settings mediastack manages, as JSON (the rest stay yours)
-    local dn=dc=ldap,dc=mediastack host skip=false
+    local dn=dc=ldap,dc=mediastack host skip=false groups
     host="$(env_get AUTHENTIK_LDAP_HOST).$(env_get STACK_DOMAIN)"
     # a staging certificate is not trusted inside Jellyfin: checking waits for a trusted one
     certs_trusted || skip=true
+    # who may open Jellyfin (decision 11): admins, those granted it, and the
+    # household while its tier is frontend — the LDAP application's
+    # bindings say the same (ak_ldap_rule)
+    groups="$PORTAL_ADMIN app-jellyfin"
+    [[ "$(svc_tier jellyfin)" == frontend ]] && groups="$PORTAL_FRONTEND $groups"
     jq -cn --arg host "$host" --arg dn "$dn" --arg pw "$(env_get AUTHENTIK_LDAP_BIND_PASSWORD)" --argjson skip "$skip" \
-        --arg fe "$PORTAL_FRONTEND" --arg ad "$PORTAL_ADMIN" '{
+        --arg groups "$groups" --arg ad "$PORTAL_ADMIN" '{
         LdapServer: $host, LdapPort: 443, UseSsl: true, UseStartTls: false, SkipSslVerify: $skip,
         LdapBindUser: ("cn=mediastack-ldap-search,ou=users," + $dn), LdapBindPassword: $pw,
         LdapBaseDn: $dn, LdapAdminBaseDn: $dn,
-        LdapSearchFilter: ("(|(memberOf=cn=" + $fe + ",ou=groups," + $dn + ")(memberOf=cn=" + $ad + ",ou=groups," + $dn + "))"),
+        LdapSearchFilter: ("(|" + ([$groups | split(" ")[] | "(memberOf=cn=" + . + ",ou=groups," + $dn + ")"] | join("")) + ")"),
         LdapAdminFilter: ("(memberOf=cn=" + $ad + ",ou=groups," + $dn + ")"),
         LdapSearchAttributes: "uid, cn, mail, displayName", LdapUidAttribute: "uid", LdapUsernameAttribute: "cn",
         CreateUsersFromLdap: true, EnableAllFolders: true, AllowPassChange: false }'
@@ -103,7 +108,7 @@ jf_ldap_configure() { # point the LDAP plugin at authentik's outpost — only th
         ok "LDAP plugin points at the portal ($(jq -r '.LdapServer' <<<"$want"), certificate checking $( [[ "$(jq -r '.SkipSslVerify' <<<"$want")" == true ]] && echo "off until production certificates" || echo on))"
         return 0
     fi
-    w_would "point Jellyfin's LDAP plugin at the portal: $(jq -r '.LdapServer' <<<"$want"):443 (LDAPS), $PORTAL_FRONTEND and $PORTAL_ADMIN may sign in, new users get every library" || return 0
+    w_would "point Jellyfin's LDAP plugin at the portal: $(jq -r '.LdapServer' <<<"$want"):443 (LDAPS), whoever may open Jellyfin (its tier: $(svc_tier jellyfin)) may sign in, new users get every library" || return 0
     merged=$(jq -c --argjson w "$want" '. + $w' <<<"$cur")
     jf_api POST "/Plugins/$JF_LDAP_GUID/Configuration" "$tok" "$merged" >/dev/null \
         && ok "LDAP plugin configured — portal accounts sign in to Jellyfin (created on their first sign-in)" \
@@ -141,10 +146,76 @@ jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admi
     jf_admin_sync "$tok"
 }
 
-jellyfin_people_follow() { # lib/people.sh: directory users' admin rights follow the portal
+jellyfin_people_follow() { # lib/people.sh: the sign-in filter, who may sign in, then admin rights — each follows the portal
     local tok; tok=$(env_get JELLYFIN_API_KEY)
     [[ -n "$tok" ]] || { wfail "jellyfin: no API key in .env (JELLYFIN_API_KEY) — ./mediastack.sh wire jellyfin makes one"; return 0; }
-    jf_admin_sync "$tok" || true   # its failures are counted (WIRE_FAILS)
+    jf_ldap_filter_follow "$tok" || true   # its failures are counted (WIRE_FAILS)
+    jf_people_access "$tok"
+    jf_admin_sync "$tok" || true
+}
+
+jf_ldap_filter_follow() { # TOKEN — the plugin's search filter matches the rule (a tier moved since wire); silent when it does
+    local cur
+    cur=$(jf_api GET "/Plugins/$JF_LDAP_GUID/Configuration" "$1") || { wfail "could not read the LDAP plugin's settings [HTTP $(jf_code)]"; return 1; }
+    [[ "$(jq -r '.LdapSearchFilter // ""' <<<"$cur")" == "$(jf_ldap_want | jq -r '.LdapSearchFilter')" ]] && return 0
+    jf_ldap_configure "$1"
+}
+
+# who may sign in (docs/design-access.md, decision 12): a directory user the
+# portal no longer lets open Jellyfin — account deactivated or deleted, its
+# tier, a grant taken away — is disabled (an open session's next request is
+# refused, proven live) and signed out of every device (apps go to sign-in
+# instead of spinning). Allowed again, only someone the stack disabled
+# (local/jellyfin-people) is enabled again: their portal password signs in as
+# before. Someone an admin disabled by hand stays disabled; local accounts
+# (the stack's own above all) are never touched.
+jf_person_set() { # jf_person_set TOKEN USER-JSON true|false — IsDisabled written, then read back
+    local id pol out
+    id=$(jq -r '.Id' <<<"$2")
+    pol=$(jq -c --argjson d "$3" '.Policy | .IsDisabled = $d' <<<"$2")
+    out=$(jf_api POST "/Users/$id/Policy" "$1" "$pol") || { echo "Jellyfin refused it [HTTP $(jf_code)]: $(oneline "$out")"; return 1; }
+    out=$(jf_api GET "/Users/$id" "$1") || { echo "it answered, but the account is unreadable now [HTTP $(jf_code)]"; return 1; }
+    [[ "$(jq -r '.Policy.IsDisabled' <<<"$out")" == "$3" ]] || { echo "it answered, but the change did not hold"; return 1; }
+}
+
+jf_people_access() { # jf_people_access TOKEN — directory users follow the rule (see above)
+    local tok=$1 portal users u name pu st why out
+    portal=$(signin_people) || { wfail "authentik: its people are unreadable — Jellyfin's sign-ins not checked: $(oneline "$portal")"; return 0; }
+    # a group the rule reads missing: nobody would be in it — everyone cut off, unasked
+    why=$(people_rule_ready) || { wfail "$why — Jellyfin's sign-ins left as they are"; return 0; }
+    users=$(jf_api GET /Users "$tok") || { wfail "could not list jellyfin users [HTTP $(jf_code)]"; return 0; }
+    while IFS= read -r u; do
+        [[ -n "$u" ]] || continue
+        name=$(jq -r '.Name' <<<"$u")
+        st=$(people_get jellyfin "$name")
+        pu=$(jq -c --arg n "${name,,}" '[.results[]? | select((.username | ascii_downcase) == $n)][0] // empty' <<<"$portal")
+        if [[ -n "$pu" ]] && people_may "$pu" jellyfin; then
+            [[ "$st" == off ]] || continue
+            if [[ "$(jq -r '.Policy.IsDisabled' <<<"$u")" != true ]]; then   # an admin turned them on already
+                (( WIRE_DRY )) || people_set jellyfin "$name" ""; continue
+            fi
+            w_would "jellyfin: '$name' may sign in again" || continue
+            if out=$(jf_person_set "$tok" "$u" false); then
+                people_set jellyfin "$name" ""
+                ok "jellyfin: '$name' may sign in again — their portal password, as before"
+            else wfail "jellyfin: '$name' may open Jellyfin again, but is still disabled — $out"; fi
+            continue
+        fi
+        [[ "$(jq -r '.Policy.IsDisabled' <<<"$u")" == true ]] && continue   # off already: the stack's (recorded) or an admin's (left)
+        if [[ -z "$pu" ]]; then why="portal account deleted"
+        elif [[ "$(jq -r '.is_active' <<<"$pu")" != true ]]; then why="portal account deactivated"
+        else why="may no longer open Jellyfin"; fi
+        w_would "jellyfin: '$name' ($why) is disabled and signed out — their history stays" || continue
+        if ! out=$(jf_person_set "$tok" "$u" true); then wfail "jellyfin: '$name' ($why) still signs in — $out"; continue; fi
+        people_set jellyfin "$name" off
+        if jf_signout_uid "$tok" "$(jq -r '.Id' <<<"$u")" "$name"; then
+            ok "jellyfin: '$name' can no longer sign in ($why) — signed out of $JF_SIGNED_OUT device(s)"
+        else
+            wfail "jellyfin: '$name' is disabled ($why), but still signed in somewhere — $JF_SIGNOUT_WHY (their next request is refused all the same)"
+        fi
+        notify ops "Jellyfin" "$name can no longer sign in to Jellyfin: $why. Allowed again, they sign in with their portal password." info
+    done < <(jq -c --arg p "$JF_LDAP_PROVIDER" '.[] | select(.Policy.AuthenticationProviderId == $p)' <<<"$users")
+    return 0
 }
 
 jellyfin_logins() { printf "Jellyfin's admin (the operator's, and Seerr's owner)\tJELLYFIN_ADMIN_USER\tJELLYFIN_ADMIN_PASSWORD\treserve\n"; }   # lib/logins.sh
@@ -636,8 +707,28 @@ jf_devices() { # KEY -> "deviceId<TAB>ownerId<TAB>ownerName" per sign-in; rc 1 (
     out=$(jf_api GET /Devices "$1") || { echo "$out"; return 1; }
     jq -r '.Items[]? | [.Id, .LastUserId, .LastUserName] | @tsv' <<<"$out"
 }
+JF_SIGNED_OUT=0 JF_SIGNOUT_WHY=""
+jf_signout_uid() { # jf_signout_uid KEY UID NAME — every sign-in UID has ends: rc 0 (JF_SIGNED_OUT devices), rc 1 (JF_SIGNOUT_WHY)
+    local key=$1 uid=$2 list ids d other n left out codes=""
+    JF_SIGNED_OUT=0 JF_SIGNOUT_WHY=""
+    list=$(jf_devices "$key") || { JF_SIGNOUT_WHY="jellyfin refused its device list [HTTP $(jf_code)]: $(oneline "$list")"; return 1; }
+    ids=$(awk -F'\t' -v u="$uid" '$2 == u {print $1}' <<<"$list" | sort -u)
+    [[ -n "$ids" ]] || return 0
+    n=$(wc -l <<<"$ids")
+    while IFS= read -r d; do
+        other=$(awk -F'\t' -v d="$d" -v u="$uid" '$1 == d && $2 != u {print $3}' <<<"$list" | sort -u | paste -sd, -)
+        [[ -z "$other" ]] || warn "jellyfin: one of $3's devices is shared — signed out for $other too"
+        out=$(jf_api DELETE "/Devices?id=$(jq -rn --arg s "$d" '$s | @uri')" "$key") || codes+=" $(jf_code): $(oneline "$out");"
+    done <<<"$ids"
+    # read back: the person's own sign-ins, not what each call answered
+    list=$(jf_devices "$key") || { JF_SIGNOUT_WHY="jellyfin refused its device list after the sign-out [HTTP $(jf_code)]: $(oneline "$list")"; return 1; }
+    left=$(awk -F'\t' -v u="$uid" '$2 == u' <<<"$list" | wc -l)
+    (( left == 0 )) || { JF_SIGNOUT_WHY="still signed in on $left of $n device(s)${codes:+ — Jellyfin said:${codes%;}}"; return 1; }
+    JF_SIGNED_OUT=$n
+}
+
 jellyfin_signout() { # NAME — every Jellyfin sign-in NAME has ends; their password is untouched
-    local key admin users uid list ids d other n left out codes=""
+    local key admin users uid
     key=$(env_get JELLYFIN_API_KEY)
     [[ -n "$key" ]] || die "no Jellyfin API key in .env — run: ./mediastack.sh wire jellyfin"
     admin=$(env_get JELLYFIN_ADMIN_USER)
@@ -646,18 +737,7 @@ jellyfin_signout() { # NAME — every Jellyfin sign-in NAME has ends; their pass
     users=$(jf_api GET /Users "$key") || die "jellyfin refused its user list [HTTP $(jf_code)]: $(oneline "$users")"
     uid=$(jq -r --arg n "${1,,}" 'first(.[]? | select((.Name | ascii_downcase) == $n) | .Id) // empty' <<<"$users")
     [[ -n "$uid" ]] || die "jellyfin has no user '$1' (its users: Jellyfin's dashboard → Users)"
-    list=$(jf_devices "$key") || die "jellyfin refused its device list [HTTP $(jf_code)]: $(oneline "$list")"
-    ids=$(awk -F'\t' -v u="$uid" '$2 == u {print $1}' <<<"$list" | sort -u)
-    [[ -n "$ids" ]] || { ok "jellyfin: $1 is signed in on no device — nothing to sign out"; return 0; }
-    n=$(wc -l <<<"$ids")
-    while IFS= read -r d; do
-        other=$(awk -F'\t' -v d="$d" -v u="$uid" '$1 == d && $2 != u {print $3}' <<<"$list" | sort -u | paste -sd, -)
-        [[ -z "$other" ]] || warn "jellyfin: one of $1's devices is shared — signed out for $other too"
-        out=$(jf_api DELETE "/Devices?id=$(jq -rn --arg s "$d" '$s | @uri')" "$key") || codes+=" $(jf_code): $(oneline "$out");"
-    done <<<"$ids"
-    # read back: the person's own sign-ins, not what each call answered
-    list=$(jf_devices "$key") || die "jellyfin refused its device list after the sign-out [HTTP $(jf_code)]: $(oneline "$list")"
-    left=$(awk -F'\t' -v u="$uid" '$2 == u' <<<"$list" | wc -l)
-    (( left == 0 )) || die "jellyfin: $1 is still signed in on $left of $n device(s)${codes:+ — Jellyfin said:${codes%;}}"
-    ok "jellyfin: $1 signed out of $n device(s) — each goes to sign-in on its next request (an app may spin until reopened)"
+    jf_signout_uid "$key" "$uid" "$1" || die "jellyfin: $1 — $JF_SIGNOUT_WHY"
+    if (( JF_SIGNED_OUT == 0 )); then ok "jellyfin: $1 is signed in on no device — nothing to sign out"
+    else ok "jellyfin: $1 signed out of $JF_SIGNED_OUT device(s) — each goes to sign-in on its next request (an app may spin until reopened)"; fi
 }
