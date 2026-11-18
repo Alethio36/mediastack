@@ -112,4 +112,6 @@ people_follow_now() { # people_follow_now SVC — an access command changed who 
     WIRE_FAILS=0 WIRE_DRY=0
     "${s//-/_}_people_follow" || true
     (( ! WIRE_FAILS )) || die "access: the portal changed, but $s's accounts did not follow ($WIRE_FAILS failure(s) above) — people-sync tries again within 15 minutes"
+    # said even when nothing above changed: people-sync may have got there first (found live, 18 Nov 2026)
+    ok "access: $s's own accounts follow the portal — any change to them is above"
 }

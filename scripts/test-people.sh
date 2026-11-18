@@ -121,7 +121,8 @@ now_run() { # now_run SVC -> rc in $T/rc
       people_follow_now "$1" ) > "$T/out" 2>&1 && echo 0 > "$T/rc" || echo $? > "$T/rc"
 }
 fresh; state_set "$PEOPLE_FOLLOWED" navidrome; ENABLED=navidrome RUNNING=navidrome FOLLOW_FAIL=""
-now_run navidrome; [[ "$(cat "$T/rc")" == 0 && "$(ran)" == "follow-navidrome|" ]] || fail_ "a followed app: its accounts follow now"; pass
+now_run navidrome; [[ "$(cat "$T/rc")" == 0 && "$(ran)" == "follow-navidrome|" ]] && grep -q "navidrome's own accounts follow the portal — any change to them is above" "$T/out" \
+    || fail_ "a followed app: its accounts follow now, said even when nothing changed (people-sync may have got there first): $(cat "$T/out")"; pass
 now_run sonarr; [[ "$(cat "$T/rc")" == 0 && -z "$(ran)" ]] || fail_ "an app with no accounts of its own: nothing"; pass
 fresh; now_run navidrome; [[ "$(cat "$T/rc")" == 0 && -z "$(ran)" ]] || fail_ "not followed yet: nothing"; pass
 fresh; state_set "$PEOPLE_FOLLOWED" navidrome; RUNNING="" now_run navidrome
@@ -150,7 +151,9 @@ jf_api() { # a fake Jellyfin: users in $T/jf.json, devices in $T/dev.tsv (id own
         "GET /Users/"*) jq -c --arg i "${2##*/}" '.[] | select(.Id == $i)' "$T/jf.json" ;;
         "POST /Users/"*/Policy) local i=${2#/Users/}; i=${i%/Policy}; echo "$4" >> "$T/jpol"
             [[ -n "${JF_IGNORE:-}" ]] && return 0
-            jq -c --arg i "$i" --argjson p "$4" 'map(if .Id == $i then .Policy = $p else . end)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json" ;;
+            jq -c --arg i "$i" --argjson p "$4" 'map(if .Id == $i then .Policy = $p else . end)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json"
+            # Jellyfin 12.4 ends a disabled person's sign-ins itself (proven live, 18 Nov 2026)
+            if [[ -n "${JF_REVOKES:-}" && "$(jq -r .IsDisabled <<<"$4")" == true ]]; then awk -v u="$i" '$2 != u' "$T/dev.tsv" > "$T/dev.n"; mv "$T/dev.n" "$T/dev.tsv"; fi ;;
         "GET /Devices") [[ -n "${DEV_FAIL:-}" ]] && return 1
             jq -Rsc 'split("\n") | map(select(length > 0) | split(" ") | {Id:.[0], LastUserId:.[1], LastUserName:.[2]}) | {Items:.}' "$T/dev.tsv" ;;
         "DELETE /Devices?id="*) [[ -n "${DEV_KEEP:-}" ]] && return 0; awk -v d="${2#*=}" '$1 != d' "$T/dev.tsv" > "$T/dev.n"; mv "$T/dev.n" "$T/dev.tsv" ;;
@@ -196,6 +199,16 @@ jfresh; jf_people_access tok > "$T/out" 2>&1
 jq -c 'map(if .Name == "carol" then .Policy.IsDisabled = false else . end)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json"
 printf '%s\n' "$(pu akadmin true '["admin"]')" "$(pu bob true '["frontend","app-jellyfin"]')" "$(pu carol true '["frontend","app-jellyfin"]')" "$(pu erin true '["frontend","app-jellyfin"]')" > "$T/portal.ndjson"
 jfresh; jf_people_access tok > "$T/out" 2>&1; ! grep -q 'POST /Users/3/' "$T/jcalls" && [[ -z "$(people_get jellyfin carol)" ]] || fail_ "turned on by hand, and may: forgotten, nothing written: $(cat "$T/jcalls")"; pass
+# Jellyfin ends the sign-ins itself on the disable: still counted, from before it
+jq -c 'map(if .Name == "carol" then .Policy.IsDisabled = false else . end)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json"; people_set jellyfin carol ""
+printf 'd7 3 carol\nd8 3 carol\nd9 2 bob\n' > "$T/dev.tsv"
+printf '%s\n' "$(pu akadmin true '["admin"]')" "$(pu bob true '["frontend","app-jellyfin"]')" "$(pu carol false '["frontend"]')" "$(pu erin true '["frontend","app-jellyfin"]')" > "$T/portal.ndjson"
+jfresh; JF_REVOKES=1 jf_people_access tok > "$T/out" 2>&1
+grep -qF "'carol' can no longer sign in (portal account deactivated) — signed out of 2 device(s)" "$T/out" && [[ "$WIRE_FAILS" == 0 ]] && ! grep -q 'DELETE /Devices' "$T/jcalls" \
+    || fail_ "Jellyfin ended them itself: the count from before the disable, nothing left for the sign-out, no failure: $(cat "$T/out")"; pass
+[[ "$(cat "$T/dev.tsv")" == "d9 2 bob" ]] || fail_ "only carol's devices gone"; pass
+jq -c 'map(if .Name == "carol" then .Policy.IsDisabled = false else . end)' "$T/jf.json" > "$T/jf.n"; mv "$T/jf.n" "$T/jf.json"; people_set jellyfin carol ""   # as the next checks found her
+
 # failures: a write that does not hold; devices that stay
 printf '%s\n' "$(pu akadmin true '["admin"]')" > "$T/portal.ndjson"
 jfresh; JF_IGNORE=1 jf_people_access tok > "$T/out" 2>&1

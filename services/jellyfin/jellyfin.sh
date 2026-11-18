@@ -165,7 +165,10 @@ jf_ldap_filter_follow() { # TOKEN — the plugin's search filter matches the rul
 # portal no longer lets open Jellyfin — account deactivated or deleted, its
 # tier, a grant taken away — is disabled (an open session's next request is
 # refused, proven live) and signed out of every device (apps go to sign-in
-# instead of spinning). Allowed again, only someone the stack disabled
+# instead of spinning). Jellyfin 12.4 ends a disabled person's sign-ins itself
+# (proven live 18 Nov 2026: their device gone, none left for the sign-out), so
+# the devices are counted before the disable, and the sign-out after it takes
+# whatever another version leaves. Allowed again, only someone the stack disabled
 # (local/jellyfin-people) is enabled again: their portal password signs in as
 # before. Someone an admin disabled by hand stays disabled; local accounts
 # (the stack's own above all) are never touched.
@@ -179,7 +182,7 @@ jf_person_set() { # jf_person_set TOKEN USER-JSON true|false — IsDisabled writ
 }
 
 jf_people_access() { # jf_people_access TOKEN — directory users follow the rule (see above)
-    local tok=$1 portal users u name pu st why out
+    local tok=$1 portal users u name pu st why out uid devs n
     portal=$(signin_people) || { wfail "authentik: its people are unreadable — Jellyfin's sign-ins not checked: $(oneline "$portal")"; return 0; }
     # a group the rule reads missing: nobody would be in it — everyone cut off, unasked
     why=$(people_rule_ready) || { wfail "$why — Jellyfin's sign-ins left as they are"; return 0; }
@@ -206,10 +209,14 @@ jf_people_access() { # jf_people_access TOKEN — directory users follow the rul
         elif [[ "$(jq -r '.is_active' <<<"$pu")" != true ]]; then why="portal account deactivated"
         else why="may no longer open Jellyfin"; fi
         w_would "jellyfin: '$name' ($why) is disabled and signed out — their history stays" || continue
+        uid=$(jq -r '.Id' <<<"$u")
+        # counted first: the disable itself ends them (Jellyfin 12.4, above)
+        if devs=$(jf_devices "$tok"); then n=$(awk -F'\t' -v u="$uid" '$2 == u' <<<"$devs" | wc -l); else n="?"; fi
         if ! out=$(jf_person_set "$tok" "$u" true); then wfail "jellyfin: '$name' ($why) still signs in — $out"; continue; fi
         people_set jellyfin "$name" off
-        if jf_signout_uid "$tok" "$(jq -r '.Id' <<<"$u")" "$name"; then
-            ok "jellyfin: '$name' can no longer sign in ($why) — signed out of $JF_SIGNED_OUT device(s)"
+        if jf_signout_uid "$tok" "$uid" "$name"; then
+            [[ "$n" == "?" ]] && n=$JF_SIGNED_OUT
+            ok "jellyfin: '$name' can no longer sign in ($why) — signed out of $n device(s)"
         else
             wfail "jellyfin: '$name' is disabled ($why), but still signed in somewhere — $JF_SIGNOUT_WHY (their next request is refused all the same)"
         fi
