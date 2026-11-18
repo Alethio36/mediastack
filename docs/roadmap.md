@@ -471,6 +471,29 @@ arrive on their own, as with watchtower, but validated first.
   that cadence (state it in the README); if promotion stops, installs freeze.
   Estimated ~300 lines with tests for pins, Renovate, tags and the walk.
 
+### The Docker engine in the update window — agreed (Nov 17 2026), after the MVP
+*Found live (17 Nov 2026, anzac4):* an `apt upgrade` run by hand just after a
+boot moved Docker 29.9.3 → 29.10.0; the package restarted the daemon under the
+stack, gluetun came back on another server, and the leak gate's boot run
+failed on the old server's tracked connection. Of the host's packages, only
+Docker's restart the stack — so only Docker's join its update.
+- **The nightly update upgrades the Docker engine** *(opt-in)* — `docker-ce`,
+  `docker-ce-cli`, `containerd.io` and the compose plugin, with
+  `apt-get install --only-upgrade`, inside the maintenance lock and before the
+  image pulls: one downtime, not two, ending in the update's own recreate, full
+  leak-gate checks and rewire. The update's restore point covers it. apt's lock
+  held by someone else: skipped that night, said in the run.
+- **doctor reports, never acts** — a pending Docker engine upgrade, a pending
+  reboot (`/var/run/reboot-required`), and whether the host installs security
+  updates on its own.
+- **The rest of the OS stays the OS's** — `unattended-upgrades` is the tool;
+  mediastack never upgrades other packages and never reboots the host.
+  Rejected: a full `apt upgrade` in the update (other software on the host,
+  conffile prompts, held packages, a half-configured dpkg inside our run,
+  kernels that need a reboot — outside the stack, against the design rule).
+- **Later, with versions from the repo:** the engine version vouched for by the
+  repo like the images (a Docker major can break the stack).
+
 ### Decisions pending
 - **Updating mediastack itself** *(raised Nov 2026, to figure out later)*.
   Today the script only moves when someone runs `upgrade`; the timers pull
