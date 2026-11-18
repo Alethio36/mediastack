@@ -861,6 +861,36 @@ all built; what each still leaves open is noted below.
     exactly, the gate middleware included); a stopped service's route stays
     and answers 502 instead of vanishing; a route only appears through
     mediastack (no labels added by hand at runtime).
+- **Edge protection: CrowdSec** *(after the MVP, Nov 2026)*. Nothing today
+  looks at addresses: the Jellyfin throttle is per person (every LDAP bind
+  reaches authentik from Traefik's address), so a guesser spreading over many
+  names, scanners probing every app and known-bad addresses go unseen. Only
+  Traefik knows the real client. CrowdSec as one container reading Traefik's
+  access log plus Jellyfin's and authentik's (community collections:
+  LePresidente/jellyfin, firix/authentik), its decisions enforced in Traefik by
+  its plugin (maxlerebourg/crowdsec-bouncer-traefik-plugin — not the
+  deprecated forward-auth bouncer) on every route; a ban told to ops through
+  the hub, like the Jellyfin lockout. Captcha rather than a ban for password
+  guessing (a person mistyping solves it); a ban for exploit probes.
+  * *Sharing (the owner's call, 17 Nov 2026: acceptable here).* The community
+    blocklist needs the install to share its own signals — one cannot be had
+    without the other. A signal is the scenario's name, hash and version, the
+    time, the install's random machine id and the offending address (with its
+    location); at login the list of enabled scenarios (so which apps run here
+    shows) and the versions of CrowdSec's own parts. Logs never leave the
+    host. Not enrolled in CrowdSec's console, and its "alert context" off — that
+    is what would add attacked usernames and paths. The household's own
+    addresses and the stack's network allowlisted, so no family member's
+    address is ever reported. A switch for local-only (no sharing, no
+    community list); privacy.md says all of it.
+  * Costs: one more container and key; community parsers to pin and keep
+    working through Jellyfin and authentik updates; it is only as good as the
+    client address Traefik sees — behind a proxy or tunnel every visitor is
+    the same few addresses and a ban hits everyone, so doctor checks it. GeoIP
+    blocking (a MaxMind account; breaks for someone abroad) and CrowdSec's
+    AppSec web firewall: later options on the same engine, not in the first
+    build. A ban at the edge also covers what JellyfinSecurity's IP bans would
+    (watchlist), for every app.
 - **Container DNS: no host search domain** — *decided (7 Oct 2026), shipped*.
   Docker copies the host's search domain into every container, so a bare
   sibling name looked up while that sibling is off the network falls through
