@@ -218,7 +218,7 @@ agreed first:
    `people-sync` for every app (Navidrome's music apps first: they ignored
    `access`) *proven live 17 Nov 2026*; slice B, Jellyfin (its tier and
    grants, the LDAP rule, disabled and signed out on loss, Seerr's card
-   following) *built 17 Nov 2026, to prove live*; then Kavita,
+   following) *proven live 18 Nov 2026*; then Kavita,
    Audiobookshelf; Seerr's open session a kept gap (watchlist). Open: a
    person deleted from the portal keeps their Jellyfin account, disabled —
    someone who later signs up under the same name would take it over once

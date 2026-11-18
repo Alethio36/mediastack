@@ -557,7 +557,15 @@ A group the rule reads missing: nobody judged, a failure says why.
 
 **Slice B — Jellyfin.** `app-jellyfin`, its tier and grants; the LDAP
 rule (decision 11); disabled and signed out on loss (decision 12); Seerr's
-card follows Jellyfin's rule. *Built 17 Nov 2026, to prove live.* Labels put it
+card follows Jellyfin's rule. *Proven live 18 Nov 2026 (anzac4, 8e189f5):* `access tier
+jellyfin admin` cut spikeuser's open tab (it spun, a reload went to sign-in,
+signing in again was refused) and took Jellyfin's and Seerr's cards off their
+dashboard at once; grant, revoke and the tier back each followed, the cards
+returning. Found on the way: Jellyfin 12.4 ends a disabled person's sign-ins
+itself — the sign-out after the disable found none and said "0 devices"
+with a session open, so the devices are counted before the disable now; and
+a people-sync run can get there before `access` does (both land the same),
+so `access` says when an app's accounts were checked. Labels put it
 under the rule: Jellyfin's `mediastack.tier: frontend` (`authentik_native_ruled`:
 an app with its own login and a tier label — `access` covers it) and Seerr's
 `mediastack.access.of: jellyfin` (its card by Jellyfin's tier, with
