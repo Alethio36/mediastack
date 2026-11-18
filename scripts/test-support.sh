@@ -247,8 +247,8 @@ seerr_url() { echo http://seerr; }
 nd_login() { echo tok; }
 gluetun_proven() { return 0; }
 H
-hook() { bash -c "source \"\$T/fx.sh\"; source \"\$T/hooks.sh\"; NAVIDROME_PEOPLE=\$T/people; $1" 2>&1; }
-printf 'bob\ton\ncarol\toff\n' > "$T/people"; mkdir -p "$T/local/state"; echo 0 > "$T/local/state/leak-verdict"
+hook() { bash -c "source \"\$T/fx.sh\"; source \"\$T/hooks.sh\"; $1" 2>&1; }
+mkdir -p "$T/local/state"; printf 'bob\ton\ncarol\toff\n' > "$T/local/navidrome-people"; echo 0 > "$T/local/state/leak-verdict"   # people_file navidrome
 [[ "$(hook 'support_arr radarr')" == $'version 6.4.4.10685, on ubuntu 24.04\nhealth error: No indexers available with RSS sync enabled\nroot folder /data/media/movies: reachable, 76 GiB free\ndownload client qBittorrent (QBittorrent): on, movieCategory movies\nindexers: 2, 1 on' ]] \
     || fail_ "an arr: version, health, root folders, download client, indexers: $(hook 'support_arr radarr')"; pass
 [[ "$(hook 'CLEAR=1 support_arr radarr')" == *$'health: clear\nroot folder'* ]] || fail_ "an arr with a clear health list says so, nothing else"; pass

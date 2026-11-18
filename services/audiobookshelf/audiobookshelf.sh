@@ -148,6 +148,16 @@ wire_audiobookshelf() {
     signin_is authentik || return 0
     abs_oidc "$tok" || return 0
     abs_root_unlink "$tok"
+    people_follow_on audiobookshelf
+    abs_admin_sync "$tok"
+}
+
+audiobookshelf_people_follow() { # lib/people.sh: the root account signs in, then portal-linked accounts' rights follow
+    local out tok
+    out=$(abs_api POST /login "" "$(jq -cn --arg u "$(env_get ABS_ADMIN_USER)" --arg p "$(env_get ABS_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
+        || { wfail "audiobookshelf rejected the root login from .env — ./mediastack.sh wire audiobookshelf says why"; return 0; }
+    tok=$(jq -r '.user.accessToken // .user.token // empty' <<<"$out")
+    [[ -n "$tok" ]] || { wfail "audiobookshelf: its login gave no token"; return 0; }
     abs_admin_sync "$tok"
 }
 

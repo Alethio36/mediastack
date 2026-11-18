@@ -137,7 +137,14 @@ jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admi
     jf_plugins_ensure "$tok" "LDAP Authentication|$JF_LDAP_GUID|portal accounts sign in to Jellyfin" || return 0
     (( WIRE_DRY )) && ! jf_api GET "/Plugins/$JF_LDAP_GUID/Configuration" "$tok" >/dev/null && return 0   # not installed yet: nothing to compare
     jf_ldap_configure "$tok" || return 0
+    people_follow_on jellyfin
     jf_admin_sync "$tok"
+}
+
+jellyfin_people_follow() { # lib/people.sh: directory users' admin rights follow the portal
+    local tok; tok=$(env_get JELLYFIN_API_KEY)
+    [[ -n "$tok" ]] || { wfail "jellyfin: no API key in .env (JELLYFIN_API_KEY) — ./mediastack.sh wire jellyfin makes one"; return 0; }
+    jf_admin_sync "$tok" || true   # its failures are counted (WIRE_FAILS)
 }
 
 jellyfin_logins() { printf "Jellyfin's admin (the operator's, and Seerr's owner)\tJELLYFIN_ADMIN_USER\tJELLYFIN_ADMIN_PASSWORD\treserve\n"; }   # lib/logins.sh

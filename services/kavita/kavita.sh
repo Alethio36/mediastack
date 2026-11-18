@@ -199,6 +199,16 @@ wire_kavita() {
         return 0
     fi
     kav_oidc "$tok" || return 0
+    people_follow_on kavita
+    kav_admin_sync "$tok"
+}
+
+kavita_people_follow() { # lib/people.sh: the stack's admin signs in, then portal accounts' admin rights follow
+    local out tok
+    out=$(kav_api POST /api/account/login "" "$(jq -cn --arg u "$(env_get KAVITA_ADMIN_USER)" --arg p "$(env_get KAVITA_ADMIN_PASSWORD)" '{username:$u, password:$p}')") \
+        || { wfail "kavita rejected the stored admin login: $(oneline "$out") — ./mediastack.sh wire kavita says why"; return 0; }
+    tok=$(jq -r '.token // empty' <<<"$out")
+    [[ -n "$tok" ]] || { wfail "kavita: its login gave no token"; return 0; }
     kav_admin_sync "$tok"
 }
 

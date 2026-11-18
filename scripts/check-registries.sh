@@ -32,6 +32,8 @@ done
 for s in $(list lib/rotate.sh 's/^ROTATE_ORDER=(\(.*\))$/\1/p'); do
     want_one ROTATE_ORDER "${s}_secrets"; want_one ROTATE_ORDER "${s}_secret_rotate"
 done
+# people-sync: PEOPLE_APPS -> <app>_people_follow
+for a in $(list lib/people.sh 's/^PEOPLE_APPS=(\([^)]*\)).*$/\1/p'); do want_one PEOPLE_APPS "${a//-/_}_people_follow"; done
 # doctor: DOCTOR_APPS -> <app>_doctor
 for a in $(list lib/doctor.sh 's/^DOCTOR_APPS=(\(.*\))$/\1/p'); do want_one DOCTOR_APPS "${a}_doctor"; done
 # by name: a lib or the entrypoint calling <service>_<anything> (a service's

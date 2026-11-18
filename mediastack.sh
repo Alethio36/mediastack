@@ -35,7 +35,7 @@ CGROUP_FILE=/proc/self/cgroup                     # scheduled_run reads it (a te
 STATE_DIR="$LOCAL_DIR/state"                      # pending work: one file per marker (state_get/state_set)
 ENV_BACKUP_DIR="$LOCAL_DIR/env-backups"           # .env before each schema migration
 ENV_BACKUP_KEEP=10                                # the oldest (your original) + the newest 9
-SCRIPT_SCHEMA=47
+SCRIPT_SCHEMA=48
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -98,6 +98,8 @@ source "$SCRIPT_DIR/lib/configure.sh"
 source "$SCRIPT_DIR/lib/lifecycle.sh"
 # shellcheck source=lib/access.sh
 source "$SCRIPT_DIR/lib/access.sh"
+# shellcheck source=lib/people.sh
+source "$SCRIPT_DIR/lib/people.sh"
 # shellcheck source=lib/rotate.sh
 source "$SCRIPT_DIR/lib/rotate.sh"
 # shellcheck source=lib/newservice.sh
@@ -1216,7 +1218,7 @@ VERBS=(
     "unit-failed~unit-failed <unit>~max=1~Internal~Tell ops a scheduled or boot run failed (systemd's OnFailure hook)."
     "frontdoor-refresh~frontdoor-refresh~none~Internal~Regenerate the panel's config and entity files."
     "audit-extract~audit-extract~none~Internal~Copy new deletion events from auditd's rotating log into the durable log (hourly timer)."
-    "people-sync~people-sync~none~Internal~With the portal: a person whose portal account was deactivated or deleted loses their Navidrome music apps (every 15 minutes)."
+    "people-sync~people-sync~none~Internal~With the portal: the apps' own accounts follow it (every 15 minutes) — Navidrome's music apps stop for anyone it no longer lets open Navidrome; Jellyfin, Kavita and Audiobookshelf admin rights follow its admin group."
 )
 
 verb_entry() { # verb_entry <verb> -> its registry line, rc 1 if unknown

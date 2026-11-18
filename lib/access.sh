@@ -388,6 +388,7 @@ access_tier() { # access_tier APP frontend|admin [--yes] — kept in .env; the c
     else
         ok "access: $s is $t now"
     fi
+    people_follow_now "$s"   # an app with accounts of its own (Navidrome's music apps) follows now
 }
 
 access_grant() { # access_grant USER APP — into app-<app>: they may open it whatever its tier
@@ -402,6 +403,7 @@ access_grant() { # access_grant USER APP — into app-<app>: they may open it wh
     if [[ -n "$why" ]]; then ok "access: $s granted to $name — they could already open it through $why; the grant keeps it if that changes"
     else ok "access: $name can now open $s (granted)"; fi
     jq -e '.is_active' <<<"$u" >/dev/null || warn "$name's portal account is off — they sign in to nothing until it is on"
+    people_follow_now "$s"
 }
 
 access_revoke() { # access_revoke USER APP — out of app-<app>; when that takes the app away, their portal sessions end
@@ -423,6 +425,7 @@ access_revoke() { # access_revoke USER APP — out of app-<app>; when that takes
     n=$(signin_sessions_end "$(jq -r .pk <<<"$u")") \
         || die "access: $name lost $s, but authentik refused to end their portal sessions: $(oneline "$n") — end them by hand (the user → Sessions)"
     ok "access: $name can no longer open $s — $(access_sessions_said "$n"); a device password of theirs stops within a minute"
+    people_follow_now "$s"
 }
 
 cmd_set_email() { # an admin changes a person's portal email; Kavita follows; a shared address warns, --yes overrides

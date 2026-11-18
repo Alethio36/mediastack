@@ -87,6 +87,8 @@ jobs:
         run: scripts/test-questions.sh
       - name: Navidrome — the stack's admin, and its people following the portal (scripts/test-navidrome.sh)
         run: scripts/test-navidrome.sh
+      - name: the apps' accounts follow the portal — the rule, the sync, at once after access (scripts/test-people.sh)
+        run: scripts/test-people.sh
       - name: what scripts/dryrun-live.sh counts as a write — every read passes, every kind of write is caught, none named with its secrets (scripts/test-dryrun-live.sh)
         run: scripts/test-dryrun-live.sh
       - name: the answers file — every problem at once, typed and written answers agree, the check pass asks nothing (scripts/test-answers.sh)

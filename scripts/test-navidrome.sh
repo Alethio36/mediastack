@@ -7,19 +7,22 @@
 #     how to add it; a dry run never creates it
 #   * a portal person seen in Navidrome is recorded; admin rights follow the
 #     portal's admins group (either way)
-#   * deactivated on the portal: the password is replaced with Navidrome's
-#     "nobody chose it" kind and admin rights go — once; ops hears it;
-#     reactivated, recorded again and nothing written
+#   * deactivated on the portal, or on it but no longer allowed Navidrome
+#     (its tier admin and not an admin, no grant; no group at all): the
+#     password is replaced with Navidrome's "nobody chose it" kind and admin
+#     rights go — once; ops hears it, with why; allowed again (reactivated, a
+#     grant), recorded again and nothing written
+#   * a group the rule reads missing: nobody judged, a failure says why
 #   * deleted from the portal: also renamed removed-<name>-<date>, the old
 #     name forgotten, the new one never looked at again
 #   * never touched: the stack's admin, an account the portal was never seen
 #     behind; names match in any case
 #   * a dry run writes nothing, records nothing; a write that does not hold
 #     is a failure and records nothing
-#   * the timer: every 15 minutes, runs people-sync, in the footprint; wire
-#     navidrome installs it only with the portal and once the stack's admin
-#     signs in (never up, never a dry run); people-sync does nothing without
-#     them; Navidrome is published on 127.0.0.1 only
+#   * wire navidrome follows it (and starts the timer) only with the portal
+#     and once the stack's admin signs in (never up, never a dry run);
+#     Navidrome is published on 127.0.0.1 only (the timer and the sync's
+#     order: scripts/test-people.sh)
 #   * set-credentials navidrome: the stack's admin gets its new password with
 #     the current one (its own change needs both); nothing changes when
 #     refused; the old one signing in still is a failure
@@ -39,7 +42,7 @@ checks=0
 pass()  { checks=$((checks+1)); }
 fail_() { echo "FAIL: $*" >&2; exit 1; }
 
-ENV_FILE=$T/.env; LOCAL_DIR=$T/local; STATE_DIR=$T/local/state; NAVIDROME_PEOPLE=$T/local/navidrome-people
+ENV_FILE=$T/.env; LOCAL_DIR=$T/local; STATE_DIR=$T/local/state; NAVIDROME_PEOPLE=$T/local/navidrome-people   # people_file navidrome
 printf 'NAVIDROME_ADMIN_USER=admin\nNAVIDROME_ADMIN_PASSWORD=pw-of-the-stack\n' > "$ENV_FILE"
 repo_owned() { :; }; ok() { echo "OK $*"; }; info() { echo ":: $*"; }; warn() { echo "WARN $*"; }; fail() { echo "FAIL $*"; }
 notify() { echo "$1|$3" >> "$T/notified"; }
@@ -67,7 +70,12 @@ nd_api() { # METHOD PATH TOKEN [json]
 nd_user() { jq -cn --arg i "$1" --arg n "$2" --argjson a "${3:-false}" '{id:$i, userName:$n, name:$n, email:"", isAdmin:$a, updatedAt:"before"}'; }
 portal_user() { jq -cn --arg n "$1" --argjson a "$2" --argjson g "${3:-[]}" '{username:$n, is_active:$a, groups_obj:($g | map({name:.}))}'; }
 signin_people() { jq -cn --slurpfile p "$T/portal.ndjson" '{results:$p}'; }
-ak_group_pk() { [[ "$1" == "$PORTAL_ADMIN" && -z "${NO_ADMIN_GROUP:-}" ]] && echo g-adm; return 0; }   # the admin group exists unless a check says not
+ak_group_pk() { # both groups exist unless a check says not
+    [[ "$1" == "$PORTAL_ADMIN" && -z "${NO_ADMIN_GROUP:-}" ]] && echo g-adm
+    [[ "$1" == "$PORTAL_FRONTEND" && -z "${NO_FRONTEND_GROUP:-}" ]] && echo g-fe
+    return 0
+}
+svc_tier() { echo "${ND_TIER:-frontend}"; }   # Navidrome's tier (access tier navidrome)
 fresh() { # fresh — an empty record, nothing called yet
     rm -rf "$T/local" "$T/calls" "$T/puts" "$T/notified"; mkdir -p "$T/local"
     WIRE_FAILS=0; WIRE_DRY=0; WIRE_CHANGES=0
@@ -89,7 +97,7 @@ fresh; out=$(WIRE_DRY=1 ND_HAS_ADMIN='' ND_EMPTY=1 nd_admin_ensure; echo "rc=$?"
 D=$(date +%Y%m%d)
 fresh
 nd_set "$(nd_user 1 admin true)" "$(nd_user 2 Alice)" "$(nd_user 3 bob true)" "$(nd_user 4 carol)" "$(nd_user 5 dave)"
-portal_set "$(portal_user alice true '["frontend","admin"]')" "$(portal_user bob true '["frontend"]')" "$(portal_user carol true)"
+portal_set "$(portal_user alice true '["frontend","admin"]')" "$(portal_user bob true '["frontend"]')" "$(portal_user carol true '["frontend"]')"
 navidrome_people_sync tok-1 > "$T/out"
 [[ "$(sort "$NAVIDROME_PEOPLE" | cut -f1,2 | tr '\t\n' ': ')" == "Alice:on bob:on carol:on " ]] || fail_ "the portal's people recorded, any case: $(cat "$NAVIDROME_PEOPLE")"; pass
 [[ "$(user_field Alice isAdmin) $(user_field bob isAdmin)" == "true false" ]] || fail_ "admin rights follow the admin group, both ways"; pass
@@ -102,16 +110,16 @@ fresh_keep() { rm -f "$T/calls" "$T/puts" "$T/notified"; WIRE_FAILS=0; WIRE_DRY=
 fresh_keep
 portal_set "$(portal_user alice true '["admin"]')" "$(portal_user bob false '["frontend"]')"
 WIRE_DRY=1 navidrome_people_sync tok-1 > "$T/out"
-[[ ! -e "$T/puts" && "$(nd_people_get bob)" == on ]] && grep -qF "would: navidrome: 'bob' (portal account deactivated)" "$T/out" \
+[[ ! -e "$T/puts" && "$(people_get navidrome bob)" == on ]] && grep -qF "would: navidrome: 'bob' (portal account deactivated)" "$T/out" \
     || fail_ "a dry run says what it would do and writes nothing"; pass
 fresh_keep; navidrome_people_sync tok-1 > "$T/out"
 bp=$(grep -F '"userName":"bob"' "$T/puts")
-[[ "$(jq -r .password <<<"$bp")" == __NAVIDROME_AUTOGEN__* && "$(jq -r .isAdmin <<<"$bp")" == false && "$(nd_people_get bob)" == off ]] \
+[[ "$(jq -r .password <<<"$bp")" == __NAVIDROME_AUTOGEN__* && "$(jq -r .isAdmin <<<"$bp")" == false && "$(people_get navidrome bob)" == off ]] \
     || fail_ "deactivated: an unchosen password, no admin, recorded off: $bp"; pass
 cp=$(grep -F '"userName":"removed-carol-' "$T/puts")
 [[ "$(jq -r .password <<<"$cp")" == __NAVIDROME_AUTOGEN__* && "$(user_field "removed-carol-$D" id)" == 4 ]] \
     || fail_ "deleted: an unchosen password, renamed removed-carol-<date>: $cp"; pass
-[[ -z "$(nd_people_get carol)" && "$(nd_people_get "removed-carol-$D")" == removed ]] || fail_ "the old name forgotten, the new one marked"; pass
+[[ -z "$(people_get navidrome carol)" && "$(people_get navidrome "removed-carol-$D")" == removed ]] || fail_ "the old name forgotten, the new one marked"; pass
 [[ "$(grep -c '^ops|' "$T/notified")" == 2 ]] && grep -qF "bob's music apps are stopped" "$T/notified" || fail_ "ops hears each one"; pass
 [[ "$(jq -r '.[] | select(.password? != null)' "$T/nd.json")" == "" && "$(grep -c . "$T/puts")" == 2 ]] || fail_ "two writes"; pass
 fresh_keep; navidrome_people_sync tok-1 > "$T/out"
@@ -120,12 +128,12 @@ fresh_keep; navidrome_people_sync tok-1 > "$T/out"
 # bob comes back
 fresh_keep; portal_set "$(portal_user alice true '["admin"]')" "$(portal_user bob true '["frontend"]')"
 navidrome_people_sync tok-1 > "$T/out"
-[[ "$(nd_people_get bob)" == on && ! -e "$T/puts" ]] && grep -qF "'bob' is back on the portal" "$T/out" || fail_ "reactivated: recorded again, nothing written"; pass
+[[ "$(people_get navidrome bob)" == on && ! -e "$T/puts" ]] && grep -qF "'bob' may open Navidrome again" "$T/out" || fail_ "reactivated: recorded again, nothing written"; pass
 
 # a write that does not hold
 fresh_keep; portal_set "$(portal_user alice true '["admin"]')" "$(portal_user bob false)"
 ND_IGNORE=1 navidrome_people_sync tok-1 > "$T/out"
-[[ "$WIRE_FAILS" == 1 && "$(nd_people_get bob)" == on ]] && grep -qF "'bob' (portal account deactivated) still plays music — it answered, but the change did not hold" "$T/out" \
+[[ "$WIRE_FAILS" == 1 && "$(people_get navidrome bob)" == on ]] && grep -qF "'bob' (portal account deactivated) still plays music — it answered, but the change did not hold" "$T/out" \
     || fail_ "a change that did not hold: a failure, nothing recorded: $(cat "$T/out")"; pass
 
 # the portal unreadable: nothing touched
@@ -134,29 +142,23 @@ navidrome_people_sync tok-1 > "$T/out"
 [[ "$WIRE_FAILS" == 1 && ! -e "$T/puts" ]] || fail_ "the portal unreadable: a failure, nothing written"; pass
 
 # ---- the timer, the verb, the port ----
-[[ "$(timer_timer_render x '*:0/15')" == *"OnCalendar=*:0/15"* ]] && grep -qF 'timer_timer_render "Mediastack: Navidrome follows the portal" "*:0/15"' services/navidrome/people.sh \
-    && grep -qF 'timer_service_render "Mediastack: Navidrome follows the portal" people-sync' services/navidrome/people.sh || fail_ "every 15 minutes, people-sync"; pass
-[[ "$(fp_timers)" == *mediastack-people.timer* && "$(fp_timers)" == *mediastack-people.service* ]] || fail_ "the timer is in the footprint (uninstall removes it)"; pass
 ! grep -q people_timer_ensure <(awk '/^cmd_up\(\)/,/^}/' mediastack.sh) || fail_ "up never installs it: its first run could beat wire's createAdmin (found live)"; pass
 wired() { # wired [VAR=value...] — wire_navidrome against the fake; -> what ran, in order
     rm -f "$T/order"
     ( for a in "$@"; do export "${a?}"; done
       svc_enabled() { return 0; }; wire_gate() { :; }; nd_ready() { return 0; }
       signin_is() { [[ "${SIGNIN_X:-authentik}" == "$1" ]]; }
-      people_timer_ensure() { echo timer >> "$T/order"; }
+      people_timer_ensure() { echo timer >> "$T/order"; }   # people_follow_on's, after it records navidrome
       navidrome_people_sync() { echo sync >> "$T/order"; }
       wire_navidrome >/dev/null 2>&1 )
     [[ ! -e "$T/order" ]] || tr '\n' ' ' < "$T/order"
 }
 fresh; nd_set; portal_set
-[[ "$(wired)" == "timer sync " ]] || fail_ "the admin signs in: the timer, then the sync: $(wired)"; pass
+[[ "$(wired)" == "timer sync " ]] && people_followed navidrome || fail_ "the admin signs in: followed, the timer, then the sync: $(wired)"; pass
 fresh; [[ "$(wired ND_HAS_ADMIN= ND_EMPTY=1)" == "timer sync " ]] || fail_ "a fresh install: the admin made first, then the timer"; pass
 fresh; [[ -z "$(wired ND_HAS_ADMIN=)" ]] || fail_ "the admin does not sign in: no timer, no sync"; pass
-fresh; [[ "$(wired WIRE_DRY=1)" == "sync " ]] || fail_ "a dry run installs no timer"; pass
+fresh; [[ "$(wired WIRE_DRY=1)" == "sync " ]] && ! people_followed navidrome || fail_ "a dry run follows nothing, installs no timer"; pass
 fresh; [[ -z "$(wired SIGNIN_X=wizarr)" ]] || fail_ "without the portal: no timer"; pass
-verb_entry people-sync >/dev/null || fail_ "people-sync is a verb"; pass
-( load_env() { :; }; render() { :; }; signin_is() { return 1; }; nd_login() { echo called > "$T/login"; }; rm -f "$T/login"; cmd_people_sync ) && [[ ! -e "$T/login" ]] \
-    || fail_ "people-sync without the portal: nothing to do, nothing called"; pass
 grep -q '"127.0.0.1:${NAVIDROME_PORT:-4533}:4533"' services/navidrome/compose.yml || fail_ "Navidrome is published on 127.0.0.1 only (the script's way in)"; pass
 r=" ${WIRE_ROLES[*]} "; [[ "$r" == *" authentik "*" navidrome "* ]] || fail_ "navidrome is wired after authentik"; pass
 
@@ -185,4 +187,32 @@ portal_set "$(portal_user alice true '["media-users","admins"]')" "$(portal_user
 NO_ADMIN_GROUP=1 navidrome_people_sync tok-1 > "$T/out"
 [[ "$(user_field Alice isAdmin)" == true && ! -s "$T/puts" && "$WIRE_FAILS" == 1 ]] && grep -qF "authentik has no '$PORTAL_ADMIN' group" "$T/out" \
     || fail_ "no admin group: admin rights left as they are, a failure says why: fails=$WIRE_FAILS puts=$(cat "$T/puts" 2>/dev/null) $(cat "$T/out")"; pass
+
+# ---- the rule: on the portal, but no longer allowed Navidrome (proven live: /rest answered, 16 Nov 2026) ----
+signin_people() { jq -cn --slurpfile p "$T/portal.ndjson" '{results:$p}'; }
+fresh
+nd_set "$(nd_user 1 admin true)" "$(nd_user 2 alice true)" "$(nd_user 3 bob)" "$(nd_user 4 erin)" "$(nd_user 5 gus)"
+portal_set "$(portal_user alice true '["frontend","admin"]')" "$(portal_user bob true '["frontend"]')" "$(portal_user erin true '["frontend","app-navidrome"]')" "$(portal_user gus true)"
+ND_TIER="admin" navidrome_people_sync tok-1 > "$T/out"
+bp=$(grep -F '"userName":"bob"' "$T/puts")
+[[ "$(jq -r .password <<<"$bp")" == __NAVIDROME_AUTOGEN__* && "$(people_get navidrome bob)" == off ]] && grep -qF "'bob' can no longer play music (may no longer open Navidrome)" "$T/out" \
+    || fail_ "tier admin, bob only in frontend: his music apps stop, recorded off: $(cat "$T/out")"; pass
+grep -qF "bob's music apps are stopped: they may no longer open Navidrome" "$T/notified" || fail_ "ops hears why"; pass
+[[ "$(people_get navidrome alice) $(people_get navidrome erin)" == "on on" ]] && ! grep -qF '"userName":"alice"' "$T/puts" && ! grep -qF '"userName":"erin"' "$T/puts" \
+    || fail_ "an admin, and one granted it (app-navidrome): kept, nothing written"; pass
+[[ "$(people_get navidrome gus)" == off ]] || fail_ "on the portal in no group at all: may open nothing — off"; pass
+fresh_keep; ND_TIER="admin" navidrome_people_sync tok-1 > "$T/out"
+[[ ! -e "$T/puts" ]] || fail_ "the next run: nothing written again"; pass
+fresh_keep; portal_set "$(portal_user alice true '["frontend","admin"]')" "$(portal_user bob true '["frontend","app-navidrome"]')" "$(portal_user erin true '["frontend","app-navidrome"]')" "$(portal_user gus true)"
+ND_TIER="admin" navidrome_people_sync tok-1 > "$T/out"
+[[ "$(people_get navidrome bob)" == on && ! -e "$T/puts" ]] && grep -qF "'bob' may open Navidrome again" "$T/out" \
+    || fail_ "granted it: on again, nothing written (he sets a new password himself)"; pass
+fresh_keep; ND_TIER="frontend" navidrome_people_sync tok-1 > "$T/out"
+[[ "$(people_get navidrome gus)" == off && ! -e "$T/puts" ]] || fail_ "tier frontend, gus still in no group: stays off"; pass
+fresh
+nd_set "$(nd_user 1 admin true)" "$(nd_user 3 bob)"
+portal_set "$(portal_user bob true '["frontend"]')"
+NO_FRONTEND_GROUP=1 ND_TIER="admin" navidrome_people_sync tok-1 > "$T/out"
+[[ ! -e "$T/puts" && "$WIRE_FAILS" == 1 && "$(people_get navidrome bob)" == on ]] && grep -qF "authentik has no '$PORTAL_FRONTEND' group" "$T/out" \
+    || fail_ "the frontend group missing: nobody judged, recorded as tied, a failure says why: $(cat "$T/out")"; pass
 echo "OK navidrome: $checks checks"

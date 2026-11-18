@@ -538,7 +538,17 @@ several slices.
 **Slice A — `people-sync` for every app; Navidrome first.** The sync
 generalised (decision 13), Navidrome's people following the rule
 (decision 12) — its hole closed — and the admin syncs of Jellyfin, Kavita
-and Audiobookshelf moved into it.
+and Audiobookshelf moved into it. *Built 17 Nov 2026, to prove live.*
+`lib/people.sh` holds the rule (`people_may`), the record of whom the stack
+turned off (`local/<app>-people`; Navidrome's file as before) and the timer;
+each app's part is `<app>_people_follow` in its folder, listed in
+`PEOPLE_APPS`. An app is followed from the first `wire` that reaches its
+portal step — a timer run must never beat the wire that makes the stack's
+admin (found live with Navidrome) — and schema 48 keeps Navidrome followed
+where it was. A run waits for authentik and each app to be up (the boot:
+the timer catches up at once, before the portal answers — found live
+17 Nov 2026), and skips while an update, a backup or `up` holds the stack.
+A group the rule reads missing: nobody judged, a failure says why.
 
 **Slice B — Jellyfin.** `app-jellyfin`, its tier and grants; the LDAP
 rule (decision 11); disabled and signed out on loss (decision 12); Seerr's
