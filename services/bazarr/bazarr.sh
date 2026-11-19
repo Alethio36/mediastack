@@ -50,6 +50,8 @@ bazarr_login() { # bazarr_login [force] — Bazarr's own login follows gate_trus
     fi
 }
 
+bazarr_gate_login() { bazarr_login; }   # `disable authentik` (GATE_UNTRUSTED=1): its login back, read back — a failure counts in WIRE_FAILS
+
 # ---- bazarr ----
 BAZARR_KEY_WAIT=90   # seconds a first start may take to write its key
 wire_bazarr() {

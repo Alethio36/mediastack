@@ -202,7 +202,8 @@ person's accounts in each app), **Wizarr** (invitation links; each app keeps
 its own login) or **authentik** (the portal — one login for every app; see
 "The portal and the gate"). Re-run `configure` to switch; leaving the portal
 warns you first (its accounts stay in its database, unusable, and every app
-goes back to its own login). With Wizarr, its one-time first run is the only
+goes back to its own login — each one put back and checked while the ports
+are still closed; if one cannot be, the portal stays and nothing reopens). With Wizarr, its one-time first run is the only
 hands-on step — `wire` walks you through it with the exact values to paste.
 
 **Release channels.** A clone follows `stable`, the default branch, and

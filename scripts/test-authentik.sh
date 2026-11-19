@@ -620,6 +620,7 @@ AK_ON=1 AUTH=gate PORTS=$'127.0.0.1:8989\n'; gate_trusted sonarr || fail_ "porta
 AK_ON=1 AUTH=gate PORTS=$'0.0.0.0:8989\n';   ! gate_trusted sonarr || fail_ "still reachable by IP: keep its own login"; pass
 AK_ON='' AUTH=gate PORTS=$'127.0.0.1:8989\n'; ! gate_trusted sonarr || fail_ "no portal: keep its own login"; pass
 AK_ON=1 AUTH=native PORTS=$'127.0.0.1:8989\n'; ! gate_trusted sonarr || fail_ "not gated: keep its own login"; pass
+AK_ON=1 AUTH=gate PORTS=$'127.0.0.1:8989\n'; ! GATE_UNTRUSTED=1 gate_trusted sonarr || fail_ "GATE_UNTRUSTED (disable authentik): no, though the portal still runs"; pass
 unset -f sudo
 # the arr's own login follows gate_trusted
 arr_key() { echo k; }; arr_url() { echo http://x; }; arr_apiver() { echo v3; }
@@ -641,6 +642,34 @@ v=$(grep -n 'still trusts the portal' <<<"$body" | sed -n 1p | cut -d: -f1)
 e=$(grep -n 'env_set COMPOSE_PROFILES' <<<"$body" | sed -n 1p | cut -d: -f1)
 g=$(grep -n 'gate_bind_sync' <<<"$body" | sed -n 1p | cut -d: -f1)
 [[ -n "$v" && -n "$e" && -n "$g" ]] && (( v < e && e < g )) || fail_ "disable authentik: logins verified, then the profile, then the ports"; pass
+
+# ... and so is every other tool's: its <svc>_gate_login, untrusted, before the
+# profile changes; one failure, or one not running, stops it there (found 18
+# Nov 2026: Bazarr, qBittorrent and LazyLibrarian were left open)
+dis() { # dis -> "rc=N" then the calls; FAILS / NOTRUN: the service that fails / is stopped
+    ( rm -f "$T/dcalls"
+      load_env() { :; }; svc_deps() { :; }; arr_instances() { :; }; ok() { :; }; info() { :; }
+      svc_enabled() { [[ " authentik bazarr qbittorrent lazylibrarian sonarr " == *" $1 "* ]]; }
+      env_get() { [[ "$1" == COMPOSE_PROFILES ]] && echo "authentik,bazarr,qbittorrent,lazylibrarian,sonarr"; return 0; }
+      svc_enabled_managed() { printf '%s\n' authentik bazarr lazylibrarian qbittorrent sonarr; }
+      svc_cname() { echo "c-$1"; }; c_state() { [[ "$1" == "c-${NOTRUN:-none}" ]] && echo exited || echo running; }
+      for g in bazarr qbittorrent lazylibrarian; do
+          eval "${g}_gate_login() { echo \"gate-login $g untrusted=\${GATE_UNTRUSTED:-}\" >> \"\$T/dcalls\"; [[ \"\${FAILS:-}\" == $g ]] && WIRE_FAILS=\$((WIRE_FAILS + 1)); return 0; }"
+      done
+      env_set() { echo "env_set $1" >> "$T/dcalls"; }; reconcile_disabled() { echo reconcile >> "$T/dcalls"; }
+      gate_bind_sync() { echo gate_bind_sync >> "$T/dcalls"; }; vpn_gen() { :; }; DC() { echo "DC $*" >> "$T/dcalls"; }
+      rc=0; ( cmd_disable authentik ) > "$T/dout" 2>&1 || rc=$?
+      echo "rc=$rc"; cat "$T/dcalls" 2>/dev/null )
+}
+o=$(dis)
+[[ "$(paste -sd'|' <<<"$o")" == "rc=0|gate-login bazarr untrusted=1|gate-login lazylibrarian untrusted=1|gate-login qbittorrent untrusted=1|env_set COMPOSE_PROFILES|reconcile|gate_bind_sync|DC up -d --remove-orphans" ]] \
+    || fail_ "disable authentik: every tool's login back, untrusted, before the profile and the ports: $(paste -sd'|' <<<"$o")"; pass
+o=$(FAILS=qbittorrent dis)
+[[ "$o" == rc=1* ]] && ! grep -q 'env_set COMPOSE_PROFILES' <<<"$o" && grep -q 'could not get their own login back (above) — authentik stays enabled, ports stay closed' "$T/dout" \
+    || fail_ "one tool's login not back: stop, the portal and the closed ports kept: $o $(cat "$T/dout")"; pass
+o=$(NOTRUN=lazylibrarian dis)
+[[ "$o" == rc=1* ]] && ! grep -q 'env_set COMPOSE_PROFILES' <<<"$o" && grep -q 'lazylibrarian is not running, so its own login cannot be put back' "$T/dout" \
+    || fail_ "a tool stopped: its login cannot be put back — stop before the ports reopen: $o $(cat "$T/dout")"; pass
 
 # every arr-family login goes through arr_login — Prowlarr and a credential
 # rotation included (found live: Prowlarr kept asking twice)

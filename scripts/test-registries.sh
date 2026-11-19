@@ -44,4 +44,9 @@ broken "a follow function without the label" \
     "printf 'wizarr_people_follow() { :; }\n' >> services/wizarr/wizarr.sh" \
     "wizarr_people_follow() exists, but no service named wizarr is labelled follow"
 
+# disable authentik: a tool that drops its login behind the gate brings <svc>_gate_login
+broken "a tool drops its login behind the gate, with no way back" \
+    "sed -i '/^bazarr_gate_login()/d' services/bazarr/bazarr.sh" \
+    "gate_trusted bazarr: 0 definitions of bazarr_gate_login() under services/"
+
 echo "OK registries: $checks checks"

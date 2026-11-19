@@ -65,6 +65,12 @@ for f in $(grep -hoE '^[a-z0-9_]+_people_follow\(\)' services/*/*.sh | sed 's/()
     people_rows | awk -F'|' -v s="$s" '{ n = $1; gsub(/-/, "_", n) } n == s && $4 == "follow" { f = 1 } END { exit !f }' \
         || { echo "FAIL mediastack.people: ${f}() exists, but no service named ${s//_/-} is labelled follow — people-sync would never run it"; rc=1; }
 done
+# disable authentik: a tool that drops its login behind the gate (gate_trusted
+# <svc>, by name) brings <svc>_gate_login, which puts it back before the ports
+# reopen — the arrs and Prowlarr (arr_login) have their own loop there
+for s in $(grep -hoE 'gate_trusted [a-z0-9-]+' services/*/*.sh | awk '{print $2}' | sort -u); do
+    want_one "gate_trusted $s" "${s//-/_}_gate_login"
+done
 # doctor: DOCTOR_APPS -> <app>_doctor
 for a in $(list lib/doctor.sh 's/^DOCTOR_APPS=(\(.*\))$/\1/p'); do want_one DOCTOR_APPS "${a}_doctor"; done
 # by name: a lib or the entrypoint calling <service>_<anything> (a service's

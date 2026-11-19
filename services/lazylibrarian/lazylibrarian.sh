@@ -70,6 +70,8 @@ ll_login() {
     ll_login_proven "$u" "$p"
 }
 
+lazylibrarian_gate_login() { ll_login || true; }   # `disable authentik` (GATE_UNTRUSTED=1): its login back, proven — a failure counts in WIRE_FAILS
+
 ll_login_proven() { # ll_login_proven USER PASS — the page refuses a stranger and admits the login ("" "": admits anyone)
     local anon with
     anon=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$(ll_url)/" || true)

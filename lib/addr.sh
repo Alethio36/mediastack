@@ -16,6 +16,16 @@
 svc_host() { # svc_host <target> -> gluetun | <target>, from its effective VPN membership
     if [[ "$(vpn_effective "$1" "$(svc_label "$1" mediastack.vpn)")" == true ]]; then echo gluetun; else echo "$1"; fi
 }
+ipv4_in_cidr() { # ipv4_in_cidr IP CIDR -> 0 when the IPv4 address IP lies in CIDR (a bare address: /32); anything else, IPv6 included: no
+    local re='^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$' x y bits=32 m
+    [[ "$1" =~ $re ]] || return 1; x=$(( (BASH_REMATCH[1] << 24) | (BASH_REMATCH[2] << 16) | (BASH_REMATCH[3] << 8) | BASH_REMATCH[4] ))
+    [[ "$2" == */* ]] && bits=${2#*/}
+    [[ "${2%/*}" =~ $re ]] || return 1; y=$(( (BASH_REMATCH[1] << 24) | (BASH_REMATCH[2] << 16) | (BASH_REMATCH[3] << 8) | BASH_REMATCH[4] ))
+    [[ "$bits" =~ ^[0-9]{1,2}$ ]] && (( bits <= 32 )) || return 1
+    (( bits == 0 )) && return 0
+    m=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+    (( (x & m) == (y & m) ))
+}
 svc_cport() { svc_label "$1" mediastack.port; }   # the port it listens on inside its namespace
 svc_addr()  { echo "$(svc_host "$1"):$(svc_cport "$1")"; }
 addr_of() { # addr_of <url | host:port> -> host:port (scheme and path dropped)

@@ -45,11 +45,20 @@ qb_gate_trust() { # requires QB_COOKIE — the gate's bypass set (or taken away)
     want=$(qb_gate_want)
     ours="$(env_get TRAEFIK_ADDRESS)/32"
     if ! gate_trusted qbittorrent; then
-        # only the stack's own bypass is taken away; a whitelist someone set up themselves stays
+        # only the stack's own bypass is taken away; a whitelist someone set up themselves stays —
+        # but one that covers Traefik's address lets anyone through Traefik in without a login
         if jq -e --arg s "$ours" '.bypass_auth_subnet_whitelist_enabled and .bypass_auth_subnet_whitelist == $s' <<<"$cur" >/dev/null; then
             w_would "qbittorrent: its login back for everyone (no portal guards it)" || return 0
             qb_api /app/setPreferences "json=$want" >/dev/null || true   # the read-back below is the verdict
         else
+            local e
+            if jq -e '.bypass_auth_subnet_whitelist_enabled' <<<"$cur" >/dev/null; then
+                while IFS= read -r e; do
+                    [[ -n "$e" ]] && ipv4_in_cidr "$(env_get TRAEFIK_ADDRESS)" "$e" || continue
+                    wfail "qbittorrent: its bypass list's '$e' covers Traefik's address ($(env_get TRAEFIK_ADDRESS)) — with no portal in front, anyone who reaches Traefik gets in without a login; take it out (Tools → Options → WebUI → Authentication)"
+                    return 0
+                done < <(jq -r '.bypass_auth_subnet_whitelist // "" | split("\n")[] | split(",")[]' <<<"$cur")
+            fi
             ok "qbittorrent: asks everyone for its login"; return 0
         fi
     elif jq -e --argjson w "$want" '. as $c | $w | to_entries | all(.value == $c[.key])' <<<"$cur" >/dev/null; then
@@ -68,6 +77,12 @@ qb_gate_trust() { # requires QB_COOKIE — the gate's bypass set (or taken away)
     else
         wfail "qbittorrent: took the change but reads back otherwise — check Tools → Options → WebUI → Authentication"
     fi
+}
+
+qbittorrent_gate_login() { # `disable authentik` (GATE_UNTRUSTED=1): its login back for everyone, proven — a failure counts in WIRE_FAILS
+    qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" \
+        || { wfail "qbittorrent: cannot sign in with the stored login to take its portal bypass away — $QB_LOGIN_BODY"; return 0; }
+    qb_gate_trust
 }
 
 qb_url() { local p; p=$(svc_hostport qbittorrent) || return 1; echo "http://127.0.0.1:$p"; }

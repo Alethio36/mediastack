@@ -831,6 +831,18 @@ cmd_disable() {
             [[ "$m" != external ]] || die "$a still trusts the portal and has no login of its own (the shared arr login: ./mediastack.sh set-credentials arr)
   authentik stays enabled, ports stay closed. Then retry: ./mediastack.sh disable authentik"
         done
+        # every other tool that drops its login behind the gate brings <svc>_gate_login
+        # (scripts/check-registries.sh holds each to it): its login back and proven
+        # while the portal still runs and the ports are still closed
+        local f
+        WIRE_FAILS=0; WIRE_DRY=0
+        for a in $(svc_enabled_managed); do
+            f="${a//-/_}_gate_login"; declare -F "$f" >/dev/null || continue
+            [[ "$(c_state "$(svc_cname "$a")")" == running ]] \
+                || die "$a is not running, so its own login cannot be put back before its port reopens — start it (./mediastack.sh up), then retry: ./mediastack.sh disable authentik"
+            GATE_UNTRUSTED=1 "$f"
+        done
+        (( ! WIRE_FAILS )) || die "$WIRE_FAILS tool(s) could not get their own login back (above) — authentik stays enabled, ports stay closed. Fix that, then retry: ./mediastack.sh disable authentik"
     fi
     env_set COMPOSE_PROFILES "$(env_get COMPOSE_PROFILES | tr ',' '\n' | grep -vx "$svc" | paste -sd, -)"
     reconcile_disabled

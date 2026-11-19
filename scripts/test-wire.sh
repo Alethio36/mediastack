@@ -351,6 +351,14 @@ QU='{"bypass_auth_subnet_whitelist_enabled":true,"bypass_auth_subnet_whitelist":
 [[ "$(qg 1 "$QD" 0 1)" == "fails=1 posts=1 en=false list= rp=false" ]] && grep -q 'reads back otherwise' "$T/qg-out" \
     || fail_ "accepted but not taken: a failure: $(cat "$T/qg-out")"; pass
 [[ "$(NOCOOKIE='' qg 1 "$QD" 0 0)" == "fails=0 posts=0 en=false list= rp=false" ]] || fail_ "no session: skipped, said so"; pass
+QC='{"bypass_auth_subnet_whitelist_enabled":true,"bypass_auth_subnet_whitelist":"192.168.1.0/24\n172.31.250.0/24","web_ui_reverse_proxy_enabled":false}'
+[[ "$(qg 0 "$QC" 0 0)" == "fails=1 posts=0 en=true list=192.168.1.0/24"$'\n'"172.31.250.0/24 rp=false" ]] && grep -q "its bypass list's '172.31.250.0/24' covers Traefik's address" "$T/qg-out" \
+    || fail_ "not trusted, someone's own list covering Traefik: a failure (anyone through Traefik would get in), nothing overwritten: $(cat "$T/qg-out")"; pass
+for c in "172.31.250.2 172.31.250.2/32 0" "172.31.250.2 172.31.250.0/24 0" "172.31.250.2 172.31.251.0/24 1" "172.31.250.2 0.0.0.0/0 0" \
+         "172.31.250.2 172.31.250.2 0" "172.31.250.2 fd00::/8 1" "172.31.250.2 10.0.0.0/33 1" "172.31.250.2 10.0.0.0/x 1" "10.255.255.255 10.0.0.0/8 0" "11.0.0.0 10.0.0.0/8 1"; do
+    read -r ip net want <<<"$c"; got=0; ipv4_in_cidr "$ip" "$net" || got=1
+    [[ "$got" == "$want" ]] || fail_ "ipv4_in_cidr $ip $net: want rc $want, got $got"; pass
+done
 awk '/^wire_qbit\(\)/,/^}/' services/qbittorrent/qbittorrent.sh | grep -A1 '^    qb_bind_tun0$' | grep '^    qb_gate_trust$' >/dev/null || fail_ "wire qbit: the gate's bypass after the tunnel bind"; pass
 
 # ---- reset-password with Wizarr: Wizarr's own single-use link (decided 14 Nov 2026, proven live first) ----

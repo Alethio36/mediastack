@@ -297,6 +297,9 @@ svc_bound_local() { # svc_bound_local <svc> -> 0 when nothing publishes its port
 }
 
 gate_trusted() { # gate_trusted <svc> -> 0 when <svc> may drop its own login: the portal runs, it is gated, and it is unreachable by IP
+    # GATE_UNTRUSTED=1: answer no while the portal still runs — `disable authentik`
+    # puts every login back before the ports reopen (each tool's <svc>_gate_login)
+    [[ -z "${GATE_UNTRUSTED:-}" ]] || return 1
     svc_enabled authentik && [[ "$(svc_label "$1" mediastack.auth)" == gate ]] && svc_bound_local "$1"
 }
 

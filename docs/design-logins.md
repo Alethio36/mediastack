@@ -28,8 +28,20 @@ back. Three things never change:
   login is dropped for people coming through the portal, not for everyone.
 - **An API stays protected.** A tool drops its login only where its API is
   then protected by a key, by the gate, or by the network.
-- **Both directions are `wire`'s.** Turning the portal off, or a tool's
-  gate off, brings its login back on the next `wire` — like `arr_login`.
+- **Both directions are `wire`'s — and `disable authentik` goes first.**
+  A tool's gate turned off brings its login back on the next `wire`, like
+  `arr_login`. Turning the portal off cannot wait for that: once authentik
+  is gone, Traefik's gate is a no-op and the ports reopen, so qBittorrent's
+  bypass would let anyone through Traefik in and Bazarr would ask nobody.
+  Each tool that drops its login brings `<svc>_gate_login`; `disable
+  authentik` runs every enabled one with `GATE_UNTRUSTED=1` (gate_trusted
+  answers no while the portal still runs), checks each, and stops — the
+  portal kept, the ports closed — if one fails or is not running. CI holds
+  every `gate_trusted <svc>` to its `<svc>_gate_login` (check-registries).
+  *Found 18 Nov 2026, before any of it reached `stable`: the loop named the
+  arrs and Prowlarr only, so LazyLibrarian (since Oct 2026), Bazarr and
+  qBittorrent were left out.* A bypass list someone set up themselves that
+  covers Traefik's address is a failure there too, never overwritten.
 
 ## Per tool
 
