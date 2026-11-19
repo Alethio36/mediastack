@@ -128,7 +128,11 @@ jobs:
       - name: every arr type has every per-type fact (scripts/test-arr-meta.sh)
         run: scripts/test-arr-meta.sh
       - name: argon2 (the panel's admin hash, as frontdoor-install makes it)
-        run: sudo apt-get install -y -qq argon2 >/dev/null
+        # the runner's package index can name a file its mirror no longer serves, and a mirror can 503:
+        # a fresh index, then retries (one 503 from security.ubuntu.com failed run #587)
+        run: |
+          sudo apt-get update -qq -o Acquire::Retries=5 >/dev/null
+          sudo apt-get install -y -qq -o Acquire::Retries=5 argon2 >/dev/null
       - name: the panel's wrapper passes every button and nothing else; its admin a stack login (scripts/test-frontdoor.sh)
         run: scripts/test-frontdoor.sh
       - name: app-to-app addresses follow the target's VPN side (scripts/test-addr.sh)
