@@ -16,7 +16,8 @@ its domain is now its route's name and Traefik sends `/` to `/admin/`; both
 proven live 18 Nov 2026, with the portal's removal and return. Transmission
 built (`mediastack.auth.inject`, `transmission_login_middleware`) and proven
 live 18 Nov 2026 (no prompt through the portal, 401 straight to it). Deluge's
-gap documented 19 Nov 2026.*
+gap documented 19 Nov 2026. WatchState built 19 Nov 2026 (`WS_TRUST_LOCAL`
+for Traefik's address), not yet proven live.*
 
 ## Why
 
@@ -67,7 +68,7 @@ back. Three things never change:
 | **Pi-hole** | an empty web password while trusted, rendered by the script (like `MEDIASTACK_GATE_BIND`): `PIHOLE_WEB_PASSWORD` set empty, absent otherwise, and compose's `${PIHOLE_WEB_PASSWORD-${PIHOLE_PASSWORD}}` — absent never means none. Decided from `.env` (`gate_planned`), since Pi-hole reads it only at its start | with no password neither its dashboard nor its API asks; both are then reachable only through the portal; DNS is untouched |
 | **Transmission** | Traefik adds its stored login (HTTP Basic) to requests that passed the gate; its own auth stays on. Its label `mediastack.auth.inject: "true"` chains `mediastack-gate@file,transmission-login@file` on its route; its `transmission_login_middleware` defines `transmission-login` in Traefik's generated file — its login while it runs and the portal guards it (`gate_planned`), a no-op otherwise, defined for the whole catalogue because routes are. CI holds the label and the hook together | its auth is one switch for the UI and the RPC — an address allowlist would have to name every caller, and Cleanuparr's address is not fixed. The gate drops a phone's device password before the header is set |
 | **Cleanuparr** | its own OIDC through the portal, *not* exclusive mode — **spike first** | with no linked identity, whoever the portal lets open it may sign in (the tier rule decides). Exclusive mode is refused: with the portal down, the way back is editing its database. Its "disable auth for local addresses" is refused too: it also drops the API key requirement for local callers |
-| **WatchState** | **spike first** | the stack does not manage its login today (a system user made on the first visit). If it cannot hand its sign-in to a proxy, it at least joins the stack's own logins: generated, in `credentials`, rotatable |
+| **WatchState** | its `WS_TRUST_LOCAL` (it signs in whoever comes from `WS_TRUST_LOCAL_NET`, as its own account), that network being Traefik's fixed address alone (`TRAEFIK_ADDRESS/32`; its default is every private range). Read at its start, so decided from `.env` (`gate_planned`): `watchstate_gate_sync` writes `WATCHSTATE_TRUST_TRAEFIK=true` while guarded, absent otherwise. `WS_TRUST_PROXY` stays off. `watchstate_gate_login` proves the trust gone by asking from inside Traefik's container, the one trusted address | the spike (its source, Nov 2026) found the trust affects only its sign-in: `has_user` hands the trusted caller a token for its one account, and its API still demands that token or its key. Its account stays its own (made on the first visit): the stack never needed it, and its username rule (`a-z 0-9 _`) would have narrowed the stack's one username for everyone |
 | **Deluge** | its login stays; a known gap, documented (README; docs/watchlist.md, "Deluge's own password behind the portal") | its web UI's password cannot be removed, and its sign-in is a session cookie, not HTTP Basic, so Traefik cannot add it as it does Transmission's; a longer session would only lengthen what a stolen cookie is worth |
 
 ## Costs
@@ -79,6 +80,11 @@ back. Three things never change:
   `set-credentials transmission` and `rotate-secrets` rewrite it there too.
 - **Pi-hole without a password** can be changed by anything running on the
   host itself (its port is the host's 127.0.0.1).
+- **WatchState's tokens outlive the trust.** A browser signed in through the
+  portal keeps its WatchState token (2 days by default) after `disable
+  authentik`. Its own settings
+  (its Env page, `/config/config/.env`) override compose's — `disable
+  authentik` catches one that keeps Traefik trusted.
 - **Phone apps** reach these tools only through the portal with a device
   password as HTTP Basic (decision 9); one with no custom-header setting
   cannot.

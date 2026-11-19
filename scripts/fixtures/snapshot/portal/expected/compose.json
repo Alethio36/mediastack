@@ -1667,6 +1667,8 @@
         "."
       ],
       "environment": {
+        "WS_TRUST_LOCAL": "true",
+        "WS_TRUST_LOCAL_NET": "172.31.250.2/32",
         "WS_TZ": "Etc/UTC"
       },
       "image": "ghcr.io/arabcoders/watchstate:latest",

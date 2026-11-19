@@ -24,6 +24,11 @@ services:
     user: "${WATCHSTATE_UID}:${MEDIA_GROUP_GID:-13000}"
     environment:
       - WS_TZ=${TZ:-Etc/UTC}
+      # its sign-in skipped for Traefik's address alone, while the portal
+      # guards it (watchstate_gate_sync, watchstate.sh beside this file); the
+      # host's port and every other container still meet its login
+      - WS_TRUST_LOCAL=${WATCHSTATE_TRUST_TRAEFIK:-false}
+      - WS_TRUST_LOCAL_NET=${TRAEFIK_ADDRESS:-172.31.250.2}/32
     ports:
       - "${MEDIASTACK_GATE_BIND:-}${WATCHSTATE_PORT:-8080}:8080"   # 127.0.0.1 while the portal guards it
     volumes:

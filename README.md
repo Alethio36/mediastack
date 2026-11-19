@@ -764,6 +764,11 @@ add each server with an API key, choose Import/Export per backend, and
 enable the scheduled tasks. Run exactly ONE instance per household —
 state lives here, and two instances means two divergent truths.
 
+Its first visit asks you to make its account (WatchState has one). Behind
+the portal it then asks for it no more; keep the password anyway — it is the
+way in once the portal is off, and `disable authentik` warns if no account
+was ever made.
+
 ## The portal and the gate (authentik)
 
 With authentik enabled, `portal.<domain>` is where your users join (by
@@ -858,7 +863,9 @@ the script still sign in), and Pi-hole's page and API ask no password (it
 reads it only at its start, so `up` applies the change; a Pi-hole phone app
 then needs a device password like the arrs'), and Transmission asks nothing
 of them either (Traefik adds its login past the gate; everything else still
-signs in). Deluge alone still asks its own password past the gate: its web
+signs in), and WatchState signs them in without its own login (it trusts
+Traefik's address alone, read at its start, so `up` applies the change; its
+account is still the way in without the portal). Deluge alone still asks its own password past the gate: its web
 UI cannot turn it off (`credentials` shows it; docs/watchlist.md). The rest
 follow tool by tool: docs/design-logins.md. The panel needs no login of its own past
 the gate (its own admin is only the way in without the portal): it trusts the portal's identity headers, on a network only the edge
