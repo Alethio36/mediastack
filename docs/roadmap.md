@@ -236,8 +236,10 @@ agreed first:
    fetch` (never a pull), "N commits behind your branch — run upgrade" in
    doctor and in the update run's ops notification. *Built 19 Nov 2026*
    (lib/lifecycle.sh `script_behind`, doctor's "mediastack itself", the
-   update run told once per new tip; `off` never asks; scripts/test-script-updates.sh),
-   not yet proven live. *Split 19 Nov 2026:* the
+   update run told once per new tip; `off` never asks; scripts/test-script-updates.sh).
+   **Step 7 done, proven live 19 Nov 2026** (anzac4): a checkout a commit
+   behind seen by doctor, run as root too, git's files left the owner's; the
+   update run's message reached ops; caught up, both say current. *Split 19 Nov 2026:* the
    `auto` half moved to step 14 — its nightly walk is the script's own
    auto-update, and pins, Renovate and auto-update ship together. Kept here,
    not later: the gap (images move nightly, the script only by hand) is open
