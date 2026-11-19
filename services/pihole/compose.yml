@@ -28,6 +28,9 @@ services:
       # the portal guards it and absent otherwise, when its own password applies
       # (pihole_gate_sync; docs/design-logins.md) — absent never means none
       - FTLCONF_webserver_api_password=${PIHOLE_WEB_PASSWORD-${PIHOLE_PASSWORD}}
+      # its dashboard answers only an address or this name (403 to any other
+      # Host — found live 18 Nov 2026, through the portal): the name of its route
+      - FTLCONF_webserver_domain=${PIHOLE_HOST:-pihole}.${STACK_DOMAIN:-unset.invalid}
     volumes:
       - ${CONFIG_ROOT}/pihole/config:/etc/pihole
       - ${CONFIG_ROOT}/pihole/dns:/etc/dnsmasq.d
@@ -42,7 +45,11 @@ services:
       traefik.http.routers.pihole.rule: "Host(`${PIHOLE_HOST:-pihole}.${STACK_DOMAIN:-unset.invalid}`)"
       traefik.http.routers.pihole.entrypoints: "websecure"
       traefik.http.routers.pihole.tls: "true"
-      traefik.http.routers.pihole.middlewares: "mediastack-gate@file"
+      traefik.http.routers.pihole.middlewares: "mediastack-gate@file,pihole-admin"
+      # its dashboard lives at /admin/; its own redirect from / names the address
+      # it was reached on (its container's), so Traefik sends / there instead
+      traefik.http.middlewares.pihole-admin.redirectregex.regex: "^(https?://[^/]+)/?$$"
+      traefik.http.middlewares.pihole-admin.redirectregex.replacement: "$${1}/admin/"
       traefik.http.services.pihole.loadbalancer.server.port: "80"
       mediastack.desc: "network-wide ad-blocking DNS"
       mediastack.vpn: "false"

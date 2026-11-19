@@ -87,4 +87,12 @@ grep -q 'DC up -d pihole' "$T/dc" || fail_ "not guarded: recreated to apply it: 
 grep -qF -- '- FTLCONF_webserver_api_password=${PIHOLE_WEB_PASSWORD-${PIHOLE_PASSWORD}}' services/pihole/compose.yml \
     || fail_ "compose: PIHOLE_WEB_PASSWORD with '-' (set empty: none; absent: PIHOLE_PASSWORD) — never ':-'"; pass
 
+# ---- through the portal: its name answered, / sent to /admin/ by Traefik (found live 18 Nov 2026) ----
+grep -qF -- '- FTLCONF_webserver_domain=${PIHOLE_HOST:-pihole}.${STACK_DOMAIN:-unset.invalid}' services/pihole/compose.yml \
+    && grep -qF 'traefik.http.routers.pihole.rule: "Host(`${PIHOLE_HOST:-pihole}.${STACK_DOMAIN:-unset.invalid}`)"' services/pihole/compose.yml \
+    || fail_ "compose: Pi-hole's webserver.domain is its route's own name (it refuses any other Host)"; pass
+grep -qF 'traefik.http.routers.pihole.middlewares: "mediastack-gate@file,pihole-admin"' services/pihole/compose.yml \
+    && grep -qF 'redirectregex.replacement: "$${1}/admin/"' services/pihole/compose.yml \
+    || fail_ "compose: the gate first, then Traefik's / to /admin/ (Pi-hole's own names its container's address)"; pass
+
 echo "OK pihole: $checks checks"

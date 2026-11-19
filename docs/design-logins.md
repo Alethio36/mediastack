@@ -9,7 +9,11 @@ now reaches it too, which it never did). qBittorrent built and
 proven live 18 Nov 2026 (`qb_gate_trust`; no login page through the portal,
 403 without a login straight to it, Sonarr's connection test passing). The
 portal's removal and return proven live the same day (below). Pi-hole built
-(`pihole_gate_sync`, `gate_planned`), not yet proven live.*
+(`pihole_gate_sync`, `gate_planned`): its API answered with no password on the
+host's port, live 18 Nov 2026; its dashboard through the portal was refused
+by Pi-hole itself (403 to any Host but an address or `webserver.domain`), so
+its domain is now its route's name and Traefik sends `/` to `/admin/` — that
+part not yet proven live.*
 
 ## Why
 

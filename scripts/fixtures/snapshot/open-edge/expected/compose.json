@@ -315,6 +315,7 @@
       ],
       "environment": {
         "FTLCONF_webserver_api_password": "",
+        "FTLCONF_webserver_domain": "pihole.media.example.com",
         "TZ": "Etc/UTC"
       },
       "image": "pihole/pihole:latest",
@@ -328,8 +329,10 @@
         "mediastack.subdomain": "pihole",
         "mediastack.vpn": "false",
         "traefik.enable": "true",
+        "traefik.http.middlewares.pihole-admin.redirectregex.regex": "^(https?://[^/]+)/?$$",
+        "traefik.http.middlewares.pihole-admin.redirectregex.replacement": "$${1}/admin/",
         "traefik.http.routers.pihole.entrypoints": "websecure",
-        "traefik.http.routers.pihole.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.pihole.middlewares": "mediastack-gate@file,pihole-admin",
         "traefik.http.routers.pihole.rule": "Host(`pihole.media.example.com`)",
         "traefik.http.routers.pihole.tls": "true",
         "traefik.http.services.pihole.loadbalancer.server.port": "80"
