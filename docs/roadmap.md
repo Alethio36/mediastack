@@ -228,6 +228,8 @@ agreed first:
    deleted from the portal: their Jellyfin account renamed
    `removed-<name>-<date>`, as Navidrome's (decided 18 Nov 2026).
 6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
+   Design agreed 18 Nov 2026: [design-logins.md](design-logins.md) (seven
+   tools, LazyLibrarian already done; Deluge a documented gap).
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions
    pending.
 8. **VPN depth** — provider by provider, from gluetun's wiki.
@@ -886,6 +888,19 @@ all built; what each still leaves open is noted below.
   container in health state *starting* also loses its route.
 
 ### Security & access
+- **A hand edit in authentik's screens tells ops** *(agreed 18 Nov 2026,
+  after the MVP)*. authentik re-applies the portal's blueprint only when its
+  file changes (2026.8: `check_blueprint_v1_file` compares
+  `last_applied_hash`), and `wire authentik` only when mediastack's version
+  is newer — so a change made by hand to anything the blueprint owns stays,
+  unreported. That is the owner's call, never undone: an authentik event
+  rule (like the Jellyfin lockout alert) on `model_updated`/`model_deleted`
+  of the blueprint's objects sends ops a **warning** — who changed what,
+  that mediastack keeps it, that a mediastack update touching that object
+  may set it back; a group changed by hand also says it ended nobody's
+  session. Spike first: whether authentik's events tell `wire`'s token
+  calls (akadmin's token) from someone using the screens; if not, `wire`
+  records its own run windows and the warning skips them.
 - **Traefik without the Docker socket** *(recommended, Oct 2026 — after the
   rollout, before a household relies on the Internet-facing edge)*. Traefik
   mounts `/var/run/docker.sock:ro` to read routes from labels; `:ro` covers
@@ -1049,6 +1064,7 @@ all built; what each still leaves open is noted below.
   Pi-hole: an empty password is safe now its port is local, but its phone apps
   would lose the API) — checked tool by tool.
   *Nov 9 2026: into the MVP* (plan step 6), after per-app access — a tool drops its own login only behind its own gate.
+  *Nov 18 2026:* designed — [design-logins.md](design-logins.md).
 - **Wizarr mode: Apprise and the panel** — *reviewed and closed (Nov 2026)*.
   The panel has its own login (`frontdoor-install` sets it without the portal):
   LAN-reachable behind it, like the arrs. Apprise has none — anyone on the LAN
