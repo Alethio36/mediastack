@@ -234,7 +234,10 @@ agreed first:
    fresh browser: no admin tool asks again (Cleanuparr: one click).
 7. **Updating mediastack itself, notify** — `SCRIPT_UPDATES=notify`: a `git
    fetch` (never a pull), "N commits behind your branch — run upgrade" in
-   doctor and in the update run's ops notification. *Split 19 Nov 2026:* the
+   doctor and in the update run's ops notification. *Built 19 Nov 2026*
+   (lib/lifecycle.sh `script_behind`, doctor's "mediastack itself", the
+   update run told once per new tip; `off` never asks; scripts/test-script-updates.sh),
+   not yet proven live. *Split 19 Nov 2026:* the
    `auto` half moved to step 14 — its nightly walk is the script's own
    auto-update, and pins, Renovate and auto-update ship together. Kept here,
    not later: the gap (images move nightly, the script only by hand) is open
