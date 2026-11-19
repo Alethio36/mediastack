@@ -100,6 +100,66 @@ cmd_upgrade() {
     MS_UPGRADE_FROM="$before" MAINT_LOCKED=1 exec "$SCRIPT_DIR/mediastack.sh" upgrade
 }
 
+# ---- is mediastack itself behind its branch? (SCRIPT_UPDATES; roadmap, MVP step 7) ----
+# The update run pulls images, never the script, so an install nobody
+# upgrades runs new app versions with old wiring (Jellyfin 12 broke wire that
+# way) and nothing said an upgrade existed. A fetch, never a pull: doctor
+# says how far behind, and the update run tells ops once per new tip.
+SCRIPT_FETCH_TIMEOUT=60   # seconds: a fetch that hangs must not hold the update run
+script_git() { # script_git ARGS... — git in this repo, as the repo's owner, never asking
+    # A root run (a timer, the panel) fetching as root would leave .git files
+    # the owner's own pull cannot write. No prompt either: an unattended run
+    # has nobody to type a passphrase, so a remote that wants one fails loud.
+    local own; own=$(stat -c %u "$SCRIPT_DIR")
+    local -a run=(env GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="ssh -o BatchMode=yes" timeout "$SCRIPT_FETCH_TIMEOUT" git -C "$SCRIPT_DIR")
+    if (( $(id -u) == 0 && own != 0 )); then
+        run=(setpriv --reuid="$own" --regid="$(stat -c %g "$SCRIPT_DIR")" --clear-groups
+             env HOME="$(getent passwd "$own" | cut -d: -f6)" "${run[@]:1}")
+    fi
+    "${run[@]}" "$@"
+}
+
+# shellcheck disable=SC2034  # SB_AHEAD is read by doctor (lib/doctor.sh)
+script_behind() { # -> SB_STATE current|behind|off|unknown, SB_UP (origin/stable), SB_N behind, SB_AHEAD, SB_TIP, SB_LOG (newest five), SB_WHY (unknown: why)
+    local remote branch out
+    SB_STATE=unknown SB_UP="" SB_N=0 SB_AHEAD=0 SB_TIP="" SB_LOG="" SB_WHY=""
+    [[ "$(env_get SCRIPT_UPDATES)" != off ]] || { SB_STATE=off; return 0; }
+    SB_UP=$(script_git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null) \
+        || { SB_WHY="this checkout follows no branch — set one: git -C $SCRIPT_DIR branch -u origin/stable"; return 0; }
+    remote=${SB_UP%%/*} branch=${SB_UP#*/}
+    out=$(script_git fetch --quiet "$remote" "$branch" 2>&1) \
+        || { SB_WHY="git fetch $remote $branch failed: $(oneline "$out") — an unattended run cannot type a key's passphrase; a public https remote needs none (git -C $SCRIPT_DIR remote -v)"; return 0; }
+    SB_N=$(script_git rev-list --count "HEAD..$SB_UP") && SB_AHEAD=$(script_git rev-list --count "$SB_UP..HEAD") \
+        && SB_TIP=$(script_git rev-parse --short "$SB_UP") \
+        || { SB_WHY="git could not compare this checkout with $SB_UP"; return 0; }
+    if (( SB_N == 0 )); then SB_STATE=current; return 0; fi
+    SB_STATE=behind
+    SB_LOG=$(script_git log --oneline --no-decorate -5 "HEAD..$SB_UP")
+}
+
+script_behind_tell_ops() { # the update run: ops hears of new mediastack commits once per new tip, and once of a check that cannot run
+    script_behind
+    case $SB_STATE in
+        behind)
+            if [[ "$(state_get script-behind-told)" == "$SB_TIP" ]]; then
+                info "mediastack is $SB_N commit(s) behind $SB_UP — ops was told of $SB_TIP already"
+            else
+                local more=""; (( SB_N > 5 )) && more=$'\n'"…and $(( SB_N - 5 )) more"
+                notify ops "Mediastack: an upgrade is available" "$SB_N new commit(s) on \`$SB_UP\`:"$'\n'"$(sed 's/^/`/; s/$/`/' <<<"$SB_LOG")$more"$'\n'"Upgrade on the host: \`./mediastack.sh upgrade\`" info
+                state_set script-behind-told "$SB_TIP"
+                info "mediastack is $SB_N commit(s) behind $SB_UP — ops told (upgrade: ./mediastack.sh upgrade)"
+            fi
+            state_del script-check-failed ;;
+        current) ok "mediastack is current with $SB_UP"; state_del script-behind-told; state_del script-check-failed ;;
+        unknown)
+            warn "mediastack could not check its branch: $SB_WHY"
+            [[ -n "$(state_get script-check-failed)" ]] \
+                || notify ops "Mediastack cannot check for upgrades" "$SB_WHY" warning
+            state_set script-check-failed 1 ;;
+        off) ;;
+    esac
+}
+
 upgrade_finish() { # upgrade_finish <commit before the pull> — run by the pulled script
     local before="$1" changed pending
     load_env                 # schema migrations: this code knows the new ones

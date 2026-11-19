@@ -159,6 +159,8 @@ jobs:
         run: scripts/test-layout.sh
       - name: the arr recycle bin's contract (scripts/test-recycle.sh)
         run: scripts/test-recycle.sh
+      - name: doctor and the update run say when mediastack itself is behind its branch — a fetch, never a pull (scripts/test-script-updates.sh)
+        run: scripts/test-script-updates.sh
       - name: no literal backslash-n in notification bodies
         run: |
           # a double-quoted \n is two characters to bash: Discord shows '\n'.

@@ -211,6 +211,16 @@ hands-on step — `wire` walks you through it with the exact values to paste.
 first (for testing it: `git checkout -b unstable origin/unstable`, then
 `upgrade`); `legacy` is the old project, kept frozen.
 
+**Knowing an upgrade exists.** The update run pulls images, never mediastack
+itself, so the script moves only when you run `upgrade`. To say when to,
+`doctor` shows how far your checkout is behind its branch, and the update run
+tells ops once per new commit there, with the newest subjects — a `git fetch`
+as the repo's owner, never a pull (`SCRIPT_UPDATES=notify`, the default;
+`off` never asks). A remote that needs your SSH key's passphrase cannot be
+fetched unattended: the check says so once, and a public `https://` remote
+needs none. Upgrading on its own comes with versions from the repo
+(docs/roadmap.md).
+
 ## What runs (à la carte)
 
 Pick any combination — the wizard walks you through it, and
@@ -278,7 +288,7 @@ Maintain
 | `backup [--note TEXT]` / `backup verify [ts]` / `backup list [svc]` | restore point now (a note says why; the backup timer runs `backup --auto`, which skips after an update's restore point under 6 hours old, waits for a running update, and waits while someone is watching in Jellyfin) / verify checksums + archives / every point, newest first, with its kind (manual, scheduled, update, update-scoped, migrate) and note — given a service, its version in each and which one is running |
 | `restore --service <svc>\|--all [--from TS]` | restore configs + exact image |
 | `rollback <svc> [--from TS] [--yes]` / `unpin <svc>` | return a service to the image it ran before — the newest restore point holding a different image; `--from` picks any point (`backup list <svc>` shows them, and which one rollback takes). Its config goes back with the image, so its data since then is replaced (the current folder is kept); it shows the plan and asks first. Pins it there / release the pin (the next `update` applies it). A shard (authentik's containers) goes back and is released as one. Going back: `rollback`; moving to a chosen version: `update <svc> --to <tag>` |
-| `upgrade` | mediastack itself: git pull + `.env` migration, run by the freshly pulled code; then says whether `up` has anything to apply, naming the services it would change (Compose's own dry run of `up` — a comment edit never triggers it). Images stay put — that's `update` |
+| `upgrade` | mediastack itself: git pull + `.env` migration, run by the freshly pulled code; then says whether `up` has anything to apply, naming the services it would change (Compose's own dry run of `up` — a comment edit never triggers it). Images stay put — that's `update`. `doctor` and the update run say when there is one to run ("Knowing an upgrade exists") |
 
 Connect
 | command | what it does |

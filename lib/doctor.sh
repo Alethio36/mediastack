@@ -430,7 +430,20 @@ _doctor_runtime_audit() {
 
 # doctor runs these in order; adding a section = append here + define
 # _doctor_<name>. Mirrors WIRE_ROLES: one registry, no second list to sync.
-DOCTOR_SECTIONS=(env environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit accounts notify audit recycle runs footprint)
+_doctor_upstream() { # mediastack itself against its branch (SCRIPT_UPDATES): behind is a warning — the stack runs; ops hears it from the update run
+    hr "doctor: mediastack itself"
+    script_behind
+    case $SB_STATE in
+        off)     info "not checked against its branch (SCRIPT_UPDATES=off)" ;;
+        current) ok "mediastack is current with $SB_UP ($SB_TIP)" ;;
+        behind)  warn "mediastack is $SB_N commit(s) behind $SB_UP — upgrade: ./mediastack.sh upgrade"
+                 sed 's/^/      /' <<<"$SB_LOG"; (( SB_N <= 5 )) || echo "      …and $(( SB_N - 5 )) more" ;;
+        unknown) warn "mediastack could not check its branch: $SB_WHY" ;;
+    esac
+    (( SB_AHEAD == 0 )) || warn "this checkout has $SB_AHEAD commit(s) that $SB_UP does not — upgrade cannot fast-forward past them (git -C $SCRIPT_DIR log $SB_UP..HEAD)"
+}
+
+DOCTOR_SECTIONS=(env environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit accounts notify audit recycle runs footprint upstream)
 
 _doctor_runs() { # runs that never finished (lib/runs.sh): a dropped SSH session, a reboot, a kill — what they did may be half done
     hr "doctor: runs"

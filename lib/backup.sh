@@ -900,6 +900,9 @@ cmd_update() {
             maint_lock update 0
         fi
     fi
+    # the script is never pulled here, only asked about: ops hears of an upgrade
+    # first, whatever the images do next (a refused or deferred run included)
+    if (( auto && ! dry )); then script_behind_tell_ops; fi
     # a proven leak holds the VPN group: nothing is updated until up re-proves gluetun
     if (( ! dry )); then leak_gate_refuse "update"; fi
     # session deferral (auto runs only)
