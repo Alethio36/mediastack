@@ -1192,7 +1192,7 @@
         "."
       ],
       "environment": {
-        "FTLCONF_webserver_api_password": "fixture-secret-pihole",
+        "FTLCONF_webserver_api_password": "",
         "TZ": "Etc/UTC"
       },
       "image": "pihole/pihole:latest",

@@ -24,6 +24,8 @@ jobs:
         run: scripts/check-registries.sh
       - name: the registry check catches what it is for — mediastack.people included (scripts/test-registries.sh)
         run: scripts/test-registries.sh
+      - name: Pi-hole asks no password behind the portal, and gets it back first when the portal goes (scripts/test-pihole.sh)
+        run: scripts/test-pihole.sh
       - name: every registry verb is documented in README
         run: |
           rc=0

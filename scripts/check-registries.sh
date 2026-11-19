@@ -68,8 +68,8 @@ done
 # disable authentik: a tool that drops its login behind the gate (gate_trusted
 # <svc>, by name) brings <svc>_gate_login, which puts it back before the ports
 # reopen — the arrs and Prowlarr (arr_login) have their own loop there
-for s in $(grep -hoE 'gate_trusted [a-z0-9-]+' services/*/*.sh | awk '{print $2}' | sort -u); do
-    want_one "gate_trusted $s" "${s//-/_}_gate_login"
+for s in $(find services -name '*.sh' ! -path 'services/authentik/*' -exec grep -hoE 'gate_(trusted|planned) [a-z0-9-]+' {} + | awk '{print $2}' | sort -u); do   # authentik's folder defines them
+    want_one "gate_trusted/planned $s" "${s//-/_}_gate_login"
 done
 # doctor: DOCTOR_APPS -> <app>_doctor
 for a in $(list lib/doctor.sh 's/^DOCTOR_APPS=(\(.*\))$/\1/p'); do want_one DOCTOR_APPS "${a}_doctor"; done

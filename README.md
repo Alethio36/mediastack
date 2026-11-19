@@ -854,7 +854,10 @@ sets once in Navidrome's settings, taken back when their portal account goes
 LazyLibrarian ask for no login of their own either — without the portal they
 take the shared arr login again — and qBittorrent asks none of the people the
 portal let in (it skips its login for Traefik's address alone; the arrs and
-the script still sign in). The rest follow tool by tool: docs/design-logins.md. The panel needs no login of its own past
+the script still sign in), and Pi-hole's page and API ask no password (it
+reads it only at its start, so `up` applies the change; a Pi-hole phone app
+then needs a device password like the arrs'). The rest follow tool by tool:
+docs/design-logins.md. The panel needs no login of its own past
 the gate (its own admin is only the way in without the portal): it trusts the portal's identity headers, on a network only the edge
 joins (`mediastack-panel`; docs/frontdoor.md). Every route past a gate strips the portal's
 identity headers, and Navidrome trusts only Traefik's address — Traefik keeps

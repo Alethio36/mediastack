@@ -281,10 +281,22 @@ gate_bind_sync() { # MEDIASTACK_GATE_BIND: where a gated tool's host port listen
     [[ "$(env_get MEDIASTACK_GATE_TRUST)" == "$trust" ]] || env_set MEDIASTACK_GATE_TRUST "$trust"
     local want=""
     svc_enabled authentik && want="127.0.0.1:"   # addr-ok: host bind, not app-to-app
-    [[ "$(env_get MEDIASTACK_GATE_BIND)" == "$want" ]] && return 0
-    env_set MEDIASTACK_GATE_BIND "$want"
-    if [[ -n "$want" ]]; then info "gated tools' host ports now listen on 127.0.0.1 only — reach them through the portal"   # addr-ok: host bind, not app-to-app
-    else info "gated tools' host ports reopen to the LAN (no portal to guard them)"; fi
+    if [[ "$(env_get MEDIASTACK_GATE_BIND)" != "$want" ]]; then
+        env_set MEDIASTACK_GATE_BIND "$want"
+        if [[ -n "$want" ]]; then info "gated tools' host ports now listen on 127.0.0.1 only — reach them through the portal"   # addr-ok: host bind, not app-to-app
+        else info "gated tools' host ports reopen to the LAN (no portal to guard them)"; fi
+    fi
+    # a tool that reads its login only at its start sets it here, before `up` (its <svc>_gate_sync)
+    local s f
+    for s in $(svc_enabled_managed); do
+        f="${s//-/_}_gate_sync"
+        if declare -F "$f" >/dev/null; then "$f"; fi
+    done
+}
+
+gate_planned() { # gate_planned <svc> -> 0 when the portal guards <svc> as .env stands — for a login read only at a container's start, decided before `up` (gate_trusted reads the live container)
+    [[ -z "${GATE_UNTRUSTED:-}" ]] || return 1
+    svc_enabled authentik && [[ "$(svc_label "$1" mediastack.auth)" == gate && "$(env_get MEDIASTACK_GATE_BIND)" == "127.0.0.1:" ]]   # addr-ok: host bind, not app-to-app
 }
 
 svc_bound_local() { # svc_bound_local <svc> -> 0 when nothing publishes its port beyond 127.0.0.1 (checked on the live container) (addr-ok: host bind, not app-to-app)

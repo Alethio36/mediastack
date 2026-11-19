@@ -23,8 +23,11 @@ services:
       - "${MEDIASTACK_GATE_BIND:-}${PIHOLE_WEB_PORT:-83}:80/tcp"   # 127.0.0.1 while the portal guards it (DNS stays on the LAN)
     environment:
       - TZ=${TZ:-Etc/UTC}
-      # Pi-hole v6 variable (v5's WEBPASSWORD is ignored by v6 images).
-      - FTLCONF_webserver_api_password=${PIHOLE_PASSWORD}
+      # Pi-hole v6 variable (v5's WEBPASSWORD is ignored by v6 images). Read
+      # only at its start: PIHOLE_WEB_PASSWORD is set empty (no password) while
+      # the portal guards it and absent otherwise, when its own password applies
+      # (pihole_gate_sync; docs/design-logins.md) — absent never means none
+      - FTLCONF_webserver_api_password=${PIHOLE_WEB_PASSWORD-${PIHOLE_PASSWORD}}
     volumes:
       - ${CONFIG_ROOT}/pihole/config:/etc/pihole
       - ${CONFIG_ROOT}/pihole/dns:/etc/dnsmasq.d

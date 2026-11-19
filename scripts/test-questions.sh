@@ -252,7 +252,7 @@ grep -q 'STACK_LOGINS=each types every one — run: ./mediastack.sh configure' "
 grep -q '^ *logins_fill' <<<"$(awk '/^provision\(\)/,/^}/' mediastack.sh)" || fail_ "provision (configure, up, enable) fills a login enabled since configure"; pass
 # every password the schema knows is a stack login some service declares — a
 # missing hook would drop its login silently — or one of these, which are not
-NOT_LOGINS="AUTHENTIK_DB_PASSWORD AUTHENTIK_ADMIN_PASSWORD AUTHENTIK_LDAP_BIND_PASSWORD SMTP_PASSWORD"   # a database's, the portal's own admin, its LDAP bind, the mail server's
+NOT_LOGINS="AUTHENTIK_DB_PASSWORD AUTHENTIK_ADMIN_PASSWORD AUTHENTIK_LDAP_BIND_PASSWORD SMTP_PASSWORD PIHOLE_WEB_PASSWORD"   # a database's, the portal's own admin, its LDAP bind, the mail server's, Pi-hole's none-behind-the-portal (only ever empty)
 declared=$(for f in $(declare -F | awk '{print $3}' | grep '_logins$'); do "$f"; done | cut -f3)
 bad=""
 for k in $(awk -F'\t' '!/^#/ && $4 != "answers" { print $1 }' services/*/env.tsv lib/env.schema.tsv | grep -E '_PASSWORD$'); do   # .env's: an answers-file key is no login
