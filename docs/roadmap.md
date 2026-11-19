@@ -232,8 +232,13 @@ agreed first:
    LazyLibrarian already done; Deluge a documented gap). Proven live with the
    portal's removal and return, then every portal card walked as an admin in a
    fresh browser: no admin tool asks again (Cleanuparr: one click).
-7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions
-   pending.
+7. **Updating mediastack itself, notify** — `SCRIPT_UPDATES=notify`: a `git
+   fetch` (never a pull), "N commits behind your branch — run upgrade" in
+   doctor and in the update run's ops notification. *Split 19 Nov 2026:* the
+   `auto` half moved to step 14 — its nightly walk is the script's own
+   auto-update, and pins, Renovate and auto-update ship together. Kept here,
+   not later: the gap (images move nightly, the script only by hand) is open
+   now on every box, and step 13's soak then tests it.
 8. **VPN depth** — provider by provider, from gluetun's wiki.
 9. **The household's look** — notifications, then branding.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
@@ -306,7 +311,10 @@ agreed first:
     authentik`, Kavita and Audiobookshelf restores; the household's own preset
     from an answers file.
 14. **Versions from the repo** — the final step, locking in a working
-    configuration, with Renovate's report-only trial; see its section.
+    configuration, with Renovate's report-only trial; see its section. With
+    it `SCRIPT_UPDATES=auto` (moved from step 7, 19 Nov 2026): the switch on
+    the nightly walk, which already carries the restore point, the health
+    gate and the hand-over to each release's script.
 15. **`migrate`** — the first household.
 
 Until step 14, updates stay "update, then fix": a broken install beats one
@@ -538,9 +546,12 @@ Docker's restart the stack — so only Docker's join its update.
   wait for versions from the repo (above), where images move only with the
   script and the nightly walk is opted out of with `UPDATE_CHANNEL=manual`.
   *Decided (Nov 9 2026):* built in and optional — `SCRIPT_UPDATES=notify|auto`
-  (default notify; MVP plan step 7), guarded by a restore point first, a health
-  check after with rollback, a minimum version per release, fast-forward only.
-  The full answer is versions from the repo (the plan's final step).
+  (default notify), guarded by a restore point first, a health check after
+  with rollback, a minimum version per release, fast-forward only. The full
+  answer is versions from the repo (the plan's final step).
+  *Split (19 Nov 2026):* `notify` is MVP step 7; `auto` ships with step 14 as
+  the switch on its release walk — built once, with the pins, rather than
+  twice (a script-only auto-update the walk would replace).
 - **Ship Pinchflat?** YouTube archiving, rated ship-worthy; brings two
   house-rule exceptions (no VPN; a self-updating yt-dlp).
   Evaluation: [watchlist.md](watchlist.md#pinchflat--pick).
