@@ -1296,7 +1296,7 @@ ak_app_gate() { # ak_app_gate ALL SVC SECTION GROUP-PK... — the app's own gate
     local all="$1" s="$2" section="$3"; shift 3
     ak_app_group "$s" || return 0
     authentik_app_provider "$s" || return 0
-    ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "$section" "$APP_PK" "$@" "$APP_GROUP"
+    ak_card "$all" "mediastack-app-$s" "$s" "$(svc_card_url "$s")" "$(svc_label "$s" mediastack.desc)" "$section" "$APP_PK" "$@" "$APP_GROUP"
     if (( ! WIRE_DRY )) && ! ak_card_bound "mediastack-app-$s" "$@" "$APP_GROUP"; then
         wfail "authentik: $s's card does not carry its rule — its gate stays off the outpost (the admin gate keeps deciding)"; return 0
     fi
@@ -1416,14 +1416,14 @@ wire_authentik_cards() { # every gated app its own gate and card; household apps
         # by that tier, with that app's own group; the rest — the household
         r=$(svc_access_of "$s")
         if [[ -z "$r" ]]; then
-            ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Media" "$prov" "$mu" "$adm"
+            ak_card "$all" "mediastack-app-$s" "$s" "$(svc_card_url "$s")" "$(svc_label "$s" mediastack.desc)" "Media" "$prov" "$mu" "$adm"
             continue
         fi
         ak_app_group "$r" || continue
         if [[ "$(svc_tier "$r")" == frontend ]]; then
-            ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Media" "$prov" "$mu" "$adm" "$APP_GROUP"
+            ak_card "$all" "mediastack-app-$s" "$s" "$(svc_card_url "$s")" "$(svc_label "$s" mediastack.desc)" "Media" "$prov" "$mu" "$adm" "$APP_GROUP"
         else
-            ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url "$s")" "$(svc_label "$s" mediastack.desc)" "Admin tools" "$prov" "$adm" "$APP_GROUP"
+            ak_card "$all" "mediastack-app-$s" "$s" "$(svc_card_url "$s")" "$(svc_label "$s" mediastack.desc)" "Admin tools" "$prov" "$adm" "$APP_GROUP"
             ak_card_unbind "mediastack-app-$s" "$mu"
         fi
     done

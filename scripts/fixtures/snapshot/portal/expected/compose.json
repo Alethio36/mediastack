@@ -866,6 +866,7 @@
       "labels": {
         "com.centurylinklabs.watchtower.enable": "false",
         "mediastack.auth": "native",
+        "mediastack.card.path": "/oidc/login",
         "mediastack.config": "true",
         "mediastack.desc": "reading server for ebooks, comics and manga",
         "mediastack.errors": "\\[(Error|Fatal)\\]",

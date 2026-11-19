@@ -51,6 +51,9 @@ services:
       mediastack.config: "true"
       mediastack.user_facing: "true"
       mediastack.subdomain: "books"
+      # its card starts the portal sign-in itself: its page would first show
+      # "unauthorized" and its login page before its own auto-login got there
+      mediastack.card.path: "/oidc/login"
       mediastack.auth: "native"   # handles its own login
       mediastack.tier: "frontend"   # who may open it (access tier kavita): its card (its OIDC application) and its accounts follow the rule
       mediastack.people: "follow"   # its accounts follow the portal (kavita_people_follow, people-sync)

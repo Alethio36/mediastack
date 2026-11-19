@@ -56,5 +56,8 @@ broken "a route adds a login no hook defines" \
 broken "a hook no route uses" \
     "sed -i '/mediastack.auth.inject/d' services/transmission/compose.yml" \
     "transmission_login_middleware() exists, but transmission has no mediastack.auth.inject"
+broken "a card path that does not follow the address" \
+    "sed -i 's|mediastack.card.path: \"/oidc/login\"|mediastack.card.path: \"oidc/login\"|' services/kavita/compose.yml" \
+    "mediastack.card.path in services/kavita/compose.yml is \"oidc/login\": it follows the app's address, so it starts with /"
 
 echo "OK registries: $checks checks"

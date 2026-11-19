@@ -2097,4 +2097,15 @@ GA='{"results":[{"slug":"mediastack-app-sonarr","pk":"a-s","provider":50},{"slug
     || fail_ "doctor: our card with a gate and no binding (open to everyone signed in) fails: $(gd '[6,50,42]' "$GA" a-s)"; pass
 grep -q 'authentik_app_gates_doctor' <(awk '/^_doctor_accounts\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "doctor runs the per-app gate check"; pass
 
+# ---- a card opens at its address, then its mediastack.card.path ----
+( svc_url() { echo "https://books.x"; }; svc_label() { [[ $2 == mediastack.card.path ]] && echo /oidc/login; return 0; }
+  [[ "$(svc_card_url kavita)" == "https://books.x/oidc/login" ]] ) || fail_ "card path: after the address"; pass
+( svc_url() { echo "https://books.x"; }; svc_label() { return 0; }
+  [[ "$(svc_card_url kavita)" == "https://books.x" ]] ) || fail_ "no card path: the bare address"; pass
+[[ "$(grep -c 'ak_card "$all" "mediastack-app-$s" "$s" "$(svc_card_url "$s")"' services/authentik/authentik.sh)" == 4 ]] \
+    && ! grep -q 'ak_card "$all" "mediastack-app-$s" "$s" "$(svc_url' services/authentik/authentik.sh \
+    || fail_ "every card (gate, household, under another app's rule) opens at svc_card_url"; pass
+grep -qx '      mediastack.card.path: "/oidc/login"' services/kavita/compose.yml \
+    || fail_ "Kavita's card starts its sign-in (its page would show unauthorized and its login page first)"; pass
+
 echo "OK authentik: $checks checks"

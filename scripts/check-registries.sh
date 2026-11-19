@@ -79,6 +79,12 @@ for f in services/*/compose.yml; do
     if grep -qE '^\s*mediastack\.auth\.inject: "true"' "$f"; then want_one "mediastack.auth.inject $s" "${s//-/_}_login_middleware"
     elif grep -qE "^${s//-/_}_login_middleware\(\)" services/*/*.sh; then echo "FAIL ${s//-/_}_login_middleware() exists, but $s has no mediastack.auth.inject: \"true\" — no route would use it"; rc=1; fi
 done
+# a portal card's path (mediastack.card.path) follows the app's address, so it
+# starts with "/" (svc_card_url)
+for f in services/*/compose.yml; do
+    p=$(sed -n 's/^[[:space:]]*mediastack\.card\.path: "\(.*\)".*/\1/p' "$f")
+    [[ -z "$p" || "$p" == /* ]] || { echo "FAIL mediastack.card.path in $f is \"$p\": it follows the app's address, so it starts with /"; rc=1; }
+done
 # doctor: DOCTOR_APPS -> <app>_doctor
 for a in $(list lib/doctor.sh 's/^DOCTOR_APPS=(\(.*\))$/\1/p'); do want_one DOCTOR_APPS "${a}_doctor"; done
 # by name: a lib or the entrypoint calling <service>_<anything> (a service's

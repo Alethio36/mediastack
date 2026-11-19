@@ -703,7 +703,9 @@ app's UI.
   `${DATA_ROOT}/media/audiobooks` and `.../podcasts`.
 * **Kavita** (`https://books.<your-domain>`) — ebooks, comics and manga
   in one modern reader with OPDS and Kobo/KOReader sync. Reads
-  `.../media/books`, `.../comics`, `.../manga`.
+  `.../media/books`, `.../comics`, `.../manga`. Its portal card opens its
+  sign-in through the portal (`/oidc/login`) and lands you inside; its bare
+  address works too, after an "unauthorized" notice and its login page.
 
 ### Acquisition (LazyLibrarian)
 

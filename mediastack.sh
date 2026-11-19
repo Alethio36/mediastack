@@ -380,6 +380,9 @@ svc_url() { # where a browser reaches the service, best effort
         && echo "internal :${port}" \
         || echo "http://$(hostname):${port}"
 }
+svc_card_url() { # svc_card_url SVC -> where its portal card opens: its address, then its mediastack.card.path — for an app whose own page starts its sign-in only after a detour
+    echo "$(svc_url "$1")$(svc_label "$1" mediastack.card.path)"
+}
 svc_deps()     { # direct dependencies: depends_on + shared network namespace
     render
     # a shard member is never a dependency of its own: it comes with its
