@@ -12,6 +12,7 @@ bazarr_key() { # bazarr_key -> api key from its config.yaml ("" while initialisi
 # takes the shared arr login as its form login. Its API asks for the API key
 # whatever the login (Bazarr's api/utils.py authenticate), so dropping the
 # login never opens the API.
+# shellcheck disable=SC2120  # force arrives from sc_rotate_arr (services/_arr/arr.sh), another file
 bazarr_login() { # bazarr_login [force] — Bazarr's own login follows gate_trusted, read back; force: push the stored password even when the name already matches (set-credentials)
     local key url cur u p want out code form=()
     key=$(bazarr_key); url=$(arr_url bazarr)
