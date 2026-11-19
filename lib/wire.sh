@@ -21,7 +21,8 @@ WIRE_FAILS=0
 # wire_<role> function in its service's folder (services/<name>/<name>.sh);
 # CI checks every role has exactly one.
 # lazylibrarian before prowlarr: prowlarr registers it with the key wire switches on
-WIRE_ROLES=(qbit deluge transmission arr lazylibrarian prowlarr bazarr apprise cleanuparr authentik jellyfin seerr wizarr audiobookshelf kavita navidrome)
+# authentik before cleanuparr: its sign-in through the portal is proven against the portal's applied setup
+WIRE_ROLES=(qbit deluge transmission arr lazylibrarian prowlarr bazarr apprise authentik cleanuparr jellyfin seerr wizarr audiobookshelf kavita navidrome)
 # roles that write without observing (one big settings blob / blind writeCFG):
 # their dry-run always says "would", so --verify cannot read drift from them
 WIRE_BLIND=(bazarr lazylibrarian seerr)

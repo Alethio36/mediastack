@@ -17,7 +17,8 @@ proven live 18 Nov 2026, with the portal's removal and return. Transmission
 built (`mediastack.auth.inject`, `transmission_login_middleware`) and proven
 live 18 Nov 2026 (no prompt through the portal, 401 straight to it). Deluge's
 gap documented 19 Nov 2026. WatchState built 19 Nov 2026 (`WS_TRUST_LOCAL`
-for Traefik's address), not yet proven live.*
+for Traefik's address) and Cleanuparr (its OIDC through the portal), neither
+yet proven live.*
 
 ## Why
 
@@ -67,7 +68,7 @@ back. Three things never change:
 | **qBittorrent** | "bypass authentication for clients in whitelisted subnets", the subnet being Traefik's fixed address (`TRAEFIK_ADDRESS/32`); reverse-proxy support stays off | the stack's callers keep logging in; with reverse-proxy support on, qBittorrent would take the client's address from Traefik's forwarded header and see the LAN instead |
 | **Pi-hole** | an empty web password while trusted, rendered by the script (like `MEDIASTACK_GATE_BIND`): `PIHOLE_WEB_PASSWORD` set empty, absent otherwise, and compose's `${PIHOLE_WEB_PASSWORD-${PIHOLE_PASSWORD}}` — absent never means none. Decided from `.env` (`gate_planned`), since Pi-hole reads it only at its start | with no password neither its dashboard nor its API asks; both are then reachable only through the portal; DNS is untouched |
 | **Transmission** | Traefik adds its stored login (HTTP Basic) to requests that passed the gate; its own auth stays on. Its label `mediastack.auth.inject: "true"` chains `mediastack-gate@file,transmission-login@file` on its route; its `transmission_login_middleware` defines `transmission-login` in Traefik's generated file — its login while it runs and the portal guards it (`gate_planned`), a no-op otherwise, defined for the whole catalogue because routes are. CI holds the label and the hook together | its auth is one switch for the UI and the RPC — an address allowlist would have to name every caller, and Cleanuparr's address is not fixed. The gate drops a phone's device password before the header is set |
-| **Cleanuparr** | its own OIDC through the portal, *not* exclusive mode — **spike first** | with no linked identity, whoever the portal lets open it may sign in (the tier rule decides). Exclusive mode is refused: with the portal down, the way back is editing its database. Its "disable auth for local addresses" is refused too: it also drops the API key requirement for local callers |
+| **Cleanuparr** | its own OIDC through the portal, *not* exclusive mode: a button on its login page, its password kept. The blueprint's provider `mediastack-oidc-cleanuparr` and its own application `mediastack-signin-cleanuparr` (on no dashboard, `blank://blank`; its card stays the gate's), `admin` bound there and the rest of its card's rule mirrored by `wire authentik` (`ak_signin_rule`, for any gated tool that has such an application). `cup_oidc` writes it (redirect address set: behind Traefik it would guess `http://`), remembers the secret by its digest, and proves it by asking for the button's address; another provider set up by hand is left alone. With no portal, and first thing in `disable authentik` (`cleanuparr_gate_login`), the button and exclusive mode go. `wire` runs authentik before cleanuparr | the spike (its source, Nov 2026): with no linked identity, whoever the portal lets open it signs in as its one account (the tier rule decides, twice: the gate and the application). It has no auto-redirect, so a click remains; its refresh token lasts 7 days. Exclusive mode is refused: with the portal down, the way back is editing its database. Its "disable auth for local addresses" is refused too: it trusts every private range whatever its trusted networks say, and drops the API key requirement for them |
 | **WatchState** | its `WS_TRUST_LOCAL` (it signs in whoever comes from `WS_TRUST_LOCAL_NET`, as its own account), that network being Traefik's fixed address alone (`TRAEFIK_ADDRESS/32`; its default is every private range). Read at its start, so decided from `.env` (`gate_planned`): `watchstate_gate_sync` writes `WATCHSTATE_TRUST_TRAEFIK=true` while guarded, absent otherwise. `WS_TRUST_PROXY` stays off. `watchstate_gate_login` proves the trust gone by asking from inside Traefik's container, the one trusted address | the spike (its source, Nov 2026) found the trust affects only its sign-in: `has_user` hands the trusted caller a token for its one account, and its API still demands that token or its key. Its account stays its own (made on the first visit): the stack never needed it, and its username rule (`a-z 0-9 _`) would have narrowed the stack's one username for everyone |
 | **Deluge** | its login stays; a known gap, documented (README; docs/watchlist.md, "Deluge's own password behind the portal") | its web UI's password cannot be removed, and its sign-in is a session cookie, not HTTP Basic, so Traefik cannot add it as it does Transmission's; a longer session would only lengthen what a stolen cookie is worth |
 
@@ -85,6 +86,9 @@ back. Three things never change:
   authentik`. Its own settings
   (its Env page, `/config/config/.env`) override compose's — `disable
   authentik` catches one that keeps Traefik trusted.
+- **Cleanuparr still takes a click**, and its sign-in is one more client
+  secret the portal holds (`AUTHENTIK_CLEANUPARR_CLIENT_SECRET`, rotated with
+  authentik's settings). Its own password remains, known to the script.
 - **Phone apps** reach these tools only through the portal with a device
   password as HTTP Basic (decision 9); one with no custom-header setting
   cannot.

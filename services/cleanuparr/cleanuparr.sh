@@ -86,6 +86,7 @@ wire_cleanuparr() {
         [[ "$(env_get CLEANUPARR_API_KEY)" == "$akey" ]] || env_set CLEANUPARR_API_KEY "$akey"
     fi
     local KH="X-Api-Key: $akey"
+    cup_oidc "$KH"
 
     # the download client (lib/roles.sh: DOWNLOAD_CLIENT, else the first
     # enabled), create-if-missing by name; the others' entries switched off
@@ -207,6 +208,69 @@ wire_cleanuparr() {
                 || wfail "hub connection rejected [HTTP $(cup_code)]: $(head -c200 <<<"$out")"
         fi
     fi
+}
+
+# ---- sign-in through the portal (docs/design-logins.md) ----
+# Its own OIDC, never exclusive: its login page gets a button to the portal,
+# its password stays (the way in with the portal down, and the script's). Its
+# sign-in is the blueprint's application mediastack-signin-cleanuparr, which
+# admits whoever its card does (ak_signin_rule). With no linked identity,
+# anyone that application lets through signs in as its one account. Its
+# "disable auth for local addresses" is never used: it trusts every private
+# range, and its API key with it.
+CUP_CLIENT=mediastack-cleanuparr
+cup_oidc_want() { # -> the sign-in settings mediastack manages (its /api/account/oidc keys; the secret apart)
+    jq -cn --arg i "$(authentik_signin_issuer cleanuparr)" --arg t "$(env_get PORTAL_TITLE)" --arg r "$(svc_url cleanuparr)" --arg c "$CUP_CLIENT" \
+        '{enabled: true, issuerUrl: $i, clientId: $c, scopes: "openid profile email", providerName: $t,
+          # behind Traefik it would guess http:// from the request
+          redirectUrl: $r, exclusiveMode: false}'
+}
+cup_oidc_holds() { jq -e --argjson w "$2" '. as $c | $w | to_entries | all(.value == $c[.key])' <<<"$1" >/dev/null 2>&1; }   # CUR WANT
+cup_secret_mark() { sha256sum <<<"$(env_get AUTHENTIK_CLEANUPARR_CLIENT_SECRET)" | cut -c1-16; }   # its secret reads back masked
+
+cup_oidc() { # KEYHDR — the portal's button while the portal runs; ours taken away when it does not (GATE_UNTRUSTED: disable authentik); another provider's never touched
+    local KH="$1" cur want out
+    cur=$(cup_api GET /account/oidc "$KH") || { wfail "cleanuparr: its sign-in settings are unreadable [HTTP $(cup_code)]: $(oneline "$cur")"; return 0; }
+    if ! signin_is authentik || [[ -n "${GATE_UNTRUSTED:-}" ]]; then cup_oidc_off "$KH" "$cur"; return 0; fi
+    if [[ "$(jq -r '.enabled' <<<"$cur")" == true && "$(jq -r '.clientId' <<<"$cur")" != "$CUP_CLIENT" ]]; then
+        ok "cleanuparr: signs in through a provider you set up ($(jq -r '.providerName' <<<"$cur")) — untouched"; return 0
+    fi
+    want=$(cup_oidc_want)
+    if cup_oidc_holds "$cur" "$want" && [[ "$(state_get CLEANUPARR_OIDC_SECRET)" == "$(cup_secret_mark)" ]]; then
+        ok "cleanuparr: sign-in through the portal"
+    else
+        w_would "cleanuparr: sign in through the portal (a button on its login page; its password stays)" || return 0
+        out=$(cup_api PUT /account/oidc "$KH" "$(jq -c --arg s "$(env_get AUTHENTIK_CLEANUPARR_CLIENT_SECRET)" '. + {clientSecret: $s}' <<<"$want")") \
+            || { wfail "cleanuparr refused its sign-in settings [HTTP $(cup_code)]: $(oneline "$out")"; return 0; }
+        cur=$(cup_api GET /account/oidc "$KH") && cup_oidc_holds "$cur" "$want" \
+            || { wfail "cleanuparr answered, but did not keep its sign-in settings: $(oneline "$cur")"; return 0; }
+        state_set CLEANUPARR_OIDC_SECRET "$(cup_secret_mark)"
+        ok "cleanuparr: sign-in through the portal set up"
+    fi
+    # proven: its button leads to the portal — it reads the portal's
+    # discovery document from inside the stack to build that address
+    out=$(cup_api POST /auth/oidc/start "") && [[ "$(jq -r '.authorizationUrl // empty' <<<"$out" 2>/dev/null)" == "$(authentik_portal)/"* ]] \
+        || wfail "cleanuparr: its portal button does not lead to the portal [HTTP $(cup_code)]: $(oneline "$out") — it reads $(authentik_signin_issuer cleanuparr).well-known/openid-configuration from inside the stack (production certificates are required; the portal's setup applied: ./mediastack.sh doctor)"
+}
+
+cup_oidc_off() { # KEYHDR CUR — our button off, and exclusive mode with it (with the portal gone it would lock everyone out); not ours: untouched
+    local KH="$1" cur="$2" out
+    [[ "$(jq -r '.clientId' <<<"$cur")" == "$CUP_CLIENT" ]] || return 0
+    [[ "$(jq -r '.enabled' <<<"$cur")" == true || "$(jq -r '.exclusiveMode' <<<"$cur")" == true ]] || return 0
+    w_would "cleanuparr: take its portal button away — its own password is the way in" || return 0
+    # the masked secret goes back as it came: Cleanuparr keeps the one it holds
+    out=$(cup_api PUT /account/oidc "$KH" "$(jq -c '{enabled: false, exclusiveMode: false, issuerUrl, clientId, clientSecret, scopes, providerName, redirectUrl}' <<<"$cur")") \
+        || { wfail "cleanuparr refused to take its portal button away [HTTP $(cup_code)]: $(oneline "$out")"; return 0; }
+    cur=$(cup_api GET /account/oidc "$KH") && jq -e '.enabled == false and .exclusiveMode == false' <<<"$cur" >/dev/null 2>&1 \
+        && ok "cleanuparr: no portal button — it signs in with its own password" \
+        || wfail "cleanuparr answered, but still shows its portal button: $(oneline "$cur")"
+}
+
+cleanuparr_gate_login() { # `disable authentik` (GATE_UNTRUSTED=1): its portal button goes before the portal does
+    local akey; akey=$(env_get CLEANUPARR_API_KEY)
+    [[ -n "$akey" ]] || { wfail "cleanuparr: no API key in .env, so its sign-in settings cannot be read — run: ./mediastack.sh wire cleanuparr"; return 0; }
+    http_ready cleanuparr "$(cup_url)/health" '^2' || return 0
+    cup_oidc "X-Api-Key: $akey"
 }
 
 cleanuparr_dl_login_resync() { # cleanuparr_dl_login_resync PROVIDER — after its login changed: Cleanuparr's entry for it takes the new one

@@ -30,6 +30,8 @@ jobs:
         run: scripts/test-transmission.sh
       - name: WatchState trusts Traefik's address alone behind the portal, and asks again first when the portal goes (scripts/test-watchstate.sh)
         run: scripts/test-watchstate.sh
+      - name: Cleanuparr signs in through the portal — never exclusive — and drops its button first when the portal goes (scripts/test-cleanuparr.sh)
+        run: scripts/test-cleanuparr.sh
       - name: every registry verb is documented in README
         run: |
           rc=0

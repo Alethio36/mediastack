@@ -179,7 +179,7 @@ rotate_journal_start p; rotate_journal_hold A a1 a2 B b1 b2
 r=$(svc_enabled() { :; }; env_get() { [[ "$1" == AUTHENTIK_LDAP_TOKEN ]] && echo t; return 0; }; authentik_secrets | cut -f1,2 | paste -sd'|' -)
 [[ "$r" == $'AUTHENTIK_API_TOKEN\t|AUTHENTIK_ADMIN_PASSWORD\takadmin|AUTHENTIK_LDAP_TOKEN\t|authentik\'s settings\tportal' ]] || fail_ "the portal's secrets, in order: $r"; pass
 r=$(svc_enabled() { :; }; env_get() { :; }; authentik_secrets | grep "^authentik's settings" | cut -f3)
-[[ "$r" == AUTHENTIK_SECRET_KEY,AUTHENTIK_DB_PASSWORD,AUTHENTIK_LDAP_BIND_PASSWORD,AUTHENTIK_ABS_CLIENT_SECRET,AUTHENTIK_KAVITA_CLIENT_SECRET ]] \
+[[ "$r" == AUTHENTIK_SECRET_KEY,AUTHENTIK_DB_PASSWORD,AUTHENTIK_LDAP_BIND_PASSWORD,AUTHENTIK_ABS_CLIENT_SECRET,AUTHENTIK_KAVITA_CLIENT_SECRET,AUTHENTIK_CLEANUPARR_CLIENT_SECRET ]] \
     || fail_ "the portal's settings name the .env keys they cover: $r"; pass
 r=$(svc_enabled() { :; }; env_get() { :; }; authentik_secrets | cut -f1 | paste -sd'|' -)
 [[ "$r" != *LDAP_TOKEN* ]] || fail_ "no LDAP outpost token yet: not listed"; pass
@@ -193,7 +193,7 @@ at() { # at SET-KEY(ok|no) -> "rc=N env=K"
 [[ "$(at ok)" != *TOLD* && "$(at ok)" == rc=0* ]] || fail_ "API token: a new key taken: .env follows: $(at ok)"; pass
 
 as() { # as DB-SET(ok|no) NEW-PROVEN(yes|no) OLD-PROVEN(yes|no) -> "rc=N secretkey=old|new dbset=calls"
-    ( : > "$T/env"; for k in AUTHENTIK_SECRET_KEY AUTHENTIK_DB_PASSWORD AUTHENTIK_LDAP_BIND_PASSWORD AUTHENTIK_ABS_CLIENT_SECRET AUTHENTIK_KAVITA_CLIENT_SECRET; do echo "$k=OLD$k" >> "$T/env"; done
+    ( : > "$T/env"; for k in AUTHENTIK_SECRET_KEY AUTHENTIK_DB_PASSWORD AUTHENTIK_LDAP_BIND_PASSWORD AUTHENTIK_ABS_CLIENT_SECRET AUTHENTIK_KAVITA_CLIENT_SECRET AUTHENTIK_CLEANUPARR_CLIENT_SECRET; do echo "$k=OLD$k" >> "$T/env"; done
       rotate_journal_start p; rm -f "$T/c"
       ak_db_password_set() { if [[ "$1" == OLD* ]]; then echo old >> "$T/c"; else echo new >> "$T/c"; fi; [[ "$DS" == ok ]]; }
       rotate_up() { :; }
@@ -205,7 +205,7 @@ as() { # as DB-SET(ok|no) NEW-PROVEN(yes|no) OLD-PROVEN(yes|no) -> "rc=N secretk
 [[ "$(as no yes yes)" == "rc=1 secretkey=old dbset=new inflight=0" ]] || fail_ "settings: the database refuses the new password: nothing changed: $(as no yes yes)"; pass
 [[ "$(as ok yes yes)" == "rc=0 secretkey=new dbset=new inflight=0" ]] || fail_ "settings: proven: all new: $(as ok yes yes)"; pass
 [[ "$(as ok no yes)" == "rc=1 secretkey=old dbset=new,old inflight=0" ]] || fail_ "settings: not proven: the database and .env back on the old: $(as ok no yes)"; pass
-[[ "$(as ok no no)" == "rc=2 secretkey=old dbset=new,old inflight=5" ]] || fail_ "settings: neither proven: stuck, all five held: $(as ok no no)"; pass
+[[ "$(as ok no no)" == "rc=2 secretkey=old dbset=new,old inflight=6" ]] || fail_ "settings: neither proven: stuck, all six held: $(as ok no no)"; pass
 
 ss() { # ss LEFT(none|one) -> "rc=N deletes=N"
     ( rm -f "$T/c"; ak_api() { case "$1" in

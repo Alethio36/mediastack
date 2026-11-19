@@ -143,7 +143,7 @@ authentik_secrets_make() { # generate what is missing — never over a database 
     # the LDAP search account's password: the blueprint sets it on every apply,
     # so a new one is simply adopted — no database guard needed
     local k2
-    for k2 in AUTHENTIK_LDAP_BIND_PASSWORD AUTHENTIK_ABS_CLIENT_SECRET AUTHENTIK_KAVITA_CLIENT_SECRET; do
+    for k2 in AUTHENTIK_LDAP_BIND_PASSWORD AUTHENTIK_ABS_CLIENT_SECRET AUTHENTIK_KAVITA_CLIENT_SECRET AUTHENTIK_CLEANUPARR_CLIENT_SECRET; do
         [[ -n "$(env_get "$k2")" ]] || { env_set "$k2" "$(gen_secret 48)"; made=1; }
     done
     (( made )) && ok "authentik: secrets generated (the admin login: ./mediastack.sh credentials)"
@@ -526,6 +526,9 @@ authentik_household() { # the enabled household apps (mediastack.user_facing) �
 
 authentik_oidc_issuer() { # authentik_oidc_issuer SVC -> the issuer of its household card's OIDC provider
     echo "$(authentik_portal)/application/o/mediastack-app-$1/"
+}
+authentik_signin_issuer() { # authentik_signin_issuer SVC -> the issuer of a gated tool's own sign-in (the blueprint's mediastack-signin-<svc>; its card is the gate's)
+    echo "$(authentik_portal)/application/o/mediastack-signin-$1/"
 }
 
 authentik_invite() { # authentik_invite DAYS [ADDRESS] -> a single-use sign-up link, printed (and emailed to ADDRESS)
@@ -1369,6 +1372,17 @@ ak_ldap_rule() { # ak_ldap_rule ADMIN-PK FRONTEND-PK — Jellyfin's sign-in (the
     return 0
 }
 
+ak_signin_rule() { # ak_signin_rule ALL SVC ADMIN-PK FRONTEND-PK — a gated tool's own sign-in (the blueprint's mediastack-signin-<svc>, when it has one) admits whoever its card does
+    # the gate already decides who reaches the tool; its sign-in says the
+    # same, so a tier or a grant moves both (the blueprint binds admin)
+    local s="$2" slug="mediastack-signin-$2"
+    jq -e --arg sl "$slug" 'any(.results[]?; .slug == $sl)' <<<"$1" >/dev/null || return 0
+    ak_app_group "$s" || return 0
+    if [[ "$(svc_tier "$s")" == frontend ]]; then ak_rule_bind "$slug" "$s's sign-in" "$3" "$4" "$APP_GROUP"
+    else ak_rule_bind "$slug" "$s's sign-in" "$3" "$APP_GROUP" && ak_card_unbind "$slug" "$4" "$s's sign-in"; fi
+    return 0
+}
+
 ak_card_prune() { # ak_card_prune ALL PREFIX WANTED... — cards mediastack made for services no longer wanted leave
     local all="$1" prefix="$2" slug; shift 2
     for slug in $(jq -r --arg p "$prefix" '.results[].slug | select(startswith($p))' <<<"$all"); do
@@ -1391,6 +1405,7 @@ wire_authentik_cards() { # every gated app its own gate and card; household apps
         if [[ "$(svc_tier "$s")" == frontend ]]; then ak_app_gate "$all" "$s" Media "$mu" "$adm"
         else ak_app_gate "$all" "$s" "Admin tools" "$adm"; ak_card_unbind "mediastack-app-$s" "$mu"; fi
     done
+    for s in $(authentik_gate_apps); do ak_signin_rule "$all" "$s" "$adm" "$mu"; done
     local r
     for s in $(authentik_household); do
         [[ -n "$(svc_label "$s" mediastack.auth.group)" ]] && continue   # behind the gate: above

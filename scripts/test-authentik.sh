@@ -1167,7 +1167,7 @@ pass
 grep -q '"127.0.0.1:${KAVITA_PORT:-5000}:5000"' services/kavita/compose.yml || fail_ "Kavita is published on 127.0.0.1 only (the script's way in)"; pass
 grep -q 'MEDIASTACK_KAVITA_CLIENT_SECRET: ${AUTHENTIK_KAVITA_CLIENT_SECRET}$' services/authentik/compose.yml \
     && grep -q 'MEDIASTACK_KAVITA_URL: https://${KAVITA_HOST:-books}.' services/authentik/compose.yml \
-    && grep -q 'AUTHENTIK_KAVITA_CLIENT_SECRET; do' services/authentik/authentik.sh \
+    && grep -q 'AUTHENTIK_KAVITA_CLIENT_SECRET AUTHENTIK_CLEANUPARR_CLIENT_SECRET; do' services/authentik/authentik.sh \
     || fail_ "Kavita's client secret: generated, and handed to the blueprint with its address"; pass
 sed -n '/name: mediastack-oidc-kavita/,/^  - model/p' services/authentik/blueprints/mediastack-portal.yaml > "$T/kav"
 grep -q 'client_id: mediastack-kavita' "$T/kav" && grep -q 'signing_key: !Find' "$T/kav" \

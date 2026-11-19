@@ -7,7 +7,7 @@
 # by the entrypoint; relies on lib/common.sh and authentik.sh at call time.
 
 # its own settings: rotated together (one `up`, not one each) — name:length, as authentik_secrets_make makes them
-AUTHENTIK_ROTATE_SETTINGS=(AUTHENTIK_SECRET_KEY:60 AUTHENTIK_DB_PASSWORD:32 AUTHENTIK_LDAP_BIND_PASSWORD:48 AUTHENTIK_ABS_CLIENT_SECRET:48 AUTHENTIK_KAVITA_CLIENT_SECRET:48)
+AUTHENTIK_ROTATE_SETTINGS=(AUTHENTIK_SECRET_KEY:60 AUTHENTIK_DB_PASSWORD:32 AUTHENTIK_LDAP_BIND_PASSWORD:48 AUTHENTIK_ABS_CLIENT_SECRET:48 AUTHENTIK_KAVITA_CLIENT_SECRET:48 AUTHENTIK_CLEANUPARR_CLIENT_SECRET:48)
 
 authentik_secrets() {
     svc_enabled authentik || return 0

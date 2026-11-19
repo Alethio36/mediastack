@@ -324,6 +324,8 @@
         "AUTHENTIK_SECRET_KEY": "fixture-secret-authentik-key",
         "MEDIASTACK_ABS_CLIENT_SECRET": "",
         "MEDIASTACK_ABS_URL": "https://audiobooks.media.example.com",
+        "MEDIASTACK_CLEANUPARR_CLIENT_SECRET": "",
+        "MEDIASTACK_CLEANUPARR_URL": "https://cleanup.media.example.com",
         "MEDIASTACK_DOMAIN": "media.example.com",
         "MEDIASTACK_KAVITA_CLIENT_SECRET": "",
         "MEDIASTACK_KAVITA_URL": "https://books.media.example.com",
