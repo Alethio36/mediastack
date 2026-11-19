@@ -275,8 +275,8 @@ cmd_users() { # the portal's people, as authentik has them
 }
 
 # ---- access: who may open which app behind the portal's gate (docs/design-access.md) ----
-ACCESS_USAGE="access [list [user]]  |  access tier <app> frontend|admin [--yes]  |  access grant|revoke <user> <app>  |  access admin <user> on|off"
-cmd_access() { # access [list [user]] | access tier <app> frontend|admin [--yes] | access grant|revoke <user> <app> | access admin <user> on|off
+ACCESS_USAGE="access [list [user]]  |  access tier <app> frontend|admin [--yes]  |  access grant|revoke <user> <app>  |  access admin <user> on|off  |  access portal <user> on|off [--yes]"
+cmd_access() { # access [list [user]] | access tier <app> frontend|admin [--yes] | access grant|revoke <user> <app> | access admin <user> on|off | access portal <user> on|off [--yes]
     load_env; render
     signin_is authentik || die "access is the portal's (authentik), and it is not enabled — with Wizarr, each app keeps its own login"
     [[ "$(c_health "$(svc_cname authentik)")" == healthy ]] || die "authentik is not healthy yet — ./mediastack.sh status authentik"
@@ -288,6 +288,7 @@ cmd_access() { # access [list [user]] | access tier <app> frontend|admin [--yes]
         grant) access_grant "$@" ;;
         revoke) access_revoke "$@" ;;
         admin) access_admin "$@" ;;
+        portal) access_portal "$@" ;;
         *) die "usage: ./mediastack.sh $ACCESS_USAGE" ;;
     esac
 }
@@ -352,6 +353,10 @@ access_list_user() { # access_list_user NAME — what that person may open of th
     if [[ -n "$rows" ]]; then printf 'APP\tWHY\tADDRESS\n%s' "$rows" | table_print
     else info "$name may open none of the apps access covers"; fi
     jq -e '.is_active' <<<"$u" >/dev/null || warn "$name's portal account is off — they sign in to nothing"
+    local sg
+    if sg=$(signin_supergroup); then
+        if access_in "$u" "$sg"; then info "$name also manages the portal itself ('$sg' — authentik's admin screens; take it back: access portal $name off)"; fi
+    else warn "whether $name manages the portal is unknown: $sg"; fi
 }
 
 access_tier() { # access_tier APP frontend|admin [--yes] — kept in .env; the card's rule applied now; who loses it signed out of the portal
@@ -439,7 +444,7 @@ access_revoke() { # access_revoke USER APP — out of app-<app>; when that takes
 
 access_admin() { # access_admin USER on|off — into or out of the portal's admin group: every app, and admin rights where an app signs people in itself
     (( $# == 2 )) || die "usage: access admin <user> on|off"
-    local want=$2 u name pk out n s
+    local want=$2 u name pk out n s sg
     [[ "$want" == on || "$want" == off ]] || die "access admin: '$want' — on or off"
     access_person "$1"; u=$ACC_PERSON; name=$(jq -r .username <<<"$u"); pk=$(jq -r .pk <<<"$u")
     # authentik's own superuser, an admin from its first start: the way in when no person is one
@@ -452,6 +457,12 @@ access_admin() { # access_admin USER on|off — into or out of the portal's admi
         jq -e '.is_active' <<<"$u" >/dev/null || warn "$name's portal account is off — they sign in to nothing until it is on"
     else
         access_in "$u" "$PORTAL_ADMIN" || { ok "access: $name is not an admin — nothing to take away"; return 0; }
+        # nobody keeps authentik's superuser rights after losing admin (access portal needs admin)
+        sg=$(signin_supergroup) || die "access: $sg — nothing changed: whether $name manages the portal is unknown"
+        if access_in "$u" "$sg"; then
+            out=$(signin_group_change remove "$pk" "$sg") || die "access: authentik did not take $name out of '$sg': $(oneline "$out") — nothing else changed"
+            ok "access: $name no longer manages the portal ('$sg')"
+        fi
         out=$(signin_group_change remove "$pk" "$PORTAL_ADMIN") || die "access: authentik did not take $name out of '$PORTAL_ADMIN': $(oneline "$out")"
         # the gate decided when each session began: only a new sign-in hears no (proven live, 16 Nov 2026)
         n=$(signin_sessions_end "$pk") \
@@ -459,6 +470,33 @@ access_admin() { # access_admin USER on|off — into or out of the portal's admi
         ok "access: $name is no longer an admin — $(access_sessions_said "$n"); what they keep: ./mediastack.sh access list $name"
     fi
     for s in "${PEOPLE_APPS[@]}"; do people_follow_now "$s"; done   # admin rights in the apps with accounts of their own follow now
+}
+
+access_portal() { # access_portal USER on|off [--yes] — authentik's own superuser group: its admin screens, for an admin who chooses to have them
+    local yes=0 args=() want u name pk sg out n
+    while (( $# )); do case "$1" in --yes) yes=1; shift ;; -*) die "Unknown access portal arg '$1'" ;; *) args+=("$1"); shift ;; esac; done
+    (( ${#args[@]} == 2 )) || die "usage: access portal <user> on|off [--yes]"
+    want=${args[1]}
+    [[ "$want" == on || "$want" == off ]] || die "access portal: '$want' — on or off"
+    access_person "${args[0]}"; u=$ACC_PERSON; name=$(jq -r .username <<<"$u"); pk=$(jq -r .pk <<<"$u")
+    [[ "$name" != akadmin ]] || die "access: akadmin is authentik's own superuser and stays one — use it only when no one else can get in"
+    [[ "$(jq -r .type <<<"$u")" == internal ]] || die "access: '$name' is not a person's account"
+    sg=$(signin_supergroup) || die "access: $sg"
+    if [[ "$want" == on ]]; then
+        access_in "$u" "$sg" && { ok "access: $name manages the portal already ('$sg')"; return 0; }
+        access_in "$u" "$PORTAL_ADMIN" || die "access: $name is not an admin — the portal's management goes only to an admin: ./mediastack.sh access admin $name on"
+        warn "access: $name gets authentik's admin screens ('$sg') — they can then sign in as anyone, change anyone's password and every rule the gate uses; a leak of their password is a leak of every account. The stack's verbs (invite, access, users, set-email, reset-password) need none of this"
+        (( yes )) || confirm "Let $name manage the portal?" || { info "nothing changed: $name does not manage the portal"; return 0; }
+        out=$(signin_group_change add "$pk" "$sg") || die "access: authentik did not put $name in '$sg': $(oneline "$out")"
+        ok "access: $name manages the portal — authentik's admin screens (Admin interface, top right of the portal)"
+        warn "access: a change made there by hand ends nobody's session and can drift from what wire sets — the verbs do both right"
+    else
+        access_in "$u" "$sg" || { ok "access: $name does not manage the portal — nothing to take away"; return 0; }
+        out=$(signin_group_change remove "$pk" "$sg") || die "access: authentik did not take $name out of '$sg': $(oneline "$out")"
+        n=$(signin_sessions_end "$pk") \
+            || die "access: $name no longer manages the portal, but authentik refused to end their portal sessions: $(oneline "$n") — end them by hand (the user → Sessions)"
+        ok "access: $name no longer manages the portal — $(access_sessions_said "$n"); they stay an admin (take that too: access admin $name off)"
+    fi
 }
 
 cmd_set_email() { # an admin changes a person's portal email; Kavita follows; a shared address warns, --yes overrides

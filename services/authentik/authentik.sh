@@ -101,6 +101,19 @@ signin_group_change() { # signin_group_change add|remove USER-PK GROUP -> rc != 
         || { echo "their groups changed, but the save that updates their dashboard was refused: $out"; return 1; }
 }
 
+signin_supergroup() { # -> the name of authentik's own superuser group ("authentik Admins" on a fresh install); rc 1, saying why, unless there is exactly one
+    # found by its flag, not its name; each result's flag checked too, so a filter authentik ignored cannot pass a plain group
+    local out n
+    out=$(ak_api GET "/core/groups/?is_superuser=true&page_size=500") || { echo "authentik's groups are unreadable: $(oneline "$out")"; return 1; }
+    out=$(jq -c '[.results[]? | select(.is_superuser == true) | .name]' <<<"$out")
+    n=$(jq 'length' <<<"$out")
+    case "$n" in
+        1) jq -r '.[0]' <<<"$out" ;;
+        0) echo "authentik has no superuser group (it makes 'authentik Admins' at its first start)"; return 1 ;;
+        *) echo "authentik has $n superuser groups ($(jq -r 'join(", ")' <<<"$out")) — which one is meant is not guessed; keep one"; return 1 ;;
+    esac
+}
+
 signin_app_group_ready() { # signin_app_group_ready SVC -> rc 0 when app-<svc> exists and the app's card admits it; else says what is missing
     local pk
     pk=$(ak_group_pk "app-$1") || { echo "authentik's groups are unreadable"; return 1; }
@@ -1093,7 +1106,7 @@ wire_authentik_ldap_token() { # fetch the mediastack-ldap outpost's token into .
 }
 
 ak_group_pk() { # ak_group_pk NAME -> its pk (exact name, not a lookalike)
-    local g; g=$(ak_api GET "/core/groups/?search=$1") || return 1
+    local g; g=$(ak_api GET "/core/groups/?search=$(jq -rn --arg n "$1" '$n | @uri')") || return 1   # a name may hold a space ("authentik Admins")
     jq -r --arg n "$1" '[.results[]? | select(.name == $n) | .pk][0] // empty' <<<"$g"
 }
 

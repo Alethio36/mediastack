@@ -1808,7 +1808,8 @@ AP='{"results":[
  {"pk":4,"username":"dave","type":"internal","is_active":false,"groups_obj":[]},
  {"pk":5,"username":"erin","type":"internal","is_active":true,"groups_obj":[{"name":"frontend"},{"name":"admin"}]},
  {"pk":6,"username":"fay","type":"internal","is_active":true,"groups_obj":[{"name":"frontend"},{"name":"app-navidrome"}]},
- {"pk":7,"username":"bot","type":"service_account","is_active":true,"groups_obj":[]}]}'
+ {"pk":7,"username":"bot","type":"service_account","is_active":true,"groups_obj":[]},
+ {"pk":8,"username":"gina","type":"internal","is_active":true,"groups_obj":[{"name":"frontend"},{"name":"admin"},{"name":"authentik Admins"}]}]}'
 acc() { # acc FUNCTION ARGS... -> its output and rc; .env in $T/aenv, calls in $T/acalls
     ( signin_people() { echo "$AP"; }
       authentik_gate_apps() { printf '%s\n' sonarr navidrome; }
@@ -1823,6 +1824,7 @@ acc() { # acc FUNCTION ARGS... -> its output and rc; .env in $T/aenv, calls in $
       ak_api() { echo "$1 $2" >> "$T/acalls"; echo "{\"deleted\":${DEL:-3}}"; }
       signin_app_group_ready() { [[ -z "${NOTREADY:-}" ]] || { echo "the group app-$1 does not exist yet"; return 1; }; }
       signin_group_change() { echo "group $1 $2 $3" >> "$T/acalls"; [[ -z "${GCFAIL:-}" ]] || { echo "refused"; return 1; }; }
+      signin_supergroup() { [[ -z "${SGFAIL:-}" ]] || { echo "authentik has 2 superuser groups (a, b) — which one is meant is not guessed; keep one"; return 1; }; echo "authentik Admins"; }
       confirm() { echo "asked: $1" >> "$T/acalls"; [[ "${ANS:-n}" == y ]]; }
       warn() { echo "WARN $*"; }; ok() { echo "OK $*"; }; info() { echo ":: $*"; }
       rc=0; ( "$@" ) 2>&1 || rc=$?; echo "rc=$rc" )
@@ -1933,6 +1935,43 @@ for a in "bot on:is not a person's account" "bob yes:access admin: 'yes' — on 
     grep -q "${a#*:}" <<<"$o" && grep -q rc=1 <<<"$o" && [[ ! -f "$T/acalls" ]] || fail_ "admin ${a%%:*}: stops (${a#*:}), nothing changed: $o"; pass
 done
 
+# admin off also takes authentik's superuser group: nobody keeps it after losing admin
+rm -f "$T/acalls"; o=$(acc access_admin gina off)
+[[ "$(grep -E '^(group|DELETE)' "$T/acalls" | paste -sd'|' -)" == "group remove 8 authentik Admins|group remove 8 admin|DELETE /core/authenticated_sessions/bulk_delete/?user_pks=8" ]] \
+    && grep -q "gina no longer manages the portal ('authentik Admins')" <<<"$o" \
+    || fail_ "admin off, a portal manager: out of the superuser group, then admin, then signed out: $o $(cat "$T/acalls")"; pass
+rm -f "$T/acalls"; o=$(SGFAIL=1 acc access_admin erin off); grep -q "nothing changed: whether erin manages the portal is unknown" <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q '^group' "$T/acalls" 2>/dev/null \
+    || fail_ "admin off, the superuser group not found: stop before changing anything: $o"; pass
+o=$(acc access_list_user gina); grep -q "gina also manages the portal itself ('authentik Admins'" <<<"$o" || fail_ "access list <user>: says who manages the portal: $o"; pass
+o=$(acc access_list_user erin); ! grep -q 'manages the portal' <<<"$o" || fail_ "access list <user>: an admin who does not manage the portal is not said to: $o"; pass
+# portal: authentik's own superuser group, a separate choice, for an admin only
+rm -f "$T/acalls"; o=$(acc access_portal erin on)
+grep -q 'asked: Let erin manage the portal?' "$T/acalls" && ! grep -q '^group' "$T/acalls" && grep -q 'nothing changed: erin does not manage the portal' <<<"$o" \
+    && grep -q 'WARN access: erin gets authentik.s admin screens' <<<"$o" \
+    || fail_ "portal on: warned and asked; no changes nothing: $o $(cat "$T/acalls")"; pass
+rm -f "$T/acalls"; o=$(ANS=y acc access_portal ERIN on)
+grep -qx 'group add 5 authentik Admins' "$T/acalls" && ! grep -q bulk_delete "$T/acalls" && grep -q 'OK access: erin manages the portal' <<<"$o" \
+    || fail_ "portal on, yes: erin (any case) into the superuser group, nobody signed out: $o $(cat "$T/acalls")"; pass
+rm -f "$T/acalls"; o=$(acc access_portal erin on --yes); ! grep -q asked "$T/acalls" && grep -qx 'group add 5 authentik Admins' "$T/acalls" || fail_ "portal on --yes: no question: $(cat "$T/acalls")"; pass
+rm -f "$T/acalls"; o=$(acc access_portal gina on); grep -q "gina manages the portal already ('authentik Admins')" <<<"$o" && [[ ! -f "$T/acalls" ]] || fail_ "portal on, already: nothing done: $o"; pass
+rm -f "$T/acalls"; o=$(ANS=y acc access_portal bob on); grep -q "bob is not an admin — the portal's management goes only to an admin: ./mediastack.sh access admin bob on" <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q '^group\|asked' "$T/acalls" 2>/dev/null \
+    || fail_ "portal on, not an admin: refused before asking, said how: $o"; pass
+rm -f "$T/acalls"; o=$(acc access_portal gina off)
+grep -qx 'group remove 8 authentik Admins' "$T/acalls" && grep -qx 'DELETE /core/authenticated_sessions/bulk_delete/?user_pks=8' "$T/acalls" && ! grep -q 'group remove 8 admin' "$T/acalls" \
+    && grep -q 'gina no longer manages the portal — their portal sessions ended (3), so their next visit asks again; they stay an admin' <<<"$o" \
+    || fail_ "portal off: out of the superuser group, signed out, still an admin: $o $(cat "$T/acalls")"; pass
+rm -f "$T/acalls"; o=$(acc access_portal erin off); grep -q 'erin does not manage the portal — nothing to take away' <<<"$o" && grep -q rc=0 <<<"$o" && [[ ! -f "$T/acalls" ]] \
+    || fail_ "portal off, not a manager: nothing done: $o"; pass
+rm -f "$T/acalls"; o=$(GCFAIL=1 acc access_portal gina off); grep -q "authentik did not take gina out of 'authentik Admins': refused" <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q bulk_delete "$T/acalls" \
+    || fail_ "portal off refused: stop before ending sessions: $o"; pass
+rm -f "$T/acalls"; o=$(SGFAIL=1 ANS=y acc access_portal erin on); grep -q 'authentik has 2 superuser groups (a, b)' <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q '^group' "$T/acalls" 2>/dev/null \
+    || fail_ "portal, the superuser group not found: stop, say why: $o"; pass
+o=$(AP=$AKP acc access_portal akadmin off); grep -q "akadmin is authentik's own superuser and stays one" <<<"$o" && grep -q rc=1 <<<"$o" || fail_ "portal, akadmin: refused: $o"; pass
+for a in "bot on:is not a person's account" "erin maybe:access portal: 'maybe' — on or off" "nobody on:the portal has no user 'nobody'" "erin:usage: access portal" "erin on --force:Unknown access portal arg '--force'"; do
+    rm -f "$T/acalls"; read -ra w <<<"${a%%:*}"; o=$(ANS=y acc access_portal "${w[@]}")
+    grep -q "${a#*:}" <<<"$o" && grep -q rc=1 <<<"$o" && ! grep -q '^group' "$T/acalls" 2>/dev/null || fail_ "portal ${a%%:*}: stops (${a#*:}), nothing changed: $o"; pass
+done
+
 # Jellyfin signs people in itself (slice B): no portal session decides it —
 # its own switch does, through its accounts' follow, after the rule changed
 : > "$T/aenv"; o=$(acc access_list)
@@ -1975,6 +2014,20 @@ o=$(HAS='' gc add 2 app-sonarr); grep -q 'their groups did not change' <<<"$o" &
     || fail_ "authentik said yes but nothing changed: a failure, not assumed: $o"; pass
 o=$(REF=1 gc add 2 app-sonarr); grep -q '"detail":"no"' <<<"$o" && grep -q rc=1 <<<"$o" || fail_ "refused: authentik's answer shown: $o"; pass
 o=$(gc add 2 app-nothing); grep -q "there is no group 'app-nothing'" <<<"$o" && ! grep -q '^POST' "$T/gcalls" || fail_ "no such group: stop before writing: $o"; pass
+o=$( ( ak_api() { echo "$1 $2" >> "$T/gcalls"; echo '{"results":[{"name":"authentik Admins","pk":"g-ak"}]}'; }; rm -f "$T/gcalls"; ak_group_pk "authentik Admins" ) )
+[[ "$o" == g-ak ]] && grep -qx 'GET /core/groups/?search=authentik%20Admins' "$T/gcalls" || fail_ "a group name with a space is sent encoded: $o $(cat "$T/gcalls")"; pass
+
+# ---- signin_supergroup: authentik's own superuser group, by its flag, exactly one ----
+sgq() { ( ak_api() { echo "$1 $2" >> "$T/sgcalls"; [[ -z "${SGREF:-}" ]] || { echo '{"detail":"no"}'; return 1; }; echo "$SGR"; }
+          rm -f "$T/sgcalls"; rc=0; signin_supergroup || rc=$?; echo "rc=$rc" ); }
+o=$(SGR='{"results":[{"name":"authentik Admins","is_superuser":true}]}' sgq)
+[[ "$o" == $'authentik Admins\nrc=0' ]] && grep -qx 'GET /core/groups/?is_superuser=true&page_size=500' "$T/sgcalls" || fail_ "one superuser group: its name, asked by its flag: $o"; pass
+o=$(SGR='{"results":[{"name":"admin","is_superuser":false},{"name":"frontend","is_superuser":false},{"name":"authentik Admins","is_superuser":true}]}' sgq)
+[[ "$o" == $'authentik Admins\nrc=0' ]] || fail_ "the filter ignored: a plain group never passes for the superuser one: $o"; pass
+o=$(SGR='{"results":[{"name":"admin","is_superuser":false}]}' sgq); grep -q 'authentik has no superuser group' <<<"$o" && grep -q rc=1 <<<"$o" || fail_ "none: said so: $o"; pass
+o=$(SGR='{"results":[{"name":"authentik Admins","is_superuser":true},{"name":"ops","is_superuser":true}]}' sgq)
+grep -q 'authentik has 2 superuser groups (authentik Admins, ops) — which one is meant is not guessed' <<<"$o" && grep -q rc=1 <<<"$o" || fail_ "two: not guessed: $o"; pass
+o=$(SGREF=1 SGR='' sgq); grep -q "authentik's groups are unreadable" <<<"$o" && grep -q rc=1 <<<"$o" || fail_ "unreadable: said so: $o"; pass
 
 # ---- ak_card: AK_CARDS_QUIET=1 reports only a card that changed (access tier) ----
 kc() { # kc QUIET URL -> ak_card's output for a card whose stored address is https://s.x, its group bound

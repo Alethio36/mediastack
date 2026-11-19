@@ -549,6 +549,17 @@ reach a session already open.
     `off` removes them and ends their portal sessions (decision 4); both
     run the apps' follow at once, so Jellyfin, Kavita, Audiobookshelf and
     Navidrome admin rights change with the group.
+17. **`access portal <user> on|off [--yes]`: authentik's admin screens, the
+    owner's choice** (*decided 18 Nov 2026*). The `admin` group is not a
+    superuser group (the blueprint, `is_superuser: false`): an authentik
+    superuser can sign in as anyone, change any password and every rule the
+    gate uses. Withholding that from every admin was a stance the stack need
+    not take, so it is a separate subcommand: into authentik's own superuser
+    group (found by its flag, never its name — "authentik Admins" on a fresh
+    install; none or several: refused, not guessed), for an admin only,
+    warned and asked first. `off` ends their portal sessions; `access admin
+    off` takes it too, first, so nobody keeps superuser after losing admin.
+    akadmin is refused by both and stays a superuser.
 
 **Costs:** a change made by hand in authentik reaches open sessions within
 15 minutes (an `access` command: at once); Kavita's open tab until its next
