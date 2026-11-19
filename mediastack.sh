@@ -668,10 +668,18 @@ pull_missing() { # pull_missing [SVC...] — the images not on this host yet, re
     # Compose pulls what is missing as it starts and does not retry: one
     # throttled pull ("retry-after: 486µs", lscr.io) ended a first install
     # (found live Nov 2026). Missing only: an image already here is left as
-    # it is (updates are update's job).
-    local try
+    # it is (updates are update's job). What is missing is decided here, image
+    # by image: Compose's own --policy missing pulls a :latest image again
+    # although it is here (Compose v5.8.0, reproduced 18 Nov 2026), so `up`
+    # updated every :latest app and recreated those whose image moved.
+    local try json s img want=()
+    json=$(DC config --format json "$@") || { fail "the stack's config does not render (compose's message above) — nothing pulled"; return 1; }
+    while IFS=$'\t' read -r s img; do
+        sudo docker image inspect "$img" >/dev/null 2>&1 || want+=("$s")
+    done < <(jq -r '.services | to_entries[] | select(.value.image) | "\(.key)\t\(.value.image)"' <<<"$json")
+    (( ${#want[@]} )) || return 0
     for (( try = 1; try <= PULL_TRIES; try++ )); do
-        DC pull --policy missing "$@" && return 0
+        DC pull "${want[@]}" && return 0
         (( try < PULL_TRIES )) || break
         warn "an image pull failed (the registry's message is above) — trying again in ${PULL_WAIT}s (attempt $((try + 1)) of $PULL_TRIES)"
         sleep "$PULL_WAIT"

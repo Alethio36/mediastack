@@ -45,7 +45,7 @@ up_race && fail_ "gluetun disabled: not the race — up stops with compose's err
 # ---- apply_up: which compose failures the health gate may adjudicate ----
 set +e +E; trap - ERR
 APPLY_VERB=restore
-apply_with() { DC() { [[ "$1" == pull ]] && return 0; printf '%s\n' "$COMPOSE_ERR" >&2; return 1; }; ( apply_up --remove-orphans gluetun ) 2>&1; echo "rc=$?"; }
+apply_with() { DC() { [[ "$1" == pull || "$1" == config ]] && return 0; printf '%s\n' "$COMPOSE_ERR" >&2; return 1; }; ( apply_up --remove-orphans gluetun ) 2>&1; echo "rc=$?"; }
 COMPOSE_ERR=' Container mediastack-gluetun Error dependency failed to start: container mediastack-gluetun is unhealthy
 dependency failed to start: container mediastack-gluetun is unhealthy'
 out=$(apply_with)
@@ -64,17 +64,27 @@ out=$(apply_with); [[ "$out" == *"deferring"*"rc=0" ]] || fail_ "compose 5 words
 
 # ---- pulls: a registry's one-off refusal is retried, a lasting one stops the start ----
 T=$(mktemp -d); trap 'rm -f "$lib"; rm -rf "$T"' EXIT
-pm() { # pm FAILS-BEFORE-SUCCESS -> "rc=N pulls=N"
-    ( echo 0 > "$T/n"; sleep() { :; }; warn() { :; }
-      DC() { local n; n=$(( $(cat "$T/n") + 1 )); echo "$n" > "$T/n"; [[ "$*" == "pull --policy missing"* ]] || return 9; (( n > FAILS )); }
-      FAILS=$1; rc=0; pull_missing jellyfin || rc=$?; echo "rc=$rc pulls=$(cat "$T/n")" )
+CFG='{"services":{"jellyfin":{"image":"jellyfin/jellyfin:latest"},"gluetun":{"image":"qmcgaw/gluetun:latest"},"authentik-db":{"image":"postgres:16"}}}'
+pm() { # pm FAILS-BEFORE-SUCCESS [SVC...] -> "rc=N pulls=N"; HERE: the images on the host; $T/pulled: what each pull asked for
+    ( echo 0 > "$T/n"; : > "$T/pulled"; sleep() { :; }; warn() { :; }; fail() { echo "FAIL $*"; }
+      sudo() { [[ "$1 $2 $3" == "docker image inspect" ]] || return 9; [[ " $HERE " == *" $4 "* ]]; }
+      DC() { case "$1" in
+               config) [[ -z "${CFGFAIL:-}" ]] || return 1; echo "$CFG" ;;
+               pull) local n; n=$(( $(cat "$T/n") + 1 )); echo "$n" > "$T/n"; echo "${*:2}" >> "$T/pulled"; (( n > FAILS )) ;;
+               *) return 9 ;;
+             esac; }
+      FAILS=$1; shift; rc=0; pull_missing "$@" || rc=$?; echo "rc=$rc pulls=$(cat "$T/n")" )
 }
-[[ "$(pm 0)" == "rc=0 pulls=1" ]] || fail_ "pulls fine: once: $(pm 0)"; pass
+HERE="jellyfin/jellyfin:latest qmcgaw/gluetun:latest postgres:16"
+[[ "$(pm 0)" == "rc=0 pulls=0" ]] || fail_ "every image here, :latest ones too: nothing pulled (Compose's --policy missing re-pulls :latest): $(pm 0)"; pass
+HERE="postgres:16"
+[[ "$(pm 0)" == "rc=0 pulls=1" && "$(cat "$T/pulled")" == "jellyfin gluetun" ]] || fail_ "two images missing: one pull of exactly those two: $(pm 0) $(cat "$T/pulled")"; pass
 [[ "$(pm 2)" == "rc=0 pulls=3" ]] || fail_ "two refusals, then through: retried, the start goes on: $(pm 2)"; pass
 [[ "$(pm 9)" == "rc=1 pulls=3" ]] || fail_ "refused every time: bounded, then a failure: $(pm 9)"; pass
+o=$(CFGFAIL=1 pm 0); [[ "$o" == *"does not render"*"rc=1 pulls=0" ]] || fail_ "the config does not render: a failure, nothing pulled: $o"; pass
 r=$(declare -f cmd_up); r=${r%%DC up -d*}
 [[ "$r" == *pull_missing* ]] || fail_ "up pulls, retried, before it starts anything"; pass
 r=$(DC() { echo "$*" >> "$T/args"; return 0; }; : > "$T/args"; ( apply_up -d --remove-orphans gluetun qbittorrent ) >/dev/null 2>&1; sed -n 1p "$T/args")
-[[ "$r" == "pull --policy missing gluetun qbittorrent" ]] || fail_ "update's and restore's apply pull its services first, without up's flags: $r"; pass
+[[ "$r" == "config --format json gluetun qbittorrent" ]] || fail_ "update's and restore's apply check its services' images first, without up's flags: $r"; pass
 
 echo "test-up-race: $checks checks passed"
