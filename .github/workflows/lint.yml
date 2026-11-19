@@ -22,6 +22,8 @@ jobs:
         run: scripts/test-roles.sh
       - name: every listed service has its function in services/ (scripts/check-registries.sh)
         run: scripts/check-registries.sh
+      - name: the registry check catches what it is for — mediastack.people included (scripts/test-registries.sh)
+        run: scripts/test-registries.sh
       - name: every registry verb is documented in README
         run: |
           rc=0

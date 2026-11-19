@@ -9,7 +9,7 @@
 #     the timer started with it, every 15 minutes, in the footprint
 #   * people-sync: nothing without the portal or while maintenance holds the
 #     stack; only followed apps that are enabled and running, in
-#     PEOPLE_APPS order; waits for authentik and each app first (the boot,
+#     name order; waits for authentik and each app first (the boot,
 #     found live 17 Nov 2026) — authentik not up: stops, nobody judged; an
 #     app not up: a failure, the others still followed; any failure fails
 #     the run (ops hears it)
@@ -42,6 +42,17 @@ ENV_FILE=$T/.env; LOCAL_DIR=$T/local; STATE_DIR=$T/local/state
 repo_owned() { :; }; ok() { echo "OK $*"; }; info() { echo ":: $*"; }; warn() { echo "WARN $*"; }; fail() { echo "FAIL $*"; }
 fresh() { rm -rf "$T/local" "$T/ran"; mkdir -p "$T/local"; WIRE_FAILS=0; WIRE_DRY=0; }
 
+# ---- which apps follow: the mediastack.people label, nothing listed ----
+RENDERED_JSON=$(jq -n '{services:{
+  kavita:{labels:{"mediastack.managed":"true","mediastack.people":"follow"}},
+  seerr:{labels:{"mediastack.managed":"true","mediastack.people":"none"}},
+  authentik:{labels:{"mediastack.managed":"true","mediastack.people":"source"}},
+  sonarr:{labels:{"mediastack.managed":"true"}},
+  mine:{labels:{"mediastack.people":"follow"}},
+  audiobookshelf:{labels:{"mediastack.managed":"true","mediastack.people":"follow"}}}}')
+[[ "$(people_apps | paste -sd' ' -)" == "audiobookshelf kavita" ]] || fail_ "people_apps: the managed services labelled follow, by name — not none, source, unlabelled or unmanaged: $(people_apps)"; pass
+RENDERED_JSON=""
+
 # ---- the record ----
 fresh
 people_set navidrome Alice on; people_set navidrome bob off; people_set kavita bob off
@@ -70,6 +81,7 @@ fresh; people_follow_on kavita; people_follow_on navidrome; people_follow_on kav
 [[ "$(state_get "$PEOPLE_FOLLOWED")" == "kavita navidrome" && "$(grep -c timer "$T/ran")" == 3 ]] || fail_ "recorded once each, the timer ensured each time: $(state_get "$PEOPLE_FOLLOWED")"; pass
 people_followed navidrome && ! people_followed jellyfin || fail_ "followed: exactly those"; pass
 unset -f people_timer_ensure; source lib/people.sh
+people_apps() { printf '%s\n' audiobookshelf jellyfin kavita navidrome; }   # the shipped four, for the runs below
 grep -qF 'timer_timer_render "Mediastack: people follow the portal" "*:0/15"' lib/people.sh \
     && grep -qF 'timer_service_render "Mediastack: people follow the portal" people-sync' lib/people.sh || fail_ "every 15 minutes, people-sync"; pass
 [[ "$(fp_timers)" == *mediastack-people.timer* && "$(fp_timers)" == *mediastack-people.service* ]] || fail_ "the timer is in the footprint (uninstall removes it)"; pass
@@ -95,8 +107,8 @@ sync_run() { # sync_run — cmd_people_sync against stubs; -> rc in $T/rc, what 
 ran() { [[ -e "$T/ran" ]] && tr '\n' '|' < "$T/ran"; return 0; }
 fresh; state_set "$PEOPLE_FOLLOWED" "navidrome kavita jellyfin audiobookshelf"
 sync_run
-[[ "$(cat "$T/rc")" == 0 && "$(ran)" == "wait authentik jellyfin kavita audiobookshelf navidrome|follow-jellyfin|follow-kavita|follow-audiobookshelf|follow-navidrome|" ]] \
-    || fail_ "every followed app, after authentik and they are up, in PEOPLE_APPS order: $(ran) $(cat "$T/out")"; pass
+[[ "$(cat "$T/rc")" == 0 && "$(ran)" == "wait authentik audiobookshelf jellyfin kavita navidrome|follow-audiobookshelf|follow-jellyfin|follow-kavita|follow-navidrome|" ]] \
+    || fail_ "every followed app, after authentik and they are up: $(ran) $(cat "$T/out")"; pass
 SIGNIN_X=wizarr sync_run; [[ "$(cat "$T/rc")" == 0 && -z "$(ran)" ]] || fail_ "without the portal: nothing called"; pass
 HELD=1 sync_run; [[ "$(cat "$T/rc")" == 0 && -z "$(ran)" ]] && grep -q "has the stack — checked again in 15 minutes" "$T/out" || fail_ "maintenance holds the stack: skipped, said: $(cat "$T/out")"; pass
 fresh; sync_run; [[ "$(cat "$T/rc")" == 0 && -z "$(ran)" ]] && grep -q "no app follows the portal yet" "$T/out" || fail_ "nothing followed yet (no wire reached it): nothing called"; pass

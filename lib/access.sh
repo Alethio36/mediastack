@@ -469,7 +469,7 @@ access_admin() { # access_admin USER on|off — into or out of the portal's admi
             || die "access: $name is no longer an admin, but authentik refused to end their portal sessions: $(oneline "$n") — end them by hand (the user → Sessions)"
         ok "access: $name is no longer an admin — $(access_sessions_said "$n"); what they keep: ./mediastack.sh access list $name"
     fi
-    for s in "${PEOPLE_APPS[@]}"; do people_follow_now "$s"; done   # admin rights in the apps with accounts of their own follow now
+    for s in $(people_apps); do people_follow_now "$s"; done   # admin rights in the apps with accounts of their own follow now
 }
 
 access_portal() { # access_portal USER on|off [--yes] — authentik's own superuser group: its admin screens, for an admin who chooses to have them

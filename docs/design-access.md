@@ -560,6 +560,17 @@ reach a session already open.
     warned and asked first. `off` ends their portal sessions; `access admin
     off` takes it too, first, so nobody keeps superuser after losing admin.
     akadmin is refused by both and stays a superuser.
+18. **Which apps' accounts follow: a label, not a list** (*decided 18 Nov
+    2026*). `people-sync` followed a hard-coded `PEOPLE_APPS`, while
+    `access` found the apps under the rule by their labels — a new app with
+    its own login would have been covered by `access` (a revoke saying it
+    can no longer be opened) with its accounts never followed. Every app
+    people sign in to now says what happens to their accounts,
+    `mediastack.people: follow|none|source`; `follow` alone puts it in
+    `people-sync` and the `access` commands' follow, and CI holds both
+    ways (the label to `<svc>_people_follow`, the function to the label)
+    and fails an app that says nothing. Each app follows on its own, so the
+    order is the name's.
 
 **Costs:** a change made by hand in authentik reaches open sessions within
 15 minutes (an `access` command: at once); Kavita's open tab until its next

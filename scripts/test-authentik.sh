@@ -1815,6 +1815,7 @@ acc() { # acc FUNCTION ARGS... -> its output and rc; .env in $T/aenv, calls in $
       authentik_gate_apps() { printf '%s\n' sonarr navidrome; }
       authentik_native_ruled() { echo jellyfin; }   # signs people in itself, under the rule (its tier label)
       people_follow_now() { echo "follow $1" >> "$T/acalls"; }
+      people_apps() { printf '%s\n' audiobookshelf jellyfin kavita navidrome; }
       svc_url() { echo "https://$1.x"; }
       svc_label() { case "$1:$2" in navidrome:mediastack.auth.group|jellyfin:mediastack.tier) echo frontend ;; esac; return 0; }
       env_get() { awk -F= -v k="$1" '$1==k{print substr($0, index($0,"=")+1)}' "$T/aenv"; }
@@ -1909,7 +1910,7 @@ rm -f "$T/acalls"; o=$(GCFAIL=1 acc access_revoke carol sonarr); grep -q 'authen
 # admin: into or out of the portal's admin group; the apps with accounts of their own follow, losing it ends portal sessions
 rm -f "$T/acalls"; o=$(acc access_admin BOB on)
 grep -qx 'group add 2 admin' "$T/acalls" && ! grep -q bulk_delete "$T/acalls" && grep -q 'OK access: bob is an admin — every app behind the gate' <<<"$o" \
-    && [[ "$(grep '^follow' "$T/acalls" | paste -sd' ' -)" == "follow jellyfin follow kavita follow audiobookshelf follow navidrome" ]] \
+    && [[ "$(grep '^follow' "$T/acalls" | paste -sd' ' -)" == "follow audiobookshelf follow jellyfin follow kavita follow navidrome" ]] \
     || fail_ "admin on: bob (any case) into admin, nobody signed out, every app with accounts of its own follows: $o $(cat "$T/acalls")"; pass
 rm -f "$T/acalls"; o=$(acc access_admin alice on); grep -q 'alice is an admin already' <<<"$o" && grep -q rc=0 <<<"$o" && [[ ! -f "$T/acalls" ]] \
     || fail_ "admin on, an admin already: nothing done: $o"; pass

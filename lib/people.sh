@@ -10,14 +10,16 @@
 #   when                  in each app's wire; every 15 minutes (people-sync,
 #                         mediastack-people.timer); at once for the app an
 #                         `access` command changed (decision 13)
-# Each app's part is <app>_people_follow in its folder, listed in PEOPLE_APPS
-# (scripts/check-registries.sh holds the list to its functions). An app is
+# Each app's part is <app>_people_follow in its folder; its compose.yml says
+# so with mediastack.people: "follow", and that label alone puts it here
+# (people_apps) — scripts/check-registries.sh holds every label to its
+# function, and makes every app people sign in to declare one. An app is
 # followed once its wire has reached its portal step (people_follow_on): the
 # timer's run must never beat the wire that makes the stack's admin (found
 # live with Navidrome). Sourced by the entrypoint; relies on the portal's
 # signin_* helpers, the entrypoint's helpers and lib/wire.sh at call time.
 
-PEOPLE_APPS=(jellyfin kavita audiobookshelf navidrome)   # the order a run follows them in
+people_apps() { svc_managed_where mediastack.people follow; }   # the apps whose accounts follow the portal (each follows on its own: the order is the name's)
 PEOPLE_TIMER=mediastack-people
 PEOPLE_FOLLOWED=people-followed   # local/state: the apps whose wire reached the portal step, space-separated
 
@@ -70,9 +72,9 @@ people_timer_ensure() { # write, enable and start the timer; reloads systemd onl
     info "the apps' people follow the portal every 15 minutes (people-sync)"
 }
 
-people_apps_now() { # -> the followed apps that are enabled and running, in PEOPLE_APPS order
+people_apps_now() { # -> the followed apps that are enabled and running
     local a
-    for a in "${PEOPLE_APPS[@]}"; do
+    for a in $(people_apps); do
         people_followed "$a" && svc_enabled "$a" || continue
         if [[ "$(c_state "$(svc_cname "$a")")" == running ]]; then echo "$a"
         else info "$a is not running — its people not checked" >&2; fi
@@ -104,7 +106,7 @@ cmd_people_sync() { # the timer's run; a failure goes to ops through the unit's 
 
 people_follow_now() { # people_follow_now SVC — an access command changed who may open it: its people follow now
     local s=$1
-    [[ " ${PEOPLE_APPS[*]} " == *" $s "* ]] || return 0
+    [[ " $(people_apps | tr '\n' ' ') " == *" $s "* ]] || return 0
     people_followed "$s" && svc_enabled "$s" || return 0
     [[ "$(c_state "$(svc_cname "$s")")" == running ]] \
         || { warn "access: $s is not running — its accounts follow once it is (people-sync, within 15 minutes)"; return 0; }

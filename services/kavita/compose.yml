@@ -53,6 +53,7 @@ services:
       mediastack.subdomain: "books"
       mediastack.auth: "native"   # handles its own login
       mediastack.tier: "frontend"   # who may open it (access tier kavita): its card (its OIDC application) and its accounts follow the rule
+      mediastack.people: "follow"   # its accounts follow the portal (kavita_people_follow, people-sync)
       # it logs its startup migrations at Fatal, saying "This is not an error" (seen live)
       mediastack.errors: '\[(Error|Fatal)\]'
       mediastack.errors.except: 'Please be patient|This is not an error'

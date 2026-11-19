@@ -99,6 +99,7 @@ services:
       mediastack.config: "true"
       mediastack.subdomain: "portal"
       mediastack.auth: "native"   # handles its own login
+      mediastack.people: "source"   # it is where people come from (the portal)
       mediastack.conflicts: "wizarr"
       traefik.enable: "true"
       traefik.http.routers.authentik.rule: "Host(`${AUTHENTIK_HOST:-portal}.${STACK_DOMAIN:-unset.invalid}`)"

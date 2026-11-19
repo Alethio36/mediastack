@@ -68,6 +68,7 @@ services:
       mediastack.subdomain: "music"
       mediastack.auth: "gate"   # the household gate: the household (and its admins) get through
       mediastack.auth.group: "frontend"   # PORTAL_FRONTEND
+      mediastack.people: "follow"   # its accounts (made at the gate) follow the portal (navidrome_people_follow, people-sync)
       mediastack.auth.bypass: "/rest/ /share/"   # music apps, public shares
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- --timeout=5 http://127.0.0.1:4533/ping || exit 1"]
