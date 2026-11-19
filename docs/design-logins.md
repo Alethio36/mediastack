@@ -16,9 +16,15 @@ its domain is now its route's name and Traefik sends `/` to `/admin/`; both
 proven live 18 Nov 2026, with the portal's removal and return. Transmission
 built (`mediastack.auth.inject`, `transmission_login_middleware`) and proven
 live 18 Nov 2026 (no prompt through the portal, 401 straight to it). Deluge's
-gap documented 19 Nov 2026. WatchState built 19 Nov 2026 (`WS_TRUST_LOCAL`
-for Traefik's address) and Cleanuparr (its OIDC through the portal), neither
-yet proven live.*
+gap documented 19 Nov 2026. WatchState (`WS_TRUST_LOCAL` for Traefik's
+address) and Cleanuparr (its OIDC through the portal) built and proven live
+19 Nov 2026, with the portal's removal and return (Cleanuparr then takes its
+arr login, WatchState the account made on its first visit). Then every portal
+card walked as an admin in a fresh browser: no admin tool asked again. Two
+cosmetic flashes, both the apps' own pages before their sign-in lands:
+WatchState shows its login page for a moment, and Kavita's first visit shows
+an "unauthorized" notice, its login page and the portal's redirect before it
+signs in on its own. Step 6 done.*
 
 ## Why
 

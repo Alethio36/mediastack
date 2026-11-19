@@ -227,9 +227,11 @@ agreed first:
    sessions kept gaps (watchlist). A person
    deleted from the portal: their Jellyfin account renamed
    `removed-<name>-<date>`, as Navidrome's (decided 18 Nov 2026).
-6. **One login for the remaining tools** — tool by tool, behind step 5's gates.
-   Design agreed 18 Nov 2026: [design-logins.md](design-logins.md) (seven
-   tools, LazyLibrarian already done; Deluge a documented gap).
+6. **One login for the remaining tools** — *done 19 Nov 2026*, tool by tool,
+   behind step 5's gates: [design-logins.md](design-logins.md) (seven tools,
+   LazyLibrarian already done; Deluge a documented gap). Proven live with the
+   portal's removal and return, then every portal card walked as an admin in a
+   fresh browser: no admin tool asks again (Cleanuparr: one click).
 7. **Updating mediastack itself** — `SCRIPT_UPDATES=notify|auto`; see Decisions
    pending.
 8. **VPN depth** — provider by provider, from gluetun's wiki.
@@ -294,6 +296,11 @@ agreed first:
     third, rewritten rather than copied, and doing it while slices still
     change those services would do it twice. ~33 pages from one template;
     first batch Navidrome, Jellyfin, Seerr, Kavita.
+    *Added 19 Nov 2026:* the portal's "Getting started" card opens the
+    dashboard it sits on (`mediastack-getting-started`, its launch URL the
+    portal's own). It becomes the household's manual — the built-in how-to
+    page: which app to install for what, the one username and password, the
+    portal's own address for each — written with this step's rewrite.
 13. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
     dependency layers below; Wizarr sign-in live; `restore --service
     authentik`, Kavita and Audiobookshelf restores; the household's own preset
