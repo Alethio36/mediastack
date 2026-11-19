@@ -635,7 +635,7 @@
         "traefik.http.routers.sonarranime.service": "sonarranime",
         "traefik.http.routers.sonarranime.tls": "true",
         "traefik.http.routers.transmission.entrypoints": "websecure",
-        "traefik.http.routers.transmission.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.transmission.middlewares": "mediastack-gate@file,transmission-login@file",
         "traefik.http.routers.transmission.rule": "Host(`transmission.media.example.com`)",
         "traefik.http.routers.transmission.service": "transmission",
         "traefik.http.routers.transmission.tls": "true",

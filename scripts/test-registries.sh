@@ -49,4 +49,12 @@ broken "a tool drops its login behind the gate, with no way back" \
     "sed -i '/^bazarr_gate_login()/d' services/bazarr/bazarr.sh" \
     "gate_trusted/planned bazarr: 0 definitions of bazarr_gate_login() under services/"
 
+# a route that adds a tool's login past the gate names a middleware its hook defines
+broken "a route adds a login no hook defines" \
+    "sed -i '/^transmission_login_middleware()/,/^}/d' services/transmission/transmission.sh" \
+    "mediastack.auth.inject transmission: 0 definitions of transmission_login_middleware() under services/"
+broken "a hook no route uses" \
+    "sed -i '/mediastack.auth.inject/d' services/transmission/compose.yml" \
+    "transmission_login_middleware() exists, but transmission has no mediastack.auth.inject"
+
 echo "OK registries: $checks checks"

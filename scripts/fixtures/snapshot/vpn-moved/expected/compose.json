@@ -240,7 +240,7 @@
         "traefik.http.routers.sonarranime.service": "sonarranime",
         "traefik.http.routers.sonarranime.tls": "true",
         "traefik.http.routers.transmission.entrypoints": "websecure",
-        "traefik.http.routers.transmission.middlewares": "mediastack-gate@file",
+        "traefik.http.routers.transmission.middlewares": "mediastack-gate@file,transmission-login@file",
         "traefik.http.routers.transmission.rule": "Host(`transmission.unset.invalid`)",
         "traefik.http.routers.transmission.service": "transmission",
         "traefik.http.routers.transmission.tls": "true",
@@ -612,6 +612,7 @@
       "labels": {
         "com.centurylinklabs.watchtower.enable": "false",
         "mediastack.auth": "gate",
+        "mediastack.auth.inject": "true",
         "mediastack.config": "true",
         "mediastack.desc": "extra torrent client (most people do not need it)",
         "mediastack.managed": "true",

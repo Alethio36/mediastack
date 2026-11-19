@@ -71,6 +71,14 @@ done
 for s in $(find services -name '*.sh' ! -path 'services/authentik/*' -exec grep -hoE 'gate_(trusted|planned) [a-z0-9-]+' {} + | awk '{print $2}' | sort -u); do   # authentik's folder defines them
     want_one "gate_trusted/planned $s" "${s//-/_}_gate_login"
 done
+# a route that adds a tool's login past the gate (mediastack.auth.inject: true)
+# names <svc>-login, which its <svc>_login_middleware defines; a hook without
+# the label is never on a route
+for f in services/*/compose.yml; do
+    s=$(basename "$(dirname "$f")")
+    if grep -qE '^\s*mediastack\.auth\.inject: "true"' "$f"; then want_one "mediastack.auth.inject $s" "${s//-/_}_login_middleware"
+    elif grep -qE "^${s//-/_}_login_middleware\(\)" services/*/*.sh; then echo "FAIL ${s//-/_}_login_middleware() exists, but $s has no mediastack.auth.inject: \"true\" — no route would use it"; rc=1; fi
+done
 # doctor: DOCTOR_APPS -> <app>_doctor
 for a in $(list lib/doctor.sh 's/^DOCTOR_APPS=(\(.*\))$/\1/p'); do want_one DOCTOR_APPS "${a}_doctor"; done
 # by name: a lib or the entrypoint calling <service>_<anything> (a service's

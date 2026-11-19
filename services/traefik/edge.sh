@@ -144,6 +144,7 @@ $dashtls
         users:
           - "$duser:$hash"
 $(traefik_gate_middleware)
+$(traefik_service_middlewares)
 tcp:
   middlewares:
     # the LDAP route answers the stack network only — never the LAN
@@ -176,6 +177,17 @@ DYNAMIC
             && ok "traefik restarted" \
             || wfail "traefik restart failed — restart it manually: sudo docker restart $(svc_cname traefik)"
     fi
+}
+
+traefik_service_middlewares() { # each catalogue service's own middleware past the gate (mediastack.auth.inject: its <svc>_login_middleware; check-registries holds the two together)
+    # every one, enabled or not: routes are made for the whole catalogue (on
+    # gluetun for a VPN'd one), and a route naming a missing middleware fails
+    local s f
+    for s in $(svc_managed); do
+        f="${s//-/_}_login_middleware"
+        if declare -F "$f" >/dev/null; then "$f"; fi
+    done
+    return 0
 }
 
 traefik_gate_middleware() { # mediastack-gate: what a router with mediastack.auth=gate passes through
@@ -303,8 +315,8 @@ cmd_traefik_setup() {
 # overlay, on gluetun for a VPN'd service, on the service itself otherwise) ----
 edge_enable_label() { echo "${1}traefik.enable: \"true\""; }   # edge_enable_label INDENT — the edge serves this container
 edge_router_name() { echo "$1" | tr -cd 'a-z0-9'; }   # compose svc name -> traefik router name
-edge_route_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass> <ownlogin>  (router/service only)
-    local i="$1" r="$2" sub="$3" cp="$4" stem="$5" auth="${6:-}" bypass="${7:-}" ownlogin="${8:-}"
+edge_route_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass> <ownlogin> <inject>  (router/service only)
+    local i="$1" r="$2" sub="$3" cp="$4" stem="$5" auth="${6:-}" bypass="${7:-}" ownlogin="${8:-}" inject="${9:-}"
     echo "${i}traefik.http.routers.${r}.rule: \"Host(\`\${${stem}_HOST:-${sub}}.\${STACK_DOMAIN:-unset.invalid}\`)\""
     echo "${i}traefik.http.routers.${r}.entrypoints: \"websecure\""
     echo "${i}traefik.http.routers.${r}.tls: \"true\""
@@ -314,6 +326,9 @@ edge_route_labels() {   # <indent> <rname> <sub> <cport> <stem> <auth> <bypass> 
     # defines mediastack-gate: authentik's check when it runs, a no-op otherwise)
     # mediastack.auth.ownlogin: false -> no login of its own: the portal, or nobody
     if [[ "$auth" == gate && "$ownlogin" == false ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-portal-only@file\""
+    # mediastack.auth.inject: true -> past the gate, Traefik adds the tool's own
+    # login (<rname>-login, its <svc>_login_middleware; docs/design-logins.md)
+    elif [[ "$auth" == gate && "$inject" == true ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-gate@file,${r}-login@file\""
     elif [[ "$auth" == gate ]]; then echo "${i}traefik.http.routers.${r}.middlewares: \"mediastack-gate@file\""; fi
     # mediastack.auth.bypass: a path that skips the gate — only where each
     # client signs in as its own person (Navidrome's music apps) or nobody

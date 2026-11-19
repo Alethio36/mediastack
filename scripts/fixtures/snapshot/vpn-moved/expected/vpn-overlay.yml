@@ -87,7 +87,7 @@ services:
       traefik.http.routers.transmission.tls: "true"
       traefik.http.routers.transmission.service: "transmission"
       traefik.http.services.transmission.loadbalancer.server.port: "9091"
-      traefik.http.routers.transmission.middlewares: "mediastack-gate@file"
+      traefik.http.routers.transmission.middlewares: "mediastack-gate@file,transmission-login@file"
   apprise:
     network_mode: "service:gluetun"
     depends_on:

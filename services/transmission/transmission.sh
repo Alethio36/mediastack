@@ -12,6 +12,25 @@ transmission_logins() { printf "Transmission's web UI\tTRANSMISSION_USER\tTRANSM
 TRANSMISSION_SAVE=/data/torrent               # the data tree's torrent folder, as every app mounts it
 TRANSMISSION_SID=""                           # the RPC's X-Transmission-Session-Id (its CSRF guard)
 
+# Behind the portal it asks no login of the people the gate let through:
+# Traefik adds its stored login (HTTP Basic) to their requests
+# (mediastack.auth.inject). Transmission's own auth stays on for every other
+# caller — its one switch covers its page and its RPC alike, so dropping it
+# would open the RPC to the whole stack network. docs/design-logins.md.
+transmission_login_middleware() { # Traefik's transmission-login: its stored login while it runs and the portal guards it, a no-op otherwise — decided from .env (gate_planned), with the gate it follows
+    if svc_enabled transmission && gate_planned transmission; then
+        printf '    transmission-login:\n      headers:\n        customRequestHeaders:\n          Authorization: "Basic %s"\n' \
+            "$(printf '%s:%s' "$(env_get TRANSMISSION_USER)" "$(env_get TRANSMISSION_PASSWORD)" | base64 -w0)"
+    else
+        printf '    transmission-login:\n      headers:\n        customResponseHeaders:\n          X-Mediastack-Login: "own"\n'
+    fi
+}
+transmission_gate_login() { # `disable authentik` (GATE_UNTRUSTED=1): its own login never went; proven to still ask (Traefik's copy goes with the regenerated gate)
+    local code; code=$(transmission_code_anon)
+    if [[ "$code" == 401 ]]; then ok "transmission: asks everyone for its login (Traefik's copy of it goes with the portal)"
+    else wfail "transmission: answers without a login (HTTP $code) — check TRANSMISSION_USER / TRANSMISSION_PASSWORD, then: ./mediastack.sh up"; fi
+}
+
 transmission_url() { local p; p=$(svc_hostport transmission) || return 1; echo "http://127.0.0.1:$p/transmission/rpc"; }
 transmission_code_anon() { # -> the RPC's HTTP status without a login: 401 when it asks for one
     curl -s -m 10 -o /dev/null -w '%{http_code}' "$(transmission_url)" 2>/dev/null || echo 000
@@ -85,6 +104,7 @@ sc_rotate_transmission() { # PASS — its login (applied by recreating it) + eve
         http_ready transmission "$(transmission_url)" '^(401|409)$' || die "Transmission did not come back — inspect: logs transmission"
         transmission_login_live || die "Transmission does not take the new password — inspect: logs transmission"
         ok "Transmission password rotated and verified (container recreated)"
+        traefik_ensure   # Traefik's copy of it behind the portal (transmission-login)
         arr_dl_login_resync transmission
         cleanuparr_dl_login_resync transmission
 }

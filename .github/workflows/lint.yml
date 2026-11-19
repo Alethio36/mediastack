@@ -26,6 +26,8 @@ jobs:
         run: scripts/test-registries.sh
       - name: Pi-hole asks no password behind the portal, and gets it back first when the portal goes (scripts/test-pihole.sh)
         run: scripts/test-pihole.sh
+      - name: Transmission asks no login behind the portal — Traefik adds it past the gate (scripts/test-transmission.sh)
+        run: scripts/test-transmission.sh
       - name: every registry verb is documented in README
         run: |
           rc=0
