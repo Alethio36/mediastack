@@ -144,6 +144,19 @@ spam.
 a short alias section in `docs/email.md` (Gmail and the sending services'
 equivalents), and the domain's SPF updated.
 
+### Deluge's own password behind the portal *(Nov 2026)*
+
+Deluge is the one gated tool that still asks for its own password after the
+portal (docs/design-logins.md). Its web UI has no setting to turn its
+password off. Its sign-in is a JSON-RPC call that sets a session cookie, not
+HTTP Basic, so Traefik cannot add it the way it does Transmission's. A
+longer `session_timeout` would only make a stolen cookie worth more. The
+password is the stack's own (`credentials`; `set-credentials deluge`).
+
+**Revisit when:** Deluge's web UI can turn off its password, or can trust a
+proxy's header or address. Most households run qBittorrent alone and never
+see this.
+
 ### qBittorrent API keys
 
 **Verdict:** evaluated, parked (Sept 2026, verified in source at the versions then running).

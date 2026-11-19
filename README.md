@@ -858,7 +858,9 @@ the script still sign in), and Pi-hole's page and API ask no password (it
 reads it only at its start, so `up` applies the change; a Pi-hole phone app
 then needs a device password like the arrs'), and Transmission asks nothing
 of them either (Traefik adds its login past the gate; everything else still
-signs in). The rest follow tool by tool: docs/design-logins.md. The panel needs no login of its own past
+signs in). Deluge alone still asks its own password past the gate: its web
+UI cannot turn it off (`credentials` shows it; docs/watchlist.md). The rest
+follow tool by tool: docs/design-logins.md. The panel needs no login of its own past
 the gate (its own admin is only the way in without the portal): it trusts the portal's identity headers, on a network only the edge
 joins (`mediastack-panel`; docs/frontdoor.md). Every route past a gate strips the portal's
 identity headers, and Navidrome trusts only Traefik's address — Traefik keeps

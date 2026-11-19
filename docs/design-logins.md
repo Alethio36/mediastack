@@ -14,8 +14,9 @@ host's port, live 18 Nov 2026; its dashboard through the portal was refused
 by Pi-hole itself (403 to any Host but an address or `webserver.domain`), so
 its domain is now its route's name and Traefik sends `/` to `/admin/`; both
 proven live 18 Nov 2026, with the portal's removal and return. Transmission
-built (`mediastack.auth.inject`, `transmission_login_middleware`), not yet
-proven live.*
+built (`mediastack.auth.inject`, `transmission_login_middleware`) and proven
+live 18 Nov 2026 (no prompt through the portal, 401 straight to it). Deluge's
+gap documented 19 Nov 2026.*
 
 ## Why
 
@@ -67,7 +68,7 @@ back. Three things never change:
 | **Transmission** | Traefik adds its stored login (HTTP Basic) to requests that passed the gate; its own auth stays on. Its label `mediastack.auth.inject: "true"` chains `mediastack-gate@file,transmission-login@file` on its route; its `transmission_login_middleware` defines `transmission-login` in Traefik's generated file — its login while it runs and the portal guards it (`gate_planned`), a no-op otherwise, defined for the whole catalogue because routes are. CI holds the label and the hook together | its auth is one switch for the UI and the RPC — an address allowlist would have to name every caller, and Cleanuparr's address is not fixed. The gate drops a phone's device password before the header is set |
 | **Cleanuparr** | its own OIDC through the portal, *not* exclusive mode — **spike first** | with no linked identity, whoever the portal lets open it may sign in (the tier rule decides). Exclusive mode is refused: with the portal down, the way back is editing its database. Its "disable auth for local addresses" is refused too: it also drops the API key requirement for local callers |
 | **WatchState** | **spike first** | the stack does not manage its login today (a system user made on the first visit). If it cannot hand its sign-in to a proxy, it at least joins the stack's own logins: generated, in `credentials`, rotatable |
-| **Deluge** | its login stays; a known gap, documented | its web UI's password cannot be removed; a longer session would only lengthen what a stolen cookie is worth |
+| **Deluge** | its login stays; a known gap, documented (README; docs/watchlist.md, "Deluge's own password behind the portal") | its web UI's password cannot be removed, and its sign-in is a session cookie, not HTTP Basic, so Traefik cannot add it as it does Transmission's; a longer session would only lengthen what a stolen cookie is worth |
 
 ## Costs
 
