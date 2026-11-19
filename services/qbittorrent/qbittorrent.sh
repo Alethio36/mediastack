@@ -24,6 +24,52 @@ qb_bind_tun0() { # requires QB_COOKIE
     fi
 }
 
+# Behind a trusted portal gate its WebUI asks no login of the people the gate
+# let through: requests from Traefik's fixed address skip it ("bypass
+# authentication for clients in whitelisted IP subnets", that one address).
+# Every other caller — the script, the arrs, Cleanuparr — still signs in.
+# Reverse-proxy support must stay off: with it on, qBittorrent takes the
+# client's address from X-Forwarded-For, which a client can write itself
+# (webapplication.cpp resolveClientAddress). docs/design-logins.md.
+qb_gate_want() { # -> the preferences qBittorrent should hold for the gate (JSON): the bypass for Traefik alone when gate_trusted, off otherwise
+    if gate_trusted qbittorrent; then
+        jq -cn --arg s "$(env_get TRAEFIK_ADDRESS)/32" '{bypass_auth_subnet_whitelist_enabled: true, bypass_auth_subnet_whitelist: $s, web_ui_reverse_proxy_enabled: false}'
+    else
+        jq -cn '{bypass_auth_subnet_whitelist_enabled: false}'
+    fi
+}
+qb_gate_trust() { # requires QB_COOKIE — the gate's bypass set (or taken away), read back
+    [[ -n "$QB_COOKIE" ]] || { info "no qBittorrent session — its portal sign-in skipped"; return 0; }
+    local cur want ours
+    cur=$(qb_api /app/preferences) || { wfail "qbittorrent: its preferences are unreadable — its portal sign-in unchecked: $(oneline "$cur")"; return 0; }
+    want=$(qb_gate_want)
+    ours="$(env_get TRAEFIK_ADDRESS)/32"
+    if ! gate_trusted qbittorrent; then
+        # only the stack's own bypass is taken away; a whitelist someone set up themselves stays
+        if jq -e --arg s "$ours" '.bypass_auth_subnet_whitelist_enabled and .bypass_auth_subnet_whitelist == $s' <<<"$cur" >/dev/null; then
+            w_would "qbittorrent: its login back for everyone (no portal guards it)" || return 0
+            qb_api /app/setPreferences "json=$want" >/dev/null || true   # the read-back below is the verdict
+        else
+            ok "qbittorrent: asks everyone for its login"; return 0
+        fi
+    elif jq -e --argjson w "$want" '. as $c | $w | to_entries | all(.value == $c[.key])' <<<"$cur" >/dev/null; then
+        ok "qbittorrent: no login for people the portal let in"; return 0
+    else
+        if jq -e --arg s "$ours" '.bypass_auth_subnet_whitelist_enabled and (.bypass_auth_subnet_whitelist // "") != "" and .bypass_auth_subnet_whitelist != $s' <<<"$cur" >/dev/null; then
+            warn "qbittorrent: its bypass list '$(jq -r '.bypass_auth_subnet_whitelist | gsub("\n"; ",")' <<<"$cur")' becomes Traefik's address alone — behind the portal its port is the host's own, so nothing else reached it that way"
+        fi
+        w_would "qbittorrent: no login for people the portal let in (requests from Traefik, $ours)" || return 0
+        qb_api /app/setPreferences "json=$want" >/dev/null || true   # the read-back below is the verdict
+    fi
+    cur=$(qb_api /app/preferences) || { wfail "qbittorrent: its preferences are unreadable after the change: $(oneline "$cur")"; return 0; }
+    if jq -e --argjson w "$want" '. as $c | $w | to_entries | all(.value == $c[.key])' <<<"$cur" >/dev/null; then
+        if gate_trusted qbittorrent; then ok "qbittorrent: no login for people the portal let in"
+        else ok "qbittorrent: asks everyone for its login"; fi
+    else
+        wfail "qbittorrent: took the change but reads back otherwise — check Tools → Options → WebUI → Authentication"
+    fi
+}
+
 qb_url() { local p; p=$(svc_hostport qbittorrent) || return 1; echo "http://127.0.0.1:$p"; }
 qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = unreachable
              # QB_LOGIN_BODY always carries the server's reply / curl error
@@ -130,6 +176,7 @@ wire_qbit() {
     # bind transfers to the tunnel interface: belt on top of the killswitch —
     # even a firewall wipe inside gluetun cannot make qbit talk past tun0
     qb_bind_tun0
+    qb_gate_trust
     # categories: one per arr instance, distinct save paths = hardlink discipline
     [[ -n "$QB_COOKIE" ]] || { info "no qBittorrent session — categories skipped"; return 0; }
     local existing s cat cexists

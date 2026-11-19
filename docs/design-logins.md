@@ -3,8 +3,10 @@
 *Status: **agreed** (18 Nov 2026), MVP plan step 6. Built tool by tool, each
 proven live before the next: Bazarr → qBittorrent → Pi-hole → Transmission →
 Cleanuparr and WatchState (after their spikes) → Deluge's note. Bazarr built
-(`bazarr_login`; `set-credentials arr` now reaches it too, which it never
-did), not yet proven live.*
+and proven live 18 Nov 2026 (`bazarr_login`; no login page through the
+portal, its API 401 without the key and 200 with it; `set-credentials arr`
+now reaches it too, which it never did). qBittorrent built (`qb_gate_trust`),
+not yet proven live.*
 
 ## Why
 

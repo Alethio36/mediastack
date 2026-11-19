@@ -319,6 +319,40 @@ awk '/^wire_bazarr\(\)/,/^}/' services/bazarr/bazarr.sh | grep '^    bazarr_logi
     || fail_ "wire bazarr: its login is bazarr_login's, and the pairing form carries none"; pass
 awk '/^sc_rotate_arr\(\)/,/^}/' services/_arr/arr.sh | grep 'bazarr_login force' >/dev/null || fail_ "set-credentials arr: Bazarr takes the new login too"; pass
 
+# ---- qBittorrent: no login for the portal's requests alone (docs/design-logins.md) ----
+qg() { # qg TRUSTED(0|1) PREFS-JSON DRY NOTAKE -> "fails=N posts=N en=E list=L rp=R"
+    ( WIRE_DRY=$3 WIRE_FAILS=0 TR=$1 NOTAKE=$4 QB_COOKIE=${NOCOOKIE-jar}; rm -f "$T/qg-posts"; printf '%s' "$2" > "$T/qg"
+      gate_trusted() { (( TR )); }; env_get() { [[ "$1" == TRAEFIK_ADDRESS ]] && echo 172.31.250.2; return 0; }
+      qb_api() { case "$1" in
+          /app/preferences) cat "$T/qg" ;;
+          /app/setPreferences) echo "${2#json=}" >> "$T/qg-posts"
+              (( NOTAKE )) || { jq -c --argjson w "${2#json=}" '. + $w' "$T/qg" > "$T/qg.n" && mv "$T/qg.n" "$T/qg"; } ;;
+          esac; }
+      qb_gate_trust > "$T/qg-out" 2>&1
+      echo "fails=$WIRE_FAILS posts=$( [[ -f "$T/qg-posts" ]] && wc -l < "$T/qg-posts" || echo 0) $(jq -r '"en=\(.bypass_auth_subnet_whitelist_enabled) list=\(.bypass_auth_subnet_whitelist) rp=\(.web_ui_reverse_proxy_enabled)"' "$T/qg")" )
+}
+QD='{"bypass_auth_subnet_whitelist_enabled":false,"bypass_auth_subnet_whitelist":"","web_ui_reverse_proxy_enabled":false,"bypass_local_auth":false}'
+QS='{"bypass_auth_subnet_whitelist_enabled":true,"bypass_auth_subnet_whitelist":"172.31.250.2/32","web_ui_reverse_proxy_enabled":false,"bypass_local_auth":false}'
+[[ "$(qg 1 "$QD" 0 0)" == "fails=0 posts=1 en=true list=172.31.250.2/32 rp=false" ]] && grep -q 'OK qbittorrent: no login for people the portal let in' "$T/qg-out" \
+    || fail_ "trusted: the bypass for Traefik's address alone, read back: $(qg 1 "$QD" 0 0) $(cat "$T/qg-out")"; pass
+! grep -q 'bypass_local_auth' "$T/qg-posts" || fail_ "the localhost bypass is never touched (the arrs in gluetun's namespace call on localhost)"; pass
+[[ "$(qg 1 "$QS" 0 0)" == "fails=0 posts=0 en=true list=172.31.250.2/32 rp=false" ]] || fail_ "trusted, set already: nothing written: $(qg 1 "$QS" 0 0)"; pass
+[[ "$(qg 1 "${QS/\"web_ui_reverse_proxy_enabled\":false/\"web_ui_reverse_proxy_enabled\":true}" 0 0)" == "fails=0 posts=1 en=true list=172.31.250.2/32 rp=false" ]] \
+    || fail_ "trusted, reverse-proxy support on (a client could write its own address): turned off: $(qg 1 "${QS/\"web_ui_reverse_proxy_enabled\":false/\"web_ui_reverse_proxy_enabled\":true}" 0 0)"; pass
+QU='{"bypass_auth_subnet_whitelist_enabled":true,"bypass_auth_subnet_whitelist":"192.168.1.0/24","web_ui_reverse_proxy_enabled":false}'
+[[ "$(qg 1 "$QU" 0 0)" == "fails=0 posts=1 en=true list=172.31.250.2/32 rp=false" ]] && grep -q "its bypass list '192.168.1.0/24' becomes Traefik's address alone" "$T/qg-out" \
+    || fail_ "trusted, someone's own list: replaced, and said so: $(cat "$T/qg-out")"; pass
+[[ "$(qg 0 "$QS" 0 0)" == "fails=0 posts=1 en=false list=172.31.250.2/32 rp=false" ]] && grep -q 'OK qbittorrent: asks everyone for its login' "$T/qg-out" \
+    || fail_ "not trusted (the portal gone), the stack's bypass: taken away, read back: $(qg 0 "$QS" 0 0)"; pass
+[[ "$(qg 0 "$QU" 0 0)" == "fails=0 posts=0 en=true list=192.168.1.0/24 rp=false" ]] || fail_ "not trusted, someone's own list: left as it is: $(qg 0 "$QU" 0 0)"; pass
+[[ "$(qg 0 "$QD" 0 0)" == "fails=0 posts=0 en=false list= rp=false" ]] || fail_ "not trusted, no bypass: nothing written: $(qg 0 "$QD" 0 0)"; pass
+[[ "$(qg 1 "$QD" 1 0)" == "fails=0 posts=0 en=false list= rp=false" ]] && grep -q 'would: qbittorrent: no login for people the portal let in' "$T/qg-out" \
+    || fail_ "a dry run: says what it would do, writes nothing: $(cat "$T/qg-out")"; pass
+[[ "$(qg 1 "$QD" 0 1)" == "fails=1 posts=1 en=false list= rp=false" ]] && grep -q 'reads back otherwise' "$T/qg-out" \
+    || fail_ "accepted but not taken: a failure: $(cat "$T/qg-out")"; pass
+[[ "$(NOCOOKIE='' qg 1 "$QD" 0 0)" == "fails=0 posts=0 en=false list= rp=false" ]] || fail_ "no session: skipped, said so"; pass
+awk '/^wire_qbit\(\)/,/^}/' services/qbittorrent/qbittorrent.sh | grep -A1 '^    qb_bind_tun0$' | grep '^    qb_gate_trust$' >/dev/null || fail_ "wire qbit: the gate's bypass after the tunnel bind"; pass
+
 # ---- reset-password with Wizarr: Wizarr's own single-use link (decided 14 Nov 2026, proven live first) ----
 wr() { # wr USERS-JSON RESET-REPLY DISABLED(0|1) NAME -> "rc=N calls" (output in $T/wr)
     ( rm -f "$T/c"; UJ=$1 RJ=$2 DIS=$3
