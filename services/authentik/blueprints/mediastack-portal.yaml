@@ -691,6 +691,10 @@ entries:
   # Same shape as Audiobookshelf. Kavita also asks for offline_access (it
   # refreshes its session) and reads the email: it matches an existing account
   # by email, always — so the stack's own admin has one nobody can sign up with.
+  # Signing out of the portal signs the browser out of Kavita too: authentik
+  # loads Kavita's /signout-oidc in a hidden frame (front-channel; Kavita has no
+  # back-channel endpoint). Without it Kavita kept its own sign-in, so the next
+  # person at that browser was the last one (found live, 18 Nov 2026).
   - model: authentik_providers_oauth2.oauth2provider
     id: provider-oidc-kavita
     identifiers:
@@ -709,6 +713,8 @@ entries:
           url: !Format ["%s/signin-oidc", !Env [MEDIASTACK_KAVITA_URL, ""]]
         - matching_mode: strict
           url: !Format ["%s/signout-callback-oidc", !Env [MEDIASTACK_KAVITA_URL, ""]]
+      logout_uri: !Format ["%s/signout-oidc", !Env [MEDIASTACK_KAVITA_URL, ""]]
+      logout_method: frontchannel
       property_mappings:
         - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
         - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]

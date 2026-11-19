@@ -1144,7 +1144,8 @@ grep -q 'client_id: mediastack-kavita' "$T/kav" && grep -q 'signing_key: !Find' 
    && grep -q '"%s/signin-oidc"' "$T/kav" && grep -q '"%s/signout-callback-oidc"' "$T/kav" \
    && grep -q 'grant_types: \[authorization_code, refresh_token\]' "$T/kav" \
    && grep -q 'scope-offline_access' "$T/kav" \
-    || fail_ "Kavita's OIDC provider: client ID, RS256 key, its callbacks, the code grant, offline_access"; pass
+   && grep -qF 'logout_uri: !Format ["%s/signout-oidc", !Env [MEDIASTACK_KAVITA_URL, ""]]' "$T/kav" && grep -qx '      logout_method: frontchannel' "$T/kav" \
+    || fail_ "Kavita's OIDC provider: client ID, RS256 key, its callbacks, the code grant, offline_access, the portal's sign-out reaching it (front-channel)"; pass
 printf 'STACK_DOMAIN=media.example.com\nPORTAL_TITLE=Home\nAUTHENTIK_KAVITA_CLIENT_SECRET=KSEC\n' > "$ENV_FILE"
 w=$(kav_oidc_want '[3,1]')
 [[ "$(jq -r '.authority' <<<"$w")" == "https://portal.media.example.com/application/o/mediastack-app-kavita/" ]] || fail_ "Kavita's authority is its card's issuer: $w"; pass

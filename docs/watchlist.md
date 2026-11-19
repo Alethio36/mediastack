@@ -245,6 +245,34 @@ extension would need a device password as a header, which some cannot send).
 sessions (a device delete that works across people, a sign-out-everywhere,
 or roles re-checked per request) — then the follow calls it on loss.
 
+### Signing out of the portal, in the apps' own sessions *(Nov 2026)*
+
+Signing out of the portal (or another person signing in at the same browser)
+does not end a session an app keeps itself — found live 18 Nov 2026, when a
+browser that had opened Kavita as akadmin stayed akadmin there after alethio
+signed in. authentik (2025.10+) sends OIDC front-channel (a hidden frame in
+the browser) and back-channel (server to server) logout, but each app must
+take it:
+
+- **Kavita** — *done*: its provider's logout URI is `/signout-oidc`,
+  front-channel (the blueprint; authentik's own Kavita guide). Proven live:
+  signed out of the portal, Kavita's next load went to the portal's sign-in.
+  Front-channel needs the browser, so it covers someone signing out, not an
+  admin's `access` command (that is the open-tab gap above).
+- **Audiobookshelf** — waits upstream: its docs offer only a logout URL the
+  other way (signing out of Audiobookshelf ends the portal session; set) and
+  say a signed-in session refreshes against Audiobookshelf, not the provider.
+  **Revisit when:** it takes front- or back-channel logout.
+- **Jellyfin** — waits upstream: it signs people in through LDAP, so there is
+  no OIDC session to end; its OIDC plugin is weighed under "Identity & SSO". `signout <user>` ends a
+  person's sessions on purpose.
+- **Seerr** — decision 14 (its OIDC is a preview).
+
+Weighed and not taken: putting these apps behind the gate, so the portal's
+session decides — their own apps (Jellyfin's TV and phone apps,
+Audiobookshelf's app, OPDS readers) cannot sign in through a browser, as
+decision 15 found for Kavita.
+
 ### Email from Wizarr
 
 **Verdict:** parked (Nov 2026). With Wizarr, `reset-password` prints Wizarr's reset link

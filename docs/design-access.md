@@ -571,6 +571,11 @@ reach a session already open.
     ways (the label to `<svc>_people_follow`, the function to the label)
     and fails an app that says nothing. Each app follows on its own, so the
     order is the name's.
+19. **Signing out of the portal reaches Kavita** (*decided 18 Nov 2026*).
+    An app keeping its own sign-in kept it after a portal sign-out, so the
+    next person at a shared browser was the last one there. Kavita's provider
+    now sends front-channel logout to `/signout-oidc` (proven live); the
+    other apps wait upstream (docs/watchlist.md, "Signing out of the portal").
 
 **Costs:** a change made by hand in authentik reaches open sessions within
 15 minutes (an `access` command: at once); Kavita's open tab until its next
