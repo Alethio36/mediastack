@@ -848,6 +848,9 @@ cmd_disable() {
     reconcile_disabled
     if [[ "$svc" == authentik ]]; then
         gate_bind_sync; vpn_gen; RENDERED_JSON=""
+        # Traefik's gate follows: without it every gated route kept asking the
+        # authentik that just went, and answered 500 (found live 18 Nov 2026)
+        traefik_ensure
         DC up -d --remove-orphans >/dev/null && ok "gated tools recreated with their LAN ports and their own logins"
     fi
     ok "'$svc' disabled; its container was removed (config kept, still backed up)."

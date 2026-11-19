@@ -658,12 +658,13 @@ dis() { # dis -> "rc=N" then the calls; FAILS / NOTRUN: the service that fails /
       done
       env_set() { echo "env_set $1" >> "$T/dcalls"; }; reconcile_disabled() { echo reconcile >> "$T/dcalls"; }
       gate_bind_sync() { echo gate_bind_sync >> "$T/dcalls"; }; vpn_gen() { :; }; DC() { echo "DC $*" >> "$T/dcalls"; }
+      traefik_ensure() { echo traefik_ensure >> "$T/dcalls"; }
       rc=0; ( cmd_disable authentik ) > "$T/dout" 2>&1 || rc=$?
       echo "rc=$rc"; cat "$T/dcalls" 2>/dev/null )
 }
 o=$(dis)
-[[ "$(paste -sd'|' <<<"$o")" == "rc=0|gate-login bazarr untrusted=1|gate-login lazylibrarian untrusted=1|gate-login qbittorrent untrusted=1|env_set COMPOSE_PROFILES|reconcile|gate_bind_sync|DC up -d --remove-orphans" ]] \
-    || fail_ "disable authentik: every tool's login back, untrusted, before the profile and the ports: $(paste -sd'|' <<<"$o")"; pass
+[[ "$(paste -sd'|' <<<"$o")" == "rc=0|gate-login bazarr untrusted=1|gate-login lazylibrarian untrusted=1|gate-login qbittorrent untrusted=1|env_set COMPOSE_PROFILES|reconcile|gate_bind_sync|traefik_ensure|DC up -d --remove-orphans" ]] \
+    || fail_ "disable authentik: every tool's login back, untrusted, before the profile and the ports; Traefik's gate regenerated before the tools restart: $(paste -sd'|' <<<"$o")"; pass
 o=$(FAILS=qbittorrent dis)
 [[ "$o" == rc=1* ]] && ! grep -q 'env_set COMPOSE_PROFILES' <<<"$o" && grep -q 'could not get their own login back (above) — authentik stays enabled, ports stay closed' "$T/dout" \
     || fail_ "one tool's login not back: stop, the portal and the closed ports kept: $o $(cat "$T/dout")"; pass

@@ -41,7 +41,12 @@ back. Three things never change:
   *Found 18 Nov 2026, before any of it reached `stable`: the loop named the
   arrs and Prowlarr only, so LazyLibrarian (since Oct 2026), Bazarr and
   qBittorrent were left out.* A bypass list someone set up themselves that
-  covers Traefik's address is a failure there too, never overwritten.
+  covers Traefik's address is a failure there too, never overwritten. Proven live 18 Nov 2026 on
+  anzac4: the arrs, Prowlarr, Bazarr and qBittorrent got their logins back
+  before the ports reopened; Bazarr's LAN port and qBittorrent through
+  Traefik then asked for them. The same run found `disable` left Traefik's
+  gate asking the authentik just removed (every gated route a 500, closed
+  rather than open) — it now regenerates Traefik's config too.
 
 ## Per tool
 
