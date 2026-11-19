@@ -271,12 +271,53 @@ bw() { # bw DRY KEY-AFTER-N-LOOKS -> "fails=N looks=N"
     ( WIRE_DRY=$1 WIRE_FAILS=0 AFTER=$2; echo 0 > "$T/looks"
       svc_enabled() { [[ "$1" == bazarr ]]; }; wire_gate() { :; }; hr() { :; }; sleep() { :; }
       bazarr_key() { n=$(( $(cat "$T/looks") + 1 )); echo "$n" > "$T/looks"; (( n > AFTER )) && echo BK; return 0; }
-      arr_url() { echo http://b; }; curl() { echo 200; }; bazarr_analytics_off() { :; }   # past the key: the rest is not this check's
+      arr_url() { echo http://b; }; curl() { echo 200; }; bazarr_analytics_off() { :; }; bazarr_login() { :; }   # past the key: the rest is not this check's
       wire_bazarr >/dev/null 2>&1; echo "fails=$WIRE_FAILS looks=$(cat "$T/looks")" )
 }
 [[ "$(bw 0 3)" == "fails=0 looks=4" ]] || fail_ "no key yet: wire waits for it, then goes on: $(bw 0 3)"; pass
 [[ "$(bw 0 9999)" == "fails=1 looks=$(( BAZARR_KEY_WAIT / 3 + 2 ))" ]] || fail_ "never written: bounded, then a failure: $(bw 0 9999)"; pass
 [[ "$(bw 1 9999)" == "fails=1 looks=1" ]] || fail_ "a dry run never waits: $(bw 1 9999)"; pass
+
+# ---- Bazarr's own login follows gate_trusted (docs/design-logins.md, step 6) ----
+bl() { # bl TRUSTED(0|1) TYPE USER DRY NOTAKE [force] -> "fails=N posts=N type=T user=U" (each post's fields in $T/bl-posts)
+    ( WIRE_DRY=$4 WIRE_FAILS=0 TR=$1 NOTAKE=$5; rm -f "$T/bl-posts"
+      printf '{"auth":{"type":%s,"username":"%s","password":"HASH","apikey":"BK"}}' "$2" "$3" > "$T/bl"
+      bazarr_key() { echo BK; }; arr_url() { echo http://b; }; gate_trusted() { (( TR )); }
+      env_get() { case "$1" in ARR_USER) echo "${BU-admin}" ;; ARR_PASSWORD) echo "${BP-secretpass12}" ;; esac; }
+      curl() { [[ " $* " == *" X-API-KEY: BK "* ]] || { echo 401; return 0; }
+          if [[ " $* " == *" -X POST "* ]]; then
+              local a f=() t="" un=""; for a in "$@"; do [[ "$a" == settings-* ]] && f+=("$a"); done
+              printf '%s\n' "${f[*]}" >> "$T/bl-posts"
+              for a in "${f[@]}"; do case "$a" in settings-auth-type=*) t=${a#*=} ;; settings-auth-username=*) un=${a#*=} ;; esac; done
+              if (( ! NOTAKE )); then
+                  [[ "$t" == null ]] && t=null || t="\"$t\""
+                  jq -c --argjson t "$t" --arg u "$un" '.auth.type = $t | if $u != "" then .auth.username = $u else . end' "$T/bl" > "$T/bl.n" && mv "$T/bl.n" "$T/bl"
+              fi
+              printf '{}\n200'
+          else [[ -z "${UNREAD:-}" ]] || { echo 'curl: (7) refused'; return 7; }; cat "$T/bl"; fi; }
+      bazarr_login "${6:-}" > "$T/bl-out" 2>&1
+      echo "fails=$WIRE_FAILS posts=$( [[ -f "$T/bl-posts" ]] && wc -l < "$T/bl-posts" || echo 0) type=$(jq -r '.auth.type' "$T/bl") user=$(jq -r '.auth.username' "$T/bl")" )
+}
+[[ "$(bl 1 '"form"' admin 0 0)" == "fails=0 posts=1 type=null user=admin" && "$(cat "$T/bl-posts")" == "settings-auth-type=null" ]] \
+    && grep -q 'OK bazarr: no login of its own — the portal guards it\|no login of its own' "$T/bl-out" \
+    || fail_ "trusted, a form login: dropped (type None), read back: $(bl 1 '"form"' admin 0 0) $(cat "$T/bl-posts")"; pass
+[[ "$(bl 1 null admin 0 0)" == "fails=0 posts=0 type=null user=admin" ]] || fail_ "trusted, none already: nothing written: $(bl 1 null admin 0 0)"; pass
+[[ "$(bl 0 null '' 0 0)" == "fails=0 posts=1 type=form user=admin" && "$(cat "$T/bl-posts")" == "settings-auth-type=form settings-auth-username=admin settings-auth-password=secretpass12" ]] \
+    || fail_ "not trusted (the portal gone), none: the arr login put back, read back: $(bl 0 null '' 0 0) $(cat "$T/bl-posts")"; pass
+[[ "$(bl 0 '"form"' admin 0 0)" == "fails=0 posts=0 type=form user=admin" ]] || fail_ "not trusted, the arr login there: nothing written: $(bl 0 '"form"' admin 0 0)"; pass
+[[ "$(bl 0 '"form"' admin 0 0 force)" == "fails=0 posts=1 type=form user=admin" ]] || fail_ "set-credentials (force): the stored password pushed though the name matches: $(bl 0 '"form"' admin 0 0 force)"; pass
+[[ "$(bl 0 '"form"' olduser 0 0)" == "fails=0 posts=1 type=form user=admin" ]] || fail_ "not trusted, another name: the arr login written: $(bl 0 '"form"' olduser 0 0)"; pass
+[[ "$(BU='' bl 0 null '' 0 0)" == "fails=0 posts=0 type=null user=" ]] && grep -q "the shared arr login is not set yet" "$T/bl-out" \
+    || fail_ "not trusted, no arr login yet: said so, nothing written: $(cat "$T/bl-out")"; pass
+[[ "$(bl 1 '"form"' admin 1 0)" == "fails=0 posts=0 type=form user=admin" ]] && grep -q "would: bazarr: drop its own login" "$T/bl-out" \
+    || fail_ "a dry run: says what it would do, writes nothing: $(cat "$T/bl-out")"; pass
+[[ "$(bl 1 '"form"' admin 0 1)" == "fails=1 posts=1 type=form user=admin" ]] && grep -q "reads back otherwise" "$T/bl-out" \
+    || fail_ "accepted but not taken: a failure, never assumed: $(cat "$T/bl-out")"; pass
+[[ "$(UNREAD=1 bl 1 '"form"' admin 0 0)" == "fails=1 posts=0 type=form user=admin" ]] && grep -q "could not read its settings" "$T/bl-out" \
+    || fail_ "its settings unreadable: a failure, nothing written: $(cat "$T/bl-out")"; pass
+awk '/^wire_bazarr\(\)/,/^}/' services/bazarr/bazarr.sh | grep '^    bazarr_login$' >/dev/null && ! grep -q 'settings-auth-' <(awk '/^wire_bazarr\(\)/,/^}/' services/bazarr/bazarr.sh) \
+    || fail_ "wire bazarr: its login is bazarr_login's, and the pairing form carries none"; pass
+awk '/^sc_rotate_arr\(\)/,/^}/' services/_arr/arr.sh | grep 'bazarr_login force' >/dev/null || fail_ "set-credentials arr: Bazarr takes the new login too"; pass
 
 # ---- reset-password with Wizarr: Wizarr's own single-use link (decided 14 Nov 2026, proven live first) ----
 wr() { # wr USERS-JSON RESET-REPLY DISABLED(0|1) NAME -> "rc=N calls" (output in $T/wr)

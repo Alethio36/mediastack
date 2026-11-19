@@ -349,6 +349,8 @@ sc_rotate_arr() { # USER PASS — every arr-family app + cleanuparr follows
         done
         # LazyLibrarian's page takes the same login (none behind the portal)
         if svc_enabled lazylibrarian && [[ "$(c_state "$(svc_cname lazylibrarian)")" == running ]]; then ll_login || true; fi   # a failure is reported by ll_login; the rest still rotates
+        # Bazarr's page takes it too (none behind the portal); it was left out until 18 Nov 2026
+        if svc_enabled bazarr && [[ "$(c_state "$(svc_cname bazarr)")" == running ]]; then bazarr_login force || true; fi
         if svc_enabled cleanuparr && [[ "$(c_state "$(svc_cname cleanuparr)")" == running ]]; then
             local lout ltok
             lout=$(cup_api POST /auth/login "" "$(jq -cn --arg u "$olduser" --arg p "$oldpass" '{username:$u,password:$p}')" || true)

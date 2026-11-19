@@ -849,7 +849,10 @@ Traefik's dashboard. Navidrome sits behind a *household* gate: anyone in
 `frontend` gets in, and the portal tells Navidrome who they are (it creates
 them on their first visit); music apps use `/rest/` with a password each user
 sets once in Navidrome's settings, taken back when their portal account goes
-(see "Music (Navidrome)"). The panel needs no login of its own past
+(see "Music (Navidrome)"). Past the gate, the arrs, Prowlarr, Bazarr and
+LazyLibrarian ask for no login of their own either — without the portal they
+take the shared arr login again (the rest follow tool by tool:
+docs/design-logins.md). The panel needs no login of its own past
 the gate (its own admin is only the way in without the portal): it trusts the portal's identity headers, on a network only the edge
 joins (`mediastack-panel`; docs/frontdoor.md). Every route past a gate strips the portal's
 identity headers, and Navidrome trusts only Traefik's address — Traefik keeps

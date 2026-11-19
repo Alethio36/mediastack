@@ -7,6 +7,49 @@ bazarr_key() { # bazarr_key -> api key from its config.yaml ("" while initialisi
     sudo grep -oP 'apikey:\s*\K\S+' "$(env_get CONFIG_ROOT)/bazarr/config/config.yaml" 2>/dev/null | sed -n 1p || true
 }
 
+# ---- its own login (docs/design-logins.md) ----
+# Behind a trusted portal gate it needs none (auth type None); otherwise it
+# takes the shared arr login as its form login. Its API asks for the API key
+# whatever the login (Bazarr's api/utils.py authenticate), so dropping the
+# login never opens the API.
+bazarr_login() { # bazarr_login [force] — Bazarr's own login follows gate_trusted, read back; force: push the stored password even when the name already matches (set-credentials)
+    local key url cur u p want out code form=()
+    key=$(bazarr_key); url=$(arr_url bazarr)
+    [[ -n "$key" ]] || { info "bazarr: no API key yet — 'wire bazarr' sets its login"; return 0; }
+    u=$(env_get ARR_USER); p=$(env_get ARR_PASSWORD)
+    if gate_trusted bazarr; then
+        want='.auth.type == null'
+    else
+        [[ -n "$u" && -n "$p" ]] || { info "bazarr: the shared arr login is not set yet — 'wire arr' creates it"; return 0; }
+        want='.auth.type == "form" and .auth.username == $u'
+    fi
+    cur=$(curl -sS -m 20 -H "X-API-KEY: $key" "$url/api/system/settings" 2>&1) && jq -e '.auth | type == "object"' <<<"$cur" >/dev/null 2>&1 \
+        || { wfail "bazarr: could not read its settings to check its login — $(oneline "$cur")"; return 0; }
+    # the password is stored hashed: a match is the type and the name; force never matches
+    if [[ "${1:-}" != force ]] && jq -e --arg u "$u" "$want" <<<"$cur" >/dev/null; then
+        if gate_trusted bazarr; then ok "bazarr: no login of its own — the portal guards it"
+        else ok "bazarr: its page asks for the arr login ('$u')"; fi
+        return 0
+    fi
+    if gate_trusted bazarr; then
+        w_would "bazarr: drop its own login — the portal guards it" || return 0
+        form=(--data-urlencode "settings-auth-type=null")   # Bazarr reads null as None (config.py empty_values)
+    else
+        w_would "bazarr: its page asks for the arr login ('$u')" || return 0
+        form=(--data-urlencode "settings-auth-type=form" --data-urlencode "settings-auth-username=$u" --data-urlencode "settings-auth-password=$p")
+    fi
+    out=$(curl -sS -m 20 -w $'\n%{http_code}' -X POST -H "X-API-KEY: $key" "${form[@]}" "$url/api/system/settings" 2>&1) || out+=$'\n000'
+    code=${out##*$'\n'}
+    [[ "$code" =~ ^2 ]] || { wfail "bazarr: its login change was refused [HTTP $code]: $(oneline "${out%$'\n'*}")"; return 0; }
+    cur=$(curl -sS -m 20 -H "X-API-KEY: $key" "$url/api/system/settings" 2>&1)
+    if jq -e --arg u "$u" "$want" <<<"$cur" >/dev/null 2>&1; then
+        if gate_trusted bazarr; then ok "bazarr: no login of its own — the portal guards it"
+        else ok "bazarr: its page asks for the arr login ('$u')"; fi
+    else
+        wfail "bazarr: took its login change [HTTP $code] but reads back otherwise — check its Settings → General → Security"
+    fi
+}
+
 # ---- bazarr ----
 BAZARR_KEY_WAIT=90   # seconds a first start may take to write its key
 wire_bazarr() {
@@ -39,6 +82,7 @@ wire_bazarr() {
         done
     fi
     bazarr_analytics_off "$bkey" "$burl"
+    bazarr_login
     local pairs=() t skey
     for t in sonarr radarr; do
         svc_enabled "$t" || continue
@@ -47,11 +91,8 @@ wire_bazarr() {
     done
     (( ${#pairs[@]} )) || { info "no base sonarr/radarr to pair — skipped"; return 0; }
     if w_would "point bazarr at base sonarr/radarr (extra instances are out of bazarr's scope)"; then
-        # auth fields exactly ONCE — duplicate form keys become lists on
-        # bazarr's side and fail its type validation
-        local form=("settings-auth-type=form"
-                    "settings-auth-username=$(env_get ARR_USER)"
-                    "settings-auth-password=$(env_get ARR_PASSWORD)") i
+        # its login is bazarr_login's (above), never in this form
+        local form=() i
         for ((i=0; i<${#pairs[@]}; i+=2)); do
             t=${pairs[i]}; skey=${pairs[i+1]}
             form+=("settings-general-use_${t}=true"
@@ -68,7 +109,7 @@ wire_bazarr() {
                 "${args[@]}" "$burl/api/system/settings" 2>&1) || bresp="${bresp}"$'\n000'
         bcode=${bresp##*$'\n'}
         if [[ "$bcode" =~ ^2 ]]; then
-            ok "bazarr paired with base sonarr/radarr (+ shared login)"
+            ok "bazarr paired with base sonarr/radarr"
         else
             wfail "bazarr pairing rejected [HTTP $bcode]: $(head -c200 <<<"${bresp%$'\n'*}")
      pair manually meanwhile (Settings -> Sonarr/Radarr) and paste the above"
