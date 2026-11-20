@@ -175,6 +175,14 @@ order it runs or prints them; a service's part lives in its folder. So far:
 `<stem>_secret_rotate`) and doctor's app checks (`DOCTOR_APPS` in
 `lib/doctor.sh` -> `<name>_doctor`).
 
+**Every secret follows one rule.** A `secret` row's value — typed,
+pasted, answered or generated — is printable ASCII with no spaces and none
+of `$`, `"`, `'`, `\` or the backtick: compose's `.env` parser and the
+script's would read those differently. It is written once, `secret_ok` in
+`lib/common.sh`; ask with `ask_secret` (a password) or `ask_secret_token`
+(a pasted key), and `env_set` refuses to store one that breaks it. Never a
+list of characters of your own (`scripts/test-secrets.sh` fails one).
+
 **A secret the scripts generate needs a way to rotate.** Every `secret` row
 of a service's `env.tsv` whose writer is `script` is either a login's password
 (its `<stem>_logins` line: `set-credentials`' job), rotated by

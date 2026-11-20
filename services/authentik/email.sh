@@ -23,7 +23,6 @@ smtp_problems() { # -> one line per thing wrong with the email settings (none: t
     [[ "$(env_get SMTP_STARTTLS)" == true && "$(env_get SMTP_TLS)" == true ]] \
         && echo "SMTP_STARTTLS and SMTP_TLS are both true — a server speaks one: STARTTLS on 587, TLS on 465"
     [[ -n "$(env_get SMTP_USER)" && -z "$pw" ]] && echo "SMTP_USER is set but SMTP_PASSWORD is empty"
-    [[ "$pw" =~ [\$[:space:]] ]] && echo "SMTP_PASSWORD holds a \$ or a space — compose would rewrite it; use an app password or SMTP key (Gmail shows its app passwords in groups of four: type it without the spaces)"
     return 0
 }
 
@@ -106,7 +105,7 @@ $(sed 's/^/  /' <<<"$p")"
 # check, ask, record); the port and the From address are held to their types
 smtp_host_problem() { env_type_ok host "${1,,}" || echo "'$1' is not a server name or address."; }   # recorded lowercase
 smtp_password_problem() { # smtp_password_problem PASS -> why not, once its spaces are dropped ("" when fine)
-    [[ "${1//[[:space:]]/}" != *'$'* ]] || echo "it holds a \$, which compose would rewrite — use an app password or SMTP key"
+    secret_ok "${1//[[:space:]]/}" || echo "it must be $SECRET_RULE — use an app password or SMTP key"
 }
 email_changed() { state_set "$EMAIL_STATE" yes; }   # configure takes the reset link off until the new settings pass a test
 
@@ -119,7 +118,7 @@ email_from_answers() { # the email settings from the answers file; a blank keeps
     fi
     if answer SMTP_PASSWORD; then
         p=$(smtp_password_problem "$REPLY_VAL"); [[ -z "$p" ]] || answer_refused "SMTP_PASSWORD: $p"
-        env_set SMTP_PASSWORD "${REPLY_VAL//[[:space:]]/}"
+        env_set SMTP_PASSWORD "$REPLY_VAL"   # its spaces dropped when the file was read (ANSWER_NOSPACE)
     fi
     [[ -n "$(env_get SMTP_HOST)" ]] || answer_refused "email has no server — set SMTP_HOST (or leave every SMTP_ key blank)"
     while IFS= read -r p; do [[ -z "$p" ]] || answer_refused "$p"; done <<<"$(smtp_problems)"

@@ -22,6 +22,9 @@ declare -gA ANSWER=()            # KEY -> the written answer (only written ones 
 declare -gA ANSWER_WORDS=([UPDATE_SCHEDULE]=never [BACKUP_SCHEDULE]=never [VPN_SERVER_COUNTRIES]=auto)
 # names the questions take in any case and record lowercase: the file does the same
 ANSWER_LOWER=" SMTP_HOST STACK_DOMAIN VPN_PROVIDER "
+# secrets the questions take with their spaces dropped (shown in groups: a mail
+# provider's app password) — the file does the same, before every secret's rule
+ANSWER_NOSPACE=" SMTP_PASSWORD "
 # a yes/no answer: these words in any case, recorded in the form its key keeps
 ANSWER_YES=" yes y true "; ANSWER_NO=" no n false "
 
@@ -127,6 +130,7 @@ answers_load() { # answers_load FILE — ANSWER from it; every problem with the 
         fi
         [[ -n "$v" ]] || continue   # blank: not answered
         [[ "$ANSWER_LOWER" != *" $k "* ]] || v=${v,,}
+        [[ "$ANSWER_NOSPACE" != *" $k "* ]] || v=${v//[[:space:]]/}
         if [[ -n "${ANSWER_WORDS[$k]:-}" && "$v" == "${ANSWER_WORDS[$k]}" ]]; then ANSWER[$k]=""; continue; fi
         case "${typ[$k]}" in
             bool|"enum:yes|no")   # yes, no, y, n, true or false, in any case

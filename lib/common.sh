@@ -147,9 +147,28 @@ gen_secret() { # gen_secret N -> N letters and digits from /dev/urandom
     echo "${s:0:$1}"
 }
 
+# One rule for every secret — a password, key or token, typed, pasted or
+# answered: printable ASCII with no whitespace, and none of $ " ' \ or the
+# backtick. Compose reads .env with a parser of its own (a $ starts a
+# variable, a leading quote quotes, whitespace is trimmed or ends the value at
+# a ' #'), the script reads it as written: one of these and the two see
+# different values. \ and the backtick survive compose but not every app's
+# config files, and the rest of the printable symbols pass everywhere the
+# stack carries a secret. Its characters are written here and nowhere else
+# (scripts/test-secrets.sh).
+secret_ok() { # secret_ok VALUE — rc 0 when VALUE passes the rule (empty passes: whether it may be empty is the caller's)
+    local LC_ALL=C   # the ranges below are bytes, whatever the locale
+    [[ -z "$1" ]] && return 0
+    [[ "$1" =~ ^[!-~]+$ && ! "$1" =~ [\$\"\'\\\`] ]]
+}
+SECRET_RULE="printable ASCII with no spaces, and none of \$ \" ' \\ or the backtick — .env and compose cannot hold them safely"
+secret_problem() { secret_ok "$1" || echo "$SECRET_RULE"; }   # secret_problem VALUE -> why it cannot be a secret ("" when it can)
+
 # KEY -> what an empty or absent KEY means: the .env schema's default column,
 # loaded once per run (env_defaults_load, lib/env.sh) — the only place one is written
 declare -gA ENV_DEFAULT=()
+# KEY -> 1 for every key of the schema's secret type (env_defaults_load): env_set refuses one that breaks the rule
+declare -gA ENV_SECRET=()
 env_or_note() { local v; v=$(env_get "$1"); echo "${v:-$2}"; }   # env_or_note <key> <note> — for display: the value, or the note when it has none
 env_get() { # env_get <key> -> its .env value; empty or absent: the schema's default (none: empty)
     # one rule for both readers of .env: compose's ${KEY:-x} means the same
@@ -174,6 +193,10 @@ state_del() { rm -f "$STATE_DIR/$1"; }
 
 env_set() { # env_set VAR value  (idempotent upsert, preserves file order)
     local var="$1" val="$2"
+    # the backstop: every writer checks its secret where it is asked; one that
+    # did not is a bug, stopped here before .env holds it
+    [[ -z "${ENV_SECRET[$var]-}" ]] || secret_ok "$val" \
+        || die "refusing to write $var: a secret must be $SECRET_RULE"
     [[ -e "$ENV_FILE" ]] || { touch "$ENV_FILE"; repo_owned "$ENV_FILE"; }
     if grep -qE "^${var}=" "$ENV_FILE"; then
         # sed with | delimiter; escape | and & in value
@@ -235,21 +258,32 @@ ask_token() { # ask_token "prompt" "current" [optional] -> REPLY_VAL; pasted sec
     done
 }
 
+ask_secret_token() { # ask_secret_token "prompt" "current" [optional] -> REPLY_VAL: a pasted secret for .env (ask_token), asked again until it passes the rule
+    while true; do
+        ask_token "$@"
+        secret_ok "$REPLY_VAL" && return 0
+        fail "That won't do: a secret must be $SECRET_RULE."
+        set -- "$1" "" "${3:-}"   # Enter must not keep a refused value
+    done
+}
+
 ask_secret() { # ask_secret "prompt" "generated-default" -> REPLY_VAL
     # Never echoes. Enter accepts the generated default (view: credentials);
     # a typed password must be entered twice to guard against blind typos.
     prompt_guard "$1"
     local a b
     while true; do
-        read -r -s -p "$1 [Enter = accept a generated one]: " a || [[ -n "$a" ]] || { echo; die "no answer to '$1': the input ended"; }; echo
+        # IFS=: a space typed at either end is kept, and refused, never trimmed unseen
+        IFS= read -r -s -p "$1 [Enter = accept a generated one]: " a || [[ -n "$a" ]] || { echo; die "no answer to '$1': the input ended"; }; echo
         if [[ -z "$a" ]]; then
             REPLY_VAL="$2"
             info "using a generated password — view any time: ./mediastack.sh credentials"
             return 0
         fi
-        read -r -s -p "Confirm password: " b || [[ -n "$b" ]] || { echo; die "no answer to 'Confirm password': the input ended"; }; echo
-        [[ "$a" == "$b" ]] && { REPLY_VAL="$a"; return 0; }
-        fail "Passwords do not match — try again."
+        IFS= read -r -s -p "Confirm password: " b || [[ -n "$b" ]] || { echo; die "no answer to 'Confirm password': the input ended"; }; echo
+        [[ "$a" == "$b" ]] || { fail "Passwords do not match — try again."; continue; }
+        secret_ok "$a" || { fail "That password won't do: $SECRET_RULE."; continue; }
+        REPLY_VAL="$a"; return 0
     done
 }
 

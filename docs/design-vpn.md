@@ -219,11 +219,11 @@ provider's `env.tsv`); a key belonging to another provider is refused, as
 `NORDVPN_TOKEN` is today. `scripts/gen-answers.sh` groups a provider's keys
 under its name.
 
-An OpenVPN password or a key is the provider's, not the stack's: it is
-refused when it holds `$`, `"`, `'`, `\` or a backtick (they break `.env` and
-compose's interpolation, `LOGIN_FORBIDDEN`), saying so. Providers' service
-credentials are generated letters and digits; one that is not is reported
-and handled then.
+An OpenVPN password or a key is the provider's, not the stack's, and
+follows every secret's rule (`secret_ok`, since 19 Nov 2026: printable
+ASCII, no spaces, none of `$`, `"`, `'`, `\` or the backtick), refused
+with that reason. Providers' service credentials are generated letters and
+digits; one that is not is reported and handled then.
 
 ## The leak gate and OpenVPN
 

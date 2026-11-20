@@ -28,7 +28,8 @@ GOOD=(SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_STARTTLS=true SMTP_TLS=false
 # ---- what makes settings unusable ----
 smtp "${GOOD[@]}"; [[ -z "$(smtp_problems)" ]] || fail_ "good settings: no problems: $(smtp_problems)"; pass
 smtp "${GOOD[@]}" SMTP_TLS=true; [[ "$(smtp_problems)" == *"both true"* ]] || fail_ "STARTTLS and TLS at once"; pass
-smtp "${GOOD[@]}" 'SMTP_PASSWORD=pa$word'; [[ "$(smtp_problems)" == *'holds a $'* ]] || fail_ "a \$ compose would rewrite"; pass
+# a $ in the password is every secret's rule's (scripts/test-secrets.sh): .env refuses it before any command runs
+[[ -n "$(smtp_password_problem 'pa$word')" ]] || fail_ "a \$ compose would rewrite"; pass
 smtp "${GOOD[@]}" SMTP_FROM=; [[ "$(smtp_problems)" == *"SMTP_FROM is empty"* ]] || fail_ "no sender"; pass
 smtp "${GOOD[@]}" SMTP_PASSWORD=; [[ "$(smtp_problems)" == *"SMTP_PASSWORD is empty"* ]] || fail_ "a login without a password"; pass
 smtp SMTP_HOST=relay.lan SMTP_PORT=25 SMTP_FROM=box@home.lan; [[ -z "$(smtp_problems)" ]] || fail_ "an unauthenticated LAN relay is fine"; pass

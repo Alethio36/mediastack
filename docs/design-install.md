@@ -207,8 +207,12 @@ again (`ask_valid`, the one-way-to-ask convention):
   accept a generated one), the prompt says so.
 - **Formats:** domain, email, URL, path (no backslash), time — as configure
   checks some of them today.
-- **Typed passwords:** entered twice; at least 12 characters; no whitespace
-  and none of `$`, `"`, `'`, `\` or the backtick — they break `.env` and compose's interpolation.
+- **Typed passwords:** entered twice; at least 12 characters; and every
+  secret's rule — printable ASCII, no whitespace, none of `$`, `"`, `'`, `\`
+  or the backtick (`secret_ok`, `lib/common.sh`; *one rule since 19 Nov
+  2026*: compose's `.env` parser and the script's would read those
+  differently — tested in `scripts/test-secrets.sh`). The same rule holds
+  every pasted key, token and answered secret, and `set-credentials`.
   On top, each service's own rule from `<name>_logins` (Kavita, for one, has
   a password policy of its own): a **unified** password must pass every
   enabled service's rule, so one answer cannot break one app.

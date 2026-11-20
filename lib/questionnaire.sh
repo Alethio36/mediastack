@@ -665,7 +665,7 @@ your own WireGuard details (for fussy/unlisted providers)."
 "Paste values from your provider's WireGuard config file ([Interface]
 PrivateKey and Address). See gluetun's wiki page 'Custom provider' for
 the remaining server-side settings to add to .env / an override file."
-            ask_token "PrivateKey (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
+            ask_secret_token "PrivateKey (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
             while true; do
                 ask WIREGUARD_ADDRESSES "Address" "$(env_get WIREGUARD_ADDRESSES)"
                 p=$(wg_addresses_problem "$REPLY_VAL"); [[ -z "$p" ]] && break
@@ -676,7 +676,7 @@ the remaining server-side settings to add to .env / an override file."
             explain "Provider: $REPLY_VAL" \
 "Follow gluetun's wiki for '$REPLY_VAL' to obtain your WireGuard private
 key, then paste it below. Country selection works the same for all."
-            ask_token "WireGuard private key (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
+            ask_secret_token "WireGuard private key (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
             ask_countries "Server country (Enter = auto)"; env_set VPN_SERVER_COUNTRIES "$REPLY_VAL" ;;
     esac
 }

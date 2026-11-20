@@ -366,7 +366,7 @@ server-side setup is out of scope here."
         local smbuser smbpass credfile gid
         ask SMB_USER "SMB username" ""
         smbuser="$REPLY_VAL"
-        read -r -s -p "SMB password: " smbpass; echo
+        IFS= read -r -s -p "SMB password: " smbpass; echo   # IFS=: the NAS's password as typed, a space at either end included
         credfile="/etc/mediastack-cifs-$(basename "$mpoint")"
         printf 'username=%s\npassword=%s\n' "$smbuser" "$smbpass" | sudo tee "$credfile" >/dev/null
         sudo chmod 600 "$credfile"

@@ -41,6 +41,8 @@ jobs:
           exit $rc
       - name: the portal's email and people (scripts/test-email.sh)
         run: scripts/test-email.sh
+      - name: every secret follows one rule, and both readers of .env see what it lets through (scripts/test-secrets.sh)
+        run: scripts/test-secrets.sh
       - name: an unhandled failure names itself, a handled one stays silent (scripts/test-errtrap.sh)
         run: scripts/test-errtrap.sh
       - name: a stack stopped with down stays down until up (scripts/test-down.sh)

@@ -15,7 +15,6 @@
 # by the entrypoint; relies on lib/common.sh and the service helpers.
 
 LOGIN_PW_MIN=12                  # a typed password: at least this long
-LOGIN_FORBIDDEN='[[:space:]$"'"'"'\\`]'   # whitespace and $ " ' \ ` break .env and compose's interpolation
 LOGIN_USER_RE='^[A-Za-z0-9._-]+$'         # the one username: what every login accepts
 
 logins_list() { # the enabled services' logins, and those of services asked for now (svc_pending), one TSV line each, a shared one once
@@ -57,7 +56,7 @@ login_user_problem() { # login_user_problem NAME -> why NAME cannot be the stack
 login_pass_problem() { # login_pass_problem PASS [PASS_KEY] -> why PASS cannot be that login's (every login's without one); "" when it can
     local p=$1 key=${2:-} l m
     (( ${#p} >= LOGIN_PW_MIN )) || { echo "at least $LOGIN_PW_MIN characters"; return 0; }
-    [[ ! "$p" =~ $LOGIN_FORBIDDEN ]] || { echo "no spaces, and none of \$ \" ' \\ or the backtick — .env and compose cannot hold them safely"; return 0; }
+    secret_ok "$p" || { echo "$SECRET_RULE"; return 0; }   # every secret's rule (lib/common.sh)
     while IFS= read -r l; do
         [[ -n "$l" ]] || continue
         [[ -z "$key" || "$(cut -f3 <<<"$l")" == "$key" ]] || continue

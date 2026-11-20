@@ -117,7 +117,7 @@ portal guards it). Cleanuparr's USERNAME cannot be changed via
 its API: if you change the username here, sign-in to cleanuparr keeps the
 old one."
         user=$(env_get ARR_USER); ask SC_U "Username" "${user:-admin}"; user="$REPLY_VAL"
-        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        login_pass_ask "New password" ARR_PASSWORD; pass="$REPLY_VAL"
         sc_rotate_arr "$user" "$pass"
         ;;
     qbit)
@@ -126,27 +126,27 @@ old one."
 "Changes the WebUI login and updates everything that stores it: each
 arr's download-client entry and cleanuparr's connection."
         user=$(env_get QBITTORRENT_USER); ask SC_QU "Username" "${user:-admin}"; user="$REPLY_VAL"
-        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        login_pass_ask "New password" QBITTORRENT_PASSWORD; pass="$REPLY_VAL"
         sc_rotate_qbit "$user" "$pass"
         ;;
     deluge)
         local pass
-        ask_secret "New Deluge password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        login_pass_ask "New Deluge password" DELUGE_PASSWORD; pass="$REPLY_VAL"
         sc_rotate_deluge "$pass"
         ;;
     transmission)
         local pass
-        ask_secret "New Transmission password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        login_pass_ask "New Transmission password" TRANSMISSION_PASSWORD; pass="$REPLY_VAL"
         sc_rotate_transmission "$pass"
         ;;
     pihole)
         local pass
-        ask_secret "New Pi-hole password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        login_pass_ask "New Pi-hole password" PIHOLE_PASSWORD; pass="$REPLY_VAL"
         sc_rotate_pihole "$pass"
         ;;
     traefik)
         local pass
-        ask_secret "New dashboard password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        login_pass_ask "New dashboard password" TRAEFIK_DASH_PASSWORD; pass="$REPLY_VAL"
         sc_rotate_traefik "$pass"
         ;;
     jellyfin)
@@ -154,7 +154,7 @@ arr's download-client entry and cleanuparr's connection."
         explain "Rotate the Jellyfin admin password" \
 "Seerr federates to Jellyfin (nothing to change there) and Wizarr connects
 by API key (unchanged). Only this password and .env move."
-        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; npass="$REPLY_VAL"
+        login_pass_ask "New password" JELLYFIN_ADMIN_PASSWORD; npass="$REPLY_VAL"
         sc_rotate_jellyfin "$npass"
         ;;
     audiobookshelf)
@@ -164,7 +164,7 @@ by API key (unchanged). Only this password and .env move."
 accounts). A password change ends every session signed in as root: other
 browsers and apps must sign in again (a page already open keeps working up
 to an hour)."
-        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        login_pass_ask "New password" ABS_ADMIN_PASSWORD; pass="$REPLY_VAL"
         sc_rotate_audiobookshelf "$pass"
         ;;
     kavita)
@@ -172,7 +172,7 @@ to an hour)."
         explain "Rotate Kavita's admin password" \
 "The admin is the stack's own account (people sign in with their own).
 Only this password and .env move."
-        ask_secret "New password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        login_pass_ask "New password" KAVITA_ADMIN_PASSWORD; pass="$REPLY_VAL"
         sc_rotate_kavita "$pass"
         ;;
     navidrome)
@@ -199,7 +199,7 @@ read it (a few seconds)."
 authentik's API, and stored in .env (AUTHENTIK_ADMIN_PASSWORD is otherwise
 read only at authentik's first start). Kept out of 'all' on purpose: the
 shared password also sits in the arrs' and qBittorrent's settings."
-        ask_secret "New password" "$(head -c16 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        login_pass_ask "New password" AUTHENTIK_ADMIN_PASSWORD; pass="$REPLY_VAL"
         sc_rotate_portal "$pass"
         ;;
     all)
@@ -215,7 +215,7 @@ means one leak opens everything — use a strong, stack-unique one.
 NOT covered: the portal's admin (set-credentials portal — it guards the
 rest), and Wizarr's admin account — rotate that in Wizarr's UI
 (Settings -> Account) yourself."
-        ask_secret "New stack password" "$(head -c12 /dev/urandom | base64 | tr -d '=+/')"; pass="$REPLY_VAL"
+        login_pass_ask "New stack password"; pass="$REPLY_VAL"
         local au qu; au=$(env_get ARR_USER); qu=$(env_get QBITTORRENT_USER)
         sc_rotate_arr "${au:-admin}" "$pass"
         sc_rotate_qbit "${qu:-admin}" "$pass"
