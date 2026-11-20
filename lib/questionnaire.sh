@@ -54,7 +54,7 @@ questionnaire_run() { # the questions, in order; each section records its own an
     _configure_selfheal
     _configure_services
     _configure_download_client
-    _configure_vpn
+    gluetun_vpn_questions   # at this place, not through the hooks' order (services/gluetun/questions.sh)
     svc_hooks questions
     _configure_panel_offer   # before the logins: the panel's admin is one of them
     _configure_logins
@@ -70,7 +70,7 @@ _configure_start() { # the closing question is configure's; a written START answ
 questionnaire_for() { # enable's questions: what the services it brings need, quick — the rest of the stack is answered
     # shellcheck disable=SC2034  # read by every section's q_quick
     Q_MODE=quick
-    if [[ "$Q_FOR" == *" gluetun "* ]]; then _configure_vpn; fi
+    if [[ "$Q_FOR" == *" gluetun "* ]]; then gluetun_vpn_questions; fi
     _configure_download_client
     svc_hooks questions
     _configure_logins
@@ -563,123 +563,8 @@ send to one of them; the others keep running, their entries switched off
 }
 
 # -------------------------------------------------------------------- VPN --
-vpn_provider_problem() { # vpn_provider_problem NAME -> why NAME is no gluetun provider ("" when it can be; recorded lowercase)
-    [[ "${1,,}" =~ ^[a-z0-9][a-z0-9\ ._-]*$ ]] || echo "'${1,,}' is not a provider name (gluetun's names: nordvpn, mullvad, protonvpn, ... or custom)."
-}
-vpn_countries_problem() { # vpn_countries_problem LIST -> why LIST is no country list ("" when it is; empty = auto)
-    [[ -z "$1" || "$1" =~ ^[A-Za-z][A-Za-z\ ,.\'-]*$ ]] || echo "'$1' is not a country name (e.g. Switzerland, or Netherlands,Sweden)."
-}
-wg_addresses_problem() { # wg_addresses_problem ADDRS -> why ADDRS is no [Interface] Address line ("" when it is)
-    # one or more IP/prefix, comma-separated
-    [[ "$1" =~ ^[0-9A-Fa-f:.]+/[0-9]{1,3}(,[[:space:]]*[0-9A-Fa-f:.]+/[0-9]{1,3})*$ ]] \
-        || echo "'$1' is not an address like 10.5.0.2/32 (copy the Address line of the config file)."
-}
-nord_wg_key() { # nord_wg_key TOKEN -> the WireGuard private key NordVPN issues for TOKEN; rc 1 with the reason instead
-    local key
-    # the login goes in on stdin (-K -), never on the command line where ps shows it
-    key=$(curl -fsS -K - "https://api.nordvpn.com/v1/users/services/credentials" \
-              <<<"user = \"token:${1}\"" \
-          | jq -r '.nordlynx_private_key // empty') \
-        || { echo "Could not reach Nord's API. Check connectivity and retry."; return 1; }
-    [[ -n "$key" ]] || { echo "Token rejected by NordVPN — regenerate it and re-run configure."; return 1; }
-    echo "$key"
-}
-
-vpn_from_answers() { # vpn_from_answers CURRENT-KEY — the VPN from the answers file; a blank keeps what is set
-    local prov key p
-    prov=$(env_get VPN_PROVIDER); answer VPN_PROVIDER && prov=$REPLY_VAL
-    p=$(vpn_provider_problem "$prov"); [[ -z "$p" ]] || answer_refused "VPN_PROVIDER: $p"
-    prov=${prov,,}; env_set VPN_PROVIDER "$prov"
-    key=$1
-    if answer WIREGUARD_PRIVATE_KEY; then key=$REPLY_VAL
-    elif answer NORDVPN_TOKEN; then
-        if [[ "$prov" != nordvpn ]]; then answer_refused "NORDVPN_TOKEN is NordVPN's — VPN_PROVIDER is $prov"; return 0; fi
-        key=$(nord_wg_key "$REPLY_VAL") || { answer_refused "NORDVPN_TOKEN: $key"; return 0; }
-    fi
-    [[ -n "$key" ]] || answer_refused "the VPN has no key — set WIREGUARD_PRIVATE_KEY$( [[ "$prov" == nordvpn ]] && echo " or NORDVPN_TOKEN" )"
-    env_set WIREGUARD_PRIVATE_KEY "$key"
-    if [[ "$prov" == custom ]]; then
-        answer WIREGUARD_ADDRESSES && env_set WIREGUARD_ADDRESSES "$REPLY_VAL"
-        p=$(wg_addresses_problem "$(env_get WIREGUARD_ADDRESSES)"); [[ -z "$p" ]] || answer_refused "WIREGUARD_ADDRESSES: $p"
-    elif answers_any WIREGUARD_ADDRESSES; then
-        answer_refused "WIREGUARD_ADDRESSES is for VPN_PROVIDER=custom (the provider sets the address)"
-    fi
-    if answer VPN_SERVER_COUNTRIES; then
-        p=$(vpn_countries_problem "$REPLY_VAL"); [[ -z "$p" ]] || answer_refused "VPN_SERVER_COUNTRIES: $p"
-        env_set VPN_SERVER_COUNTRIES "$REPLY_VAL"
-    fi
-    q_answered "VPN" "$prov, key set, servers: $(env_or_note VPN_SERVER_COUNTRIES auto)"
-}
-
-ask_countries() { # ask_countries "prompt" -> REPLY_VAL: country names, comma-separated, or empty
-    if q_quick; then REPLY_VAL=$(env_get VPN_SERVER_COUNTRIES); q_took "Server country" "${REPLY_VAL:-auto}"; return 0; fi
-    local p
-    while true; do
-        ask VPN_SERVER_COUNTRIES "$1" "$(env_get VPN_SERVER_COUNTRIES)"
-        p=$(vpn_countries_problem "$REPLY_VAL"); [[ -z "$p" ]] && return 0
-        fail "$p"
-    done
-}
-
-_configure_vpn() {
-    # -- VPN: only when something runs in it
-    svc_enabled gluetun || return 0
-    local wg_cur; wg_cur=$(env_get WIREGUARD_PRIVATE_KEY)
-    if answers_any VPN_PROVIDER NORDVPN_TOKEN WIREGUARD_PRIVATE_KEY WIREGUARD_ADDRESSES VPN_SERVER_COUNTRIES; then
-        vpn_from_answers "$wg_cur"; return 0
-    fi
-    if q_quick && [[ -n "$wg_cur" ]]; then q_took "VPN" "keep $(env_get VPN_PROVIDER) and its key"; return 0; fi
-    if answers_checking; then q_unasked "VPN" "VPN_PROVIDER and NORDVPN_TOKEN or WIREGUARD_PRIVATE_KEY"; return 0; fi
-    explain "VPN (gluetun)" \
-"All download traffic runs inside a VPN container. Supported: any gluetun
-provider (nordvpn, mullvad, protonvpn, surfshark, ...) or 'custom' to paste
-your own WireGuard details (for fussy/unlisted providers)."
-    local p
-    while true; do
-        ask VPN_PROVIDER "VPN provider" "$(env_get VPN_PROVIDER)"
-        p=$(vpn_provider_problem "$REPLY_VAL"); [[ -z "$p" ]] && break
-        fail "$p"
-    done
-    REPLY_VAL=${REPLY_VAL,,}
-    env_set VPN_PROVIDER "$REPLY_VAL"
-    case "$REPLY_VAL" in
-        nordvpn)
-            if [[ -n "$wg_cur" ]] && ! confirm "A WireGuard key is already set. Replace it?"; then
-                ok "Keeping existing key."
-            else
-                explain "NordVPN token" \
-"1. Log in at nordvpn.com -> Services -> NordVPN" \
-"2. 'Set up NordVPN manually' -> generate an access token" \
-"3. Copy it (it is shown only once) and paste it below." \
-"The key is fetched from Nord's API — nothing is installed on this host."
-                local key
-                ask_token "NordVPN access token (input hidden)"
-                key=$(nord_wg_key "$REPLY_VAL") || die "$key"
-                env_set WIREGUARD_PRIVATE_KEY "$key"
-                ok "WireGuard key fetched and verified."
-                ask_countries "Server country (e.g. Switzerland; Enter = auto)"
-                env_set VPN_SERVER_COUNTRIES "$REPLY_VAL"
-            fi ;;
-        custom)
-            explain "Manual WireGuard" \
-"Paste values from your provider's WireGuard config file ([Interface]
-PrivateKey and Address). See gluetun's wiki page 'Custom provider' for
-the remaining server-side settings to add to .env / an override file."
-            ask_secret_token "PrivateKey (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
-            while true; do
-                ask WIREGUARD_ADDRESSES "Address" "$(env_get WIREGUARD_ADDRESSES)"
-                p=$(wg_addresses_problem "$REPLY_VAL"); [[ -z "$p" ]] && break
-                fail "$p"
-            done
-            env_set WIREGUARD_ADDRESSES "$REPLY_VAL" ;;
-        *)
-            explain "Provider: $REPLY_VAL" \
-"Follow gluetun's wiki for '$REPLY_VAL' to obtain your WireGuard private
-key, then paste it below. Country selection works the same for all."
-            ask_secret_token "WireGuard private key (input hidden)" "$wg_cur"; env_set WIREGUARD_PRIVATE_KEY "$REPLY_VAL"
-            ask_countries "Server country (Enter = auto)"; env_set VPN_SERVER_COUNTRIES "$REPLY_VAL" ;;
-    esac
-}
+# gluetun's own step: services/gluetun/questions.sh (gluetun_vpn_questions),
+# its providers' questions in services/gluetun/providers/
 
 # --------------------------------------------------------------- the rest --
 _configure_timezone() {

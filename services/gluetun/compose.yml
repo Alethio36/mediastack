@@ -30,16 +30,25 @@ services:
       - ${CONFIG_ROOT}/gluetun:/gluetun
     environment:
       - TZ=${TZ:-Etc/UTC}
-      - VPN_SERVICE_PROVIDER=${VPN_PROVIDER:-nordvpn}
-      - VPN_TYPE=wireguard
+      # The provider, its tunnel, its keys and its server choices are the
+      # provider folder's (services/gluetun/providers/<VPN_PROVIDER>/):
+      # generated into local/vpn-provider.yml by vpn_provider_gen, as .env
+      # references — only what that provider reads reaches gluetun.
       - VERSION_INFORMATION=off   # no phone-home: its check of GitHub for a newer gluetun (the stack owns updates)
-      - WIREGUARD_PRIVATE_KEY=${WIREGUARD_PRIVATE_KEY}
-      - WIREGUARD_ADDRESSES=${WIREGUARD_ADDRESSES:-10.5.0.2/32}
-      # Server selection: comma-separated, leave unused ones empty.
-      - SERVER_COUNTRIES=${VPN_SERVER_COUNTRIES:-}
-      - SERVER_CITIES=${VPN_SERVER_CITIES:-}
-      - SERVER_HOSTNAMES=${VPN_SERVER_HOSTNAMES:-}
-      - UPDATER_PERIOD=24h
+      # pinned, whatever the image's default becomes (docs/privacy.md): no
+      # resolver check through ipleak.net, no lookup of the exit address
+      # (ipinfo.io first) — leak-test and doctor ask Mullvad's checker for it
+      - DNS_RESOLVERS_CHECK=off
+      - PUBLICIP_ENABLED=off
+      # the tunnel's interface: the torrent clients bind to tun0. Only the
+      # image's Dockerfile makes it tun0 for WireGuard (gluetun's own default
+      # there is wg0) — pinned here so an image change cannot unbind them
+      - VPN_INTERFACE=tun0
+      # its server list, from gluetun's own (GitHub) rather than scraped from
+      # the provider's servers, every 15 days: gluetun's wiki asks for no less,
+      # or providers block the updater. Through the tunnel, after it is up.
+      - UPDATER_PERIOD=360h
+      - UPDATER_PREFER_DIRECT_DOWNLOAD=yes
       # Encrypted upstream DNS (DNS over TLS), asked through the tunnel; a
       # comma-separated list spreads queries across resolvers (gluetun's wiki:
       # harder to profile). No plaintext upstream: gluetun's wiki warns a

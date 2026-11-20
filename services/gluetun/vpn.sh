@@ -358,6 +358,7 @@ gluetun_control_key() { # the control server's closing key: made once (its compo
 
 vpn_gen() {
     gluetun_control_key   # a fresh install: before its first up renders gluetun
+    vpn_provider_gen      # the provider's settings (services/gluetun/provider.sh), wherever membership is rendered
     install -d -m 755 "$LOCAL_DIR"; repo_owned "$LOCAL_DIR"
     local bj; bj=$(vpn_base_json) || die "vpn: could not read base compose config"
     local svcs
@@ -581,7 +582,9 @@ vpn_egress_ready() { # vpn_egress_ready SVC -> 0 when SVC may go out; else a FAI
 
 support_gluetun() { # support: the provider and servers asked for, the last leak-test verdict, whether this gluetun was proven
     local v
-    local k w; w="provider $(env_get VPN_PROVIDER)"
+    local k w p; p=$(env_get VPN_PROVIDER); w="provider $p ($(env_get VPN_TYPE)"
+    if vpnp_load "$p"; then w+=", $( [[ -n "$(vpnp_call "$p" proven)" ]] && echo "proven $(vpnp_call "$p" proven)" || echo "not tested live by mediastack")"; else w+=", no such provider folder"; fi
+    w+=")"
     for k in COUNTRIES CITIES HOSTNAMES; do v=$(env_get "VPN_SERVER_$k"); w+="; ${k,,} ${v:-any}"; done
     echo "$w; DNS $(env_get VPN_DNS_RESOLVERS)"
     v=$(state_get "$LEAK_VERDICT")

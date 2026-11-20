@@ -14,9 +14,9 @@ ENV_SCHEMA_FILE="$SCRIPT_DIR/lib/env.schema.tsv"   # the shared rows; a service'
 ENV_IGNORE_MARK="# mediastack: ignore"
 ENV_ROOTS_RE='(CONFIG|DATA|CACHE|TRANSCODE|BACKUP)_ROOT'
 
-env_schema_all() { # the whole schema: the shared rows, then every service's (services/<name>/env.tsv)
+env_schema_all() { # the whole schema: the shared rows, then every service's (services/<name>/env.tsv) and its providers' (services/<name>/providers/<p>/env.tsv)
     local f
-    for f in "$ENV_SCHEMA_FILE" "$SCRIPT_DIR"/services/*/env.tsv; do [[ -e "$f" ]] && cat "$f"; done
+    for f in "$ENV_SCHEMA_FILE" "$SCRIPT_DIR"/services/*/env.tsv "$SCRIPT_DIR"/services/*/providers/*/env.tsv; do [[ -e "$f" ]] && cat "$f"; done
     return 0
 }
 env_schema_rows() { env_schema_all | grep -vE '^(#|[[:space:]]*$)'; }   # key type empty writer default recommended meaning

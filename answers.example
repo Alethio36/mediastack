@@ -275,21 +275,45 @@ DELUGE_PASSWORD=
 
 # ------------------------------------------------------------ gluetun --
 
-# the gluetun VPN provider name
+# the VPN provider: a folder of services/gluetun/providers (gluetun's name, spaces as hyphens)
 #   any single-line text — no recommendation — asked when it applies; with no terminal it must be written
 VPN_PROVIDER=
+
+# the tunnel the provider is run with (each provider's folder says which it offers)
+#   wireguard — recommended: wireguard
+VPN_TYPE=
 
 # the VPN's WireGuard private key
 #   a secret on one line, with no control characters (a newline or a tab) — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)
 WIREGUARD_PRIVATE_KEY=
 
-# the WireGuard interface address (e.g. 10.5.0.2/32)
-#   any single-line text — recommended: 10.5.0.2/32
+# the WireGuard interface address, for a provider that gives one per key (empty: the provider's own, e.g. NordVPN's and ProtonVPN's)
+#   any single-line text — optional: blank leaves it unset
 WIREGUARD_ADDRESSES=
+
+# the WireGuard pre-shared key, for a provider that needs one (AirVPN, Windscribe)
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+WIREGUARD_PRESHARED_KEY=
 
 # limit the VPN to these countries (comma-separated; empty = any)
 #   any single-line text (or auto) — recommended: auto
 VPN_SERVER_COUNTRIES=
+
+# your WireGuard server's public key ([Peer] PublicKey; VPN_PROVIDER=custom)
+#   any single-line text — optional: blank leaves it unset
+WIREGUARD_PUBLIC_KEY=
+
+# your WireGuard server's address or name ([Peer] Endpoint; a name is looked up from this host, kept current)
+#   any single-line text — optional: blank leaves it unset
+WIREGUARD_ENDPOINT_HOST=
+
+# your WireGuard server's port ([Peer] Endpoint)
+#   a port number (1-65535) — optional: blank leaves it unset
+WIREGUARD_ENDPOINT_PORT=
+
+# your WireGuard config file (.conf): its keys, address and endpoint are read into .env (VPN_PROVIDER=custom)
+#   a file path — optional: blank leaves it unset
+WIREGUARD_CONF=
 
 # NordVPN's access token — configure turns it into WIREGUARD_PRIVATE_KEY
 #   a secret on one line, with no control characters (a newline or a tab) — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)

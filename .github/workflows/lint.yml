@@ -8,7 +8,7 @@ jobs:
         with:
           fetch-depth: 0   # the schema-bump step diffs a whole push, not one commit
       - name: shellcheck
-        run: shellcheck -S warning -x mediastack.sh lib/*.sh services/*/*.sh scripts/*.sh
+        run: shellcheck -S warning -x mediastack.sh lib/*.sh services/*/*.sh services/*/providers/*/*.sh scripts/*.sh
       - name: front-door safety audit
         run: bash scripts/audit-frontdoor-safety.sh
       - name: no placeholder host literals
@@ -43,6 +43,10 @@ jobs:
         run: scripts/test-email.sh
       - name: every secret follows one rule, and both readers of .env see what it lets through (scripts/test-secrets.sh)
         run: scripts/test-secrets.sh
+      - name: each VPN provider is a folder that brings what it needs, and only its settings reach gluetun (scripts/test-vpn-providers.sh)
+        run: scripts/test-vpn-providers.sh
+      - name: every VPN provider folder is one gluetun's :latest image still has (scripts/check-vpn-providers.sh)
+        run: scripts/check-vpn-providers.sh
       - name: an unhandled failure names itself, a handled one stays silent (scripts/test-errtrap.sh)
         run: scripts/test-errtrap.sh
       - name: a stack stopped with down stays down until up (scripts/test-down.sh)

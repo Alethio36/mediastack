@@ -174,8 +174,12 @@ refused 'SIGNIN=none\nNORDVPN_TOKEN=TOKEN\nENABLE_WIZARR=y\nENABLE_OLIVETIN=y\n'
 refused 'SIGNIN=none\nNORDVPN_TOKEN=TOKEN\nENABLE_TRAEFIK=y\nENABLE_NPM=y\nSTACK_DOMAIN=media.example.com\nACME_EMAIL=a@b.co\nCF_DNS_API_TOKEN=CFTOK\n' \
     "npm and traefik cannot both run"; pass
 refused 'SIGNIN=none\nNORDVPN_TOKEN=TOKEN\nDOWNLOAD_CLIENT=deluge\n' "DOWNLOAD_CLIENT=deluge is not among the download clients that run"; pass
-refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\nNORDVPN_TOKEN=TOKEN\n' "NORDVPN_TOKEN is NordVPN's"; pass
-refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\n' "the VPN has no key — set WIREGUARD_PRIVATE_KEY"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\nNORDVPN_TOKEN=TOKEN\n' "NORDVPN_TOKEN is for another VPN provider — VPN_PROVIDER is mullvad"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\n' "the VPN (mullvad) needs WIREGUARD_PRIVATE_KEY"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\nWIREGUARD_PRIVATE_KEY=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=\n' "the VPN (mullvad) needs WIREGUARD_ADDRESSES"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=windscribe\nVPN_SERVER_COUNTRIES=Sweden\n' "VPN_SERVER_COUNTRIES: windscribe does not choose servers by country"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\nWIREGUARD_PRIVATE_KEY=nope\n' "WIREGUARD_PRIVATE_KEY: that is not a WireGuard key"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=perfect-privacy\n' "is no VPN provider mediastack knows"; pass
 refused 'CONFIGURE_MODE=full\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\n' "CONFIGURE_MODE=full asks every question — it needs a terminal"; pass
 refused 'SIGNIN=none\nNORDVPN_TOKEN=TOKEN\nSTACK_PASSWORD=Sh4red-pass-1\n' "STACK_PASSWORD is the one password of STACK_LOGINS=unified"; pass
 refused 'SIGNIN=authentik\nNORDVPN_TOKEN=TOKEN\nSTACK_DOMAIN=media.example.com\nACME_EMAIL=a@b.co\nCF_DNS_API_TOKEN=WRONG\n' \

@@ -240,7 +240,7 @@ covered=$( ( svc_enabled() { :; }; signin_is() { :; }; env_get() { echo set; }; 
              for f in $(grep -ho '^[a-z0-9_]*_logins()' services/*/*.sh | tr -d '()'); do "$f" | cut -f3; done   # the declarations only (never configure's step)
              for e in "${ROTATE_NOT[@]}"; do echo "${e%%|*}"; done ) | sort -u )
 missing=""
-for f in lib/env.schema.tsv services/*/env.tsv; do
+for f in lib/env.schema.tsv services/*/env.tsv services/*/providers/*/env.tsv; do
     for k in $(awk -F'\t' '$2 == "secret" && $4 == "script" { print $1 }' "$f"); do
         grep -qx "$k" <<<"$covered" || missing+=" $k ($f)"
     done

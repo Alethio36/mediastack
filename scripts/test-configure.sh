@@ -13,7 +13,9 @@
 #     question, authentik_questions); input that
 #     ends mid-question stops configure instead of asking forever
 #   * the VPN is asked about only when something runs in it; secrets are read
-#     hidden; the NordVPN token reaches curl on stdin, never on its command line
+#     hidden; the NordVPN token reaches curl on stdin, never on its command line;
+#     a provider is a folder, chosen by name or number; a new provider is not
+#     offered the old one's key; a WireGuard key is checked
 #   * a blank tunnel token turns the tunnel off; enable refuses it without one
 #   * the Traefik dashboard's login asks nothing at up (it is a stack login)
 #   * the panel is asked for, not installed: configure installs it after
@@ -142,18 +144,33 @@ grep -q 'different filesystems' "$T/out" || fail_ "an existing one on another fi
 # ---- secrets read hidden; the token never on curl's command line ----
 curl() { printf '%s\n' "$*" > "$T/curl.args"; cat > "$T/curl.stdin"; echo '{"nordlynx_private_key":"KEY"}'; }
 printf 'COMPOSE_PROFILES=sonarr\n' > "$ENV_FILE"
-_configure_vpn </dev/null > "$T/out" 2>&1 && [[ ! -s "$T/out" ]] || fail_ "nothing in the VPN: no VPN question"; pass
+gluetun_vpn_questions </dev/null > "$T/out" 2>&1 && [[ ! -s "$T/out" ]] || fail_ "nothing in the VPN: no VPN question"; pass
 printf 'COMPOSE_PROFILES=gluetun\n' > "$ENV_FILE"
-printf 'nordvpn\nTOKEN123\n\n' | _configure_vpn > "$T/out" 2>&1 || fail_ "nord step runs"
+printf 'nordvpn\nTOKEN123\n\n' | gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord step runs"
 [[ "$(env_get WIREGUARD_PRIVATE_KEY)" == KEY ]] || fail_ "the key is fetched: $(cat "$ENV_FILE")"; pass
 ! grep -q TOKEN123 "$T/curl.args" && grep -qx 'user = "token:TOKEN123"' "$T/curl.stdin" \
     || fail_ "the token goes on stdin, not the command line: $(cat "$T/curl.args")"; pass
-printf 'COMPOSE_PROFILES=gluetun\nVPN_PROVIDER=custom\nWIREGUARD_PRIVATE_KEY=OLDKEY\n' > "$ENV_FILE"
-printf 'custom\n\n\n' | _configure_vpn > "$T/out" 2>&1 || fail_ "custom step runs"
-[[ "$(env_get WIREGUARD_PRIVATE_KEY)" == OLDKEY ]] || fail_ "Enter keeps the private key"; pass
+# a provider chosen by its number; a key the old provider made is not offered
+# again (Enter refused, a bad key refused, then a good one); its address asked
+WGK=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=
+printf 'COMPOSE_PROFILES=gluetun\nVPN_PROVIDER=nordvpn\nWIREGUARD_PRIVATE_KEY=OLDNORDKEY\n' > "$ENV_FILE"
+n=$(vpnp_list | grep -nx mullvad | cut -d: -f1)
+printf '%s\n\nnot-a-key\n%s\n10.64.0.2/32\n\n' "$n" "$WGK" | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "mullvad step runs: $(cat "$T/out")"
+[[ "$(env_get VPN_PROVIDER)" == mullvad && "$(env_get WIREGUARD_PRIVATE_KEY)" == "$WGK" && "$(env_get WIREGUARD_ADDRESSES)" == 10.64.0.2/32 ]] \
+    || fail_ "by number, the old provider's key not kept, its address asked: $(cat "$ENV_FILE")"; pass
+grep -q 'this value is required' "$T/out" && grep -q 'not a WireGuard key' "$T/out" || fail_ "Enter and a bad key refused, saying why: $(cat "$T/out")"; pass
+printf 'mullvad\n\n\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "mullvad again runs"
+[[ "$(env_get WIREGUARD_PRIVATE_KEY)" == "$WGK" && "$(env_get WIREGUARD_ADDRESSES)" == 10.64.0.2/32 ]] || fail_ "the same provider: Enter keeps its key and address"; pass
+# your own config, by its path: a broken one refused naming its line, then a good one read in
+printf '[Interface]\nPrivateKey = %s\nAddress = 10.7.0.2/32\n[Peer]\nPublicKey = %s\nEndpoint = home.example.net\n' "$WGK" "$WGK" > "$T/bad.conf"
+printf '[Interface]\nPrivateKey = %s\nAddress = 10.7.0.2/32\n[Peer]\nPublicKey = %s\nEndpoint = home.example.net:51820\n' "$WGK" "$WGK" > "$T/good.conf"
+printf 'custom\n%s\n%s\n' "$T/bad.conf" "$T/good.conf" | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "custom step runs: $(cat "$T/out")"
+[[ "$(env_get VPN_PROVIDER)" == custom && "$(env_get WIREGUARD_ENDPOINT_HOST)" == home.example.net && "$(env_get WIREGUARD_ENDPOINT_PORT)" == 51820 ]] \
+    && grep -q "line 6: Endpoint 'home.example.net' is not host:port" "$T/out" && grep -q 'looks it up from this host' "$T/out" \
+    || fail_ "custom: a bad config named by its line, a good one read in, a name said to be looked up: $(cat "$T/out")"; pass
 # a prompt is printed only to a terminal, so the echo is checked at the source:
 # no secret is read by a prompt that echoes, or offered as a visible default
-! grep -nE 'ask WIREGUARD_PRIVATE_KEY|read -r -p "(NordVPN|Tunnel)' lib/questionnaire.sh services/cloudflared/cloudflared.sh \
+! grep -nE 'ask WIREGUARD_(PRIVATE|PRESHARED)_KEY|read -r -p "(NordVPN|Tunnel)' lib/questionnaire.sh services/gluetun/*.sh services/gluetun/providers/*/provider.sh services/cloudflared/cloudflared.sh \
     || fail_ "a secret is read with an echoing prompt"; pass
 
 # ---- the tunnel needs its token ----
@@ -185,7 +202,8 @@ _configure_panel_offer </dev/null > "$T/out" 2>&1; [[ ! -s "$T/out" ]] || fail_ 
 
 # ---- each answer's check: says why, changes nothing (the answers file reuses them) ----
 cp "$ENV_FILE" "$T/checks.before"
-[[ -z "$(vpn_provider_problem NordVPN)" && -n "$(vpn_provider_problem 'bad name!')" ]] || fail_ "provider: a gluetun name (any case), not punctuation"; pass
+[[ -z "$(vpn_provider_problem NordVPN)" && -n "$(vpn_provider_problem 'bad name!')" && -n "$(vpn_provider_problem perfect-privacy)" ]] \
+    || fail_ "provider: a folder of services/gluetun/providers (any case) — nothing else"; pass
 [[ -z "$(vpn_countries_problem '')" && -z "$(vpn_countries_problem 'Netherlands,Sweden')" && -n "$(vpn_countries_problem 'Swi$$')" ]] \
     || fail_ "countries: empty (auto) or names"; pass
 [[ -z "$(wg_addresses_problem '10.5.0.2/32, fd00::2/128')" && -n "$(wg_addresses_problem 10.5.0.2)" ]] || fail_ "addresses: IP/prefix, comma-separated"; pass
@@ -201,6 +219,7 @@ cp "$ENV_FILE" "$T/checks.before"
 [[ -z "$(trash_profile_problem 720p)" && -z "$(trash_profile_problem skip)" && -n "$(trash_profile_problem 8k)" ]] || fail_ "a TRaSH profile"; pass
 [[ -z "$(traefik_domain_problem Media.Example.com)" && -n "$(traefik_domain_problem 'Bad Domain')" ]] || fail_ "a domain (any case)"; pass
 cmp -s "$ENV_FILE" "$T/checks.before" || fail_ "a check writes nothing"; pass
+vpnp_load nordvpn
 ( curl() { cat >/dev/null; echo '{"nordlynx_private_key":"K1"}'; }; [[ "$(nord_wg_key T)" == K1 ]] ) || fail_ "Nord's key for a token"; pass
 ( curl() { cat >/dev/null; echo '{}'; }; ! out=$(nord_wg_key T) && [[ "$out" == "Token rejected by NordVPN"* ]] ) || fail_ "a rejected token: rc 1 and why"; pass
 

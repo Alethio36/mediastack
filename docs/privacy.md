@@ -21,7 +21,8 @@ downloads to your home.
 | GitHub | recyclarr (TRaSH guides) | that a recyclarr runs |
 | Cloudflare's DNS (or the resolvers you name in `VPN_DNS_RESOLVERS`) | gluetun, for every app in the tunnel | every name those apps look up — encrypted on the way (DNS over TLS) |
 | Your VPN provider | gluetun | everything above, by its traffic (the provider sees your home address too: it is who you pay) |
-| gluetun's own lookups | gluetun | its server list updates, block lists, its startup DNS check |
+| GitHub (gluetun's server list) | gluetun, every 15 days (`UPDATER_PERIOD=360h`) | that a gluetun runs, for your provider — fetched from gluetun's own list (`UPDATER_PREFER_DIRECT_DOWNLOAD=yes`), never by asking your provider's servers |
+| gluetun's block lists | gluetun | that a gluetun runs |
 | Mullvad's address checker, Google's resolver, bash.ws | `leak-test` and `doctor` | the VPN's exit address and which resolvers answer for it |
 
 **Why Cloudflare and not your VPN provider's DNS:** many queries from the same
@@ -55,6 +56,7 @@ by your VPN provider.
 | Container registries (Docker Hub, GitHub, linuxserver.io) | `install`, `update` | which images you run |
 | GitHub | `upgrade` | that a mediastack is updated |
 | RIPEstat (RIPE NCC) | `leak-test`, once a day | your home address, its network, that network's name (shown so you can tell it is yours) and its address blocks — so the tunnel can be compared against them locally |
+| Your host's own DNS resolver | `up`, the boot guard and the 5-minute check — only with your own WireGuard config (`VPN_PROVIDER=custom`) whose server is given by name | the server's name: it is looked up before the tunnel exists, so outside it — the server your own config names |
 
 **Notifications are outside the VPN on purpose.** An alert that the tunnel is
 down must not need the tunnel, and posting through it would tie the VPN's exit
@@ -87,6 +89,11 @@ Version checks — asking the maker's server whether a newer version exists,
 which tells it a copy runs and from where — are off where the app has a
 switch, because the stack owns updates: authentik (`AUTHENTIK_DISABLE_UPDATE_CHECK`),
 Traefik (`checkNewVersion: false`), gluetun (`VERSION_INFORMATION=off`).
+gluetun's other two lookups are off too, pinned whatever its own default
+becomes: its check of which resolvers answer, through ipleak.net
+(`DNS_RESOLVERS_CHECK=off`), and its lookup of the tunnel's exit address,
+through ipinfo.io and others (`PUBLICIP_ENABLED=off`) —
+`leak-test` and `doctor` learn that address from Mullvad's checker.
 OliveTin's is off by its own default. **These have no switch, and still ask**,
 from whichever address the app uses (an app inside the VPN asks through it):
 the arrs and Prowlarr (their update server; without analytics it learns only

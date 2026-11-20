@@ -991,6 +991,9 @@ cmd_update() {
     image_store_init   # here, not in svc_digest's $( ): once for every target
     for s in "${targets[@]}"; do before[$s]=$(c_version "$(svc_cname "$s")"); before_d[$s]=$(svc_digest "$s"); done
     DC pull "${targets[@]}"
+    # a new gluetun that no longer knows the provider is refused before anything
+    # is recreated: the running tunnel stays as it is (services/gluetun/provider.sh)
+    if [[ " ${targets[*]} " == *" gluetun "* ]]; then vpn_provider_ready update; fi
     hr "Applying"
     # recreating gluetun builds a new namespace and compose does not recreate
     # its borrowers whose own config is unchanged: update_apply re-joins the

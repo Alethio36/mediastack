@@ -33,8 +33,10 @@ internet — the hostnames resolve to your LAN.
     fine at the floor
 * Media storage separate from configs — any size, NAS over NFS/SMB is fine
   (`add-mount` sets it up)
-* A VPN subscription with WireGuard from a
-  [gluetun-supported provider](https://github.com/qdm12/gluetun-wiki)
+* A VPN subscription with WireGuard from one of the providers in
+  `services/gluetun/providers/` (AirVPN, FastestVPN, IVPN, Mullvad, NordVPN,
+  ProtonVPN, Surfshark, Windscribe — only NordVPN is tested live so far), or
+  your own WireGuard config (`custom`)
 * Optional, for HTTPS hostnames: a domain with DNS on Cloudflare
 
 ## Install
@@ -51,7 +53,10 @@ keeps it for the rest of that run, so a long step does not stop to ask again.
   has no `sudo` at all: as root, `apt install sudo && usermod -aG sudo
   <your-user>`, then log out and back in.
 * **Your VPN:** a NordVPN access token (nordvpn.com → Services → NordVPN →
-  *Set up NordVPN manually*), or your provider's WireGuard private key.
+  *Set up NordVPN manually*); or your provider's WireGuard private key (and,
+  for some, the address and pre-shared key of its config file — configure
+  asks only what yours needs, and says where its account page shows it); or
+  your own WireGuard `.conf` file.
 * **For HTTPS names and the authentik portal** (skip otherwise): a domain;
   a wildcard A record `*.<domain>` → this machine's LAN IP (on Cloudflare:
   proxy **off**, grey cloud); and either the domain's DNS on Cloudflare with

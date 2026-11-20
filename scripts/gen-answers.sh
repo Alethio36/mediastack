@@ -65,7 +65,7 @@ rows() {
 # the stack's own logins' passwords: asked only when each is typed
 LOGIN_KEYS=$(for f in $(declare -F | awk '$3 ~ /^[a-z][a-z0-9_]*_logins$/ { print $3 }'); do "$f"; done | cut -f3 | tr '\n' ' ')
 
-row_of() { awk -F'\t' -v k="$1" '$1 == k { print; exit }' lib/env.schema.tsv services/*/env.tsv; }   # the schema row of KEY
+row_of() { awk -F'\t' -v k="$1" '$1 == k { print; exit }' lib/env.schema.tsv services/*/env.tsv services/*/providers/*/env.tsv; }   # the schema row of KEY
 
 out=$work/answers.example
 {
@@ -110,6 +110,11 @@ rows lib/env.schema.tsv
 for f in services/*/env.tsv; do
     s=${f#services/}; s=${s%/env.tsv}; [[ "$s" != _arr ]] || s="the arrs"
     body=$(rows "$f")
+    for pf in "services/$s/providers"/*/env.tsv; do   # a provider's own keys, under its service (gluetun's: NordVPN's token)
+        [[ -e "$pf" ]] || continue
+        pb=$(rows "$pf"); [[ -n "$pb" ]] || continue
+        body+="${body:+$'\n'}$pb"
+    done
     if [[ "$s" == recyclarr ]]; then   # TRaSH's profile, one per arr it manages (an arr made for one profile carries it)
         IFS=$'\t' read -r _ t _ _ d r m <<<"$(row_of 'TRASH_PROFILE_<arr>')"
         for a in $(svc_managed); do

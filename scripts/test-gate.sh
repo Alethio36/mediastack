@@ -147,7 +147,7 @@ out=$( (wire_gate sonarr jellyfin) 2>&1 ) && fail_ "gate open, sonarr down: refu
 
 # ---- up: two phases ----
 UP_LOG="$T/up"
-for f in load_env vpn_gen require_mounts reconcile_disabled require_free_ports frontdoor_require provision \
+for f in load_env vpn_gen vpn_endpoint_refresh vpn_provider_ready require_mounts reconcile_disabled require_free_ports frontdoor_require provision \
          uid_handover traefik_ensure authentik_prepare network_ensure vpnguard_ensure authentik_release_record \
          wire_repoint_pending prowlarr_indexers_retest; do eval "$f() { :; }"; done
 svc_enabled_managed() { printf '%s\n' gluetun jellyfin qbittorrent sonarr; }

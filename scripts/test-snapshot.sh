@@ -17,6 +17,7 @@
 # throwaway copy: gate_bind_sync, vpn_gen, traefik_gen (when Traefik is on),
 # then the compose render. Captured:
 #   vpn-overlay.yml          local/vpn-overlay.yml
+#   vpn-provider.yml         local/vpn-provider.yml (the VPN provider's settings for gluetun)
 #   traefik/                 the static and dynamic config, your proxy.d routes
 #   authentik-templates/     the email templates with the portal's name in them
 #   compose.json             the render, cut to what mediastack owns (below)
@@ -106,6 +107,7 @@ snap_case() { # snap_case CASE OUT — one fixture through the up order, outputs
     RENDERED_JSON=""
     mkdir -p "$out"
     normalize < "$OVERLAY_FILE" > "$out/vpn-overlay.yml"
+    [[ ! -e "$PROVIDER_FILE" ]] || normalize < "$PROVIDER_FILE" > "$out/vpn-provider.yml"
     if svc_enabled traefik; then
         traefik_gen
         croot=$(env_get CONFIG_ROOT)

@@ -43,7 +43,7 @@ HOST_RULES=(panel units)
 cj()       { echo "$1/expected/compose.json"; }
 setting()  { sed -n "s/^$2=//p" "$1/env.set" | tail -1; }        # a key the fixture sets ("" otherwise)
 portal_on(){ jq -e '.services.authentik' "$(cj "$1")" >/dev/null; }
-schema_type() { awk -F'\t' -v k="$1" '$1==k {print $2; exit}' lib/env.schema.tsv services/*/env.tsv; }
+schema_type() { awk -F'\t' -v k="$1" '$1==k {print $2; exit}' lib/env.schema.tsv services/*/env.tsv services/*/providers/*/env.tsv; }
 
 # ---- the rules: each prints one line per violation ----
 rule_vpn() {

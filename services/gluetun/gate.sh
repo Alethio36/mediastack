@@ -148,6 +148,9 @@ vpn_supervise() { # vpn_supervise [full] — local or full checks (as gluetun's 
     fi
     wait_verdict --recover gluetun \
         || { warn "vpn-watch: gluetun ${VERDICT_WHY[gluetun]} — checked again in 5 minutes"; return 0; }
+    # a VPN server given by name that now answers elsewhere: the tunnel moves (services/gluetun/provider.sh)
+    local erc=0; vpn_endpoint_refresh || erc=$?
+    if (( erc == 10 )); then vpn_endpoint_move; return $?; fi
     # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
     INSPECT_JSON=""
     for s in "${group[@]}"; do

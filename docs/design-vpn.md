@@ -1,6 +1,9 @@
 # Design: VPN depth — every provider gluetun knows, one folder each
 
-*Status: **agreed** (19 Nov 2026), MVP plan step 8; revised the same day —
+*Status: **agreed** (19 Nov 2026), MVP plan step 8. **Slice 1 built** (19–20
+Nov 2026, not yet proven live): the provider layer, the eight WireGuard
+providers and `custom` with endpoint names, gluetun's own settings fixed,
+schema 51. Revised the day it was agreed —
 an endpoint's hostname is resolved by mediastack (not refused), port
 forwarding reaches the download client through a file gluetun writes (not
 its control server), and every secret follows the stack's one rule
@@ -80,7 +83,7 @@ change:
 services/gluetun/
   compose.yml        provider-independent settings only (below)
   env.tsv            the shared keys (VPN_PROVIDER, VPN_TYPE, WIREGUARD_*, OPENVPN_*, VPN_SERVER_*)
-  questions.sh       gluetun_questions — the hook, moved out of lib/questionnaire.sh
+  questions.sh       gluetun_vpn_questions — moved out of lib/questionnaire.sh, still called at its place
   provider.sh        the generic part: list, load, render, check, the shared questions
   providers/
     nordvpn/
@@ -233,7 +236,9 @@ the translation:
 
 ## configure
 
-`gluetun_questions` (the hook, so `enable gluetun` asks it too):
+`gluetun_vpn_questions`, called where configure asked the VPN before (after the
+download client) and by `enable`'s questions when gluetun comes with it — not
+through the `<name>_questions` hook, whose order would move it:
 
 1. **Provider:** a numbered list of the folders, alphabetical, `custom` last
    ("your own WireGuard or OpenVPN config"). Each line shows the types it
