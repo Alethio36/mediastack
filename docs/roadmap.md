@@ -244,7 +244,10 @@ agreed first:
    auto-update, and pins, Renovate and auto-update ship together. Kept here,
    not later: the gap (images move nightly, the script only by hand) is open
    now on every box, and step 13's soak then tests it.
-8. **VPN depth** — provider by provider, from gluetun's wiki.
+8. **VPN depth** — provider by provider, from gluetun's wiki. Designed in
+   [design-vpn.md](design-vpn.md) (*proposed 19 Nov 2026*): one folder per
+   provider, today's WireGuard fixes first, then OpenVPN, server choices and
+   port forwarding.
 9. **The household's look** — notifications, then branding.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
