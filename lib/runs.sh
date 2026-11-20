@@ -20,7 +20,7 @@
 RUNS_DIR=""                 # LOCAL_DIR/runs, set when a run starts (a test that moves LOCAL_DIR moves it too)
 RUNS_KEEP=20                # per verb and its options: the newest this many
 RUNS_KEEP_FAILED_DAYS=30    # a failed or unfinished one beyond them is kept this long
-RUNS_FLUSH_WAIT=5           # seconds the end of a run waits for its last output to reach the screen
+RUNS_FLUSH_WAIT=5           # seconds the end of a run waits for its last output to reach the screen and its footer the record
 RUNS_SCRUB_MIN=6            # a secret shorter than this is not looked for (it would match ordinary words)
 # their output is a secret (logins, invitation and sign-in links) or other
 # people's activity (container logs, and `logs -f` never ends): header and footer only
@@ -225,7 +225,7 @@ run_record_start() { # run_record_start VERB ARG... — record this run, or carr
         warn "this run is not recorded: $f cannot be written" >&2; return 0
     fi
     repo_owned "$f"
-    export MS_RUN_RECORD="$f" MS_RUN_PID=$BASHPID MS_RUN_T0=$EPOCHSECONDS MS_RUN_FDS="" MS_RUN_TEES=""
+    export MS_RUN_RECORD="$f" MS_RUN_PID=$BASHPID MS_RUN_T0=$EPOCHSECONDS MS_RUN_FDS="" MS_RUN_TEES="" MS_RUN_STAMPERS=""
     RUN_OWNER=1; run_signals_arm
     if run_header_only "$1"; then
         echo "output: not recorded — it prints secrets or other people's activity" >> "$f"
@@ -235,11 +235,15 @@ run_record_start() { # run_record_start VERB ARG... — record this run, or carr
     exec {o}>&1 {e}>&2
     if run_same_target; then
         exec {s1}> >(run_stamp "$f" 1)
+        MS_RUN_STAMPERS=$!
         exec > >(run_tee "/dev/fd/$s1") 2>&1
         MS_RUN_TEES=$!
         MS_RUN_FDS="$o $e $s1"
     else
-        exec {s1}> >(run_stamp "$f" 2) {s2}> >(run_stamp "$f" 2)
+        exec {s1}> >(run_stamp "$f" 2)
+        MS_RUN_STAMPERS=$!
+        exec {s2}> >(run_stamp "$f" 2)
+        MS_RUN_STAMPERS+=" $!"
         exec > >(run_tee "/dev/fd/$s1")
         MS_RUN_TEES=$!
         exec 2> >(run_tee "/dev/fd/$s2" >&"$e")
@@ -267,8 +271,11 @@ run_record_end() { # run_record_end RC — on exit: restore the screen, let the 
     exec 1>&"$o" 2>&"$e"
     exec {s1}>&- {o}>&- {e}>&-
     [[ -n "$s2" ]] && exec {s2}>&-
-    # the screen gets the run's last lines before the shell's prompt does
-    for p in $MS_RUN_TEES; do
+    # the screen gets the run's last lines before the shell's prompt does, and
+    # the record its footer before the run ends: a systemd unit kills what is
+    # left of a run once its main process exits (found live Nov 2026: a scrub
+    # cut off — no footer, its .end and temp file left, root's)
+    for p in $MS_RUN_TEES ${MS_RUN_STAMPERS:-}; do
         while ! run_gone "$p" && (( waited < RUNS_FLUSH_WAIT * 20 )); do sleep 0.05; waited=$((waited + 1)); done
     done
     return 0

@@ -110,7 +110,11 @@ main ── stdout/stderr ──> tee ──> the screen, byte for byte (a termi
   reported once and the screen carries on.
 - **The footer is written by the last stamper to finish**, from the exit
   status the run leaves in `<record>.end` as it ends — so it always follows
-  the last line. No `.end`: the run never finished.
+  the last line. No `.end`: the run never finished. The run waits for its
+  stampers (up to `RUNS_FLUSH_WAIT`) before it exits: a systemd unit kills
+  what is left of a run once its main process exits, and once cut a
+  stamper's scrub off — no footer, its `.end` and temp file left behind,
+  root's (found live Nov 2026).
 - **One EXIT trap.** It runs hooks (`on_exit`, lib/common.sh); a second
   `trap … EXIT` in the main shell would silently drop the footer, so CI allows
   them only in subshells. The sudo keepalive lets go of the record's pipe.

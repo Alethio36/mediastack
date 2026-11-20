@@ -101,6 +101,14 @@ grep -qa $'out one\r$' "$T/tty" && grep -qa $'err one\r$' "$T/tty" && ! grep -qa
     || fail_ "a raw terminal gets \\r\\n, the record \\n: $(od -c "$T/tty" | head -5)"; pass
 reset; script -qec "bash -c 'source \"$T/fx.sh\"; main fx' > \"$T/o3\" 2>&1" /dev/null > /dev/null 2>&1 || true
 cmp -s "$T/m0" "$T/o3" || fail_ "not a terminal: no \\r added"; pass
+# the run ends only once its record has its footer: a systemd unit kills what
+# is left of it when its main process exits (found live Nov 2026: a scrub cut off,
+# no footer, its .end and temp file left behind, root's)
+for how in '> "$T/o4" 2>&1' '> "$T/o4" 2> "$T/e4"'; do
+    reset; eval "bash -c 'source \"\$T/fx.sh\"; run_secret_pairs() { sleep 1; }; main fx' $how"
+    f=$(rec fx); [[ "$(tail -n 1 "$f")" == "exit:     0 after "* ]] && [[ -z "$(ls "$T"/local/runs/*.log.* 2>/dev/null)" ]] \
+        || fail_ "a slow scrub: the footer is written before the run ends ($how): $(tail -n 2 "$f"; ls "$T/local/runs")"; pass
+done
 reset; : > "$T/local/runs"; run fx > "$T/o2" 2> "$T/e2"; rc=$?   # a file where the folder goes: no record, even for root
 [[ $rc == 0 ]] && cmp -s "$T/o0" "$T/o2" && grep -qF 'this run is not recorded' "$T/e2" \
     || fail_ "no record possible: the run is the same, and says so (rc=$rc)"; pass
