@@ -574,6 +574,36 @@ Docker's restart the stack — so only Docker's join its update.
   coverage; which Whisparr line to track (it has had more than one). Decide
   in the watchlist before shipping.
   *Nov 9 2026:* after the MVP — a test of adding a service as a folder.
+- **Several households' Jellyfins as one — Jellyswarrm?** *(possible feature,
+  TBD — raised 19 Nov 2026, after the MVP)*. Jellyswarrm
+  ([LLukas22/Jellyswarrm](https://github.com/LLukas22/Jellyswarrm), GPL-2.0,
+  v1.0.0 on 11 Nov 2026, still marked "in development") answers clients as
+  one Jellyfin server in front of several: libraries with the same name
+  merged, the same title on two servers collapsed into one item, each
+  viewer's accounts mapped across servers. Each server it fronts has a
+  streaming mode: `Redirect` (the viewer's device fetches from that server
+  itself, so every viewer must reach every server) or `Proxy` (the stream
+  passes through Jellyswarrm, so only Jellyswarrm must reach the servers).
+  To look into before deciding:
+  * **The link between houses:** `Proxy` mode plus a private network from
+    the Jellyswarrm host to each server. Never gluetun — that is the way out
+    to a commercial VPN, and household streams must not go through it. A
+    self-hostable WireGuard mesh (NetBird, Headscale) as its own shard, its
+    access rules allowing Jellyswarrm to reach each Jellyfin's port and
+    nothing else on anyone's network.
+  * **Passwords:** a community read of an earlier commit found it signs in
+    to each upstream server with the viewer's own password. Behind the
+    portal that password is the person's portal password, so it would reach
+    a friend's server — recheck on the current release; separate
+    per-server credentials through its account mapping may be the answer,
+    or it may not fit the portal at all.
+  * **Bandwidth:** in `Proxy` mode every remote stream crosses the
+    Jellyswarrm host and the mesh; each friend's home upload is the limit.
+    Transcoding stays on the server that holds the file.
+  * **Fit with the house rules:** its admin UI behind the admin gate, its
+    database backed up, a version to pin; which household runs it, and
+    what each household's stack learns about the others.
+  Decide in the watchlist before shipping.
 - **Hardware transcoding in Jellyfin** *(tabled, Oct 2026: no GPU to test
   on)*. Jellyfin's encoding settings are an API `wire` already uses (the
   transcode path), so a wire step could set the hardware type (VAAPI, QSV,
