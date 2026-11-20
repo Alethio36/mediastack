@@ -247,7 +247,8 @@ agreed first:
 8. **VPN depth** — provider by provider, from gluetun's wiki. Designed in
    [design-vpn.md](design-vpn.md) (*agreed 19 Nov 2026*): one folder per
    provider, today's WireGuard fixes first, then OpenVPN, server choices and
-   port forwarding. Landed first: one rule for every secret (`secret_ok`).
+   port forwarding. Landed first: `.env` carries any one-line value
+   (`env_encode`), so no secret is refused for its characters.
 9. **The household's look** — notifications, then branding.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole

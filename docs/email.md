@@ -108,9 +108,10 @@ A recovery flow you set yourself in authentik's UI is left alone. A link
 opened again after it worked lands on the dashboard (the reset signed them
 in); opened signed out once used or expired, it starts a new reset.
 
-**The password may not contain `$` or spaces** — compose would rewrite them.
-App passwords and SMTP keys never do: `configure` drops spaces (an app
-password's are only how it is shown) and refuses a `$`.
+**Spaces in the password are dropped** — an app password's are only how it
+is shown (Gmail: groups of four). Any other character is carried as typed: a
+`$` or a quote is written to `.env` in its quoted form
+(`SMTP_PASSWORD="pa\$s"`), which compose reads as typed.
 
 ## 4. Troubleshooting
 

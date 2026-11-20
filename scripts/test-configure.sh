@@ -195,7 +195,7 @@ cp "$ENV_FILE" "$T/checks.before"
 # the services' own (their question hooks)
 [[ -z "$(portal_title_problem 'My Portal')" && -n "$(portal_title_problem '   ')" ]] || fail_ "the portal needs a name"; pass
 [[ -z "$(smtp_host_problem smtp.Example.com)" && -n "$(smtp_host_problem 'bad host!')" ]] || fail_ "a mail server's name (any case)"; pass
-[[ -z "$(smtp_password_problem 'ab cd ef')" && -n "$(smtp_password_problem 'pa$s')" ]] || fail_ "a mail password: spaces dropped, no \$"; pass
+[[ -z "$(smtp_password_problem 'ab cd ef')" && -z "$(smtp_password_problem 'pa$s')" && -n "$(smtp_password_problem $'pa\x01s')" ]] || fail_ "a mail password: spaces dropped, a \$ carried, a control character refused"; pass
 [[ -z "$(jf_server_name_problem 'My Jelly')" && -n "$(jf_server_name_problem 'bad$name')" && -n "$(jf_server_name_problem ' ')" ]] \
     || fail_ "Jellyfin's name: something, nothing .env cannot hold"; pass
 [[ -z "$(trash_profile_problem 720p)" && -z "$(trash_profile_problem skip)" && -n "$(trash_profile_problem 8k)" ]] || fail_ "a TRaSH profile"; pass

@@ -88,9 +88,9 @@ answers_flags() { # answers_flags --domain D | --signin X | --services a,b ... �
     local t
     while (( $# )); do
         case "$1" in
-            --domain)   t=$(env_value_problem STACK_DOMAIN "${2,,}" domain no)
+            --domain)   t=$(env_decoded_problem STACK_DOMAIN "${2,,}" domain no)   # a flag's value is literal: no .env form
                         if [[ -z "$t" ]]; then ANSWER[STACK_DOMAIN]=${2,,}; else answer_refused "--domain: $t"; fi ;;
-            --signin)   t=$(env_value_problem SIGNIN "$2" 'enum:none|wizarr|authentik' no)
+            --signin)   t=$(env_decoded_problem SIGNIN "$2" 'enum:none|wizarr|authentik' no)
                         if [[ -z "$t" ]]; then ANSWER[SIGNIN]=$2; else answer_refused "--signin: $t"; fi ;;
             --services) if [[ "$2" =~ ^[a-z0-9-]+(,[a-z0-9-]+)*$ ]]; then ANSWER_SERVICES=" ${2//,/ } "
                         else answer_refused "--services: '$2' is not service names, comma-separated"; fi ;;
@@ -128,6 +128,10 @@ answers_load() { # answers_load FILE — ANSWER from it; every problem with the 
         if [[ -z "$r" || "$r" == - ]]; then
             answer_refused "$k is no question configure asks (a typo, or a setting for .env itself)"; continue
         fi
+        # written as in .env (env_encode): its form checked, then read as the value it stands for
+        r=$(env_raw_problem "$k" "$v" "$( [[ "${typ[$k]}" == secret ]] && echo hidden )")
+        [[ -z "$r" ]] || { answer_refused "$r"; continue; }
+        v=$(env_decode "$v")
         [[ -n "$v" ]] || continue   # blank: not answered
         [[ "$ANSWER_LOWER" != *" $k "* ]] || v=${v,,}
         [[ "$ANSWER_NOSPACE" != *" $k "* ]] || v=${v//[[:space:]]/}
@@ -138,7 +142,7 @@ answers_load() { # answers_load FILE — ANSWER from it; every problem with the 
                 v=$t ;;
             path|file) v=$(abspath "${v/#\~/$HOME}") ;;   # as a typed path is read: ~ is home, relative is the repo's
         esac
-        r=$(env_value_problem "$k" "$v" "${typ[$k]}" "${emp[$k]}")
+        r=$(env_decoded_problem "$k" "$v" "${typ[$k]}" "${emp[$k]}")
         [[ -z "$r" ]] || { answer_refused "$r"; continue; }
         ANSWER[$k]=$v
     done < "$f"

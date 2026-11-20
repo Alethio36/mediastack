@@ -21,13 +21,11 @@ env_schema_all() { # the whole schema: the shared rows, then every service's (se
 }
 env_schema_rows() { env_schema_all | grep -vE '^(#|[[:space:]]*$)'; }   # key type empty writer default recommended meaning
 
-env_defaults_load() { # the schema's defaults into ENV_DEFAULT, its secrets into ENV_SECRET — once, in the top-level shell, so every $( ) inherits them
-    local k t d
-    ENV_DEFAULT=(); ENV_SECRET=()
-    while IFS=$'\t' read -r k t _ _ d _; do
+env_defaults_load() { # the schema's defaults into ENV_DEFAULT — once, in the top-level shell, so every $( ) inherits them
+    local k d
+    ENV_DEFAULT=()
+    while IFS=$'\t' read -r k _ _ _ d _; do
         [[ "$d" == - || "$k" == *'<'* ]] || ENV_DEFAULT[$k]=$d   # a family's defaults live with each service
-        # shellcheck disable=SC2034  # read by env_set (lib/common.sh)
-        [[ "$t" != secret ]] || ENV_SECRET[$k]=1
     done < <(env_schema_rows)
 }
 
@@ -94,7 +92,7 @@ env_schema_lookup() { # env_schema_lookup KEY -> "type<TAB>empty" of its row (it
 env_type_expect() { # what a value of TYPE looks like, for a message
     case "$1" in
         text)     echo "any single-line text" ;;
-        secret)   echo "a secret of printable ASCII with no spaces and none of \$ \" ' \\ or the backtick" ;;
+        secret)   echo "a secret on one line, with no control characters (a newline or a tab)" ;;
         path)     echo "a folder path" ;;
         file)     echo "a file path" ;;
         dirname)  echo "one folder name (no /)" ;;
@@ -146,20 +144,16 @@ env_type_ok() { # env_type_ok TYPE VALUE — rc 0 when VALUE is a TYPE
     esac
 }
 
-env_value_problem() { # env_value_problem KEY VALUE TYPE EMPTY -> what is wrong (nothing when fine)
+env_value_problem() { # env_value_problem KEY RAW TYPE EMPTY -> what is wrong with RAW, as written in .env (nothing when fine)
+    local k="$1" t="$3" e="$4" p
+    # its form first: one both readers read alike (env_encode, lib/common.sh)
+    p=$(env_raw_problem "$k" "$2" "$( [[ "$t" == secret ]] && echo hidden )"); [[ -z "$p" ]] || { echo "$p"; return; }
+    env_decoded_problem "$k" "$(env_decode "$2")" "$t" "$e"
+}
+
+env_decoded_problem() { # env_decoded_problem KEY VALUE TYPE EMPTY -> what is wrong with the value itself (nothing when fine)
     local k="$1" v="$2" t="$3" e="$4" shown
     shown="'$v'"; [[ "$t" == secret ]] && shown="(hidden)"
-    # the script reads a value as everything after '=', exactly; compose strips
-    # quotes and a trailing comment — the two would see different values
-    if [[ "$v" =~ ^[\"\'] ]]; then
-        echo "$k=$shown is quoted: the script reads the quotes as part of the value. Remove them."; return
-    fi
-    if [[ "$v" =~ [[:space:]]# ]]; then
-        echo "$k=$shown has a comment after the value: the script reads it as part of the value. Move the comment to its own line above."; return
-    fi
-    if [[ "$v" == *'$'* ]]; then
-        echo "$k=$shown holds a \$: compose reads a variable there, the script reads text — the two would see different values. Remove it (a secret: choose or ask your provider for one without)."; return
-    fi
     if [[ -z "$v" ]]; then
         # empty means the schema's default, for both readers; with none, it must be allowed
         [[ "$e" == ok || -n "${ENV_DEFAULT[$k]-}" ]] || echo "$k is empty — expected $(env_type_expect "$t")."

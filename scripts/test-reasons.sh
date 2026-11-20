@@ -41,7 +41,7 @@ mapfile -t reasons < <(declare -F | awk '{print $3}' \
 for f in "${reasons[@]}"; do
     n=$(declare -f "$f" | grep -oE '\$\{?[1-9]' | grep -oE '[1-9]' | sort -n | tail -1 || true)
     args=(); for (( i = 0; i < ${n:-0}; i++ )); do args+=(""); done
-    [[ "$f" == env_value_problem ]] && args[0]=TZ   # a key the schema knows
+    [[ "$f" == env_value_problem || "$f" == env_decoded_problem ]] && args[0]=TZ   # a key the schema knows
     out=$(as_stack "$f" "${args[@]}"); rc=$?
     (( rc == 0 )) || fail_ "$f, given nothing, fails instead of explaining (rc=$rc): $out"; pass
 done

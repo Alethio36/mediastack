@@ -80,7 +80,8 @@ cat <<'EOT'
 # A written answer is used. A blank one keeps what is already set; on a first
 # install it takes the recommendation, or is asked — and with no terminal,
 # an answer that would be asked must be written. Values follow .env's rules:
-# no quotes, and no comment after a value (comments go on their own line).
+# bare, or in double quotes with \ " $ escaped (for a $, a leading quote or
+# a space at an end); no comment after a value (comments go on their own line).
 # A yes/no answer takes yes, no, y, n, true or false; a path starting ~ is
 # your home, a relative one is inside this folder.
 # answers*.env is git-ignored: your answers never reach the repo.

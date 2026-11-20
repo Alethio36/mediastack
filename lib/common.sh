@@ -147,36 +147,90 @@ gen_secret() { # gen_secret N -> N letters and digits from /dev/urandom
     echo "${s:0:$1}"
 }
 
-# One rule for every secret — a password, key or token, typed, pasted or
-# answered: printable ASCII with no whitespace, and none of $ " ' \ or the
-# backtick. Compose reads .env with a parser of its own (a $ starts a
-# variable, a leading quote quotes, whitespace is trimmed or ends the value at
-# a ' #'), the script reads it as written: one of these and the two see
-# different values. \ and the backtick survive compose but not every app's
-# config files, and the rest of the printable symbols pass everywhere the
-# stack carries a secret. Its characters are written here and nowhere else
-# (scripts/test-secrets.sh).
-secret_ok() { # secret_ok VALUE — rc 0 when VALUE passes the rule (empty passes: whether it may be empty is the caller's)
-    local LC_ALL=C   # the ranges below are bytes, whatever the locale
-    [[ -z "$1" ]] && return 0
-    [[ "$1" =~ ^[!-~]+$ && ! "$1" =~ [\$\"\'\\\`] ]]
+# .env has two readers: compose, with a parser of its own (bare, a $ starts a
+# variable, a leading quote quotes, a space at either end is trimmed and a
+# ' #' starts a comment), and the script, through env_get. A value either
+# reads alike bare, or is written in compose's double-quoted form with \, "
+# and $ escaped (\\ \" \$) — that form holds any one-line value, spaces,
+# quotes, $ and \ included (proven against compose: scripts/test-secrets.sh).
+# env_set writes the quoted form only where the bare one would be misread, so
+# an ordinary value stays as it always was; env_get reads both.
+env_needs_quotes() { # env_needs_quotes VALUE — rc 0 when its bare form would read differently in compose
+    [[ "$1" == *'$'* || "$1" =~ ^[\"\'] || "$1" =~ ^[[:space:]] || "$1" =~ [[:space:]]$ || "$1" =~ [[:space:]]# ]]
 }
-SECRET_RULE="printable ASCII with no spaces, and none of \$ \" ' \\ or the backtick — .env and compose cannot hold them safely"
+env_encode() { # env_encode VALUE -> the .env form both readers read as VALUE
+    local v=$1
+    env_needs_quotes "$v" || { printf '%s\n' "$v"; return 0; }
+    v=${v//\\/\\\\}; v=${v//\"/\\\"}; v=${v//\$/\\\$}
+    printf '"%s"\n' "$v"
+}
+env_decode() { # env_decode RAW -> the value a well-formed .env form stands for (env_raw_problem says whether it is)
+    local r=$1 out="" i c
+    if [[ ${#r} -lt 2 || "$r" != \"*\" ]]; then printf '%s\n' "$r"; return 0; fi
+    r=${r:1:${#r}-2}
+    for (( i = 0; i < ${#r}; i++ )); do
+        c=${r:i:1}
+        if [[ "$c" == \\ ]]; then i=$((i + 1)); c=${r:i:1}; fi   # \\ \" \$: the character itself
+        out+=$c
+    done
+    printf '%s\n' "$out"
+}
+env_raw_problem() { # env_raw_problem KEY RAW [hidden] -> why RAW is no .env form both readers read alike ("" when it is); hidden: a secret, never shown
+    local k=$1 r=$2 shown="'$2'" inner i c
+    [[ "$r" == [\"\']* ]] && shown=$r   # a quoted value shows as written
+    [[ "${3:-}" == hidden ]] && shown="(hidden)"
+    case "$r" in
+        \'*) echo "$k=$shown is in single quotes, which compose and the script read differently — write it bare, or in double quotes with \\ \" and \$ escaped"; return ;;
+        \"*)
+            if [[ ${#r} -lt 2 || "$r" != *\" ]]; then
+                # a closing quote with text after it (a comment), or none at all
+                if [[ "${r:1}" =~ (^|[^\\])(\\\\)*\" ]]; then echo "$k=$shown has text after its closing quote — a comment goes on its own line above"
+                else echo "$k=$shown opens a double quote it never closes"; fi
+                return
+            fi
+            inner=${r:1:${#r}-2}
+            for (( i = 0; i < ${#inner}; i++ )); do
+                c=${inner:i:1}
+                if [[ "$c" == \\ ]]; then
+                    i=$((i + 1)); c=${inner:i:1}
+                    [[ "$c" == \\ || "$c" == \" || "$c" == \$ ]] && continue
+                    [[ -z "$c" ]] && { echo "$k=$shown opens a double quote it never closes (its last quote is escaped)"; return; }
+                    echo "$k=$shown holds \\$c in double quotes, which compose reads as an escape — write a backslash as \\\\"; return
+                elif [[ "$c" == \" ]]; then echo "$k=$shown has a \" inside its quotes — write it as \\\" (or a comment after it goes on its own line above)"; return
+                elif [[ "$c" == \$ ]]; then echo "$k=$shown has a \$ inside its quotes, which compose reads as a variable — write it as \\\$"; return
+                fi
+            done
+            return ;;
+    esac
+    if [[ "$r" == *'$'* ]]; then echo "$k=$shown holds a \$, which compose reads as a variable — write the value in double quotes with \$ escaped: $k=\"…\\\$…\""; return; fi
+    if [[ "$r" =~ [[:space:]]# ]]; then echo "$k=$shown has a comment after the value: the script reads it as part of the value. Move the comment to its own line above."; return; fi
+    if [[ "$r" =~ ^[[:space:]] || "$r" =~ [[:space:]]$ ]]; then echo "$k=$shown starts or ends with a space, which compose drops and the script keeps — put the value in double quotes"; return; fi
+}
+
+# One rule for every secret — a password, key or token, typed, pasted or
+# answered: it fits on one line, with no control characters (a newline or a
+# tab). Everything else is carried exactly — spaces, quotes, $ and \ through
+# the quoted .env form above, and every API call encodes its own (jq --arg,
+# --data-urlencode, base64). A limit an app has of its own belongs to that
+# app's login (<stem>_logins options, lib/logins.sh), never here.
+secret_ok() { # secret_ok VALUE — rc 0 when VALUE passes the rule (empty passes: whether it may be empty is the caller's)
+    [[ ! "$1" =~ [[:cntrl:]] ]]
+}
+SECRET_RULE="one line, with no control characters (a newline or a tab)"
 secret_problem() { secret_ok "$1" || echo "$SECRET_RULE"; }   # secret_problem VALUE -> why it cannot be a secret ("" when it can)
 
 # KEY -> what an empty or absent KEY means: the .env schema's default column,
 # loaded once per run (env_defaults_load, lib/env.sh) — the only place one is written
 declare -gA ENV_DEFAULT=()
-# KEY -> 1 for every key of the schema's secret type (env_defaults_load): env_set refuses one that breaks the rule
-declare -gA ENV_SECRET=()
 env_or_note() { local v; v=$(env_get "$1"); echo "${v:-$2}"; }   # env_or_note <key> <note> — for display: the value, or the note when it has none
 env_get() { # env_get <key> -> its .env value; empty or absent: the schema's default (none: empty)
     # one rule for both readers of .env: compose's ${KEY:-x} means the same
     (( $# == 1 )) || die "env_get $1: a default is written in the .env schema (lib/env.schema.tsv, services/*/env.tsv), never at the call"
     local line v
     line=$(grep -E "^$1=" "$ENV_FILE" 2>/dev/null | tail -n1 || true)
-    v=${line#*=}
-    if [[ -n "$line" && -n "$v" ]]; then echo "$v"; else echo "${ENV_DEFAULT[$1]-}"; fi
+    v=$(env_decode "${line#*=}")   # the value, as compose reads it too (env_encode)
+    # printf, not echo: a value such as -n or -e is a value, never an option
+    if [[ -n "$line" && -n "$v" ]]; then printf '%s\n' "$v"; else printf '%s\n' "${ENV_DEFAULT[$1]-}"; fi
 }
 
 env_del() { sed -i "/^$1=/d" "$ENV_FILE"; } # remove a variable entirely
@@ -192,11 +246,11 @@ state_set() {
 state_del() { rm -f "$STATE_DIR/$1"; }
 
 env_set() { # env_set VAR value  (idempotent upsert, preserves file order)
-    local var="$1" val="$2"
-    # the backstop: every writer checks its secret where it is asked; one that
-    # did not is a bug, stopped here before .env holds it
-    [[ -z "${ENV_SECRET[$var]-}" ]] || secret_ok "$val" \
-        || die "refusing to write $var: a secret must be $SECRET_RULE"
+    local var="$1" val
+    # a newline would end the value and start a line of its own — a key of
+    # whoever wrote the value. Every writer checks where it asks; this is the backstop
+    [[ ! "$2" =~ [[:cntrl:]] ]] || die "refusing to write $var: a value in .env must be $SECRET_RULE"
+    val=$(env_encode "$2")   # quoted only where compose would read it differently
     [[ -e "$ENV_FILE" ]] || { touch "$ENV_FILE"; repo_owned "$ENV_FILE"; }
     if grep -qE "^${var}=" "$ENV_FILE"; then
         # sed with | delimiter; escape | and & in value

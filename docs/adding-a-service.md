@@ -175,13 +175,16 @@ order it runs or prints them; a service's part lives in its folder. So far:
 `<stem>_secret_rotate`) and doctor's app checks (`DOCTOR_APPS` in
 `lib/doctor.sh` -> `<name>_doctor`).
 
-**Every secret follows one rule.** A `secret` row's value — typed,
-pasted, answered or generated — is printable ASCII with no spaces and none
-of `$`, `"`, `'`, `\` or the backtick: compose's `.env` parser and the
-script's would read those differently. It is written once, `secret_ok` in
-`lib/common.sh`; ask with `ask_secret` (a password) or `ask_secret_token`
-(a pasted key), and `env_set` refuses to store one that breaks it. Never a
-list of characters of your own (`scripts/test-secrets.sh` fails one).
+**Every secret follows one rule, and `.env` carries any value.** A
+`secret` row's value — typed, pasted, answered or generated — is one line
+with no control characters (`secret_ok`, `lib/common.sh`); spaces, quotes,
+`$` and `\` are carried. Write `.env` through `env_set` and read it through
+`env_get`: they keep it in the form compose reads alike (`env_encode` —
+double quotes with `\\ \" \$` escaped where the bare form would be
+misread). Ask with `ask_secret` (a password) or `ask_secret_token` (a pasted
+key). A limit an app has of its own goes in its `<stem>_logins` options
+(`pw_max=N`), never a list of characters (`scripts/test-secrets.sh` fails
+one).
 
 **A secret the scripts generate needs a way to rotate.** Every `secret` row
 of a service's `env.tsv` whose writer is `script` is either a login's password

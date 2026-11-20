@@ -233,8 +233,8 @@ grep -q "'ab' won't do: qBittorrent's WebUI needs at least 3 characters" "$T/out
     && [[ "$(envv ARR_PASSWORD)$(envv QBITTORRENT_PASSWORD)$(envv JELLYFIN_ADMIN_PASSWORD)" == Abcdefghijkl1Abcdefghijkl1Abcdefghijkl1 ]] \
     || fail_ "unified: one name, one password: $(grep -E '_(USER|PASSWORD)=' "$T/w/.env" | paste -sd' ')"; pass
 login_problem() { ( ENV_FILE=$T/w/.env; login_pass_problem "$@" ); }
-[[ -n "$(login_problem 'Abc defghijkl1')" && -n "$(login_problem 'Abcdefghij$kl1')" && -z "$(login_problem 'Abcdefghijkl1')" ]] \
-    || fail_ "a typed password: no whitespace, no \$"; pass
+[[ -z "$(login_problem 'Abc defghijkl1')" && -z "$(login_problem 'Abcdefghij$kl"1')" && -n "$(login_problem $'Abcdefghij\tkl1')" ]] \
+    || fail_ "a typed password: spaces, \$ and quotes carried, a control character refused"; pass
 # a service enabled later is filled the way configure made the others, without asking
 sed -i 's/^COMPOSE_PROFILES=.*/&,kavita/' "$T/w/.env"
 ( ENV_FILE=$T/w/.env; logins_fill ) </dev/null > "$T/out" 2>&1 || fail_ "unified: a later login filled without asking"

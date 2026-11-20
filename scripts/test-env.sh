@@ -5,7 +5,7 @@
 #     file reads; .env.example holds every key you or a setup step writes,
 #     its values pass, and its ENV_SCHEMA is the script's
 #   * values: each type accepts what it should and refuses what it should; a
-#     quoted value or one with a trailing comment is refused (the script and
+#     single-quoted value or one with a trailing comment is refused (the script and
 #     compose would read different values); secrets never appear in a message;
 #     every problem is listed before the command stops
 #   * a family key (<svc>_NAME) counts only for a service that exists, so a
@@ -161,11 +161,11 @@ if command -v systemd-analyze >/dev/null; then good calendar '*-*-* 03:30'; bad 
 
 # ---- values in a .env ----
 ENV_FILE=$T/.env
-printf 'RECYCLE_DAYS=abc\nUPDATE_DEFER_ACTION=skip   # note\nARR_PASSWORD="s3cret pass"\nNOTIFY_GRACE=\nCONFIG_ROOT=\nAUDIT_KEEP_DAYS=365\nRECYCLE_ROOT=\n' > "$ENV_FILE"
+printf 'RECYCLE_DAYS=abc\nUPDATE_DEFER_ACTION=skip   # note\nARR_PASSWORD=\x27s3cret pass\x27\nNOTIFY_GRACE=\nCONFIG_ROOT=\nAUDIT_KEEP_DAYS=365\nRECYCLE_ROOT=\n' > "$ENV_FILE"
 out=$( (env_validate) 2>&1 ) && fail_ "bad values must stop the command"
 [[ "$out" == *"RECYCLE_DAYS='abc' is not a whole number"* ]] || fail_ "type problem: $out"; pass
 [[ "$out" == *"UPDATE_DEFER_ACTION='skip   # note' has a comment after the value"* ]] || fail_ "inline comment: $out"; pass
-[[ "$out" == *"ARR_PASSWORD=(hidden) is quoted"* && "$out" != *s3cret* ]] || fail_ "a secret must never be shown: $out"; pass
+[[ "$out" == *"ARR_PASSWORD=(hidden) is in single quotes"* && "$out" != *s3cret* ]] || fail_ "a secret must never be shown: $out"; pass
 # empty is fine where the schema allows it or has a default (NOTIFY_GRACE: 30); only a required key without one is a problem
 [[ "$out" == *"CONFIG_ROOT is empty"* && "$out" != *NOTIFY_GRACE* && "$out" != *RECYCLE_ROOT* && "$out" != *AUDIT_KEEP_DAYS* ]] || fail_ "empty: only a required key without a default: $out"; pass
 

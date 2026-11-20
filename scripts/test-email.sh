@@ -28,8 +28,8 @@ GOOD=(SMTP_HOST=smtp.example.com SMTP_PORT=587 SMTP_STARTTLS=true SMTP_TLS=false
 # ---- what makes settings unusable ----
 smtp "${GOOD[@]}"; [[ -z "$(smtp_problems)" ]] || fail_ "good settings: no problems: $(smtp_problems)"; pass
 smtp "${GOOD[@]}" SMTP_TLS=true; [[ "$(smtp_problems)" == *"both true"* ]] || fail_ "STARTTLS and TLS at once"; pass
-# a $ in the password is every secret's rule's (scripts/test-secrets.sh): .env refuses it before any command runs
-[[ -n "$(smtp_password_problem 'pa$word')" ]] || fail_ "a \$ compose would rewrite"; pass
+# a $ in the password is carried in .env's quoted form (scripts/test-secrets.sh); only a control character is refused
+[[ -z "$(smtp_password_problem 'pa$word')" ]] || fail_ "a \$ is carried, not refused"; pass
 smtp "${GOOD[@]}" SMTP_FROM=; [[ "$(smtp_problems)" == *"SMTP_FROM is empty"* ]] || fail_ "no sender"; pass
 smtp "${GOOD[@]}" SMTP_PASSWORD=; [[ "$(smtp_problems)" == *"SMTP_PASSWORD is empty"* ]] || fail_ "a login without a password"; pass
 smtp SMTP_HOST=relay.lan SMTP_PORT=25 SMTP_FROM=box@home.lan; [[ -z "$(smtp_problems)" ]] || fail_ "an unauthenticated LAN relay is fine"; pass
@@ -98,13 +98,14 @@ printf 'TZ=America/Los_Angeles\nSMTP_HOST=keep.example.com\n' > "$ENV_FILE"; mig
 explain() { :; }; hr() { :; }
 cfg() { printf '%b' "$1" | authentik_configure_email >/dev/null 2>&1; }
 : > "$ENV_FILE"; cfg 'n\n'; [[ -z "$(env_get SMTP_HOST)" ]] || fail_ "skipped: nothing set"; pass
-: > "$ENV_FILE"; cfg 'y\nSMTP.Example.com\n1\n\nme@example.com\npa$s\nabcd1234\n\n'
+: > "$ENV_FILE"; cfg 'y\nSMTP.Example.com\n1\n\nme@example.com\npa$ s"q"\n\n'
 [[ "$(env_get SMTP_HOST)" == smtp.example.com && "$(env_get SMTP_PORT)" == 587 && "$(env_get SMTP_STARTTLS)" == true \
-   && "$(env_get SMTP_TLS)" == false && "$(env_get SMTP_PASSWORD)" == abcd1234 && "$(env_get SMTP_FROM)" == me@example.com ]] \
-    || fail_ "STARTTLS on 587, a \$ password refused then a good one, the login as sender: $(cat "$ENV_FILE")"; pass
+   && "$(env_get SMTP_TLS)" == false && "$(env_get SMTP_PASSWORD)" == 'pa$s"q"' && "$(env_get SMTP_FROM)" == me@example.com ]] \
+    || fail_ "STARTTLS on 587, a password with \$ and quotes carried (its space dropped), the login as sender: $(cat "$ENV_FILE")"; pass
+grep -qxF 'SMTP_PASSWORD="pa\$s\"q\""' "$ENV_FILE" || fail_ "it is written in .env's quoted form: $(grep SMTP_PASSWORD "$ENV_FILE")"; pass
 cfg 'c\nsmtp.example.com\n2\n\n\n\n\n'
-[[ "$(env_get SMTP_PORT)" == 465 && "$(env_get SMTP_TLS)" == true && "$(env_get SMTP_STARTTLS)" == false && "$(env_get SMTP_PASSWORD)" == abcd1234 ]] \
-    || fail_ "change to TLS: 465 suggested, Enter keeps the password: $(cat "$ENV_FILE")"; pass
+[[ "$(env_get SMTP_PORT)" == 465 && "$(env_get SMTP_TLS)" == true && "$(env_get SMTP_STARTTLS)" == false && "$(env_get SMTP_PASSWORD)" == 'pa$s"q"' ]] \
+    || fail_ "change to TLS: 465 suggested, Enter keeps the password (read and written back in its quoted form): $(cat "$ENV_FILE")"; pass
 cfg 'r\n'; [[ -z "$(env_get SMTP_HOST)" && -z "$(env_get SMTP_PASSWORD)" ]] || fail_ "remove: every key emptied"; pass
 # a fresh .env carries SMTP_FROM= empty: the login is still offered; an app password's spaces go
 printf 'SMTP_HOST=\nSMTP_USER=\nSMTP_PASSWORD=\nSMTP_FROM=\n' > "$ENV_FILE"

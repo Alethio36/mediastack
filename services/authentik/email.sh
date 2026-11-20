@@ -177,8 +177,8 @@ authentik_configure_email() {
     if [[ -n "$REPLY_VAL" ]]; then
         while true; do
             ask_token "Password (an app password or the service's SMTP key; spaces are dropped — input hidden)" "$(env_get SMTP_PASSWORD)"
-            # compose would rewrite a space or a $; an app password's spaces are only
-            # how it is shown (Gmail: groups of four), so they go
+            # an app password's spaces are only how it is shown (Gmail: groups of
+            # four), so they go; a $ or a quote is carried (env_set's quoted form)
             pw=${REPLY_VAL//[[:space:]]/}
             [[ "$pw" == "$REPLY_VAL" ]] || info "spaces dropped"
             p=$(smtp_password_problem "$pw"); [[ -z "$p" ]] || { fail "$p"; continue; }

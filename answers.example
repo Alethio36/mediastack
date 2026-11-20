@@ -8,7 +8,8 @@
 # A written answer is used. A blank one keeps what is already set; on a first
 # install it takes the recommendation, or is asked — and with no terminal,
 # an answer that would be asked must be written. Values follow .env's rules:
-# no quotes, and no comment after a value (comments go on their own line).
+# bare, or in double quotes with \ " $ escaped (for a $, a leading quote or
+# a space at an end); no comment after a value (comments go on their own line).
 # A yes/no answer takes yes, no, y, n, true or false; a path starting ~ is
 # your home, a relative one is inside this folder.
 # answers*.env is git-ignored: your answers never reach the repo.
@@ -197,29 +198,29 @@ UPDATE_SCHEDULE=
 BACKUP_SCHEDULE=
 
 # the one password of the stack's own logins, with STACK_LOGINS=unified
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)
 STACK_PASSWORD=
 
 # ------------------------------------------------------------ the arrs --
 
 # the shared arr password (configure records it; set-credentials arr)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 ARR_PASSWORD=
 
 # ------------------------------------------------------------ apprise --
 
 # the ops stream's Apprise URLs, comma-separated (one-shot: handed to the hub by wire apprise)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
 NOTIFY_OPS=
 
 # the users stream's Apprise URLs, comma-separated (one-shot: handed to the hub by wire apprise)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
 NOTIFY_USERS=
 
 # ------------------------------------------------------------ audiobookshelf --
 
 # Audiobookshelf's root password (configure records it; set-credentials audiobookshelf)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 ABS_ADMIN_PASSWORD=
 
 # ------------------------------------------------------------ authentik --
@@ -249,7 +250,7 @@ SMTP_TLS=
 SMTP_USER=
 
 # that login's password — an app password or the service's SMTP key
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
 SMTP_PASSWORD=
 
 # the address mail comes from (one the server lets you send as)
@@ -263,13 +264,13 @@ LDAP_APP_PASSWORDS=
 # ------------------------------------------------------------ cloudflared --
 
 # Cloudflare tunnel token (cloudflared)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
 CLOUDFLARE_TUNNEL_TOKEN=
 
 # ------------------------------------------------------------ deluge --
 
 # Deluge's web password — one of the stack's own (configure records it; set-credentials deluge)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 DELUGE_PASSWORD=
 
 # ------------------------------------------------------------ gluetun --
@@ -279,7 +280,7 @@ DELUGE_PASSWORD=
 VPN_PROVIDER=
 
 # the VPN's WireGuard private key
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)
 WIREGUARD_PRIVATE_KEY=
 
 # the WireGuard interface address (e.g. 10.5.0.2/32)
@@ -291,13 +292,13 @@ WIREGUARD_ADDRESSES=
 VPN_SERVER_COUNTRIES=
 
 # NordVPN's access token — configure turns it into WIREGUARD_PRIVATE_KEY
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)
 NORDVPN_TOKEN=
 
 # ------------------------------------------------------------ jellyfin --
 
 # Jellyfin's admin password (configure records it; set-credentials jellyfin)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 JELLYFIN_ADMIN_PASSWORD=
 
 # the name Jellyfin's apps and casting show (configure asks; wire sets it once, while Jellyfin still shows its ID)
@@ -307,13 +308,13 @@ JELLYFIN_SERVER_NAME=
 # ------------------------------------------------------------ kavita --
 
 # Kavita's admin password (configure records it; set-credentials kavita)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 KAVITA_ADMIN_PASSWORD=
 
 # ------------------------------------------------------------ navidrome --
 
 # Navidrome's admin password (configure records it)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 NAVIDROME_ADMIN_PASSWORD=
 
 # ------------------------------------------------------------ olivetin --
@@ -323,19 +324,19 @@ NAVIDROME_ADMIN_PASSWORD=
 PANEL=
 
 # the web panel's admin password (configure or frontdoor-install records it; set-credentials panel)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 PANEL_ADMIN_PASSWORD=
 
 # ------------------------------------------------------------ pihole --
 
 # Pi-hole's web password — one of the stack's own (configure records it; set-credentials pihole)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 PIHOLE_PASSWORD=
 
 # ------------------------------------------------------------ qbittorrent --
 
 # qBittorrent's password (configure records it; set-credentials qbit)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 QBITTORRENT_PASSWORD=
 
 # ------------------------------------------------------------ recyclarr --
@@ -351,7 +352,7 @@ TRASH_PROFILE_SONARR=
 # ------------------------------------------------------------ traefik --
 
 # Cloudflare DNS token for certificates (traefik-setup)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)
 CF_DNS_API_TOKEN=
 
 # certificate contact address (traefik-setup)
@@ -363,7 +364,7 @@ ACME_EMAIL=
 ACME_ENV=
 
 # the Traefik dashboard's password (configure records it; set-credentials traefik)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 TRAEFIK_DASH_PASSWORD=
 
 # where the certificate comes from: Let's Encrypt through Cloudflare, or your own files (configure; traefik-setup --certs)
@@ -381,5 +382,5 @@ TLS_KEY_FILE=
 # ------------------------------------------------------------ transmission --
 
 # Transmission's password (configure records it; set-credentials transmission; its container carries it)
-#   a secret of printable ASCII with no spaces and none of $ " ' \ or the backtick — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 TRANSMISSION_PASSWORD=

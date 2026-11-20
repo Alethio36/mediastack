@@ -91,11 +91,11 @@ has() { grep -qF -- "$1" "$T/out"; }
 
 # ---- the file itself: every problem at once, nothing asked or written ----
 fresh; cp "$T/w/.env" "$T/before.env"
-answers 'FOO=1\nCOMPOSE_PROFILES=sonarr\nnot a line\nTZ=Nowhere/Land\nSIGNIN="none"\nSIGNIN=none\nUPDATE_SCHEDULE=never\n\n# a comment\nVPN_SERVER_COUNTRIES=\n'
+answers 'FOO=1\nCOMPOSE_PROFILES=sonarr\nnot a line\nTZ=Nowhere/Land\nSIGNIN=\x27none\x27\nSIGNIN=none\nUPDATE_SCHEDULE=never\n\n# a comment\nVPN_SERVER_COUNTRIES=\n'
 filed "$T/a.env" '' --fresh; rc=$?
 (( rc == 4 )) || fail_ "a file with problems: exit 4 (got $rc)"; pass
 has "FOO is no question configure asks" && has "COMPOSE_PROFILES is no question configure asks" && has "line 3 is not KEY=value" \
-    && has "TZ='Nowhere/Land' is not a time zone" && has "SIGNIN='\"none\"' is quoted" && has "SIGNIN is answered twice" \
+    && has "TZ='Nowhere/Land' is not a time zone" && has "SIGNIN='none' is in single quotes" && has "SIGNIN is answered twice" \
     || fail_ "each problem with the file is named"; pass
 [[ "$(problems)" == 6 ]] || fail_ "all six listed at once, the word 'never' and a blank are no problem: $(problems)"; pass
 cmp -s "$T/w/.env" "$T/before.env" && [[ -z "$(ls -A "$T/w/local/state")" ]] || fail_ "nothing written"; pass
