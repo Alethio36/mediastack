@@ -140,7 +140,7 @@ vpn_rejoin_stopped() { # vpn_rejoin_stopped SVC... — those stopped while joine
     # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
     INSPECT_JSON=""
     gid=$(c_id "$(svc_cname gluetun)")
-    [[ -n "$gid" ]] || return 0   # no gluetun: nothing to join (the caller's wait for it says so)
+    [[ -n "$gid" ]] || return 0   # without a gluetun there is nothing to join (the caller's wait for it says so)
     for s in "$@"; do
         cn=$(svc_cname "$s")
         case "$(c_state "$cn")" in running|absent) continue ;; esac

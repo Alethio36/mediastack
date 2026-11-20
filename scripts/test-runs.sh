@@ -98,7 +98,7 @@ cmp -s "$T/m0" "$T/m1" || fail_ "stdout and stderr in one place keep their order
 reset; script -qec "bash -c 'stty -opost; source \"$T/fx.sh\"; main fx'" "$T/tty" > /dev/null 2>&1 || true
 f=$(rec fx); footer "$f" > /dev/null
 grep -qa $'out one\r$' "$T/tty" && grep -qa $'err one\r$' "$T/tty" && ! grep -qa $'\r' "$f" \
-    || fail_ "a raw terminal gets \\r\\n, the record \\n: $(od -c "$T/tty" | head -5)"; pass
+    || fail_ "a raw terminal gets \\r\\n, the record \\n: $(od -c "$T/tty" | sed -n 1,5p)"; pass
 reset; script -qec "bash -c 'source \"$T/fx.sh\"; main fx' > \"$T/o3\" 2>&1" /dev/null > /dev/null 2>&1 || true
 cmp -s "$T/m0" "$T/o3" || fail_ "not a terminal: no \\r added"; pass
 # the run ends only once its record has its footer: a systemd unit kills what
