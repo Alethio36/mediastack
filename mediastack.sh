@@ -729,12 +729,18 @@ cmd_up()   {
     if svc_enabled gluetun; then vpn_provider_ready up; fi   # the provider, its keys, and an image that knows it — before gluetun starts on a guess
     if (( ${#group[@]} )); then
         mapfile -t rest < <(svc_enabled_managed | grep -vxF -f <(printf '%s\n' "${group[@]}"))
+        # a new provider, key or image recreates gluetun: its group stops first (gate.sh)
+        INSPECT_JSON=""
+        if [[ "$(c_state "$(svc_cname gluetun)")" != absent ]] && gluetun_recreates; then
+            gluetun_recreate_prepare || die "Stopping gluetun and its VPN'd services for its recreate failed — compose's error is above. Nothing was started. Fix it, then: ./mediastack.sh up"
+        fi
         DC up -d --remove-orphans "${rest[@]}" \
             || die "Starting the stack failed — compose's error is above. Nothing VPN'd was started. Fix it, then: ./mediastack.sh up"
         wait_verdict --recover gluetun \
             || die "gluetun ${VERDICT_WHY[gluetun]} — nothing VPN'd was started.
   Inspect: ./mediastack.sh logs gluetun (bad credentials? provider outage?)"
         leak_gate_up
+        vpn_rejoin_stopped "${group[@]}" || die "Recreating the VPN'd services onto the live gluetun failed — compose's error is above. Fix it, then: ./mediastack.sh up"
     fi
     if ! DC up -d --remove-orphans; then
         up_race || die "Starting the stack failed — compose's error is above. Fix it, then: ./mediastack.sh up"

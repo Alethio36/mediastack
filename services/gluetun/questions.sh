@@ -55,7 +55,10 @@ gluetun_vpn_from_answers() { # the VPN from the answers file; a blank keeps what
         [[ "$mine" == *" $k "* ]] || ! answers_any "$k" || answer_refused "$k is for another VPN provider — VPN_PROVIDER is $prov"
     done
     # a new provider takes nothing the old one made: every key it reads comes from this file
-    if (( VPN_PROVIDER_CHANGED )); then for k in $(vpnp_call "$prov" env "$t"); do env_set "$k" ""; done; fi
+    if (( VPN_PROVIDER_CHANGED )); then
+        vpn_keys_drop_others "$prov"
+        for k in $(vpnp_call "$prov" env "$t"); do env_set "$k" ""; done
+    fi
     # the provider's own answers first (a token turned into a key), then its keys as written
     if vpnp_has "$prov" answers; then vpnp_call "$prov" answers "$t"; fi
     for k in $(vpnp_call "$prov" env "$t"); do
@@ -89,6 +92,7 @@ or 'custom' to paste your own WireGuard config."
     vpn_choose_provider; prov=$REPLY_VAL
     VPN_PROVIDER_CHANGED=0; [[ "$prov" != "$cur" ]] && VPN_PROVIDER_CHANGED=1
     env_set VPN_PROVIDER "$prov"
+    if (( VPN_PROVIDER_CHANGED )); then vpn_keys_drop_others "$prov"; fi
     # one type each for now (WireGuard): asked once a provider offers two
     env_set VPN_TYPE "$(vpnp_call "$prov" types | awk '{print $1}')"
     vpnp_call "$prov" questions "$(env_get VPN_TYPE)"

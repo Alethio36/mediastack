@@ -108,6 +108,50 @@ gluetun_instance() { local cn; cn=$(svc_cname gluetun); echo "$(c_id "$cn") $(c_
 leak_proof_record() { INSPECT_JSON=""; state_set "$LEAK_PROVEN" "$(gluetun_instance)"; }
 gluetun_proven() { local p; p=$(state_get "$LEAK_PROVEN"); [[ -n "$p" && "$p" == "$(gluetun_instance)" ]]; }
 
+# ---- gluetun recreated: its group stops first ----
+# A recreated gluetun is a new namespace: members left running in the old one
+# have no network until they are re-pinned, and meanwhile the arrs'
+# notifications and indexers fail and back off (found live Nov 2026: radarr's
+# "notifications unavailable" after a provider switch). So they stop first,
+# gluetun after them, and what the host tracked from gluetun's address is
+# forgotten (kept, the next full run waits the old tunnel session out).
+# Compose does not recreate a stopped member whose own config is unchanged —
+# it would start in the removed namespace — so one stopped while joined to a
+# gluetun since removed is recreated, unstarted, onto the live one before it
+# starts (vpn_rejoin_stopped).
+gluetun_recreate_prepare() { # the running VPN group stopped, then gluetun; gluetun's flows forgotten
+    local -a group run=(); local s gip
+    mapfile -t group < <(vpn_group)
+    # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+    INSPECT_JSON=""
+    for s in "${group[@]}"; do
+        if [[ "$(c_state "$(svc_cname "$s")")" == running ]]; then run+=("$s"); fi
+    done
+    if (( ${#run[@]} )); then
+        info "stopping the VPN'd services while gluetun is recreated (their network goes with it): ${run[*]}"
+        DC stop "${run[@]}" >/dev/null || return 1
+    fi
+    gip=$(gluetun_addr)
+    DC stop gluetun >/dev/null || return 1
+    lt_flows_forget "$gip"
+}
+vpn_rejoin_stopped() { # vpn_rejoin_stopped SVC... — those stopped while joined to a gluetun since removed: recreated, not started, onto the live one
+    local -a stale=(); local s cn gid nm
+    # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
+    INSPECT_JSON=""
+    gid=$(c_id "$(svc_cname gluetun)")
+    [[ -n "$gid" ]] || return 0   # no gluetun: nothing to join (the caller's wait for it says so)
+    for s in "$@"; do
+        cn=$(svc_cname "$s")
+        case "$(c_state "$cn")" in running|absent) continue ;; esac
+        nm=$(c_netmode "$cn")
+        if [[ "$nm" == container:* && "$nm" != "container:$gid" ]]; then stale+=("$s"); fi
+    done
+    (( ${#stale[@]} )) || return 0
+    info "onto the live gluetun (stopped while it was recreated): ${stale[*]}"
+    DC up --no-start --force-recreate --no-deps "${stale[@]}" >/dev/null
+}
+
 vpn_start_group() { # vpn_start_group [--no-recreate] SVC... — start these VPN'd services through the gate: 0 started, 3 held by it, 1 failed
     # gluetun must be up (the caller waits for it). The gate open, the tier
     # follows gluetun: proven since its last start -> the local checks, else
@@ -125,6 +169,7 @@ vpn_start_group() { # vpn_start_group [--no-recreate] SVC... — start these VPN
     leak_test_run 0 "$lonly" || rc=$?
     leak_verdict "$rc"
     (( rc != 1 )) || return 3
+    vpn_rejoin_stopped "$@" || { fail "recreating $* onto the live gluetun failed — see compose's message above"; return 1; }
     DC up -d "${how[@]}" "$@" >/dev/null || { fail "starting $* failed — see compose's message above"; return 1; }
     vpn_reattach_guard
 }

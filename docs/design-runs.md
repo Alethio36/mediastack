@@ -89,9 +89,18 @@ check stays.
 In `main()`, before the verb runs (`run_record_start`):
 
 ```
-main ── stdout/stderr ──> tee ──> the screen, byte for byte
+main ── stdout/stderr ──> tee ──> the screen, byte for byte (a terminal: \r\n)
                            └────> run_stamp ──> the record, then its footer
 ```
+
+- **A terminal gets `\r\n`.** A sudo in the foreground puts the terminal in
+  raw mode while it runs (`use_pty`, Debian's default), and the tee lags the
+  script: a line it writes then goes down a row without going back to the
+  left edge — the screen stair-steps (found live Nov 2026). `\r\n` draws the
+  same in either mode, so the screen's copy goes through a perl filter
+  (`run_tee`); the record keeps `\n`, and a pipe or a file gets the bytes
+  unchanged. The filter reads what arrives, not lines: a prompt with no
+  newline reaches the screen at once.
 
 - **One `tee` when stdout and stderr go to the same place** (a terminal,
   `2>&1`, the journal): their order is kept exactly. Otherwise one `tee` and

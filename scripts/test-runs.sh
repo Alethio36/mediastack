@@ -93,6 +93,14 @@ cmp -s "$T/o0" "$T/o1" && cmp -s "$T/e0" "$T/e1" || fail_ "stdout and stderr byt
 reset; run fx > "$T/m1" 2>&1
 bash -c "source \"\$T/fx.sh\"; run_record_start() { :; }; main fx" > "$T/m0" 2>&1
 cmp -s "$T/m0" "$T/m1" || fail_ "stdout and stderr in one place keep their order"; pass
+# a terminal in raw mode (a sudo in the foreground, use_pty): the screen's
+# lines still end at the left edge; the record has no \r
+reset; script -qec "bash -c 'stty -opost; source \"$T/fx.sh\"; main fx'" "$T/tty" > /dev/null 2>&1 || true
+f=$(rec fx); footer "$f" > /dev/null
+grep -qa $'out one\r$' "$T/tty" && grep -qa $'err one\r$' "$T/tty" && ! grep -qa $'\r' "$f" \
+    || fail_ "a raw terminal gets \\r\\n, the record \\n: $(od -c "$T/tty" | head -5)"; pass
+reset; script -qec "bash -c 'source \"$T/fx.sh\"; main fx' > \"$T/o3\" 2>&1" /dev/null > /dev/null 2>&1 || true
+cmp -s "$T/m0" "$T/o3" || fail_ "not a terminal: no \\r added"; pass
 reset; : > "$T/local/runs"; run fx > "$T/o2" 2> "$T/e2"; rc=$?   # a file where the folder goes: no record, even for root
 [[ $rc == 0 ]] && cmp -s "$T/o0" "$T/o2" && grep -qF 'this run is not recorded' "$T/e2" \
     || fail_ "no record possible: the run is the same, and says so (rc=$rc)"; pass

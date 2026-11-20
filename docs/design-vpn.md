@@ -1,9 +1,9 @@
 # Design: VPN depth — every provider gluetun knows, one folder each
 
-*Status: **agreed** (19 Nov 2026), MVP plan step 8. **Slice 1 built** (19–20
-Nov 2026, not yet proven live): the provider layer, the eight WireGuard
-providers and `custom` with endpoint names, gluetun's own settings fixed,
-schema 51. Revised the day it was agreed —
+*Status: **agreed** (19 Nov 2026), MVP plan step 8. **Slice 1 built and
+proven live** (19–20 Nov 2026, the test box): the provider layer, the eight
+WireGuard providers and `custom` with endpoint names, gluetun's own settings
+fixed, schema 51. Revised the day it was agreed —
 an endpoint's hostname is resolved by mediastack (not refused), port
 forwarding reaches the download client through a file gluetun writes (not
 its control server), and every secret follows the stack's one rule
@@ -389,6 +389,32 @@ from its server data stops the tunnel.
    same fields gluetun's NordVPN updater reads) — the manual path end to end,
    once by its address and once by its hostname.
    Proved here too: nothing reads gluetun's public IP once it is off.
+   **Proven live 20 Nov 2026** (the test box, NordVPN):
+   - schema 50 → 51, then `up`: gluetun recreated through the leak gate (PASS),
+     `.env` and `local/vpn-provider.yml` as designed, the image's provider list
+     read from its own usage and cached; gluetun's log: no resolver check, no
+     public-IP lookup; leak-test PASS, `wire --verify` no drift;
+   - a provider whose key is missing (mullvad without its address): `up`
+     refused, named it, started nothing VPN'd;
+   - `custom` by address: one NordVPN server's IP, public key and our key —
+     tunnel up, leak gate PASS, the firewall open only to that address. The
+     first server tried (the list's first Netherlands entry) never answered
+     with the same path, key and address: the server, not the path;
+   - `custom` by name: the hostname looked up from the host and recorded;
+     gluetun not recreated (the same address renders the same file);
+   - the name moving (the record forged to an old address, `vpn-watch` by
+     hand): detected, ops told, the group stopped, the gate, the group
+     started, the new address recorded. gluetun was not really recreated (it
+     never ran on the forged address): compose's recreate is every
+     configure's;
+   - back to nordvpn through an answers file: a new server, gate PASS.
+   It found three things, fixed the same day: a provider switch left the old
+   provider's keys in `.env` (now emptied, `vpn_keys_drop_others`); `up`
+   recreated gluetun under the running VPN group, whose arrs then failed and
+   backed off (radarr: "notifications unavailable") — the group now stops
+   first and re-joins after the gate (`gluetun_recreate_prepare`,
+   `vpn_rejoin_stopped`; update and the move too); and the screen stair-stepped
+   while a sudo ran (`docs/design-runs.md`).
 2. **OpenVPN:** the type, its credentials, the fourteen OpenVPN-only
    folders, `custom` OpenVPN, the leak gate's two places. Live: NordVPN over
    OpenVPN, UDP and TCP (whether Nord's token API also gives the OpenVPN

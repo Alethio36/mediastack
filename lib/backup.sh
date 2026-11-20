@@ -831,10 +831,9 @@ UPDATE_GUARDED=0   # 1 when update_apply started VPN'd services through the gate
 APPLY_VERB=update   # what update_apply's and apply_up's messages call the run: update, or restore
 update_apply() { # update_apply [--restore] TARGET... — apply the pulled images; the VPN group through the leak gate
     # The leak gate (services/gluetun/gate.sh): the VPN group starts last,
-    # after gluetun is proven. gluetun changed -> it is stopped (what the host
-    # tracked from its address is from before: forgotten), recreated with the
-    # rest, proven by the full run, then the whole group re-joins it (the
-    # members still in its old namespace have had no network meanwhile).
+    # after gluetun is proven. gluetun changed -> its group stops, then it
+    # (gluetun_recreate_prepare, gate.sh), recreated with the rest, proven by
+    # the full run, then the whole group re-joins it.
     # gluetun unchanged -> the local checks before the group's targets.
     # --restore: restore stopped gluetun and put its config back itself, so a
     # restored gluetun is a changed one whatever compose would recreate.
@@ -849,9 +848,7 @@ update_apply() { # update_apply [--restore] TARGET... — apply the pulled image
     done
     if (( gchg )); then
         info "gluetun changed — recreated first and proven by the full leak-test, then its VPN group"
-        gip=$(gluetun_addr)
-        DC stop gluetun >/dev/null || die "$APPLY_VERB: could not stop gluetun for its recreate — nothing was applied"
-        lt_flows_forget "$gip"
+        gluetun_recreate_prepare || die "$APPLY_VERB: could not stop gluetun and its VPN'd services for its recreate — nothing was applied"
     fi
     if (( ${#rest[@]} )); then apply_up --remove-orphans "${rest[@]}"; fi
     if (( gchg )); then

@@ -139,6 +139,21 @@ grep -qx '      WIREGUARD_ENDPOINT_IP: "198.51.100.11"' "$PROVIDER_FILE" && grep
 cust WIREGUARD_ENDPOINT_HOST=other.example.net
 [[ "$(vpn_provider_problems)" == *"has not been looked up yet"* ]] || fail_ "a name not looked up yet: up does it first"; pass
 
+# ---- a switch: what only the old provider read goes ----
+cust WIREGUARD_ENDPOINT_HOST=vpn.example.net WIREGUARD_PRESHARED_KEY="$K2"; state_set "$VPN_ENDPOINT_STATE" "vpn.example.net 198.51.100.3"
+env_set VPN_PROVIDER nordvpn; vpn_keys_drop_others nordvpn
+[[ "$(env_get WIREGUARD_PRIVATE_KEY)" == "$K1" ]] || fail_ "a key the new provider reads stays (its own questions decide it)"; pass
+for k in WIREGUARD_ADDRESSES WIREGUARD_PUBLIC_KEY WIREGUARD_ENDPOINT_HOST WIREGUARD_ENDPOINT_PORT WIREGUARD_PRESHARED_KEY; do
+    [[ -z "$(env_get "$k")" ]] || fail_ "custom -> nordvpn: $k emptied: $(cat "$ENV_FILE")"; pass
+done
+[[ -z "$(state_get "$VPN_ENDPOINT_STATE")" ]] || fail_ "the endpoint record goes with them"; pass
+! grep -qE '^(NORDVPN_TOKEN|WIREGUARD_CONF)=' "$ENV_FILE" || fail_ "a key .env does not hold is never added: $(cat "$ENV_FILE")"; pass
+setenv VPN_PROVIDER=mullvad WIREGUARD_PRIVATE_KEY="$K1" WIREGUARD_ADDRESSES=10.64.0.2/32; vpn_keys_drop_others custom
+[[ "$(env_get WIREGUARD_ADDRESSES)" == 10.64.0.2/32 ]] || fail_ "a key both read stays"; pass
+state_set "$VPN_ENDPOINT_STATE" "vpn.example.net 198.51.100.3"; vpn_keys_drop_others custom
+[[ -n "$(state_get "$VPN_ENDPOINT_STATE")" ]] || fail_ "a switch to custom keeps the endpoint record"; pass
+state_del "$VPN_ENDPOINT_STATE"
+
 # ---- your own config ----
 conf() { printf '%s\n' "$@" > "$T/wg.conf"; }
 conf '# from my router' '[Interface]' "PrivateKey = $K1" 'Address = 10.7.0.2/32, fd00::2/128' 'DNS = 10.7.0.1' '' '[Peer]' \

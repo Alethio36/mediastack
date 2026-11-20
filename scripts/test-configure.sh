@@ -168,6 +168,11 @@ printf 'custom\n%s\n%s\n' "$T/bad.conf" "$T/good.conf" | Q_TERMINAL=1 gluetun_vp
 [[ "$(env_get VPN_PROVIDER)" == custom && "$(env_get WIREGUARD_ENDPOINT_HOST)" == home.example.net && "$(env_get WIREGUARD_ENDPOINT_PORT)" == 51820 ]] \
     && grep -q "line 6: Endpoint 'home.example.net' is not host:port" "$T/out" && grep -q 'looks it up from this host' "$T/out" \
     || fail_ "custom: a bad config named by its line, a good one read in, a name said to be looked up: $(cat "$T/out")"; pass
+# back to nordvpn: custom's server, its key and its address go with it
+printf 'nordvpn\nTOKEN123\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "custom -> nordvpn runs: $(cat "$T/out")"
+[[ "$(env_get VPN_PROVIDER)" == nordvpn && "$(env_get WIREGUARD_PRIVATE_KEY)" == KEY ]] \
+    && ! grep -qE '^WIREGUARD_(ADDRESSES|PUBLIC_KEY|ENDPOINT_HOST|ENDPOINT_PORT)=.' "$ENV_FILE" \
+    || fail_ "a switch empties what only the old provider read: $(cat "$ENV_FILE")"; pass
 # a prompt is printed only to a terminal, so the echo is checked at the source:
 # no secret is read by a prompt that echoes, or offered as a visible default
 ! grep -nE 'ask WIREGUARD_(PRIVATE|PRESHARED)_KEY|read -r -p "(NordVPN|Tunnel)' lib/questionnaire.sh services/gluetun/*.sh services/gluetun/providers/*/provider.sh services/cloudflared/cloudflared.sh \

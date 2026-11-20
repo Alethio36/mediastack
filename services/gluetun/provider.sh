@@ -64,6 +64,17 @@ vpnp_keys() { # vpnp_keys NAME — every .env key the provider reads, any type (
     return 0
 }
 vpn_all_keys() { local p; for p in $(vpnp_list); do vpnp_load "$p" && vpnp_keys "$p"; done | sort -u; }   # every key some provider reads
+vpn_keys_drop_others() { # vpn_keys_drop_others NAME — a switch to NAME: what only other providers read is emptied in .env, and the endpoint record when NAME names no server
+    # left, they read as NAME's own (a custom server's name and key under nordvpn: found live Nov 2026)
+    local mine k
+    mine=" $(vpnp_keys "$1" | tr '\n' ' ') "
+    for k in $(vpn_all_keys); do
+        [[ "$mine" == *" $k "* ]] && continue
+        if [[ -n "$(env_get "$k")" ]]; then env_set "$k" ""; fi   # only what .env holds: an answers-only key is never added
+    done
+    [[ "$mine" == *" WIREGUARD_ENDPOINT_HOST "* ]] || state_del "$VPN_ENDPOINT_STATE"
+    return 0
+}
 
 vpn_provider_problem() { # vpn_provider_problem NAME -> why NAME is no provider here ("" when it is; recorded lowercase)
     vpnp_load "${1,,}" && return 0
@@ -214,7 +225,7 @@ vpn_endpoint_move() { # the endpoint's name points elsewhere: gluetun recreated 
     mapfile -t group < <(vpn_group)
     warn "the VPN server $(vpn_endpoint_host) moved: $VPN_ENDPOINT_OLD -> $new — gluetun is recreated onto it, the VPN'd services restarted through the leak gate"
     notify ops "Mediastack VPN server moved" "$(vpn_endpoint_host) now answers at **$new** (was $VPN_ENDPOINT_OLD): gluetun recreated onto it; the VPN'd services restart through the leak gate." warning
-    if (( ${#group[@]} )); then DC stop "${group[@]}" >/dev/null 2>&1 || true; fi
+    gluetun_recreate_prepare || { fail "stopping gluetun and its VPN'd services for the move failed — see compose's message above"; return 1; }
     vpn_gen
     DC up -d --no-deps gluetun >/dev/null || { fail "recreating gluetun onto $new failed — see compose's message above"; return 1; }
     wait_verdict --recover gluetun || { fail "gluetun ${VERDICT_WHY[gluetun]} after the move — the VPN'd services stay stopped"; return 1; }

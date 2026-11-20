@@ -18,7 +18,8 @@
 #   * the gate's timers: local every 5 minutes; the full run hourly, at a random
 #     minute; this host's own address daily, at a random time — and in the footprint
 #   * update: gluetun unchanged -> the group's targets through the gate; changed ->
-#     stopped, forgotten, recreated, ready, then the whole group; a held group fails it
+#     its running group stopped, then gluetun, forgotten, recreated, ready, then
+#     the whole group; a held group fails it
 #   * doctor during a gated stop: one finding; the held members are not each a problem
 #   * enable starts its service through up (the gate), never with its own compose up
 #   * restore --service (and so rollback) starts what it restored as update applies:
@@ -27,7 +28,10 @@
 #   * a stale member re-joins as it is: gluetun restarted in place -> docker restart
 #     (no pending change applied); gluetun recreated (a new ID) -> recreated onto it
 #   * up's two phases: everything but the group, the gate, then the group — and
-#     no second phase when the gate fails
+#     no second phase when the gate fails; gluetun changed -> its running group
+#     stopped before it is recreated, and re-joined after the gate
+#   * a member stopped while gluetun was recreated (it names the removed one) is
+#     recreated, unstarted, onto the live one before it starts — compose would not
 # Sources the real entrypoint (minus its last line, main "$@"); docker and
 # the leak-test itself are stubs.
 #
@@ -156,6 +160,7 @@ vpn_reattach_guard() { echo "guard" >> "$UP_LOG"; }
 DC() { echo "DC $*" >> "$UP_LOG"; }
 sudo() { :; }
 leak_gate_up() { echo "gate" >> "$UP_LOG"; (( GATE_RC != 1 )) || exit 1; }
+gluetun_recreates() { return 1; }   # unchanged; the changed case below
 GATE_RC=0; : > "$UP_LOG"
 (cmd_up) > /dev/null 2>&1 || fail_ "up runs through — $(cat "$UP_LOG")"; pass
 [[ "$(paste -sd'|' "$UP_LOG")" == "DC config --format json|DC up -d --remove-orphans gluetun jellyfin|wait --recover gluetun|gate|DC up -d --remove-orphans|guard" ]] \
@@ -164,6 +169,18 @@ GATE_RC=1; : > "$UP_LOG"
 (cmd_up) > /dev/null 2>&1 && fail_ "a FAIL at the gate ends up"; pass
 [[ "$(paste -sd'|' "$UP_LOG")" == "DC config --format json|DC up -d --remove-orphans gluetun jellyfin|wait --recover gluetun|gate" ]] \
     || fail_ "and the group is never started ($(paste -sd'|' "$UP_LOG"))"; pass
+# gluetun changed (a new provider, key or image): the running group stops, then
+# gluetun, its flows forgotten; after the gate the stopped members re-join it
+: > "$UP_LOG"
+( gluetun_recreates() { return 0; }; GATE_RC=0
+  RUNNING=" gluetun jellyfin qbittorrent sonarr "
+  c_state() { [[ "$RUNNING" == *" ${1#mediastack-} "* ]] && echo running || echo exited; }
+  c_id() { echo gid-new; }; c_netmode() { echo container:gid-old; }
+  gluetun_addr() { echo 172.31.250.5; }; lt_flows_forget() { echo "forget $1" >> "$UP_LOG"; }
+  DC() { echo "DC $*" >> "$UP_LOG"; local x; if [[ "$1" == stop ]]; then for x in "${@:2}"; do RUNNING=${RUNNING// $x / }; done; fi; }
+  cmd_up ) > /dev/null 2>&1 || fail_ "up with gluetun changed runs through — $(cat "$UP_LOG")"; pass
+[[ "$(paste -sd'|' "$UP_LOG")" == "DC config --format json|DC stop qbittorrent sonarr|DC stop gluetun|forget 172.31.250.5|DC up -d --remove-orphans gluetun jellyfin|wait --recover gluetun|gate|DC up --no-start --force-recreate --no-deps qbittorrent sonarr|DC up -d --remove-orphans|guard" ]] \
+    || fail_ "gluetun changed: its group stopped first, gluetun stopped, forgotten; after the gate the group re-joins the new one ($(paste -sd'|' "$UP_LOG"))"; pass
 ENABLED="qbittorrent sonarr jellyfin"; : > "$UP_LOG"
 out=$( (cmd_up) 2>&1 ) && fail_ "VPN'd services without gluetun: refused"; pass
 [[ "$out" == *"but gluetun is not"* && ! -s "$UP_LOG" ]] || fail_ "before anything starts — $out"; pass
@@ -312,9 +329,10 @@ GREC=1; gluetun_recreates() { return "$GREC"; }
 : > "$APPLY_LOG"; update_apply jellyfin sonarr > /dev/null 2>&1
 [[ "$(paste -sd'|' "$APPLY_LOG")" == "apply --remove-orphans jellyfin|gate sonarr" && $UPDATE_GCHG == 0 ]] \
     || fail_ "gluetun unchanged: the rest applied, the group's targets through the gate ($(paste -sd'|' "$APPLY_LOG"))"; pass
-GREC=0; : > "$APPLY_LOG"; update_apply gluetun jellyfin sonarr > /dev/null 2>&1
-[[ "$(paste -sd'|' "$APPLY_LOG")" == "DC stop gluetun|forget 172.31.250.9|apply --remove-orphans gluetun jellyfin|wait --recover gluetun|gate qbittorrent sonarr" && $UPDATE_GCHG == 1 ]] \
-    || fail_ "gluetun changed: stopped, its tracked connections forgotten, recreated, ready, then the WHOLE group through the gate ($(paste -sd'|' "$APPLY_LOG"))"; pass
+GREC=0; RUNNING="gluetun jellyfin qbittorrent sonarr"; : > "$APPLY_LOG"; update_apply gluetun jellyfin sonarr > /dev/null 2>&1
+[[ "$(paste -sd'|' "$APPLY_LOG")" == "DC stop qbittorrent sonarr|DC stop gluetun|forget 172.31.250.9|apply --remove-orphans gluetun jellyfin|wait --recover gluetun|gate qbittorrent sonarr" && $UPDATE_GCHG == 1 ]] \
+    || fail_ "gluetun changed: its group stopped, then gluetun, its tracked connections forgotten, recreated, ready, then the WHOLE group through the gate ($(paste -sd'|' "$APPLY_LOG"))"; pass
+RUNNING="gluetun jellyfin"
 VSG_RC=3; out=$( (update_apply gluetun sonarr) 2>&1 ) && fail_ "the gate held the group: the update fails"; pass
 [[ "$out" == *"the leak gate stopped the VPN group"*"rollback gluetun"* ]] || fail_ "and says what to do — $out"; pass
 VSG_RC=0
@@ -423,5 +441,36 @@ RJ=$T/rejoin; : > "$RJ"; rm -f "$T"/joined.*
   vpn_reattach_guard ) > "$T/rj.out" 2>&1 || fail_ "re-join: $(cat "$T/rj.out")"
 [[ "$(paste -sd'|' "$RJ")" == "RESTART mediastack-qbittorrent|DC up -d --force-recreate --no-deps sonarr" ]] \
     || fail_ "restarted in place: restarted as it is; a removed gluetun: recreated onto the new one ($(paste -sd'|' "$RJ"))"; pass
+
+# ---- stopped while gluetun was recreated: recreated onto the live one, not started ----
+RJ=$T/rejoin2; : > "$RJ"
+( c_id() { echo gid-live; }
+  c_state() { case $1 in *qbittorrent|*sonarr|*radarr) echo exited ;; *bazarr) echo running ;; *) echo absent ;; esac; }
+  c_netmode() { case $1 in *qbittorrent) echo container:gid-gone ;; *sonarr) echo container:gid-live ;; *) echo container:gid-gone ;; esac; }
+  DC() { echo "DC $*" >> "$RJ"; }
+  vpn_rejoin_stopped qbittorrent sonarr bazarr prowlarr radarr ) > "$T/rj2.out" 2>&1 || fail_ "rejoin: $(cat "$T/rj2.out")"
+[[ "$(paste -sd'|' "$RJ")" == "DC up --no-start --force-recreate --no-deps qbittorrent radarr" ]] \
+    || fail_ "only the stopped ones naming a removed gluetun: recreated, unstarted; one naming the live one, a running one, an absent one untouched ($(paste -sd'|' "$RJ"))"; pass
+: > "$RJ"
+( c_id() { echo ""; }; DC() { echo "DC $*" >> "$RJ"; }; vpn_rejoin_stopped qbittorrent ) > /dev/null 2>&1
+[[ ! -s "$RJ" ]] || fail_ "no gluetun: nothing to join"; pass
+# a gated start re-joins before it starts
+( eval "$(awk '/^vpn_start_group\(\)/,/^}/' services/gluetun/gate.sh)"   # the update checks above stub it
+  state_del "$LEAK_GATE"; leak_test_run() { return 0; }; leak_verdict() { :; }; gluetun_proven() { return 0; }
+  vpn_rejoin_stopped() { echo "rejoin $*" >> "$RJ"; }; DC() { echo "DC $*" >> "$RJ"; }; vpn_reattach_guard() { :; }
+  : > "$RJ"; vpn_start_group --no-recreate qbittorrent sonarr ) > /dev/null 2>&1
+[[ "$(paste -sd'|' "$RJ")" == "rejoin qbittorrent sonarr|DC up -d --no-recreate qbittorrent sonarr" ]] \
+    || fail_ "vpn_start_group: the stopped re-join first, then the start ($(paste -sd'|' "$RJ"))"; pass
+
+# ---- the VPN server's name moved: the same order as up ----
+: > "$RJ"
+( vpn_endpoint_ip() { echo 198.51.100.11; }; vpn_endpoint_host() { echo vpn.example.net; }; VPN_ENDPOINT_OLD=198.51.100.3
+  vpn_group() { printf '%s\n' qbittorrent sonarr; }; notify() { echo "notify $2" >> "$RJ"; }
+  gluetun_recreate_prepare() { echo prepare >> "$RJ"; }; vpn_gen() { echo gen >> "$RJ"; }
+  DC() { echo "DC $*" >> "$RJ"; }; wait_verdict() { echo "wait $*" >> "$RJ"; }
+  vpn_start_group() { echo "start $*" >> "$RJ"; }
+  vpn_endpoint_move ) > /dev/null 2>&1 || fail_ "the move runs through: $(cat "$RJ")"; pass
+[[ "$(paste -sd'|' "$RJ")" == "notify Mediastack VPN server moved|prepare|gen|DC up -d --no-deps gluetun|wait --recover gluetun|start qbittorrent sonarr" ]] \
+    || fail_ "a move: told, the group and gluetun stopped, rendered, gluetun recreated and ready, the group through the gate ($(paste -sd'|' "$RJ"))"; pass
 
 echo "test-gate: $checks checks passed"

@@ -2,8 +2,9 @@
 # lib/runs.sh — every run recorded in local/runs/ (docs/design-runs.md): a
 # header, everything the run printed (each line timestamped, colours
 # stripped), a footer with its exit status. A record never changes a run: the
-# screen gets the same bytes through `tee`, the exit code is the run's own,
-# and a record that cannot be written is reported once while the run goes on.
+# screen gets the same bytes through `tee` (a terminal's newlines as \r\n,
+# run_tee), the exit code is the run's own, and a record that cannot be
+# written is reported once while the run goes on.
 #
 #   main ── stdout/stderr ──> tee ──> the screen, as before
 #                              └────> run_stamp ──> the record, then its footer
@@ -52,6 +53,20 @@ run_commit() { # the code this run is: short commit and branch
     c=$(git -c safe.directory="$SCRIPT_DIR" -C "$SCRIPT_DIR" rev-parse --short HEAD 2>/dev/null) || { echo unknown; return 0; }
     b=$(git -c safe.directory="$SCRIPT_DIR" -C "$SCRIPT_DIR" symbolic-ref --short -q HEAD 2>/dev/null) || b=detached
     echo "$c ($b)"
+}
+
+# A sudo in the foreground puts the terminal in raw mode while it runs
+# (use_pty, Debian's default), and the tee lags the script: a line it writes
+# to the terminal then goes down without going back to the left edge — a
+# staircase (found live Nov 2026). So a terminal gets \r\n, which draws the
+# same in either mode; the record keeps \n. sysread, not lines: a prompt with
+# no newline reaches the screen at once.
+# shellcheck disable=SC2016  # perl, not shell
+RUN_CRLF_PL='$| = 1; while (sysread(STDIN, my $b, 65536)) { $b =~ s/\n/\r\n/g; print $b }'
+run_tee() { # run_tee FILE — the record's tee, in its process substitution: FILE gets the output, and the screen (stdout)
+    trap '' INT HUP   # Ctrl-C is the run's: the record outlives it to write the footer
+    if [[ -t 1 ]]; then tee -p "$1" | perl -e "$RUN_CRLF_PL"; exit 0; fi
+    exec tee -p "$1"
 }
 
 run_header_only() { local v; for v in "${RUNS_HEADER_ONLY[@]}"; do [[ "$1" == "$v" ]] && return 0; done; return 1; }
@@ -220,14 +235,14 @@ run_record_start() { # run_record_start VERB ARG... — record this run, or carr
     exec {o}>&1 {e}>&2
     if run_same_target; then
         exec {s1}> >(run_stamp "$f" 1)
-        exec > >(trap '' INT HUP; exec tee -p "/dev/fd/$s1") 2>&1
+        exec > >(run_tee "/dev/fd/$s1") 2>&1
         MS_RUN_TEES=$!
         MS_RUN_FDS="$o $e $s1"
     else
         exec {s1}> >(run_stamp "$f" 2) {s2}> >(run_stamp "$f" 2)
-        exec > >(trap '' INT HUP; exec tee -p "/dev/fd/$s1")
+        exec > >(run_tee "/dev/fd/$s1")
         MS_RUN_TEES=$!
-        exec 2> >(trap '' INT HUP; exec tee -p "/dev/fd/$s2" >&"$e")
+        exec 2> >(run_tee "/dev/fd/$s2" >&"$e")
         MS_RUN_TEES+=" $!"
         MS_RUN_FDS="$o $e $s1 $s2"
     fi
