@@ -1,7 +1,10 @@
 # Design: VPN depth — every provider gluetun knows, one folder each
 
-*Status: **proposed** (19 Nov 2026), MVP plan step 8. To agree before any
-code. Built in four slices, each proven live on the test box before the
+*Status: **agreed** (19 Nov 2026), MVP plan step 8; revised the same day —
+an endpoint's hostname is resolved by mediastack (not refused), port
+forwarding reaches the download client through a file gluetun writes (not
+its control server), and every secret follows the stack's one rule
+(`secret_ok`, landed first). Built in four slices, each proven live on the test box before the
 next; only NordVPN can be proven live (the one account we have), so every
 other provider ships from gluetun's wiki and source, marked as not tested
 live, and is fixed from the feedback of the people who use it.*
@@ -188,16 +191,45 @@ or a config file a provider hands out.
   reads `[Interface]` PrivateKey and Address, `[Peer]` PublicKey,
   PresharedKey and Endpoint into `.env` (`WIREGUARD_PRIVATE_KEY`,
   `WIREGUARD_ADDRESSES`, `WIREGUARD_PUBLIC_KEY`, `WIREGUARD_PRESHARED_KEY`,
-  `WIREGUARD_ENDPOINT_IP`, `WIREGUARD_ENDPOINT_PORT`), each checked, the line
-  at fault named. One question instead of six. Parsed into `.env` rather than
-  mounted as gluetun's `wg0.conf`: secrets keep one home (the support
+  `WIREGUARD_ENDPOINT_HOST`, `WIREGUARD_ENDPOINT_PORT`), each checked, the
+  line at fault named. One question instead of six. Parsed into `.env` rather
+  than mounted as gluetun's `wg0.conf`: secrets keep one home (the support
   bundle's redaction, `chmod 600`), and configure can say which line is wrong.
-  Gluetun accepts only an IP for the endpoint (its issue #2680): a hostname is
-  refused with that reason, never resolved once and frozen.
 - **OpenVPN** (slice 2): the person's `.ovpn` file goes in `custom/vpn/`
   (theirs, untracked, upgrade-safe); the provider overlay mounts it read-only
   and points `OPENVPN_CUSTOM_CONFIG` at it; the username and password are
   asked like any provider's.
+
+### An endpoint by name
+
+Gluetun takes only an IP for a custom server (its firewall is one rule for
+one address; `WIREGUARD_ENDPOINT_IP`, its issue #2680, and the same for an
+OpenVPN file's `remote` — a TODO in its source), but a home server on
+dynamic DNS, or a config a provider hands out, names a host. mediastack does
+the translation:
+
+- **`.env` keeps what the config says:** `WIREGUARD_ENDPOINT_HOST`, a name
+  or an address. No address of a name is ever written to `.env`.
+- **Resolved at render:** `vpn_provider_gen` looks the name up from the host
+  (IPv4 first; IPv6 only where the stack has it) and writes the address into
+  `local/vpn-provider.yml` as `WIREGUARD_ENDPOINT_IP` — not a secret, so the
+  file stays 0644 and byte-stable for an unchanged answer.
+- **Kept current:** every `up`, the boot guard and the 5-minute check look it
+  up again. A different address recreates gluetun through the leak gate (the
+  VPN group stopped, leak-test on the new tunnel, then the group), and ops is
+  told the old and new address.
+- **A failed lookup is not a change:** on the first render there is no
+  address to start with, so it stops, naming the name; after that, the tunnel
+  keeps the address it has, and doctor and ops get a warning.
+- **Several addresses:** gluetun takes one. mediastack picks the first in
+  sorted order and moves only when that one is gone from the answer, so
+  round-robin DNS does not recreate gluetun every five minutes.
+- **Privacy:** the lookup leaves the host outside the tunnel (the tunnel is
+  not up yet) — to the host's resolver, for the server the person's own
+  config names. `docs/privacy.md` says so.
+- **OpenVPN** (slice 2): the same for a name in the file's `remote` — first
+  checked: whether `OPENVPN_ENDPOINT_IP` overrides it, so the person's file
+  is never rewritten.
 
 ## configure
 
@@ -244,22 +276,41 @@ can. Gluetun's own way to hand the port to qBittorrent (its
 for localhost": in gluetun's namespace that is every VPN'd container, against
 step 6's bypass for Traefik's address alone. Refused. Instead:
 
-- mediastack reads the forwarded port from gluetun's control server
-  (`/v1/portforward`, with `GLUETUN_CONTROL_APIKEY` — the script becomes the
-  key's one holder; `rotate-secrets` already rotates and proves it) when the
-  gate starts the VPN group and on the 5-minute check;
-- and sets it in the chosen download client through its own login:
-  `<client>_listen_port PORT` in each torrent client's folder (qBittorrent,
-  Deluge, Transmission). check-registries holds every `mediastack.torrent`
-  client to one.
-- `static`: the person's port from the provider's site
-  (`VPN_FORWARDED_PORT`), opened with `FIREWALL_VPN_INPUT_PORTS`, synced
-  the same way.
-- doctor: the port forwarded, the client listening on it.
+- **Gluetun only writes the port down.** Its up and down hooks write the
+  number to a file in its own config folder and remove it — no API call, no
+  login:
+  `VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'echo {{PORT}} > /gluetun/forwarded-port'`
+  and a down command that removes it (`{{PORT}}` is gluetun's own number; the
+  commands are fixed text, nothing of the person's in them).
+- **mediastack reads it** — `${CONFIG_ROOT}/gluetun/forwarded-port` — when
+  the gate starts the VPN group and on every 5-minute check. A file older than
+  gluetun's current start is stale and ignored; anything but one port number
+  is refused, saying so. The control server stays closed to everything: the
+  script still holds no gluetun key.
+- **It sets the port in the download client through that client's own
+  login,** with its random port and UPnP off: `<client>_listen_port PORT` in
+  each torrent client's folder (qBittorrent, Deluge, Transmission);
+  check-registries holds every `mediastack.torrent` client to one. Only
+  `DOWNLOAD_CLIENT` gets it: the clients share gluetun's network namespace,
+  so two cannot listen on one port.
+- **`static`:** the person's port from the provider's site
+  (`VPN_FORWARDED_PORT`), opened with `FIREWALL_VPN_INPUT_PORTS`, set in the
+  client the same way.
+- **leak-test** also reads gluetun's INPUT rules: traffic in is accepted
+  only on the tunnel, and only to the forwarded port.
+- **doctor:** the port forwarded is the client's listening port.
+- **A client that cannot be reached** is a warning to ops, retried every 5
+  minutes — never a stop of the VPN group: it is no leak.
+- **The cost:** after a reconnect (Proton gives a new port each time) the
+  client can be unconnectable for up to 5 minutes; downloads go on, only
+  incoming connections wait. Reacting at once needs a watch on the file, and
+  a file watch does not work when `CONFIG_ROOT` is on NFS — the 5-minute
+  check ships, a faster path only if it proves too slow.
 
-No account to prove it with, but the sync can be proven live: gluetun's
-control server accepts a port set by hand, so a made-up port must reach
-qBittorrent, Deluge and Transmission and come back after a gluetun restart.
+No account to prove it with, but the sync can be proven live: a made-up port
+in the file must reach qBittorrent, Deluge and Transmission (each as
+`DOWNLOAD_CLIENT` in turn), and a file older than gluetun's start must be
+ignored.
 
 ## The providers (gluetun `master`, 19 Nov 2026)
 
@@ -319,6 +370,10 @@ from its server data stops the tunnel.
   answers file, with the shims refusing Docker and sudo.
 - `check-registries.sh`: every `mediastack.torrent` client has
   `<client>_listen_port` (slice 4).
+- An endpoint by name: a fixture resolver — an answer renders its address,
+  sorted; a set that still holds the chosen address changes nothing; one
+  without it moves; a failed lookup on the first render stops, later warns
+  and keeps the tunnel; no name or address of one reaches `.env`.
 
 ## Build order
 
@@ -328,7 +383,8 @@ from its server data stops the tunnel.
    `docs/privacy.md`. Live: NordVPN through the new layer (wire --verify, a
    leak-test PASS, the soak's VPN stage); then one NordVPN server entered as
    `custom` (its station IP and WireGuard public key, from Nord's API — the
-   same fields gluetun's NordVPN updater reads) — the manual path end to end.
+   same fields gluetun's NordVPN updater reads) — the manual path end to end,
+   once by its address and once by its hostname.
    Proved here too: nothing reads gluetun's public IP once it is off.
 2. **OpenVPN:** the type, its credentials, the fourteen OpenVPN-only
    folders, `custom` OpenVPN, the leak gate's two places. Live: NordVPN over
@@ -338,8 +394,9 @@ from its server data stops the tunnel.
    checked against the image's server data (`format-servers -<provider>
    -format json`) before gluetun starts, and in configure where gluetun's
    `servers.json` already exists. Live: NordVPN's P2P servers in one city.
-4. **Port forwarding:** native and static, the sync, doctor. Live: the sync
-   with a port set by hand on the control server.
+4. **Port forwarding:** native and static, the file, the sync, leak-test's
+   INPUT check, doctor. Live: the sync, with a port written into the file by
+   hand.
 
 ## Not in this step
 
