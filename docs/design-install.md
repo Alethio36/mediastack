@@ -214,7 +214,11 @@ again (`ask_valid`, the one-way-to-ask convention):
   with `\\`, `\"` and `\$` escaped (`env_encode`), which compose and the
   script read alike — proven against compose in `scripts/test-secrets.sh`.
   The same rule holds every pasted key, token and answered secret, and
-  `set-credentials`.
+  `set-credentials`. *Proven live 19 Nov 2026 on the test box:* `set-credentials
+  all` with `Aa0 !"#$%&'()*+,-./:;<=>?@[\]^_`{|}~` — every enabled app
+  rotated and signed in (`wire --verify`, Cleanuparr by hand), and with the
+  portal off Pi-hole, qBittorrent, Bazarr and the Traefik dashboard took it at
+  their own login pages.
   On top, each service's own rule from `<name>_logins` (Kavita, for one, has
   a password policy of its own): a **unified** password must pass every
   enabled service's rule, so one answer cannot break one app.

@@ -270,6 +270,9 @@ agreed first:
     - **Each secret compose carries runs a full `up`** in `rotate-secrets`
       (the leak gate's minute each); grouping them per service, as the
       portal's settings are, could save minutes per run.
+    - **`set-credentials all` restarts Traefik twice** (19 Nov 2026, live):
+      once for Transmission's login it adds past the gate, once for the
+      dashboard's. One regeneration at the end would do.
     - **Grep the code for checks that use `grep -q` in a pipe or a `$( )`
       that can die** — test-pipes and test-reasons caught three new ones in
       one day; their rules belong in the contributor notes.
