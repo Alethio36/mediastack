@@ -47,7 +47,7 @@ curl() {
     local in; in=$(cat); printf '%s\n' "$*" >> "$T/curl.args"; printf '%s\n' "$in" >> "$T/curl.stdin"
     [[ -z "${CURL_DOWN:-}" ]] || return 7
     case "$*" in
-        *nordvpn*)        echo '{"nordlynx_private_key":"KEY"}' ;;
+        *nordvpn*)        echo '{"nordlynx_private_key":"KEY","username":"NORDUSER","password":"NORDPASS"}' ;;
         *tokens/verify*)  if [[ "$in" == *"Bearer CFTOK\""* ]]; then echo '{"success":true,"result":{"status":"active"}}'
                           else echo '{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}]}'; fi ;;
         *zones?name=example.com*) echo '{"success":true,"result":[{"id":"z1","name":"example.com","status":"active"}]}' ;;
@@ -175,11 +175,22 @@ refused 'SIGNIN=none\nNORDVPN_TOKEN=TOKEN\nENABLE_TRAEFIK=y\nENABLE_NPM=y\nSTACK
     "npm and traefik cannot both run"; pass
 refused 'SIGNIN=none\nNORDVPN_TOKEN=TOKEN\nDOWNLOAD_CLIENT=deluge\n' "DOWNLOAD_CLIENT=deluge is not among the download clients that run"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\nNORDVPN_TOKEN=TOKEN\n' "NORDVPN_TOKEN is for another VPN provider — VPN_PROVIDER is mullvad"; pass
-refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\n' "the VPN (mullvad) needs WIREGUARD_PRIVATE_KEY"; pass
-refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\nWIREGUARD_PRIVATE_KEY=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=\n' "the VPN (mullvad) needs WIREGUARD_ADDRESSES"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\n' "the VPN (mullvad, wireguard) needs WIREGUARD_PRIVATE_KEY"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\nWIREGUARD_PRIVATE_KEY=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=\n' "the VPN (mullvad, wireguard) needs WIREGUARD_ADDRESSES"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=windscribe\nVPN_SERVER_COUNTRIES=Sweden\n' "VPN_SERVER_COUNTRIES: windscribe does not choose servers by country"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\nWIREGUARD_PRIVATE_KEY=nope\n' "WIREGUARD_PRIVATE_KEY: that is not a WireGuard key"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=perfect-privacy\n' "is no VPN provider mediastack knows"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_TYPE=openvpn\nNORDVPN_TOKEN=TOKEN\nWIREGUARD_PRIVATE_KEY=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=\n' "WIREGUARD_PRIVATE_KEY is for nordvpn over the other tunnel — VPN_TYPE is openvpn"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=expressvpn\nVPN_TYPE=openvpn\nOPENVPN_USER=u\nOPENVPN_PASSWORD=p\nOPENVPN_PROTOCOL=tcp\n' "OPENVPN_PROTOCOL=tcp: expressvpn has OpenVPN servers over udp only"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=cyberghost\nOPENVPN_USER=u\nOPENVPN_PASSWORD=p\n' "the VPN (cyberghost, openvpn) needs OPENVPN_CERT" "the VPN (cyberghost, openvpn) needs OPENVPN_KEY"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nNORDVPN_TOKEN=TOKEN\nOPENVPN_PROTOCOL=tcp\n' "OPENVPN_PROTOCOL: only for VPN_TYPE=openvpn — VPN_TYPE is wireguard"; pass
+# NordVPN over OpenVPN: the token gives its service login; cyberghost alone is OpenVPN, so its type need not be written
+fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nVPN_TYPE=openvpn\nOPENVPN_PROTOCOL=tcp\nNORDVPN_TOKEN=TOKEN\n'; filed "$T/a.env" '' --fresh || fail_ "nordvpn over OpenVPN runs: $(cat "$T/out")"
+[[ "$(envv VPN_TYPE)" == openvpn && "$(envv OPENVPN_USER)" == NORDUSER && "$(envv OPENVPN_PASSWORD)" == NORDPASS && "$(envv OPENVPN_PROTOCOL)" == tcp && -z "$(envv WIREGUARD_PRIVATE_KEY)" ]] \
+    || fail_ "the token's OpenVPN login, over TCP, no WireGuard key: $(grep -E '^(VPN_TYPE|OPENVPN_|WIREGUARD_PRIVATE)' "$T/w/.env")"; pass
+fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nVPN_PROVIDER=expressvpn\nOPENVPN_USER=u\nOPENVPN_PASSWORD=p\n'; filed "$T/a.env" '' --fresh || fail_ "an OpenVPN-only provider runs: $(cat "$T/out")"
+[[ "$(envv VPN_TYPE)" == openvpn && "$(envv OPENVPN_PROTOCOL)" == udp ]] || fail_ "its only tunnel and protocol taken: $(envv VPN_TYPE) $(envv OPENVPN_PROTOCOL)"; pass
+
 refused 'CONFIGURE_MODE=full\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\n' "CONFIGURE_MODE=full asks every question — it needs a terminal"; pass
 refused 'SIGNIN=none\nNORDVPN_TOKEN=TOKEN\nSTACK_PASSWORD=Sh4red-pass-1\n' "STACK_PASSWORD is the one password of STACK_LOGINS=unified"; pass
 refused 'SIGNIN=authentik\nNORDVPN_TOKEN=TOKEN\nSTACK_DOMAIN=media.example.com\nACME_EMAIL=a@b.co\nCF_DNS_API_TOKEN=WRONG\n' \

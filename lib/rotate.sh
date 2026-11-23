@@ -43,6 +43,8 @@ declare -A ROTATE_AFTER=(
 # Secrets held outside the stack: never rotated here — the end says where a new one comes from.
 ROTATE_EXTERNAL=(
     "WIREGUARD_PRIVATE_KEY|the VPN's key: a new one from your VPN provider, then ./mediastack.sh configure (full) and replace it at the VPN step"
+    "OPENVPN_PASSWORD|the VPN's OpenVPN login: a new one from your VPN provider, then ./mediastack.sh configure (full) and replace it at the VPN step"
+    "OPENVPN_KEY|the VPN's OpenVPN client key: a new one from your VPN provider, then ./mediastack.sh configure (full) and read it in at the VPN step"
     "CF_DNS_API_TOKEN|Cloudflare's DNS token: a new one in Cloudflare's dashboard, then ./mediastack.sh traefik-setup"
     "CLOUDFLARE_TUNNEL_TOKEN|the Cloudflare tunnel's token: a new one in Cloudflare's dashboard, into CLOUDFLARE_TUNNEL_TOKEN in .env, then ./mediastack.sh up"
     "SMTP_PASSWORD|the mail login: a new app password from your mail provider, then ./mediastack.sh configure (its Email step) and ./mediastack.sh up"

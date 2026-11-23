@@ -245,7 +245,7 @@ CT_OUT2="$CUR"$'\n'"$OLD"; WATCH="$IN1"$'\n'"$IN1"$'\n'"$NAT"; fl "$CUR"$'\n'"$O
     || fail_ "renewed only by the old server calling in: PASS, said so — $(cat "$T/out")"; pass
 grep -q "104s left before the wait, 104s after; captured: 0 out from gluetun's address, 2 in to it" "$T/out" \
     || fail_ "the evidence in the line: both times left and the capture each way (the host's own translated address is not gluetun) — $(cat "$T/out")"; pass
-[[ "$(cat "$T/watch_filter")" == "udp and host 172.31.250.131 and (host 187.15.144.4)" ]] || fail_ "the capture: gluetun's address and the old server only ($(cat "$T/watch_filter"))"; pass
+[[ "$(cat "$T/watch_filter")" == "host 172.31.250.131 and ((udp and host 187.15.144.4))" ]] || fail_ "the capture: gluetun's address and the old server only, on its protocol ($(cat "$T/watch_filter"))"; pass
 [[ "$(cat "$T/slept")" == 109 ]] || fail_ "the capture runs inside the same wait, not a second one ($(cat "$T/slept"))"; pass
 WATCH="$IN1"$'\n'"$OUT1"; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
 [[ $(lt_exit_code) == 1 ]] && grep -q "gluetun's address sent to udp 187.15.144.4:51820 past the current VPN server while it was waited out" "$T/out" \
@@ -255,6 +255,17 @@ CT_OUT2=$CUR; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
 [[ $(lt_exit_code) == 1 ]] && grep -q "gone after; captured: 1 out" "$T/out" || fail_ "sent to the old server, then expired: still FAIL — $(cat "$T/out")"; pass
 CT_OUT2="$CUR"$'\n'"$OLD"; WATCH=""; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "
 [[ $(lt_exit_code) == 0 ]] && grep -q "no packet either way" "$T/out" || fail_ "tracked, nothing captured either way: nothing sent, PASS — $(cat "$T/out")"; pass
+# OpenVPN over TCP (slice 2): an old session on the tunnel's TCP port is waited out and watched on TCP
+TCUR='tcp      6 431999 ESTABLISHED src=172.31.250.138 dst=194.88.96.24 sport=40312 dport=443 src=194.88.96.24 dst=192.168.70.36 sport=443 dport=40312 [ASSURED] mark=0 use=1'
+TOLD='tcp      6 110 TIME_WAIT src=172.31.250.138 dst=187.15.144.4 sport=40300 dport=443 src=187.15.144.4 dst=192.168.70.36 sport=443 dport=40300 [ASSURED] mark=0 use=1'
+CT_OUT2=$TCUR; WATCH=""; FL_PORTS="tcp/443 " fl "$TCUR"$'\n'"$TOLD" "194.88.96.24 "
+[[ $(lt_exit_code) == 0 ]] && grep -q "the old session to tcp 187.15.144.4:443 ended" "$T/out" || fail_ "OpenVPN over TCP, an old session closing: PASS — $(cat "$T/out")"; pass
+[[ "$(cat "$T/watch_filter")" == "host 172.31.250.131 and ((tcp and host 187.15.144.4))" ]] || fail_ "the capture follows the tunnel's protocol: TCP ($(cat "$T/watch_filter"))"; pass
+FL_PORTS="tcp/443 " fl "$TCUR"$'\n''tcp 6 431990 ESTABLISHED src=172.31.250.138 dst=187.15.144.4 sport=40300 dport=443 [ASSURED]' "194.88.96.24 "
+[[ $(lt_exit_code) == 2 ]] || fail_ "an old TCP session still established (days to its timeout): UNPROVEN, never waited — $(cat "$T/out")"; pass
+FL_PORTS="tcp/443 " fl "$TCUR"$'\n''udp 17 29 src=172.31.250.138 dst=187.15.144.4 sport=40000 dport=443' "194.88.96.24 "
+[[ $(lt_exit_code) == 1 ]] || fail_ "the tunnel's port over the other protocol is no tunnel: FAIL — $(cat "$T/out")"; pass
+CT_OUT2="$CUR"$'\n'"$OLD"; WATCH=""   # back to the WireGuard case the next checks build on
 ON_SUDO_PATH="conntrack"; fl "$CUR"$'\n'"$OLD" "194.88.96.24 "; ON_SUDO_PATH="conntrack tcpdump"
 [[ $(lt_exit_code) == 1 ]] && grep -q "still talks to udp 187.15.144.4:51820 .* refreshed.*no capture: tcpdump is not installed" "$T/out" \
     || fail_ "no tcpdump: a renewal stays a live path — FAIL, saying why — $(cat "$T/out")"; pass

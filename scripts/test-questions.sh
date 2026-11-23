@@ -111,7 +111,7 @@ gen_keys='^(MEILI_MASTER_KEY|[A-Z_]*_PASSWORD)='
 quick_env=$(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env")
 
 # ---- full, fresh: Enter through every question gives what quick takes ----
-clean; run '2\n\n\n\n\n\n\n1\n1\n\nTOKEN\n\n\n\n\n\n\n\n\n\n\n' --fresh || fail_ "full on a fresh .env runs"
+clean; run '2\n\n\n\n\n\n\n1\n1\n\n\nTOKEN\n\n\n\n\n\n\n\n\n\n\n' --fresh || fail_ "full on a fresh .env runs"
 [[ ! -s "$T/calls" ]] || fail_ "full ran what it may not: $(cat "$T/calls")"; pass
 [[ "$(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env")" == "$quick_env" ]] \
     || fail_ "Enter through full = quick: $(diff <(echo "$quick_env") <(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env"))"; pass
@@ -226,7 +226,7 @@ grep -q 'Logins: admin, passwords generated (recommended)' "$T/out" || fail_ "qu
 before=$(cat "$T/w/.env"); run '2\n\n\n\n\n\n\n0\n0\n\nn\n\n\n\n\n\n\n\n' || fail_ "full re-run, everything kept"
 [[ "$(cat "$T/w/.env")" == "$before" ]] && ! grep -q 'Username for all of them' "$T/out" || fail_ "every login made: no logins question, nothing changed"; pass
 # full, unified: one typed password for all; a short one and a mismatch refused first
-clean; run '2\n\n\n\n\n\n\n1\n1\n\nTOKEN\n\n\nab\nops\n2\nshort\nshort\nAbcdefghijkl1\nAbcdefghijkX\nAbcdefghijkl1\nAbcdefghijkl1\n\n\n\n\n\n\n' --fresh || fail_ "full, unified"
+clean; run '2\n\n\n\n\n\n\n1\n1\n\n\nTOKEN\n\n\nab\nops\n2\nshort\nshort\nAbcdefghijkl1\nAbcdefghijkX\nAbcdefghijkl1\nAbcdefghijkl1\n\n\n\n\n\n\n' --fresh || fail_ "full, unified"
 grep -q "'ab' won't do: qBittorrent's WebUI needs at least 3 characters" "$T/out" && grep -q "That password won't do: at least 12 characters" "$T/out" \
     && grep -q 'Passwords do not match' "$T/out" || fail_ "a name and a password the logins refuse are said, and asked again"; pass
 [[ "$(envv ARR_USER)/$(envv QBITTORRENT_USER)/$(envv JELLYFIN_ADMIN_USER)" == ops/ops/ops && "$(envv STACK_LOGINS)" == unified ]] \
@@ -252,7 +252,7 @@ grep -q 'STACK_LOGINS=each types every one — run: ./mediastack.sh configure' "
 grep -q '^ *logins_fill' <<<"$(awk '/^provision\(\)/,/^}/' mediastack.sh)" || fail_ "provision (configure, up, enable) fills a login enabled since configure"; pass
 # every password the schema knows is a stack login some service declares — a
 # missing hook would drop its login silently — or one of these, which are not
-NOT_LOGINS="AUTHENTIK_DB_PASSWORD AUTHENTIK_ADMIN_PASSWORD AUTHENTIK_LDAP_BIND_PASSWORD SMTP_PASSWORD PIHOLE_WEB_PASSWORD"   # a database's, the portal's own admin, its LDAP bind, the mail server's, Pi-hole's none-behind-the-portal (only ever empty)
+NOT_LOGINS="AUTHENTIK_DB_PASSWORD AUTHENTIK_ADMIN_PASSWORD AUTHENTIK_LDAP_BIND_PASSWORD SMTP_PASSWORD PIHOLE_WEB_PASSWORD OPENVPN_PASSWORD"   # a database's, the portal's own admin, its LDAP bind, the mail server's, Pi-hole's none-behind-the-portal (only ever empty), the VPN provider's (an external account's, asked at the VPN step)
 declared=$(for f in $(declare -F | awk '{print $3}' | grep '_logins$'); do "$f"; done | cut -f3)
 bad=""
 for k in $(awk -F'\t' '!/^#/ && $4 != "answers" { print $1 }' services/*/env.tsv lib/env.schema.tsv | grep -E '_PASSWORD$'); do   # .env's: an answers-file key is no login

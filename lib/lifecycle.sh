@@ -62,7 +62,8 @@ https://download.docker.com/linux/${ID} ${VERSION_CODENAME} stable" \
 Next: ./mediastack.sh configure — the guided setup. Quick (the default) asks
 only what has no sensible default: which services, how people sign in, and
 your VPN — HAVE THIS READY: a NordVPN access token (nordvpn.com -> Services
--> NordVPN -> "Set up NordVPN manually"), or your provider's WireGuard key.
+-> NordVPN -> "Set up NordVPN manually"), or your provider's WireGuard key
+or OpenVPN login (some also give a certificate file), or your own config file.
 With HTTPS: your domain and its Cloudflare token. Then it starts everything,
 connects the apps and checks the result (~15-20 min on a first run).
 EOT

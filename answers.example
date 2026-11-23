@@ -279,8 +279,8 @@ DELUGE_PASSWORD=
 #   any single-line text — no recommendation — asked when it applies; with no terminal it must be written
 VPN_PROVIDER=
 
-# the tunnel the provider is run with (each provider's folder says which it offers)
-#   wireguard — recommended: wireguard
+# the tunnel the provider is run with (each provider's folder says which it offers; WireGuard where it has both)
+#   wireguard | openvpn — recommended: wireguard
 VPN_TYPE=
 
 # the VPN's WireGuard private key
@@ -294,6 +294,26 @@ WIREGUARD_ADDRESSES=
 # the WireGuard pre-shared key, for a provider that needs one (AirVPN, Windscribe)
 #   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
 WIREGUARD_PRESHARED_KEY=
+
+# the VPN's OpenVPN username — the provider's service login for manual setup, usually not the website's
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+OPENVPN_USER=
+
+# the VPN's OpenVPN password (the same service login)
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+OPENVPN_PASSWORD=
+
+# OpenVPN over UDP or TCP (TCP: slower, for networks that block UDP; each provider's folder says which it offers)
+#   udp | tcp — recommended: udp
+OPENVPN_PROTOCOL=
+
+# the OpenVPN client certificate, for a provider that gives one (AirVPN, CyberGhost, VPN Unlimited, VPNSecure): its base64 body, one line
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+OPENVPN_CERT=
+
+# the OpenVPN client key (PKCS#8, BEGIN PRIVATE KEY), for a provider that gives one (AirVPN, CyberGhost, VPN Unlimited): its base64 body, one line
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+OPENVPN_KEY=
 
 # limit the VPN to these countries (comma-separated; empty = any)
 #   any single-line text (or auto) — recommended: auto
@@ -315,9 +335,21 @@ WIREGUARD_ENDPOINT_PORT=
 #   a file path — optional: blank leaves it unset
 WIREGUARD_CONF=
 
-# NordVPN's access token — configure turns it into WIREGUARD_PRIVATE_KEY
+# your OpenVPN config file (.ovpn): copied to custom/vpn/openvpn.ovpn, which gluetun runs (VPN_PROVIDER=custom, VPN_TYPE=openvpn)
+#   a file path — optional: blank leaves it unset
+OPENVPN_CONF=
+
+# NordVPN's access token — configure turns it into WIREGUARD_PRIVATE_KEY, or OPENVPN_USER and OPENVPN_PASSWORD (VPN_TYPE=openvpn)
 #   a secret on one line, with no control characters (a newline or a tab) — no recommendation — asked when it applies; with no terminal it must be written — a secret: keep this file yours alone (chmod 600)
 NORDVPN_TOKEN=
+
+# VPNSecure's encrypted client key (BEGIN ENCRYPTED PRIVATE KEY, yourusername.key): its base64 body, one line
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+OPENVPN_ENCRYPTED_KEY=
+
+# the passphrase of VPNSecure's encrypted key (your VPNSecure account password)
+#   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
+OPENVPN_KEY_PASSPHRASE=
 
 # ------------------------------------------------------------ jellyfin --
 

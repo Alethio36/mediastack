@@ -362,10 +362,11 @@ lt_flows_watch() { # lt_flows_watch GIP SECONDS "proto dst dport"... — capture
     local gip=$1 secs=$2 f p d dp hosts="" n; shift 2
     LT_WATCH_PID="" LT_WATCH_WHY="" LT_WATCH_OUT="" LT_WATCH_IN="" LT_WATCH_FIRST=""
     sudo sh -c 'command -v "$1"' _ tcpdump >/dev/null 2>&1 || { LT_WATCH_WHY="tcpdump is not installed — ./mediastack.sh install adds it"; return 0; }
-    for f in "$@"; do read -r p d dp <<<"$f"; hosts+="${hosts:+ or }host $d"; done
+    # each server on its own tunnel's protocol: WireGuard and OpenVPN over UDP, OpenVPN over TCP
+    for f in "$@"; do read -r p d dp <<<"$f"; hosts+="${hosts:+ or }($p and host $d)"; done
     LT_WATCH_CAP=$(mktemp); LT_WATCH_ERR=$(mktemp)
     # shellcheck disable=SC2024  # the capture lands in our own temp files, read by lt_flows_watched
-    sudo timeout "$secs" tcpdump -lni any "udp and host $gip and ($hosts)" >"$LT_WATCH_CAP" 2>"$LT_WATCH_ERR" & LT_WATCH_PID=$!
+    sudo timeout "$secs" tcpdump -lni any "host $gip and ($hosts)" >"$LT_WATCH_CAP" 2>"$LT_WATCH_ERR" & LT_WATCH_PID=$!
     for n in 1 2 3 4 5 6 7 8 9 10; do grep -q 'listening on' "$LT_WATCH_ERR" && return 0; sleep 0.5; done
     LT_WATCH_WHY="the capture did not start ($(oneline "$(cat "$LT_WATCH_ERR")"))"
     wait "$LT_WATCH_PID" 2>/dev/null || true; LT_WATCH_PID=""; rm -f "$LT_WATCH_CAP" "$LT_WATCH_ERR"
@@ -375,7 +376,7 @@ lt_flows_watched() { # lt_flows_watched GIP "proto dst dport"... — the capture
     [[ -n "$LT_WATCH_PID" ]] || return 0
     wait "$LT_WATCH_PID" 2>/dev/null || true   # timeout ends it: exit 124
     for f in "$@"; do read -r p d dp <<<"$f"; olds+="$d "; done
-    # "<time> <iface> <In|Out> IP <src>.<port> > <dst>.<port>: UDP, ..." — a line from the bridge and the veth alike
+    # "<time> <iface> <In|Out> IP <src>.<port> > <dst>.<port>: UDP, ..." (TCP: ": Flags [...]") — a line from the bridge and the veth alike
     read -r LT_WATCH_OUT LT_WATCH_IN < <(awk -v g="$gip" -v o=" $olds" '
         { for (i = 2; i < NF; i++) if ($i == ">") { s = $(i-1); d = $(i+1); sub(/\.[0-9]+$/, "", s); sub(/\.[0-9]+:?$/, "", d)
               if (s == g && index(o, " " d " ")) out++; else if (d == g && index(o, " " s " ")) in_++; break } }

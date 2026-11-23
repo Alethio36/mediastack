@@ -142,11 +142,11 @@ _configure_roots > "$T/out" 2>&1
 grep -q 'different filesystems' "$T/out" || fail_ "an existing one on another filesystem warns"; pass
 
 # ---- secrets read hidden; the token never on curl's command line ----
-curl() { printf '%s\n' "$*" > "$T/curl.args"; cat > "$T/curl.stdin"; echo '{"nordlynx_private_key":"KEY"}'; }
+curl() { printf '%s\n' "$*" > "$T/curl.args"; cat > "$T/curl.stdin"; echo '{"nordlynx_private_key":"KEY","username":"NORDUSER","password":"NORDPASS"}'; }
 printf 'COMPOSE_PROFILES=sonarr\n' > "$ENV_FILE"
 gluetun_vpn_questions </dev/null > "$T/out" 2>&1 && [[ ! -s "$T/out" ]] || fail_ "nothing in the VPN: no VPN question"; pass
 printf 'COMPOSE_PROFILES=gluetun\n' > "$ENV_FILE"
-printf 'nordvpn\nTOKEN123\n\n' | gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord step runs"
+printf 'nordvpn\n\nTOKEN123\n\n' | gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord step runs"
 [[ "$(env_get WIREGUARD_PRIVATE_KEY)" == KEY ]] || fail_ "the key is fetched: $(cat "$ENV_FILE")"; pass
 ! grep -q TOKEN123 "$T/curl.args" && grep -qx 'user = "token:TOKEN123"' "$T/curl.stdin" \
     || fail_ "the token goes on stdin, not the command line: $(cat "$T/curl.args")"; pass
@@ -164,15 +164,35 @@ printf 'mullvad\n\n\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 ||
 # your own config, by its path: a broken one refused naming its line, then a good one read in
 printf '[Interface]\nPrivateKey = %s\nAddress = 10.7.0.2/32\n[Peer]\nPublicKey = %s\nEndpoint = home.example.net\n' "$WGK" "$WGK" > "$T/bad.conf"
 printf '[Interface]\nPrivateKey = %s\nAddress = 10.7.0.2/32\n[Peer]\nPublicKey = %s\nEndpoint = home.example.net:51820\n' "$WGK" "$WGK" > "$T/good.conf"
-printf 'custom\n%s\n%s\n' "$T/bad.conf" "$T/good.conf" | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "custom step runs: $(cat "$T/out")"
+printf 'custom\n\n%s\n%s\n' "$T/bad.conf" "$T/good.conf" | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "custom step runs: $(cat "$T/out")"
 [[ "$(env_get VPN_PROVIDER)" == custom && "$(env_get WIREGUARD_ENDPOINT_HOST)" == home.example.net && "$(env_get WIREGUARD_ENDPOINT_PORT)" == 51820 ]] \
     && grep -q "line 6: Endpoint 'home.example.net' is not host:port" "$T/out" && grep -q 'looks it up from this host' "$T/out" \
     || fail_ "custom: a bad config named by its line, a good one read in, a name said to be looked up: $(cat "$T/out")"; pass
 # back to nordvpn: custom's server, its key and its address go with it
-printf 'nordvpn\nTOKEN123\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "custom -> nordvpn runs: $(cat "$T/out")"
+printf 'nordvpn\n\nTOKEN123\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "custom -> nordvpn runs: $(cat "$T/out")"
 [[ "$(env_get VPN_PROVIDER)" == nordvpn && "$(env_get WIREGUARD_PRIVATE_KEY)" == KEY ]] \
     && ! grep -qE '^WIREGUARD_(ADDRESSES|PUBLIC_KEY|ENDPOINT_HOST|ENDPOINT_PORT)=.' "$ENV_FILE" \
     || fail_ "a switch empties what only the old provider read: $(cat "$ENV_FILE")"; pass
+# OpenVPN (slice 2): nordvpn's tunnel asked, the token gives the login; a switch of tunnel drops the WireGuard key
+printf 'nordvpn\nopenvpn\nTOKEN123\ntcp\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord over OpenVPN runs: $(cat "$T/out")"
+[[ "$(env_get VPN_TYPE)" == openvpn && "$(env_get OPENVPN_USER)" == NORDUSER && "$(env_get OPENVPN_PASSWORD)" == NORDPASS && "$(env_get OPENVPN_PROTOCOL)" == tcp && -z "$(env_get WIREGUARD_PRIVATE_KEY)" ]] \
+    || fail_ "nordvpn over OpenVPN: its login fetched, TCP, the WireGuard key gone: $(grep -E '^(VPN_|OPENVPN_|WIREGUARD_PRIVATE)' "$ENV_FILE")"; pass
+grep -q 'Tunnel (wireguard/openvpn) \[wireguard\]' "$T/out" || grep -q 'WireGuard is faster' "$T/out" || fail_ "the tunnel asked where the provider has both: $(cat "$T/out")"; pass
+printf 'expressvpn\nEXPUSER\nEXPPASS\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "an OpenVPN-only provider runs: $(cat "$T/out")"
+[[ "$(env_get VPN_TYPE)" == openvpn && "$(env_get OPENVPN_USER)" == EXPUSER && "$(env_get OPENVPN_PROTOCOL)" == udp ]] && ! grep -q 'OpenVPN protocol' "$T/out" \
+    || fail_ "expressvpn: no tunnel or protocol asked (one of each), its login asked anew: $(grep -E '^(VPN_TYPE|OPENVPN_)' "$ENV_FILE")"; pass
+# a client certificate and key, from the .ovpn the provider gives (an old RSA key refused first)
+printf '%s\n' '-----BEGIN RSA PRIVATE KEY-----' 'MIIE' '-----END RSA PRIVATE KEY-----' > "$T/old.key"
+printf '%s\n' 'client' 'remote 1.2.3.4 1194' '<cert>' '-----BEGIN CERTIFICATE-----' 'Q0VSVA==' '-----END CERTIFICATE-----' '</cert>' '<key>' '-----BEGIN PRIVATE KEY-----' 'S0VZ' '-----END PRIVATE KEY-----' '</key>' > "$T/cg.ovpn"
+printf 'cyberghost\nu\np\n%s\n%s\n%s\n\n\n' "$T/cg.ovpn" "$T/old.key" "$T/cg.ovpn" | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "cyberghost runs: $(cat "$T/out")"
+[[ "$(env_get OPENVPN_CERT)" == Q0VSVA== && "$(env_get OPENVPN_KEY)" == S0VZ ]] && grep -q 'openssl pkcs8' "$T/out" \
+    || fail_ "its certificate and key read from the file, an RSA key refused with the conversion: $(cat "$T/out")"; pass
+# your own .ovpn: kept under custom/vpn/, its login asked because it has auth-user-pass
+CUSTOM_DIR=$T/custom
+printf '%s\n' 'client' 'remote vpn.example.net 1194 udp' 'auth-user-pass' > "$T/mine.ovpn"
+printf 'custom\nopenvpn\n%s\nMYUSER\nMYPASS\n' "$T/mine.ovpn" | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "custom OpenVPN runs: $(cat "$T/out")"
+cmp -s "$T/mine.ovpn" "$CUSTOM_DIR/vpn/openvpn.ovpn" && [[ "$(env_get OPENVPN_USER)" == MYUSER && -z "$(env_get OPENVPN_CERT)" ]] && grep -q 'server vpn.example.net:1194 over udp, a login' "$T/out" \
+    || fail_ "custom OpenVPN: the file kept as yours, its login asked, cyberghost's certificate gone: $(cat "$T/out")"; pass
 # a prompt is printed only to a terminal, so the echo is checked at the source:
 # no secret is read by a prompt that echoes, or offered as a visible default
 ! grep -nE 'ask WIREGUARD_(PRIVATE|PRESHARED)_KEY|read -r -p "(NordVPN|Tunnel)' lib/questionnaire.sh services/gluetun/*.sh services/gluetun/providers/*/provider.sh services/cloudflared/cloudflared.sh \

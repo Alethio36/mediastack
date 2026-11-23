@@ -184,6 +184,8 @@ support_custom() { # the files in custom/, their contents
     [[ -d "$CUSTOM_DIR" ]] || { echo "(no custom/ folder)"; return 0; }
     while IFS= read -r -d '' f; do
         echo "--- custom/${f#"$CUSTOM_DIR/"}"
+        # a VPN config (custom/vpn/) carries its keys inline: its name only, never its contents
+        if [[ "$f" == "$CUSTOM_DIR/vpn/"* ]]; then echo "(a VPN config: it holds keys — left out)"; continue; fi
         if ! grep -Iq . "$f" 2>/dev/null && [[ -s "$f" ]]; then echo "(not text — left out)"; continue; fi
         head -c "$SUPPORT_CUSTOM_MAX" "$f"; echo
         (( $(stat -c %s "$f") > SUPPORT_CUSTOM_MAX )) && echo "(cut at $SUPPORT_CUSTOM_MAX bytes)"

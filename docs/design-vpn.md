@@ -3,7 +3,10 @@
 *Status: **agreed** (19 Nov 2026), MVP plan step 8. **Slice 1 built and
 proven live** (19–20 Nov 2026, the test box): the provider layer, the eight
 WireGuard providers and `custom` with endpoint names, gluetun's own settings
-fixed, schema 51. Revised the day it was agreed —
+fixed, schema 51. **Slice 2 built** (23 Nov 2026), not yet proven live:
+OpenVPN for every provider gluetun runs it for (the fourteen OpenVPN-only
+folders, seven of the WireGuard eight), `custom` OpenVPN, the leak gate's
+capture on the tunnel's own protocol, schema 52. Revised the day it was agreed —
 an endpoint's hostname is resolved by mediastack (not refused), port
 forwarding reaches the download client through a file gluetun writes (not
 its control server), and every secret follows the stack's one rule
@@ -135,6 +138,11 @@ Optional, found by name:
 | `vpnp_<name>_portforward` | `native` (gluetun arranges the port: Proton, PIA, PrivateVPN) or `static` (a port the person sets on the provider's site: AirVPN, Windscribe). Absent: none. Slice 4 |
 | `vpnp_<name>_check TYPE` | refuses settings this provider cannot use before gluetun renders (AirVPN without its pre-shared key). Prints the reason, rc 1 |
 | `vpnp_<name>_doctor` | doctor lines of its own (Proton: port forwarding on but the key was made without NAT-PMP) |
+| `vpnp_<name>_protocols` | the OpenVPN protocols it has servers for (default `udp tcp`; gluetun refuses TCP for Giganews, IPVanish and VyprVPN, and its server data has none for ExpressVPN, Privado and VPN Unlimited); empty: its config file decides (`custom`). Slice 2 |
+| `vpnp_<name>_extra TYPE` | literal gluetun settings, or `${KEY}` references to optional keys (IVPN's password, needed only with an email) |
+| `vpnp_<name>_keys TYPE` | `.env` and answers-file keys it reads beyond `_env` and `_extra` (NordVPN's token; `custom`'s config file and server name) — kept on a switch to it, and never refused as another's in the answers file |
+| `vpnp_<name>_endpoint TYPE` | the server its config names, for "an endpoint by name" (`custom`) |
+| `vpnp_<name>_prepare TYPE` / `_mounts TYPE` | files it renders under `local/vpn-files/` (0700) and mounts read-only into gluetun; their contents' hash is a label of gluetun's, so a changed file recreates it through the gate; a file no provider in use mounts is removed (`custom` OpenVPN's copy) |
 
 The shared helpers in `provider.sh` (`vpn_ask_wg_key`, `vpn_ask_wg_address`,
 `vpn_ask_wg_psk`, `vpn_ask_openvpn_login`, `vpn_ask_filter`) read the
@@ -198,10 +206,23 @@ or a config file a provider hands out.
   line at fault named. One question instead of six. Parsed into `.env` rather
   than mounted as gluetun's `wg0.conf`: secrets keep one home (the support
   bundle's redaction, `chmod 600`), and configure can say which line is wrong.
-- **OpenVPN** (slice 2): the person's `.ovpn` file goes in `custom/vpn/`
-  (theirs, untracked, upgrade-safe); the provider overlay mounts it read-only
-  and points `OPENVPN_CUSTOM_CONFIG` at it; the username and password are
-  asked like any provider's.
+- **OpenVPN** (slice 2, built): configure takes the person's `.ovpn` (a path;
+  `OPENVPN_CONF` in the answers file) and keeps it as
+  `custom/vpn/openvpn.ovpn` (theirs, untracked, upgrade-safe, 0600 — its keys
+  are inline; the support bundle names it, never its contents). Read in
+  gluetun's source first: it takes the file's first `remote` and refuses a
+  name there outright (its settings check, before the tunnel), and
+  `OPENVPN_ENDPOINT_IP` does not override it for `custom`. So what gluetun runs
+  is a copy, `local/vpn-files/custom.ovpn` (0600), rendered at every
+  `vpn_provider_gen`: the person's file byte for byte, its first `remote` at
+  the address looked up (port and protocol written out, gluetun's defaults
+  where the file has none), every other `remote` left out — mounted read-only,
+  `OPENVPN_CUSTOM_CONFIG` pointing at it. The cost: a second copy of the
+  file's keys, under `local/` and 0600, removed on a switch away. A
+  `<connection>` block is refused (one server per config). The username and
+  password are asked only when the file has `auth-user-pass` (gluetun drops
+  that line and writes its own only when a user is set). The protocol is the
+  file's, never asked.
 
 ### An endpoint by name
 
@@ -230,9 +251,11 @@ the translation:
 - **Privacy:** the lookup leaves the host outside the tunnel (the tunnel is
   not up yet) — to the host's resolver, for the server the person's own
   config names. `docs/privacy.md` says so.
-- **OpenVPN** (slice 2): the same for a name in the file's `remote` — first
-  checked: whether `OPENVPN_ENDPOINT_IP` overrides it, so the person's file
-  is never rewritten.
+- **OpenVPN** (slice 2): the same for a name in the file's first `remote`;
+  `OPENVPN_ENDPOINT_IP` does not override it for `custom` (checked in
+  gluetun's source), so the copy gluetun runs carries the address and the
+  person's file is never rewritten. A move re-renders the copy, whose new hash
+  recreates gluetun through the gate.
 
 ## configure
 
@@ -245,8 +268,18 @@ through the `<name>_questions` hook, whose order would move it:
    supports and, for one never proven live, "not tested by mediastack yet —
    tell us how it goes". An existing `VPN_PROVIDER` is the default.
 2. **Type:** asked only where the provider supports both; WireGuard is the
-   default (faster, and what the leak gate was built against).
-3. **Credentials:** the provider's `_questions TYPE`.
+   default (faster, and what the leak gate was built against). A new type,
+   like a new provider, empties the other tunnel's keys.
+3. **Credentials:** the provider's `_questions TYPE`. OpenVPN's login is asked
+   hidden; a client certificate or key is read from the file the provider
+   gives (its `.ovpn` holds both inline, or a file each), its base64 body into
+   `.env` as one line — a key as PKCS#8 only (gluetun wraps it as
+   `PRIVATE KEY`; an `RSA PRIVATE KEY` is refused with the `openssl pkcs8`
+   line that converts it). NordVPN's token gives the OpenVPN service login as
+   well as the WireGuard key (its API's `username` and `password`, checked
+   against a live account 23 Nov 2026): nothing more is asked.
+   OpenVPN's protocol (`OPENVPN_PROTOCOL`, UDP default) is asked only where
+   the provider has servers for both.
 4. **Servers:** its `_filters`, through `vpn_ask_filter` (slice 1: countries
    as today; slice 3: the rest).
 5. **Port forwarding** (slice 4): only where `_portforward` says it can.
@@ -266,10 +299,13 @@ only a control character refused (`secret_ok`, 19 Nov 2026).
 `tun0`, the exit address). Two places assume WireGuard and follow the tunnel
 instead (slice 2):
 
-- `lt_flows_watch` captures `udp` only: an OpenVPN tunnel over TCP needs the
-  capture to follow `LT_TUNNEL_PORTS`' protocol.
+- `lt_flows_watch` captured `udp` only: it now captures each old server on
+  its own flow's protocol (built, slice 2). An old OpenVPN session over TCP
+  that the host still tracks as established (days to its timeout) cannot be
+  waited out and is UNPROVEN, as any session over the 180 s limit is; one
+  closing (TIME_WAIT, 2 min) is waited out and watched like UDP's.
 - the kill-switch test (`ip link set dev tun0 down`) is proven again on
-  OpenVPN.
+  OpenVPN (live, slice 2).
 
 ## Port forwarding (slice 4)
 
@@ -417,8 +453,21 @@ from its server data stops the tunnel.
    while a sudo ran (`docs/design-runs.md`).
 2. **OpenVPN:** the type, its credentials, the fourteen OpenVPN-only
    folders, `custom` OpenVPN, the leak gate's two places. Live: NordVPN over
-   OpenVPN, UDP and TCP (whether Nord's token API also gives the OpenVPN
-   service login is checked first; if not, it is asked).
+   OpenVPN, UDP and TCP (Nord's token API gives the OpenVPN service login:
+   checked live 23 Nov 2026, so nothing more is asked).
+   **Built 23 Nov 2026**, schema 52 (the OpenVPN keys added empty):
+   - every folder gluetun's `master` has (22 and `custom`); per provider what
+     its source requires — a login for most; AirVPN a certificate and key and
+     no login; CyberGhost and VPN Unlimited a login, a certificate and a key;
+     VPNSecure a certificate, an encrypted key and its passphrase; IVPN no
+     password with an account ID (its `_check`);
+   - the protocols each has servers for (gluetun's validation and its server
+     data, gluetun-servers 6 Nov 2026), refused before gluetun starts;
+   - `custom` OpenVPN as above (the rendered copy, its hash a label);
+   - the leak gate's capture on the tunnel's protocol; `support` names the
+     protocol, leaves `custom/vpn/` out; rotate-secrets names the OpenVPN
+     login and key as yours to replace.
+   Not yet proven live.
 3. **Server choices per provider:** regions, cities, categories and flags,
    checked against the image's server data (`format-servers -<provider>
    -format json`) before gluetun starts, and in configure where gluetun's

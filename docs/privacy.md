@@ -56,7 +56,7 @@ by your VPN provider.
 | Container registries (Docker Hub, GitHub, linuxserver.io) | `install`, `update` | which images you run |
 | GitHub | `upgrade` | that a mediastack is updated |
 | RIPEstat (RIPE NCC) | `leak-test`, once a day | your home address, its network, that network's name (shown so you can tell it is yours) and its address blocks — so the tunnel can be compared against them locally |
-| Your host's own DNS resolver | `up`, the boot guard and the 5-minute check — only with your own WireGuard config (`VPN_PROVIDER=custom`) whose server is given by name | the server's name: it is looked up before the tunnel exists, so outside it — the server your own config names |
+| Your host's own DNS resolver | `up`, the boot guard and the 5-minute check — only with your own WireGuard or OpenVPN config (`VPN_PROVIDER=custom`) whose server is given by name | the server's name: it is looked up before the tunnel exists, so outside it — the server your own config names |
 
 **Notifications are outside the VPN on purpose.** An alert that the tunnel is
 down must not need the tunnel, and posting through it would tie the VPN's exit

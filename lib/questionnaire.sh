@@ -886,7 +886,7 @@ questionnaire_summary() { # configure's last screen: every answer, the defaulted
     q_row sign-in "$model"
     [[ -n "$(env_get DOWNLOAD_CLIENT)" ]] && q_row "download client" "$(env_get DOWNLOAD_CLIENT)"
     if svc_enabled gluetun; then
-        q_row VPN "$(env_get VPN_PROVIDER), key $( [[ -n "$(env_get WIREGUARD_PRIVATE_KEY)" ]] && echo set || echo MISSING), servers: $(env_or_note VPN_SERVER_COUNTRIES auto)"
+        q_row VPN "$(vpn_summary)"   # services/gluetun/provider.sh
     fi
     svc_enabled cloudflared && q_row tunnel "token set"
     [[ -z "$(logins_list)" ]] || q_row logins "$(env_get STACK_USER), passwords $(env_get STACK_LOGINS) (see: credentials)"

@@ -583,6 +583,7 @@ vpn_egress_ready() { # vpn_egress_ready SVC -> 0 when SVC may go out; else a FAI
 support_gluetun() { # support: the provider and servers asked for, the last leak-test verdict, whether this gluetun was proven
     local v
     local k w p; p=$(env_get VPN_PROVIDER); w="provider $p ($(env_get VPN_TYPE)"
+    [[ "$(env_get VPN_TYPE)" == openvpn ]] && w+=" over $(vpnp_load "$p" && [[ -z "$(vpnp_protocols "$p")" ]] && echo "what its config file says" || env_get OPENVPN_PROTOCOL)"
     if vpnp_load "$p"; then w+=", $( [[ -n "$(vpnp_call "$p" proven)" ]] && echo "proven $(vpnp_call "$p" proven)" || echo "not tested live by mediastack")"; else w+=", no such provider folder"; fi
     w+=")"
     for k in COUNTRIES CITIES HOSTNAMES; do v=$(env_get "VPN_SERVER_$k"); w+="; ${k,,} ${v:-any}"; done
