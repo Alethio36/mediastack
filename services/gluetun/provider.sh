@@ -61,10 +61,13 @@ vpnp_call() { # vpnp_call NAME HOOK [ARG...] — the provider's HOOK (dies when 
 }
 vpnp_filter_on() { [[ " $(vpnp_call "$1" filters) " == *" $2 "* ]]; }   # vpnp_filter_on NAME FILTER — it chooses servers by FILTER
 vpnp_protocols() { if vpnp_has "$1" protocols; then vpnp_call "$1" protocols; else echo udp tcp; fi; }   # vpnp_protocols NAME — its OpenVPN protocols ("": its config file decides)
-vpnp_type_keys() { # vpnp_type_keys NAME TYPE — the .env keys the provider reads run with TYPE (its env, the ${KEY}s of its extra, its keys)
-    vpnp_call "$1" env "$2" | tr ' ' '\n'
+vpnp_type_keys() { # vpnp_type_keys NAME TYPE — the .env keys the provider reads run with TYPE (its env, the ${KEY}s of its extra, its keys), one a line
+    # word-split, never line-split: a hook that names none prints a blank line
+    # (custom's env for OpenVPN), and a blank key broke ANSWER[$k] (found live Nov 2026)
+    local w
+    for w in $(vpnp_call "$1" env "$2"); do echo "$w"; done
     if vpnp_has "$1" extra; then vpnp_call "$1" extra "$2" | grep -oE '\$\{[A-Z0-9_]+' | cut -c3- || true; fi
-    if vpnp_has "$1" keys; then vpnp_call "$1" keys "$2" | tr ' ' '\n'; fi
+    if vpnp_has "$1" keys; then for w in $(vpnp_call "$1" keys "$2"); do echo "$w"; done; fi
     return 0
 }
 vpnp_keys() { # vpnp_keys NAME — every .env key the provider reads, any type (each type's keys, its own rows)

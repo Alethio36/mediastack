@@ -65,6 +65,7 @@ for p in "${ALL[@]}"; do
     [[ "$(vpnp_call "$p" name | tr ' ' -)" == "$p" ]] || fail_ "$p: the folder is its gluetun name, spaces as hyphens"; pass
     for t in $(vpnp_call "$p" types); do [[ " wireguard openvpn " == *" $t "* ]] || fail_ "$p: type $t is one mediastack runs"; pass; done
     for pr in $(vpnp_protocols "$p"); do [[ " udp tcp " == *" $pr "* ]] || fail_ "$p: protocol $pr"; pass; done
+    for t in $(vpnp_call "$p" types); do ! vpnp_type_keys "$p" "$t" | grep -vE '^[A-Z][A-Z0-9_]*$' >/dev/null || fail_ "$p ($t): a key that is no key name (a blank one broke configure live, Nov 2026): [$(vpnp_type_keys "$p" "$t" | paste -sd'|')]"; pass; done
     tk=" $(for t in $(vpnp_call "$p" types); do vpnp_type_keys "$p" "$t"; done | tr '\n' ' ') "
     if [[ -f "services/gluetun/providers/$p/env.tsv" ]]; then
         for k in $(grep -vE '^(#|[[:space:]]*$)' "services/gluetun/providers/$p/env.tsv" | cut -f1); do
@@ -74,6 +75,8 @@ for p in "${ALL[@]}"; do
     for f in $(vpnp_call "$p" filters); do [[ -n "${VPN_FILTER_VAR[$f]-}" ]] || fail_ "$p: filter $f is one mediastack knows"; pass; done
     for k in $(vpnp_keys "$p"); do [[ "$schema_keys" == *" $k "* ]] || fail_ "$p reads $k, which is no schema key"; pass; done
 done
+! vpn_all_keys | grep -vE '^[A-Z][A-Z0-9_]*$' >/dev/null || fail_ "every key some provider reads is a key name — configure looks each up in ANSWER"; pass
+( declare -gA ANSWER=(); set -e; mapfile -t ks < <(vpn_all_keys); answers_any "${ks[@]}" || true ) 2>"$T/err" && [[ ! -s "$T/err" ]] || fail_ "configure's answers check over every provider key: $(cat "$T/err")"; pass
 grep -rlE '^vpnp_[a-z0-9_]+_name\(\)' services --include=*.sh | grep -v '^services/gluetun/providers/' && fail_ "a provider's functions outside its folder"; pass
 
 # ---- what reaches gluetun ----
