@@ -248,7 +248,15 @@ agreed first:
    [design-vpn.md](design-vpn.md) (*agreed 19 Nov 2026*): one folder per
    provider, today's WireGuard fixes first, then OpenVPN, server choices and
    port forwarding. Landed first: `.env` carries any one-line value
-   (`env_encode`), so no secret is refused for its characters.
+   (`env_encode`), so no secret is refused for its characters. **Slice 1
+   done, proven live 20 Nov 2026** (anzac4, NordVPN): the provider layer,
+   eight WireGuard providers and `custom` (endpoint names resolved and kept
+   current), schema 51 — leak gate PASS, wire --verify no drift, an endpoint
+   move and a provider switch both ways. Found live and fixed with it: a
+   gluetun recreate now stops its VPN group first and re-joins it after the
+   gate (up, update, the move); a switch drops the old provider's keys.
+   Next: slice 2 (OpenVPN), slice 3 (server choices), slice 4 (port
+   forwarding).
 9. **The household's look** — notifications, then branding.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
