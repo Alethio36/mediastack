@@ -281,8 +281,16 @@ agreed first:
    showing no picture), the webhook's own name and icon uploaded from the
    host (no public address), the hub's configuration made YAML with your own
    entries kept, titles that lead with what happened, a text too long for a
-   card cut instead of refused. Not yet proven live. Next: slice 2, the kit
-   (name, icon, colours, picture) — the cards and the webhook take it first.
+   card cut instead of refused. **Proven live 24 Nov 2026** on the test box:
+   the stream tests, a card per type's colour, the webhook's name and icon,
+   Seerr's real events (a request held for approval, blue; approved, green)
+   and its own test. Two fixes from that run: Seerr's test (no event, nobody
+   asking) showed stray markup — the event and who asked are now the hub's
+   per-message values with defaults, so it reads *Seerr · test*; and the
+   poster moved from Discord's ~80 px thumbnail to the card's large image
+   (a dead poster address still shows no picture there). Next: slice 2, the
+   kit (name, icon, colours, picture) — the cards and the webhook take it
+   first.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless
@@ -981,6 +989,18 @@ all built; what each still leaves open is noted below.
   container in health state *starting* also loses its route.
 
 ### Security & access
+- **A permission changed in Seerr tells ops** *(found live 24 Nov 2026,
+  after step 9)*. Seerr has no event for it — its notifications are
+  requests and issues only (`Notification` in Seerr's
+  `server/lib/notifications/index.ts`) — so turning on *Manage Requests* for
+  someone in its screens reaches nobody. people-sync (every 15 minutes) does
+  not read Seerr today; it would read Seerr's users too, keep each user's
+  permission bits in local/state and send ops a **warning** when they change — who, which permissions were
+  added or taken, that it was done in Seerr. Mind: the first run records
+  without telling; a user Seerr makes at first sign-in is new, not a change;
+  `access` changes mediastack makes itself are said by `access` already.
+  Jellyfin, Kavita, Audiobookshelf and Navidrome likewise, each where its
+  own events do not tell (check each first).
 - **A hand edit in authentik's screens tells ops** *(agreed 18 Nov 2026,
   after the MVP)*. authentik re-applies the portal's blueprint only when its
   file changes (2026.8: `check_blueprint_v1_file` compares
