@@ -606,9 +606,10 @@ VPN sends as gluetun, so those show as the VPN group).
 **Seerr's events** (requests, approvals, availability, failures, issues)
 reach the hub tagged with the event's own name, and each stream's URLs
 carry the events that stream receives, so the hub routes them: *media
-available* goes to **users**, everything else to **ops**. The card is the
-title (with its year), Seerr's event and who asked, then its overview —
-Seerr's own words. The table is `NOTIFY_EVENTS` in `lib/notify.sh` (the
+available* goes to **users**, everything else to **ops**. The card leads
+with Seerr's event and who asked, then the title (with its year) and its
+overview — Seerr's own words (Seerr's own test, which has neither, reads
+*Seerr · test*). The table is `NOTIFY_EVENTS` in `lib/notify.sh` (the
 card colour per event: `NOTIFY_EVENT_TYPE`); `wire apprise` keeps
 mediastack's entries current. Seerr only announces media that was *requested* through it — a
 title an arr adds on its own (an import list, a manual add) is not
@@ -637,7 +638,7 @@ watchlist, "Deferring for other apps' sessions").
 
 Upgrading an existing install: `wire seerr` updates the message template
 of the agent it made in any earlier version (tag `activity`, then `ops`,
-then the plain one before the cards) to the current one; the events you turned on in Seerr and its poster
+then the plain one before the cards, then the first card) to the current one; the events you turned on in Seerr and its poster
 setting stay as they are, and a template you wrote yourself is never
 touched. A hub line tagged `activity` (the stream before `ops`) receives
 nothing any more — `wire apprise`, `notify` and `doctor` name it; remove

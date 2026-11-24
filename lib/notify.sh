@@ -35,21 +35,27 @@ declare -A SEERR_EVENT_BIT=(
     [MEDIA_DECLINED]=64 [MEDIA_AUTO_APPROVED]=128 [ISSUE_CREATED]=256 [ISSUE_COMMENT]=512
     [ISSUE_RESOLVED]=1024 [ISSUE_REOPENED]=2048 [MEDIA_AUTO_REQUESTED]=4096
 )
-# the payload Seerr sends: the title (with its year) as the card's title, the
-# event and who asked (or reported) first, its overview below; the event name
-# as the tag (the routing), its poster as the card's (a per-message value of
-# the hub's: a blank one takes the configuration's placeholder). Seerr fills
-# every {{...}} it knows, nested ones too, and an empty one with nothing.
+# the payload Seerr sends: the title (with its year) as the card's title, its
+# overview as the text; the event name as the tag (the routing). The poster,
+# the event and who asked (or reported) are per-message values of the hub's,
+# placed by the card's template: a blank one takes the configuration's
+# default — Seerr's own test has no event and nobody asking, and its card
+# reads "Seerr · test" instead of empty markup. Seerr fills every {{...}} it
+# knows, nested ones too, and an empty one with nothing. The text ends in a
+# zero-width space: the hub refuses an empty text, and a title with no
+# overview would be lost.
 # shellcheck disable=SC2034  # these three are read by wire_seerr (services/seerr/seerr.sh)
-SEERR_HUB_PAYLOAD='{"title":"{{subject}}","body":"**{{event}}** · {{requestedBy_username}}{{reportedBy_username}}\n{{message}}","tag":"{{notification_type}}","type":"info","format":"markdown","template":{"poster":"{{image}}"}}'
+SEERR_HUB_PAYLOAD='{"title":"{{subject}}","body":"{{message}}​","tag":"{{notification_type}}","type":"info","format":"markdown","template":{"poster":"{{image}}","event":"{{event}}","who":"{{requestedBy_username}}{{reportedBy_username}}"}}'
 # every template wire seerr wrote before (tag "activity", the stream before
-# ops; then "ops"; then the plain one before the cards): a template mediastack
+# ops; then "ops"; then the plain one before the cards; then the first card,
+# its event line in Seerr's text): a template mediastack
 # wrote is mediastack's to update — the events turned on and the poster
 # setting stay whoever set them
 SEERR_HUB_PAYLOADS_BEFORE=(
     '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"activity","type":"info"}'
     '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"ops","type":"info"}'
     '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"{{notification_type}}","type":"info"}'
+    '{"title":"{{subject}}","body":"**{{event}}** · {{requestedBy_username}}{{reportedBy_username}}\n{{message}}","tag":"{{notification_type}}","type":"info","format":"markdown","template":{"poster":"{{image}}"}}'
 )
 SEERR_HUB_TYPES_BEFORE=222   # the events every earlier version turned on
 NOTIFY_LEGACY_TAGS=(activity) # streams mediastack no longer has
@@ -150,6 +156,9 @@ declare -A NOTIFY_EVENT_TYPE=(
 )
 # the poster when Seerr sends none: public (Discord fetches it), in this repository
 NOTIFY_NO_POSTER=https://raw.githubusercontent.com/Alethio36/mediastack/stable/services/apprise/assets/no-poster.png
+# the event and who when Seerr sends neither: only its own test does
+NOTIFY_NO_EVENT=Seerr
+NOTIFY_NO_WHO="test"
 
 notify_line_stream() { # notify_line_stream LINE -> the stream when a text-format line is mediastack's (one stream + event names), else nothing
     local tags t s="" known=" ${NOTIFY_STREAMS[*]} ${NOTIFY_EVENTS[*]} "
@@ -226,7 +235,8 @@ notify_cfg_render() { # -> the configuration, YAML, from NOTIFY_MODEL and NOTIFY
     [[ -n "${NOTIFY_MODEL//[[:space:]]/}${NOTIFY_YOURS//[[:space:]]/}" ]] || return 0   # nothing left: no configuration (hub_cfg_put removes it)
     printf '%s\n' "# The notification hub's configuration, written by ./mediastack.sh. Your own" \
         "# entries go in urls:, outside mediastack's two marker lines — they are kept." \
-        "version: 1" "template:" "  poster: $(notify_yaml_q "$NOTIFY_NO_POSTER")" "urls:" "$NOTIFY_MARK_BEGIN"
+        "version: 1" "template:" "  poster: $(notify_yaml_q "$NOTIFY_NO_POSTER")" \
+        "  event: $(notify_yaml_q "$NOTIFY_NO_EVENT")" "  who: $(notify_yaml_q "$NOTIFY_NO_WHO")" "urls:" "$NOTIFY_MARK_BEGIN"
     while IFS=$'\t' read -r s u; do
         [[ -n "$s" ]] || continue
         if [[ "$u" == discord://* ]]; then
@@ -234,7 +244,7 @@ notify_cfg_render() { # -> the configuration, YAML, from NOTIFY_MODEL and NOTIFY
             printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u?avatar=no&template=$tdir/plain.json&:footer=$foot")" "$s"
             for ty in success info warning failure; do
                 evs=$(notify_stream_events_of "$s" "$ty"); [[ -n "$evs" ]] || continue
-                printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u?avatar=no&template=$tdir/poster.json&:poster=\${POSTER}&:color=$((16#${NOTIFY_COLOUR[$ty]#\#}))&:footer=$foot")" "$evs"
+                printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u?avatar=no&template=$tdir/poster.json&:poster=\${POSTER}&:event=\${EVENT}&:who=\${WHO}&:color=$((16#${NOTIFY_COLOUR[$ty]#\#}))&:footer=$foot")" "$evs"
             done
         else
             printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u")" "$s${NOTIFY_EVENTS[$s]:+, ${NOTIFY_EVENTS[$s]// /, }}"

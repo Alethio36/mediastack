@@ -31,7 +31,7 @@ discord_sender_sync() { # discord_sender_sync URL — the webhook shows mediasta
     if [[ -n "$rec" ]]; then
         IFS=$'\t' read -r rname rav rwant <<<"$rec"
         if [[ "$name" != "$rname" || "$av" != "$rav" ]]; then echo "yours: its name or avatar was changed in Discord ($name) — left as it is"; return 0; fi
-        if [[ "$rwant" == "$want" ]]; then echo "current: $name"; return 0; fi
+        if [[ "$rwant" == "$want" ]]; then echo "current: $name, with its icon (already set)"; return 0; fi
     fi
     img="data:image/png;base64,$(base64 -w0 < "$SCRIPT_DIR/$DISCORD_SENDER_ICON")"
     out=$(jq -cn --arg n "$DISCORD_SENDER_NAME" --arg a "$img" '{name: $n, avatar: $a}' \

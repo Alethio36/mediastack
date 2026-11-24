@@ -53,6 +53,13 @@ for p in "${SEERR_HUB_PAYLOADS_BEFORE[@]}"; do
 done
 [[ "$(jq -r '.title, .format, .template.poster' <<<"$SEERR_HUB_PAYLOAD" | paste -sd'|')" == '{{subject}}|markdown|{{image}}' ]] \
     || fail_ "Seerr's card: its title, markdown, the poster as the hub's per-message value"; pass
+# found live on anzac4: Seerr's own test has no event and nobody asking, and
+# "**{{event}}** · {{requestedBy_username}}" in its text showed as "**·" —
+# the event and who are per-message values now, a blank one the default's
+[[ "$(jq -r '.template.event, .template.who' <<<"$SEERR_HUB_PAYLOAD" | paste -sd'|')" == '{{event}}|{{requestedBy_username}}{{reportedBy_username}}' ]] \
+    || fail_ "Seerr's event and who asked: the hub's per-message values"; pass
+[[ "$(jq -r .body <<<"$SEERR_HUB_PAYLOAD")" == $'{{message}}\xe2\x80\x8b' ]] \
+    || fail_ "Seerr's text: its overview alone, never empty (the hub refuses an empty text)"; pass
 
 # ---- Seerr's agent: the template is mediastack's, the events and poster are yours ----
 agent() { jq -cn --arg p "$1" --argjson t "$2" --argjson e "$3" \
@@ -95,12 +102,19 @@ notify_cfg_read "$cfg" || fail_ "a text-format configuration reads: $NOTIFY_CFG_
 got=$(notify_cfg_edit retag <<<"$cfg")
 grep -qx 'version: 1' <<<"$got" && grep -qxF "  poster: \"$NOTIFY_NO_POSTER\"" <<<"$got" && grep -qxF "$NOTIFY_MARK_BEGIN" <<<"$got" && grep -qxF "$NOTIFY_MARK_END" <<<"$got" \
     || fail_ "YAML, the placeholder poster as its default, mediastack's markers: $got"; pass
+grep -qxF '  event: "Seerr"' <<<"$got" && grep -qxF '  who: "test"' <<<"$got" \
+    || fail_ "YAML: Seerr's test reads \"Seerr · test\" (the event and who's defaults): $got"; pass
+for t in services/apprise/discord/*.json; do   # every {{token}} a template uses is Apprise's own or one the entries pass
+    while read -r k; do [[ "$k" == app_* || " footer poster event who color " == *" $k "* ]] || fail_ "$t uses {{$k}}, which no entry passes"; done \
+        < <(grep -oE '\{\{[a-z_]+\}\}' "$t" | tr -d '{}' | sort -u)
+    pass
+done
 d=$(sed -n "/^  - \"discord:\/\/111\/tokenA?/{p;n;p}" <<<"$got")
 plain="  - \"discord://111/tokenA?avatar=no&template=/config/mediastack-templates/plain.json&:footer=testhost%20%C2%B7%20ops\":"$'\n'"      - tag: ops"
 [[ "$d" == "$plain"* ]] || fail_ "a Discord URL: the stream's own messages as a card (no avatar of Apprise's, its footer): [$d]"; pass
 for ty in success info warning failure; do
     evs=$(notify_stream_events_of ops "$ty"); [[ -n "$evs" ]] || continue
-    grep -qF "template=/config/mediastack-templates/poster.json&:poster=\${POSTER}&:color=$((16#${NOTIFY_COLOUR[$ty]#\#}))&" <<<"$got" && grep -qxF "      - tag: $evs" <<<"$got" \
+    grep -qF "template=/config/mediastack-templates/poster.json&:poster=\${POSTER}&:event=\${EVENT}&:who=\${WHO}&:color=$((16#${NOTIFY_COLOUR[$ty]#\#}))&" <<<"$got" && grep -qxF "      - tag: $evs" <<<"$got" \
         || fail_ "ops's $ty Seerr events ($evs): one card entry with the poster and that colour"; pass
 done
 [[ "$(grep -c 'discord://222/tokenB' <<<"$got")" == 2 ]] && grep -qxF '      - tag: MEDIA_AVAILABLE' <<<"$got" || fail_ "users on Discord: its messages, and Seerr's one event with the poster"; pass
@@ -147,7 +161,7 @@ curl() {
 out=$(discord_sender_sync discord://555/tok); [[ "$out" == "set: Mediastack, with its icon" && "$(paste -sd' ' "$DREQ")" == "GET PATCH" ]] || fail_ "first time: name and icon set ($out)"; pass
 jq -e '.name == "Mediastack" and (.avatar | startswith("data:image/png;base64,iVBOR"))' "$T/dbody" >/dev/null || fail_ "the icon goes up as image data, from this host — no public address"; pass
 DGET=$DPATCH; : > "$DREQ"; out=$(discord_sender_sync discord://555/tok)
-[[ "$out" == "current: Mediastack" && "$(paste -sd' ' "$DREQ")" == GET ]] || fail_ "the same again: nothing sent ($out)"; pass
+[[ "$out" == "current: Mediastack, with its icon (already set)" && "$(paste -sd' ' "$DREQ")" == GET ]] || fail_ "the same again: nothing sent ($out)"; pass
 DGET='{"name":"Our house","avatar":"mine99"}'; : > "$DREQ"; out=$(discord_sender_sync discord://555/tok)
 [[ "$out" == yours:* && "$(paste -sd' ' "$DREQ")" == GET ]] || fail_ "changed in Discord: yours, left alone ($out)"; pass
 DCODE=400; state_del discord-sender-555; out=$(discord_sender_sync discord://555/tok) && fail_ "refused: said"

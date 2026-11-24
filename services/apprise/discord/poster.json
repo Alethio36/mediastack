@@ -1,1 +1,1 @@
-{"embeds":[{"title":"{{app_title}}","description":"{{app_body}}","color":{{color}},"thumbnail":{"url":"{{poster}}"},"footer":{"text":"{{footer}}"}}]}
+{"embeds":[{"author":{"name":"{{event}} · {{who}}"},"title":"{{app_title}}","description":"{{app_body}}","color":{{color}},"thumbnail":{"url":"{{poster}}"},"footer":{"text":"{{footer}}"}}]}
