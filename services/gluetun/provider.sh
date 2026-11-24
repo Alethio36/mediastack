@@ -95,7 +95,18 @@ vpn_summary() { # -> one line: the provider, its tunnel, whether what it needs i
     vpnp_load "$p" || { echo "$p (no such provider)"; return 0; }
     for k in $(vpnp_call "$p" env "$t"); do [[ -n "$(env_get "$k")" ]] || miss=1; done
     [[ "$t" == openvpn && -n "$(vpnp_protocols "$p")" ]] && proto=" over $(env_get OPENVPN_PROTOCOL)"
-    echo "$p ($t$proto), $( (( miss )) && echo "login MISSING" || echo "login set"), servers: $(env_or_note VPN_SERVER_COUNTRIES auto)"
+    echo "$p ($t$proto), $( (( miss )) && echo "login MISSING" || echo "login set"), $(vpn_servers_words "$p")"
+}
+vpn_servers_words() { # vpn_servers_words NAME -> where NAME connects, for a summary: its server choice, or the one server its config names
+    local h
+    if [[ -n "$(vpnp_call "$1" filters | tr -d '[:space:]')" ]]; then echo "servers: $(env_or_note VPN_SERVER_COUNTRIES auto)"; return 0; fi
+    h=$(vpn_endpoint_host)   # a provider with no server choices names one server (custom)
+    echo "server: ${h:-not set} (its config)"
+}
+vpn_protocol_tidy() { # vpn_protocol_tidy NAME TYPE — OPENVPN_PROTOCOL emptied when NAME run with TYPE does not read it (WireGuard; a config file that says it)
+    [[ "$2" == openvpn && -n "$(vpnp_protocols "$1")" ]] && return 0
+    if grep -qE '^OPENVPN_PROTOCOL=.' "$ENV_FILE"; then env_set OPENVPN_PROTOCOL ""; fi   # the raw line: env_get answers the default for an empty one
+    return 0
 }
 vpn_provider_problem() { # vpn_provider_problem NAME -> why NAME is no provider here ("" when it is; recorded lowercase)
     vpnp_load "${1,,}" && return 0

@@ -264,6 +264,18 @@ setenv VPN_PROVIDER=nordvpn VPN_TYPE=openvpn OPENVPN_USER=u OPENVPN_PASSWORD=p; 
 rm -rf "$CUSTOM_DIR/vpn"; setenv VPN_PROVIDER=custom VPN_TYPE=openvpn
 [[ "$(vpn_provider_problems)" == *"needs your config at custom/vpn/openvpn.ovpn"* ]] || fail_ "no .ovpn: named"; pass
 
+# ---- what is left behind, and what the summary says ----
+setenv VPN_PROVIDER=mullvad VPN_TYPE=wireguard OPENVPN_PROTOCOL=tcp; vpn_protocol_tidy mullvad wireguard
+grep -qx 'OPENVPN_PROTOCOL=' "$ENV_FILE" || fail_ "WireGuard reads no OpenVPN protocol: emptied ($(grep OPENVPN_PROTOCOL "$ENV_FILE"))"; pass
+setenv VPN_PROVIDER=surfshark VPN_TYPE=openvpn OPENVPN_PROTOCOL=tcp; vpn_protocol_tidy surfshark openvpn
+grep -qx 'OPENVPN_PROTOCOL=tcp' "$ENV_FILE" || fail_ "a provider over OpenVPN keeps its protocol"; pass
+setenv VPN_PROVIDER=custom VPN_TYPE=openvpn OPENVPN_PROTOCOL=udp; vpn_protocol_tidy custom openvpn
+grep -qx 'OPENVPN_PROTOCOL=' "$ENV_FILE" || fail_ "custom's file says its protocol: emptied"; pass
+setenv VPN_PROVIDER=custom VPN_TYPE=wireguard WIREGUARD_ENDPOINT_HOST=vpn.example.net
+[[ "$(vpn_servers_words custom)" == "server: vpn.example.net (its config)" ]] || fail_ "custom: its one server, not 'servers: auto' ($(vpn_servers_words custom))"; pass
+setenv VPN_PROVIDER=nordvpn VPN_SERVER_COUNTRIES=Switzerland
+[[ "$(vpn_servers_words nordvpn)" == "servers: Switzerland" ]] || fail_ "a provider with server choices: its countries ($(vpn_servers_words nordvpn))"; pass
+
 # ---- schema 52 ----
 printf 'VPN_PROVIDER=nordvpn\nOPENVPN_USER=kept\n' > "$ENV_FILE"; migrate_env_51_to_52 >/dev/null 2>&1
 grep -qx 'OPENVPN_PROTOCOL=' "$ENV_FILE" && grep -qx 'OPENVPN_KEY_PASSPHRASE=' "$ENV_FILE" && [[ "$(env_get OPENVPN_USER)" == kept && "$(grep -c '^OPENVPN_USER=' "$ENV_FILE")" == 1 ]] \

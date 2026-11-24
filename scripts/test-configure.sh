@@ -194,6 +194,7 @@ printf '%s\n' 'client' 'remote vpn.example.net 1194 udp' 'auth-user-pass' > "$T/
 printf 'custom\nopenvpn\n%s\nMYUSER\nMYPASS\n' "$T/mine.ovpn" | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "custom OpenVPN runs: $(cat "$T/out")"
 cmp -s "$T/mine.ovpn" "$CUSTOM_DIR/vpn/openvpn.ovpn" && [[ "$(env_get OPENVPN_USER)" == MYUSER && -z "$(env_get OPENVPN_CERT)" ]] && grep -q 'server vpn.example.net:1194 over udp, a login' "$T/out" \
     || fail_ "custom OpenVPN: the file kept as yours, its login asked, cyberghost's certificate gone: $(cat "$T/out")"; pass
+grep -qx 'OPENVPN_PROTOCOL=' "$ENV_FILE" || fail_ "custom OpenVPN: no protocol left behind — its file says it ($(grep OPENVPN_PROTOCOL "$ENV_FILE"))"; pass
 # a prompt is printed only to a terminal, so the echo is checked at the source:
 # no secret is read by a prompt that echoes, or offered as a visible default
 ! grep -nE 'ask WIREGUARD_(PRIVATE|PRESHARED)_KEY|read -r -p "(NordVPN|Tunnel)' lib/questionnaire.sh services/gluetun/*.sh services/gluetun/providers/*/provider.sh services/cloudflared/cloudflared.sh \

@@ -86,7 +86,8 @@ gluetun_vpn_from_answers() { # the VPN from the answers file; a blank keeps what
     elif answers_any VPN_SERVER_COUNTRIES && ! vpnp_filter_on "$prov" countries; then
         answer_refused "VPN_SERVER_COUNTRIES: $prov does not choose servers by country"
     fi
-    q_answered "VPN" "$prov ($t$( [[ "$t" == openvpn && -n "$protos" ]] && echo " over $(env_get OPENVPN_PROTOCOL)" )), its login set, servers: $(env_or_note VPN_SERVER_COUNTRIES auto)"
+    vpn_protocol_tidy "$prov" "$t"
+    q_answered "VPN" "$prov ($t$( [[ "$t" == openvpn && -n "$protos" ]] && echo " over $(env_get OPENVPN_PROTOCOL)" )), its login set, $(vpn_servers_words "$prov")"
 }
 
 gluetun_vpn_questions() { # configure's VPN step — only when something runs in the VPN
@@ -95,7 +96,7 @@ gluetun_vpn_questions() { # configure's VPN step — only when something runs in
     cur=$(env_get VPN_PROVIDER); curt=$(env_get VPN_TYPE)
     local -a keys; mapfile -t keys < <(vpn_all_keys)
     if answers_any VPN_PROVIDER VPN_TYPE OPENVPN_PROTOCOL VPN_SERVER_COUNTRIES "${keys[@]}"; then gluetun_vpn_from_answers; return 0; fi
-    if q_quick && vpnp_load "$cur" && [[ -z "$(vpn_provider_problems)" ]]; then q_took "VPN" "keep $cur ($curt) and its login"; return 0; fi
+    if q_quick && vpnp_load "$cur" && [[ -z "$(vpn_provider_problems)" ]]; then vpn_protocol_tidy "$cur" "$curt"; q_took "VPN" "keep $cur ($curt) and its login"; return 0; fi
     if answers_checking; then q_unasked "VPN" "VPN_PROVIDER and its keys (answers.example, the gluetun lines)"; return 0; fi
     explain "VPN (gluetun)" \
 "All download traffic runs inside a VPN container. Pick your provider from the
@@ -109,5 +110,6 @@ or 'custom' to give your own WireGuard or OpenVPN config."
     if (( VPN_PROVIDER_CHANGED )); then vpn_keys_drop_others "$prov" "$t"; fi
     vpnp_call "$prov" questions "$t"
     if [[ "$t" == openvpn ]]; then vpn_ask_protocol "$prov"; fi
+    vpn_protocol_tidy "$prov" "$t"   # nothing left that this provider and tunnel do not read
     if vpnp_filter_on "$prov" countries; then vpn_ask_countries "Server country (e.g. Switzerland; Enter = auto)"; fi
 }
