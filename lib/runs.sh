@@ -62,10 +62,26 @@ run_commit() { # the code this run is: short commit and branch
 # same in either mode; the record keeps \n. sysread, not lines: a prompt with
 # no newline reaches the screen at once.
 # shellcheck disable=SC2016  # perl, not shell
-RUN_CRLF_PL='$| = 1; while (sysread(STDIN, my $b, 65536)) { $b =~ s/\n/\r\n/g; print $b }'
+# the screen's filter (a terminal only): each finished line starts with the
+# time, as in the record (the stack's zone), and ends in \r\n — a foreground
+# sudo (use_pty) leaves the terminal raw, and a bare \n stair-stepped. Read as it
+# comes (sysread): a prompt shows at once, unstamped — readline's line editing
+# counts from column 0, so a stamp before it would misplace the cursor on a long
+# path. A blank line stays blank.
+RUN_SCREEN_PL='use POSIX qw(strftime); $| = 1; my $bol = 1;
+  while (sysread(STDIN, my $b, 65536)) {
+    my $t = strftime("%H:%M:%S ", localtime); my $o = "";
+    for my $l (split /(?<=\n)/, $b) {
+      if ($l =~ s/\n\z//) { $o .= (($bol && $l ne "") ? $t : "") . $l . "\r\n"; $bol = 1 }
+      else { $o .= $l; $bol = 0 }
+    }
+    print $o }'
 run_tee() { # run_tee FILE — the record's tee, in its process substitution: FILE gets the output, and the screen (stdout)
     trap '' INT HUP   # Ctrl-C is the run's: the record outlives it to write the footer
-    if [[ -t 1 ]]; then tee -p "$1" | perl -e "$RUN_CRLF_PL"; exit 0; fi
+    if [[ -t 1 ]]; then
+        [[ -n "$RUN_TZ" ]] && export TZ="$RUN_TZ"   # the screen's times in the record's zone
+        tee -p "$1" | perl -e "$RUN_SCREEN_PL"; exit 0
+    fi
     exec tee -p "$1"
 }
 

@@ -123,4 +123,11 @@ run s1 s2 s3 s4
 [[ $RC == 1 && "$VERDICT_BAD" == "s2 s3" ]] || fail_ "mixed: VERDICT_BAD='$VERDICT_BAD'"; pass
 grep -q '^OK s4 (running, healthy)' <<<"$OUT" || fail_ "a pass prints an OK line: $OUT"; pass
 
+# ---- a long wait is never silent ----
+reset; ctr s1 running starting; ctr s2 running healthy; at 95 s1 health healthy
+run s1 s2
+[[ "$RC" == 0 && "$(grep -c 'still waiting' <<<"$OUT")" == 3 ]] && grep -q 'still waiting (30s of 400s): s1 (starting)$' <<<"$OUT" \
+    && ! grep 'still waiting' <<<"$OUT" | grep s2 >/dev/null || fail_ "every 30s: who is still awaited and their health, a settled one not named ($OUT)"; pass
+reset; ctr s1 running starting; run s1
+[[ "$RC" == 1 && "$(grep -c 'still waiting' <<<"$OUT")" == 13 ]] || fail_ "a wait that runs out: a line every 30s to the end ($(grep -c 'still waiting' <<<"$OUT"))"; pass
 echo "OK verdict: $checks checks"

@@ -58,7 +58,12 @@ started:  2026-11-12T21:46:32-08:00
 exit:     0 after 412s
 ```
 
-- **Every line is timestamped** in the record (not on screen). Both root
+- **Every line is timestamped** in the record, and on screen at a terminal
+  (*23 Nov 2026*: a 400-second wait read as a hang — the screen's lines carry the
+  record's times, in the stack's zone; a prompt is left unstamped, since
+  readline's line editing counts from column 0; the panel and a pipe get the
+  output as it was). Long health waits also say who they still wait for, every
+  30 s (`wait_verdict`). Both root
   causes found on 12 Nov came down to ordering between components (authentik's
   OAuth2 blueprint against our first pass; people-sync against Navidrome's
   `createAdmin`), which a record with only a start and an end cannot show.

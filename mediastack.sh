@@ -992,6 +992,7 @@ c_host_path() { # c_host_path <cname> <container-path> -> the host path behind i
 # start_period + interval x retries (CI: scripts/check-start-wait.sh), so a
 # wait only ever cuts off a healthcheck that hangs rather than one that is slow.
 START_WAIT=400
+VERDICT_SAY_EVERY=30   # seconds between wait_verdict's "still waiting" lines
 VERDICT_BAD=""
 declare -A VERDICT_WHY=()
 # wait_verdict [--recover] SVC... — block until Docker has judged every
@@ -1008,10 +1009,11 @@ declare -A VERDICT_WHY=()
 # Re-inspects live on every poll (CACHE RULE at c_inspect), whatever the
 # caller's cache holds.
 wait_verdict() {
-    local deadline s cn st h left recover=0
+    local deadline s cn st h left recover=0 t0 said now pending
     local -A rc0=() vd=()
     [[ "${1:-}" == --recover ]] && { recover=1; shift; }
-    deadline=$(( $(date +%s) + START_WAIT ))
+    t0=$(date +%s); said=$t0
+    deadline=$(( t0 + START_WAIT ))
     VERDICT_BAD=""; VERDICT_WHY=()
     INSPECT_JSON=""; c_inspect_all
     for s in "$@"; do rc0[$s]=$(c_restarts "$(svc_cname "$s")"); done
@@ -1031,7 +1033,19 @@ wait_verdict() {
         done
         left=0; for s in "$@"; do [[ -n "${vd[$s]:-}" ]] || left=$((left+1)); done
         (( left == 0 )) && break
-        (( $(date +%s) < deadline )) || break
+        now=$(date +%s)
+        (( now < deadline )) || break
+        # a long wait is never silent: who is still awaited, and how they stand
+        if (( now - said >= VERDICT_SAY_EVERY )); then
+            pending=""
+            for s in "$@"; do
+                [[ -z "${vd[$s]:-}" ]] || continue
+                cn=$(svc_cname "$s"); h=$(c_health "$cn"); [[ "$h" != - ]] || h=$(c_state "$cn")
+                pending+="${pending:+, }$s ($h)"
+            done
+            info "still waiting ($(( now - t0 ))s of ${START_WAIT}s): $pending"
+            said=$now
+        fi
         sleep 5
         INSPECT_JSON=""; c_inspect_all
     done

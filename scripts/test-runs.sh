@@ -99,6 +99,12 @@ reset; script -qec "bash -c 'stty -opost; source \"$T/fx.sh\"; main fx'" "$T/tty
 f=$(rec fx); footer "$f" > /dev/null
 grep -qa $'out one\r$' "$T/tty" && grep -qa $'err one\r$' "$T/tty" && ! grep -qa $'\r' "$f" \
     || fail_ "a raw terminal gets \\r\\n, the record \\n: $(od -c "$T/tty" | sed -n 1,5p)"; pass
+grep -qaE $'^[0-9]{2}:[0-9]{2}:[0-9]{2} out one\r$' "$T/tty" && grep -qaE $'^[0-9]{2}:[0-9]{2}:[0-9]{2} err one\r$' "$T/tty" \
+    || fail_ "the screen's lines start with the time, as the record's do: $(od -c "$T/tty" | sed -n 1,5p)"; pass
+# the filter itself: a finished line stamped, a prompt (no newline yet) shown at once and unstamped, a blank line blank
+scr() { bash -c 'source lib/runs.sh; perl -e "$RUN_SCREEN_PL"' | sed -E 's/[0-9]{2}:[0-9]{2}:[0-9]{2} /T /g'; }
+[[ "$(printf 'one\n\nPath [x]: ' | scr)" == $'T one\r\n\r\nPath [x]: ' ]] || fail_ "the screen's filter: lines stamped, the prompt as is: $(printf 'one\n\nPath [x]: ' | scr | od -c | sed -n 1,3p)"; pass
+[[ "$( { printf 'Path [x]: '; sleep 0.2; printf 'typed\nnext\n'; } | scr)" == $'Path [x]: typed\r\nT next\r' ]] || fail_ "the line a prompt began is left as typed, the next one stamped"; pass
 reset; script -qec "bash -c 'source \"$T/fx.sh\"; main fx' > \"$T/o3\" 2>&1" /dev/null > /dev/null 2>&1 || true
 cmp -s "$T/m0" "$T/o3" || fail_ "not a terminal: no \\r added"; pass
 # the run ends only once its record has its footer: a systemd unit kills what
