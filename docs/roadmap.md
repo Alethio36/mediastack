@@ -319,8 +319,14 @@ agreed first:
    emails' button in the accent. Set by `wire authentik` and `brand`, each
    value only while it is authentik's own or mediastack's last; files named
    by their content in authentik's media folder. No logo in the emails (an
-   image needs a public address). Not yet proven live. Next: slice 4, app by
-   app (Jellyfin first).
+   image needs a public address). **Proven live 24 Nov 2026** on the test
+   box: an empty kit gave every card its app's icon and the title *Welcome
+   to Mediastack*, nothing else; a logo, background, tab icon, an app icon of
+   your own and an accent each reached the sign-in page and the dashboard
+   (buttons and links alike); `default` on each put authentik's own back and
+   kept the icons and the title. Found live: the portal setup's own "Start
+   here" card was a bare letter — it takes the kit's icon now. Next: slice 4,
+   app by app (Jellyfin first).
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless
