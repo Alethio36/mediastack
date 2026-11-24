@@ -228,7 +228,9 @@ brand_apply_messages() { # the kit as it is now reaches the hub (colours) and th
 brand_apply_apps() { # the kit as it is now reaches the apps that show it: the portal (authentik) and Jellyfin
     render
     if signin_is authentik; then
-        if [[ "$(c_state "$(svc_cname authentik)")" == running ]]; then authentik_brand_apply
+        if [[ "$(c_state "$(svc_cname authentik)")" == running ]]; then
+            # ready first: the change before may have restarted it (the accent rewrites its email templates)
+            http_ready authentik "$(authentik_url)/-/health/ready/" '^2' && authentik_brand_apply
         else info "the portal is not running — it takes the kit at its next start: ./mediastack.sh up, then ./mediastack.sh wire authentik"; fi
     fi
     if svc_enabled jellyfin; then
