@@ -484,7 +484,7 @@ vpn_endpoint_move() { # the endpoint's name points elsewhere: gluetun recreated 
     local -a group; local new; new=$(vpn_endpoint_ip)
     mapfile -t group < <(vpn_group)
     warn "the VPN server $(vpn_endpoint_host) moved: $VPN_ENDPOINT_OLD -> $new — gluetun is recreated onto it, the VPN'd services restarted through the leak gate"
-    notify ops "Mediastack VPN server moved" "$(vpn_endpoint_host) now answers at **$new** (was $VPN_ENDPOINT_OLD): gluetun recreated onto it; the VPN'd services restart through the leak gate." warning
+    notify ops "VPN server moved" "$(vpn_endpoint_host) now answers at **$new** (was $VPN_ENDPOINT_OLD): gluetun recreated onto it; the VPN'd services restart through the leak gate." warning
     gluetun_recreate_prepare || { fail "stopping gluetun and its VPN'd services for the move failed — see compose's message above"; return 1; }
     vpn_gen
     DC up -d --no-deps gluetun >/dev/null || { fail "recreating gluetun onto $new failed — see compose's message above"; return 1; }

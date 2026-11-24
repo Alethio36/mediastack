@@ -151,7 +151,7 @@ manifest_notify_loss() { # manifest_notify_loss COMPARE-OUTPUT PREV-TS [FROM TO]
         { print "• " $0 (($0 in w) ? " — " w[$0] : "") }')
     [[ "$who" == /dev/null ]] || rm -f "$who"
     (( n > 20 )) && more="$nl…and $((n - 20)) more"
-    notify ops "Mediastack: media removed" "$n title folder(s) lost media files since the manifest of $2:$nl$list$more${nl}Detail: \`./mediastack.sh manifest diff\`" warning
+    notify ops "Media removed" "$n title folder(s) lost media files since the manifest of $2:$nl$list$more${nl}Detail: \`./mediastack.sh manifest diff\`" warning
 }
 
 manifest_take() { # manifest_take [--accept]
@@ -185,7 +185,7 @@ manifest_take() { # manifest_take [--accept]
             local pct=$(( drop * 100 / f[1] ))
             manifest_report "$cmp" 10 "$from" "$now"
             rm -f "$new"
-            notify ops "Mediastack manifest: large drop NOT recorded" "Media file count fell ${pct}% (${f[1]} -> ${f[2]}), above MANIFEST_ALERT_PCT=${limit}. The snapshot was NOT kept as the new baseline."$'\n'"Share down? Fix it. Deletion intended? \`./mediastack.sh manifest --accept\`" failure
+            notify ops "Large media drop not recorded" "Media file count fell ${pct}% (${f[1]} -> ${f[2]}), above MANIFEST_ALERT_PCT=${limit}. The snapshot was NOT kept as the new baseline."$'\n'"Share down? Fix it. Deletion intended? \`./mediastack.sh manifest --accept\`" failure
             die "Media file count fell ${pct}% (${f[1]} -> ${f[2]}) — above MANIFEST_ALERT_PCT=$limit. Snapshot NOT recorded.
   Share unmounted or half-visible? Fix it and retry: ./mediastack.sh manifest
   Deletion intended? Record it: ./mediastack.sh manifest --accept"

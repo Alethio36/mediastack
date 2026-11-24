@@ -98,16 +98,16 @@ out=$(run "" work_ok)
 [[ "$out" == "rc=0 | DC stop radarr sonarr|WORK marker=backup|radarr sonarr|"*"DC up -d --no-recreate radarr sonarr|"*"marker=no" && "$out" != *NOTIFY* ]] \
     || fail_ "success: stop, work (marker naming it), start, marker gone, no alert: $out"; pass
 out=$(run "" work_error)
-[[ "$out" == "rc=1 | "*"DC up -d --no-recreate radarr sonarr|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "an error: started again and alerted: $out"; pass
+[[ "$out" == "rc=1 | "*"DC up -d --no-recreate radarr sonarr|"*"NOTIFY Backup stopped early — services running again"*"marker=no" ]] || fail_ "an error: started again and alerted: $out"; pass
 out=$(run "" work_signal)
-[[ "$out" == "rc=143 | "*"DC up -d --no-recreate radarr sonarr|"*"NOTIFY Mediastack backup stopped early — services running again"*"marker=no" ]] || fail_ "a signal: started again and alerted: $out"; pass
+[[ "$out" == "rc=143 | "*"DC up -d --no-recreate radarr sonarr|"*"NOTIFY Backup stopped early — services running again"*"marker=no" ]] || fail_ "a signal: started again and alerted: $out"; pass
 out=$(run "" work_partial)
 [[ "$out" == "rc=$BACKUP_PARTIAL | "*"DC up -d --no-recreate radarr sonarr|"*"marker=no" && "$out" != *"stopped early"* ]] \
     || fail_ "a failed archive: started again, left to the caller's FAILED alert: $out"; pass
 out=$(run "sonarr " work_ok)
 [[ "$out" == *"DC stop sonarr|"*"DC up -d --no-recreate sonarr|"* ]] || fail_ "a scoped stop starts exactly what it stopped: $out"; pass
 out=$(DC_UP_RC=1 run "" work_ok)
-[[ "$out" == "rc=1 | "*"FAIL"*"did not start again"*"NOTIFY Mediastack is DOWN"*"marker=yes" ]] \
+[[ "$out" == "rc=1 | "*"FAIL"*"did not start again"*"NOTIFY The stack is down"*"marker=yes" ]] \
     || fail_ "services that will not start: a failure, an alert, the marker kept for boot: $out"; pass
 # found reproducing the bug: a failed copy under the caller's || (where bash
 # ignores set -e) must still fail — not finish as a complete point
@@ -137,7 +137,7 @@ out=$(run "" work_ok)
 DC() { if [[ "$1" == ps ]]; then printf 'radarr\nsonarr\n'; return; fi; echo "DC $*" >> "$T/log"; [[ "$1" != up ]] || return "${DC_UP_RC:-0}"; }
 printf 'backup\n\n' > "$STOP_MARKER"   # what a power cut leaves
 svc_enabled_managed() { printf 'radarr\nsonarr\n'; }   # what is enabled: the cut-short marker names nothing
-rm -f "$T/log"; stopped_recover; [[ "$(cat "$T/log")" == *"DC up -d --no-recreate radarr sonarr"*"NOTIFY Mediastack backup cut off — services started again at boot"* && ! -f "$STOP_MARKER" ]] \
+rm -f "$T/log"; stopped_recover; [[ "$(cat "$T/log")" == *"DC up -d --no-recreate radarr sonarr"*"NOTIFY Backup cut off — services started again at boot"* && ! -f "$STOP_MARKER" ]] \
     || fail_ "at boot, a marker left behind: its services started, alerted, marker gone: $(cat "$T/log")"; pass
 rm -f "$T/log"; stopped_recover; [[ ! -s "$T/log" ]] || fail_ "at boot, no marker: nothing started"; pass
 # the boot unit is 644 like every unit (found live: mktemp's 600 made
@@ -180,7 +180,7 @@ rm -f "$T/log"; mkdir -p "$T/pr2"
 out=$(point_record "$T/pr2" manual "" sonarr nodigest gone 2>&1)
 [[ "$(cat "$T/pr2/images.lock")" == "sonarr repo/sonarr@sha256:sonarrd" ]] || fail_ "the lock holds what is known: $(cat "$T/pr2/images.lock")"; pass
 [[ "$out" == *"No image digest for nodigest"* && "$out" != *gone* ]] || fail_ "a running container without a digest is named, a stopped one is not: $out"; pass
-[[ "$(cat "$T/log")" == *"NOTIFY Mediastack restore point incomplete"* ]] || fail_ "the gap reaches ops: $(cat "$T/log" 2>/dev/null)"; pass
+[[ "$(cat "$T/log")" == *"NOTIFY Restore point incomplete"* ]] || fail_ "the gap reaches ops: $(cat "$T/log" 2>/dev/null)"; pass
 unset -f c_state
 backup_take() { echo "TAKE $1|$2"; }
 [[ "$(cmd_backup --note "before jellyfin 12")" == "TAKE manual|before jellyfin 12" ]] || fail_ "backup --note: a manual point with the note"; pass
@@ -274,11 +274,11 @@ rm -rf "$T/sk"/*; [[ "$(sched)" == *"TAKE scheduled"* ]] || fail_ "no point at a
 # 30 minutes past the hour: the hours are whole, so a second between making the
 # point and judging it read 119h on a slow CI runner (a flaky check, found Nov 2026)
 rm -rf "$T/sk"/*; mkdir -p "$T/sk/$(date -d '+120 hours 30 minutes' +%Y%m%d-%H%M%S)"; out=$(sched)
-[[ "$out" == *"dated 120h ahead of this host's clock"*"NOTIFY Mediastack: this host's clock moved back"*"TAKE scheduled"* && "$out" != *skipped* ]] \
+[[ "$out" == *"dated 120h ahead of this host's clock"*"NOTIFY This host's clock moved back"*"TAKE scheduled"* && "$out" != *skipped* ]] \
     || fail_ "a point dated in the future: said, told to ops, and the backup runs — $out"; pass
 ( exec 8<"$MAINT_LOCK"; flock 8; sleep 4 ) & holder=$!; sleep 0.5
 out=$(sched) || true
-[[ "$out" == *"NOTIFY Mediastack scheduled backup skipped"* && "$out" != *TAKE* ]] || fail_ "the lock held past the wait: skipped, alerted: $out"; pass
+[[ "$out" == *"NOTIFY Scheduled backup skipped"* && "$out" != *TAKE* ]] || fail_ "the lock held past the wait: skipped, alerted: $out"; pass
 out=$( ( MAINT_LOCKED=0; maint_lock backup 0 ) 2>&1 ) && fail_ "a run you start refuses while the lock is held"
 [[ "$out" == *"Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — backup refused"* ]] || fail_ "says why: $out"; pass
 wait "$holder"
@@ -318,9 +318,9 @@ verify() { printf '#!/bin/bash\necho "lock=$MAINT_LOCKED"\n%s\n' "$1" > "$T/fake
            out=$(<"$T/vout"); }
 verify 'exit 0'; [[ "$out" == *"OK wire --verify: the new versions kept"*"went on" ]] || fail_ "kept: $out"; pass
 verify 'echo "would: set jellyfin transcode path"; exit 1'
-[[ "$out" == *"found drift"*"would: set jellyfin"*"NOTIFY Mediastack update changed settings"*"went on" ]] || fail_ "drift: $out"; pass
+[[ "$out" == *"found drift"*"would: set jellyfin"*"NOTIFY Update changed settings"*"went on" ]] || fail_ "drift: $out"; pass
 verify 'echo "ERROR Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — wire refused." >&2; exit 1'
-[[ "$out" == *"FAIL wire --verify could not run after the update (exit 1)"*"lock=1"*"wire refused"*"NOTIFY Mediastack update: wiring not verified"*"went on" ]] \
+[[ "$out" == *"FAIL wire --verify could not run after the update (exit 1)"*"lock=1"*"wire refused"*"NOTIFY Update: wiring not verified"*"went on" ]] \
     || fail_ "could not run: named, alerted, the update goes on: $out"; pass
 [[ "$out" != *"found drift"* ]] || fail_ "a verify that could not run is not drift: $out"; pass
 # each verdict is recorded for the closing summary
@@ -337,11 +337,11 @@ n_ops=$(grep -n 'update_summary "${changed\[@\]}"' <<<"$upd" | cut -d: -f1 || tr
 n_exit=$(grep -n '"$UPDATE_SYNC" != FAILED' <<<"$upd" | cut -d: -f1 || true)
 [[ -n "$n_users" && -n "$n_sync" && -n "$n_ops" && -n "$n_exit" ]] && (( n_users < n_sync && n_sync < n_ops && n_ops < n_exit )) \
     || fail_ "household 'complete' before trash-sync, ops' 'updated' after it, a failed sync fails the run last ($n_users/$n_sync/$n_ops/$n_exit)"; pass
-[[ $(grep -c 'notify ops "Mediastack updated"' lib/backup.sh) == 1 ]] || fail_ "one 'updated' summary, not two"; pass
+[[ $(grep -c 'notify ops "Update done"' lib/backup.sh) == 1 ]] || fail_ "one 'updated' summary, not two"; pass
 # a failed trash-sync still tells ops what changed (it once exited before the summary)
 sumr() { ( UPDATE_WIRING=$1 UPDATE_SYNC=$2; notify() { printf 'NOTIFY %s|%s|%s' "$2" "$3" "$4"; }; update_summary radarr:6.1 sonarr:5.0 ); }
 out=$(sumr "kept every setting" FAILED)
-[[ "$out" == "NOTIFY Mediastack updated|"*'`radarr:6.1`'*'`sonarr:5.0`'*"Wiring: kept every setting"*"TRaSH sync: FAILED|success" ]] || fail_ "failed sync: $out"; pass
+[[ "$out" == "NOTIFY Update done|"*'`radarr:6.1`'*'`sonarr:5.0`'*"Wiring: kept every setting"*"TRaSH sync: FAILED|success" ]] || fail_ "failed sync: $out"; pass
 out=$(sumr "" ""); [[ "$out" != *Wiring* && "$out" != *TRaSH* ]] || fail_ "no verify, no sync: no lines for them: $out"; pass
 # after every stack start Prowlarr re-tests its indexers once FlareSolverr is
 # healthy: a cold FlareSolverr failed its first requests and the arrs reported

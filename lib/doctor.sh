@@ -20,7 +20,7 @@ doctor_tell_ops() {
     local fp told at now=$EPOCHSECONDS list
     fp=$(doctor_fingerprint); told=$(state_get doctor-told); at=$(state_get doctor-told-at)
     if [[ -z "$fp" ]]; then
-        [[ -n "$told" ]] && notify ops "Mediastack doctor: all clear" "Every check passed — the problems reported before are gone." info
+        [[ -n "$told" ]] && notify ops "Doctor: all clear" "Every check passed — the problems reported before are gone." info
         rm -f "$STATE_DIR/doctor-told" "$STATE_DIR/doctor-told-at"
         return 0
     fi
@@ -30,7 +30,7 @@ doctor_tell_ops() {
     fi
     list=$(printf -- '- %s\n' "${D_FAIL_LINES[@]:0:10}")
     (( D_FAILS > 10 )) && list+=$'\n'"…and $(( D_FAILS - 10 )) more"
-    notify ops "Mediastack doctor: $D_FAILS problem(s)" "$list"$'\n'"Fixes: \`./mediastack.sh doctor\` on the host." failure
+    notify ops "Doctor: $D_FAILS problem(s)" "$list"$'\n'"Fixes: \`./mediastack.sh doctor\` on the host." failure
     state_set doctor-told "$fp"; state_set doctor-told-at "$now"
 }
 

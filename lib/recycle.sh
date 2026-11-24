@@ -210,7 +210,7 @@ recycle_watch() { # nightly (with the manifest): warn and notify ops when the bi
     problems=$(recycle_problems $u)
     [[ -n "$problems" ]] || return 0
     warn "recycle bin: $problems"
-    notify ops "Mediastack: recycle bin needs attention" "$problems"$'\n'"$(recycle_advice)" warning
+    notify ops "Recycle bin needs attention" "$problems"$'\n'"$(recycle_advice)" warning
 }
 
 # ------------------------------------------------------------------ doctor --

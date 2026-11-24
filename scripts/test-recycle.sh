@@ -125,7 +125,7 @@ p=$(recycle_problems $((2*GB)) $((100*GB)) $((5*GB)))
 recycle_usage() { echo $((20*GB)) $((100*GB)) $((5*GB)); }
 notify() { printf '%s\n%s\n' "$2" "$3" > "$T/notified"; }
 recycle_watch
-grep -q 'recycle bin needs attention' "$T/notified" && grep -q 'delete what you no longer need yourself' "$T/notified" \
+grep -q 'Recycle bin needs attention' "$T/notified" && grep -q 'delete what you no longer need yourself' "$T/notified" \
     || fail_ "the nightly watch must notify ops with the advice: $(cat "$T/notified" 2>/dev/null)"; pass
 envf false; rm -f "$T/notified"; recycle_watch
 [[ ! -e "$T/notified" ]] || fail_ "off: the watch stays quiet"; pass

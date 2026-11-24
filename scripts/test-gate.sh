@@ -102,7 +102,7 @@ leak_gate_closed || fail_ "a FAIL closes the gate"; pass
 [[ "$(state_get "$LEAK_GATE")" == *": traffic: gluetun's address is talking past the tunnel — udp 192.168.69.1:53" ]] || fail_ "and remembers why ($(state_get "$LEAK_GATE"))"; pass
 grep -q " stop qbittorrent$" "$COMPOSE_LOG" || fail_ "the running group member is stopped ($(cat "$COMPOSE_LOG"))"; pass
 grep -q "gluetun" "$COMPOSE_LOG" && fail_ "gluetun is never stopped by the gate"; pass
-[[ "$(grep -c . "$NOTES")" == 1 ]] && grep -q "^ops|Mediastack VPN LEAK — downloads stopped|failure$" "$NOTES" || fail_ "ops hears the leak ($(cat "$NOTES"))"; pass
+[[ "$(grep -c . "$NOTES")" == 1 ]] && grep -q "^ops|VPN leak — downloads stopped|failure$" "$NOTES" || fail_ "ops hears the leak ($(cat "$NOTES"))"; pass
 leak_verdict 1 > /dev/null 2>&1
 [[ "$(grep -c . "$NOTES")" == 1 ]] || fail_ "the same leak next run: not heard again"; pass
 leak_verdict 0 > /dev/null 2>&1
@@ -472,7 +472,7 @@ RJ=$T/rejoin2; : > "$RJ"
   DC() { echo "DC $*" >> "$RJ"; }; wait_verdict() { echo "wait $*" >> "$RJ"; }
   vpn_start_group() { echo "start $*" >> "$RJ"; }
   vpn_endpoint_move ) > /dev/null 2>&1 || fail_ "the move runs through: $(cat "$RJ")"; pass
-[[ "$(paste -sd'|' "$RJ")" == "notify Mediastack VPN server moved|prepare|gen|DC up -d --no-deps gluetun|wait --recover gluetun|start qbittorrent sonarr" ]] \
+[[ "$(paste -sd'|' "$RJ")" == "notify VPN server moved|prepare|gen|DC up -d --no-deps gluetun|wait --recover gluetun|start qbittorrent sonarr" ]] \
     || fail_ "a move: told, the group and gluetun stopped, rendered, gluetun recreated and ready, the group through the gate ($(paste -sd'|' "$RJ"))"; pass
 
 echo "test-gate: $checks checks passed"

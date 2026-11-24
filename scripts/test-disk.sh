@@ -80,10 +80,10 @@ grep -q '_doctor_disk' <(awk '/^_doctor_resources\(\)/,/^}/' lib/doctor.sh) || f
 rm -f "$T/sent"; rm -rf "$STATE_DIR"
 fs repo /srv 100000000000 $(( 1 * G )) 1000000 900000
 disk_watch > /dev/null; disk_watch > /dev/null
-[[ $(sent) == 2 ]] && grep -q '^ops|Mediastack: a disk is nearly full|failure$' "$T/sent" || fail_ "a failure reaches ops every night: $(cat "$T/sent")"; pass
+[[ $(sent) == 2 ]] && grep -q '^ops|A disk is nearly full|failure$' "$T/sent" || fail_ "a failure reaches ops every night: $(cat "$T/sent")"; pass
 rm -f "$T/sent"; fs repo /srv 100000000000 $(( 9 * G )) 1000000 900000
 disk_watch > /dev/null; disk_watch > /dev/null
-[[ $(sent) == 1 ]] && grep -q '^ops|Mediastack: a disk is getting full|warning$' "$T/sent" || fail_ "a warning reaches ops once: $(cat "$T/sent")"; pass
+[[ $(sent) == 1 ]] && grep -q '^ops|A disk is getting full|warning$' "$T/sent" || fail_ "a warning reaches ops once: $(cat "$T/sent")"; pass
 for f in "$STATE_DIR"/disk-warned-*; do echo $(( EPOCHSECONDS - DISK_WARN_EVERY - 1 )) > "$f"; done
 disk_watch > /dev/null; [[ $(sent) == 2 ]] || fail_ "and again a week later"; pass
 fs repo /srv 100000000000 $(( 20 * G )) 1000000 900000; disk_watch > /dev/null
@@ -91,7 +91,7 @@ fs repo /srv 100000000000 $(( 20 * G )) 1000000 900000; disk_watch > /dev/null
 # nothing readable: loud in doctor and at night, never silent
 disk_df() { return 1; }
 D_FAILS=0; _doctor_disk > /dev/null; (( D_FAILS == 1 )) || fail_ "doctor: a space check that cannot run is a problem"; pass
-rm -f "$T/sent"; disk_watch > /dev/null; grep -q '^ops|Mediastack: the disk check could not run|failure$' "$T/sent" || fail_ "nightly: ops hears the check did not run"; pass
+rm -f "$T/sent"; disk_watch > /dev/null; grep -q '^ops|The disk check could not run|failure$' "$T/sent" || fail_ "nightly: ops hears the check did not run"; pass
 SCRIPT_DIR=$SCRIPT_DIR_REAL
 awk '/^manifest_take\(\)/ { f = 1 } f && /^    disk_watch/ { ok = 1 } f && /scan/ { exit } END { exit !ok }' lib/manifest.sh || fail_ "the nightly manifest checks the disks first"; pass
 

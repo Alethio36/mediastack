@@ -192,7 +192,7 @@ chain_run() { # chain_run STEP... — each in turn, stopping at the first that f
         [[ "${!i}" != frontdoor-install ]] || state_del "$PANEL_STATE"
     done
     ok "All $# steps done."
-    notify ops "Mediastack" "$CMD finished: $(printf '%s, ' "$@" | sed 's/, $//') all done." info   # configure's chain, or enable's
+    notify ops "${CMD^} finished" "All done: $(printf '%s, ' "$@" | sed 's/, $//')." success   # configure's chain, or enable's
 }
 
 closing_todo() { # what is proven, what is still yours to do, where things are

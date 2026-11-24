@@ -82,7 +82,7 @@ disk_watch() { # nightly (with the manifest): a filesystem running out tells ops
     rep=$(disk_report)
     if [[ -z "$rep" ]]; then
         warn "disk: no filesystem the stack writes to could be read (df) — the space check did not run"
-        notify ops "Mediastack: the disk check could not run" "df gave nothing for any root, Docker's data or this folder. Details: \`./mediastack.sh doctor\`" failure
+        notify ops "The disk check could not run" "df gave nothing for any root, Docker's data or this folder. Details: \`./mediastack.sh doctor\`" failure
         return 0
     fi
     while IFS=$'\t' read -r level mnt labels size avail itot ifree; do
@@ -91,12 +91,12 @@ disk_watch() { # nightly (with the manifest): a filesystem running out tells ops
         words=$(disk_words "$size" "$avail" "$itot" "$ifree")
         warn "disk $mnt ($labels): $words"
         if [[ "$level" == fail ]]; then
-            notify ops "Mediastack: a disk is nearly full" "$mnt ($labels): $words. Below $(disk_h "$DISK_FAIL_BYTES") free, pulls, databases and restore points start failing. Details and fixes: \`./mediastack.sh doctor\`" failure
+            notify ops "A disk is nearly full" "$mnt ($labels): $words. Below $(disk_h "$DISK_FAIL_BYTES") free, pulls, databases and restore points start failing. Details and fixes: \`./mediastack.sh doctor\`" failure
             continue
         fi
         last=$(state_get "$key")
         [[ -n "$last" ]] && (( now - last < DISK_WARN_EVERY )) && continue
-        notify ops "Mediastack: a disk is getting full" "$mnt ($labels): $words. It fails below $(disk_h "$DISK_FAIL_BYTES"). Details: \`./mediastack.sh doctor\`" warning
+        notify ops "A disk is getting full" "$mnt ($labels): $words. It fails below $(disk_h "$DISK_FAIL_BYTES"). Details: \`./mediastack.sh doctor\`" warning
         state_set "$key" "$now"
     done <<<"$rep"
 }

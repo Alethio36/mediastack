@@ -48,7 +48,7 @@ BACKUP_SKIP_HOURS=6
 backup_scheduled() {
     load_env
     maint_lock "the scheduled backup" "$MAINT_WAIT" || {
-        notify ops "Mediastack scheduled backup skipped" "Another update or backup held the stack for $((MAINT_WAIT / 3600)) hours. Check: \`systemctl status mediastack-update mediastack-backup\`" failure
+        notify ops "Scheduled backup skipped" "Another update or backup held the stack for $((MAINT_WAIT / 3600)) hours. Check: \`systemctl status mediastack-update mediastack-backup\`" failure
         die "Another update or backup held the stack for $((MAINT_WAIT / 3600)) hours — this scheduled backup is skipped."
     }
     local last age
@@ -58,7 +58,7 @@ backup_scheduled() {
     # skip every scheduled backup until the clock caught up (found Nov 2026)
     if [[ -n "$last" ]] && age=$(ts_age_hours "$last") && (( age < 0 )); then
         warn "Restore point $last is dated $(( -age ))h ahead of this host's clock — the clock moved back. This scheduled backup runs anyway; check: timedatectl"
-        notify ops "Mediastack: this host's clock moved back" "The newest restore point, \`$last\`, is dated $(( -age ))h in the future. Scheduled backups still run. Check: \`timedatectl\`" warning
+        notify ops "This host's clock moved back" "The newest restore point, \`$last\`, is dated $(( -age ))h in the future. Scheduled backups still run. Check: \`timedatectl\`" warning
     elif [[ -n "$last" ]] && (( age < BACKUP_SKIP_HOURS )); then
         ok "Restore point $last is $( (( age == 0 )) && echo "under an hour" || echo "${age}h" ) old and covers every service — this scheduled backup is skipped."
         return 0
@@ -164,7 +164,7 @@ backup_take() { # backup_take KIND NOTE — a full cold restore point into the G
     case $rc in
         0) sudo mv "$dest" "$final"; ok "Restore point complete: $final" ;;
         "$BACKUP_PARTIAL")
-            notify ops "Mediastack backup FAILED" "Restore point \`$dest\` finished with errors — **do not trust it**. Inspect on the host; the next backup removes it." failure
+            notify ops "Backup failed" "Restore point \`$dest\` finished with errors — **do not trust it**. Inspect on the host; the next backup removes it." failure
             die "Backup finished WITH ERRORS — $dest is kept for inspection, never restored from, and removed by the next backup." ;;
         *) die "Backup stopped early (exit $rc) — the services were started again; nothing was kept as a restore point." ;;
     esac
@@ -244,7 +244,7 @@ point_record() { # point_record DEST KIND NOTE SVC... — images.lock and meta, 
     { printf 'kind=%s\nnote=%s\n' "$kind" "$note"; printf '%s' "$rows"; } | sudo tee "$dest/meta" >/dev/null
     (( ${#lost[@]} )) || return 0
     warn "No image digest for ${lost[*]} — this point cannot put them back on their exact images (a shard among them will not restore from it)"
-    notify ops "Mediastack restore point incomplete" "Point \`$(basename "${dest%.partial}")\` has no image digest for: ${lost[*]}. Restore and rollback cannot return them to their exact images from it." warning
+    notify ops "Restore point incomplete" "Point \`$(basename "${dest%.partial}")\` has no image digest for: ${lost[*]}. Restore and rollback cannot return them to their exact images from it." warning
 }
 
 cmd_backup_list() { # backup list [svc] — every restore point, newest first; with a service, what it ran in each
@@ -390,12 +390,12 @@ stopped_restart() { # stopped_run's EXIT trap: the services come back first, mes
     info "$what: starting again what it stopped (up to ~1 min)"
     if ! stopped_start; then
         fail "$what: the services it stopped did not start again — run: ./mediastack.sh up"
-        notify ops "Mediastack is DOWN" "The $what stopped services that did not start again. Run \`./mediastack.sh up\` on the host." failure
+        notify ops "The stack is down" "The $what stopped services that did not start again. Run \`./mediastack.sh up\` on the host." failure
         exit 1
     fi
     if (( rc != 0 && rc != BACKUP_PARTIAL )); then
         warn "$what stopped early (exit $rc) — the services it stopped were started again"
-        notify ops "Mediastack $what stopped early — services running again" "Exit $rc (an error, Ctrl-C, a dropped session or a shutdown): the services it stopped were started again. The restore point it was making is incomplete and is never used." failure
+        notify ops "${what^} stopped early — services running again" "Exit $rc (an error, Ctrl-C, a dropped session or a shutdown): the services it stopped were started again. The restore point it was making is incomplete and is never used." failure
     fi
     exit "$rc"
 }
@@ -405,10 +405,10 @@ stopped_recover() { # at boot: a marker left behind is a stop no trap could undo
     local what; what=$(head -1 "$STOP_MARKER")
     if stopped_start; then
         warn "$what was cut off (power loss or a killed run) — the services it stopped were started again"
-        notify ops "Mediastack $what cut off — services started again at boot" "Found at boot: the services it stopped were started again. The restore point it was making is incomplete and is never used." failure
+        notify ops "${what^} cut off — services started again at boot" "Found at boot: the services it stopped were started again. The restore point it was making is incomplete and is never used." failure
     else
         fail "$what was cut off and the services it stopped did not start — run: ./mediastack.sh up"
-        notify ops "Mediastack is DOWN" "Found at boot: a cut-off $what left services stopped, and they did not start. Run \`./mediastack.sh up\` on the host." failure
+        notify ops "The stack is down" "Found at boot: a cut-off $what left services stopped, and they did not start. Run \`./mediastack.sh up\` on the host." failure
     fi
 }
 
@@ -501,7 +501,7 @@ preupdate_backup() {
     ( cd "$dest" && sudo sh -c 'sha256sum * > SHA256SUMS' )
     if (( rc == 0 )); then sudo mv "$dest" "${dest%.partial}"; ok "Pre-update restore point complete: ${dest%.partial}"
     else
-        notify ops "Mediastack pre-update backup FAILED" "Scoped restore point \`$dest\` finished with errors — **do not trust it**. Inspect on the host; the next one removes it." failure
+        notify ops "Pre-update backup failed" "Scoped restore point \`$dest\` finished with errors — **do not trust it**. Inspect on the host; the next one removes it." failure
         die "Pre-update backup finished WITH ERRORS — $dest is kept for inspection, never restored from, and removed by the next one."
     fi
     prune_preupdate
@@ -890,7 +890,7 @@ cmd_update() {
     if (( ! dry )); then
         if (( auto )); then
             maint_lock "the scheduled update" "$MAINT_WAIT" || {
-                notify ops "Mediastack scheduled update skipped" "Another update or backup held the stack for $((MAINT_WAIT / 3600)) hours." failure
+                notify ops "Scheduled update skipped" "Another update or backup held the stack for $((MAINT_WAIT / 3600)) hours." failure
                 die "Another update or backup held the stack for $((MAINT_WAIT / 3600)) hours — this scheduled update is skipped."
             }
         else
@@ -1043,7 +1043,7 @@ cmd_update() {
             advice="No version changed — it did not come back from the restart. Look: \`./mediastack.sh logs <service> --no-follow\`"
             echo "  No version changed — it did not come back from the restart. Look: ./mediastack.sh logs <service> --no-follow"
         fi
-        notify ops "Mediastack update FAILED" "Unhealthy after update: **${bad[*]}**"$'\n'"$advice" failure
+        notify ops "Update failed" "Unhealthy after update: **${bad[*]}**"$'\n'"$advice" failure
         exit 1
     fi
     ok "All updated services healthy."
@@ -1079,7 +1079,7 @@ update_trash_sync() { # the update pipeline's TRaSH step -> UPDATE_SYNC: done | 
         if cmd_trash_sync; then UPDATE_SYNC="done"
         else
             fail "update pipeline: trash-sync step failed (updates themselves succeeded — see FAIL lines above)"
-            notify ops "Mediastack trash-sync FAILED" "Nightly TRaSH sync failed — updates themselves succeeded."$'\n'"Inspect: \`./mediastack.sh trash-sync\`" failure
+            notify ops "TRaSH sync failed" "Nightly TRaSH sync failed — updates themselves succeeded."$'\n'"Inspect: \`./mediastack.sh trash-sync\`" failure
             UPDATE_SYNC=FAILED
         fi
     elif [[ -n "$(trash_instances)" ]]; then   # arrs it could manage, never set up: said, not skipped silently
@@ -1093,7 +1093,7 @@ update_summary() { # update_summary CHANGED... — ops' one "updated" message, l
     local summary; summary=$(printf '`%s`\n' "$@")
     if [[ -n "$UPDATE_WIRING" ]]; then summary+=$'\n'"Wiring: $UPDATE_WIRING"; fi
     if [[ -n "$UPDATE_SYNC" ]]; then summary+=$'\n'"TRaSH sync: $UPDATE_SYNC"; fi
-    notify ops "Mediastack updated" "$summary" success
+    notify ops "Update done" "$summary" success
 }
 
 update_verify_wiring() { # wire --verify after a version change: drift warns, a verify that cannot run fails loud; the update goes on
@@ -1110,14 +1110,14 @@ update_verify_wiring() { # wire --verify after a version change: drift warns, a 
         fail "wire --verify could not run after the update (exit $vrc): $(oneline "$(tail -3 <<<"$vout")")"
         echo "  The update itself succeeded. Check: ./mediastack.sh wire --verify"
         UPDATE_WIRING="not verified (see the message before this one)"
-        notify ops "Mediastack update: wiring not verified" "wire --verify could not run after the update (exit $vrc): \`$(oneline "$(tail -3 <<<"$vout")")\`"$'\n'"Check: \`./mediastack.sh wire --verify\`" failure
+        notify ops "Update: wiring not verified" "wire --verify could not run after the update (exit $vrc): \`$(oneline "$(tail -3 <<<"$vout")")\`"$'\n'"Check: \`./mediastack.sh wire --verify\`" failure
         return 0
     fi
     warn "wire --verify found drift after the update — a new version changed settings wire owns:"
     printf '%s\n' "$drift" | sed 's/^/    /'
     echo "  Apply: ./mediastack.sh wire     (see it all first: ./mediastack.sh wire --verify)"
     UPDATE_WIRING="a new version changed settings (see the message before this one)"
-    notify ops "Mediastack update changed settings" "A new version reset settings wire owns:"$'\n'"$(printf '`%s`\n' "$drift")"$'\n'"Apply: \`./mediastack.sh wire\`" warning
+    notify ops "Update changed settings" "A new version reset settings wire owns:"$'\n'"$(printf '`%s`\n' "$drift")"$'\n'"Apply: \`./mediastack.sh wire\`" warning
 }
 
 cmd_apply_timer() {
@@ -1199,7 +1199,7 @@ cmd_unit_failed() { # unit-failed UNIT — the OnFailure hook's verb: tell ops, 
         from="the journal (no run record)"; inspect="journalctl -u $unit -n 50"
     fi
     lines=$(cut -c1-200 <<<"$lines")
-    notify ops "Mediastack: $unit failed" "$(printf 'Result: %s, exit status %s, on %s. Its last lines, from %s:\n```\n%s\n```\nInspect: %s' \
+    notify ops "$unit failed" "$(printf 'Result: %s, exit status %s, on %s. Its last lines, from %s:\n```\n%s\n```\nInspect: %s' \
         "${res:-unknown}" "${code:-?}" "$(hostname)" "$from" "${lines:-(none)}" "$inspect")" failure
     state_set "$key" "$now"
 }

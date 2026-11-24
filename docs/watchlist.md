@@ -200,6 +200,20 @@ announced so requested titles are not announced twice.
 **Revisit when:** someone wants arrivals that did not come through Seerr
 announced to the household.
 
+### A poster sent as a file, inside the Discord card *(Nov 2026)*
+
+Seerr's poster reaches a Discord card as a link (TMDB's address): Discord
+fetches it, and a removed one shows no picture. Sent as a file instead, it
+would be Discord's own copy and other services (ntfy, Telegram, email) would
+show it too — but Apprise's Discord plugin drops the card when a message
+carries an attachment and posts the file as a second message below it (its
+`send()`, read Nov 2026). Discord itself allows an uploaded file inside a
+card (`attachment://name` in the same request).
+
+**Revisit when:** Apprise keeps the embed with an attachment and points its
+image at the upload (worth raising with Apprise) — then Seerr's payload
+attaches the poster, and every service gets it.
+
 ### Deferring for other apps' sessions
 
 Scheduled updates and backups wait while someone plays something in Jellyfin

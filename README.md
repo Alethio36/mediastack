@@ -576,9 +576,28 @@ with `notify`:
 ./mediastack.sh notify send users "Maintenance tonight" "Jellyfin is down 8-9pm" [--type warning]
 ```
 
-`set` and `clear` change only that stream's lines in the hub's
-configuration — anything you added in Apprise's UI (your own tags) is
-kept. A notification that fails is recorded: `notify` and `doctor` show
+**How messages look.** Every message is a title, a short markdown text and
+a type — info, success, warning or failure — so any service Apprise reaches
+shows it its own way. On **Discord** each message is a card in its type's
+colour, with the host and stream at its foot; Seerr's events are cards with
+the title's poster (a neutral placeholder when Seerr has none; a poster
+address that stopped working simply shows no picture). Every message comes
+from the webhook itself, named *Mediastack* with mediastack's icon:
+`notify set` and `wire apprise` set the webhook's name and avatar once
+(uploaded from this host — no public address needed). Change either in
+Discord afterwards and it stays as you set it. The branding kit
+(roadmap) brings your own name, icon and colours.
+
+The hub's configuration is Apprise's YAML: mediastack's entries sit
+between two marker lines and are rewritten from the streams' URLs (on
+Discord one webhook becomes a few entries — the stream's own messages and
+Seerr's events by outcome, each through a template of mediastack's in the
+hub's folder). `set` and `clear` change only that stream's URLs —
+anything you added in Apprise's UI outside the markers (your own tags) is
+kept. A configuration in Apprise's older text format is converted the
+first time `wire apprise` runs, your own lines entry for entry. A Discord
+webhook's own options (`?avatar=...`) are mediastack's to set; keep your
+own on a URL outside the markers. A notification that fails is recorded: `notify` and `doctor` show
 the last failure and why. `doctor` also reads the hub's own log for the
 past week: any send it could not deliver — the apps' own (the arrs, Seerr,
 Prowlarr) included — is named with its sender and tag (an app behind the
@@ -587,10 +606,11 @@ VPN sends as gluetun, so those show as the VPN group).
 **Seerr's events** (requests, approvals, availability, failures, issues)
 reach the hub tagged with the event's own name, and each stream's URLs
 carry the events that stream receives, so the hub routes them: *media
-available* goes to **users** ("X is ready to watch"), everything else to
-**ops**. The wording is Seerr's. The table is `NOTIFY_EVENTS` in
-`lib/notify.sh`; `wire apprise` keeps the tags on mediastack's lines
-current. Seerr only announces media that was *requested* through it — a
+available* goes to **users**, everything else to **ops**. The card is the
+title (with its year), Seerr's event and who asked, then its overview —
+Seerr's own words. The table is `NOTIFY_EVENTS` in `lib/notify.sh` (the
+card colour per event: `NOTIFY_EVENT_TYPE`); `wire apprise` keeps
+mediastack's entries current. Seerr only announces media that was *requested* through it — a
 title an arr adds on its own (an import list, a manual add) is not
 announced.
 
@@ -616,8 +636,8 @@ Navidrome or Audiobookshelf, or reading in Kavita, is not seen (see the
 watchlist, "Deferring for other apps' sessions").
 
 Upgrading an existing install: `wire seerr` updates the message template
-of the agent it made in any earlier version (tag `activity`, then `ops`)
-to per-event routing; the events you turned on in Seerr and its poster
+of the agent it made in any earlier version (tag `activity`, then `ops`,
+then the plain one before the cards) to the current one; the events you turned on in Seerr and its poster
 setting stay as they are, and a template you wrote yourself is never
 touched. A hub line tagged `activity` (the stream before `ops`) receives
 nothing any more — `wire apprise`, `notify` and `doctor` name it; remove

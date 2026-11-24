@@ -97,7 +97,7 @@ vpn_pf_sync() { # the forwarded port into the download client's settings — sai
             local hint=""; if vpnp_has "$(env_get VPN_PROVIDER)" pf_hint; then hint=" $(vpnp_call "$(env_get VPN_PROVIDER)" pf_hint "$(env_get VPN_TYPE)")"; fi
             warn "port forwarding: gluetun has forwarded no port $(( ($(date +%s) - started) / 60 )) minutes after it started — $VPN_PF_WHY.$hint Its last lines on it:"
             vpn_pf_log_lines
-            vpn_pf_tell "noport $(gluetun_instance)" "Mediastack: no port forwarded" \
+            vpn_pf_tell "noport $(gluetun_instance)" "No port forwarded" \
                 "gluetun has forwarded no port since it started ($VPN_PF_WHY).$hint Downloads go on; peers cannot connect in. See: ./mediastack.sh logs gluetun" warning
         fi
         return 0
@@ -107,11 +107,11 @@ vpn_pf_sync() { # the forwarded port into the download client's settings — sai
     prev=$(state_get "$VPN_PF_STATE")
     if out=$("${dl}_listen_port" "$port"); then
         ok "port forwarding: $dl listens on $port, the port the VPN forwards"
-        if [[ "$prev" == *" fail" ]]; then vpn_pf_tell "$port $dl ok" "Mediastack: port forwarding works again" "$dl listens on $port, the port the VPN forwards." info
+        if [[ "$prev" == *" fail" ]]; then vpn_pf_tell "$port $dl ok" "Port forwarding works again" "$dl listens on $port, the port the VPN forwards." info
         else vpn_pf_tell "$port $dl ok" "" "" ""; fi
     else
         warn "port forwarding: $dl did not take port $port — $out (tried again in 5 minutes)"
-        vpn_pf_tell "$port $dl fail" "Mediastack: the forwarded port did not reach $dl" \
+        vpn_pf_tell "$port $dl fail" "The forwarded port did not reach $dl" \
             "The VPN forwards port $port, and $dl did not take it: $out. Downloads go on; peers cannot connect in. Tried again every 5 minutes." warning
     fi
     return 0

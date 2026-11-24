@@ -15,14 +15,19 @@
 #   hub_notify_url                  where an app on the stack network posts a message (its address follows the VPN)
 #   hub_failed_sends HOURS          the sends it could not deliver in that time, by anyone: "addr<TAB>tags" per send
 #
-# The configuration is Apprise's text format (tags=URL per line); lib/notify.sh
-# edits those lines. The apps' own hub entries (the arrs, Prowlarr, Seerr,
+#   hub_templates_sync              mediastack's Discord templates where the hub reads them (before storing a configuration that names them)
+#
+# The configuration is Apprise's YAML (lib/notify.sh writes it; a text-format
+# one is read and converted). A Discord URL in it names a template of
+# mediastack's (services/apprise/discord/), copied into the hub's own folder:
+# the hub reads it there, at /config/$HUB_TEMPLATES_DIR. The apps' own hub entries (the arrs, Prowlarr, Seerr,
 # Cleanuparr) stay with their wire code: a notification-hub role waits for a
 # second provider (docs/roadmap.md).
 # Sourced by the entrypoint; relies on lib/common.sh and the svc helpers at call time.
 
 HUB_SVC=apprise
 HUB_KEY=mediastack   # the configuration's key in Apprise (every URL mediastack stores is under it)
+HUB_TEMPLATES_DIR=mediastack-templates   # under its /config: mediastack's Discord templates
 
 hub_enabled() { svc_enabled "$HUB_SVC"; }
 hub_running() { [[ "$(c_state "$(svc_cname "$HUB_SVC")")" == running ]]; }
@@ -64,13 +69,23 @@ hub_cfg_get() { # the hub's stored configuration text (empty when none)
     esac
 }
 
-hub_cfg_put() { # hub_cfg_put TEXT — store it (empty: remove the configuration)
-    local out code
+hub_templates_sync() { # the templates in the repo, copied into the hub's config folder when they differ (owned by its user, read-only to it)
+    local src="$SCRIPT_DIR/services/apprise/discord" dst f
+    dst="$(env_get CONFIG_ROOT)/$HUB_SVC/$HUB_TEMPLATES_DIR"
+    sudo install -d -m 755 -o "$(env_get APPRISE_UID)" -g "$(env_get MEDIA_GROUP_GID)" "$dst"
+    for f in "$src"/*.json; do
+        sudo cmp -s "$f" "$dst/$(basename "$f")" 2>/dev/null && continue
+        sudo install -m 644 -o "$(env_get APPRISE_UID)" -g "$(env_get MEDIA_GROUP_GID)" "$f" "$dst/$(basename "$f")"
+    done
+}
+hub_cfg_put() { # hub_cfg_put TEXT — store it, YAML or Apprise's text format (empty: remove the configuration)
+    local out code fmt=text
+    if grep -qE '^(version|urls):' <<<"$1"; then fmt=yaml; hub_templates_sync; fi   # what it names must be there first
     if [[ -z "$(grep -v '^[[:space:]]*$' <<<"$1" || true)" ]]; then   # nothing left to store
         out=$(curl -sS -m 10 -X POST -w $'\n%{http_code}' "$(hub_local_url)/del/$HUB_KEY" 2>&1) || die "the hub is unreachable: $(oneline "$out")"
     else
         out=$(curl -sS -m 10 -X POST -H "Content-Type: application/json" \
-              -d "$(jq -cn --arg c "$1" '{config:$c,format:"text"}')" \
+              -d "$(jq -cn --arg c "$1" --arg f "$fmt" '{config:$c,format:$f}')" \
               -w $'\n%{http_code}' "$(hub_local_url)/add/$HUB_KEY" 2>&1) || die "the hub is unreachable: $(oneline "$out")"
     fi
     code=${out##*$'\n'}

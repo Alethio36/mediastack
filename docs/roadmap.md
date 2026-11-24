@@ -272,7 +272,17 @@ agreed first:
    doctor, schema 54), **proven live the same day** as far as a NordVPN account
    allows (the sync into qBittorrent and Transmission, the way in with nothing
    forwarded, forwarding refused for a provider without it). **Step 8 done.**
-9. **The household's look** — notifications, then branding.
+9. **The household's look** — notifications, then branding. **Slice 1 built
+   23 Nov 2026** (the notification layout): every message a card on Discord
+   in its type's colour (Apprise's Discord templates, kept in
+   `services/apprise/discord/`), Seerr's events with the title's poster (a
+   per-message value of the hub's, a placeholder when there is none — both
+   checked live on the test box first, with a poster address that 404s
+   showing no picture), the webhook's own name and icon uploaded from the
+   host (no public address), the hub's configuration made YAML with your own
+   entries kept, titles that lead with what happened, a text too long for a
+   card cut instead of refused. Not yet proven live. Next: slice 2, the kit
+   (name, icon, colours, picture) — the cards and the webhook take it first.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless

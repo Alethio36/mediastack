@@ -45,37 +45,38 @@ wire_apprise() {
             warn "the URLs configure recorded were not used: the hub already has endpoints (change them: ./mediastack.sh notify set)"
             state_del "$NOTIFY_URLS_STATE"
         fi
-        # the URLs are yours (notify set / Apprise's UI); only the event tags on
-        # the lines mediastack wrote are kept current, so Seerr's events route
+        # the URLs are yours (notify set / Apprise's UI); mediastack's block is
+        # rewritten from them (Seerr's routing, the cards, a text-format
+        # configuration made YAML) and the rest kept as written
         local cur want
-        cur=$(hub_cfg_get); want=$(notify_cfg_edit retag <<<"$cur")
+        cur=$(hub_cfg_get)
+        if ! notify_cfg_read "$cur"; then wfail "notifications: $NOTIFY_CFG_WHY"; return 0; fi
+        want=$(notify_cfg_render)
         local t; while IFS= read -r t; do warn "$(notify_legacy_note "$t")"; done < <(notify_legacy_lines <<<"$cur")
         if [[ "$cur" == "$want" ]]; then
             ok "notification endpoints configured, routing current (manage: ./mediastack.sh notify)"
-        elif w_would "tag the streams' URLs with the Seerr events each receives (${NOTIFY_EVENTS[users]// /, } -> users, the rest -> ops)"; then
+        elif w_would "rewrite mediastack's notification entries: each stream's messages as cards, Seerr's events routed (${NOTIFY_EVENTS[users]// /, } -> users, the rest -> ops) with their posters$(grep -qE '^(version|urls):' <<<"$cur" || echo "; the configuration becomes YAML, your own lines kept")"; then
             hub_cfg_put "$want"
-            ok "notification routing updated"
+            ok "notification entries updated"
         fi
+        if (( ! WIRE_DRY )); then hub_templates_sync; discord_senders_sync; fi
     elif [[ -z "$(state_get "$NOTIFY_URLS_STATE")" ]]; then
         info "no notification URLs to store — ./mediastack.sh configure asks them (or: ./mediastack.sh notify set)"
     else
         # configure's URLs (services/apprise/questions.sh): handed over once, then deleted
-        local cfg="" u
-        for u in $(notify_pending ops | tr ',' ' '); do cfg+="$(notify_tagline ops)=$u"$'\n'; done
-        for u in $(notify_pending users | tr ',' ' '); do cfg+="$(notify_tagline users)=$u"$'\n'; done
+        local u s
+        NOTIFY_MODEL=""
+        # shellcheck disable=SC2034  # read by notify_cfg_render (lib/notify.sh)
+        NOTIFY_YOURS=""
+        for s in "${NOTIFY_STREAMS[@]}"; do
+            for u in $(notify_pending "$s" | tr ',' ' '); do NOTIFY_MODEL+="$s"$'\t'"$(notify_url_canon "$u")"$'\n'; done
+        done
         if w_would "store the notification endpoints configure recorded, under key 'mediastack'"; then
-            local resp acode
-            resp=$(curl -sS -m 10 -X POST -H "Content-Type: application/json" \
-                   -d "$(jq -cn --arg c "$cfg" '{config:$c,format:"text"}')" \
-                   -w $'\n%{http_code}' "$(hub_local_url)/add/mediastack" 2>&1) \
-                || { wfail "apprise unreachable while storing config: $(head -c200 <<<"$resp")"; return 0; }
-            acode=${resp##*$'\n'}
-            [[ "$acode" =~ ^2 ]] \
-                || { wfail "apprise rejected the config [HTTP $acode]: $(head -c200 <<<"${resp%$'\n'*}")
-     check the URL syntax against https://github.com/caronc/apprise/wiki"; return 0; }
+            ( hub_cfg_put "$(notify_cfg_render)" ) || { wfail "the hub did not take the endpoints configure recorded (its answer is above) — check the URL syntax against https://github.com/caronc/apprise/wiki"; return 0; }
             ok "notification endpoints stored"
+            discord_senders_sync
             state_del "$NOTIFY_URLS_STATE"; state_set "$NOTIFY_STORED_STATE" yes
-            notify ops "Mediastack" "Notifications are wired up — this is your ops stream." info
+            notify ops "Notifications are on" "This is your **ops** stream: errors, updates, backups, the VPN and requests. The household's news goes to **users**." success
             info "a test notification went to the ops stream — check it arrived"
         fi
     fi

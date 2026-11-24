@@ -48,9 +48,11 @@ for e in "${!seen[@]}"; do [[ "$e" == TEST_NOTIFICATION || -n "${SEERR_EVENT_BIT
 [[ "$(seerr_hub_types)" == 8158 ]] || fail_ "agent types: $(seerr_hub_types) (every event but the test: 8158)"; pass
 [[ "$(jq -r .tag <<<"$SEERR_HUB_PAYLOAD")" == '{{notification_type}}' ]] || fail_ "the payload must tag each event with its own name"; pass
 for p in "${SEERR_HUB_PAYLOADS_BEFORE[@]}"; do
-    [[ "$(jq -c 'del(.tag)' <<<"$SEERR_HUB_PAYLOAD")" == "$(jq -c 'del(.tag)' <<<"$p")" ]] \
-        || fail_ "only the tag may differ from a template mediastack wrote before (the wording stays Seerr's)"; pass
+    jq -e . <<<"$p" >/dev/null || fail_ "a template mediastack wrote before is JSON: $p"; pass
+    [[ "$p" != "$SEERR_HUB_PAYLOAD" ]] || fail_ "the current template is not among the earlier ones"; pass
 done
+[[ "$(jq -r '.title, .format, .template.poster' <<<"$SEERR_HUB_PAYLOAD" | paste -sd'|')" == '{{subject}}|markdown|{{image}}' ]] \
+    || fail_ "Seerr's card: its title, markdown, the poster as the hub's per-message value"; pass
 
 # ---- Seerr's agent: the template is mediastack's, the events and poster are yours ----
 agent() { jq -cn --arg p "$1" --argjson t "$2" --argjson e "$3" \
@@ -70,8 +72,12 @@ got=$(seerr_agent_next "$(agent "${SEERR_HUB_PAYLOADS_BEFORE[1]}" 222 false)")
 activity,ops=discord://2/tokenY
 ops=discord://3/tokenZ' | tr '\n' ' ')" == "activity " ]] \
     || fail_ "only a line tagged just 'activity' is a leftover — and its URL is never printed"; pass
+[[ "$(notify_legacy_lines <<<$'  - "discord://1/tokenX":\n      - tag: activity\n  - "discord://2/tokenY":\n      - tag: activity, ops' | tr '\n' ' ')" == "activity " ]] \
+    || fail_ "the same in YAML"; pass
 
-# ---- the configuration ----
+# ---- the configuration: a text-format one read, YAML written ----
+hostname() { echo testhost; }
+HUB_TEMPLATES_DIR=mediastack-templates
 cfg='# my hub
 ops=discord://111/tokenA
 users=https://discord.com/api/webhooks/222/tokenB
@@ -80,26 +86,82 @@ mine,alerts=ntfy://ntfy.sh/mine
 users,ops=mailto://me:pw@example.com
 ops,custom=discord://333/tokenC
 json://hook.example.com/in?x=1'
+notify_cfg_read "$cfg" || fail_ "a text-format configuration reads: $NOTIFY_CFG_WHY"
+[[ "$NOTIFY_MODEL" == $'ops\tdiscord://111/tokenA\nusers\tdiscord://222/tokenB\nops\tntfy://ntfy.sh/ops-topic\n' ]] \
+    || fail_ "mediastack's lines: each stream's URLs, a Discord webhook as discord://ID/TOKEN: [$NOTIFY_MODEL]"; pass
+[[ "$NOTIFY_YOURS" == *'  # my hub'* && "$NOTIFY_YOURS" == *$'  - "ntfy://ntfy.sh/mine":\n      - tag: mine, alerts'* && "$NOTIFY_YOURS" == *$'  - "mailto://me:pw@example.com":\n      - tag: users, ops'* \
+   && "$NOTIFY_YOURS" == *$'  - "discord://333/tokenC":\n      - tag: ops, custom'* && "$NOTIFY_YOURS" == *'  - "json://hook.example.com/in?x=1"'* ]] \
+    || fail_ "your lines become YAML entries one for one (comment, tags, an untagged URL): [$NOTIFY_YOURS]"; pass
 got=$(notify_cfg_edit retag <<<"$cfg")
-want="# my hub
-$(notify_tagline ops)=discord://111/tokenA
-$(notify_tagline users)=https://discord.com/api/webhooks/222/tokenB
-$(notify_tagline ops)=ntfy://ntfy.sh/ops-topic
-mine,alerts=ntfy://ntfy.sh/mine
-users,ops=mailto://me:pw@example.com
-ops,custom=discord://333/tokenC
-json://hook.example.com/in?x=1"
-[[ "$got" == "$want" ]] || fail_ "retag: only mediastack's lines get the event tags:
-$(diff <(echo "$want") <(echo "$got") || true)"; pass
-[[ "$(notify_cfg_edit retag <<<"$got")" == "$got" ]] || fail_ "retagging twice must change nothing"; pass
-got=$(notify_cfg_edit set users "ntfy://ntfy.sh/family, discord://444/tokenD" <<<"$want")
-[[ "$(grep -c "^$(notify_tagline users)=" <<<"$got")" == 2 && "$got" != *tokenB* && "$got" == *"users,ops=mailto"* && "$got" == *"mine,alerts"* ]] \
-    || fail_ "set: replace that stream's lines only: $got"; pass
-got=$(notify_cfg_edit clear ops <<<"$want")
-[[ "$got" != *tokenA* && "$got" != *ops-topic* && "$got" == *"ops,custom=discord://333/tokenC"* && "$got" == *tokenB* ]] \
-    || fail_ "clear: remove that stream's lines only: $got"; pass
-[[ "$(notify_cfg_urls users <<<"$want" | tr '\n' ' ')" == "https://discord.com/api/webhooks/222/tokenB mailto://me:pw@example.com " ]] \
-    || fail_ "a stream's URLs are every line carrying its tag"; pass
+grep -qx 'version: 1' <<<"$got" && grep -qxF "  poster: \"$NOTIFY_NO_POSTER\"" <<<"$got" && grep -qxF "$NOTIFY_MARK_BEGIN" <<<"$got" && grep -qxF "$NOTIFY_MARK_END" <<<"$got" \
+    || fail_ "YAML, the placeholder poster as its default, mediastack's markers: $got"; pass
+d=$(sed -n "/^  - \"discord:\/\/111\/tokenA?/{p;n;p}" <<<"$got")
+plain="  - \"discord://111/tokenA?avatar=no&template=/config/mediastack-templates/plain.json&:footer=testhost%20%C2%B7%20ops\":"$'\n'"      - tag: ops"
+[[ "$d" == "$plain"* ]] || fail_ "a Discord URL: the stream's own messages as a card (no avatar of Apprise's, its footer): [$d]"; pass
+for ty in success info warning failure; do
+    evs=$(notify_stream_events_of ops "$ty"); [[ -n "$evs" ]] || continue
+    grep -qF "template=/config/mediastack-templates/poster.json&:poster=\${POSTER}&:color=$((16#${NOTIFY_COLOUR[$ty]#\#}))&" <<<"$got" && grep -qxF "      - tag: $evs" <<<"$got" \
+        || fail_ "ops's $ty Seerr events ($evs): one card entry with the poster and that colour"; pass
+done
+[[ "$(grep -c 'discord://222/tokenB' <<<"$got")" == 2 ]] && grep -qxF '      - tag: MEDIA_AVAILABLE' <<<"$got" || fail_ "users on Discord: its messages, and Seerr's one event with the poster"; pass
+grep -qxF '      - tag: ops, MEDIA_PENDING, MEDIA_APPROVED, MEDIA_AUTO_APPROVED, MEDIA_DECLINED, MEDIA_FAILED, MEDIA_AUTO_REQUESTED, ISSUE_CREATED, ISSUE_COMMENT, ISSUE_RESOLVED, ISSUE_REOPENED, TEST_NOTIFICATION' <<<"$got" \
+    && grep -q '^  - "ntfy://ntfy.sh/ops-topic":$' <<<"$got" || fail_ "any other URL: one entry, the stream and its events: $got"; pass
+for e in "${!NOTIFY_EVENT_TYPE[@]}"; do [[ -n "${SEERR_EVENT_BIT[$e]:-}" || "$e" == TEST_NOTIFICATION ]] || fail_ "$e has a colour and Seerr has no such event"; pass; done
+for e in "${!SEERR_EVENT_BIT[@]}"; do [[ -n "${NOTIFY_EVENT_TYPE[$e]:-}" ]] || fail_ "Seerr's $e has no outcome (its card's colour)"; pass; done
+[[ "$(sed -n "/^$(sed 's/[^^]/[&]/g; s/\^/\\^/g' <<<"$NOTIFY_MARK_END")$/,\$p" <<<"$got" | tail -n +2)" == "${NOTIFY_YOURS%$'\n'}" ]] || fail_ "your entries follow mediastack's block, as converted"; pass
+[[ "$(notify_cfg_edit retag <<<"$got")" == "$got" ]] || fail_ "read back and written again: the same (YAML round trip)"; pass
+got2=$(notify_cfg_edit set users "ntfy://ntfy.sh/family, https://discord.com/api/webhooks/444/tokenD" <<<"$got")
+notify_cfg_read "$got2"
+[[ "$NOTIFY_MODEL" == $'ops\tdiscord://111/tokenA\nops\tntfy://ntfy.sh/ops-topic\nusers\tntfy://ntfy.sh/family\nusers\tdiscord://444/tokenD\n' && "$got2" != *tokenB* && "$got2" == *"mailto://me:pw@example.com"* ]] \
+    || fail_ "set: that stream's URLs replaced, the rest and yours kept: [$NOTIFY_MODEL]"; pass
+got2=$(notify_cfg_edit clear ops <<<"$got"); notify_cfg_read "$got2"
+[[ "$NOTIFY_MODEL" == $'users\tdiscord://222/tokenB\n' && "$got2" == *"discord://333/tokenC"* ]] || fail_ "clear: that stream's URLs only: [$NOTIFY_MODEL]"; pass
+[[ "$(notify_cfg_urls users <<<"$got" | tr '\n' ' ')" == "discord://222/tokenB " ]] || fail_ "a stream's URLs, from mediastack's block"; pass
+[[ -z "$(notify_cfg_edit clear users <<<"$(notify_cfg_edit clear ops <<<'ops=ntfy://ntfy.sh/a
+users=ntfy://ntfy.sh/b')")" ]] || fail_ "nothing left: no configuration (the hub's is removed)"; pass
+( notify_cfg_edit retag <<<$'version: 1\nurls:\n  - "ntfy://ntfy.sh/x"' ) 2>"$T/err" && fail_ "YAML without mediastack's markers: refused"
+grep -q "without mediastack's marker lines" "$T/err" || fail_ "saying why: $(cat "$T/err")"; pass
+( notify_cfg_edit retag <<<$'ops=ntfy://ntfy.sh/a\ninclude http://example.com/more.cfg' ) 2>"$T/err" && fail_ "an include: refused"
+grep -q "line 2 is an include" "$T/err" || fail_ "naming the line: $(cat "$T/err")"; pass
+[[ "$(notify_url_canon 'discord://bot@111/tokA?avatar=yes')" == discord://111/tokA && "$(notify_url_canon https://discordapp.com/api/webhooks/9/t-k)" == discord://9/t-k \
+   && "$(notify_url_canon 'ntfys://ntfy.example/t?priority=5')" == 'ntfys://ntfy.example/t?priority=5' ]] || fail_ "a Discord URL's own options are mediastack's; any other kept as given"; pass
+unset -f hostname
+
+# ---- the templates: valid JSON once filled, where the hub reads them ----
+for f in services/apprise/discord/*.json; do
+    sed 's/{{app_color_int}}/1/; s/{{color}}/1/' "$f" | jq -e '.embeds[0].title and .embeds[0].description and .embeds[0].footer.text' >/dev/null || fail_ "$f: a card once filled"; pass
+done
+sudo() { echo "$*" >> "$T/sudo"; [[ "$1" != cmp ]]; }   # cmp: differs
+: > "$T/sudo"; env_get() { case "$1" in CONFIG_ROOT) echo /cfg ;; APPRISE_UID) echo 13010 ;; MEDIA_GROUP_GID) echo 13000 ;; esac; }
+hub_templates_sync
+grep -q "install -d -m 755 -o 13010 -g 13000 /cfg/apprise/mediastack-templates" "$T/sudo" && grep -q "install -m 644 -o 13010 -g 13000 .*/plain.json /cfg/apprise/mediastack-templates/plain.json" "$T/sudo" \
+    || fail_ "the templates go to the hub's folder, its own: $(cat "$T/sudo")"; pass
+unset -f sudo env_get
+
+# ---- the sender on Discord: the webhook's own name and icon ----
+DREQ=$T/dreq; : > "$DREQ"; DGET='{"name":"mediastack","avatar":null}'; DPATCH='{"name":"Mediastack","avatar":"abc123"}'; DCODE=200
+curl() {
+    local a; for a in "$@"; do [[ "$a" == PATCH ]] && { cat > "$T/dbody"; echo PATCH >> "$DREQ"; printf '%s\n%s' "$DPATCH" "$DCODE"; return 0; }; done
+    echo GET >> "$DREQ"; printf '%s\n200' "$DGET"
+}
+out=$(discord_sender_sync discord://555/tok); [[ "$out" == "set: Mediastack, with its icon" && "$(paste -sd' ' "$DREQ")" == "GET PATCH" ]] || fail_ "first time: name and icon set ($out)"; pass
+jq -e '.name == "Mediastack" and (.avatar | startswith("data:image/png;base64,iVBOR"))' "$T/dbody" >/dev/null || fail_ "the icon goes up as image data, from this host — no public address"; pass
+DGET=$DPATCH; : > "$DREQ"; out=$(discord_sender_sync discord://555/tok)
+[[ "$out" == "current: Mediastack" && "$(paste -sd' ' "$DREQ")" == GET ]] || fail_ "the same again: nothing sent ($out)"; pass
+DGET='{"name":"Our house","avatar":"mine99"}'; : > "$DREQ"; out=$(discord_sender_sync discord://555/tok)
+[[ "$out" == yours:* && "$(paste -sd' ' "$DREQ")" == GET ]] || fail_ "changed in Discord: yours, left alone ($out)"; pass
+DCODE=400; state_del discord-sender-555; out=$(discord_sender_sync discord://555/tok) && fail_ "refused: said"
+[[ "$out" == *"HTTP 400"* ]] || fail_ "with Discord's answer: $out"; pass
+discord_sender_sync ntfy://x >/dev/null && fail_ "not a Discord webhook: no"; pass
+unset -f curl
+
+# ---- a message too long for a card is cut, never refused whole ----
+svc_enabled() { return 0; }; svc_cname() { echo x; }; c_state() { echo running; }
+real_hub_send=$(declare -f hub_send)
+hub_send() { printf '%s' "$2" > "$T/title"; printf '%s' "$3" > "$T/body"; printf '200\tok\n'; }
+notify ops "$(printf 'T%.0s' {1..300})" "$(printf 'b%.0s' {1..5000})"
+(( $(wc -m < "$T/title") <= 256 && $(wc -m < "$T/body") <= 4096 )) && grep -q 'cut: the rest is on the host' "$T/body" || fail_ "title and text cut to fit a card, saying so"; pass
+eval "$real_hub_send"
 
 # ---- URLs without their secrets ----
 for u in discord://111/tokenA https://discord.com/api/webhooks/222/tokenB mailto://me:pw@example.com ntfy://user:pw@ntfy.sh/topic \
@@ -204,7 +266,7 @@ ENV_FILE=$T/env
     ( cmd_unit_failed sshd.service ) 2>/dev/null && fail_ "unit-failed must refuse a unit that is not mediastack's"; pass
     cmd_unit_failed mediastack-update.service >/dev/null
     [[ "$(cat "$SENT/1.tag")" == ops && "$(cat "$SENT/1.type")" == failure ]] || fail_ "unit-failed sends to ops as a failure"; pass
-    [[ "$(cat "$SENT/1.title")" == "Mediastack: mediastack-update.service failed" ]] || fail_ "the title names the unit: $(cat "$SENT/1.title")"; pass
+    [[ "$(cat "$SENT/1.title")" == "mediastack-update.service failed" ]] || fail_ "the title names the unit: $(cat "$SENT/1.title")"; pass
     body=$(cat "$SENT/1.body")
     [[ "$body" == *"Result: exit-code, exit status 1, on testbox"* && "$body" == *"lib/backup.sh:812"* && "$body" == *"journalctl -u mediastack-update.service"* ]] \
         || fail_ "the body carries result, exit status, host, that run's lines and where to look: $body"; pass
@@ -323,7 +385,7 @@ wa 204 </dev/null || fail_ "nothing recorded, no terminal"
     probs() { D_FAIL_LINES=("$@"); D_FAILS=$#; }
     probs "radarr: No indexers" "sonarr: No indexers" "disk /srv: 1.0GiB free of 94GiB (1%)"
     doctor_tell_ops
-    [[ $(told) == 1 ]] && grep -q '^ops|Mediastack doctor: 3 problem(s)|failure$' "$SENT" && grep -q '^- disk /srv: 1.0GiB free' "$SENT" \
+    [[ $(told) == 1 ]] && grep -q '^ops|Doctor: 3 problem(s)|failure$' "$SENT" && grep -q '^- disk /srv: 1.0GiB free' "$SENT" \
         || fail_ "the first time: ops hears the problems, listed: $(cat "$SENT")"; pass
     probs "radarr: No indexers" "sonarr: No indexers" "disk /srv: 0.9GiB free of 94GiB (0%)"
     doctor_tell_ops; [[ $(told) == 1 ]] || fail_ "the same problems, numbers moved: not again"; pass
@@ -332,7 +394,7 @@ wa 204 </dev/null || fail_ "nothing recorded, no terminal"
     probs "radarr: No indexers"
     doctor_tell_ops; [[ $(told) == 3 ]] || fail_ "a different set: told at once"; pass
     probs
-    doctor_tell_ops; [[ $(told) == 4 ]] && grep -q '^ops|Mediastack doctor: all clear|info$' "$SENT" || fail_ "all fixed: ops hears all clear"; pass
+    doctor_tell_ops; [[ $(told) == 4 ]] && grep -q '^ops|Doctor: all clear|info$' "$SENT" || fail_ "all fixed: ops hears all clear"; pass
     doctor_tell_ops; [[ $(told) == 4 ]] || fail_ "clear again: nothing more"; pass
     mapfile -t many < <(seq -f 'problem %g' 1 13); probs "${many[@]}"; : > "$SENT"
     doctor_tell_ops; grep -q '^- problem 10$' "$SENT" && ! grep -q '^- problem 11$' "$SENT" && grep -q '^…and 3 more$' "$SENT" \

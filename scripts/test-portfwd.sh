@@ -119,7 +119,7 @@ docker() { echo "2026-11-24 ERROR [port forwarding] getting external IPv4 addres
 rm -f "$T/config/gluetun/forwarded_port"; : > "$NOTES"; STARTED=$(date -u -d '-1 minute' +%FT%TZ)
 out=$(vpn_pf_sync 2>&1); [[ "$out" == *"gluetun has written no port yet — tried again in 5 minutes"* && ! -s "$NOTES" ]] || fail_ "no port yet: said, nothing to ops: $out"; pass
 STARTED=$(date -u -d '-6 minutes' +%FT%TZ); out=$(vpn_pf_sync 2>&1); vpn_pf_sync >/dev/null 2>&1
-[[ "$out" == *"forwarded no port 6 minutes after it started"*"NAT-PMP ticked"*"connection refused"* && "$(grep -c 'no port forwarded|warning' "$NOTES")" == 1 ]] \
+[[ "$out" == *"forwarded no port 6 minutes after it started"*"NAT-PMP ticked"*"connection refused"* && "$(grep -c 'No port forwarded|warning' "$NOTES")" == 1 ]] \
     || fail_ "still none 5 minutes on: said with ProtonVPN's hint and gluetun's lines, ops told once: $out / $(cat "$NOTES")"; pass
 unset -f docker
 setenv VPN_PROVIDER=nordvpn WIREGUARD_PRIVATE_KEY="$K1"; : > "$LP_CALLS"

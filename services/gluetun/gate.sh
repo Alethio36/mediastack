@@ -71,15 +71,15 @@ leak_verdict() { # leak_verdict RC — act on a leak-test verdict (LT_FIRST name
     state_set "$LEAK_VERDICT" "$rc"
     case $rc in
         1)  leak_gate_close "$LT_FIRST"
-            [[ "$prev" == 1 ]] || notify ops "Mediastack VPN LEAK — downloads stopped" \
+            [[ "$prev" == 1 ]] || notify ops "VPN leak — downloads stopped" \
                 "leak-test proved a problem: \`$LT_FIRST\`"$'\n'"The VPN'd services are stopped; gluetun stays up for inspection."$'\n'"Fix it, then: \`./mediastack.sh up\` (it runs the checks again first)" failure ;;
-        2)  [[ "$prev" == 2 ]] || notify ops "Mediastack leak-test: not everything proven" \
+        2)  [[ "$prev" == 2 ]] || notify ops "Leak test: not everything proven" \
                 "Nothing failed, but: \`$LT_FIRST\`"$'\n'"Nothing was stopped. Check: \`./mediastack.sh leak-test\`" warning ;;
         0)  if [[ -n "$prev" && "$prev" != 0 ]]; then
                 if leak_gate_closed; then
-                    notify ops "Mediastack leak checks pass again" "Every check proven. The VPN'd services stay stopped until: \`./mediastack.sh up\`" success
+                    notify ops "Leak checks pass again" "Every check proven. The VPN'd services stay stopped until: \`./mediastack.sh up\`" success
                 else
-                    notify ops "Mediastack leak checks pass again" "Every check proven." success
+                    notify ops "Leak checks pass again" "Every check proven." success
                 fi
             fi ;;
     esac

@@ -146,7 +146,7 @@ script_behind_tell_ops() { # the update run: ops hears of new mediastack commits
                 info "mediastack is $SB_N commit(s) behind $SB_UP — ops was told of $SB_TIP already"
             else
                 local more=""; (( SB_N > 5 )) && more=$'\n'"…and $(( SB_N - 5 )) more"
-                notify ops "Mediastack: an upgrade is available" "$SB_N new commit(s) on \`$SB_UP\`:"$'\n'"$(sed 's/^/`/; s/$/`/' <<<"$SB_LOG")$more"$'\n'"Upgrade on the host: \`./mediastack.sh upgrade\`" info
+                notify ops "An upgrade is available" "$SB_N new commit(s) on \`$SB_UP\`:"$'\n'"$(sed 's/^/`/; s/$/`/' <<<"$SB_LOG")$more"$'\n'"Upgrade on the host: \`./mediastack.sh upgrade\`" info
                 state_set script-behind-told "$SB_TIP"
                 info "mediastack is $SB_N commit(s) behind $SB_UP — ops told (upgrade: ./mediastack.sh upgrade)"
             fi
@@ -155,7 +155,7 @@ script_behind_tell_ops() { # the update run: ops hears of new mediastack commits
         unknown)
             warn "mediastack could not check its branch: $SB_WHY"
             [[ -n "$(state_get script-check-failed)" ]] \
-                || notify ops "Mediastack cannot check for upgrades" "$SB_WHY" warning
+                || notify ops "Cannot check for upgrades" "$SB_WHY" warning
             state_set script-check-failed 1 ;;
         off) ;;
     esac

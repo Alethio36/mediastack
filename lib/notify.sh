@@ -35,15 +35,21 @@ declare -A SEERR_EVENT_BIT=(
     [MEDIA_DECLINED]=64 [MEDIA_AUTO_APPROVED]=128 [ISSUE_CREATED]=256 [ISSUE_COMMENT]=512
     [ISSUE_RESOLVED]=1024 [ISSUE_REOPENED]=2048 [MEDIA_AUTO_REQUESTED]=4096
 )
-# the payload Seerr sends: its own wording, the event name as the tag
+# the payload Seerr sends: the title (with its year) as the card's title, the
+# event and who asked (or reported) first, its overview below; the event name
+# as the tag (the routing), its poster as the card's (a per-message value of
+# the hub's: a blank one takes the configuration's placeholder). Seerr fills
+# every {{...}} it knows, nested ones too, and an empty one with nothing.
 # shellcheck disable=SC2034  # these three are read by wire_seerr (services/seerr/seerr.sh)
-SEERR_HUB_PAYLOAD='{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"{{notification_type}}","type":"info"}'
+SEERR_HUB_PAYLOAD='{"title":"{{subject}}","body":"**{{event}}** · {{requestedBy_username}}{{reportedBy_username}}\n{{message}}","tag":"{{notification_type}}","type":"info","format":"markdown","template":{"poster":"{{image}}"}}'
 # every template wire seerr wrote before (tag "activity", the stream before
-# ops; then "ops"): a template mediastack wrote is mediastack's to update —
-# the events turned on and the poster setting stay whoever set them
+# ops; then "ops"; then the plain one before the cards): a template mediastack
+# wrote is mediastack's to update — the events turned on and the poster
+# setting stay whoever set them
 SEERR_HUB_PAYLOADS_BEFORE=(
     '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"activity","type":"info"}'
     '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"ops","type":"info"}'
+    '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"{{notification_type}}","type":"info"}'
 )
 SEERR_HUB_TYPES_BEFORE=222   # the events every earlier version turned on
 NOTIFY_LEGACY_TAGS=(activity) # streams mediastack no longer has
@@ -63,12 +69,14 @@ seerr_agent_next() { # seerr_agent_next AGENT-JSON -> the agent as it should be;
     jq -c --arg p "$SEERR_HUB_PAYLOAD" --argjson t "$have_t" '.types = $t | .options.jsonPayload = $p' <<<"$1"
 }
 
-notify_legacy_lines() { # stdin: config text -> the tags of lines for streams mediastack no longer has (URLs never printed)
+notify_legacy_lines() { # stdin: the stored configuration -> the tags of entries for streams mediastack no longer has (URLs never printed)
     local line tags t
     while IFS= read -r line; do
-        [[ "$line" =~ ^([A-Za-z0-9_\ ,-]+)= ]] || continue
-        tags=${BASH_REMATCH[1]//,/ }
-        for t in "${NOTIFY_LEGACY_TAGS[@]}"; do [[ " $tags " == " $t " ]] && echo "$t"; done
+        if [[ "$line" =~ ^\ {6}-\ tag:\ (.*)$ ]]; then tags=${BASH_REMATCH[1]//,/ }          # YAML
+        elif [[ "$line" =~ ^([A-Za-z0-9_\ ,-]+)= ]]; then tags=${BASH_REMATCH[1]//,/ }        # the text format
+        else continue; fi
+        local -a ta; read -ra ta <<<"$tags"
+        for t in "${NOTIFY_LEGACY_TAGS[@]}"; do [[ ${#ta[@]} == 1 && "${ta[0]}" == "$t" ]] && echo "$t"; done
     done
     return 0
 }
@@ -83,10 +91,6 @@ seerr_hub_types() { # the agent's types: every routed event's bit, summed
     echo "$n"
 }
 
-notify_tagline() { # notify_tagline STREAM -> the tags mediastack writes on that stream's URLs
-    local t; t="$1 ${NOTIFY_EVENTS[$1]}"; echo "${t// /,}"
-}
-
 # ---------------------------------------------------------------- sending --
 notify_record() { # notify_record STREAM WHY — keep the latest outcome for status/doctor
     [[ " ${NOTIFY_STREAMS[*]} " == *" $1 "* ]] || return 0
@@ -95,8 +99,12 @@ notify_record() { # notify_record STREAM WHY — keep the latest outcome for sta
 }
 
 NOTIFY_WARNED=0
+NOTIFY_TITLE_MAX=240    # characters: Discord's card title takes 256
+NOTIFY_BODY_MAX=3800    # characters: its card's text takes 4096 — a longer one would be refused whole
 notify() { # notify TAG TITLE BODY [TYPE] — never blocks, never fails the caller; the outcome is recorded
     local tag="$1" title="$2" body="$3" type="${4:-info}" ans why
+    (( ${#title} <= NOTIFY_TITLE_MAX )) || title="${title:0:NOTIFY_TITLE_MAX}…"
+    (( ${#body} <= NOTIFY_BODY_MAX )) || body="${body:0:NOTIFY_BODY_MAX}"$'\n'"… (cut: the rest is on the host)"
     hub_enabled 2>/dev/null || return 0
     hub_running 2>/dev/null || return 0
     ans=$(hub_send "$tag" "$title" "$body" "$type") || true   # unreachable: judged just below
@@ -115,7 +123,35 @@ notify_interruption() { # notify_interruption TITLE BODY [TYPE] — household se
 }
 
 # ------------------------------------------------------- the configuration --
-notify_line_stream() { # notify_line_stream LINE -> the stream when the line is mediastack's (one stream + event names), else nothing
+# Stored as Apprise's YAML: per-message values (Seerr's poster) need it. One
+# block between two marker lines is mediastack's, rewritten whole from the
+# streams' URLs (the model); everything outside it — your own entries — is
+# kept as written. A configuration in Apprise's older text format is read too
+# (mediastack's lines: one stream plus event names) and written back as YAML,
+# your own lines converted entry for entry.
+#
+# A Discord URL becomes several entries on the same webhook: the stream's own
+# messages (tag ops or users) as a card in the message type's colour, and
+# Seerr's events, grouped by outcome, as a card with the poster in the group's
+# colour (Seerr sends every event as one type). Both through a template of
+# mediastack's (services/apprise/discord/), placed where the hub reads it.
+# Any other URL is one entry with the stream and its events: Apprise turns the
+# markdown into what that service shows.
+NOTIFY_MARK_BEGIN="  # >>> mediastack: rewritten by ./mediastack.sh (notify set, wire apprise) — your own entries go outside these two lines"
+NOTIFY_MARK_END="  # <<< mediastack"
+# the card colour per outcome — Apprise's own (its asset defaults; the branding kit's next)
+declare -A NOTIFY_COLOUR=([info]="#3AA3E3" [success]="#3AA337" [warning]="#CACF29" [failure]="#A32037")
+# the outcome of each Seerr event: its card's colour
+declare -A NOTIFY_EVENT_TYPE=(
+    [MEDIA_AVAILABLE]=success [MEDIA_APPROVED]=success [MEDIA_AUTO_APPROVED]=success [ISSUE_RESOLVED]=success
+    [MEDIA_PENDING]=info [MEDIA_AUTO_REQUESTED]=info [ISSUE_COMMENT]=info [TEST_NOTIFICATION]=info
+    [ISSUE_CREATED]=warning [ISSUE_REOPENED]=warning
+    [MEDIA_FAILED]=failure [MEDIA_DECLINED]=failure
+)
+# the poster when Seerr sends none: public (Discord fetches it), in this repository
+NOTIFY_NO_POSTER=https://raw.githubusercontent.com/Alethio36/mediastack/stable/services/apprise/assets/no-poster.png
+
+notify_line_stream() { # notify_line_stream LINE -> the stream when a text-format line is mediastack's (one stream + event names), else nothing
     local tags t s="" known=" ${NOTIFY_STREAMS[*]} ${NOTIFY_EVENTS[*]} "
     [[ "$1" =~ ^([A-Za-z0-9_\ ,-]+)= ]] || return 0
     tags=${BASH_REMATCH[1]//,/ }
@@ -128,29 +164,102 @@ notify_line_stream() { # notify_line_stream LINE -> the stream when the line is 
     echo "$s"
 }
 
-notify_cfg_edit() { # stdin: config text; $1 retag|set|clear, $2 STREAM, $3 URLS (set) -> the new text
-    local mode="$1" stream="${2:-}" urls="${3:-}" line s u
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        s=$(notify_line_stream "$line")
-        if [[ -z "$s" ]]; then printf '%s\n' "$line"; continue; fi
-        case "$mode" in
-            retag) printf '%s=%s\n' "$(notify_tagline "$s")" "${line#*=}" ;;
-            set|clear) [[ "$s" == "$stream" ]] || printf '%s=%s\n' "$(notify_tagline "$s")" "${line#*=}" ;;
-        esac
-    done
-    if [[ "$mode" == set ]]; then
-        for u in ${urls//,/ }; do printf '%s=%s\n' "$(notify_tagline "$stream")" "$u"; done
+notify_url_canon() { # notify_url_canon URL -> a Discord webhook as discord://ID/TOKEN (its other options are mediastack's to set); any other URL as given
+    if [[ "$1" =~ ^discord://([^/@?]*@)?([0-9]+)/([^/?\"]+) ]]; then echo "discord://${BASH_REMATCH[2]}/${BASH_REMATCH[3]}"
+    elif [[ "$1" =~ ^https://(ptb\.|canary\.)?discord(app)?\.com/api/webhooks/([0-9]+)/([^/?\"]+) ]]; then echo "discord://${BASH_REMATCH[3]}/${BASH_REMATCH[4]}"
+    else echo "$1"; fi
+}
+notify_yaml_q() { local v=${1//\\/\\\\}; printf '"%s"' "${v//\"/\\\"}"; }   # a YAML double-quoted string
+
+NOTIFY_MODEL=""; NOTIFY_YOURS=""; NOTIFY_CFG_WHY=""   # notify_cfg_read's answer
+notify_cfg_read() { # notify_cfg_read TEXT — NOTIFY_MODEL ("stream<TAB>url" per line) and NOTIFY_YOURS (your entries, YAML) from the stored configuration; rc 1 with NOTIFY_CFG_WHY
+    local line s n=0 in_urls=0 ours=0 url="" tags t
+    NOTIFY_MODEL=""; NOTIFY_YOURS=""; NOTIFY_CFG_WHY=""
+    if ! grep -qE '^(version|urls):' <<<"$1"; then   # Apprise's text format
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            n=$((n + 1))
+            [[ -n "${line//[[:space:]]/}" ]] || continue
+            if [[ "$line" =~ ^[[:space:]]*# ]]; then NOTIFY_YOURS+="  ${line#"${line%%[![:space:]]*}"}"$'\n'; continue; fi
+            if [[ "$line" =~ ^[[:space:]]*include[[:space:]] ]]; then
+                NOTIFY_CFG_WHY="line $n is an include (${line%% *} …): mediastack cannot carry it into YAML — move it into Apprise's UI, then re-run"; return 1
+            fi
+            s=$(notify_line_stream "$line")
+            if [[ -n "$s" ]]; then notify_model_add "$s" "$(notify_url_canon "${line#*=}")"
+            elif [[ "$line" =~ ^([A-Za-z0-9_\ ,-]+)=(.*)$ ]]; then
+                tags=$(sed -E 's/[[:space:]]*,[[:space:]]*/, /g; s/^[[:space:]]+|[[:space:]]+$//g' <<<"${BASH_REMATCH[1]}")
+                NOTIFY_YOURS+="  - $(notify_yaml_q "${BASH_REMATCH[2]}"):"$'\n'"      - tag: $tags"$'\n'
+            else
+                NOTIFY_YOURS+="  - $(notify_yaml_q "$line")"$'\n'
+            fi
+        done <<<"$1"
+        return 0
     fi
+    # YAML: mediastack's block between the markers, the rest of urls: yours
+    grep -qxF -- "$NOTIFY_MARK_BEGIN" <<<"$1" \
+        || { NOTIFY_CFG_WHY="the hub's configuration is YAML without mediastack's marker lines — mediastack cannot tell its entries from yours (put the streams back: ./mediastack.sh notify set ops|users)"; return 1; }
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if (( ! in_urls )); then [[ "$line" == "urls:" ]] && in_urls=1; continue; fi
+        if [[ "$line" == "$NOTIFY_MARK_BEGIN" ]]; then ours=1; continue; fi
+        if [[ "$line" == "$NOTIFY_MARK_END" ]]; then ours=0; continue; fi
+        if (( ! ours )); then NOTIFY_YOURS+="$line"$'\n'; continue; fi
+        if [[ "$line" =~ ^\ \ -\ \"(.*)\":$ ]]; then url=${BASH_REMATCH[1]//\\\"/\"}; url=${url//\\\\/\\}; continue; fi
+        [[ "$line" =~ ^\ {6}-\ tag:\ (.*)$ ]] || continue
+        tags=" ${BASH_REMATCH[1]//,/ } "
+        for t in "${NOTIFY_STREAMS[@]}"; do
+            [[ "$tags" == *" $t "* ]] || continue
+            if [[ "$url" == discord://* ]]; then notify_model_add "$t" "$(notify_url_canon "$url")"   # its options are mediastack's
+            else notify_model_add "$t" "$url"; fi                                                   # any other: as you gave it
+        done
+    done <<<"$1"
+    return 0
 }
 
-notify_cfg_urls() { # stdin: config text; $1 STREAM -> that stream's URLs (every line carrying its tag)
-    local line tags
-    while IFS= read -r line; do
-        [[ "$line" =~ ^([A-Za-z0-9_\ ,-]+)=(.*)$ ]] || continue
-        tags=" ${BASH_REMATCH[1]//,/ } "
-        [[ "$tags" == *" $1 "* ]] && printf '%s\n' "${BASH_REMATCH[2]}"
-    done
-    return 0
+notify_model_add() { [[ $'\n'"$NOTIFY_MODEL" == *$'\n'"$1"$'\t'"$2"$'\n'* ]] || NOTIFY_MODEL+="$1"$'\t'"$2"$'\n'; }   # notify_model_add STREAM URL — once
+notify_stream_events_of() { # notify_stream_events_of STREAM TYPE -> its Seerr events of that outcome, comma-separated ("" for none)
+    local e out=""
+    for e in ${NOTIFY_EVENTS[$1]}; do [[ "${NOTIFY_EVENT_TYPE[$e]:-info}" != "$2" ]] || out+="${out:+, }$e"; done
+    echo "$out"
+}
+notify_footer() { echo "$(hostname -s 2>/dev/null || echo mediastack) · $1"; }   # notify_footer STREAM -> a card's footer
+notify_cfg_render() { # -> the configuration, YAML, from NOTIFY_MODEL and NOTIFY_YOURS
+    local s u ty evs foot tdir=/config/$HUB_TEMPLATES_DIR
+    [[ -n "${NOTIFY_MODEL//[[:space:]]/}${NOTIFY_YOURS//[[:space:]]/}" ]] || return 0   # nothing left: no configuration (hub_cfg_put removes it)
+    printf '%s\n' "# The notification hub's configuration, written by ./mediastack.sh. Your own" \
+        "# entries go in urls:, outside mediastack's two marker lines — they are kept." \
+        "version: 1" "template:" "  poster: $(notify_yaml_q "$NOTIFY_NO_POSTER")" "urls:" "$NOTIFY_MARK_BEGIN"
+    while IFS=$'\t' read -r s u; do
+        [[ -n "$s" ]] || continue
+        if [[ "$u" == discord://* ]]; then
+            foot=$(jq -rn --arg f "$(notify_footer "$s")" '$f | @uri')
+            printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u?avatar=no&template=$tdir/plain.json&:footer=$foot")" "$s"
+            for ty in success info warning failure; do
+                evs=$(notify_stream_events_of "$s" "$ty"); [[ -n "$evs" ]] || continue
+                printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u?avatar=no&template=$tdir/poster.json&:poster=\${POSTER}&:color=$((16#${NOTIFY_COLOUR[$ty]#\#}))&:footer=$foot")" "$evs"
+            done
+        else
+            printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u")" "$s${NOTIFY_EVENTS[$s]:+, ${NOTIFY_EVENTS[$s]// /, }}"
+        fi
+    done <<<"$NOTIFY_MODEL"
+    printf '%s\n' "$NOTIFY_MARK_END"
+    [[ -z "$NOTIFY_YOURS" ]] || printf '%s' "$NOTIFY_YOURS"
+}
+
+notify_cfg_edit() { # stdin: the stored configuration; $1 retag|set|clear, $2 STREAM, $3 URLS (set) -> the new one (YAML); dies when it cannot be read
+    local mode="$1" stream="${2:-}" urls="${3:-}" u keep="" s
+    notify_cfg_read "$(cat)" || die "$NOTIFY_CFG_WHY"
+    if [[ "$mode" == set || "$mode" == clear ]]; then
+        while IFS=$'\t' read -r s u; do [[ -z "$s" || "$s" == "$stream" ]] || keep+="$s"$'\t'"$u"$'\n'; done <<<"$NOTIFY_MODEL"
+        NOTIFY_MODEL=$keep
+    fi
+    if [[ "$mode" == set ]]; then
+        for u in ${urls//,/ }; do NOTIFY_MODEL+="$stream"$'\t'"$(notify_url_canon "$u")"$'\n'; done
+    fi
+    notify_cfg_render
+}
+
+notify_cfg_urls() { # stdin: the stored configuration; $1 STREAM -> that stream's URLs (Discord's as discord://ID/TOKEN)
+    notify_cfg_read "$(cat)" || return 0
+    awk -F'\t' -v s="$1" '$1 == s { print $2 }' <<<"$NOTIFY_MODEL"
 }
 
 notify_url_shown() { # a URL without its secrets: the service, and its host only where that is a plain server name
@@ -208,7 +317,7 @@ notify_test() {
     local s streams=("${NOTIFY_STREAMS[@]}") ans why rc=0
     [[ -n "${1:-}" ]] && { notify_stream_ok "$1"; streams=("$1"); }
     for s in "${streams[@]}"; do
-        ans=$(hub_send "$s" "Mediastack test" "A test on the $s stream — if you can read this, it works." info) || true   # judged below
+        ans=$(hub_send "$s" "Test on the $s stream" "If you can read this, the **$s** stream works." success) || true   # judged below
         why=$(hub_outcome "${ans%%$'\t'*}" "${ans#*$'\t'}")
         notify_record "$s" "$why"
         if [[ -z "$why" ]]; then ok "$s: the hub delivered the test — check it arrived"
@@ -275,6 +384,7 @@ stream's current URLs; anything else in the hub's configuration is kept.
     local cfg; cfg=$(hub_cfg_get | notify_cfg_edit set "$1" "$REPLY_VAL")
     hub_cfg_put "$cfg"
     ok "$1: URLs stored"
+    discord_senders_sync
     notify_test "$1"
 }
 

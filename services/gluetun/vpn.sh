@@ -78,7 +78,7 @@ vpn_reattach_guard() {
         for vd in "${stale[@]}"; do
             nm=$(vpn_join "$(svc_cname "$vd")" "$gid" "$gns")
             [[ "$nm" == ok ]] && continue
-            notify ops "Mediastack VPN re-pin FAILED" "VPN dependents detached from gluetun and re-pin FAILED: **${stale[*]}**"$'\n'"Fix now: \`./mediastack.sh up\` then \`./mediastack.sh leak-test\`" failure
+            notify ops "VPN re-pin failed" "VPN dependents detached from gluetun and re-pin FAILED: **${stale[*]}**"$'\n'"Fix now: \`./mediastack.sh up\` then \`./mediastack.sh leak-test\`" failure
             die "vpn guard: $vd is still not joined to the live gluetun after its re-join — VPN egress is broken. Fix this before anything else."
         done
         ok "re-pinned ${#stale[@]} dependent(s) onto the live gluetun"

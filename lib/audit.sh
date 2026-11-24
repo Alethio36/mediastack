@@ -473,7 +473,7 @@ audit_extract() { # copy new events into the durable log; prune it; flag a gap
         printf '%s\t-\tgap\t%s .. %s\t\n' "$now" "$(printf '%(%F %T)T' "$ran")" "$(printf '%(%F %T)T' "$oldest")" \
             | audit_append "$dir" "$day"
         warn "deletion log gap: auditd rotated its log before events from $(printf '%(%F %T)T' "$ran") to $(printf '%(%F %T)T' "$oldest") were copied"
-        notify ops "Mediastack: deletion log gap" "auditd rotated its log faster than the hourly copy: deletions from $(printf '%(%F %T)T' "$ran") to $(printf '%(%F %T)T' "$oldest") may be missing from \`audit report\`." warning
+        notify ops "Deletion log gap" "auditd rotated its log faster than the hourly copy: deletions from $(printf '%(%F %T)T' "$ran") to $(printf '%(%F %T)T' "$oldest") may be missing from \`audit report\`." warning
     fi
     raw=$(mktemp); tmp=$(mktemp); users=$(mktemp); umap=$(mktemp); mounts=$(mktemp)
     # shellcheck disable=SC2024  # the temp file is ours; only ausearch needs root

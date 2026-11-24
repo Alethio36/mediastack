@@ -75,7 +75,7 @@ o=$( setpriv() { echo USED; }; script_git rev-parse --abbrev-ref HEAD )
 # ---- the update run tells ops once per new tip ----
 rm -f "$T/notes"
 o=$(script_behind_tell_ops)
-[[ "$(wc -l < "$T/notes")" -ge 1 ]] && grep -q '^ops Mediastack: an upgrade is available 7 new commit(s) on `origin/stable`:' "$T/notes" \
+[[ "$(wc -l < "$T/notes")" -ge 1 ]] && grep -q '^ops An upgrade is available 7 new commit(s) on `origin/stable`:' "$T/notes" \
     && grep -q '…and 2 more' "$T/notes" && grep -q 'Upgrade on the host: `./mediastack.sh upgrade`' "$T/notes" && grep -q ' info$' "$T/notes" \
     || fail_ "behind, first time: ops told, five subjects and how many more, the verb: $(cat "$T/notes" 2>/dev/null)"; pass
 [[ "$(state_get script-behind-told)" == "$(g -C "$T/up" rev-parse --short HEAD)" ]] || fail_ "the tip told is kept"; pass
@@ -89,7 +89,7 @@ rm -f "$T/notes"; o=$(script_behind_tell_ops)
 [[ ! -f "$T/notes" && -z "$(state_get script-behind-told)" ]] && grep -q 'OK mediastack is current with origin/stable' <<<"$o" || fail_ "upgraded: current, the record cleared: $o"; pass
 g -C "$T/install" remote set-url origin "$T/nowhere.git"
 rm -f "$T/notes"; o=$(script_behind_tell_ops)
-grep -q '^ops Mediastack cannot check for upgrades git fetch origin stable failed' "$T/notes" && grep -q ' warning$' "$T/notes" && grep -q '^WARN mediastack could not check its branch' <<<"$o" \
+grep -q '^ops Cannot check for upgrades git fetch origin stable failed' "$T/notes" && grep -q ' warning$' "$T/notes" && grep -q '^WARN mediastack could not check its branch' <<<"$o" \
     || fail_ "a check that cannot run: warned, ops told: $o $(cat "$T/notes" 2>/dev/null)"; pass
 rm -f "$T/notes"; script_behind_tell_ops >/dev/null
 [[ ! -f "$T/notes" ]] || fail_ "the same failure next run: ops not told again"; pass

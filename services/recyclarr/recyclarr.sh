@@ -442,6 +442,6 @@ recyclarr_pin_notice() { # the pin on recyclarr's major (":8") is deliberate, a 
                 | grep -oE '<title>v[0-9]+' | sed -n 1p | grep -oE '[0-9]+' || true)
     if [[ -n "$rc_pin" && -n "$rc_latest" ]] && (( rc_latest > rc_pin )); then
         warn "recyclarr v$rc_latest is out; the stack pins major v$rc_pin — review the breaking changes, then bump the tag in services/recyclarr/compose.yml when ready"
-        notify ops "recyclarr v$rc_latest available" "Stack pins major **v$rc_pin**. Review upstream breaking changes, then bump \`services/recyclarr/compose.yml\`." warning
+        notify ops "Recyclarr v$rc_latest available" "Stack pins major **v$rc_pin**. Review upstream breaking changes, then bump \`services/recyclarr/compose.yml\`." warning
     fi
 }

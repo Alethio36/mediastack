@@ -349,7 +349,7 @@ mkdir -p "$T/fk"; printf '#!/usr/bin/env bash\necho "$1" >> "%s/steps"\n[[ "$1" 
 [[ -z "$( STATE_DIR=$T/cs; state_get "$PANEL_STATE")" ]] || fail_ "the panel, once installed, is not installed again"; pass
 printf '#!/usr/bin/env bash\n' > "$T/fk/mediastack.sh"; : > "$T/steps"
 ( SCRIPT_DIR=$T/fk STATE_DIR=$T/cs LOCAL_DIR=$T CMD=enable; notify() { echo "NOTIFY $*" >> "$T/steps"; }; chain_run up wire ) > /dev/null 2>&1
-grep -q '^NOTIFY ops Mediastack enable finished: up, wire all done' "$T/steps" || fail_ "the closing notification names the verb that ran the chain: $(cat "$T/steps")"; pass
+grep -q '^NOTIFY ops Enable finished All done: up, wire. success' "$T/steps" || fail_ "the closing notification names the verb that ran the chain: $(cat "$T/steps")"; pass
 w() { ( SSH_CONNECTION=${1:-} TMUX=${2:-} STY=${3:-}; chain_ssh_warn ) 2>&1; }
 [[ "$(w '1.2.3.4 5 6.7.8.9 22')" == *"over SSH outside tmux or screen"*"configure again carries on"* && -z "$(w '1.2.3.4 5 6.7.8.9 22' /tmp/tmux-1)" \
    && -z "$(w '1.2.3.4 5 6.7.8.9 22' '' 123.pts)" && -z "$(w)" ]] || fail_ "the SSH warning: only over SSH outside tmux and screen"; pass
