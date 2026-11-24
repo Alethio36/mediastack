@@ -7,7 +7,8 @@
 
 vpnp_vpn_unlimited_name()      { echo "vpn unlimited"; }
 vpnp_vpn_unlimited_types()     { echo openvpn; }
-vpnp_vpn_unlimited_filters()   { echo countries cities hostnames; }
+vpnp_vpn_unlimited_filters()   { echo countries cities hostnames flags; }
+vpnp_vpn_unlimited_flags()   { echo free stream; }   # its server flags (CI: each has servers in gluetun's list)
 vpnp_vpn_unlimited_protocols() { echo udp; }
 vpnp_vpn_unlimited_proven()    { echo ""; }
 vpnp_vpn_unlimited_env()       { echo OPENVPN_USER OPENVPN_PASSWORD OPENVPN_CERT OPENVPN_KEY; }

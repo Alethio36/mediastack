@@ -179,6 +179,20 @@ refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\n' "the VPN (mullvad
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\nWIREGUARD_PRIVATE_KEY=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=\n' "the VPN (mullvad, wireguard) needs WIREGUARD_ADDRESSES"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=windscribe\nVPN_SERVER_COUNTRIES=Sweden\n' "VPN_SERVER_COUNTRIES: windscribe does not choose servers by country"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=mullvad\nWIREGUARD_PRIVATE_KEY=nope\n' "WIREGUARD_PRIVATE_KEY: that is not a WireGuard key"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nNORDVPN_TOKEN=TOKEN\nVPN_SERVER_ISPS=M247\nVPN_SERVER_FLAGS=tor\n' \
+    "VPN_SERVER_ISPS: nordvpn does not choose servers by ISP" "VPN_SERVER_FLAGS: nordvpn does not choose servers by server flag"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=protonvpn\nWIREGUARD_PRIVATE_KEY=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=\nVPN_SERVER_FLAGS=free,owned\n' \
+    "VPN_SERVER_FLAGS: 'owned' is no server flag of protonvpn's — its flags: free, stream, secure-core, tor"; pass
+# server choices as gluetun reads them; checked against its server list when its image is here
+fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\nVPN_SERVER_CATEGORIES=P2P\nVPN_SERVER_COUNTRIES=Switzerland , Netherlands\nVPN_SERVER_CITIES=any\n'
+filed "$T/a.env" '' --fresh || fail_ "server choices run: $(cat "$T/out")"
+[[ "$(envv VPN_SERVER_CATEGORIES)" == P2P && "$(envv VPN_SERVER_COUNTRIES)" == Switzerland,Netherlands && -z "$(envv VPN_SERVER_CITIES)" ]] \
+    || fail_ "a list as gluetun reads one (no space around a value), any is no limit: $(grep '^VPN_SERVER' "$T/w/.env")"; pass
+printf '%s\n' '[{"vpn":"wireguard","country":"Switzerland","city":"Zurich","categories":["Standard VPN servers","P2P"],"hostname":"ch1"}]' > "$T/servers.json"
+real_load=$(declare -f vpn_servers_load); vpn_servers_load() { VPN_SERVERS=$T/servers.json; }
+refused 'SIGNIN=none\nENABLE_SONARR=y\nNORDVPN_TOKEN=TOKEN\nVPN_SERVER_CATEGORIES=P2P\nVPN_SERVER_CITIES=Zurik\n' \
+    "VPN_SERVER_CITIES: no city 'Zurik' among nordvpn's WireGuard servers with VPN_SERVER_CATEGORIES=P2P — close: Zurich"; pass
+eval "$real_load"
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=perfect-privacy\n' "is no VPN provider mediastack knows"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_TYPE=openvpn\nNORDVPN_TOKEN=TOKEN\nWIREGUARD_PRIVATE_KEY=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=\n' "WIREGUARD_PRIVATE_KEY is for nordvpn over the other tunnel — VPN_TYPE is openvpn"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=expressvpn\nVPN_TYPE=openvpn\nOPENVPN_USER=u\nOPENVPN_PASSWORD=p\nOPENVPN_PROTOCOL=tcp\n' "OPENVPN_PROTOCOL=tcp: expressvpn has OpenVPN servers over udp only"; pass

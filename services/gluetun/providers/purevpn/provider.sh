@@ -5,7 +5,7 @@
 
 vpnp_purevpn_name()      { echo "purevpn"; }
 vpnp_purevpn_types()     { echo openvpn; }
-vpnp_purevpn_filters()   { echo countries cities hostnames; }
+vpnp_purevpn_filters()   { echo regions countries cities categories hostnames; }
 vpnp_purevpn_protocols() { echo udp tcp; }
 vpnp_purevpn_proven()    { echo ""; }
 vpnp_purevpn_env()       { echo OPENVPN_USER OPENVPN_PASSWORD; }

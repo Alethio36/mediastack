@@ -111,7 +111,7 @@ gen_keys='^(MEILI_MASTER_KEY|[A-Z_]*_PASSWORD)='
 quick_env=$(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env")
 
 # ---- full, fresh: Enter through every question gives what quick takes ----
-clean; run '2\n\n\n\n\n\n\n1\n1\n\n\nTOKEN\n\n\n\n\n\n\n\n\n\n\n' --fresh || fail_ "full on a fresh .env runs"
+clean; run '2\n\n\n\n\n\n\n1\n1\n\n\nTOKEN\n\n\n\n\n\n\n\n\n\n\n\n\n\n' --fresh || fail_ "full on a fresh .env runs"
 [[ ! -s "$T/calls" ]] || fail_ "full ran what it may not: $(cat "$T/calls")"; pass
 [[ "$(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env")" == "$quick_env" ]] \
     || fail_ "Enter through full = quick: $(diff <(echo "$quick_env") <(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env"))"; pass
@@ -223,10 +223,10 @@ done; pass
 [[ "$(printf '%s\n' "$(envv ARR_PASSWORD)" "$(envv JELLYFIN_ADMIN_PASSWORD)" "$(envv QBITTORRENT_PASSWORD)" | sort -u | wc -l)" == 3 ]] \
     || fail_ "generated: a different password for each"; pass
 grep -q 'Logins: admin, passwords generated (recommended)' "$T/out" || fail_ "quick says what it took"; pass
-before=$(cat "$T/w/.env"); run '2\n\n\n\n\n\n\n0\n0\n\nn\n\n\n\n\n\n\n\n' || fail_ "full re-run, everything kept"
+before=$(cat "$T/w/.env"); run '2\n\n\n\n\n\n\n0\n0\n\nn\n\n\n\n\n\n\n\n\n\n\n' || fail_ "full re-run, everything kept"
 [[ "$(cat "$T/w/.env")" == "$before" ]] && ! grep -q 'Username for all of them' "$T/out" || fail_ "every login made: no logins question, nothing changed"; pass
 # full, unified: one typed password for all; a short one and a mismatch refused first
-clean; run '2\n\n\n\n\n\n\n1\n1\n\n\nTOKEN\n\n\nab\nops\n2\nshort\nshort\nAbcdefghijkl1\nAbcdefghijkX\nAbcdefghijkl1\nAbcdefghijkl1\n\n\n\n\n\n\n' --fresh || fail_ "full, unified"
+clean; run '2\n\n\n\n\n\n\n1\n1\n\n\nTOKEN\n\n\n\n\n\nab\nops\n2\nshort\nshort\nAbcdefghijkl1\nAbcdefghijkX\nAbcdefghijkl1\nAbcdefghijkl1\n\n\n\n\n\n\n' --fresh || fail_ "full, unified"
 grep -q "'ab' won't do: qBittorrent's WebUI needs at least 3 characters" "$T/out" && grep -q "That password won't do: at least 12 characters" "$T/out" \
     && grep -q 'Passwords do not match' "$T/out" || fail_ "a name and a password the logins refuse are said, and asked again"; pass
 [[ "$(envv ARR_USER)/$(envv QBITTORRENT_USER)/$(envv JELLYFIN_ADMIN_USER)" == ops/ops/ops && "$(envv STACK_LOGINS)" == unified ]] \

@@ -5,7 +5,7 @@
 
 vpnp_slickvpn_name()      { echo "slickvpn"; }
 vpnp_slickvpn_types()     { echo openvpn; }
-vpnp_slickvpn_filters()   { echo countries cities hostnames; }
+vpnp_slickvpn_filters()   { echo regions countries cities hostnames; }
 vpnp_slickvpn_protocols() { echo udp tcp; }
 vpnp_slickvpn_proven()    { echo ""; }
 vpnp_slickvpn_env()       { echo OPENVPN_USER OPENVPN_PASSWORD; }

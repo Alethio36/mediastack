@@ -1,22 +1,85 @@
 #!/usr/bin/env bash
 # services/gluetun/questions.sh — configure's VPN step: which provider (a
 # folder of services/gluetun/providers), its credentials (the provider's own
-# questions) and its server choices. Called by the questionnaire at its place
+# questions) and its server choices (checked against gluetun's own server
+# list when its image is on this host). Called by the questionnaire at its place
 # (after the download client) and by enable's questions when gluetun is among
 # what it brings — not through the <name>_questions hook, whose order would
 # move it. It asks and records, as every question does (docs/adding-a-service.md);
 # a provider's own question may call that provider's account API (NordVPN's,
 # to turn a token into a key) and nothing else.
 
-vpn_ask_countries() { # vpn_ask_countries "prompt" — the countries to choose servers in (empty: any), recorded
-    if q_quick; then q_took "Server country" "$(env_or_note VPN_SERVER_COUNTRIES auto)"; return 0; fi
-    local p
+vpn_choices_list() { printf '%s\n' "$@" | paste -sd, | sed 's/,/, /g' | fold -s -w 78 | sed 's/^/  /'; }   # vpn_choices_list CHOICE... — for "?" at a choice's prompt
+vpn_ask_filter() { # vpn_ask_filter NAME FILTER — one server choice (empty: any), checked against gluetun's server list when it is on this host (VPN_SERVERS), recorded as the list spells it
+    local key=${VPN_FILTER_KEY[$2]} title v item c p anyis="no limit"; local -a choices=() items out
+    title="Server ${VPN_FILTER_ONE[$2]}"
+    if vpnp_has "$1" filter_default && [[ -n "$(vpnp_call "$1" filter_default "$2")" ]]; then anyis="$1's default, $(vpnp_call "$1" filter_default "$2")"; fi
+    if q_quick; then v=$(vpn_filter_value "$1" "$2"); q_took "$title" "${v:-any}"; return 0; fi
+    if [[ -n "$VPN_SERVERS" ]]; then
+        vpn_filters_before "$1" "$2"
+        mapfile -t choices < <(vpn_servers_query "$1" "${VPN_FILTER_FIELD[$2]}" "$VPN_PRIOR")
+        if (( ${#choices[@]} == 0 )); then   # none among the servers the choices before keep: nothing to choose
+            if [[ -n "$(env_get "$key")" ]]; then info "$key cleared: $(vpn_servers_said "$1" "$VPN_WITH") have no ${VPN_FILTER_ONE[$2]}"; env_set "$key" ""; fi
+            return 0
+        fi
+    fi
     while true; do
-        ask VPN_SERVER_COUNTRIES "$1" "$(env_get VPN_SERVER_COUNTRIES)"
-        p=$(vpn_countries_problem "$REPLY_VAL"); [[ -z "$p" ]] && break
+        ask "$key" "$title ($( (( ${#choices[@]} )) && echo "? lists the ${#choices[@]}; " )comma-separated; any = $anyis)" "$(env_or_note "$key" any)"
+        if [[ "$REPLY_VAL" == "?" ]]; then
+            if (( ${#choices[@]} )); then vpn_choices_list "${choices[@]}"; else info "the list needs gluetun's image on this host — up checks the choice against it"; fi
+            continue
+        fi
+        v=$(vpn_list_tidy "$REPLY_VAL"); p=""
+        if [[ -n "$v" ]] && (( ${#choices[@]} )); then
+            IFS=, read -ra items <<<"$v"; out=()
+            for item in "${items[@]}"; do
+                if c=$(vpn_choice_match "$item" "${choices[@]}"); then out+=("$c"); continue; fi
+                p="no ${VPN_FILTER_ONE[$2]} '$item' among $(vpn_servers_said "$1" "$VPN_WITH") — $(vpn_close_matches "$item" "${choices[@]}")"; break
+            done
+            v=$(IFS=,; echo "${out[*]}")
+        fi
+        [[ -n "$p" ]] || break
         fail "$p"
     done
-    env_set VPN_SERVER_COUNTRIES "$REPLY_VAL"
+    env_set "$key" "$v"
+}
+vpn_flags_problem() { # vpn_flags_problem NAME LIST -> why LIST is not flags of NAME's ("" when it is)
+    local f
+    for f in ${2//,/ }; do
+        [[ " $(vpnp_flags "$1") " == *" $f "* ]] || { echo "'$f' is no server flag of $1's — its flags: $(vpnp_flags "$1" | sed 's/ /, /g')"; return 0; }
+    done
+}
+vpn_ask_flags() { # vpn_ask_flags NAME — the server flags (empty: none), recorded; asked before the filters, whose lists they narrow
+    local f v p
+    if q_quick; then q_took "Server flags" "$(env_or_note VPN_SERVER_FLAGS none)"; return 0; fi
+    info "$1 can keep to servers that are: $(for f in $(vpnp_flags "$1"); do printf '%s (%s); ' "$f" "${VPN_FLAG_SAYS[$f]}"; done | sed 's/; $//')"
+    while true; do
+        ask VPN_SERVER_FLAGS "Server flags ($(vpnp_flags "$1" | tr ' ' /), comma-separated; none = any server)" "$(env_or_note VPN_SERVER_FLAGS none)"
+        v=$(vpn_list_tidy "${REPLY_VAL,,}"); [[ "$v" != none ]] || v=""
+        p=$(vpn_flags_problem "$1" "$v")
+        if [[ -z "$p" && -n "$v" && -n "$VPN_SERVERS" ]]; then   # together they must leave a server
+            env_set VPN_SERVER_FLAGS "$v"
+            [[ "$(vpn_servers_query "$1" "" '{}')" -gt 0 ]] || p="no server of $1's is all of $v — $(vpn_servers_said "$1")"
+        fi
+        [[ -n "$p" ]] || break
+        fail "$p"
+    done
+    env_set VPN_SERVER_FLAGS "$v"
+}
+vpn_ask_server_choices() { # vpn_ask_server_choices NAME — the server choices NAME offers: its flags first (they narrow every list), then each filter in order but hostnames (set in .env only)
+    local f p
+    [[ -n "$(vpnp_call "$1" filters | tr -d '[:space:]')" ]] || return 0
+    VPN_SERVERS=""
+    if ! q_quick && ! vpn_servers_load "$1"; then info "Server choices are not checked here: $VPN_SERVERS_ERR — up checks them against gluetun's server list."; fi
+    if vpnp_filter_on "$1" flags; then vpn_ask_flags "$1"; fi
+    for f in $VPN_FILTER_ORDER; do
+        if [[ "$f" != hostnames ]] && vpnp_filter_on "$1" "$f"; then vpn_ask_filter "$1" "$f"; fi
+    done
+    [[ -n "$VPN_SERVERS" ]] || return 0
+    p=$(vpn_choices_problems "$1")   # VPN_SERVER_HOSTNAMES is never asked: it can still rule them out
+    [[ -z "$p" ]] && return 0
+    while IFS= read -r f; do fail "$f"; done <<<"$p"
+    warn "up refuses to start gluetun with these — change them in .env, or run ./mediastack.sh configure again"
 }
 
 vpn_choose_provider() { # -> REPLY_VAL: a provider folder, by its name or its number in the list
@@ -80,11 +143,27 @@ gluetun_vpn_from_answers() { # the VPN from the answers file; a blank keeps what
     elif answers_any OPENVPN_PROTOCOL && answer OPENVPN_PROTOCOL; then
         answer_refused "OPENVPN_PROTOCOL: $( [[ "$t" == openvpn ]] && echo "$prov's OpenVPN config file says it" || echo "only for VPN_TYPE=openvpn — VPN_TYPE is $t" )"
     fi
-    if vpnp_filter_on "$prov" countries && answer VPN_SERVER_COUNTRIES; then
-        p=$(vpn_countries_problem "$REPLY_VAL"); [[ -z "$p" ]] || answer_refused "VPN_SERVER_COUNTRIES: $p"
-        env_set VPN_SERVER_COUNTRIES "$REPLY_VAL"
-    elif answers_any VPN_SERVER_COUNTRIES && ! vpnp_filter_on "$prov" countries; then
-        answer_refused "VPN_SERVER_COUNTRIES: $prov does not choose servers by country"
+    local f key v
+    for f in flags $VPN_FILTER_ORDER; do
+        [[ "$f" != hostnames ]] || continue   # .env only: never asked
+        key=${VPN_FILTER_KEY[$f]}
+        if ! vpnp_filter_on "$prov" "$f"; then
+            if answers_any "$key"; then answer_refused "$key: $prov does not choose servers by ${VPN_FILTER_ONE[$f]}"; fi
+            continue
+        fi
+        answer "$key" || continue
+        v=$(vpn_list_tidy "$REPLY_VAL")
+        if [[ "$f" == flags ]]; then
+            v=${v,,}; [[ "$v" != none ]] || v=""
+            p=$(vpn_flags_problem "$prov" "$v"); [[ -z "$p" ]] || { answer_refused "VPN_SERVER_FLAGS: $p"; continue; }
+        fi
+        env_set "$key" "$v"
+    done
+    # each against gluetun's server list, when its image is on this host (up checks them otherwise)
+    if [[ -n "$(vpnp_call "$prov" filters | tr -d '[:space:]')" ]]; then
+        if vpn_servers_load "$prov"; then
+            while IFS= read -r p; do [[ -z "$p" ]] || answer_refused "$p"; done <<<"$(vpn_choices_problems "$prov")"
+        fi
     fi
     vpn_protocol_tidy "$prov" "$t"
     q_answered "VPN" "$prov ($t$( [[ "$t" == openvpn && -n "$protos" ]] && echo " over $(env_get OPENVPN_PROTOCOL)" )), its login set, $(vpn_servers_words "$prov")"
@@ -95,7 +174,8 @@ gluetun_vpn_questions() { # configure's VPN step — only when something runs in
     local cur curt prov t
     cur=$(env_get VPN_PROVIDER); curt=$(env_get VPN_TYPE)
     local -a keys; mapfile -t keys < <(vpn_all_keys)
-    if answers_any VPN_PROVIDER VPN_TYPE OPENVPN_PROTOCOL VPN_SERVER_COUNTRIES "${keys[@]}"; then gluetun_vpn_from_answers; return 0; fi
+    local f; for f in flags $VPN_FILTER_ORDER; do keys+=("${VPN_FILTER_KEY[$f]}"); done
+    if answers_any VPN_PROVIDER VPN_TYPE OPENVPN_PROTOCOL "${keys[@]}"; then gluetun_vpn_from_answers; return 0; fi
     if q_quick && vpnp_load "$cur" && [[ -z "$(vpn_provider_problems)" ]]; then vpn_protocol_tidy "$cur" "$curt"; q_took "VPN" "keep $cur ($curt) and its login"; return 0; fi
     if answers_checking; then q_unasked "VPN" "VPN_PROVIDER and its keys (answers.example, the gluetun lines)"; return 0; fi
     explain "VPN (gluetun)" \
@@ -111,5 +191,5 @@ or 'custom' to give your own WireGuard or OpenVPN config."
     vpnp_call "$prov" questions "$t"
     if [[ "$t" == openvpn ]]; then vpn_ask_protocol "$prov"; fi
     vpn_protocol_tidy "$prov" "$t"   # nothing left that this provider and tunnel do not read
-    if vpnp_filter_on "$prov" countries; then vpn_ask_countries "Server country (e.g. Switzerland; Enter = auto)"; fi
+    vpn_ask_server_choices "$prov"
 }

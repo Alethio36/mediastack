@@ -7,7 +7,8 @@
 
 vpnp_protonvpn_name()    { echo protonvpn; }
 vpnp_protonvpn_types()   { echo wireguard openvpn; }
-vpnp_protonvpn_filters() { echo countries cities hostnames; }
+vpnp_protonvpn_filters() { echo countries cities hostnames flags; }
+vpnp_protonvpn_flags()   { echo free stream secure-core tor; }   # its server flags (CI: each has servers in gluetun's list)
 vpnp_protonvpn_proven()  { echo ""; }
 vpnp_protonvpn_env() { # TYPE
     case "$1" in

@@ -7,7 +7,7 @@
 
 vpnp_windscribe_name()    { echo windscribe; }
 vpnp_windscribe_types()   { echo wireguard openvpn; }
-vpnp_windscribe_filters() { echo cities hostnames; }
+vpnp_windscribe_filters() { echo regions cities hostnames; }
 vpnp_windscribe_proven()  { echo ""; }
 vpnp_windscribe_env() { # TYPE
     case "$1" in

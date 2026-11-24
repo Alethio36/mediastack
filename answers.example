@@ -315,9 +315,29 @@ OPENVPN_CERT=
 #   a secret on one line, with no control characters (a newline or a tab) — optional: blank leaves it unset — a secret: keep this file yours alone (chmod 600)
 OPENVPN_KEY=
 
+# limit the VPN to servers in these regions (comma-separated, as gluetun's server list spells them; empty = any; each provider's folder says what it offers)
+#   any single-line text (or any) — recommended: any
+VPN_SERVER_REGIONS=
+
 # limit the VPN to these countries (comma-separated; empty = any)
 #   any single-line text (or auto) — recommended: auto
 VPN_SERVER_COUNTRIES=
+
+# limit the VPN to these cities (comma-separated; empty = any)
+#   any single-line text (or any) — recommended: any
+VPN_SERVER_CITIES=
+
+# limit the VPN to servers of these hosting ISPs (comma-separated; empty = any; IVPN, Mullvad)
+#   any single-line text (or any) — recommended: any
+VPN_SERVER_ISPS=
+
+# limit the VPN to servers of these categories (comma-separated, e.g. P2P; empty = the provider's own: NordVPN's standard servers; NordVPN, PureVPN)
+#   any single-line text (or any) — recommended: any
+VPN_SERVER_CATEGORIES=
+
+# limit the VPN to servers with all these flags (comma-separated: owned, free, stream, secure-core, tor — each provider's folder says which it has; empty = none)
+#   any single-line text (or none) — recommended: none
+VPN_SERVER_FLAGS=
 
 # your WireGuard server's public key ([Peer] PublicKey; VPN_PROVIDER=custom)
 #   any single-line text — optional: blank leaves it unset

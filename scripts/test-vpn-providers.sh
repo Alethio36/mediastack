@@ -29,6 +29,13 @@
 #     conversion; your own .ovpn — its first remote, a name looked up, the copy
 #     gluetun runs (0600, one remote, at the address) mounted read-only with its
 #     hash a label, gone on a switch away; schema 52 adds the keys
+#   * server choices (slice 3): regions, ISPs, categories and flags as each
+#     provider offers them; gluetun's server list read by its image's
+#     format-servers on a copy with no network, cached per image and data; each
+#     choice checked among the servers the ones before keep (the tunnel, its
+#     protocol, the flags, NordVPN's standard servers by default), a miss named
+#     with close matches, a space or empty value refused as gluetun would read
+#     it; NordVPN's Dedicated IP only with your server named; schema 53
 #
 #   scripts/test-vpn-providers.sh     run (exit 1 on the first failed check)
 set -euo pipefail
@@ -72,7 +79,13 @@ for p in "${ALL[@]}"; do
             [[ "$tk" == *" $k "* ]] || fail_ "$p: its own key $k is read by none of its types (its keys hook) — the answers file would refuse it"; pass
         done
     fi
-    for f in $(vpnp_call "$p" filters); do [[ -n "${VPN_FILTER_VAR[$f]-}" ]] || fail_ "$p: filter $f is one mediastack knows"; pass; done
+    for f in $(vpnp_call "$p" filters); do [[ -n "${VPN_FILTER_KEY[$f]-}" ]] || fail_ "$p: filter $f is one mediastack knows"; pass; done
+    if vpnp_filter_on "$p" flags; then
+        [[ -n "$(vpnp_flags "$p")" ]] || fail_ "$p: flags among its filters, and no flags hook naming them"; pass
+        for f in $(vpnp_flags "$p"); do [[ -n "${VPN_FLAG_VAR[$f]-}" && -n "${VPN_FLAG_SAYS[$f]-}" ]] || fail_ "$p: flag $f is one mediastack knows"; pass; done
+    else
+        ! vpnp_has "$p" flags || fail_ "$p: a flags hook, but flags is not among its filters"; pass
+    fi
     for k in $(vpnp_keys "$p"); do [[ "$schema_keys" == *" $k "* ]] || fail_ "$p reads $k, which is no schema key"; pass; done
 done
 ! vpn_all_keys | grep -vE '^[A-Z][A-Z0-9_]*$' >/dev/null || fail_ "every key some provider reads is a key name — configure looks each up in ANSWER"; pass
@@ -95,13 +108,14 @@ setenv VPN_PROVIDER=windscribe
 vpn_provider_gen; ! grep -q SERVER_COUNTRIES "$PROVIDER_FILE" || fail_ "windscribe chooses no country: none reaches gluetun"; pass
 setenv VPN_PROVIDER=nordvpn; vpn_provider_gen
 ! grep -q WIREGUARD_ADDRESSES "$PROVIDER_FILE" || fail_ "NordVPN's address is gluetun's own: not sent"; pass
-grep -qx '      SERVER_CATEGORIES: "Standard VPN servers"' "$PROVIDER_FILE" || fail_ "NordVPN: standard servers only — a Dedicated IP one refuses this account (found live Nov 2026)"; pass
+grep -qx '      SERVER_CATEGORIES: "${VPN_SERVER_CATEGORIES:-Standard VPN servers}"' "$PROVIDER_FILE" || fail_ "NordVPN: standard servers unless a category is chosen — a Dedicated IP one refuses this account (found live Nov 2026): $(cat "$PROVIDER_FILE")"; pass
+grep -qx '      SERVER_REGIONS: "${VPN_SERVER_REGIONS:-}"' "$PROVIDER_FILE" && ! grep -qE 'ISP:|_ONLY:' "$PROVIDER_FILE" || fail_ "NordVPN: its regions as a reference, no ISP or flag it lacks"; pass
 setenv VPN_PROVIDER=nordvpn VPN_TYPE=openvpn OPENVPN_USER=svcuser OPENVPN_PASSWORD='p@ss$word'; vpn_provider_gen
 grep -qx '      VPN_TYPE: "openvpn"' "$PROVIDER_FILE" && grep -qx '      OPENVPN_USER: "${OPENVPN_USER:-}"' "$PROVIDER_FILE" \
     && grep -qx '      OPENVPN_PASSWORD: "${OPENVPN_PASSWORD:-}"' "$PROVIDER_FILE" && grep -qx '      OPENVPN_PROTOCOL: "${OPENVPN_PROTOCOL:-udp}"' "$PROVIDER_FILE" \
     || fail_ "OpenVPN: its login and protocol as references: $(cat "$PROVIDER_FILE")"; pass
 ! grep -qE 'WIREGUARD|svcuser|p@ss' "$PROVIDER_FILE" || fail_ "OpenVPN: no WireGuard key, no login's value"; pass
-grep -qx '      SERVER_CATEGORIES: "Standard VPN servers"' "$PROVIDER_FILE" || fail_ "NordVPN over OpenVPN: standard servers only too"; pass
+grep -qx '      SERVER_CATEGORIES: "${VPN_SERVER_CATEGORIES:-Standard VPN servers}"' "$PROVIDER_FILE" || fail_ "NordVPN over OpenVPN: standard servers by default too"; pass
 ! grep -q 'volumes:' "$PROVIDER_FILE" || fail_ "a provider without files mounts nothing"; pass
 setenv VPN_PROVIDER=nosuch; vpn_provider_gen
 [[ ! -e "$PROVIDER_FILE" ]] || fail_ "no folder, no file (up says why)"; pass
@@ -133,6 +147,7 @@ sudo() {
     case "$*" in
         "docker image inspect"*) echo "$IMGID" ;;
         "docker run --rm qmcgaw/gluetun:latest format-servers -h") echo run >> "$T/runs"; printf '%s\n' "$USAGE"; return 2 ;;
+        "docker run --rm --network none"*) echo '[{"vpn":"wireguard","country":"Sweden","categories":["Standard VPN servers"],"hostname":"se1.example"}]' ;;   # its server list (below)
         *) "$@" ;;
     esac
 }
@@ -274,7 +289,112 @@ grep -qx 'OPENVPN_PROTOCOL=' "$ENV_FILE" || fail_ "custom's file says its protoc
 setenv VPN_PROVIDER=custom VPN_TYPE=wireguard WIREGUARD_ENDPOINT_HOST=vpn.example.net
 [[ "$(vpn_servers_words custom)" == "server: vpn.example.net (its config)" ]] || fail_ "custom: its one server, not 'servers: auto' ($(vpn_servers_words custom))"; pass
 setenv VPN_PROVIDER=nordvpn VPN_SERVER_COUNTRIES=Switzerland
-[[ "$(vpn_servers_words nordvpn)" == "servers: Switzerland" ]] || fail_ "a provider with server choices: its countries ($(vpn_servers_words nordvpn))"; pass
+[[ "$(vpn_servers_words nordvpn)" == "servers: Standard VPN servers; Switzerland" ]] || fail_ "a provider with server choices: its countries, its default category ($(vpn_servers_words nordvpn))"; pass
+setenv VPN_PROVIDER=nordvpn VPN_SERVER_CATEGORIES=P2P VPN_SERVER_CITIES=Zurich
+[[ "$(vpn_servers_words nordvpn)" == "servers: P2P; Zurich" ]] || fail_ "each choice set, in configure's order ($(vpn_servers_words nordvpn))"; pass
+setenv VPN_PROVIDER=protonvpn VPN_SERVER_COUNTRIES=Japan VPN_SERVER_FLAGS=free
+[[ "$(vpn_servers_words protonvpn)" == "servers: Japan; free only" ]] || fail_ "flags said as such ($(vpn_servers_words protonvpn))"; pass
+setenv VPN_PROVIDER=surfshark; [[ "$(vpn_servers_words surfshark)" == "servers: any" ]] || fail_ "none set: any"; pass
+setenv VPN_PROVIDER=nordvpn; [[ "$(vpn_servers_words nordvpn)" == "servers: Standard VPN servers" ]] || fail_ "none set: the provider's default said ($(vpn_servers_words nordvpn))"; pass
+
+# ---- server choices (slice 3): checked against gluetun's own server list ----
+# format-servers' JSON, as the image prints it (its fields, ips and all)
+cat > "$T/nord.json" <<'EOJ'
+[
+  {"vpn":"wireguard","country":"Switzerland","region":"Europe","city":"Zurich","categories":["Standard VPN servers","P2P"],"hostname":"ch1.nordvpn.com","wgpubkey":"k","ips":["192.0.2.1"]},
+  {"vpn":"wireguard","country":"Switzerland","region":"Europe","city":"Geneva","categories":["Standard VPN servers"],"hostname":"ch2.nordvpn.com","wgpubkey":"k","ips":["192.0.2.2"]},
+  {"vpn":"wireguard","country":"Netherlands","region":"Europe","city":"Amsterdam","categories":["Standard VPN servers","P2P"],"hostname":"nl1.nordvpn.com","wgpubkey":"k","ips":["192.0.2.3"]},
+  {"vpn":"wireguard","country":"Netherlands","region":"Europe","city":"Amsterdam","categories":["Dedicated IP"],"hostname":"nl9.nordvpn.com","wgpubkey":"k","ips":["192.0.2.4"]},
+  {"vpn":"wireguard","country":"United States","region":"The Americas","city":"New York","categories":["Standard VPN servers","P2P"],"hostname":"us1.nordvpn.com","wgpubkey":"k","ips":["192.0.2.5"]},
+  {"vpn":"openvpn","country":"Switzerland","region":"Europe","city":"Zurich","categories":["Standard VPN servers","P2P"],"hostname":"ch1.nordvpn.com","tcp":true,"udp":true,"ips":["192.0.2.1"]},
+  {"vpn":"openvpn","country":"Sweden","region":"Europe","city":"Stockholm","categories":["Double VPN"],"hostname":"se-nl1.nordvpn.com","udp":true,"ips":["192.0.2.6"]}
+]
+EOJ
+cat > "$T/proton.json" <<'EOJ'
+[
+  {"vpn":"wireguard","country":"Japan","city":"Tokyo","free":true,"hostname":"jp-free.protonvpn.net","wgpubkey":"k","ips":["192.0.2.7"]},
+  {"vpn":"wireguard","country":"Switzerland","city":"Zurich","secure_core":true,"hostname":"ch-sc.protonvpn.net","wgpubkey":"k","ips":["192.0.2.8"]},
+  {"vpn":"wireguard","country":"Switzerland","city":"Zurich","stream":true,"hostname":"ch-st.protonvpn.net","wgpubkey":"k","ips":["192.0.2.9"]}
+]
+EOJ
+CONFIG=$T/config; mkdir -p "$CONFIG/gluetun"; : > "$T/fs-runs"; IMGID=sha256:aaa; FSFAIL=0
+svc_image() { echo qmcgaw/gluetun:latest; }
+sudo() {
+    case "$*" in
+        "docker image inspect -f {{.Id}} qmcgaw/gluetun:latest") [[ -n "$IMGID" ]] && echo "$IMGID" ;;
+        "docker run --rm qmcgaw/gluetun:latest format-servers -h") printf '%s\n' "  -nordvpn" "    	Format Nordvpn servers" "  -protonvpn" "    	Format Protonvpn servers"; return 2 ;;
+        "docker run --rm --network none -v "*" qmcgaw/gluetun:latest format-servers -"*" -format json")
+            local d=${7%:/gluetun}
+            echo "$* | $(cd "$d" && find . -type f | sort | paste -sd' ')" >> "$T/fs-runs"
+            (( FSFAIL == 0 )) || { echo "flag provided but not defined: ${10}" >&2; return 2; }
+            case "${10}" in -nordvpn) cat "$T/nord.json" ;; -protonvpn) cat "$T/proton.json" ;; *) echo '[]' ;; esac ;;
+        *) "$@" ;;
+    esac
+}
+vpn_on() { setenv CONFIG_ROOT="$CONFIG" "$@"; }
+vpn_on VPN_PROVIDER=nordvpn WIREGUARD_PRIVATE_KEY="$K1"
+vpn_servers_load nordvpn || fail_ "the server list loads: $VPN_SERVERS_ERR"; pass
+[[ "$VPN_SERVERS" == "$LOCAL_DIR/vpn-servers/nordvpn.json" && "$(jq length "$VPN_SERVERS")" == 7 ]] && ! grep -q '"ips"' "$VPN_SERVERS" \
+    || fail_ "kept under local/, every server, only the fields a choice reads: $(head -c 300 "$VPN_SERVERS")"; pass
+grep -q -- '--network none' "$T/fs-runs" && ! grep -q -- "-v $CONFIG" "$T/fs-runs" || fail_ "the image runs with no network, on a copy — never on config/gluetun itself: $(cat "$T/fs-runs")"; pass
+vpn_servers_load nordvpn; [[ "$(wc -l < "$T/fs-runs")" == 1 ]] || fail_ "the same image and data: read once"; pass
+mkdir -p "$CONFIG/gluetun/servers"; echo '{"updated":1}' > "$CONFIG/gluetun/servers/nordvpn.json"
+vpn_servers_load nordvpn; [[ "$(wc -l < "$T/fs-runs")" == 2 && "$(tail -1 "$T/fs-runs")" == *'| ./servers/nordvpn.json' ]] \
+    || fail_ "new data from gluetun's updater: read again, that file in the copy (gluetun merges it): $(tail -1 "$T/fs-runs")"; pass
+IMGID=sha256:bbb; vpn_servers_load nordvpn; [[ "$(wc -l < "$T/fs-runs")" == 3 ]] || fail_ "a new image: read again"; pass
+IMGID=""; ! vpn_servers_load nordvpn && [[ "$VPN_SERVERS_ERR" == *"not on this host yet"* ]] || fail_ "no image yet: said ($VPN_SERVERS_ERR)"; pass
+IMGID=sha256:ccc; FSFAIL=1; ! vpn_servers_load nordvpn && [[ "$VPN_SERVERS_ERR" == *"format-servers -nordvpn failed: flag provided but not defined"* ]] || fail_ "its failure said, with its words ($VPN_SERVERS_ERR)"; pass
+FSFAIL=0; ! vpn_servers_load fastestvpn && [[ "$VPN_SERVERS_ERR" == *"gave no server list"* ]] || fail_ "an empty list is no list ($VPN_SERVERS_ERR)"; pass
+IMGID=sha256:aaa
+chk() { vpn_on "$@"; vpn_servers_load "$(env_get VPN_PROVIDER)" || fail_ "loads: $VPN_SERVERS_ERR"; vpn_choices_problems "$(env_get VPN_PROVIDER)"; }
+[[ -z "$(chk VPN_PROVIDER=nordvpn VPN_SERVER_CATEGORIES=P2P VPN_SERVER_CITIES=Zurich)" ]] || fail_ "P2P in Zurich: there ($(chk VPN_PROVIDER=nordvpn VPN_SERVER_CATEGORIES=P2P VPN_SERVER_CITIES=Zurich))"; pass
+[[ -z "$(chk VPN_PROVIDER=nordvpn VPN_SERVER_COUNTRIES=switzerland,NETHERLANDS)" ]] || fail_ "case is ignored, as gluetun does"; pass
+out=$(chk VPN_PROVIDER=nordvpn VPN_SERVER_CITIES=Zurik)
+[[ "$out" == "VPN_SERVER_CITIES: no city 'Zurik' among nordvpn's WireGuard servers with VPN_SERVER_CATEGORIES=Standard VPN servers — close: Zurich" ]] || fail_ "a typo: refused, its close matches, the default category named: $out"; pass
+out=$(chk VPN_PROVIDER=nordvpn VPN_SERVER_CATEGORIES=P2P VPN_SERVER_CITIES=Geneva)
+[[ "$out" == *"no city 'Geneva' among nordvpn's WireGuard servers with VPN_SERVER_CATEGORIES=P2P — they are: Amsterdam, New York, Zurich" ]] || fail_ "a city with no P2P server: refused naming what narrowed it: $out"; pass
+out=$(chk VPN_PROVIDER=nordvpn VPN_SERVER_COUNTRIES=Atlantis VPN_SERVER_CITIES=Nowhere)
+[[ "$out" == *"'Atlantis'"* && "$out" != *Nowhere* ]] || fail_ "the first refused filter stops the check — the next would be checked among nothing: $out"; pass
+out=$(chk VPN_PROVIDER=nordvpn VPN_SERVER_HOSTNAMES=nl9.nordvpn.com)
+[[ "$out" == *"no hostname 'nl9.nordvpn.com' among nordvpn's WireGuard servers with VPN_SERVER_CATEGORIES=Standard VPN servers"* ]] || fail_ "a Dedicated IP server named, the category left empty: its default rules it out, said: $out"; pass
+[[ -z "$(chk VPN_PROVIDER=nordvpn VPN_SERVER_CATEGORIES='Dedicated IP' VPN_SERVER_HOSTNAMES=nl9.nordvpn.com)" ]] || fail_ "your own Dedicated IP server, named with its category: there"; pass
+out=$(chk VPN_PROVIDER=nordvpn VPN_TYPE=openvpn OPENVPN_USER=u OPENVPN_PASSWORD=p VPN_SERVER_COUNTRIES=Sweden)
+[[ "$out" == *"no country 'Sweden' among nordvpn's OpenVPN (udp) servers with VPN_SERVER_CATEGORIES=Standard VPN servers"* ]] || fail_ "the tunnel and its protocol narrow it: $out"; pass
+[[ -z "$(chk VPN_PROVIDER=nordvpn VPN_TYPE=openvpn OPENVPN_USER=u OPENVPN_PASSWORD=p VPN_SERVER_CATEGORIES='Double VPN' VPN_SERVER_COUNTRIES=Sweden)" ]] || fail_ "Double VPN in Sweden over OpenVPN: there"; pass
+out=$(chk VPN_PROVIDER=nordvpn VPN_SERVER_COUNTRIES='Switzerland, Netherlands')
+[[ "$out" == *"' Netherlands' has a space at an end"* ]] || fail_ "a space after a comma: gluetun reads it as written, so refused: $out"; pass
+out=$(chk VPN_PROVIDER=nordvpn VPN_SERVER_COUNTRIES='Switzerland,,Netherlands'); [[ "$out" == *"an empty value"* ]] || fail_ "two commas: refused: $out"; pass
+out=$(chk VPN_PROVIDER=nordvpn VPN_SERVER_COUNTRIES='Switzerland,'); [[ "$out" == *"an empty value"* ]] || fail_ "a comma at the end: refused: $out"; pass
+[[ -z "$(chk VPN_PROVIDER=protonvpn VPN_SERVER_FLAGS=stream VPN_SERVER_COUNTRIES=Switzerland)" ]] || fail_ "a streaming server in Switzerland: there"; pass
+out=$(chk VPN_PROVIDER=protonvpn VPN_SERVER_FLAGS=free VPN_SERVER_COUNTRIES=Switzerland)
+[[ "$out" == *"no country 'Switzerland' among protonvpn's WireGuard servers with VPN_SERVER_FLAGS=free — they are: Japan" ]] || fail_ "flags narrow every list: $out"; pass
+out=$(chk VPN_PROVIDER=protonvpn VPN_SERVER_FLAGS=free,secure-core)
+[[ "$out" == "no server matches: protonvpn's WireGuard servers with VPN_SERVER_FLAGS=free,secure-core — none in gluetun's list (configure asks what protonvpn offers)" ]] || fail_ "no server with all its flags: refused: $out"; pass
+vpn_on VPN_PROVIDER=nordvpn WIREGUARD_PRIVATE_KEY="$K1" VPN_SERVER_CITIES=Zurik
+out=$( (vpn_provider_ready up) 2>&1 ) && fail_ "up stops on a choice no server has"
+[[ "$out" == *"gluetun cannot start"*"no city 'Zurik'"* ]] || fail_ "saying which: $out"; pass
+vpn_on VPN_PROVIDER=nordvpn WIREGUARD_PRIVATE_KEY="$K1" VPN_SERVER_CITIES=Zurich; ( vpn_provider_ready up ) >/dev/null 2>&1 || fail_ "a choice the list has: up goes on"; pass
+# what gluetun gets, and what is refused before the list is read
+setenv VPN_PROVIDER=protonvpn WIREGUARD_PRIVATE_KEY="$K1" VPN_SERVER_FLAGS='Free, secure-core'; vpn_provider_gen
+grep -qx '      FREE_ONLY: "on"' "$PROVIDER_FILE" && grep -qx '      SECURE_CORE_ONLY: "on"' "$PROVIDER_FILE" && ! grep -qE 'STREAM_ONLY|TOR_ONLY' "$PROVIDER_FILE" \
+    || fail_ "each flag set is on, any case or spacing; the others left to gluetun: $(cat "$PROVIDER_FILE")"; pass
+[[ "$(probs VPN_PROVIDER=protonvpn WIREGUARD_PRIVATE_KEY="$K1" VPN_SERVER_FLAGS=owned)" == *"'owned' is no server flag of protonvpn's — its flags: free, stream, secure-core, tor"* ]] || fail_ "a flag the provider lacks"; pass
+[[ "$(probs VPN_PROVIDER=nordvpn WIREGUARD_PRIVATE_KEY="$K1" VPN_SERVER_FLAGS=free)" == *"VPN_SERVER_FLAGS=free, but nordvpn does not choose servers by server flag"* ]] || fail_ "flags for a provider with none"; pass
+[[ "$(probs VPN_PROVIDER=surfshark WIREGUARD_PRIVATE_KEY="$K1" WIREGUARD_ADDRESSES=10.14.0.2/16 VPN_SERVER_ISPS=M247)" == *"surfshark does not choose servers by ISP"* ]] || fail_ "an ISP for a provider without"; pass
+[[ "$(probs VPN_PROVIDER=nordvpn WIREGUARD_PRIVATE_KEY="$K1" VPN_SERVER_CATEGORIES='P2P,dedicated IP')" == *"a Dedicated IP server takes only the login of the account it was sold to"* ]] || fail_ "NordVPN's Dedicated IP category without your server named: refused"; pass
+[[ -z "$(probs VPN_PROVIDER=nordvpn WIREGUARD_PRIVATE_KEY="$K1" VPN_SERVER_CATEGORIES='Dedicated IP' VPN_SERVER_HOSTNAMES=nl9.nordvpn.com)" ]] || fail_ "with it named: no problem"; pass
+unset -f sudo svc_image
+# a switch to a provider without a choice: it is emptied, the rest kept
+setenv VPN_PROVIDER=windscribe VPN_SERVER_COUNTRIES=Sweden VPN_SERVER_CITIES=Stockholm VPN_SERVER_CATEGORIES=P2P; vpn_keys_drop_others windscribe wireguard
+grep -qx 'VPN_SERVER_COUNTRIES=' "$ENV_FILE" && grep -qx 'VPN_SERVER_CATEGORIES=' "$ENV_FILE" && [[ "$(env_get VPN_SERVER_CITIES)" == Stockholm ]] \
+    || fail_ "a switch empties the choices the new provider lacks, keeps the rest: $(grep VPN_SERVER "$ENV_FILE")"; pass
+[[ "$(vpn_list_tidy ' Zurich , Geneva ,,')" == Zurich,Geneva && -z "$(vpn_list_tidy any)" && -z "$(vpn_list_tidy ' AUTO ')" && "$(vpn_list_tidy 'New York')" == "New York" ]] \
+    || fail_ "a typed list: no space around a value, no empty one; any or auto is no limit"; pass
+
+# ---- schema 53 ----
+printf 'VPN_PROVIDER=nordvpn\nVPN_SERVER_CATEGORIES=P2P\n' > "$ENV_FILE"; migrate_env_52_to_53 >/dev/null 2>&1
+grep -qx 'VPN_SERVER_REGIONS=' "$ENV_FILE" && grep -qx 'VPN_SERVER_ISPS=' "$ENV_FILE" && grep -qx 'VPN_SERVER_FLAGS=' "$ENV_FILE" && [[ "$(grep -c '^VPN_SERVER_CATEGORIES=' "$ENV_FILE")" == 1 && "$(env_get VPN_SERVER_CATEGORIES)" == P2P ]] \
+    || fail_ "schema 53: the new choices added empty, one already there kept: $(cat "$ENV_FILE")"; pass
 
 # ---- schema 52 ----
 printf 'VPN_PROVIDER=nordvpn\nOPENVPN_USER=kept\n' > "$ENV_FILE"; migrate_env_51_to_52 >/dev/null 2>&1

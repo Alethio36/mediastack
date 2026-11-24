@@ -171,6 +171,7 @@
         "SERVER_CITIES": "",
         "SERVER_COUNTRIES": "",
         "SERVER_HOSTNAMES": "",
+        "SERVER_REGIONS": "",
         "TZ": "Etc/UTC",
         "UPDATER_PERIOD": "360h",
         "UPDATER_PREFER_DIRECT_DOWNLOAD": "yes",

@@ -6,7 +6,7 @@
 
 vpnp_private_internet_access_name()      { echo "private internet access"; }
 vpnp_private_internet_access_types()     { echo openvpn; }
-vpnp_private_internet_access_filters()   { echo hostnames; }
+vpnp_private_internet_access_filters()   { echo regions hostnames; }
 vpnp_private_internet_access_protocols() { echo udp tcp; }
 vpnp_private_internet_access_proven()    { echo ""; }
 vpnp_private_internet_access_env()       { echo OPENVPN_USER OPENVPN_PASSWORD; }

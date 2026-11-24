@@ -7,7 +7,7 @@
 
 vpnp_vpnsecure_name()      { echo "vpnsecure"; }
 vpnp_vpnsecure_types()     { echo openvpn; }
-vpnp_vpnsecure_filters()   { echo countries cities hostnames; }
+vpnp_vpnsecure_filters()   { echo countries cities hostnames; }   # no premium flag: gluetun reads PREMIUM_ONLY and filters nothing by it (Nov 2026)
 vpnp_vpnsecure_protocols() { echo udp tcp; }
 vpnp_vpnsecure_proven()    { echo ""; }
 vpnp_vpnsecure_env()       { echo OPENVPN_CERT OPENVPN_ENCRYPTED_KEY OPENVPN_KEY_PASSPHRASE; }

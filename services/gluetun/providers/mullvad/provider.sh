@@ -6,7 +6,8 @@
 
 vpnp_mullvad_name()    { echo mullvad; }
 vpnp_mullvad_types()   { echo wireguard; }
-vpnp_mullvad_filters() { echo countries cities hostnames; }
+vpnp_mullvad_filters() { echo countries cities isps hostnames flags; }
+vpnp_mullvad_flags()   { echo owned; }   # its server flags (CI: each has servers in gluetun's list)
 vpnp_mullvad_proven()  { echo ""; }
 vpnp_mullvad_env()     { echo WIREGUARD_PRIVATE_KEY WIREGUARD_ADDRESSES; }
 vpnp_mullvad_questions() { # TYPE

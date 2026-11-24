@@ -79,7 +79,7 @@ over the file. **agreed**
 - **Paths are read as typed ones**: `~` is the user's home, a relative path
   is inside the repo folder. **agreed**
 - **Empty is never an answer.** Keys where an empty value means something
-  (`BACKUP_SCHEDULE=` = never, `VPN_SERVER_COUNTRIES=` = auto) take the
+  (`BACKUP_SCHEDULE=` = never, `VPN_SERVER_COUNTRIES=` = auto, the other server choices = any) take the
   question's word in the file: `never`, `auto`. **agreed**
 - **The mode.** Blank `CONFIGURE_MODE` is quick: a file exists to skip
   questions. `full` asks every blank one.

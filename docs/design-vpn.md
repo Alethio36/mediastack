@@ -115,7 +115,7 @@ fifteen lines:
 # services/gluetun/providers/surfshark/provider.sh
 vpnp_surfshark_name()    { echo surfshark; }              # gluetun's VPN_SERVICE_PROVIDER, exactly
 vpnp_surfshark_types()   { echo wireguard openvpn; }      # what gluetun supports for it; the first is the default
-vpnp_surfshark_filters() { echo countries regions cities; } # the server choices configure offers
+vpnp_surfshark_filters() { echo regions countries cities hostnames; } # its server choices: only those gluetun's data has values for
 vpnp_surfshark_proven()  { echo ""; }                     # "live <date>" once proven on a test box
 vpnp_surfshark_questions() { # TYPE — ask for its credentials and record them
     case "$1" in
@@ -140,6 +140,8 @@ Optional, found by name:
 | `vpnp_<name>_check TYPE` | refuses settings this provider cannot use before gluetun renders (AirVPN without its pre-shared key). Prints the reason, rc 1 |
 | `vpnp_<name>_doctor` | doctor lines of its own (Proton: port forwarding on but the key was made without NAT-PMP) |
 | `vpnp_<name>_protocols` | the OpenVPN protocols it has servers for (default `udp tcp`; gluetun refuses TCP for Giganews, IPVanish and VyprVPN, and its server data has none for ExpressVPN, Privado and VPN Unlimited); empty: its config file decides (`custom`). Slice 2 |
+| `vpnp_<name>_flags` | the server flags it offers, with `flags` among its filters: `owned` (Mullvad), `free` and `stream` (ProtonVPN, VPN Unlimited), `secure-core` and `tor` (ProtonVPN). Slice 3 |
+| `vpnp_<name>_filter_default FILTER` | what a filter is when `.env` leaves it empty (NordVPN's categories: `Standard VPN servers`, so no Dedicated IP server). Slice 3 |
 | `vpnp_<name>_extra TYPE` | literal gluetun settings, or `${KEY}` references to optional keys (IVPN's password, needed only with an email) |
 | `vpnp_<name>_keys TYPE` | `.env` and answers-file keys it reads beyond `_env` and `_extra` (NordVPN's token; `custom`'s config file and server name) — kept on a switch to it, and never refused as another's in the answers file |
 | `vpnp_<name>_endpoint TYPE` | the server its config names, for "an endpoint by name" (`custom`) |
@@ -192,7 +194,52 @@ never starting gluetun on a guess:
 - every variable its `_env` names is set in `.env` ("Mullvad needs
   WIREGUARD_ADDRESSES: the Address line of your WireGuard config — run:
   ./mediastack.sh configure");
-- its `_check`, if it has one.
+- its `_check`, if it has one;
+- every server choice, against the servers gluetun will choose among
+  (slice 3, below).
+
+### Server choices against gluetun's own list (slice 3)
+
+`.env` holds one key per kind of choice: `VPN_SERVER_CATEGORIES`, `_REGIONS`,
+`_COUNTRIES`, `_CITIES`, `_ISPS`, `_HOSTNAMES` (each gluetun's comma list,
+rendered as a reference), and `VPN_SERVER_FLAGS`, one list for gluetun's
+`OWNED_ONLY`, `FREE_ONLY`, `STREAM_ONLY`, `SECURE_CORE_ONLY` and `TOR_ONLY`
+(each flag set is rendered `on`; one key instead of five a provider would read
+one or two of). A provider offers only what gluetun supports for it *and* its
+server data has values for (`_filters`, `_flags`; CI holds every folder to the
+image's data). Not offered: Surfshark's multi-hop and PureVPN's forwarding
+servers (gluetun supports both, its data marks no server for either), and
+VPNSecure's `PREMIUM_ONLY` — gluetun reads it and filters nothing by it
+(`filterServer`, Nov 2026). Forwarding-only servers (`PORT_FORWARD_ONLY`) are
+slice 4's.
+
+Before gluetun starts (`up`, `update`) — and in configure and the answers file
+whenever gluetun's image is already on the host — every choice is checked
+against the servers gluetun itself will choose among:
+
+- **The same data.** The image's `format-servers -<provider> -format json`
+  merges its built-in list with what its updater keeps in
+  `config/gluetun/servers/` (the newer wins), exactly as gluetun does at start.
+  It rewrites what it merges, so it runs on a throwaway copy of that file, with
+  no network. The fields a choice reads are kept in `local/vpn-servers/`, per
+  image ID and data hash: a few seconds once per new image or server update.
+- **The same rules,** mirrored from gluetun's `filterServer`: equality ignoring
+  case, a category matching any of a server's, a Dedicated IP server only with
+  categories or hostnames set, the tunnel and the OpenVPN protocol.
+- **In order, each among what the ones before keep:** flags, categories,
+  regions, countries, cities, ISPs, hostnames. A value no server there has is
+  refused naming what narrowed it and up to eight close matches ("no city
+  'Zurik' among nordvpn's WireGuard servers with VPN_SERVER_CATEGORIES=P2P —
+  close: Zurich"). Valid values that together keep no server are refused the
+  same way. A space after a comma or an empty value is refused too: gluetun
+  splits on the comma and trims nothing, so " Sweden" would match no server.
+  gluetun itself only warns about an unknown value beside a known one; here
+  it is refused.
+
+The cost: the rules are a copy. If gluetun changes them, the check and gluetun
+can disagree — loudly either way (this refusal, or gluetun's own error and its
+log lines at start), and CI's data check catches a choice the image no longer
+has.
 
 ## Manual WireGuard and OpenVPN (`custom`)
 
@@ -281,8 +328,13 @@ through the `<name>_questions` hook, whose order would move it:
    against a live account 23 Nov 2026): nothing more is asked.
    OpenVPN's protocol (`OPENVPN_PROTOCOL`, UDP default) is asked only where
    the provider has servers for both.
-4. **Servers:** its `_filters`, through `vpn_ask_filter` (slice 1: countries
-   as today; slice 3: the rest).
+4. **Servers** (slice 3): its flags first, then each of its `_filters` in the
+   check's order but hostnames (`vpn_ask_filter`). Enter keeps what is set,
+   `any` clears it. With gluetun's image on the host, each list is narrowed by
+   the answers before it, `?` prints it, a miss is refused with close matches
+   and an answer is kept as the list spells it; without it, the answer is
+   tidied (no space around a comma) and up checks it. Quick mode keeps what is
+   set.
 5. **Port forwarding** (slice 4): only where `_portforward` says it can.
 
 Answers-file keys come from the same rows (`VPN_PROVIDER`, `VPN_TYPE`, the
@@ -356,7 +408,7 @@ ignored.
 
 | Folder | WireGuard | OpenVPN | WireGuard needs | Server choices beyond country | Forwarding |
 |---|---|---|---|---|---|
-| airvpn | ✓ | ✓ | key, address, pre-shared key | region, city, name | static |
+| airvpn | ✓ | ✓ | key, address, pre-shared key | region, city | static |
 | cyberghost | | ✓ | | — | |
 | expressvpn | | ✓ | | city | |
 | fastestvpn | ✓ | ✓ | key, address | city | |
@@ -364,23 +416,25 @@ ignored.
 | hidemyass | | ✓ | | region, city | |
 | ipvanish | | ✓ | | city | |
 | ivpn | ✓ | ✓ | key, address | region, city, ISP | |
-| mullvad | ✓ | | key, address | city, ISP, Mullvad-owned only | |
-| **nordvpn** | ✓ | ✓ | key (from its token) | region, city, P2P / Double VPN / Onion | |
+| mullvad | ✓ | | key, address | city, ISP; flag owned | |
+| **nordvpn** | ✓ | ✓ | key (from its token) | category (P2P, Double VPN, Onion Over VPN; standard by default), region, city | |
 | privado | | ✓ | | city | |
-| private-internet-access | | ✓ | | region (no country), forwarding servers only | native |
+| private-internet-access | | ✓ | | region (no country); forwarding servers in slice 4 | native |
 | privatevpn | | ✓ | | city | native |
-| protonvpn | ✓ | ✓ | key (made with NAT-PMP for forwarding) | city, Secure Core, P2P, streaming, Tor | native (up to 5 ports) |
-| purevpn | | ✓ | | region, city, P2P | outside gluetun |
+| protonvpn | ✓ | ✓ | key (made with NAT-PMP for forwarding) | city; flags free, stream, secure-core, tor | native (up to 5 ports) |
+| purevpn | | ✓ | | category (p2p), region, city | outside gluetun |
 | slickvpn | | ✓ | | region, city | |
 | surfshark | ✓ | ✓ | key, address | region, city | |
 | torguard | | ✓ | | city | |
-| vpn-unlimited | | ✓ | | city, streaming, free | |
-| vpnsecure | | ✓ (a key passphrase) | | city, premium only | |
+| vpn-unlimited | | ✓ | | city; flags free, stream | |
+| vpnsecure | | ✓ (a key passphrase) | | city (premium only: gluetun filters nothing by it) | |
 | vyprvpn | | ✓ | | region (no country) | |
 | windscribe | ✓ | ✓ | key, address, pre-shared key | region, city (no country) | static |
 | custom | ✓ | ✓ | the whole config | — | |
 
-Where a provider has no country, configure asks no country question (its `_filters`).
+Server choices as gluetun's data has them (gluetun-servers, 6 Nov 2026; CI
+checks each against `:latest`). Where a provider has no country, configure asks
+no country question (its `_filters`).
 Only **nordvpn** can be proven live. `VPN_SERVER_HOSTNAMES` stays a
 `.env`-only key, never asked: gluetun's wiki warns that a hostname dropped
 from its server data stops the tunnel.
@@ -408,6 +462,12 @@ from its server data stops the tunnel.
   on purpose: it must be acted on before the next promote.
 - `test-questions.sh`: each provider's questions, interactive and from the
   answers file, with the shims refusing Docker and sudo.
+- Server choices (slice 3): `test-vpn-providers.sh` reads a fixture of
+  format-servers' JSON through the real loader (the copy, no network, the
+  cache per image and data) and refuses each kind of bad choice by its
+  message; `test-configure.sh` and `test-answers.sh` the questions and the
+  answers file with and without the list; CI's `check-vpn-providers.sh` holds
+  every folder's filters and flags to `:latest`'s data, per tunnel.
 - `check-registries.sh`: every `mediastack.torrent` client has
   `<client>_listen_port` (slice 4).
 - An endpoint by name: a fixture resolver — an answer renders its address,
@@ -481,7 +541,8 @@ from its server data stops the tunnel.
    by name; its issue #3497). Fixed in the folder: `nordvpn`'s `_extra`
    always sends `SERVER_CATEGORIES=Standard VPN servers` (any match: P2P
    servers are standard too). Slice 3's categories must keep it that way: a
-   NordVPN `SERVER_CATEGORIES` is never left empty.
+   NordVPN `SERVER_CATEGORIES` is never left empty (kept: it is the default of
+   `VPN_SERVER_CATEGORIES`, slice 3).
    **Over TCP, NordVPN is not offered** (found live the same day): gluetun dials
    port 443 — its NordVPN data lists no TCP ports — while NordVPN's servers
    answer OpenVPN over TCP on 1231–1234 (their own `.ovpn`, proven from the test
@@ -509,6 +570,15 @@ from its server data stops the tunnel.
    checked against the image's server data (`format-servers -<provider>
    -format json`) before gluetun starts, and in configure where gluetun's
    `servers.json` already exists. Live: NordVPN's P2P servers in one city.
+   **Built 23 Nov 2026**, schema 53 (regions, ISPs, categories and flags added
+   empty): as above (*Server choices against gluetun's own list*). NordVPN's
+   standard servers became `VPN_SERVER_CATEGORIES`' default — a category chosen
+   replaces it, and Dedicated IP is refused unless your own server is named
+   (`VPN_SERVER_HOSTNAMES`). A switch of provider empties the choices the new
+   one does not offer. Found while building: configure stored a typed
+   "Netherlands, Sweden" as written (gluetun reads " Sweden", matching no
+   server) and could not clear a country once set (`auto` was taken as one) —
+   both fixed with the rest. Not yet proven live.
 4. **Port forwarding:** native and static, the file, the sync, leak-test's
    INPUT check, doctor. Live: the sync, with a port written into the file by
    hand.

@@ -6,7 +6,7 @@
 
 vpnp_surfshark_name()    { echo surfshark; }
 vpnp_surfshark_types()   { echo wireguard openvpn; }
-vpnp_surfshark_filters() { echo countries cities hostnames; }
+vpnp_surfshark_filters() { echo regions countries cities hostnames; }
 vpnp_surfshark_proven()  { echo ""; }
 vpnp_surfshark_env() { # TYPE
     case "$1" in

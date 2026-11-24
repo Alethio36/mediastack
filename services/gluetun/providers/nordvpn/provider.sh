@@ -8,7 +8,7 @@
 
 vpnp_nordvpn_name()    { echo nordvpn; }
 vpnp_nordvpn_types()   { echo wireguard openvpn; }
-vpnp_nordvpn_filters() { echo countries cities hostnames; }
+vpnp_nordvpn_filters() { echo regions countries cities categories hostnames; }
 vpnp_nordvpn_proven()  { echo "live 2026-09"; }
 vpnp_nordvpn_env() { # TYPE
     case "$1" in
@@ -22,8 +22,18 @@ vpnp_nordvpn_keys() { echo NORDVPN_TOKEN; }   # TYPE — an answers-file key, fo
 # a silent WireGuard tunnel until the healthcheck moves on (found live Nov 2026:
 # us12774, nl1025, nl1032, uk1618, uk2785). gluetun's own exclusion needs a
 # "dedicated" flag its NordVPN server data does not carry yet (gluetun-servers,
-# 6 Nov 2026; its issue #3497). A P2P server is a standard one too (any match).
-vpnp_nordvpn_extra() { printf 'SERVER_CATEGORIES\tStandard VPN servers\n'; }   # TYPE
+# 6 Nov 2026; its issue #3497). That is the default of VPN_SERVER_CATEGORIES:
+# a category chosen replaces it — P2P, Double VPN and Onion Over VPN servers are
+# never Dedicated IP ones (its data, Nov 2026), and Dedicated IP itself is
+# refused unless your own server is named (its check).
+vpnp_nordvpn_filter_default() { [[ "$1" != categories ]] || echo "Standard VPN servers"; }   # FILTER
+vpnp_nordvpn_check() { # TYPE
+    local c; c=$(env_get VPN_SERVER_CATEGORIES)
+    if [[ ",${c,,}," == *",dedicated ip,"* && -z "$(env_get VPN_SERVER_HOSTNAMES)" ]]; then
+        echo "VPN_SERVER_CATEGORIES=$c: a Dedicated IP server takes only the login of the account it was sold to — name yours in VPN_SERVER_HOSTNAMES, or choose another category"
+        return 1
+    fi
+}
 # OpenVPN over UDP only. Over TCP gluetun dials port 443 — its NordVPN server
 # data lists no TCP ports, so its default is used — and NordVPN's servers
 # answer OpenVPN over TCP on 1231-1234 now: the connection opens and the server

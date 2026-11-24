@@ -146,7 +146,7 @@ curl() { printf '%s\n' "$*" > "$T/curl.args"; cat > "$T/curl.stdin"; echo '{"nor
 printf 'COMPOSE_PROFILES=sonarr\n' > "$ENV_FILE"
 gluetun_vpn_questions </dev/null > "$T/out" 2>&1 && [[ ! -s "$T/out" ]] || fail_ "nothing in the VPN: no VPN question"; pass
 printf 'COMPOSE_PROFILES=gluetun\n' > "$ENV_FILE"
-printf 'nordvpn\n\nTOKEN123\n\n' | gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord step runs"
+printf 'nordvpn\n\nTOKEN123\n\n\n\n\n' | gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord step runs: $(cat "$T/out")"
 [[ "$(env_get WIREGUARD_PRIVATE_KEY)" == KEY ]] || fail_ "the key is fetched: $(cat "$ENV_FILE")"; pass
 ! grep -q TOKEN123 "$T/curl.args" && grep -qx 'user = "token:TOKEN123"' "$T/curl.stdin" \
     || fail_ "the token goes on stdin, not the command line: $(cat "$T/curl.args")"; pass
@@ -155,11 +155,11 @@ printf 'nordvpn\n\nTOKEN123\n\n' | gluetun_vpn_questions > "$T/out" 2>&1 || fail
 WGK=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=
 printf 'COMPOSE_PROFILES=gluetun\nVPN_PROVIDER=nordvpn\nWIREGUARD_PRIVATE_KEY=OLDNORDKEY\n' > "$ENV_FILE"
 n=$(vpnp_list | grep -nx mullvad | cut -d: -f1)
-printf '%s\n\nnot-a-key\n%s\n10.64.0.2/32\n\n' "$n" "$WGK" | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "mullvad step runs: $(cat "$T/out")"
+printf '%s\n\nnot-a-key\n%s\n10.64.0.2/32\n\n\n\n\n' "$n" "$WGK" | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "mullvad step runs: $(cat "$T/out")"
 [[ "$(env_get VPN_PROVIDER)" == mullvad && "$(env_get WIREGUARD_PRIVATE_KEY)" == "$WGK" && "$(env_get WIREGUARD_ADDRESSES)" == 10.64.0.2/32 ]] \
     || fail_ "by number, the old provider's key not kept, its address asked: $(cat "$ENV_FILE")"; pass
 grep -q 'this value is required' "$T/out" && grep -q 'not a WireGuard key' "$T/out" || fail_ "Enter and a bad key refused, saying why: $(cat "$T/out")"; pass
-printf 'mullvad\n\n\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "mullvad again runs"
+printf 'mullvad\n\n\n\n\n\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "mullvad again runs"
 [[ "$(env_get WIREGUARD_PRIVATE_KEY)" == "$WGK" && "$(env_get WIREGUARD_ADDRESSES)" == 10.64.0.2/32 ]] || fail_ "the same provider: Enter keeps its key and address"; pass
 # your own config, by its path: a broken one refused naming its line, then a good one read in
 printf '[Interface]\nPrivateKey = %s\nAddress = 10.7.0.2/32\n[Peer]\nPublicKey = %s\nEndpoint = home.example.net\n' "$WGK" "$WGK" > "$T/bad.conf"
@@ -169,17 +169,17 @@ printf 'custom\n\n%s\n%s\n' "$T/bad.conf" "$T/good.conf" | Q_TERMINAL=1 gluetun_
     && grep -q "line 6: Endpoint 'home.example.net' is not host:port" "$T/out" && grep -q 'looks it up from this host' "$T/out" \
     || fail_ "custom: a bad config named by its line, a good one read in, a name said to be looked up: $(cat "$T/out")"; pass
 # back to nordvpn: custom's server, its key and its address go with it
-printf 'nordvpn\n\nTOKEN123\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "custom -> nordvpn runs: $(cat "$T/out")"
+printf 'nordvpn\n\nTOKEN123\n\n\n\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "custom -> nordvpn runs: $(cat "$T/out")"
 [[ "$(env_get VPN_PROVIDER)" == nordvpn && "$(env_get WIREGUARD_PRIVATE_KEY)" == KEY ]] \
     && ! grep -qE '^WIREGUARD_(ADDRESSES|PUBLIC_KEY|ENDPOINT_HOST|ENDPOINT_PORT)=.' "$ENV_FILE" \
     || fail_ "a switch empties what only the old provider read: $(cat "$ENV_FILE")"; pass
 # OpenVPN (slice 2): nordvpn's tunnel asked, the token gives the login; a switch of tunnel drops the WireGuard key
-printf 'nordvpn\nopenvpn\nTOKEN123\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord over OpenVPN runs: $(cat "$T/out")"
+printf 'nordvpn\nopenvpn\nTOKEN123\n\n\n\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord over OpenVPN runs: $(cat "$T/out")"
 [[ "$(env_get VPN_TYPE)" == openvpn && "$(env_get OPENVPN_USER)" == NORDUSER && "$(env_get OPENVPN_PASSWORD)" == NORDPASS && "$(env_get OPENVPN_PROTOCOL)" == udp && -z "$(env_get WIREGUARD_PRIVATE_KEY)" ]] \
     && ! grep -q 'OpenVPN protocol' "$T/out" \
     || fail_ "nordvpn over OpenVPN: its login fetched, UDP without asking (its only one), the WireGuard key gone: $(grep -E '^(VPN_|OPENVPN_|WIREGUARD_PRIVATE)' "$ENV_FILE")"; pass
 grep -q 'Tunnel (wireguard/openvpn) \[wireguard\]' "$T/out" || grep -q 'WireGuard is faster' "$T/out" || fail_ "the tunnel asked where the provider has both: $(cat "$T/out")"; pass
-printf 'expressvpn\nEXPUSER\nEXPPASS\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "an OpenVPN-only provider runs: $(cat "$T/out")"
+printf 'expressvpn\nEXPUSER\nEXPPASS\n\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "an OpenVPN-only provider runs: $(cat "$T/out")"
 [[ "$(env_get VPN_TYPE)" == openvpn && "$(env_get OPENVPN_USER)" == EXPUSER && "$(env_get OPENVPN_PROTOCOL)" == udp ]] && ! grep -q 'OpenVPN protocol' "$T/out" \
     || fail_ "expressvpn: no tunnel or protocol asked (one of each), its login asked anew: $(grep -E '^(VPN_TYPE|OPENVPN_)' "$ENV_FILE")"; pass
 # a client certificate and key, from the .ovpn the provider gives (an old RSA key refused first)
@@ -195,6 +195,23 @@ printf 'custom\nopenvpn\n%s\nMYUSER\nMYPASS\n' "$T/mine.ovpn" | Q_TERMINAL=1 glu
 cmp -s "$T/mine.ovpn" "$CUSTOM_DIR/vpn/openvpn.ovpn" && [[ "$(env_get OPENVPN_USER)" == MYUSER && -z "$(env_get OPENVPN_CERT)" ]] && grep -q 'server vpn.example.net:1194 over udp, a login' "$T/out" \
     || fail_ "custom OpenVPN: the file kept as yours, its login asked, cyberghost's certificate gone: $(cat "$T/out")"; pass
 grep -qx 'OPENVPN_PROTOCOL=' "$ENV_FILE" || fail_ "custom OpenVPN: no protocol left behind — its file says it ($(grep OPENVPN_PROTOCOL "$ENV_FILE"))"; pass
+# server choices (slice 3), with gluetun's server list on this host: "?" lists
+# them, a typo is refused with close matches, an answer kept as the list spells it
+printf '%s\n' '[{"vpn":"wireguard","country":"Switzerland","region":"Europe","city":"Zurich","categories":["Standard VPN servers","P2P"],"hostname":"ch1"},' \
+    '{"vpn":"wireguard","country":"Switzerland","region":"Europe","city":"Geneva","categories":["Standard VPN servers"],"hostname":"ch2"},' \
+    '{"vpn":"wireguard","country":"Netherlands","region":"Europe","city":"Amsterdam","categories":["Standard VPN servers","P2P"],"hostname":"nl1"}]' > "$T/servers.json"
+real_load=$(declare -f vpn_servers_load)
+# shellcheck disable=SC2034  # read by the questions
+vpn_servers_load() { VPN_SERVERS=$T/servers.json; }
+printf 'COMPOSE_PROFILES=gluetun\nVPN_PROVIDER=nordvpn\nWIREGUARD_PRIVATE_KEY=KEY\n' > "$ENV_FILE"
+printf 'nordvpn\n\nTOKEN123\np2p\n\n?\nswitzerland\nzurik\nzurich\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord with its server list runs: $(cat "$T/out")"
+[[ "$(env_get VPN_SERVER_CATEGORIES)" == P2P && -z "$(env_get VPN_SERVER_REGIONS)" && "$(env_get VPN_SERVER_COUNTRIES)" == Switzerland && "$(env_get VPN_SERVER_CITIES)" == Zurich ]] \
+    || fail_ "each answer as the list spells it, Enter on an empty one is any: $(grep '^VPN_SERVER' "$ENV_FILE")"; pass
+grep -q '  Netherlands, Switzerland$' "$T/out" && grep -q "no city 'zurik' among nordvpn's WireGuard servers with VPN_SERVER_CATEGORIES=P2P, VPN_SERVER_COUNTRIES=Switzerland — close: Zurich" "$T/out" \
+    || fail_ "? lists the P2P countries, a typo names the close one: $(cat "$T/out")"; pass
+printf 'nordvpn\n\nTOKEN123\n\n\n\nany\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord again runs: $(cat "$T/out")"
+[[ "$(env_get VPN_SERVER_CATEGORIES)" == P2P && "$(env_get VPN_SERVER_COUNTRIES)" == Switzerland && -z "$(env_get VPN_SERVER_CITIES)" ]] || fail_ "Enter keeps a choice, any clears it: $(grep '^VPN_SERVER' "$ENV_FILE")"; pass
+eval "$real_load"
 # a prompt is printed only to a terminal, so the echo is checked at the source:
 # no secret is read by a prompt that echoes, or offered as a visible default
 ! grep -nE 'ask WIREGUARD_(PRIVATE|PRESHARED)_KEY|read -r -p "(NordVPN|Tunnel)' lib/questionnaire.sh services/gluetun/*.sh services/gluetun/providers/*/provider.sh services/cloudflared/cloudflared.sh \
@@ -231,8 +248,8 @@ _configure_panel_offer </dev/null > "$T/out" 2>&1; [[ ! -s "$T/out" ]] || fail_ 
 cp "$ENV_FILE" "$T/checks.before"
 [[ -z "$(vpn_provider_problem NordVPN)" && -n "$(vpn_provider_problem 'bad name!')" && -n "$(vpn_provider_problem perfect-privacy)" ]] \
     || fail_ "provider: a folder of services/gluetun/providers (any case) — nothing else"; pass
-[[ -z "$(vpn_countries_problem '')" && -z "$(vpn_countries_problem 'Netherlands,Sweden')" && -n "$(vpn_countries_problem 'Swi$$')" ]] \
-    || fail_ "countries: empty (auto) or names"; pass
+[[ -z "$(vpn_list_tidy auto)" && "$(vpn_list_tidy 'Netherlands, Sweden')" == Netherlands,Sweden ]] \
+    || fail_ "a server choice: auto (or any) is no limit; a typed list as gluetun reads one (no space after a comma)"; pass
 [[ -z "$(wg_addresses_problem '10.5.0.2/32, fd00::2/128')" && -n "$(wg_addresses_problem 10.5.0.2)" ]] || fail_ "addresses: IP/prefix, comma-separated"; pass
 [[ -z "$(sched_problem 'Tue 04:00')" && "$(sched_problem bogus)" == "'bogus' is not a valid schedule." ]] || fail_ "a schedule is what systemd takes"; pass
 [[ "$(accounts_current gluetun,authentik,traefik)" == authentik && "$(accounts_current gluetun,wizarr)" == wizarr \

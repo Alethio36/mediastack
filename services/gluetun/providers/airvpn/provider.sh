@@ -6,7 +6,7 @@
 
 vpnp_airvpn_name()    { echo airvpn; }
 vpnp_airvpn_types()   { echo wireguard openvpn; }
-vpnp_airvpn_filters() { echo countries cities hostnames; }
+vpnp_airvpn_filters() { echo regions countries cities hostnames; }
 vpnp_airvpn_proven()  { echo ""; }
 vpnp_airvpn_env() { # TYPE
     case "$1" in

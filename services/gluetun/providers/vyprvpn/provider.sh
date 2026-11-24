@@ -6,7 +6,7 @@
 
 vpnp_vyprvpn_name()      { echo "vyprvpn"; }
 vpnp_vyprvpn_types()     { echo openvpn; }
-vpnp_vyprvpn_filters()   { echo hostnames; }
+vpnp_vyprvpn_filters()   { echo regions hostnames; }
 vpnp_vyprvpn_protocols() { echo udp; }
 vpnp_vyprvpn_proven()    { echo ""; }
 vpnp_vyprvpn_env()       { echo OPENVPN_USER OPENVPN_PASSWORD; }

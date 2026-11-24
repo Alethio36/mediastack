@@ -6,7 +6,7 @@
 
 vpnp_giganews_name()      { echo "giganews"; }
 vpnp_giganews_types()     { echo openvpn; }
-vpnp_giganews_filters()   { echo hostnames; }
+vpnp_giganews_filters()   { echo regions hostnames; }
 vpnp_giganews_protocols() { echo udp; }
 vpnp_giganews_proven()    { echo ""; }
 vpnp_giganews_env()       { echo OPENVPN_USER OPENVPN_PASSWORD; }

@@ -5,7 +5,7 @@
 
 vpnp_hidemyass_name()      { echo "hidemyass"; }
 vpnp_hidemyass_types()     { echo openvpn; }
-vpnp_hidemyass_filters()   { echo countries cities hostnames; }
+vpnp_hidemyass_filters()   { echo regions countries cities hostnames; }
 vpnp_hidemyass_protocols() { echo udp tcp; }
 vpnp_hidemyass_proven()    { echo ""; }
 vpnp_hidemyass_env()       { echo OPENVPN_USER OPENVPN_PASSWORD; }

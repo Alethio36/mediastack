@@ -19,7 +19,7 @@ ANSWERS_PASS=""                  # "" (none given) | check | apply
 ANSWERS_PROBLEMS=""              # pass 1: the file its problems are collected in
 declare -gA ANSWER=()            # KEY -> the written answer (only written ones are here)
 # words that stand for an empty value, which is never an answer itself
-declare -gA ANSWER_WORDS=([UPDATE_SCHEDULE]=never [BACKUP_SCHEDULE]=never [VPN_SERVER_COUNTRIES]=auto)
+declare -gA ANSWER_WORDS=([UPDATE_SCHEDULE]=never [BACKUP_SCHEDULE]=never [VPN_SERVER_COUNTRIES]=auto [VPN_SERVER_REGIONS]=any [VPN_SERVER_CITIES]=any [VPN_SERVER_ISPS]=any [VPN_SERVER_CATEGORIES]=any [VPN_SERVER_FLAGS]=none)
 # names the questions take in any case and record lowercase: the file does the same
 ANSWER_LOWER=" SMTP_HOST STACK_DOMAIN VPN_PROVIDER "
 # secrets the questions take with their spaces dropped (shown in groups: a mail

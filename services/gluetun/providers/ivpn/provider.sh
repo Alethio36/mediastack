@@ -6,7 +6,7 @@
 
 vpnp_ivpn_name()    { echo ivpn; }
 vpnp_ivpn_types()   { echo wireguard openvpn; }
-vpnp_ivpn_filters() { echo countries cities hostnames; }
+vpnp_ivpn_filters() { echo regions countries cities isps hostnames; }
 vpnp_ivpn_proven()  { echo ""; }
 vpnp_ivpn_env() { # TYPE — OpenVPN: the password is optional (an account ID needs none)
     case "$1" in
