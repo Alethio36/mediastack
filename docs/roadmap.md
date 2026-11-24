@@ -264,8 +264,9 @@ agreed first:
    holding the stack, and screen times, wait progress and a failed wait's log
    lines. **Slice 3 built 23 Nov 2026** (server choices: categories, regions,
    cities, ISPs and flags as each provider has them, every one checked against
-   gluetun's own server list before gluetun starts; schema 53) — not yet proven
-   live. Next: its live proof, then slice 4 (port forwarding).
+   gluetun's own server list before gluetun starts; schema 53), **proven live
+   the same day** (NordVPN's P2P servers in Zurich; an impossible city refused
+   before anything restarted). Next: slice 4 (port forwarding).
 9. **The household's look** — notifications, then branding.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole

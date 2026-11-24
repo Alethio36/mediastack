@@ -578,7 +578,21 @@ from its server data stops the tunnel.
    one does not offer. Found while building: configure stored a typed
    "Netherlands, Sweden" as written (gluetun reads " Sweden", matching no
    server) and could not clear a country once set (`auto` was taken as one) —
-   both fixed with the rest. Not yet proven live.
+   both fixed with the rest.
+   **Slice 3 proven live, 23 Nov 2026** (the test box, NordVPN over WireGuard):
+   - schema 52 → 53 on a running stack: NordVPN's whole list read from the
+     image (14 130 servers, gluetun's own updated data in the copy), cached,
+     the check passing; gluetun recreated once through the gate (its file
+     gained the region and category references);
+   - configure in full: `?` listing the categories and regions, the countries
+     and the one city narrowed by P2P and Switzerland, `zurik` refused with
+     "close: Zurich", the answers stored as the list spells them; gluetun
+     filtering on all three and connecting to ch509 (P2P, Zurich — by its
+     address in gluetun's data), gate and leak-test PASS;
+   - an impossible city (Lisbon, with P2P in Switzerland): `up` refused before
+     anything restarted, naming what narrowed it and the one city there —
+     the running gluetun untouched;
+   - back to Zurich: nothing recreated, the cached list reused.
 4. **Port forwarding:** native and static, the file, the sync, leak-test's
    INPUT check, doctor. Live: the sync, with a port written into the file by
    hand.
