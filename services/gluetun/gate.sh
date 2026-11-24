@@ -180,6 +180,7 @@ vpn_start_group() { # vpn_start_group [--no-recreate] SVC... — start these VPN
 # and the rest, never the group. This puts back what that policy did: every
 # enabled member that is not running is started, through the gate, whether it
 # crashed or the host just booted. To keep one stopped: disable it, or down.
+VPN_WATCH_WAIT=60   # seconds the 5-minute check waits for gluetun to recover: well inside MAINT_SHORT_WAIT (test-gate holds it there)
 vpn_supervise() { # vpn_supervise [full] — local or full checks (as gluetun's state needs, or full), then any member not running
     local full=${1:-} group=() missing=() s rc=0 lonly=0
     mapfile -t group < <(vpn_group)
@@ -191,7 +192,10 @@ vpn_supervise() { # vpn_supervise [full] — local or full checks (as gluetun's 
         info "vpn-watch: gluetun is not running — Docker restarts it; checked again in 5 minutes"
         return 0
     fi
-    wait_verdict --recover gluetun \
+    # a short wait, never START_WAIT: this run holds the stack's lock, and a
+    # command you start waits only MAINT_SHORT_WAIT for it — a broken gluetun
+    # held it 400s of every run and refused up's fix (found live Nov 2026)
+    START_WAIT=$VPN_WATCH_WAIT wait_verdict --recover gluetun \
         || { warn "vpn-watch: gluetun ${VERDICT_WHY[gluetun]} — checked again in 5 minutes"; return 0; }
     # a VPN server given by name that now answers elsewhere: the tunnel moves (services/gluetun/provider.sh)
     local erc=0; vpn_endpoint_refresh || erc=$?

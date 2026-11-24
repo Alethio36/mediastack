@@ -155,7 +155,7 @@ for f in load_env vpn_gen vpn_endpoint_refresh vpn_provider_ready require_mounts
          uid_handover traefik_ensure authentik_prepare network_ensure vpnguard_ensure authentik_release_record \
          wire_repoint_pending prowlarr_indexers_retest; do eval "$f() { :; }"; done
 svc_enabled_managed() { printf '%s\n' gluetun jellyfin qbittorrent sonarr; }
-wait_verdict() { echo "wait $*" >> "$UP_LOG"; }
+wait_verdict() { echo "wait $*" >> "$UP_LOG"; echo "$START_WAIT" > "$T/waitmax"; }
 vpn_reattach_guard() { echo "guard" >> "$UP_LOG"; }
 DC() { echo "DC $*" >> "$UP_LOG"; }
 sudo() { :; }
@@ -233,6 +233,8 @@ grep -q "DC up -d --no-recreate qbittorrent sonarr" "$UP_LOG" || fail_ "members 
 RUNNING="gluetun jellyfin qbittorrent sonarr"; : > "$LEAK_LOG"; : > "$UP_LOG"; state_set "$LEAK_PROVEN" "gid1 $GSTART"
 vpn_supervise > /dev/null 2>&1
 ! grep -q "DC up" "$UP_LOG" && grep -qx "test local=1" "$LEAK_LOG" || fail_ "all running, gluetun proven: the local checks only, nothing started ($(paste -sd'|' "$UP_LOG"))"; pass
+grep -qx "wait --recover gluetun" "$UP_LOG" && [[ "$(cat "$T/waitmax")" == "$VPN_WATCH_WAIT" ]] && (( VPN_WATCH_WAIT * 2 <= MAINT_SHORT_WAIT )) \
+    || fail_ "the check waits for gluetun briefly, holding the lock: a command you start (up to ${MAINT_SHORT_WAIT}s) still gets it (waited up to $(cat "$T/waitmax")s)"; pass
 RUNNING="jellyfin"; : > "$LEAK_LOG"; : > "$UP_LOG"
 vpn_supervise > /dev/null 2>&1
 [[ ! -s "$LEAK_LOG" ]] && ! grep -q "DC up" "$UP_LOG" || fail_ "gluetun not running: nothing tested, nothing started (Docker restarts it)"; pass
