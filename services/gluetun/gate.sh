@@ -212,7 +212,9 @@ vpn_supervise() { # vpn_supervise [full] — local or full checks (as gluetun's 
     fi
     if [[ "$full" != full ]] && gluetun_proven; then lonly=1; fi
     leak_test_run 0 "$lonly" || rc=$?
-    leak_verdict "$rc"
+    local vrc=0; leak_verdict "$rc" || vrc=$?
+    (( rc == 1 )) || vpn_pf_sync   # the forwarded port, kept in the download client (portfwd.sh): a new one after a reconnect
+    return "$vrc"
 }
 
 cmd_vpn_watch() { # the 5-minute check (mediastack-leakcheck.timer); --full: the hourly run (mediastack-leaktest.timer)

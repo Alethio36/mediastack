@@ -183,6 +183,9 @@ refused 'SIGNIN=none\nENABLE_SONARR=y\nNORDVPN_TOKEN=TOKEN\nVPN_SERVER_ISPS=M247
     "VPN_SERVER_ISPS: nordvpn does not choose servers by ISP" "VPN_SERVER_FLAGS: nordvpn does not choose servers by server flag"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=protonvpn\nWIREGUARD_PRIVATE_KEY=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=\nVPN_SERVER_FLAGS=free,owned\n' \
     "VPN_SERVER_FLAGS: 'owned' is no server flag of protonvpn's — its flags: free, stream, secure-core, tor"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nNORDVPN_TOKEN=TOKEN\nVPN_PORT_FORWARDING=on\n' "VPN_PORT_FORWARDING=on: mediastack forwards no port with nordvpn"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=airvpn\nWIREGUARD_PRIVATE_KEY=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=\nWIREGUARD_ADDRESSES=10.1.0.2/32\nWIREGUARD_PRESHARED_KEY=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=\nVPN_PORT_FORWARDING=on\n' \
+    "airvpn forwards the port you set on its site — write it as VPN_FORWARDED_PORT"; pass
 # server choices as gluetun reads them; checked against its server list when its image is here
 fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\nVPN_SERVER_CATEGORIES=P2P\nVPN_SERVER_COUNTRIES=Switzerland , Netherlands\nVPN_SERVER_CITIES=any\n'
 filed "$T/a.env" '' --fresh || fail_ "server choices run: $(cat "$T/out")"

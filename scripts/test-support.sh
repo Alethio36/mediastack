@@ -259,7 +259,7 @@ mkdir -p "$T/local/state"; printf 'bob\ton\ncarol\toff\n' > "$T/local/navidrome-
     || fail_ "authentik: version, the blueprints not applied and ours, outposts: $(hook support_authentik)"; pass
 [[ "$(hook support_qbittorrent)" == $'version v5.3.0\ntransfers bound to: ANY interface; listening on port 6881\ncategories: movies, tv' ]] || fail_ "qBittorrent: $(hook support_qbittorrent)"; pass
 [[ "$(hook support_seerr)" == $'version 3.5.2\njellyfin: jellyfin:8096, 1 libraries enabled\nradarr Radarr: localhost:7878, default, profile Any, folder /data/media/movies' ]] || fail_ "Seerr: $(hook support_seerr)"; pass
-[[ "$(hook support_gluetun)" == $'provider nordvpn (wireguard, proven live 2026-09); countries any; cities any; hostnames any; DNS cloudflare\nlast leak-test: passed\nleak gate: open\nthe running gluetun was proven before the VPN\'d services started' ]] || fail_ "gluetun: $(hook support_gluetun)"; pass
+[[ "$(hook support_gluetun)" == $'provider nordvpn (wireguard, proven live 2026-09); categories any; regions any; countries any; cities any; isps any; flags any; hostnames any; DNS cloudflare\nport forwarding: off\nlast leak-test: passed\nleak gate: open\nthe running gluetun was proven before the VPN\'d services started' ]] || fail_ "gluetun: $(hook support_gluetun)"; pass
 [[ "$(hook support_navidrome)" == $'the stack\'s admin signs in\nperson bob: on\nperson carol: off' ]] || fail_ "Navidrome: $(hook support_navidrome)"; pass
 
 # ---- the verb ----

@@ -8,6 +8,7 @@ vpnp_airvpn_name()    { echo airvpn; }
 vpnp_airvpn_types()   { echo wireguard openvpn; }
 vpnp_airvpn_filters() { echo regions countries cities hostnames; }
 vpnp_airvpn_proven()  { echo ""; }
+vpnp_airvpn_portforward() { echo static; }   # a port you forward in its client area (Ports), opened on the tunnel by gluetun
 vpnp_airvpn_env() { # TYPE
     case "$1" in
         wireguard) echo WIREGUARD_PRIVATE_KEY WIREGUARD_ADDRESSES WIREGUARD_PRESHARED_KEY ;;

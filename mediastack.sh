@@ -36,7 +36,7 @@ CGROUP_FILE=/proc/self/cgroup                     # scheduled_run reads it (a te
 STATE_DIR="$LOCAL_DIR/state"                      # pending work: one file per marker (state_get/state_set)
 ENV_BACKUP_DIR="$LOCAL_DIR/env-backups"           # .env before each schema migration
 ENV_BACKUP_KEEP=10                                # the oldest (your original) + the newest 9
-SCRIPT_SCHEMA=53
+SCRIPT_SCHEMA=54
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -760,6 +760,7 @@ cmd_up()   {
     ok "Stack started."
     wire_repoint_pending # a VPN toggle moved a service: re-point what calls it
     prowlarr_indexers_retest
+    if svc_enabled gluetun && ! leak_gate_closed; then vpn_pf_sync; fi   # the forwarded port into the download client (services/gluetun/portfwd.sh)
     cat <<'EOT'
 Check on it:   ./mediastack.sh status    (what's running, health, versions)
 Verify it:     ./mediastack.sh doctor    (full audit with fixes)

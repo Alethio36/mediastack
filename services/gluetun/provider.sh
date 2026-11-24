@@ -31,7 +31,11 @@
 # mounted read-only into gluetun; their contents' hash is a label, so a changed
 # file recreates gluetun), flags (the server flags it offers, with "flags" among
 # its filters: owned free stream secure-core tor) and filter_default FILTER
-# (what the filter is when .env leaves it empty — NordVPN's standard servers).
+# (what the filter is when .env leaves it empty — NordVPN's standard servers),
+# portforward (native: gluetun arranges the port; static: you set it on the
+# provider's site; "native servers": gluetun then keeps only its forwarding
+# servers), portforward_on TYPE (what turning forwarding on changes in its keys:
+# ProtonVPN's +pmp) and pf_hint TYPE (why no port came, in one sentence).
 # An env.tsv beside it holds the keys only it reads.
 
 VPN_PROVIDERS_DIR="$SCRIPT_DIR/services/gluetun/providers"
@@ -107,6 +111,9 @@ vpn_keys_drop_others() { # vpn_keys_drop_others NAME TYPE — a switch to NAME r
     for k in $VPN_FILTER_ORDER flags; do   # a server choice NAME does not offer: up would refuse it
         if ! vpnp_filter_on "$1" "$k" && [[ -n "$(env_get "${VPN_FILTER_KEY[$k]}")" ]]; then env_set "${VPN_FILTER_KEY[$k]}" ""; fi
     done
+    # forwarding NAME cannot do, or a port of a provider that forwards one you set
+    if [[ -z "$(vpnp_portforward "$1")" && "$(env_get VPN_PORT_FORWARDING)" == on ]]; then env_set VPN_PORT_FORWARDING off; fi
+    if [[ "$(vpnp_portforward "$1")" != static && -n "$(env_get VPN_FORWARDED_PORT)" ]]; then env_set VPN_FORWARDED_PORT ""; fi
     vpnp_has "$1" endpoint || state_del "$VPN_ENDPOINT_STATE"
     return 0
 }
@@ -117,7 +124,7 @@ vpn_summary() { # -> one line: the provider, its tunnel, whether what it needs i
     vpnp_load "$p" || { echo "$p (no such provider)"; return 0; }
     for k in $(vpnp_call "$p" env "$t"); do [[ -n "$(env_get "$k")" ]] || miss=1; done
     [[ "$t" == openvpn && -n "$(vpnp_protocols "$p")" ]] && proto=" over $(env_get OPENVPN_PROTOCOL)"
-    echo "$p ($t$proto), $( (( miss )) && echo "login MISSING" || echo "login set"), $(vpn_servers_words "$p")"
+    echo "$p ($t$proto), $( (( miss )) && echo "login MISSING" || echo "login set"), $(vpn_servers_words "$p")$(vpn_pf_words "$p")"
 }
 vpn_servers_words() { # vpn_servers_words NAME -> where NAME connects, for a summary: its server choice, or the one server its config names
     local h f v; local -a said=()
@@ -161,6 +168,12 @@ vpn_provider_env() { # vpn_provider_env -> NAME<TAB>VALUE for every gluetun sett
     for f in $(vpn_flags_set); do
         [[ " $(vpnp_flags "$p") " != *" $f "* ]] || printf '%s\t%s\n' "${VPN_FLAG_VAR[$f]}" on
     done
+    # port forwarding (portfwd.sh): only while it is on — a provider that
+    # forwards none gets nothing, so every other render stays as it was
+    case "$(vpn_pf_kind "$p")" in
+        native) printf '%s\t%s\n' VPN_PORT_FORWARDING on VPN_PORT_FORWARDING_STATUS_FILE "$VPN_PF_FILE_IN" ;;
+        static) printf 'FIREWALL_VPN_INPUT_PORTS\t${VPN_FORWARDED_PORT:-}\n' ;;
+    esac
     if vpnp_has "$p" extra; then vpnp_call "$p" extra "$t"; fi
 }
 
@@ -239,6 +252,7 @@ vpn_provider_problems() { # -> one line per reason gluetun cannot start with the
             [[ " $(vpnp_flags "$p") " == *" $f "* ]] || echo "VPN_SERVER_FLAGS: '$f' is no server flag of $p's — its flags: $(vpnp_flags "$p" | sed 's/ /, /g')"
         done
     fi
+    vpn_pf_problems "$p"
     if vpnp_has "$p" check; then vpnp_call "$p" check "$t" || true; fi
     return 0
 }
@@ -278,6 +292,7 @@ gluetun_image_providers() { # GLUETUN_PROVIDERS: the providers the gluetun image
 # narrowed it. If gluetun changes its rules the two can disagree — loudly
 # either way: this refusal, or gluetun's own error and log lines at start.
 VPN_SERVERS=""; VPN_SERVERS_ERR=""   # vpn_servers_load's answer
+VPN_SERVERS_FORMAT=v2   # the cache's fields: a new one reads the list again (v2: port_forward, slice 4)
 vpn_servers_dir() { echo "$LOCAL_DIR/vpn-servers"; }
 vpn_servers_load() { # vpn_servers_load NAME — VPN_SERVERS: NAME's servers as gluetun sees them (a JSON array, in a file); rc 1 with VPN_SERVERS_ERR
     local img id g src sum dir tmp f
@@ -289,7 +304,7 @@ vpn_servers_load() { # vpn_servers_load NAME — VPN_SERVERS: NAME's servers as 
     g=$(vpnp_call "$1" name); src=$(env_get CONFIG_ROOT)/gluetun
     sum=$( { sudo cat "$src/servers/$g.json" "$src/servers.json" 2>/dev/null || true; } | sha256sum | cut -c1-16)
     dir=$(vpn_servers_dir)
-    if [[ "$(cat "$dir/$1.key" 2>/dev/null)" == "$id $sum" && -s "$dir/$1.json" ]]; then VPN_SERVERS=$dir/$1.json; return 0; fi
+    if [[ "$(cat "$dir/$1.key" 2>/dev/null)" == "$VPN_SERVERS_FORMAT $id $sum" && -s "$dir/$1.json" ]]; then VPN_SERVERS=$dir/$1.json; return 0; fi
     tmp=$(mktemp -d); mkdir -p "$tmp/gluetun/servers"
     for f in "servers/$g.json" servers.json; do
         if sudo test -f "$src/$f"; then sudo cp "$src/$f" "$tmp/gluetun/$f"; fi
@@ -299,13 +314,13 @@ vpn_servers_load() { # vpn_servers_load NAME — VPN_SERVERS: NAME's servers as 
         VPN_SERVERS_ERR="its format-servers -$1 failed: $(oneline "$(cat "$tmp/err")")"; sudo rm -rf "$tmp"; return 1
     fi
     install -d -m 755 "$dir"; repo_owned "$dir"
-    if ! jq -ce 'map({vpn, country, region, city, isp, categories, owned, free, stream, secure_core, tor, tcp, udp, hostname, dedicated}
+    if ! jq -ce 'map({vpn, country, region, city, isp, categories, owned, free, stream, secure_core, tor, port_forward, tcp, udp, hostname, dedicated}
                      | with_entries(select(.value != null and .value != false and .value != "" and .value != [])))
                  | if length > 0 then . else error("no server") end' "$tmp/out" > "$dir/$1.json" 2>/dev/null; then
         VPN_SERVERS_ERR="its format-servers -$1 gave no server list: $(oneline "$(head -c 300 "$tmp/out")")"; rm -f "$dir/$1.json"; sudo rm -rf "$tmp"; return 1
     fi
     sudo rm -rf "$tmp"
-    echo "$id $sum" > "$dir/$1.key"; repo_owned "$dir/$1.json" "$dir/$1.key"
+    echo "$VPN_SERVERS_FORMAT $id $sum" > "$dir/$1.key"; repo_owned "$dir/$1.json" "$dir/$1.key"
     VPN_SERVERS=$dir/$1.json
 }
 # the servers that the tunnel, the flags and PRIOR (a JSON object: field -> values) keep
@@ -327,7 +342,8 @@ vpn_servers_query() { # vpn_servers_query NAME FIELD PRIOR -> FIELD's values amo
     local t proto="" flags f named=false
     t=$(env_get VPN_TYPE)
     [[ "$t" == openvpn && -n "$(vpnp_protocols "$1")" ]] && proto=$(env_get OPENVPN_PROTOCOL)
-    flags=$(for f in $(vpn_flags_set); do [[ " $(vpnp_flags "$1") " == *" $f "* ]] && echo "${VPN_FLAG_FIELD[$f]}"; done | jq -Rsc 'split("\n") | map(select(. != ""))')
+    flags=$( { for f in $(vpn_flags_set); do [[ " $(vpnp_flags "$1") " != *" $f "* ]] || echo "${VPN_FLAG_FIELD[$f]}"; done
+               if [[ -n "$(vpn_pf_kind "$1")" ]] && vpnp_pf_servers_only "$1"; then echo port_forward; fi; } | jq -Rsc 'split("\n") | map(select(. != ""))')
     [[ -n "$(vpn_filter_value "$1" categories)$(env_get VPN_SERVER_HOSTNAMES)" ]] && named=true
     jq -r --arg type "$t" --arg proto "$proto" --argjson flags "$flags" --argjson named "$named" \
         --arg field "$2" --argjson prior "$3" "$VPN_SERVERS_JQ" "$VPN_SERVERS"
@@ -335,7 +351,10 @@ vpn_servers_query() { # vpn_servers_query NAME FIELD PRIOR -> FIELD's values amo
 vpn_servers_said() { # vpn_servers_said NAME [WITH] -> how a message names the servers checked among ("nordvpn's WireGuard servers", WITH appended)
     local t; t=$(env_get VPN_TYPE)
     if [[ "$t" == openvpn ]]; then t="OpenVPN$( [[ -n "$(vpnp_protocols "$1")" ]] && echo " ($(env_get OPENVPN_PROTOCOL))" )"; else t=WireGuard; fi
-    echo "$1's $t servers$( [[ -z "$(vpn_flags_set)" ]] || echo " with VPN_SERVER_FLAGS=$(vpn_flags_set | paste -sd,)" )${2:+ with $2}"
+    local w=""
+    [[ -z "$(vpn_flags_set)" ]] || w=" with VPN_SERVER_FLAGS=$(vpn_flags_set | paste -sd,)"
+    if [[ -n "$(vpn_pf_kind "$1")" ]] && vpnp_pf_servers_only "$1"; then if [[ -n "$w" ]]; then w+=", port forwarding"; else w=" with port forwarding"; fi; fi
+    echo "$1's $t servers$w${2:+ with $2}"
 }
 vpn_close_matches() { # vpn_close_matches VALUE CHOICE... -> a hint: up to 8 choices close to VALUE, or all of a few, or where the list is
     local v=${1,,} c lc; local -a near=(); shift

@@ -95,6 +95,8 @@ jobs:
         run: scripts/test-doctor-perms.sh
       - name: the leak gate — the VPN group starts only after gluetun is proven, a leak stops it (scripts/test-gate.sh)
         run: scripts/test-gate.sh
+      - name: port forwarding — gluetun's file, the sync into the download client, leak-test's way in, configure (scripts/test-portfwd.sh)
+        run: scripts/test-portfwd.sh
       - name: night jobs — the VPN group recreated only on a gluetun change, the tunnel ready before recyclarr, Prowlarr's health re-checked (scripts/test-night-jobs.sh)
         run: scripts/test-night-jobs.sh
       - name: configure's questions — fresh defaults, one front door, hidden secrets (scripts/test-configure.sh)

@@ -339,6 +339,14 @@ VPN_SERVER_CATEGORIES=
 #   any single-line text (or none) — recommended: none
 VPN_SERVER_FLAGS=
 
+# a port forwarded to the download client, so peers can connect in (seeding) — only for a provider that forwards one (each provider's folder says); off changes nothing for downloads
+#   on | off — recommended: off
+VPN_PORT_FORWARDING=
+
+# the port your provider's site forwards to you, for one that forwards a port you set (AirVPN, Windscribe); the others arrange their own
+#   a port number (1-65535) — optional: blank leaves it unset
+VPN_FORWARDED_PORT=
+
 # your WireGuard server's public key ([Peer] PublicKey; VPN_PROVIDER=custom)
 #   any single-line text — optional: blank leaves it unset
 WIREGUARD_PUBLIC_KEY=

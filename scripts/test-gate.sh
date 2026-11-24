@@ -270,7 +270,7 @@ stopped_start > /dev/null 2>&1 && fail_ "a group that failed to start: a failure
 # ---- leak_test_run: dependents re-joined only once gluetun's own checks passed ----
 # shellcheck source=services/gluetun/vpn.sh
 source services/gluetun/vpn.sh   # the real leak_test_run back (stubbed above)
-for f in lt_dns_config lt_dns_lan_path lt_control_server lt_flows lt_ipv6 lt_tunnel_ip lt_udp_identity lt_dns_host_path lt_dns_resolvers; do eval "$f() { :; }"; done
+for f in lt_dns_config lt_dns_lan_path lt_control_server lt_firewall_in lt_flows lt_ipv6 lt_tunnel_ip lt_udp_identity lt_dns_host_path lt_dns_resolvers; do eval "$f() { :; }"; done
 hostid_ensure() { return 0; }
 FW_FAIL=0
 lt_firewall() { if (( FW_FAIL )); then lt_fail "firewall: a test leak"; else lt_pass "firewall ok"; fi; }

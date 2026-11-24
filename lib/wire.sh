@@ -320,6 +320,7 @@ cmd_wire() {
         mkdir -p "$LOCAL_DIR"; touch "$WIRED_FILE"; repo_owned "$LOCAL_DIR" "$WIRED_FILE"
         WIRE_STEP=apply; wire_apply_settings "$pending_before"; WIRE_STEP=""
         wire_recheck
+        if [[ "$section" == all ]] && svc_enabled gluetun && ! leak_gate_closed; then vpn_pf_sync; fi   # the forwarded port (services/gluetun/portfwd.sh)
         if (( WIRE_FAILS )); then
             fail "wire finished with $WIRE_FAILS failure(s):"
             wire_fail_summary

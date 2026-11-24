@@ -85,6 +85,19 @@ qbittorrent_gate_login() { # `disable authentik` (GATE_UNTRUSTED=1): its login b
     qb_gate_trust
 }
 
+qbittorrent_listen_port() { # qbittorrent_listen_port PORT [check] — (check: only says whether) it listens on PORT, its random port and UPnP off (port forwarding, services/gluetun/portfwd.sh); read back; rc 1 with the reason on stdout
+    local out want rc=0
+    vpn_pf_client_ready "$(qb_url)/api/v2/app/webapiVersion" '^[1-9]' || { echo "its WebUI does not answer"; return 1; }
+    qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" || rc=$?
+    (( rc == 0 )) || { echo "its login from .env $( (( rc == 1 )) && echo "is refused" || echo "got no answer"): $QB_LOGIN_BODY"; return 1; }
+    want='.listen_port == $p and .random_port == false and .upnp == false'
+    out=$(qb_api /app/preferences) || { echo "its settings are unreadable: $(oneline "$out")"; return 1; }
+    jq -e --argjson p "$1" "$want" <<<"$out" >/dev/null 2>&1 && return 0
+    [[ "${2:-}" != check ]] || { echo "it listens on port $(jq -r '.listen_port' <<<"$out" 2>/dev/null) (random $(jq -r '.random_port' <<<"$out" 2>/dev/null), UPnP $(jq -r '.upnp' <<<"$out" 2>/dev/null))"; return 1; }
+    qb_api /app/setPreferences "json=$(jq -cn --argjson p "$1" '{listen_port: $p, random_port: false, upnp: false}')" >/dev/null || true   # the read-back is the verdict
+    out=$(qb_api /app/preferences) || { echo "its settings are unreadable: $(oneline "$out")"; return 1; }
+    jq -e --argjson p "$1" "$want" <<<"$out" >/dev/null 2>&1 || { echo "it reads back port $(jq -r '.listen_port' <<<"$out" 2>/dev/null), random $(jq -r '.random_port' <<<"$out" 2>/dev/null), UPnP $(jq -r '.upnp' <<<"$out" 2>/dev/null)"; return 1; }
+}
 qb_url() { local p; p=$(svc_hostport qbittorrent) || return 1; echo "http://127.0.0.1:$p"; }
 qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = unreachable
              # QB_LOGIN_BODY always carries the server's reply / curl error

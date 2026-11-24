@@ -53,6 +53,18 @@ transmission_rpc() { # transmission_rpc METHOD ARGUMENTS-JSON -> its .arguments 
     done
     echo "no session id after a 409"; return 1
 }
+transmission_listen_port() { # transmission_listen_port PORT [check] — (check: only says whether) it listens on PORT, its random port and UPnP/NAT-PMP off (port forwarding, services/gluetun/portfwd.sh); read back; rc 1 with the reason on stdout
+    local cur out want fields='{"fields": ["peer-port", "peer-port-random-on-start", "port-forwarding-enabled"]}'
+    vpn_pf_client_ready "$(transmission_url)" '^(401|409)$' || { echo "its RPC does not answer"; return 1; }
+    want='.["peer-port"] == $p and .["peer-port-random-on-start"] == false and .["port-forwarding-enabled"] == false'
+    cur=$(transmission_rpc session-get "$fields") || { echo "its settings are unreadable: $cur"; return 1; }
+    jq -e --argjson p "$1" "$want" <<<"$cur" >/dev/null 2>&1 && return 0
+    [[ "${2:-}" != check ]] || { echo "it reads $(oneline "$cur")"; return 1; }
+    out=$(transmission_rpc session-set "$(jq -cn --argjson p "$1" '{"peer-port": $p, "peer-port-random-on-start": false, "port-forwarding-enabled": false}')") \
+        || { echo "it refused the port: $out"; return 1; }
+    cur=$(transmission_rpc session-get "$fields") || { echo "its settings are unreadable: $cur"; return 1; }
+    jq -e --argjson p "$1" "$want" <<<"$cur" >/dev/null 2>&1 || { echo "it reads back $(oneline "$cur")"; return 1; }
+}
 transmission_login_live() { # -> rc 0 when the running container asks for a login and takes .env's
     [[ "$(transmission_code_anon)" == 401 ]] && transmission_rpc session-get '{"fields": ["version"]}' >/dev/null
 }

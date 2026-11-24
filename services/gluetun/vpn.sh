@@ -218,6 +218,7 @@ leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2
 
     hr "leak-test: the firewall and the traffic"
     lt_firewall "$gcn"
+    lt_firewall_in "$gcn"
     lt_flows "$gcn"
 
     hr "leak-test: attachment audit"
@@ -543,6 +544,7 @@ gluetun_doctor() { # doctor: every VPN'd service joined to the live tunnel, and 
         if ! out=$(sudo docker exec "$gcn" wget -q --spider --timeout=8 "$VPN_EGRESS_URL" 2>&1); then
             d_fail "no egress through the tunnel ($VPN_EGRESS_URL: $(oneline "${out:-no answer}"))" "VPN may be down; downloads are dead (not leaking — kill-switch)" "./mediastack.sh logs gluetun"
         else
+            vpn_pf_doctor
             out=$(sudo docker exec "$gcn" wget -qO- --timeout=8 https://am.i.mullvad.net/json 2>&1 || true)
             ip=$(jq -r '.ip // empty' <<<"$out" 2>/dev/null || true)
             if [[ -n "$ip" ]]; then ok "tunnel egress works; public IP $ip ($(jq -r '.organization // "?"' <<<"$out"))"
@@ -586,8 +588,9 @@ support_gluetun() { # support: the provider and servers asked for, the last leak
     [[ "$(env_get VPN_TYPE)" == openvpn ]] && w+=" over $(vpnp_load "$p" && [[ -z "$(vpnp_protocols "$p")" ]] && echo "what its config file says" || env_get OPENVPN_PROTOCOL)"
     if vpnp_load "$p"; then w+=", $( [[ -n "$(vpnp_call "$p" proven)" ]] && echo "proven $(vpnp_call "$p" proven)" || echo "not tested live by mediastack")"; else w+=", no such provider folder"; fi
     w+=")"
-    for k in COUNTRIES CITIES HOSTNAMES; do v=$(env_get "VPN_SERVER_$k"); w+="; ${k,,} ${v:-any}"; done
+    for k in CATEGORIES REGIONS COUNTRIES CITIES ISPS FLAGS HOSTNAMES; do v=$(env_get "VPN_SERVER_$k"); w+="; ${k,,} ${v:-any}"; done
     echo "$w; DNS $(env_get VPN_DNS_RESOLVERS)"
+    vpn_pf_support
     v=$(state_get "$LEAK_VERDICT")
     case "$v" in 0) echo "last leak-test: passed" ;; 1) echo "last leak-test: FAILED" ;; 2) echo "last leak-test: unproven" ;; *) echo "last leak-test: none recorded" ;; esac
     echo "leak gate: $(leak_gate_closed && echo "CLOSED ($(state_get "$LEAK_GATE"))" || echo open)"

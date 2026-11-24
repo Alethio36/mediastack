@@ -9,6 +9,7 @@ vpnp_private_internet_access_types()     { echo openvpn; }
 vpnp_private_internet_access_filters()   { echo regions hostnames; }
 vpnp_private_internet_access_protocols() { echo udp tcp; }
 vpnp_private_internet_access_proven()    { echo ""; }
+vpnp_private_internet_access_portforward() { echo native servers; }   # its API, with your login, on its forwarding servers only (gluetun's default with forwarding on)
 vpnp_private_internet_access_env()       { echo OPENVPN_USER OPENVPN_PASSWORD; }
 vpnp_private_internet_access_questions() { # TYPE
     vpn_ask_openvpn_login "$(vpn_login_hint "Private Internet Access" private-internet-access)"

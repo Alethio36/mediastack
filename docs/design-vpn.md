@@ -136,7 +136,8 @@ Optional, found by name:
 
 | Function | What it does |
 |---|---|
-| `vpnp_<name>_portforward` | `native` (gluetun arranges the port: Proton, PIA, PrivateVPN) or `static` (a port the person sets on the provider's site: AirVPN, Windscribe). Absent: none. Slice 4 |
+| `vpnp_<name>_portforward` | `native` (gluetun arranges the port: Proton, PIA, PrivateVPN) or `static` (a port the person sets on the provider's site: AirVPN, Windscribe); `native servers`: gluetun then keeps only its forwarding servers (PIA, Proton — its `PORT_FORWARD_ONLY` default). Absent: none. Slice 4 |
+| `vpnp_<name>_portforward_on TYPE` / `_pf_hint TYPE` | what turning forwarding on changes in its keys (Proton's OpenVPN username takes `+pmp`), and why no port came, in one sentence (Proton: a WireGuard key made without NAT-PMP). Slice 4 |
 | `vpnp_<name>_check TYPE` | refuses settings this provider cannot use before gluetun renders (AirVPN without its pre-shared key). Prints the reason, rc 1 |
 | `vpnp_<name>_doctor` | doctor lines of its own (Proton: port forwarding on but the key was made without NAT-PMP) |
 | `vpnp_<name>_protocols` | the OpenVPN protocols it has servers for (default `udp tcp`; gluetun refuses TCP for Giganews, IPVanish and VyprVPN, and its server data has none for ExpressVPN, Privado and VPN Unlimited); empty: its config file decides (`custom`). Slice 2 |
@@ -363,46 +364,66 @@ instead (slice 2):
 ## Port forwarding (slice 4)
 
 `VPN_PORT_FORWARDING=on|off` (default off), asked only for a provider that
-can. Gluetun's own way to hand the port to qBittorrent (its
-`VPN_PORT_FORWARDING_UP_COMMAND` example) needs qBittorrent's "bypass login
-for localhost": in gluetun's namespace that is every VPN'd container, against
-step 6's bypass for Traefik's address alone. Refused. Instead:
+can — before its server choices, which it narrows for some. Gluetun's own way
+to hand the port to qBittorrent (its `VPN_PORT_FORWARDING_UP_COMMAND`
+example) needs qBittorrent's "bypass login for localhost": in gluetun's
+namespace that is every VPN'd container, against step 6's bypass for
+Traefik's address alone. Refused. Instead:
 
-- **Gluetun only writes the port down.** Its up and down hooks write the
-  number to a file in its own config folder and remove it — no API call, no
-  login:
-  `VPN_PORT_FORWARDING_UP_COMMAND=/bin/sh -c 'echo {{PORT}} > /gluetun/forwarded-port'`
-  and a down command that removes it (`{{PORT}}` is gluetun's own number; the
-  commands are fixed text, nothing of the person's in them).
-- **mediastack reads it** — `${CONFIG_ROOT}/gluetun/forwarded-port` — when
-  the gate starts the VPN group and on every 5-minute check. A file older than
-  gluetun's current start is stale and ignored; anything but one port number
-  is refused, saying so. The control server stays closed to everything: the
-  script still holds no gluetun key.
+- **Gluetun only writes the port down — in its own status file.** It writes
+  the port to `VPN_PORT_FORWARDING_STATUS_FILE` each time it gets one and
+  empties the file when forwarding stops (its `portforward` service, read 20
+  Nov 2026), so no command of ours runs in it: the file is pointed at
+  `/gluetun/forwarded_port`, its config folder. (The design first had up and
+  down shell commands writing it; the status file does the same with no text
+  of ours rendered.)
+- **mediastack reads it** — `${CONFIG_ROOT}/gluetun/forwarded_port` — when
+  `up` and `wire` finish and on every 5-minute check (`vpn_pf_sync`,
+  `services/gluetun/portfwd.sh`). A file older than gluetun's current start is
+  left from before (a crash) and ignored; anything but one port is refused,
+  saying so. The control server stays closed to everything: the script still
+  holds no gluetun key.
 - **It sets the port in the download client through that client's own
   login,** with its random port and UPnP off: `<client>_listen_port PORT` in
-  each torrent client's folder (qBittorrent, Deluge, Transmission);
-  check-registries holds every `mediastack.torrent` client to one. Only
-  `DOWNLOAD_CLIENT` gets it: the clients share gluetun's network namespace,
-  so two cannot listen on one port.
+  each torrent client's folder (qBittorrent, Deluge, Transmission; `check`
+  only says whether it already does — doctor's); check-registries holds every
+  `mediastack.torrent` client to one. Only `DOWNLOAD_CLIENT` gets it: the
+  clients share gluetun's network namespace, so two cannot listen on one port.
 - **`static`:** the person's port from the provider's site
-  (`VPN_FORWARDED_PORT`), opened with `FIREWALL_VPN_INPUT_PORTS`, set in the
-  client the same way.
-- **leak-test** also reads gluetun's INPUT rules: traffic in is accepted
-  only on the tunnel, and only to the forwarded port.
+  (`VPN_FORWARDED_PORT`, 1024–65535), opened with `FIREWALL_VPN_INPUT_PORTS`
+  (a reference), set in the client the same way. Windscribe forwards to a
+  static IP: that server is named in `VPN_SERVER_HOSTNAMES`.
+- **Forwarding servers:** with forwarding on, gluetun keeps only PIA's and
+  ProtonVPN's forwarding servers (`PORT_FORWARD_ONLY`'s default) — the server
+  check (slice 3) narrows the same way, so it never passes a city gluetun then
+  finds no server in.
+- **ProtonVPN:** over OpenVPN its username needs `+pmp` (configure adds it,
+  `up` refuses without); over WireGuard the key must have been made with
+  NAT-PMP, which nothing here can see — no port 5 minutes after gluetun
+  started is a warning to ops naming it, with gluetun's own lines.
+- **leak-test** also reads gluetun's INPUT rules: the policy DROP, and from
+  the tunnel only the forwarded port (TCP and UDP) — nothing at all without
+  forwarding (`lt_firewall_in`).
 - **doctor:** the port forwarded is the client's listening port.
-- **A client that cannot be reached** is a warning to ops, retried every 5
-  minutes — never a stop of the VPN group: it is no leak.
+- **A client that cannot be reached** is a warning to ops, once per change
+  (and once when it works again), retried every 5 minutes — never a stop of
+  the VPN group: it is no leak.
+- **Not offered:** PureVPN — gluetun does not arrange its port, and nothing
+  says how a person would learn it; its data marks 31 forwarding servers.
 - **The cost:** after a reconnect (Proton gives a new port each time) the
   client can be unconnectable for up to 5 minutes; downloads go on, only
   incoming connections wait. Reacting at once needs a watch on the file, and
   a file watch does not work when `CONFIG_ROOT` is on NFS — the 5-minute
-  check ships, a faster path only if it proves too slow.
+  check ships, a faster path only if it proves too slow. One port: Proton can
+  forward up to five.
 
-No account to prove it with, but the sync can be proven live: a made-up port
-in the file must reach qBittorrent, Deluge and Transmission (each as
-`DOWNLOAD_CLIENT` in turn), and a file older than gluetun's start must be
-ignored.
+No account to prove it with, but the sync can be proven live:
+`scripts/pf-sync-live.sh PORT` feeds a made-up port through the real code
+into each enabled torrent client in turn (as `DOWNLOAD_CLIENT`), reads it back
+from the client, puts the client's own settings back, and shows a file older
+than gluetun's start ignored — forwarding switched on for that run alone,
+`.env` untouched. leak-test's way in is proven on any provider (nothing in
+from the tunnel).
 
 ## The providers (gluetun `master`, 19 Nov 2026)
 
@@ -470,6 +491,10 @@ from its server data stops the tunnel.
   every folder's filters and flags to `:latest`'s data, per tunnel.
 - `check-registries.sh`: every `mediastack.torrent` client has
   `<client>_listen_port` (slice 4).
+- Port forwarding (slice 4): `test-portfwd.sh` — the folders, what reaches
+  gluetun on and off, each refusal, gluetun's file (old, empty, two ports, a
+  word, a leading zero), the sync and what ops is told, each client's hook,
+  leak-test's way in, configure; `scripts/pf-sync-live.sh` on a running stack.
 - An endpoint by name: a fixture resolver — an answer renders its address,
   sorted; a set that still holds the chosen address changes nothing; one
   without it moves; a failed lookup on the first render stops, later warns
@@ -596,6 +621,12 @@ from its server data stops the tunnel.
 4. **Port forwarding:** native and static, the file, the sync, leak-test's
    INPUT check, doctor. Live: the sync, with a port written into the file by
    hand.
+   **Built 23 Nov 2026**, schema 54 (`VPN_PORT_FORWARDING=off`,
+   `VPN_FORWARDED_PORT` empty): as above (*Port forwarding*) — gluetun's own
+   status file instead of up/down commands, the server check narrowed to
+   forwarding servers, ProtonVPN's `+pmp`, PureVPN left out. Found while
+   building: `support` named only the countries, cities and hostnames of the
+   server choices (all of them now, and forwarding). Not yet proven live.
 
 ## Not in this step
 

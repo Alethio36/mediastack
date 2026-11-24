@@ -34,6 +34,21 @@ deluge_connect() { # deluge_connect -> rc 0 when its web UI talks to its daemon 
     deluge_rpc web.connect "$(jq -cn --arg h "$hid" '[$h]')" >/dev/null && [[ "$(deluge_rpc web.connected '[]')" == true ]]
 }
 
+deluge_listen_port() { # deluge_listen_port PORT [check] — (check: only says whether) it listens on PORT, its random port, UPnP and NAT-PMP off (port forwarding, services/gluetun/portfwd.sh); read back; rc 1 with the reason on stdout
+    local cur out want keys='[["listen_ports", "random_port", "upnp", "natpmp"]]'
+    vpn_pf_client_ready "$(deluge_url)/" '^200$' || { echo "its web UI does not answer"; return 1; }
+    deluge_login "$(env_get DELUGE_PASSWORD)" || { echo "its password from .env is refused"; return 1; }
+    deluge_connect || { echo "its web UI does not reach its daemon"; return 1; }
+    want='.listen_ports == [$p, $p] and .random_port == false and .upnp == false and .natpmp == false'
+    cur=$(deluge_rpc core.get_config_values "$keys") || { echo "its settings are unreadable: $cur"; return 1; }
+    jq -e --argjson p "$1" "$want" <<<"$cur" >/dev/null 2>&1 && return 0
+    [[ "${2:-}" != check ]] || { echo "it reads $(oneline "$cur")"; return 1; }
+    out=$(deluge_rpc core.set_config "$(jq -cn --argjson p "$1" '[{listen_ports: [$p, $p], random_port: false, upnp: false, natpmp: false}]')") \
+        || { echo "it refused the port: $out"; return 1; }
+    cur=$(deluge_rpc core.get_config_values "$keys") || { echo "its settings are unreadable: $cur"; return 1; }
+    jq -e --argjson p "$1" "$want" <<<"$cur" >/dev/null 2>&1 || { echo "it reads back $(oneline "$cur")"; return 1; }
+}
+
 wire_deluge() {
     hr "wire: Deluge"
     svc_enabled deluge || { info "deluge not enabled — skipped"; return 0; }

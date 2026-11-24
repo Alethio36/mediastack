@@ -266,7 +266,10 @@ agreed first:
    cities, ISPs and flags as each provider has them, every one checked against
    gluetun's own server list before gluetun starts; schema 53), **proven live
    the same day** (NordVPN's P2P servers in Zurich; an impossible city refused
-   before anything restarted). Next: slice 4 (port forwarding).
+   before anything restarted). **Slice 4 built 23 Nov 2026** (port
+   forwarding: gluetun's own status file read into the download client by its
+   own login, static ports for AirVPN and Windscribe, leak-test's way in,
+   doctor, schema 54) — not yet proven live. Next: its live proof, then step 9.
 9. **The household's look** — notifications, then branding.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole

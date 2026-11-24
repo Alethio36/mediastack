@@ -32,6 +32,8 @@ done
 for s in $(list lib/rotate.sh 's/^ROTATE_ORDER=(\(.*\))$/\1/p'); do
     want_one ROTATE_ORDER "${s}_secrets"; want_one ROTATE_ORDER "${s}_secret_rotate"
 done
+# port forwarding: every torrent client (mediastack.torrent) takes the forwarded port — <client>_listen_port
+for s in $(grep -l 'mediastack.torrent: "true"' services/*/compose.yml | sed 's|services/||; s|/compose.yml||'); do want_one mediastack.torrent "${s//-/_}_listen_port"; done
 # people-sync: an app people sign in to (mediastack.auth native, or a household
 # gate's mediastack.auth.group) says what happens to their accounts —
 # mediastack.people follow (its <svc>_people_follow), none (a comment says

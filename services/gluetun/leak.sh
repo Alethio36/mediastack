@@ -315,6 +315,38 @@ lt_firewall() { # lt_firewall GLUETUN — every way out of the namespace: the po
     else lt_pass "firewall: out the LAN side only to the VPN server (${LT_ENDPOINTS% }) and the stack's own network ($sub)"; fi
 }
 
+lt_firewall_in() { # lt_firewall_in GLUETUN — every way into the namespace: the policy DROP, and the tunnel open to the forwarded port alone (nothing, without forwarding)
+    # Loopback, replies to a connection already made, and the namespace's own
+    # docker subnet on its LAN side (the stack reaching the VPN'd services)
+    # are expected. From the tunnel — the internet — only the port the VPN
+    # forwards (portfwd.sh), TCP and UDP; anything else in from it is a FAIL.
+    local gcn=$1 rules sub r port want="" kind opened="" bad=() unknown=() stray=()
+    rules=$(sudo docker exec "$gcn" iptables -S INPUT 2>&1) || { lt_unproven "firewall in: cannot read gluetun's rules ($(oneline "$rules"))"; return 0; }
+    sub=$(lt_ns_subnet "$gcn")
+    [[ -n "$sub" ]] || { lt_unproven "firewall in: cannot read the namespace's own subnet (eth0)"; return 0; }
+    kind=$(vpn_pf_kind); if [[ -n "$kind" ]]; then vpn_pf_read; want=$VPN_PF_PORT; fi
+    if grep -qx -- '-P INPUT DROP' <<<"$rules"; then :
+    else lt_fail "firewall in: gluetun's inbound policy is not DROP ($(grep -- '^-P INPUT' <<<"$rules" | sed -n 1p)) — anything may reach the VPN'd services"; return 0; fi
+    while IFS= read -r r; do
+        [[ "$r" == "-A INPUT "* && "$r" == *" -j ACCEPT"* ]] || continue
+        port=$(grep -oE -- '--dport [0-9]+' <<<"$r" | awk '{print $2}' || true)
+        if [[ "$r" == *" -i lo "* ]]; then continue
+        elif [[ "$r" == *"--ctstate RELATED,ESTABLISHED"* || "$r" == *"--ctstate ESTABLISHED,RELATED"* ]]; then continue
+        elif [[ "$r" =~ \ -i\ (tun|wg)[^\ ]*\  ]]; then
+            if [[ -n "$port" && -n "$want" && "$port" == "$want" ]]; then opened="$port"
+            elif [[ -n "$port" && "$kind" == native && -z "$want" ]]; then stray+=("$r")   # a port gluetun opened that its file does not name yet
+            else bad+=("$r"); fi
+        elif [[ "$r" == *" -i eth"* ]] && [[ "$r" =~ -d\ ([0-9./]+) ]] && ip4_cidr_inside "${BASH_REMATCH[1]}" "$sub"; then continue
+        else unknown+=("$r"); fi
+    done <<<"$rules"
+    if (( ${#bad[@]} )); then lt_fail "firewall in: lets traffic in from the tunnel$( [[ -n "$want" ]] && echo " beyond the forwarded port $want" || echo " with no port forwarded" ): $(printf '%s; ' "${bad[@]}")(a FIREWALL_VPN_INPUT_PORTS in your override?)"
+    elif (( ${#unknown[@]} )); then lt_unproven "firewall in: rules this check cannot account for: $(printf '%s; ' "${unknown[@]}")"
+    elif (( ${#stray[@]} )); then lt_unproven "firewall in: the tunnel open on a port gluetun's file does not name yet ($VPN_PF_WHY): $(printf '%s; ' "${stray[@]}")"
+    elif [[ -n "$kind" && -n "$want" && -z "$opened" ]]; then lt_unproven "firewall in: port $want is forwarded but not open on the tunnel — peers cannot connect in (no leak)"
+    elif [[ -n "$opened" ]]; then lt_pass "firewall in: from the tunnel, only port $opened (the port the VPN forwards); the rest dropped"
+    else lt_pass "firewall in: nothing comes in from the tunnel but replies (no port forwarded)"; fi
+}
+
 # A tracked connection outlives its session: after gluetun changes servers
 # (it does on its own, found live Nov 2026: five times in an hour of
 # restarts), the old server's entry stays tracked until its timeout runs out

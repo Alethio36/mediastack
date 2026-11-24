@@ -9,6 +9,7 @@ vpnp_windscribe_name()    { echo windscribe; }
 vpnp_windscribe_types()   { echo wireguard openvpn; }
 vpnp_windscribe_filters() { echo regions cities hostnames; }
 vpnp_windscribe_proven()  { echo ""; }
+vpnp_windscribe_portforward() { echo static; }   # a port its site forwards to your static IP (name that server in VPN_SERVER_HOSTNAMES), opened on the tunnel by gluetun
 vpnp_windscribe_env() { # TYPE
     case "$1" in
         wireguard) echo WIREGUARD_PRIVATE_KEY WIREGUARD_ADDRESSES WIREGUARD_PRESHARED_KEY ;;

@@ -66,6 +66,31 @@ vpn_ask_flags() { # vpn_ask_flags NAME — the server flags (empty: none), recor
     done
     env_set VPN_SERVER_FLAGS "$v"
 }
+vpn_ask_portforward() { # vpn_ask_portforward NAME TYPE — a port forwarded to the download client, asked only where NAME forwards one; recorded (off where it cannot)
+    local kind p; kind=$(vpnp_portforward "$1")
+    if [[ -z "$kind" ]]; then
+        [[ "$(env_get VPN_PORT_FORWARDING)" != on ]] || env_set VPN_PORT_FORWARDING off
+        return 0
+    fi
+    if q_quick; then q_took "Port forwarding" "$(env_get VPN_PORT_FORWARDING)"; return 0; fi
+    info "$1 can forward a port to the download client, so peers can connect in — better for seeding.
+Off changes nothing for downloads.$( [[ "$kind" == static ]] && echo " $1 forwards the port you set on its site: you give it next." )"
+    local yes=0
+    if [[ "$(env_get VPN_PORT_FORWARDING)" == on ]]; then confirm_yes "Forward a port?" && yes=1; else confirm "Forward a port?" && yes=1; fi
+    if (( ! yes )); then env_set VPN_PORT_FORWARDING off; env_set VPN_FORWARDED_PORT ""; return 0; fi
+    env_set VPN_PORT_FORWARDING on
+    if [[ "$kind" == static ]]; then
+        while true; do
+            ask VPN_FORWARDED_PORT "The port $1's site forwards to you" "$(env_get VPN_FORWARDED_PORT)"
+            p=$(pf_port_problem "$REPLY_VAL"); [[ -n "$p" ]] || break
+            fail "$p"
+        done
+        env_set VPN_FORWARDED_PORT "$REPLY_VAL"
+    else
+        env_set VPN_FORWARDED_PORT ""
+    fi
+    if vpnp_has "$1" portforward_on; then vpnp_call "$1" portforward_on "$2"; fi
+}
 vpn_ask_server_choices() { # vpn_ask_server_choices NAME — the server choices NAME offers: its flags first (they narrow every list), then each filter in order but hostnames (set in .env only)
     local f p
     [[ -n "$(vpnp_call "$1" filters | tr -d '[:space:]')" ]] || return 0
@@ -143,6 +168,20 @@ gluetun_vpn_from_answers() { # the VPN from the answers file; a blank keeps what
     elif answers_any OPENVPN_PROTOCOL && answer OPENVPN_PROTOCOL; then
         answer_refused "OPENVPN_PROTOCOL: $( [[ "$t" == openvpn ]] && echo "$prov's OpenVPN config file says it" || echo "only for VPN_TYPE=openvpn — VPN_TYPE is $t" )"
     fi
+    # port forwarding, before the server choices: it narrows them (forwarding servers only, for some)
+    local kind; kind=$(vpnp_portforward "$prov")
+    if answer VPN_PORT_FORWARDING; then
+        if [[ "$REPLY_VAL" == on && -z "$kind" ]]; then answer_refused "VPN_PORT_FORWARDING=on: mediastack forwards no port with $prov (it does with: $(vpn_pf_providers | paste -sd' ' | sed 's/ /, /g'))"
+        else env_set VPN_PORT_FORWARDING "$REPLY_VAL"; fi
+    elif [[ -z "$kind" && "$(env_get VPN_PORT_FORWARDING)" == on ]]; then env_set VPN_PORT_FORWARDING off
+    fi
+    if answer VPN_FORWARDED_PORT; then
+        if [[ "$kind" != static || "$(env_get VPN_PORT_FORWARDING)" != on ]]; then answer_refused "VPN_FORWARDED_PORT: only for VPN_PORT_FORWARDING=on with a provider that forwards a port you set (AirVPN, Windscribe) — $prov $( [[ "$kind" == native ]] && echo "arranges its own" || echo "with forwarding off" )"
+        else p=$(pf_port_problem "$REPLY_VAL"); [[ -z "$p" ]] || answer_refused "VPN_FORWARDED_PORT: $p"; env_set VPN_FORWARDED_PORT "$REPLY_VAL"; fi
+    elif [[ "$kind" != static || "$(env_get VPN_PORT_FORWARDING)" != on ]] && [[ -n "$(env_get VPN_FORWARDED_PORT)" ]]; then env_set VPN_FORWARDED_PORT ""
+    fi
+    if [[ "$(vpn_pf_kind "$prov")" == static && -z "$(env_get VPN_FORWARDED_PORT)" ]]; then answer_refused "VPN_PORT_FORWARDING=on: $prov forwards the port you set on its site — write it as VPN_FORWARDED_PORT"; fi
+    if [[ -n "$(vpn_pf_kind "$prov")" ]] && vpnp_has "$prov" portforward_on; then vpnp_call "$prov" portforward_on "$t"; fi
     local f key v
     for f in flags $VPN_FILTER_ORDER; do
         [[ "$f" != hostnames ]] || continue   # .env only: never asked
@@ -166,7 +205,7 @@ gluetun_vpn_from_answers() { # the VPN from the answers file; a blank keeps what
         fi
     fi
     vpn_protocol_tidy "$prov" "$t"
-    q_answered "VPN" "$prov ($t$( [[ "$t" == openvpn && -n "$protos" ]] && echo " over $(env_get OPENVPN_PROTOCOL)" )), its login set, $(vpn_servers_words "$prov")"
+    q_answered "VPN" "$prov ($t$( [[ "$t" == openvpn && -n "$protos" ]] && echo " over $(env_get OPENVPN_PROTOCOL)" )), its login set, $(vpn_servers_words "$prov")$(vpn_pf_words "$prov")"
 }
 
 gluetun_vpn_questions() { # configure's VPN step — only when something runs in the VPN
@@ -175,7 +214,7 @@ gluetun_vpn_questions() { # configure's VPN step — only when something runs in
     cur=$(env_get VPN_PROVIDER); curt=$(env_get VPN_TYPE)
     local -a keys; mapfile -t keys < <(vpn_all_keys)
     local f; for f in flags $VPN_FILTER_ORDER; do keys+=("${VPN_FILTER_KEY[$f]}"); done
-    if answers_any VPN_PROVIDER VPN_TYPE OPENVPN_PROTOCOL "${keys[@]}"; then gluetun_vpn_from_answers; return 0; fi
+    if answers_any VPN_PROVIDER VPN_TYPE OPENVPN_PROTOCOL VPN_PORT_FORWARDING VPN_FORWARDED_PORT "${keys[@]}"; then gluetun_vpn_from_answers; return 0; fi
     if q_quick && vpnp_load "$cur" && [[ -z "$(vpn_provider_problems)" ]]; then vpn_protocol_tidy "$cur" "$curt"; q_took "VPN" "keep $cur ($curt) and its login"; return 0; fi
     if answers_checking; then q_unasked "VPN" "VPN_PROVIDER and its keys (answers.example, the gluetun lines)"; return 0; fi
     explain "VPN (gluetun)" \
@@ -191,5 +230,6 @@ or 'custom' to give your own WireGuard or OpenVPN config."
     vpnp_call "$prov" questions "$t"
     if [[ "$t" == openvpn ]]; then vpn_ask_protocol "$prov"; fi
     vpn_protocol_tidy "$prov" "$t"   # nothing left that this provider and tunnel do not read
+    vpn_ask_portforward "$prov" "$t"   # before the server choices: forwarding narrows them for some
     vpn_ask_server_choices "$prov"
 }

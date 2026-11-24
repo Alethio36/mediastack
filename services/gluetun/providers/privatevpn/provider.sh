@@ -9,6 +9,7 @@ vpnp_privatevpn_types()     { echo openvpn; }
 vpnp_privatevpn_filters()   { echo countries cities hostnames; }
 vpnp_privatevpn_protocols() { echo udp tcp; }
 vpnp_privatevpn_proven()    { echo ""; }
+vpnp_privatevpn_portforward() { echo native; }   # gluetun asks its API; any server
 vpnp_privatevpn_env()       { echo OPENVPN_USER OPENVPN_PASSWORD; }
 vpnp_privatevpn_questions() { # TYPE
     vpn_ask_openvpn_login "$(vpn_login_hint "PrivateVPN" privatevpn)"
