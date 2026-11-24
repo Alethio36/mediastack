@@ -63,7 +63,8 @@ exit:     0 after 412s
   record's times, in the stack's zone; a prompt is left unstamped, since
   readline's line editing counts from column 0; the panel and a pipe get the
   output as it was). Long health waits also say who they still wait for, every
-  30 s (`wait_verdict`). Both root
+  30 s, and a failed one shows the service's own words: its log's last error
+  lines, else its last lines (`wait_verdict`, `verdict_evidence`). Both root
   causes found on 12 Nov came down to ordering between components (authentik's
   OAuth2 blueprint against our first pass; people-sync against Navidrome's
   `createAdmin`), which a record with only a start and an end cannot show.

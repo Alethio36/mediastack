@@ -993,6 +993,22 @@ c_host_path() { # c_host_path <cname> <container-path> -> the host path behind i
 # wait only ever cuts off a healthcheck that hangs rather than one that is slow.
 START_WAIT=400
 VERDICT_SAY_EVERY=30   # seconds between wait_verdict's "still waiting" lines
+VERDICT_LOG_SCAN=300   # a failed wait reads this many of the service's last log lines...
+VERDICT_LOG_LINES=5    # ...and shows this many: the error-like ones, else the last
+VERDICT_LOG_RE='error|fatal|panic|fail|denied|refused|exception|traceback|cannot|unable'
+verdict_evidence() { # verdict_evidence SVC — under a failed wait: the service's own words, its last error lines (else its last lines)
+    local cn lines l what="its last error lines"
+    cn=$(svc_cname "$1")
+    [[ "$(c_state "$cn")" != absent ]] || return 0   # no container, no log
+    lines=$(sudo docker logs --tail "$VERDICT_LOG_SCAN" "$cn" 2>&1 | grep -iE "$VERDICT_LOG_RE" | tail -n "$VERDICT_LOG_LINES" || true)
+    if [[ -z "$lines" ]]; then
+        lines=$(sudo docker logs --tail "$VERDICT_LOG_LINES" "$cn" 2>&1 || true); what="its last lines (none reads as an error)"
+    fi
+    [[ -n "$lines" ]] || return 0
+    info "$1's log, $what — all of it: ./mediastack.sh logs $1"
+    while IFS= read -r l; do printf '     %s
+' "${l:0:300}"; done <<<"$lines"
+}
 VERDICT_BAD=""
 declare -A VERDICT_WHY=()
 # wait_verdict [--recover] SVC... — block until Docker has judged every
@@ -1056,7 +1072,7 @@ wait_verdict() {
             [[ "$h" == starting ]] && VERDICT_WHY[$s]+=" — its healthcheck is probably hanging"
             vd[$s]=bad
         fi
-        [[ "${vd[$s]}" == bad ]] && VERDICT_BAD+="$s "
+        [[ "${vd[$s]}" == bad ]] && { VERDICT_BAD+="$s "; verdict_evidence "$s"; }
     done
     VERDICT_BAD=${VERDICT_BAD% }
     [[ -z "$VERDICT_BAD" ]]

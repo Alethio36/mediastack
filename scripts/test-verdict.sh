@@ -38,6 +38,7 @@ apply_events() { # $T/events: "<at> <cname> <field> <value>"
     done < "$T/events"
 }
 sudo() {
+    if [[ "$1 $2" == "docker logs" ]]; then echo "${*: -1}" >> "$T/logs_read"; cat "$T/log-${*: -1}" 2>/dev/null; return 0; fi
     [[ "$1 $2" == "docker inspect" ]] || { "$@"; return; }
     shift 4   # docker inspect --type container
     local cn out="" h
@@ -130,4 +131,16 @@ run s1 s2
     && ! grep 'still waiting' <<<"$OUT" | grep s2 >/dev/null || fail_ "every 30s: who is still awaited and their health, a settled one not named ($OUT)"; pass
 reset; ctr s1 running starting; run s1
 [[ "$RC" == 1 && "$(grep -c 'still waiting' <<<"$OUT")" == 13 ]] || fail_ "a wait that runs out: a line every 30s to the end ($(grep -c 'still waiting' <<<"$OUT"))"; pass
+# ---- a failed wait shows the service's own words ----
+reset; rm -f "$T/logs_read"; ctr s1 running starting; ctr s2 running healthy
+printf '%s\n' 'INFO [openvpn] Peer Connection Initiated' 'ERROR [openvpn] AUTH: Received control message: AUTH_FAILED' '' 'Your credentials might be wrong' 'INFO [openvpn] restarting' > "$T/log-mediastack-s1"
+run s1 s2
+[[ "$RC" == 1 ]] && grep -q "s1's log, its last error lines — all of it: ./mediastack.sh logs s1" <<<"$OUT" \
+    && grep -qx '     ERROR \[openvpn\] AUTH: Received control message: AUTH_FAILED' <<<"$OUT" && ! grep -q 'Peer Connection' <<<"$OUT" \
+    || fail_ "a failed wait: the error lines of its log, nothing else ($OUT)"; pass
+[[ "$(sort -u "$T/logs_read")" == mediastack-s1 ]] || fail_ "only the failed service's log is read ($(sort -u "$T/logs_read" | paste -sd' '))"; pass
+reset; ctr s1 exited -; printf '%s\n' 'starting up' 'listening on :8080' 'bye' > "$T/log-mediastack-s1"; run s1
+[[ "$RC" == 1 ]] && grep -q "its last lines (none reads as an error)" <<<"$OUT" && grep -qx '     bye' <<<"$OUT" || fail_ "no error line: its last lines instead ($OUT)"; pass
+reset; rm -f "$T/logs_read"; run s1
+[[ "$RC" == 1 && ! -e "$T/logs_read" ]] || fail_ "no container: no log asked for"; pass
 echo "OK verdict: $checks checks"
