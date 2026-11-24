@@ -68,6 +68,9 @@ grep -qx 'BRAND_COLOUR_SUCCESS=2E8B57' "$ENV_FILE" && [[ "$(brand_colour success
 ( brand_colour_set success green ) >/dev/null 2>&1 && fail_ "a colour that is none: refused"
 grep -qx 'BRAND_COLOUR_SUCCESS=2E8B57' "$ENV_FILE" || fail_ "refused: the colour stays"; pass
 ( brand_colour_set purple '#2e8b57' ) >/dev/null 2>&1 && fail_ "an unknown type: refused"; pass
+# the colour shown as itself on a terminal (24-bit), nothing in a log
+[[ -z "$(brand_swatch 2E8B57)" ]] || fail_ "no terminal: no swatch"; pass
+[[ "$(C_RST=$'\e[0m'; brand_swatch 2E8B57)" == $'\e[48;2;46;139;87m  \e[0m ' ]] || fail_ "a terminal: a block in the colour itself"; pass
 env_type_ok hex 2E8B57 && ! env_type_ok hex '#2E8B57' || fail_ ".env's hex type: six digits, no #"; pass
 
 # Seerr's cards take the kit's colour; the defaults are Apprise's own

@@ -595,7 +595,7 @@ there, and each message type's colour is yours to pick:
 reads the rest of the line as a comment otherwise; or leave it out). Every
 card follows — mediastack's own messages (the colour is the hub's start-up
 setting, so `brand` restarts it) and Seerr's events. `brand` alone shows the
-kit. A colour edited in `.env` by hand reaches the hub at the next `up`,
+kit (on a terminal each colour is shown as itself, beside its code). A colour edited in `.env` by hand reaches the hub at the next `up`,
 and Seerr's cards at the next `wire apprise`.
 
 The hub's configuration is Apprise's YAML: mediastack's entries sit

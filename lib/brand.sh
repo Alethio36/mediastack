@@ -38,6 +38,11 @@ brand_icon_problem() { # brand_icon_problem FILE -> why it cannot be the icon ("
 
 brand_colour() { echo "#$(env_get "BRAND_COLOUR_${1^^}")"; }   # brand_colour TYPE -> #RRGGBB
 
+brand_swatch() { # brand_swatch RRGGBB -> a small block in that colour and a space, on a terminal (24-bit colour); nothing otherwise
+    [[ -n "$C_RST" ]] || return 0
+    printf '\e[48;2;%d;%d;%dm  %s ' "$((16#${1:0:2}))" "$((16#${1:2:2}))" "$((16#${1:4:2}))" "$C_RST"
+}
+
 brand_colour_value() { # brand_colour_value TEXT -> the .env form (6 hex digits, upper case); rc 1 when it is not a colour
     local v=${1#\#}
     [[ "$v" =~ ^[0-9A-Fa-f]{6}$ ]] || return 1
@@ -78,7 +83,7 @@ brand_status() {
     fi
     for t in "${BRAND_TYPES[@]}"; do
         v=$(env_get "BRAND_COLOUR_${t^^}")
-        info "colour, $t: #$v$([[ "$v" == "${ENV_DEFAULT[BRAND_COLOUR_${t^^}]}" ]] && echo "  (mediastack's)")"
+        info "colour, $t: $(brand_swatch "$v")#$v$([[ "$v" == "${ENV_DEFAULT[BRAND_COLOUR_${t^^}]}" ]] && echo "  (mediastack's)")"
     done
 }
 
@@ -88,10 +93,10 @@ brand_colour_set() { # brand_colour_set TYPE COLOUR|default
     load_env
     k="BRAND_COLOUR_${t^^}"
     if [[ "$2" == default ]]; then
-        env_del "$k"; ok "$t messages: mediastack's colour, #${ENV_DEFAULT[$k]}"
+        env_del "$k"; ok "$t messages: mediastack's colour, $(brand_swatch "${ENV_DEFAULT[$k]}")#${ENV_DEFAULT[$k]}"
     else
         v=$(brand_colour_value "$2") || die "'$2' is not a colour — six hex digits, e.g. #3AA337 (the # is optional)"
-        env_set "$k" "$v"; ok "$t messages: #$v"
+        env_set "$k" "$v"; ok "$t messages: $(brand_swatch "$v")#$v"
     fi
     brand_apply
 }
