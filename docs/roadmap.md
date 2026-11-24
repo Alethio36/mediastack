@@ -429,6 +429,12 @@ agreed first:
       can pass. Run the code under test with the entrypoint's own `set -eE`
       and trap, each check in its own subshell, so a test sees what a run
       would.
+    - **The arrs' health failures arrive as blue info cards** (seen 24 Nov
+      2026 on Discord): Radarr, Sonarr and Prowlarr send every message to
+      the hub as one type, so "Health Check Failure" looks like news. Their
+      health messages should take the warning (or failure) colour — through
+      the hub entry's type, a per-title rule, or whatever their Apprise
+      settings offer (check their source first).
     - **Contributors' shellcheck is not CI's** (found 24 Nov 2026): CI runs
       Ubuntu 24.04's (0.9); a newer one (0.11) passed a test file CI failed
       (SC2218), and unstable stayed red until the promote noticed. A lint
