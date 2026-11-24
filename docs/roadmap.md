@@ -297,7 +297,13 @@ agreed first:
    for mediastack's cards, mediastack's entries for Seerr's); the `brand`
    verb shows the kit and changes a colour or the icon, applied at once. The
    name stays configure's question (it re-applies the portal and the apps
-   that show it). Not yet proven live. Deferred: the background picture and
+   that show it). **Proven live 24 Nov 2026** on the test box: the hub took
+   the colour map at `up`; a new success and info colour reached
+   mediastack's cards and Seerr's alike, each applied at once (the hub
+   restarted, about 10 s); a non-square icon refused with its size; back to
+   the defaults; doctor's brand section; `brand` shows each colour as itself
+   on a terminal (24-bit). An icon of your own is proven by the tests only
+   (the upload path is the one slice 1 proved live). Deferred: the background picture and
    accent colour (slice 3, the portal: nothing else shows them); a public
    icon address for platforms that cannot take an upload (Slack, ntfy) —
    when one is set up. Next: slice 3, the portal.
