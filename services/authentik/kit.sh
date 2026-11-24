@@ -159,7 +159,7 @@ authentik_app_icons() { # every mediastack card shows its app's icon (yours, els
             if [[ -n "$p" ]]; then wfail "authentik: $s's icon is unusable, its card keeps what it shows — $p"; continue; fi
             want=$(authentik_kit_name "$src" "icons/$s")
         fi
-        authentik_kit_field "$s's card icon" "icon-$s" "$(jq -r '.meta_icon // ""' <<<"$app")" "$want" "" || continue
+        authentik_kit_field "$([[ "$s" == getting-started ]] && echo "the Start here card's icon" || echo "$s's card icon")" "icon-$s" "$(jq -r '.meta_icon // ""' <<<"$app")" "$want" "" || continue
         ak_api PATCH "/core/applications/$(authentik_card_slug "$s")/" "$(jq -cn --arg i "$want" '{meta_icon:$i}')" >/dev/null \
             && { state_set "authentik-kit-icon-$s" "$want"; n=$((n + 1)); } \
             || wfail "authentik refused $s's card icon"

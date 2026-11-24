@@ -369,6 +369,13 @@ agreed first:
       said `by: panel` — the message read the record a second time, so what
       the check saw was lost; 0 failures in 40 runs under full CPU load after.
       The checks now print what they read and the records folder then.
+    - **The configure tests run without the ERR trap** (`set +e +E; trap -
+      ERR` in test-configure, test-questions and test-answers, so each check
+      reads its own status): an unguarded failure inside configure's code,
+      which a real run stops on and names (`on_err`), carries on there and
+      can pass. Run the code under test with the entrypoint's own `set -eE`
+      and trap, each check in its own subshell, so a test sees what a run
+      would.
     - **The leak gate closed once on `up` right after gluetun was recreated**
       (16 Nov 2026, anzac4, 18:55): a FAIL, not shown because the run's
       output was discarded; `leak-test` passed minutes later and every
