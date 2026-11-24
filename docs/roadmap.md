@@ -345,11 +345,46 @@ agreed first:
    **Step 9 done.** Everything else the kit could reach — Kavita's themes,
    Navidrome's sign-in, Jellyfin's logo and server name, error pages, a
    public icon address — is in the watchlist ("More of the household's look").
-10. **Live TV (Dispatcharr)** — evaluation, then the build.
+10. **Live TV (Dispatcharr)** — evaluation, then the build. *Reframed 24 Nov
+    2026:* also the first service added under the folder contract ("Organised
+    by service" below), and its proof. A shipped service should slot in as
+    `services/dispatcharr/` — its fragment, settings rows, questions, wire
+    role, icon, kit hooks, README — plus only the changes the contract names
+    as deliberate: its word in each explicit verb list (`WIRE_ROLES`,
+    `DOCTOR_APPS`, …) and its lines in `.env.example`. Every other file it
+    makes us touch — the installer, configure, the questionnaire, wire,
+    doctor, backup, the edge — is recorded as it happens and is a finding:
+    made generic in this step where cheap, else filed for step 11. It ends
+    with the recipe written down for whoever adds the next one (a
+    contributor's section beside `docs/adding-a-service.md`, which covers
+    your own services in `custom/compose.d/`), held by `check-registries`
+    where a rule can be checked.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless
     complexity, each finding fixed or filed. Before the README, so it
-    describes what is left. Already noted for it (Nov 2026):
+    describes what is left. *Widened 24 Nov 2026:* a deep dive, not only the
+    list below — every file read, looking for what fell through the cracks:
+    - **dead code** — functions nothing calls, settings nothing reads, state
+      keys written and never read, migrations past their window, tests of
+      what is gone, comments describing what no longer happens;
+    - **architecture** — the same pattern written more than once (the
+      "set while it is the app's own or mediastack's last" rule lives in
+      several places; how each app's API is reached and its answer judged),
+      contracts that leak (a service reaching into another's internals,
+      `lib/` knowing a service by name), state kept about another app where
+      the app could be asked, order that only works by accident;
+    - **drift** — docs and comments against the code, roadmap entries marked
+      done against what is built, watchlist entries whose condition has
+      fired, messages that say one thing and do another;
+    - **the tests themselves** — what they cannot see (the ERR trap below; a
+      stub that hides a real failure), the tools they run on (the
+      shellcheck below), checks that cannot fail;
+    - **security and safety** — every `sudo`, every secret's path, every
+      place input reaches a shell, a file or an API.
+    Every finding is written down (here or in its own file) with a verdict —
+    fixed, filed, or kept with the reason — so nothing is dropped silently.
+    Big by design: done in slices by area, each with its own fixes. Already
+    noted for it (Nov 2026):
     - **One apply of the portal's setup takes about four minutes**, an
       unchanged one too (authentik's log, a fresh install) — every first
       wire and every rotation of its settings waits it out. Why, and whether
@@ -394,6 +429,10 @@ agreed first:
       can pass. Run the code under test with the entrypoint's own `set -eE`
       and trap, each check in its own subshell, so a test sees what a run
       would.
+    - **Contributors' shellcheck is not CI's** (found 24 Nov 2026): CI runs
+      Ubuntu 24.04's (0.9); a newer one (0.11) passed a test file CI failed
+      (SC2218), and unstable stayed red until the promote noticed. A lint
+      entry point that runs CI's checks and names the version it needs.
     - **The leak gate closed once on `up` right after gluetun was recreated**
       (16 Nov 2026, anzac4, 18:55): a FAIL, not shown because the run's
       output was discarded; `leak-test` passed minutes later and every
@@ -423,7 +462,9 @@ agreed first:
 13. **Validation** — soak stages 2 (synthetic media) and 3 (mishaps); the
     dependency layers below; Wizarr sign-in live; `restore --service
     authentik`, Kavita and Audiobookshelf restores; the household's own preset
-    from an answers file.
+    from an answers file; and soak stage 5 (from step 3, added 24 Nov 2026):
+    each preset live from a fresh install — standard, Deluge-only,
+    Jellyfin-only, Wizarr, no Traefik.
 14. **Versions from the repo** — the final step, locking in a working
     configuration, with Renovate's report-only trial; see its section. With
     it `SCRIPT_UPDATES=auto` (moved from step 7, 19 Nov 2026): the switch on
