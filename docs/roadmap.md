@@ -335,8 +335,14 @@ agreed first:
    portal, a sign-in line naming the household; Seerr and the web panel the
    name as their title. Not taken: Jellyfin's logo (only a picture inside
    its CSS could replace its banner); Kavita, Audiobookshelf, Navidrome
-   (signed in through the portal; little of their own to brand). Not yet
-   proven live.
+   (signed in through the portal; little of their own to brand). **Proven
+   live 24 Nov 2026** on the test box: Jellyfin's sign-in with the accent
+   (the button, the focused field and its label — its secondary colour,
+   found in the spike) and the background behind it, the sign-in line;
+   Seerr's tab "Sign In - Mediastack"; back to the defaults, the line kept.
+   Found live: a change right after the accent reached authentik while it
+   restarted for its email templates — `brand` now waits for it to be ready.
+   **Step 9 done.**
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless
