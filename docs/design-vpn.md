@@ -3,10 +3,11 @@
 *Status: **agreed** (19 Nov 2026), MVP plan step 8. **Slice 1 built and
 proven live** (19–20 Nov 2026, the test box): the provider layer, the eight
 WireGuard providers and `custom` with endpoint names, gluetun's own settings
-fixed, schema 51. **Slice 2 built** (23 Nov 2026), not yet proven live:
-OpenVPN for every provider gluetun runs it for (the fourteen OpenVPN-only
-folders, seven of the WireGuard eight), `custom` OpenVPN, the leak gate's
-capture on the tunnel's own protocol, schema 52. Revised the day it was agreed —
+fixed, schema 51. **Slice 2 built and proven live** (23 Nov 2026, the test
+box): OpenVPN for every provider gluetun runs it for (the fourteen
+OpenVPN-only folders, seven of the WireGuard eight), `custom` OpenVPN, the leak
+gate's capture on the tunnel's own protocol, schema 52 — and two NordVPN fixes
+it found (standard servers only; OpenVPN over UDP only). Revised the day it was agreed —
 an endpoint's hostname is resolved by mediastack (not refused), port
 forwarding reaches the download client through a file gluetun writes (not
 its control server), and every secret follows the stack's one rule
@@ -488,6 +489,22 @@ from its server data stops the tunnel.
    `OPENVPN_ENDPOINT_PORT` for NordVPN. `vpnp_nordvpn_protocols` is `udp`
    (docs/watchlist.md says when it comes back). Proven live over OpenVPN/UDP:
    nl834, the gate, `leak-test --killswitch` (both proofs), `wire --verify`.
+   **Slice 2 proven live, 23 Nov 2026** (the test box, NordVPN):
+   - schema 51 → 52 on a running stack: nothing changed, gate PASS;
+   - configure: the tunnel asked where a provider has two, the token giving the
+     OpenVPN login, the summary's line; a switch of tunnel emptying the other's
+     keys;
+   - NordVPN over OpenVPN/UDP: as above; `OPENVPN_PROTOCOL=tcp` refused at
+     once, naming the fix;
+   - `custom` OpenVPN by name (NordVPN's own `.ovpn` for us8219, its remotes
+     renamed): kept unchanged in `custom/vpn/` (0600), the copy gluetun runs
+     with one remote at the address looked up and the file's own port (1231),
+     the firewall open to that alone, gate and leak-test PASS; the name moving
+     (a forged record, `vpn-watch`): detected, the group through the full
+     gate, the copy at the address;
+   - back to NordVPN over WireGuard: the copy removed, your file kept, the
+     OpenVPN login emptied, no endpoint record, the first server standard.
+   Not provable here: every other provider, and TCP on a live provider.
 3. **Server choices per provider:** regions, cities, categories and flags,
    checked against the image's server data (`format-servers -<provider>
    -format json`) before gluetun starts, and in configure where gluetun's

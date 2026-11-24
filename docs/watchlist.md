@@ -318,6 +318,11 @@ NordVPN, so mediastack cannot set the port; routing NordVPN TCP through
 updater fills them), or gluetun allows a custom port for NordVPN. Then
 `vpnp_nordvpn_protocols` goes back to `udp tcp`, proven live over TCP.
 
+The same risk stands over UDP: NordVPN's own `.ovpn` files now list UDP on
+1231–1234 too, while gluetun dials 1194 — still answered (23 Nov 2026: nl834,
+us8219). If NordVPN over OpenVPN/UDP ever stops connecting, check 1194 first;
+WireGuard (51820) is not affected.
+
 ## Deferred services
 
 Services assessed for the stack and consciously *not* shipped yet. Adding any

@@ -255,11 +255,14 @@ agreed first:
    move and a provider switch both ways. Found live and fixed with it: a
    gluetun recreate now stops its VPN group first and re-joins it after the
    gate (up, update, the move); a switch drops the old provider's keys.
-   **Slice 2 built 23 Nov 2026** (OpenVPN: every provider gluetun runs it
-   for, `custom` OpenVPN, the leak gate's capture on the tunnel's protocol,
-   schema 52), not yet proven live. Next: slice 2 live (NordVPN over UDP and
-   TCP, the kill-switch, a custom `.ovpn` by name), slice 3 (server choices),
-   slice 4 (port forwarding).
+   **Slice 2 done, proven live 23 Nov 2026** (OpenVPN: every provider
+   gluetun runs it for, `custom` OpenVPN by name, the leak gate's capture on
+   the tunnel's protocol, schema 52). Found live and fixed with it: NordVPN on
+   standard servers only (a Dedicated IP server refuses the login, over either
+   tunnel), NordVPN's OpenVPN over UDP only (gluetun dials TCP on the wrong
+   port — watchlist), configure's blank provider key, the 5-minute check
+   holding the stack, and screen times, wait progress and a failed wait's log
+   lines. Next: slice 3 (server choices), slice 4 (port forwarding).
 9. **The household's look** — notifications, then branding.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
