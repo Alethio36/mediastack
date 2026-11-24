@@ -288,9 +288,19 @@ agreed first:
    asking) showed stray markup — the event and who asked are now the hub's
    per-message values with defaults, so it reads *Seerr · test*; and the
    poster moved from Discord's ~80 px thumbnail to the card's large image
-   (a dead poster address still shows no picture there). Next: slice 2, the
-   kit (name, icon, colours, picture) — the cards and the webhook take it
-   first.
+   (a dead poster address still shows no picture there). **Slice 2 built
+   24 Nov 2026** (the kit, as messages show it): the name is `PORTAL_TITLE`
+   (one name, the portal's and the sender's; Discord's refused names said
+   before anything is sent), the icon `custom/branding/icon.png` (a square
+   PNG, 128–1024 px, ≤ 1 MiB, checked by `brand` and doctor), a colour per
+   message type (`BRAND_COLOUR_<TYPE>`: Apprise's own map at the hub's start
+   for mediastack's cards, mediastack's entries for Seerr's); the `brand`
+   verb shows the kit and changes a colour or the icon, applied at once. The
+   name stays configure's question (it re-applies the portal and the apps
+   that show it). Not yet proven live. Deferred: the background picture and
+   accent colour (slice 3, the portal: nothing else shows them); a public
+   icon address for platforms that cannot take an upload (Slack, ntfy) —
+   when one is set up. Next: slice 3, the portal.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless

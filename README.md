@@ -312,6 +312,7 @@ Connect
 | `users` | the portal's people: username, name, email, groups, and whether they can sign in (the stack's own `akadmin` and service accounts left out) |
 | `email [status\|test <address>]` | the portal's outgoing email: `status` shows the settings and whether they passed a test; `test` sends a real message through authentik and, if the server refuses, says why it usually happens; a pass turns on the sign-in page's **Forgot password?** (a reset link by email). Set up with `configure` — [docs/email.md](docs/email.md) |
 | `notify [status\|test [stream]\|set <stream>\|clear <stream>\|send <stream> <title> <message> [--type T]]` | the notification streams (`ops`, `users`): what each is set to (URLs hidden) and whether it delivered, a test, replace or clear a stream's URLs, or send your own message — see "Notifications" |
+| `brand [status\|colour <type> <#hex>\|default\|icon <file.png>\|default]` | the household's kit, as messages show it: the name (`PORTAL_TITLE`, which configure asks with the portal), the icon and a colour per message type (`info`, `success`, `warning`, `failure`). `colour` and `icon` check what you give (a colour is six hex digits; the icon a square PNG, 128–1024 pixels, at most 1 MiB), store it (`.env`'s `BRAND_COLOUR_<TYPE>`; `custom/branding/icon.png`) and apply it at once: the hub restarts for a colour (a few seconds without notifications), and every Discord webhook mediastack set up takes the name and icon. `default` goes back to mediastack's. doctor checks the icon — see "Notifications (Apprise)" |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
 | `trash-sync [--dry-run]` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update. `--dry-run` previews the drift (`recyclarr --preview`) and changes nothing |
 | `traefik-setup` | ask Traefik's questions again (`configure` asks them first): domain, Cloudflare token — checked with Cloudflare when pasted, with the domain's zone — and the cert environment (the dashboard's login is one of the stack's own: `set-credentials traefik`) |
@@ -585,8 +586,17 @@ address that stopped working simply shows no picture). Every message comes
 from the webhook itself, named *Mediastack* with mediastack's icon:
 `notify set` and `wire apprise` set the webhook's name and avatar once
 (uploaded from this host — no public address needed). Change either in
-Discord afterwards and it stays as you set it. The branding kit
-(roadmap) brings your own name, icon and colours.
+Discord afterwards and it stays as you set it.
+
+**Your own look** (`brand`). The sender's name is the household's
+(`PORTAL_TITLE`), its icon `custom/branding/icon.png` when you put one
+there, and each message type's colour is yours to pick:
+`./mediastack.sh brand colour success '#2E8B57'` (quote the `#`: the shell
+reads the rest of the line as a comment otherwise; or leave it out). Every
+card follows — mediastack's own messages (the colour is the hub's start-up
+setting, so `brand` restarts it) and Seerr's events. `brand` alone shows the
+kit. A colour edited in `.env` by hand reaches the hub at the next `up`,
+and Seerr's cards at the next `wire apprise`.
 
 The hub's configuration is Apprise's YAML: mediastack's entries sit
 between two marker lines and are rewritten from the streams' URLs (on

@@ -19,6 +19,7 @@
         "gluetun": "service_healthy"
       },
       "environment": {
+        "APPRISE_ASSET_HTML_NOTIFY_MAP": "{\"info\":\"#3AA3E3\",\"success\":\"#3AA337\",\"warning\":\"#CACF29\",\"failure\":\"#A32037\"}",
         "PGID": "13000",
         "PUID": "13022",
         "TZ": "Etc/UTC"

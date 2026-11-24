@@ -87,6 +87,8 @@ source "$SCRIPT_DIR/lib/recycle.sh"
 source "$SCRIPT_DIR/lib/footprint.sh"
 # shellcheck source=lib/notify.sh
 source "$SCRIPT_DIR/lib/notify.sh"
+# shellcheck source=lib/brand.sh
+source "$SCRIPT_DIR/lib/brand.sh"
 # shellcheck source=lib/logins.sh
 source "$SCRIPT_DIR/lib/logins.sh"
 # shellcheck source=lib/answers.sh
@@ -1268,6 +1270,7 @@ VERBS=(
     "email~email [status|test <address>]~free~Connect~The portal's outgoing email: status, or send a real test message (docs/email.md)."
     "link-account~link-account <portal-user>~max=1~Connect~A person's existing Jellyfin/Kavita/Audiobookshelf accounts become their portal account (history kept)."
     "notify~notify [status|test [stream]|set <stream>|clear <stream>|send <stream> <title> <message> [--type T]]~free~Connect~Notification streams (ops, users): status, test, change or clear a stream's URLs, send your own message."
+    "brand~brand [status|colour <type> <#hex>|default|icon <file.png>|default]~free~Connect~The household's kit: the name, the icon and the message colours — show them, or change a colour or the icon (checked, then applied at once)."
     "set-user-facing~set-user-facing [<svc> true|false]~max=2~Connect~Show or change which services notify the household on update (the 'users' stream)."
     "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login)."
     "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift)."

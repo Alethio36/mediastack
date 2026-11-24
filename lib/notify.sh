@@ -145,8 +145,6 @@ notify_interruption() { # notify_interruption TITLE BODY [TYPE] — household se
 # markdown into what that service shows.
 NOTIFY_MARK_BEGIN="  # >>> mediastack: rewritten by ./mediastack.sh (notify set, wire apprise) — your own entries go outside these two lines"
 NOTIFY_MARK_END="  # <<< mediastack"
-# the card colour per outcome — Apprise's own (its asset defaults; the branding kit's next)
-declare -A NOTIFY_COLOUR=([info]="#3AA3E3" [success]="#3AA337" [warning]="#CACF29" [failure]="#A32037")
 # the outcome of each Seerr event: its card's colour
 declare -A NOTIFY_EVENT_TYPE=(
     [MEDIA_AVAILABLE]=success [MEDIA_APPROVED]=success [MEDIA_AUTO_APPROVED]=success [ISSUE_RESOLVED]=success
@@ -244,7 +242,7 @@ notify_cfg_render() { # -> the configuration, YAML, from NOTIFY_MODEL and NOTIFY
             printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u?avatar=no&template=$tdir/plain.json&:footer=$foot")" "$s"
             for ty in success info warning failure; do
                 evs=$(notify_stream_events_of "$s" "$ty"); [[ -n "$evs" ]] || continue
-                printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u?avatar=no&template=$tdir/poster.json&:poster=\${POSTER}&:event=\${EVENT}&:who=\${WHO}&:color=$((16#${NOTIFY_COLOUR[$ty]#\#}))&:footer=$foot")" "$evs"
+                printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u?avatar=no&template=$tdir/poster.json&:poster=\${POSTER}&:event=\${EVENT}&:who=\${WHO}&:color=$((16#$(env_get "BRAND_COLOUR_${ty^^}")))&:footer=$foot")" "$evs"
             done
         else
             printf '  - %s:\n      - tag: %s\n' "$(notify_yaml_q "$u")" "$s${NOTIFY_EVENTS[$s]:+, ${NOTIFY_EVENTS[$s]// /, }}"

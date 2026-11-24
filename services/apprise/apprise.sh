@@ -29,6 +29,21 @@ apprise_entry_tag() { # apprise_entry_tag <svc> <api base> <key> <notification l
     fi
 }
 
+apprise_brand_apply() { # the kit (lib/brand.sh) reaches the running hub: its colours, mediastack's entries, the Discord senders
+    # the colours of mediastack's own messages are the hub's start-up setting
+    # (compose.yml): compose recreates it when they changed, and leaves it be when not
+    DC up -d --no-deps "$HUB_SVC" >/dev/null || die "the notification hub did not start again — see compose's message above; ./mediastack.sh logs $HUB_SVC"
+    http_ready "$HUB_SVC" "$(hub_local_url)/status" '^2' || die "the notification hub did not answer after its restart — ./mediastack.sh logs $HUB_SVC"
+    # the colours of Seerr's cards are in mediastack's entries: rewritten from the kit
+    local cur want
+    cur=$(hub_cfg_get)
+    if [[ -z "$cur" ]]; then info "no notification URLs stored yet — the kit applies when you set one: ./mediastack.sh notify set ops"; return 0; fi
+    notify_cfg_read "$cur" || die "notifications: $NOTIFY_CFG_WHY"
+    want=$(notify_cfg_render)
+    if [[ "$cur" != "$want" ]]; then hub_cfg_put "$want"; ok "notification entries updated"; fi
+    discord_senders_sync
+}
+
 wire_apprise() {
     hr "wire: apprise"
     svc_enabled apprise || { info "apprise not enabled — skipped"; return 0; }

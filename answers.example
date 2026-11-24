@@ -225,7 +225,7 @@ ABS_ADMIN_PASSWORD=
 
 # ------------------------------------------------------------ authentik --
 
-# the portal's name on its login and sign-up pages (authentik; default Mediastack)
+# the household's name: the portal's, on its login and sign-up pages (authentik), and the Discord sender's (default Mediastack)
 #   any single-line text — recommended: Mediastack
 PORTAL_TITLE=
 

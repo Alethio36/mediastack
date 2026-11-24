@@ -443,7 +443,7 @@ _doctor_upstream() { # mediastack itself against its branch (SCRIPT_UPDATES): be
     (( SB_AHEAD == 0 )) || warn "this checkout has $SB_AHEAD commit(s) that $SB_UP does not — upgrade cannot fast-forward past them (git -C $SCRIPT_DIR log $SB_UP..HEAD)"
 }
 
-DOCTOR_SECTIONS=(env environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit accounts notify audit recycle runs footprint upstream)
+DOCTOR_SECTIONS=(env environment containers ports permissions resources storage neighbours vpn_backups apps runtime_audit accounts notify brand audit recycle runs footprint upstream)
 
 _doctor_runs() { # runs that never finished (lib/runs.sh): a dropped SSH session, a reboot, a kill — what they did may be half done
     hr "doctor: runs"

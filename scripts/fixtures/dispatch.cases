@@ -250,3 +250,6 @@ audit-extract x
 notify
 notify test users
 notify send users "title" "message"
+brand
+brand colour success "#3AA337"
+brand icon default

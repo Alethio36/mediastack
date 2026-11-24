@@ -364,3 +364,9 @@ CALL cmd_notify [0]
 CALL cmd_notify [2] test users
 ## notify send users "title" "message"
 CALL cmd_notify [4] send users "title" "message"
+## brand
+CALL cmd_brand [0]
+## brand colour success "#3AA337"
+CALL cmd_brand [3] colour success "#3AA337"
+## brand icon default
+CALL cmd_brand [2] icon default

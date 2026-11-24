@@ -111,6 +111,7 @@ env_type_expect() { # what a value of TYPE looks like, for a message
         email)    echo "an e-mail address" ;;
         url)      echo "an http:// or https:// address" ;;
         cname)    echo "a container name (letters, digits, _ . -)" ;;
+        hex)      echo "a colour as 6 hex digits without #, e.g. 3AA337" ;;
         enum:*)   echo "one of: ${1#enum:}" | sed 's/|/, /g' ;;
         *)        echo "?" ;;
     esac
@@ -138,6 +139,7 @@ env_type_ok() { # env_type_ok TYPE VALUE — rc 0 when VALUE is a TYPE
         email)    [[ "$v" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] ;;
         url)      [[ "$v" =~ ^https?://[^[:space:]]+$ ]] ;;
         cname)    [[ "$v" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] ;;
+        hex)      [[ "$v" =~ ^[0-9A-Fa-f]{6}$ ]] ;;
         enum:*)   [[ "|${t#enum:}|" == *"|$v|"* ]] ;;
         retired:*) return 0 ;;
         *) die "the .env schema (lib/env.schema.tsv, services/*/env.tsv): unknown type '$t'" ;;

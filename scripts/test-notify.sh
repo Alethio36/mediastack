@@ -117,7 +117,7 @@ plain="  - \"discord://111/tokenA?avatar=no&template=/config/mediastack-template
 [[ "$d" == "$plain"* ]] || fail_ "a Discord URL: the stream's own messages as a card (no avatar of Apprise's, its footer): [$d]"; pass
 for ty in success info warning failure; do
     evs=$(notify_stream_events_of ops "$ty"); [[ -n "$evs" ]] || continue
-    grep -qF "template=/config/mediastack-templates/poster.json&:poster=\${POSTER}&:event=\${EVENT}&:who=\${WHO}&:color=$((16#${NOTIFY_COLOUR[$ty]#\#}))&" <<<"$got" && grep -qxF "      - tag: $evs" <<<"$got" \
+    grep -qF "template=/config/mediastack-templates/poster.json&:poster=\${POSTER}&:event=\${EVENT}&:who=\${WHO}&:color=$((16#$(env_get "BRAND_COLOUR_${ty^^}")))&" <<<"$got" && grep -qxF "      - tag: $evs" <<<"$got" \
         || fail_ "ops's $ty Seerr events ($evs): one card entry with the poster and that colour"; pass
 done
 [[ "$(grep -c 'discord://222/tokenB' <<<"$got")" == 2 ]] && grep -qxF '      - tag: MEDIA_AVAILABLE' <<<"$got" || fail_ "users on Discord: its messages, and Seerr's one event with the poster"; pass
@@ -149,11 +149,12 @@ for f in services/apprise/discord/*.json; do
     sed 's/{{app_color_int}}/1/; s/{{color}}/1/' "$f" | jq -e '.embeds[0].title and .embeds[0].description and .embeds[0].footer.text' >/dev/null || fail_ "$f: a card once filled"; pass
 done
 sudo() { echo "$*" >> "$T/sudo"; [[ "$1" != cmp ]]; }   # cmp: differs
+eval "real_$(declare -f env_get)"
 : > "$T/sudo"; env_get() { case "$1" in CONFIG_ROOT) echo /cfg ;; APPRISE_UID) echo 13010 ;; MEDIA_GROUP_GID) echo 13000 ;; esac; }
 hub_templates_sync
 grep -q "install -d -m 755 -o 13010 -g 13000 /cfg/apprise/mediastack-templates" "$T/sudo" && grep -q "install -m 644 -o 13010 -g 13000 .*/plain.json /cfg/apprise/mediastack-templates/plain.json" "$T/sudo" \
     || fail_ "the templates go to the hub's folder, its own: $(cat "$T/sudo")"; pass
-unset -f sudo env_get
+unset -f sudo; eval "$(declare -f real_env_get | sed '1s/^real_//')"
 
 # ---- the sender on Discord: the webhook's own name and icon ----
 DREQ=$T/dreq; : > "$DREQ"; DGET='{"name":"mediastack","avatar":null}'; DPATCH='{"name":"Mediastack","avatar":"abc123"}'; DCODE=200
@@ -161,7 +162,8 @@ curl() {
     local a; for a in "$@"; do [[ "$a" == PATCH ]] && { cat > "$T/dbody"; echo PATCH >> "$DREQ"; printf '%s\n%s' "$DPATCH" "$DCODE"; return 0; }; done
     echo GET >> "$DREQ"; printf '%s\n200' "$DGET"
 }
-out=$(discord_sender_sync discord://555/tok); [[ "$out" == "set: Mediastack, with its icon" && "$(paste -sd' ' "$DREQ")" == "GET PATCH" ]] || fail_ "first time: name and icon set ($out)"; pass
+ENV_FILE=$T/brand.env; : > "$ENV_FILE"
+out=$(discord_sender_sync discord://555/tok); [[ "$out" == "set: Mediastack, with mediastack's icon" && "$(paste -sd' ' "$DREQ")" == "GET PATCH" ]] || fail_ "first time: name and icon set ($out)"; pass
 jq -e '.name == "Mediastack" and (.avatar | startswith("data:image/png;base64,iVBOR"))' "$T/dbody" >/dev/null || fail_ "the icon goes up as image data, from this host — no public address"; pass
 DGET=$DPATCH; : > "$DREQ"; out=$(discord_sender_sync discord://555/tok)
 [[ "$out" == "current: Mediastack, with its icon (already set)" && "$(paste -sd' ' "$DREQ")" == GET ]] || fail_ "the same again: nothing sent ($out)"; pass
@@ -170,6 +172,18 @@ DGET='{"name":"Our house","avatar":"mine99"}'; : > "$DREQ"; out=$(discord_sender
 DCODE=400; state_del discord-sender-555; out=$(discord_sender_sync discord://555/tok) && fail_ "refused: said"
 [[ "$out" == *"HTTP 400"* ]] || fail_ "with Discord's answer: $out"; pass
 discord_sender_sync ntfy://x >/dev/null && fail_ "not a Discord webhook: no"; pass
+# the kit: a new name or icon is sent again (mediastack set the one there); one Discord refuses is not
+DCODE=200; DPATCH='{"name":"Our House","avatar":"def456"}'; DGET='{"name":"Mediastack","avatar":"abc123"}'
+state_set discord-sender-555 "Mediastack"$'\t'"abc123"$'\t'"$(discord_sender_want)"
+echo 'PORTAL_TITLE="Our House"' > "$ENV_FILE"; : > "$DREQ"; out=$(discord_sender_sync discord://555/tok)
+[[ "$out" == "set: Our House, with mediastack's icon" && "$(paste -sd' ' "$DREQ")" == "GET PATCH" ]] && jq -e '.name == "Our House"' "$T/dbody" >/dev/null \
+    || fail_ "the kit's name changed: the webhook takes it ($out)"; pass
+BRAND_DIR=$T/branding; mkdir -p "$BRAND_DIR"; cp services/apprise/assets/icon.png "$BRAND_DIR/icon.png"; printf 'x' >> "$BRAND_DIR/icon.png"
+DGET=$DPATCH; DPATCH='{"name":"Our House","avatar":"ghi789"}'; : > "$DREQ"; out=$(discord_sender_sync discord://555/tok)
+[[ "$out" == "set: Our House, with your icon" && "$(paste -sd' ' "$DREQ")" == "GET PATCH" ]] || fail_ "your icon in custom/branding/: the webhook takes it ($out)"; pass
+echo 'PORTAL_TITLE="Discord Night"' > "$ENV_FILE"; DGET=$DPATCH; : > "$DREQ"; out=$(discord_sender_sync discord://555/tok) && fail_ "a name Discord refuses: not sent"
+[[ "$out" == *"the name 'Discord Night' (PORTAL_TITLE)"*configure* && "$(paste -sd' ' "$DREQ")" == GET ]] || fail_ "a name Discord refuses: said before anything is sent ($out)"; pass
+rm -rf "$BRAND_DIR"; BRAND_DIR=$CUSTOM_DIR/branding; : > "$ENV_FILE"
 unset -f curl
 
 # ---- a message too long for a card is cut, never refused whole ----
