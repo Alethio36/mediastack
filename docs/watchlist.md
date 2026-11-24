@@ -301,6 +301,23 @@ Then wire carries the stack's `SMTP_*` into it, configure's Email step and
 pass `email test` (the `SMTP_TESTED` fingerprint, as the portal's "Forgot
 password?" is gated today) — without proven email, the link is printed as now.
 
+### NordVPN over OpenVPN TCP *(Nov 2026)*
+
+**Verdict:** parked (23 Nov 2026). The `nordvpn` folder offers OpenVPN over
+UDP only (`vpnp_nordvpn_protocols`); `OPENVPN_PROTOCOL=tcp` is refused before
+gluetun starts. Over TCP gluetun dials port 443 — its NordVPN server data lists
+no TCP ports (gluetun-servers, 6 Nov 2026: none of the OpenVPN entries), so its
+default is used — and NordVPN's servers now answer OpenVPN over TCP on
+1231–1234: the connection opens and the server hangs up, every retry (live on
+the test box: us13319, us12607; NordVPN's own `.ovpn` for us12607 connected on
+1233 with the same login). gluetun refuses `OPENVPN_ENDPOINT_PORT` for
+NordVPN, so mediastack cannot set the port; routing NordVPN TCP through
+`custom` would lose its server choices.
+
+**Revisit when:** gluetun's NordVPN server data carries `tcp_ports` (its
+updater fills them), or gluetun allows a custom port for NordVPN. Then
+`vpnp_nordvpn_protocols` goes back to `udp tcp`, proven live over TCP.
+
 ## Deferred services
 
 Services assessed for the stack and consciously *not* shipped yet. Adding any

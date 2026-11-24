@@ -481,6 +481,13 @@ from its server data stops the tunnel.
    always sends `SERVER_CATEGORIES=Standard VPN servers` (any match: P2P
    servers are standard too). Slice 3's categories must keep it that way: a
    NordVPN `SERVER_CATEGORIES` is never left empty.
+   **Over TCP, NordVPN is not offered** (found live the same day): gluetun dials
+   port 443 — its NordVPN data lists no TCP ports — while NordVPN's servers
+   answer OpenVPN over TCP on 1231–1234 (their own `.ovpn`, proven from the test
+   box); the server hangs up, every retry, and gluetun refuses
+   `OPENVPN_ENDPOINT_PORT` for NordVPN. `vpnp_nordvpn_protocols` is `udp`
+   (docs/watchlist.md says when it comes back). Proven live over OpenVPN/UDP:
+   nl834, the gate, `leak-test --killswitch` (both proofs), `wire --verify`.
 3. **Server choices per provider:** regions, cities, categories and flags,
    checked against the image's server data (`format-servers -<provider>
    -format json`) before gluetun starts, and in configure where gluetun's

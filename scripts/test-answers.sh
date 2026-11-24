@@ -185,9 +185,10 @@ refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=expressvpn\nVPN_TYPE=openvpn
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=cyberghost\nOPENVPN_USER=u\nOPENVPN_PASSWORD=p\n' "the VPN (cyberghost, openvpn) needs OPENVPN_CERT" "the VPN (cyberghost, openvpn) needs OPENVPN_KEY"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nNORDVPN_TOKEN=TOKEN\nOPENVPN_PROTOCOL=tcp\n' "OPENVPN_PROTOCOL: only for VPN_TYPE=openvpn — VPN_TYPE is wireguard"; pass
 # NordVPN over OpenVPN: the token gives its service login; cyberghost alone is OpenVPN, so its type need not be written
-fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nVPN_TYPE=openvpn\nOPENVPN_PROTOCOL=tcp\nNORDVPN_TOKEN=TOKEN\n'; filed "$T/a.env" '' --fresh || fail_ "nordvpn over OpenVPN runs: $(cat "$T/out")"
-[[ "$(envv VPN_TYPE)" == openvpn && "$(envv OPENVPN_USER)" == NORDUSER && "$(envv OPENVPN_PASSWORD)" == NORDPASS && "$(envv OPENVPN_PROTOCOL)" == tcp && -z "$(envv WIREGUARD_PRIVATE_KEY)" ]] \
-    || fail_ "the token's OpenVPN login, over TCP, no WireGuard key: $(grep -E '^(VPN_TYPE|OPENVPN_|WIREGUARD_PRIVATE)' "$T/w/.env")"; pass
+fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nVPN_TYPE=openvpn\nNORDVPN_TOKEN=TOKEN\n'; filed "$T/a.env" '' --fresh || fail_ "nordvpn over OpenVPN runs: $(cat "$T/out")"
+[[ "$(envv VPN_TYPE)" == openvpn && "$(envv OPENVPN_USER)" == NORDUSER && "$(envv OPENVPN_PASSWORD)" == NORDPASS && "$(envv OPENVPN_PROTOCOL)" == udp && -z "$(envv WIREGUARD_PRIVATE_KEY)" ]] \
+    || fail_ "the token's OpenVPN login, over UDP (its only one), no WireGuard key: $(grep -E '^(VPN_TYPE|OPENVPN_|WIREGUARD_PRIVATE)' "$T/w/.env")"; pass
+refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_TYPE=openvpn\nOPENVPN_PROTOCOL=tcp\nNORDVPN_TOKEN=TOKEN\n' "OPENVPN_PROTOCOL=tcp: nordvpn has OpenVPN servers over udp only"; pass
 fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nVPN_PROVIDER=expressvpn\nOPENVPN_USER=u\nOPENVPN_PASSWORD=p\n'; filed "$T/a.env" '' --fresh || fail_ "an OpenVPN-only provider runs: $(cat "$T/out")"
 [[ "$(envv VPN_TYPE)" == openvpn && "$(envv OPENVPN_PROTOCOL)" == udp ]] || fail_ "its only tunnel and protocol taken: $(envv VPN_TYPE) $(envv OPENVPN_PROTOCOL)"; pass
 

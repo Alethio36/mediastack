@@ -174,9 +174,10 @@ printf 'nordvpn\n\nTOKEN123\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out"
     && ! grep -qE '^WIREGUARD_(ADDRESSES|PUBLIC_KEY|ENDPOINT_HOST|ENDPOINT_PORT)=.' "$ENV_FILE" \
     || fail_ "a switch empties what only the old provider read: $(cat "$ENV_FILE")"; pass
 # OpenVPN (slice 2): nordvpn's tunnel asked, the token gives the login; a switch of tunnel drops the WireGuard key
-printf 'nordvpn\nopenvpn\nTOKEN123\ntcp\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord over OpenVPN runs: $(cat "$T/out")"
-[[ "$(env_get VPN_TYPE)" == openvpn && "$(env_get OPENVPN_USER)" == NORDUSER && "$(env_get OPENVPN_PASSWORD)" == NORDPASS && "$(env_get OPENVPN_PROTOCOL)" == tcp && -z "$(env_get WIREGUARD_PRIVATE_KEY)" ]] \
-    || fail_ "nordvpn over OpenVPN: its login fetched, TCP, the WireGuard key gone: $(grep -E '^(VPN_|OPENVPN_|WIREGUARD_PRIVATE)' "$ENV_FILE")"; pass
+printf 'nordvpn\nopenvpn\nTOKEN123\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord over OpenVPN runs: $(cat "$T/out")"
+[[ "$(env_get VPN_TYPE)" == openvpn && "$(env_get OPENVPN_USER)" == NORDUSER && "$(env_get OPENVPN_PASSWORD)" == NORDPASS && "$(env_get OPENVPN_PROTOCOL)" == udp && -z "$(env_get WIREGUARD_PRIVATE_KEY)" ]] \
+    && ! grep -q 'OpenVPN protocol' "$T/out" \
+    || fail_ "nordvpn over OpenVPN: its login fetched, UDP without asking (its only one), the WireGuard key gone: $(grep -E '^(VPN_|OPENVPN_|WIREGUARD_PRIVATE)' "$ENV_FILE")"; pass
 grep -q 'Tunnel (wireguard/openvpn) \[wireguard\]' "$T/out" || grep -q 'WireGuard is faster' "$T/out" || fail_ "the tunnel asked where the provider has both: $(cat "$T/out")"; pass
 printf 'expressvpn\nEXPUSER\nEXPPASS\n\n' | Q_TERMINAL=1 gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "an OpenVPN-only provider runs: $(cat "$T/out")"
 [[ "$(env_get VPN_TYPE)" == openvpn && "$(env_get OPENVPN_USER)" == EXPUSER && "$(env_get OPENVPN_PROTOCOL)" == udp ]] && ! grep -q 'OpenVPN protocol' "$T/out" \

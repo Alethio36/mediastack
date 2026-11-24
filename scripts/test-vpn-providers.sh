@@ -115,7 +115,9 @@ probs() { setenv "$@"; vpn_provider_problems; }
 [[ -z "$(probs VPN_PROVIDER=nordvpn WIREGUARD_PRIVATE_KEY="$K1" VPN_SERVER_COUNTRIES=Sweden)" ]] || fail_ "a complete setup: no problem"; pass
 [[ "$(probs VPN_PROVIDER=mullvad VPN_TYPE=openvpn)" == *"VPN_TYPE=openvpn: mediastack runs mullvad with wireguard only"* ]] || fail_ "a type the provider lacks"; pass
 [[ "$(probs VPN_PROVIDER=nordvpn VPN_TYPE=openvpn OPENVPN_USER=u)" == *"nordvpn needs OPENVPN_PASSWORD"* ]] || fail_ "OpenVPN: its login, in full"; pass
-[[ -z "$(probs VPN_PROVIDER=nordvpn VPN_TYPE=openvpn OPENVPN_USER=u OPENVPN_PASSWORD=p OPENVPN_PROTOCOL=tcp)" ]] || fail_ "nordvpn over TCP: no problem"; pass
+[[ "$(probs VPN_PROVIDER=nordvpn VPN_TYPE=openvpn OPENVPN_USER=u OPENVPN_PASSWORD=p OPENVPN_PROTOCOL=tcp)" == *"OPENVPN_PROTOCOL=tcp, but nordvpn has OpenVPN servers over udp only"* ]] \
+    || fail_ "nordvpn over TCP: refused before gluetun starts — gluetun dials 443, NordVPN answers on 1231-1234 (found live Nov 2026)"; pass
+[[ -z "$(probs VPN_PROVIDER=surfshark VPN_TYPE=openvpn OPENVPN_USER=u OPENVPN_PASSWORD=p OPENVPN_PROTOCOL=tcp)" ]] || fail_ "a provider with TCP servers: TCP is no problem"; pass
 [[ "$(probs VPN_PROVIDER=expressvpn VPN_TYPE=openvpn OPENVPN_USER=u OPENVPN_PASSWORD=p OPENVPN_PROTOCOL=tcp)" == *"OPENVPN_PROTOCOL=tcp, but expressvpn has OpenVPN servers over udp only"* ]] \
     || fail_ "a protocol the provider has no servers for"; pass
 [[ -z "$(probs VPN_PROVIDER=ivpn VPN_TYPE=openvpn OPENVPN_USER=i-AB12-CD34-EF56)" ]] || fail_ "ivpn: an account ID needs no password"; pass

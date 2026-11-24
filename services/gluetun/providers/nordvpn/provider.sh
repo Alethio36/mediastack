@@ -24,6 +24,14 @@ vpnp_nordvpn_keys() { echo NORDVPN_TOKEN; }   # TYPE — an answers-file key, fo
 # "dedicated" flag its NordVPN server data does not carry yet (gluetun-servers,
 # 6 Nov 2026; its issue #3497). A P2P server is a standard one too (any match).
 vpnp_nordvpn_extra() { printf 'SERVER_CATEGORIES\tStandard VPN servers\n'; }   # TYPE
+# OpenVPN over UDP only. Over TCP gluetun dials port 443 — its NordVPN server
+# data lists no TCP ports, so its default is used — and NordVPN's servers
+# answer OpenVPN over TCP on 1231-1234 now: the connection opens and the server
+# hangs up, every retry (found live Nov 2026: us13319, us12607; NordVPN's own
+# .ovpn for us12607 connects on 1233). gluetun refuses OPENVPN_ENDPOINT_PORT
+# for NordVPN, so it cannot be set here. Back on the list once its data carries
+# the ports (docs/watchlist.md).
+vpnp_nordvpn_protocols() { echo udp; }
 
 nord_creds() { # nord_creds TOKEN TYPE -> NordVPN's service credentials for TOKEN (JSON), holding what TYPE needs; rc 1 with the reason instead
     local out need
