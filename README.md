@@ -580,7 +580,7 @@ with `notify`:
 a type — info, success, warning or failure — so any service Apprise reaches
 shows it its own way. On **Discord** each message is a card in its type's
 colour, with the host and stream at its foot; Seerr's events are cards with
-the title's poster (a neutral placeholder when Seerr has none; a poster
+the title's poster, large below the text (a neutral placeholder when Seerr has none; a poster
 address that stopped working simply shows no picture). Every message comes
 from the webhook itself, named *Mediastack* with mediastack's icon:
 `notify set` and `wire apprise` set the webhook's name and avatar once

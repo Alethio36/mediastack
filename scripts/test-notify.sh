@@ -104,6 +104,9 @@ grep -qx 'version: 1' <<<"$got" && grep -qxF "  poster: \"$NOTIFY_NO_POSTER\"" <
     || fail_ "YAML, the placeholder poster as its default, mediastack's markers: $got"; pass
 grep -qxF '  event: "Seerr"' <<<"$got" && grep -qxF '  who: "test"' <<<"$got" \
     || fail_ "YAML: Seerr's test reads \"Seerr · test\" (the event and who's defaults): $got"; pass
+# Nick, on the first live card: the thumbnail (Discord's ~80 px) is too small — the large image slot
+grep -qF '"image":{"url":"{{poster}}"}' services/apprise/discord/poster.json && ! grep -q thumbnail services/apprise/discord/poster.json \
+    || fail_ "Seerr's poster: the card's large image, not the thumbnail"; pass
 for t in services/apprise/discord/*.json; do   # every {{token}} a template uses is Apprise's own or one the entries pass
     while read -r k; do [[ "$k" == app_* || " footer poster event who color " == *" $k "* ]] || fail_ "$t uses {{$k}}, which no entry passes"; done \
         < <(grep -oE '\{\{[a-z_]+\}\}' "$t" | tr -d '{}' | sort -u)
