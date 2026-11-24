@@ -435,7 +435,8 @@ from its server data stops the tunnel.
    - `custom` by address: one NordVPN server's IP, public key and our key —
      tunnel up, leak gate PASS, the firewall open only to that address. The
      first server tried (the list's first Netherlands entry) never answered
-     with the same path, key and address: the server, not the path;
+     with the same path, key and address: the server, not the path — a
+     Dedicated IP server, it turned out (below, slice 2);
    - `custom` by name: the hostname looked up from the host and recorded;
      gluetun not recreated (the same address renders the same file);
    - the name moving (the record forged to an old address, `vpn-watch` by
@@ -468,6 +469,18 @@ from its server data stops the tunnel.
      protocol, leaves `custom/vpn/` out; rotate-secrets names the OpenVPN
      login and key as yours to replace.
    Not yet proven live.
+   **Found live 23 Nov 2026** (NordVPN over OpenVPN): `AUTH_FAILED` on every
+   retry, with the service login proven identical to the dashboard's. Every
+   server refused was a **Dedicated IP** server (us12774, nl1025; and over
+   WireGuard nl1032 in slice 1, uk1618 and uk2785 in the same day's log — a
+   silent tunnel until the healthcheck moved on). Such a server takes only the
+   login of the account its address was sold to. gluetun's `master` skips them
+   by a `dedicated` flag its NordVPN server data does not carry yet
+   (gluetun-servers, 6 Nov 2026: 0 of ~14 000 entries; ~22% are in the group
+   by name; its issue #3497). Fixed in the folder: `nordvpn`'s `_extra`
+   always sends `SERVER_CATEGORIES=Standard VPN servers` (any match: P2P
+   servers are standard too). Slice 3's categories must keep it that way: a
+   NordVPN `SERVER_CATEGORIES` is never left empty.
 3. **Server choices per provider:** regions, cities, categories and flags,
    checked against the image's server data (`format-servers -<provider>
    -format json`) before gluetun starts, and in configure where gluetun's

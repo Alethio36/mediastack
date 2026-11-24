@@ -95,11 +95,13 @@ setenv VPN_PROVIDER=windscribe
 vpn_provider_gen; ! grep -q SERVER_COUNTRIES "$PROVIDER_FILE" || fail_ "windscribe chooses no country: none reaches gluetun"; pass
 setenv VPN_PROVIDER=nordvpn; vpn_provider_gen
 ! grep -q WIREGUARD_ADDRESSES "$PROVIDER_FILE" || fail_ "NordVPN's address is gluetun's own: not sent"; pass
+grep -qx '      SERVER_CATEGORIES: "Standard VPN servers"' "$PROVIDER_FILE" || fail_ "NordVPN: standard servers only — a Dedicated IP one refuses this account (found live Nov 2026)"; pass
 setenv VPN_PROVIDER=nordvpn VPN_TYPE=openvpn OPENVPN_USER=svcuser OPENVPN_PASSWORD='p@ss$word'; vpn_provider_gen
 grep -qx '      VPN_TYPE: "openvpn"' "$PROVIDER_FILE" && grep -qx '      OPENVPN_USER: "${OPENVPN_USER:-}"' "$PROVIDER_FILE" \
     && grep -qx '      OPENVPN_PASSWORD: "${OPENVPN_PASSWORD:-}"' "$PROVIDER_FILE" && grep -qx '      OPENVPN_PROTOCOL: "${OPENVPN_PROTOCOL:-udp}"' "$PROVIDER_FILE" \
     || fail_ "OpenVPN: its login and protocol as references: $(cat "$PROVIDER_FILE")"; pass
 ! grep -qE 'WIREGUARD|svcuser|p@ss' "$PROVIDER_FILE" || fail_ "OpenVPN: no WireGuard key, no login's value"; pass
+grep -qx '      SERVER_CATEGORIES: "Standard VPN servers"' "$PROVIDER_FILE" || fail_ "NordVPN over OpenVPN: standard servers only too"; pass
 ! grep -q 'volumes:' "$PROVIDER_FILE" || fail_ "a provider without files mounts nothing"; pass
 setenv VPN_PROVIDER=nosuch; vpn_provider_gen
 [[ ! -e "$PROVIDER_FILE" ]] || fail_ "no folder, no file (up says why)"; pass

@@ -17,6 +17,13 @@ vpnp_nordvpn_env() { # TYPE
     esac
 }
 vpnp_nordvpn_keys() { echo NORDVPN_TOKEN; }   # TYPE — an answers-file key, for either tunnel
+# Standard servers only, never a Dedicated IP one: those take only the login of
+# the account the address was sold to — AUTH_FAILED over OpenVPN on every retry,
+# a silent WireGuard tunnel until the healthcheck moves on (found live Nov 2026:
+# us12774, nl1025, nl1032, uk1618, uk2785). gluetun's own exclusion needs a
+# "dedicated" flag its NordVPN server data does not carry yet (gluetun-servers,
+# 6 Nov 2026; its issue #3497). A P2P server is a standard one too (any match).
+vpnp_nordvpn_extra() { printf 'SERVER_CATEGORIES\tStandard VPN servers\n'; }   # TYPE
 
 nord_creds() { # nord_creds TOKEN TYPE -> NordVPN's service credentials for TOKEN (JSON), holding what TYPE needs; rc 1 with the reason instead
     local out need
