@@ -325,8 +325,18 @@ agreed first:
    your own and an accent each reached the sign-in page and the dashboard
    (buttons and links alike); `default` on each put authentik's own back and
    kept the icons and the title. Found live: the portal setup's own "Start
-   here" card was a bare letter — it takes the kit's icon now. Next: slice 4,
-   app by app (Jellyfin first).
+   here" card was a bare letter — it takes the kit's icon now. **Slice 4
+   built 24 Nov 2026** (app by app, surveyed in each app's source): a spike
+   on the test box first (Jellyfin 12.4: its colour variables in its custom
+   CSS recolour its buttons, a picture uploaded as its splashscreen shows
+   behind its sign-in, its login disclaimer shows under the form); then
+   Jellyfin takes the accent (its CSS, between marker lines, yours kept;
+   what it draws in a fixed blue stays), the background and, with the
+   portal, a sign-in line naming the household; Seerr and the web panel the
+   name as their title. Not taken: Jellyfin's logo (only a picture inside
+   its CSS could replace its banner); Kavita, Audiobookshelf, Navidrome
+   (signed in through the portal; little of their own to brand). Not yet
+   proven live.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless

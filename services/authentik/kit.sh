@@ -41,11 +41,6 @@ authentik_accent_css() { # authentik_accent_css RRGGBB -> authentik's buttons an
         "$1" "$1" "$1" "$1" "$1" "$1" "$1" "$1" "$1" "$1"
 }
 
-authentik_kit_decide() { # authentik_kit_decide CUR WANT DEFAULT MINE -> same | set | yours
-    if [[ "$1" == "$2" ]]; then echo same
-    elif [[ -z "$1" || "$1" == "$3" || ( -n "$4" && "$1" == "$4" ) ]]; then echo set
-    else echo yours; fi
-}
 
 AK_KIT_FILES=()   # SRC<TAB>NAME of every file the portal is given now (authentik_kit_collect)
 AK_ICON_APPS=()   # every mediastack card by its key: an app's service, or getting-started (authentik_kit_collect)
@@ -86,7 +81,7 @@ authentik_kit_files() { # the files AK_KIT_FILES names where authentik reads the
 authentik_kit_field() { # authentik_kit_field LABEL STATE-KEY CUR WANT DEFAULT -> rc 0 when it is to be set (said); the rest said here
     local d mine
     mine=$(state_get "authentik-kit-$2")
-    d=$(authentik_kit_decide "$3" "$4" "$5" "$mine")
+    d=$(brand_decide "$3" "$4" "$5" "$mine")
     case "$d" in
         same)  return 1 ;;
         yours) ok "authentik: $1 was set in its own screens — yours, untouched"; return 1 ;;

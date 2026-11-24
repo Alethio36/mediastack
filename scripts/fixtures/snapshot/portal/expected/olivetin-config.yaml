@@ -1,6 +1,6 @@
 # Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install.
 logLevel: "INFO"
-pageTitle: "Mediastack"
+pageTitle: "Tom & Jo's <Media> {Portal}"
 # custom-webui/themes/mediastack/theme.css (written by frontdoor-install) styles
 # the status tiles into a coloured grid.
 themeName: "mediastack"

@@ -30,7 +30,10 @@ panel_config_render() { # panel_config_render USER HASH -> config.yaml; both con
     # single-quoted YAML: a login's name is letters, digits and . _ - (lib/logins.sh), a hash has no quote
     # the panel's users and the portal's admin group share one name: the
     # portal sends a person's groups, and the list below lets that one in
-    _fd_otcfg_head | sed "s/@ADMIN_GROUP@/$PORTAL_ADMIN/g"
+    local head t
+    head=$(_fd_otcfg_head | sed "s/@ADMIN_GROUP@/$PORTAL_ADMIN/g")
+    t=$(env_get PORTAL_TITLE); t=${t//\\/\\\\}; t=${t//\"/\\\"}   # the household's name, a double-quoted YAML string
+    printf '%s\n' "${head//@PAGE_TITLE@/"$t"}"
     printf "    - username: '%s'\n      usergroup: %s\n      password: '%s'\n" "$1" "$PORTAL_ADMIN" "$2"
     _fd_otcfg_tail; panel_portal_render
 }
@@ -133,7 +136,7 @@ _fd_otcfg_head() {
     cat <<'OTCFG_HEAD'
 # Managed by mediastack.sh frontdoor-install. Regenerate via frontdoor-install.
 logLevel: "INFO"
-pageTitle: "Mediastack"
+pageTitle: "@PAGE_TITLE@"
 # custom-webui/themes/mediastack/theme.css (written by frontdoor-install) styles
 # the status tiles into a coloured grid.
 themeName: "mediastack"

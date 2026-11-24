@@ -547,6 +547,7 @@ wire_jellyfin() {
         env_set JELLYFIN_API_KEY "$have"
         ok "stack API key minted and stored (JELLYFIN_API_KEY)"
     fi
+    jellyfin_brand_apply   # the household's kit on Jellyfin (services/jellyfin/kit.sh)
 }
 
 sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)

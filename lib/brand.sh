@@ -14,8 +14,13 @@
 #               (services/NOTICE-icons.md says where they come from)
 #   colours     BRAND_COLOUR_<TYPE> — a message card's colour per type
 #               (Apprise's map for mediastack's, the hub entries for Seerr's)
-#   accent      BRAND_ACCENT — the portal's buttons and links, and the button
-#               in its emails (authentik's own blue when unset)
+#   accent      BRAND_ACCENT — the portal's buttons and links, the button in
+#               its emails, Jellyfin's web client (each app's own when unset)
+# Where each shows: the portal (services/authentik/kit.sh), Jellyfin — its
+# accent, the background behind its sign-in, a sign-in line naming the
+# household (services/jellyfin/kit.sh), Seerr's and the web panel's title
+# (the name). Kavita, Audiobookshelf and Navidrome take none of it: people
+# reach them signed in through the portal, which carries it.
 # Each place takes it where mediastack set it last, never over a value set
 # in that app's own screens. Nothing is required: an empty kit is the
 # shipped look. Sourced by the entrypoint.
@@ -70,6 +75,12 @@ brand_file_problem() { # brand_file_problem icon|logo|background FILE -> why it 
         || { echo "$f is ${w}x${h} — an icon must be ${BRAND_ICON_MIN} to ${BRAND_ICON_MAX} pixels a side"; return 0; }
 }
 brand_icon_problem() { brand_file_problem icon "$1"; }   # brand_icon_problem FILE (the sender's, an app's: one rule)
+
+brand_decide() { # brand_decide CUR WANT DEFAULT MINE -> same | set | yours: an app's value is set while it is the app's own or the one mediastack set last
+    if [[ "$1" == "$2" ]]; then echo same
+    elif [[ -z "$1" || "$1" == "$3" || ( -n "$4" && "$1" == "$4" ) ]]; then echo set
+    else echo yours; fi
+}
 
 brand_colour() { echo "#$(env_get "BRAND_COLOUR_${1^^}")"; }   # brand_colour TYPE -> #RRGGBB
 
@@ -160,7 +171,7 @@ brand_accent_set() { # brand_accent_set COLOUR|default
         v=$(brand_colour_value "$1") || die "'$1' is not a colour — six hex digits, e.g. #E6701E (the # is optional)"
         env_set BRAND_ACCENT "$v"; ok "the portal's accent: $(brand_swatch "$v")#$v"
     fi
-    brand_apply_portal
+    brand_apply_apps
 }
 
 brand_file_put() { # brand_file_put SRC DEST — into custom/branding/, yours (the folder made, handed to the repo's owner)
@@ -186,7 +197,7 @@ brand_file_set() { # brand_file_set icon|logo|background FILE|default
         ok "the $k is yours: custom/branding/${dest##*/}"
     fi
     [[ "$k" == icon ]] && brand_apply_messages
-    brand_apply_portal
+    brand_apply_apps
 }
 
 brand_app_icon_set() { # brand_app_icon_set SVC FILE|default
@@ -201,7 +212,7 @@ brand_app_icon_set() { # brand_app_icon_set SVC FILE|default
         brand_file_put "$2" "$f"
         ok "$s's card: your icon (custom/branding/icons/$s.png)"
     fi
-    brand_apply_portal
+    brand_apply_apps
 }
 
 brand_apply_messages() { # the kit as it is now reaches the hub (colours) and the Discord senders (name, icon)
@@ -214,15 +225,17 @@ brand_apply_messages() { # the kit as it is now reaches the hub (colours) and th
     info "see it: ./mediastack.sh notify test"
 }
 
-brand_apply_portal() { # the kit as it is now reaches the portal (authentik): its brand, sign-in title, app icons and emails
+brand_apply_apps() { # the kit as it is now reaches the apps that show it: the portal (authentik) and Jellyfin
     render
-    signin_is authentik || return 0
-    if [[ "$(c_state "$(svc_cname authentik)")" != running ]]; then
-        info "the portal is not running — it takes the kit at its next start: ./mediastack.sh up, then ./mediastack.sh wire authentik"
-        return 0
+    if signin_is authentik; then
+        if [[ "$(c_state "$(svc_cname authentik)")" == running ]]; then authentik_brand_apply
+        else info "the portal is not running — it takes the kit at its next start: ./mediastack.sh up, then ./mediastack.sh wire authentik"; fi
     fi
-    authentik_brand_apply
-    info "see it: the portal's sign-in page, in a private window"
+    if svc_enabled jellyfin; then
+        if [[ "$(c_state "$(svc_cname jellyfin)")" == running ]]; then jellyfin_brand_apply
+        else info "jellyfin is not running — it takes the kit at: ./mediastack.sh up, then ./mediastack.sh wire jellyfin"; fi
+    fi
+    info "see it: the portal's and Jellyfin's sign-in pages, in a private window"
 }
 
 _doctor_brand() {

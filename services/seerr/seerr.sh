@@ -214,6 +214,7 @@ wire_seerr() {
         seerr_key_store "$jar"
         rm -f "$jar"
         ok "seerr arr entries verified"
+        seerr_brand_apply   # its title: the household's name (services/seerr/kit.sh)
         return 0
     fi
     out=$(seerr_api POST /settings/initialize "$jar") \
@@ -221,6 +222,7 @@ wire_seerr() {
     seerr_key_store "$jar"
     rm -f "$jar"
     ok "seerr initialised — users sign in with their jellyfin logins"
+    seerr_brand_apply
 }
 
 seerr_doctor() { # doctor: apps — initialised

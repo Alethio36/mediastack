@@ -1107,6 +1107,18 @@ authentik's own screens is yours: mediastack leaves it as it is. The emails
 carry the name and the accent but no logo: an image in an email needs an
 address the Internet can reach, and the portal is on your network only.
 
+**The apps.** Jellyfin, whose own sign-in page everyone sees (the TV and
+phone apps too), takes the accent in its web client (its custom CSS, between
+two marker lines — CSS of your own there stays; the parts it draws in a fixed
+blue — sliders, toggles, the loading ring — stay blue), your background
+behind its sign-in form, and with the portal a line under that form: *Sign in
+with your* name *account — the same username and password as the portal*. A
+line you wrote in its dashboard stays. Its logo stays Jellyfin's: replacing
+it would put the picture inside the CSS every page loads. Seerr and the web
+panel take the household's name as their title (a title written in Seerr's
+settings stays). Kavita, Audiobookshelf and Navidrome take none of it:
+people reach them signed in through the portal, which carries the look.
+
 ## Invites (Wizarr)
 
 For installs that chose Wizarr as the account model (with the portal,

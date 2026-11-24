@@ -103,7 +103,7 @@ printf 'GIF89a......' > "$T/g.gif"
 [[ "$(brand_file_problem background "$T/g.gif")" == *"neither a PNG nor a JPEG"* ]] || fail_ "a GIF background: said"; pass
 head -c 6000000 /dev/zero > "$T/big.jpg"; printf '\xff\xd8\xff' | dd of="$T/big.jpg" conv=notrunc 2>/dev/null
 [[ "$(brand_file_problem background "$T/big.jpg")" == *"the most for the background is 5120 KiB"* ]] || fail_ "a background over 5 MiB: said"; pass
-brand_apply_portal() { echo "PORTAL" >> "$T/applied"; }; brand_apply_messages() { echo "MESSAGES" >> "$T/applied"; }
+brand_apply_apps() { echo "PORTAL" >> "$T/applied"; }; brand_apply_messages() { echo "MESSAGES" >> "$T/applied"; }
 : > "$T/applied"; brand_file_set background "$(png 1920 1080)" >/dev/null
 [[ -e "$BRAND_DIR/background.png" && "$(brand_yours background)" == "$BRAND_DIR/background.png" && "$(cat "$T/applied")" == PORTAL ]] || fail_ "brand background: stored, the portal told"; pass
 cp "$T/j.jpg" "$T/bg.jpg"; brand_file_set background "$T/bg.jpg" >/dev/null
@@ -129,7 +129,7 @@ brand_app_icon_set jellyfin default >/dev/null
 # ---- the portal: what is set, and what is left ----
 for c in "same:a:a:d:" "set:d:a:d:" "set::a:d:" "set:m:a:d:m" "yours:u:a:d:m" "yours:u:a:d:"; do
     IFS=: read -r want cur w d mine <<<"$c"
-    [[ "$(authentik_kit_decide "$cur" "$w" "$d" "$mine")" == "$want" ]] || fail_ "decide cur=$cur want=$w default=$d mine=$mine: $want"; pass
+    [[ "$(brand_decide "$cur" "$w" "$d" "$mine")" == "$want" ]] || fail_ "decide cur=$cur want=$w default=$d mine=$mine: $want"; pass
 done
 css=$(authentik_accent_css E6701E)
 [[ "$css" == ':root {'* && "$css" == *'--pf-global--primary-color--100: #E6701E'* && "$css" == *'--pf-global--link--Color: #E6701E'* ]] || fail_ "the accent: buttons and links: $css"; pass
@@ -164,7 +164,7 @@ authentik_dir() { echo "$T/ak"; }
 sudo() { local a=() skip=0 x; for x in "$@"; do if (( skip )); then skip=0; continue; fi; case "$x" in -o|-g) skip=1 ;; *) a+=("$x") ;; esac; done; "${a[@]}"; }
 authentik_templates_sync() { :; }
 echo 'PORTAL_TITLE="Our House"' >> "$ENV_FILE"
-brand_file_set logo "$(png 600 150)" >/dev/null 2>&1 || true   # stored; brand_apply_portal is the stub here
+brand_file_set logo "$(png 600 150)" >/dev/null 2>&1 || true   # stored; brand_apply_apps is the stub here
 : > "$AKP"; authentik_brand_apply > "$T/out" 2>&1
 logo=$(jq -r '.results[0].branding_logo' "$AKB")
 [[ "$logo" =~ ^mediastack/logo-[0-9a-f]{12}\.png$ && -e "$T/ak/data/media/public/$logo" ]] || fail_ "the logo: copied into authentik's media, the brand names it: $logo"; pass
@@ -191,5 +191,61 @@ printf 'not a png' > "$BRAND_DIR/logo.png"; : > "$AKP"; authentik_brand_apply > 
 [[ "$(jq -r '.results[0].branding_logo' "$AKB")" == /static/dist/assets/icons/icon_left_brand.svg ]] && grep -q "your logo is unusable, the portal keeps what it shows" "$T/out" \
     || fail_ "an unusable logo of yours: said, nothing changed"; pass
 rm -f "$BRAND_DIR/logo.png"
+
+# ---- Jellyfin: the accent in its CSS (yours kept), its sign-in picture, the sign-in line ----
+b=$(jellyfin_kit_css E6701E)
+[[ "$(head -1 <<<"$b")" == "$JF_KIT_BEGIN" && "$(tail -1 <<<"$b")" == "$JF_KIT_END" && "$b" == *'--jf-palette-primary-mainChannel: 230 112 30;'* && "$b" == *'--jf-palette-secondary-main: #E6701E'* ]] \
+    || fail_ "Jellyfin's accent: its own colour variables, between mediastack's markers: $b"; pass
+[[ -z "$(jellyfin_kit_css "")" ]] || fail_ "no accent: no block"; pass
+[[ "$(jellyfin_css_merge "" "$b")" == "$b" ]] || fail_ "no CSS before: the block alone"; pass
+mine='.card { border-radius: 0; }'
+[[ "$(jellyfin_css_merge "$mine" "$b")" == "$mine"$'\n'"$b" ]] || fail_ "your CSS first, mediastack's block after"; pass
+[[ "$(jellyfin_css_merge "$(jellyfin_css_merge "$mine" "$b")" "$(jellyfin_kit_css 112233)")" == "$mine"$'\n'"$(jellyfin_kit_css 112233)" ]] || fail_ "a new accent: the block replaced, yours kept"; pass
+[[ "$(jellyfin_css_merge "$mine"$'\n'"$b"$'\n''.x { y: z; }' "")" == "$mine"$'\n''.x { y: z; }' ]] || fail_ "no accent: the block taken out, all of yours kept"; pass
+signin_model() { echo authentik; }
+echo 'PORTAL_TITLE="A*B_C"' >> "$ENV_FILE"
+[[ "$(jellyfin_kit_disclaimer)" == 'Sign in with your **A\*B\_C** account — the same username and password as the portal.' ]] || fail_ "the sign-in line: the name as text: $(jellyfin_kit_disclaimer)"; pass
+signin_model() { echo jellyfin; }
+[[ -z "$(jellyfin_kit_disclaimer)" ]] || fail_ "no portal: no sign-in line"; pass
+signin_model() { echo authentik; }; echo 'PORTAL_TITLE="Our House"' >> "$ENV_FILE"
+
+JFB=$T/jfb.json; echo '{"LoginDisclaimer":null,"CustomCss":"","SplashscreenEnabled":false}' > "$JFB"
+jf_api() {
+    case "$1 $2" in
+        "GET /Branding/Configuration") cat "$JFB" ;;
+        "POST /System/Configuration/Branding") echo "$4" > "$JFB"; echo POST >> "$T/jfcalls" ;;
+        *) return 1 ;;
+    esac
+}
+jf_code() { echo 200; }; jf_url() { echo http://jf; }
+jellyfin_splash_upload() { echo "UPLOAD $2" >> "$T/jfcalls"; }
+curl() { [[ " $* " == *" DELETE "* ]] && echo DELETE >> "$T/jfcalls"; return 0; }
+echo JELLYFIN_API_KEY=k >> "$ENV_FILE"; sed -i '/^BRAND_ACCENT=/d' "$ENV_FILE"; echo BRAND_ACCENT=E6701E >> "$ENV_FILE"
+cp "$T/bg.jpg" "$BRAND_DIR/background.jpg"
+: > "$T/jfcalls"; jellyfin_brand_apply > "$T/out" 2>&1
+[[ "$(jq -r .CustomCss "$JFB")" == "$(jellyfin_kit_css E6701E)" && "$(jq -r .SplashscreenEnabled "$JFB")" == true ]] \
+    && [[ "$(jq -r .LoginDisclaimer "$JFB")" == *'**Our House** account'* ]] && grep -q "^UPLOAD $BRAND_DIR/background.jpg$" "$T/jfcalls" \
+    || fail_ "Jellyfin: the accent, the sign-in line, the background uploaded and shown: $(cat "$JFB") $(cat "$T/jfcalls")"; pass
+: > "$T/jfcalls"; jellyfin_brand_apply > "$T/out" 2>&1
+[[ ! -s "$T/jfcalls" ]] || fail_ "Jellyfin, the same kit again: nothing sent ($(cat "$T/jfcalls"))"; pass
+jq -c '.LoginDisclaimer = "Ask Nick for an account." | .CustomCss = ".mine{}\n" + .CustomCss' "$JFB" > "$JFB.n" && mv "$JFB.n" "$JFB"
+rm -f "$BRAND_DIR/background.jpg"; sed -i '/^BRAND_ACCENT=/d' "$ENV_FILE"
+: > "$T/jfcalls"; jellyfin_brand_apply > "$T/out" 2>&1
+[[ "$(jq -r .LoginDisclaimer "$JFB")" == "Ask Nick for an account." && "$(jq -r .CustomCss "$JFB")" == ".mine{}" && "$(jq -r .SplashscreenEnabled "$JFB")" == false ]] \
+    && grep -qx DELETE "$T/jfcalls" && grep -q "written in its dashboard — yours, untouched" "$T/out" \
+    || fail_ "the kit emptied: your line and CSS kept, mediastack's block and picture gone: $(cat "$JFB") $(cat "$T/jfcalls")"; pass
+unset -f curl jf_api
+
+# ---- Seerr's title; the panel's ----
+SEERR=$T/seerr.json; echo '{"applicationTitle":"Seerr"}' > "$SEERR"
+curl() { local a; for a in "$@"; do [[ "$a" == POST ]] && { jq -c --argjson p "$(sed -n 's/.*-d \({.*}\) .*/\1/p' <<<"$*")" '. + $p' "$SEERR" > "$SEERR.n" && mv "$SEERR.n" "$SEERR"; echo '{}'; return 0; }; done; cat "$SEERR"; }
+seerr_url() { echo http://seerr; }; echo SEERR_API_KEY=s >> "$ENV_FILE"
+seerr_brand_apply > "$T/out" 2>&1
+[[ "$(jq -r .applicationTitle "$SEERR")" == "Our House" ]] || fail_ "Seerr's title: the household's name: $(cat "$SEERR")"; pass
+echo '{"applicationTitle":"Film Club"}' > "$SEERR"; seerr_brand_apply > "$T/out" 2>&1
+[[ "$(jq -r .applicationTitle "$SEERR")" == "Film Club" ]] && grep -q "yours, untouched" "$T/out" || fail_ "a title written in Seerr's settings: yours"; pass
+unset -f curl
+echo 'PORTAL_TITLE="Tom \"&\" Co"' >> "$ENV_FILE"
+grep -qxF 'pageTitle: "Tom \"&\" Co"' <<<"$(panel_config_render admin hash)" || fail_ "the panel's title: the household's name, a YAML string: $(panel_config_render admin hash | grep pageTitle)"; pass
 
 echo "OK brand: $checks checks"
