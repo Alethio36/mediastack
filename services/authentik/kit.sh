@@ -48,7 +48,10 @@ authentik_kit_decide() { # authentik_kit_decide CUR WANT DEFAULT MINE -> same | 
 }
 
 AK_KIT_FILES=()   # SRC<TAB>NAME of every file the portal is given now (authentik_kit_collect)
-AK_ICON_APPS=()   # the service of every mediastack card (authentik_kit_collect)
+AK_ICON_APPS=()   # every mediastack card by its key: an app's service, or getting-started (authentik_kit_collect)
+# the "Start here" card (the portal setup's own) shows the kit's icon: yours, else mediastack's
+authentik_card_slug() { if [[ "$1" == getting-started ]]; then echo mediastack-getting-started; else echo "mediastack-app-$1"; fi; }
+authentik_card_src()  { if [[ "$1" == getting-started ]]; then brand_icon; else brand_app_icon "$1"; fi; }
 authentik_kit_collect() { # the files the kit gives the portal now — yours that pass their check, and each card's icon; rc 1 when the cards are unreadable
     local k f all slug s src
     AK_KIT_FILES=(); AK_ICON_APPS=()
@@ -57,9 +60,10 @@ authentik_kit_collect() { # the files the kit gives the portal now — yours tha
         AK_KIT_FILES+=("$f"$'\t'"$(authentik_kit_name "$f" "$k")")
     done
     all=$(ak_api GET "/core/applications/?superuser_full_list=true&page_size=500") || { wfail "authentik: applications unreadable — the cards' icons unchecked"; return 1; }
-    for slug in $(jq -r '.results[].slug | select(startswith("mediastack-app-"))' <<<"$all"); do
-        s=${slug#mediastack-app-}; AK_ICON_APPS+=("$s")
-        src=$(brand_app_icon "$s"); [[ -n "$src" && -z "$(brand_icon_problem "$src")" ]] || continue
+    for slug in $(jq -r '.results[].slug | select(startswith("mediastack-app-") or . == "mediastack-getting-started")' <<<"$all"); do
+        s=${slug#mediastack-app-}; [[ "$slug" != mediastack-getting-started ]] || s=getting-started
+        AK_ICON_APPS+=("$s")
+        src=$(authentik_card_src "$s"); [[ -n "$src" && -z "$(brand_icon_problem "$src")" ]] || continue
         AK_KIT_FILES+=("$src"$'\t'"$(authentik_kit_name "$src" "icons/$s")")
     done
 }
@@ -148,15 +152,15 @@ authentik_app_icons() { # every mediastack card shows its app's icon (yours, els
     local all s app want src p n=0
     all=$(ak_api GET "/core/applications/?superuser_full_list=true&page_size=500") || { wfail "authentik: applications unreadable — the cards' icons unchecked"; return 0; }
     for s in "${AK_ICON_APPS[@]}"; do
-        app=$(jq -c --arg sl "mediastack-app-$s" '[.results[] | select(.slug == $sl)][0] // empty' <<<"$all"); [[ -n "$app" ]] || continue
-        src=$(brand_app_icon "$s"); want=""
+        app=$(jq -c --arg sl "$(authentik_card_slug "$s")" '[.results[] | select(.slug == $sl)][0] // empty' <<<"$all"); [[ -n "$app" ]] || continue
+        src=$(authentik_card_src "$s"); want=""
         if [[ -n "$src" ]]; then
             p=$(brand_icon_problem "$src")
             if [[ -n "$p" ]]; then wfail "authentik: $s's icon is unusable, its card keeps what it shows — $p"; continue; fi
             want=$(authentik_kit_name "$src" "icons/$s")
         fi
         authentik_kit_field "$s's card icon" "icon-$s" "$(jq -r '.meta_icon // ""' <<<"$app")" "$want" "" || continue
-        ak_api PATCH "/core/applications/mediastack-app-$s/" "$(jq -cn --arg i "$want" '{meta_icon:$i}')" >/dev/null \
+        ak_api PATCH "/core/applications/$(authentik_card_slug "$s")/" "$(jq -cn --arg i "$want" '{meta_icon:$i}')" >/dev/null \
             && { state_set "authentik-kit-icon-$s" "$want"; n=$((n + 1)); } \
             || wfail "authentik refused $s's card icon"
     done

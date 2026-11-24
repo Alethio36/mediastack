@@ -145,7 +145,7 @@ h=$(authentik_template_render services/authentik/templates/mediastack-invitation
 WIRE_DRY=0; AKB=$T/akb.json; AKF=$T/akf.json; AKA=$T/aka.json; AKP=$T/akpatch
 echo '{"results":[{"brand_uuid":"u1","branding_logo":"/static/dist/assets/icons/icon_left_brand.svg","branding_favicon":"/static/dist/assets/icons/icon.png","branding_default_flow_background":"/static/dist/assets/images/flow_background.jpg","branding_custom_css":""}]}' > "$AKB"
 echo '{"title":"Welcome to authentik!"}' > "$AKF"
-echo '{"results":[{"slug":"mediastack-app-jellyfin","meta_icon":""},{"slug":"mediastack-app-kavita","meta_icon":"my/own.png"},{"slug":"mediastack-getting-started","meta_icon":""}]}' > "$AKA"
+echo '{"results":[{"slug":"mediastack-app-jellyfin","meta_icon":""},{"slug":"mediastack-app-kavita","meta_icon":"my/own.png"},{"slug":"mediastack-getting-started","meta_icon":""},{"slug":"other-card","meta_icon":""}]}' > "$AKA"
 ak_api() {
     case "$1 $2" in
         "GET /core/brands/"*) cat "$AKB" ;;
@@ -174,7 +174,9 @@ logo=$(jq -r '.results[0].branding_logo' "$AKB")
 [[ "$(jq -r '.results[] | select(.slug == "mediastack-app-jellyfin") | .meta_icon' "$AKA")" =~ ^mediastack/icons/jellyfin-[0-9a-f]{12}\.png$ ]] || fail_ "jellyfin's card: its shipped icon"; pass
 [[ "$(jq -r '.results[] | select(.slug == "mediastack-app-kavita") | .meta_icon' "$AKA")" == my/own.png ]] && grep -q "kavita's card icon was set in its own screens" "$T/out" \
     || fail_ "an icon set in authentik's screens: yours, said, untouched"; pass
-! grep -q getting-started "$AKP" || fail_ "a card that is not an app's: left alone"; pass
+[[ "$(jq -r '.results[] | select(.slug == "mediastack-getting-started") | .meta_icon' "$AKA")" =~ ^mediastack/icons/getting-started-[0-9a-f]{12}\.png$ ]] \
+    || fail_ "the Start here card: the kit's icon (found live: a bare letter)"; pass
+! grep -q other-card "$AKP" || fail_ "a card that is not mediastack's: left alone"; pass
 : > "$AKP"; authentik_brand_apply > "$T/out" 2>&1
 [[ ! -s "$AKP" ]] || fail_ "the same kit again: nothing sent ($(cat "$AKP"))"; pass
 jq -c '.results[0].branding_default_flow_background = "uploads/mine.jpg"' "$AKB" > "$AKB.n" && mv "$AKB.n" "$AKB"

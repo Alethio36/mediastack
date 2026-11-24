@@ -4,8 +4,9 @@
 # overwritten), words in .env:
 #   name        PORTAL_TITLE — configure asks it with the portal; the portal's
 #               name, its sign-in title, the Discord sender's
-#   icon        icon.png — the Discord sender's avatar (mediastack's when
-#               absent) and the portal's tab icon (authentik's when absent)
+#   icon        icon.png — the Discord sender's avatar and the portal's
+#               "Start here" card (mediastack's when absent), and the portal's
+#               tab icon (authentik's when absent)
 #   logo        logo.png — the portal's logo (authentik's when absent)
 #   background  background.png or .jpg — the portal's sign-in background
 #   app icons   icons/<service>.png — that app's card on the portal's
@@ -174,7 +175,9 @@ brand_file_set() { # brand_file_set icon|logo|background FILE|default
     old=$(brand_yours "$k")
     if [[ "$2" == default ]]; then
         [[ -n "$old" ]] || { ok "the $k is already the shipped one"; return 0; }
-        rm -f "$old"; ok "the $k is the shipped one again (yours removed from custom/branding/)"
+        rm -f "$old"
+        if [[ "$k" == icon ]]; then ok "the icon: mediastack's for messages, authentik's on the portal (yours removed from custom/branding/)"
+        else ok "the $k: authentik's own again (yours removed from custom/branding/)"; fi
     else
         p=$(brand_file_problem "$k" "$2"); [[ -z "$p" ]] || die "$p"
         dest="$BRAND_DIR/$k.$( [[ "$k" == background ]] && brand_file_kind "$2" || echo png )"

@@ -1092,7 +1092,8 @@ switches Jellyfin's sign-in to the portal (doctor fails until it has).
 The portal takes the household's kit (`brand`): its sign-in page says
 *Welcome to* your name (`PORTAL_TITLE`), and in `custom/branding/` your
 `logo.png` sits above the sign-in card and on the dashboard, your `icon.png`
-is the browser tab's icon, and your `background.png` (or `.jpg`) is behind
+is the browser tab's icon and the "Start here" card's (mediastack's on that
+card without yours), and your `background.png` (or `.jpg`) is behind
 the sign-in card. `brand accent '#E6701E'` colours its buttons and links,
 and the button in its emails (quote the `#`, or leave it out). Each app's card
 on the dashboard shows the app's own icon — mediastack ships one for each
