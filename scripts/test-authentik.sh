@@ -89,6 +89,7 @@ pass()  { checks=$((checks+1)); }
 fail_() { echo "FAIL: $*" >&2; exit 1; }
 ok() { :; }
 people_timer_ensure() { :; }   # a wire reaching the portal step starts it (systemd): scripts/test-people.sh
+authentik_kit_icons() { :; }; authentik_brand_apply() { :; }   # the kit on the portal: scripts/test-brand.sh
 
 # ---- the upgrade path ----
 AUTHENTIK_RELEASES=(2026.2 2026.5 2026.8)

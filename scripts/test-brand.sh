@@ -40,23 +40,23 @@ png() { # png W H [EXTRA-BYTES] -> a file with a PNG's header saying W x H
 # ---- the icon ----
 [[ -z "$(brand_icon_problem "$SCRIPT_DIR/$BRAND_ICON_SHIPPED")" ]] || fail_ "the shipped icon passes its own check: $(brand_icon_problem "$SCRIPT_DIR/$BRAND_ICON_SHIPPED")"; pass
 [[ -z "$(brand_icon_problem "$(png 256 256)")" ]] || fail_ "a square PNG of 256: fine"; pass
-[[ "$(brand_icon_problem "$(png 256 200)")" == *"256x200 — the icon must be square"* ]] || fail_ "not square: said"; pass
+[[ "$(brand_icon_problem "$(png 256 200)")" == *"256x200 — an icon must be square"* ]] || fail_ "not square: said"; pass
 [[ "$(brand_icon_problem "$(png 64 64)")" == *"128 to 1024 pixels"* ]] || fail_ "too small: said"; pass
 [[ "$(brand_icon_problem "$(png 2048 2048)")" == *"128 to 1024 pixels"* ]] || fail_ "too large: said"; pass
-[[ "$(brand_icon_problem "$(png 512 512 1100000)")" == *"the most is 1024 KiB"* ]] || fail_ "over 1 MiB: said"; pass
+[[ "$(brand_icon_problem "$(png 512 512 1100000)")" == *"the most for the icon is 1024 KiB"* ]] || fail_ "over 1 MiB: said"; pass
 printf '\xff\xd8\xff\xe0 a jpeg' > "$T/j.jpg"
 [[ "$(brand_icon_problem "$T/j.jpg")" == *"is not a PNG"* ]] || fail_ "a JPEG: not a PNG, said"; pass
 [[ "$(brand_icon_problem "$T/none.png")" == *"not a readable file"* ]] || fail_ "missing: said"; pass
 [[ "$(brand_icon)" == "$SCRIPT_DIR/$BRAND_ICON_SHIPPED" ]] || fail_ "no icon of yours: the shipped one"; pass
 
 hub_enabled() { return 1; }
-brand_icon_set "$(png 300 300)" > "$T/out"
+brand_file_set icon "$(png 300 300)" > "$T/out"
 cmp -s "$T/p300x300.png" "$BRAND_DIR/icon.png" && [[ "$(brand_icon)" == "$BRAND_DIR/icon.png" && "$(stat -c %a "$BRAND_DIR/icon.png")" == 644 ]] \
     || fail_ "brand icon FILE: copied into custom/branding/ and used"; pass
 grep -q "the kit reaches it at its next start" "$T/out" || fail_ "the hub off: nothing applied, and said when: $(cat "$T/out")"; pass
-( brand_icon_set "$(png 300 200)" ) >/dev/null 2>"$T/err" && fail_ "an unusable icon: refused"
+( brand_file_set icon "$(png 300 200)" ) >/dev/null 2>"$T/err" && fail_ "an unusable icon: refused"
 cmp -s "$T/p300x300.png" "$BRAND_DIR/icon.png" || fail_ "an unusable icon refused: yours stays as it was"; pass
-brand_icon_set default >/dev/null
+brand_file_set icon default >/dev/null
 [[ ! -e "$BRAND_DIR/icon.png" && "$(brand_icon)" == "$SCRIPT_DIR/$BRAND_ICON_SHIPPED" ]] || fail_ "brand icon default: the shipped one again"; pass
 
 # ---- the colours ----
@@ -94,5 +94,100 @@ sed -E "s/^APPRISE_ASSET_HTML_NOTIFY_MAP=//; s/'$//; s/\\$\\{[A-Z_]+:-([0-9A-F]{
 [[ -z "$(brand_name_discord_problem 'Our House')" ]] || fail_ "an ordinary name: fine"; pass
 [[ "$(brand_name_discord_problem 'Movie Discord')" == *'"discord" or "clyde"'* && -n "$(brand_name_discord_problem 'CLYDE')" ]] || fail_ "Discord's refused words: said"; pass
 [[ "$(brand_name_discord_problem "$(printf 'x%.0s' {1..81})")" == *"1 to 80"* ]] || fail_ "too long: said"; pass
+
+# ---- the portal's files ----
+[[ -z "$(brand_file_problem logo "$(png 600 150)")" ]] || fail_ "a logo: any shape of PNG"; pass
+[[ "$(brand_file_problem logo "$T/j.jpg")" == *"not a PNG"* ]] || fail_ "a logo that is a JPEG: said"; pass
+[[ -z "$(brand_file_problem background "$T/j.jpg")" && -z "$(brand_file_problem background "$(png 1920 1080)")" ]] || fail_ "a background: a JPEG or a PNG"; pass
+printf 'GIF89a......' > "$T/g.gif"
+[[ "$(brand_file_problem background "$T/g.gif")" == *"neither a PNG nor a JPEG"* ]] || fail_ "a GIF background: said"; pass
+head -c 6000000 /dev/zero > "$T/big.jpg"; printf '\xff\xd8\xff' | dd of="$T/big.jpg" conv=notrunc 2>/dev/null
+[[ "$(brand_file_problem background "$T/big.jpg")" == *"the most for the background is 5120 KiB"* ]] || fail_ "a background over 5 MiB: said"; pass
+brand_apply_portal() { echo "PORTAL" >> "$T/applied"; }; brand_apply_messages() { echo "MESSAGES" >> "$T/applied"; }
+: > "$T/applied"; brand_file_set background "$(png 1920 1080)" >/dev/null
+[[ -e "$BRAND_DIR/background.png" && "$(brand_yours background)" == "$BRAND_DIR/background.png" && "$(cat "$T/applied")" == PORTAL ]] || fail_ "brand background: stored, the portal told"; pass
+cp "$T/j.jpg" "$T/bg.jpg"; brand_file_set background "$T/bg.jpg" >/dev/null
+[[ ! -e "$BRAND_DIR/background.png" && -e "$BRAND_DIR/background.jpg" ]] || fail_ "a JPEG background replaces the PNG one: one background, by its kind"; pass
+: > "$T/applied"; brand_file_set icon "$(png 256 256)" >/dev/null
+[[ "$(paste -sd' ' "$T/applied")" == "MESSAGES PORTAL" ]] || fail_ "the icon: both the messages and the portal take it"; pass
+brand_file_set icon default >/dev/null; brand_file_set background default >/dev/null
+[[ -z "$(brand_yours icon)$(brand_yours background)" ]] || fail_ "default: yours removed"; pass
+
+# ---- the apps' icons: shipped, every one usable; yours first ----
+n=0; for f in services/*/icon.png; do
+    p=$(brand_icon_problem "$f"); [[ -z "$p" ]] || fail_ "a shipped icon: $p"; n=$((n + 1))
+done; (( n >= 20 )) || fail_ "an icon ships for each app with a card ($n)"; pass
+grep -q 'Apache License 2.0' services/NOTICE-icons.md && grep -q 'MIT License' services/NOTICE-icons.md || fail_ "where the shipped icons come from, and their licences: services/NOTICE-icons.md"; pass
+[[ "$(brand_app_icon jellyfin)" == "$SCRIPT_DIR/services/jellyfin/icon.png" && -z "$(brand_app_icon nosuchapp)" ]] || fail_ "an app's icon: the shipped one; none: nothing"; pass
+brand_app_icon_set jellyfin "$(png 200 200)" >/dev/null
+[[ "$(brand_app_icon jellyfin)" == "$BRAND_DIR/icons/jellyfin.png" ]] || fail_ "brand app-icon: yours first"; pass
+( brand_app_icon_set '../x' "$(png 200 200)" ) >/dev/null 2>&1 && fail_ "a service name with a path in it: refused"; pass
+( brand_app_icon_set kavita "$(png 200 100)" ) >/dev/null 2>&1 && fail_ "a card icon that is not square: refused"; pass
+brand_app_icon_set jellyfin default >/dev/null
+[[ "$(brand_app_icon jellyfin)" == "$SCRIPT_DIR/services/jellyfin/icon.png" ]] || fail_ "app-icon default: the shipped one again"; pass
+
+# ---- the portal: what is set, and what is left ----
+for c in "same:a:a:d:" "set:d:a:d:" "set::a:d:" "set:m:a:d:m" "yours:u:a:d:m" "yours:u:a:d:"; do
+    IFS=: read -r want cur w d mine <<<"$c"
+    [[ "$(authentik_kit_decide "$cur" "$w" "$d" "$mine")" == "$want" ]] || fail_ "decide cur=$cur want=$w default=$d mine=$mine: $want"; pass
+done
+css=$(authentik_accent_css E6701E)
+[[ "$css" == ':root {'* && "$css" == *'--pf-global--primary-color--100: #E6701E'* && "$css" == *'--pf-global--link--Color: #E6701E'* ]] || fail_ "the accent: buttons and links: $css"; pass
+[[ -z "$(authentik_accent_css "")" ]] || fail_ "no accent: no CSS (authentik's own)"; pass
+[[ "$(authentik_kit_name "$T/p256x256.png" logo)" =~ ^mediastack/logo-[0-9a-f]{12}\.png$ && "$(authentik_kit_name "$T/j.jpg" background)" == mediastack/background-*.jpg ]] \
+    || fail_ "a file's name in authentik's media: by kind and content"; pass
+[[ "$(authentik_email_accent)" == 2563eb ]] || fail_ "the emails' button: their blue without an accent"; pass
+echo BRAND_ACCENT=E6701E >> "$ENV_FILE"
+h=$(authentik_template_render services/authentik/templates/mediastack-invitation.html X)
+[[ "$h" == *'background:#E6701E'* && "$h" != *'@@'* ]] || fail_ "the emails' button takes the accent"; pass
+
+# the brand, against a stub of authentik's API: PATCH bodies recorded
+WIRE_DRY=0; AKB=$T/akb.json; AKF=$T/akf.json; AKA=$T/aka.json; AKP=$T/akpatch
+echo '{"results":[{"brand_uuid":"u1","branding_logo":"/static/dist/assets/icons/icon_left_brand.svg","branding_favicon":"/static/dist/assets/icons/icon.png","branding_default_flow_background":"/static/dist/assets/images/flow_background.jpg","branding_custom_css":""}]}' > "$AKB"
+echo '{"title":"Welcome to authentik!"}' > "$AKF"
+echo '{"results":[{"slug":"mediastack-app-jellyfin","meta_icon":""},{"slug":"mediastack-app-kavita","meta_icon":"my/own.png"},{"slug":"mediastack-getting-started","meta_icon":""}]}' > "$AKA"
+ak_api() {
+    case "$1 $2" in
+        "GET /core/brands/"*) cat "$AKB" ;;
+        "GET /flows/instances/"*) cat "$AKF" ;;
+        "GET /core/applications/"*) cat "$AKA" ;;
+        PATCH*) echo "$2 $3" >> "$AKP"
+            case "$2" in
+                /core/brands/*) jq -c --argjson p "$3" '.results[0] += $p' "$AKB" > "$AKB.n" && mv "$AKB.n" "$AKB" ;;
+                /flows/*) jq -c --argjson p "$3" '. += $p' "$AKF" > "$AKF.n" && mv "$AKF.n" "$AKF" ;;
+                /core/applications/*) jq -c --arg sl "${2#/core/applications/}" --argjson p "$3" '.results |= map(if .slug == ($sl | rtrimstr("/")) then . + $p else . end)' "$AKA" > "$AKA.n" && mv "$AKA.n" "$AKA" ;;
+            esac ;;
+        *) return 1 ;;
+    esac
+}
+authentik_dir() { echo "$T/ak"; }
+sudo() { local a=() skip=0 x; for x in "$@"; do if (( skip )); then skip=0; continue; fi; case "$x" in -o|-g) skip=1 ;; *) a+=("$x") ;; esac; done; "${a[@]}"; }
+authentik_templates_sync() { :; }
+echo 'PORTAL_TITLE="Our House"' >> "$ENV_FILE"
+brand_file_set logo "$(png 600 150)" >/dev/null 2>&1 || true   # stored; brand_apply_portal is the stub here
+: > "$AKP"; authentik_brand_apply > "$T/out" 2>&1
+logo=$(jq -r '.results[0].branding_logo' "$AKB")
+[[ "$logo" =~ ^mediastack/logo-[0-9a-f]{12}\.png$ && -e "$T/ak/data/media/public/$logo" ]] || fail_ "the logo: copied into authentik's media, the brand names it: $logo"; pass
+[[ "$(jq -r '.results[0].branding_custom_css' "$AKB")" == *'#E6701E'* && "$(jq -r '.results[0].branding_favicon' "$AKB")" == /static/dist/assets/icons/icon.png ]] \
+    || fail_ "the accent set; no icon of yours: authentik's tab icon stays"; pass
+[[ "$(jq -r .title "$AKF")" == "Welcome to Our House" ]] || fail_ "the sign-in title: the household's name"; pass
+[[ "$(jq -r '.results[] | select(.slug == "mediastack-app-jellyfin") | .meta_icon' "$AKA")" =~ ^mediastack/icons/jellyfin-[0-9a-f]{12}\.png$ ]] || fail_ "jellyfin's card: its shipped icon"; pass
+[[ "$(jq -r '.results[] | select(.slug == "mediastack-app-kavita") | .meta_icon' "$AKA")" == my/own.png ]] && grep -q "kavita's card icon was set in its own screens" "$T/out" \
+    || fail_ "an icon set in authentik's screens: yours, said, untouched"; pass
+! grep -q getting-started "$AKP" || fail_ "a card that is not an app's: left alone"; pass
+: > "$AKP"; authentik_brand_apply > "$T/out" 2>&1
+[[ ! -s "$AKP" ]] || fail_ "the same kit again: nothing sent ($(cat "$AKP"))"; pass
+jq -c '.results[0].branding_default_flow_background = "uploads/mine.jpg"' "$AKB" > "$AKB.n" && mv "$AKB.n" "$AKB"
+brand_file_set background "$T/bg.jpg" >/dev/null 2>&1 || true
+: > "$AKP"; authentik_brand_apply > "$T/out" 2>&1
+[[ "$(jq -r '.results[0].branding_default_flow_background' "$AKB")" == uploads/mine.jpg ]] && grep -q "the sign-in background was set in its own screens" "$T/out" \
+    || fail_ "a background set in authentik's screens: yours, even with one in the kit"; pass
+old=$logo; rm -f "$BRAND_DIR/logo.png"; : > "$AKP"; authentik_brand_apply > "$T/out" 2>&1
+[[ "$(jq -r '.results[0].branding_logo' "$AKB")" == /static/dist/assets/icons/icon_left_brand.svg && ! -e "$T/ak/data/media/public/$old" ]] \
+    || fail_ "the kit's logo taken away: authentik's back, the file removed"; pass
+printf 'not a png' > "$BRAND_DIR/logo.png"; : > "$AKP"; authentik_brand_apply > "$T/out" 2>&1
+[[ "$(jq -r '.results[0].branding_logo' "$AKB")" == /static/dist/assets/icons/icon_left_brand.svg ]] && grep -q "your logo is unusable, the portal keeps what it shows" "$T/out" \
+    || fail_ "an unusable logo of yours: said, nothing changed"; pass
+rm -f "$BRAND_DIR/logo.png"
 
 echo "OK brand: $checks checks"

@@ -312,7 +312,7 @@ Connect
 | `users` | the portal's people: username, name, email, groups, and whether they can sign in (the stack's own `akadmin` and service accounts left out) |
 | `email [status\|test <address>]` | the portal's outgoing email: `status` shows the settings and whether they passed a test; `test` sends a real message through authentik and, if the server refuses, says why it usually happens; a pass turns on the sign-in page's **Forgot password?** (a reset link by email). Set up with `configure` — [docs/email.md](docs/email.md) |
 | `notify [status\|test [stream]\|set <stream>\|clear <stream>\|send <stream> <title> <message> [--type T]]` | the notification streams (`ops`, `users`): what each is set to (URLs hidden) and whether it delivered, a test, replace or clear a stream's URLs, or send your own message — see "Notifications" |
-| `brand [status\|colour <type> <#hex>\|default\|icon <file.png>\|default]` | the household's kit, as messages show it: the name (`PORTAL_TITLE`, which configure asks with the portal), the icon and a colour per message type (`info`, `success`, `warning`, `failure`). `colour` and `icon` check what you give (a colour is six hex digits; the icon a square PNG, 128–1024 pixels, at most 1 MiB), store it (`.env`'s `BRAND_COLOUR_<TYPE>`; `custom/branding/icon.png`) and apply it at once: the hub restarts for a colour (a few seconds without notifications), and every Discord webhook mediastack set up takes the name and icon. `default` goes back to mediastack's. doctor checks the icon — see "Notifications (Apprise)" |
+| `brand [status\|colour <type> <#hex>\|default\|accent <#hex>\|default\|icon\|logo\|background <file>\|default\|app-icon <svc> <file.png>\|default]` | the household's kit, everywhere it shows: the name (`PORTAL_TITLE`, which configure asks with the portal), and in `custom/branding/` the icon (`icon.png`: the Discord sender's avatar and the portal's tab icon), the portal's logo (`logo.png`) and sign-in background (`background.png` or `.jpg`), and each app's card icon (`icons/<service>.png`; mediastack ships one for each app — `services/NOTICE-icons.md`); in `.env` a colour per message type (`info`, `success`, `warning`, `failure`) and the portal's accent (its buttons and links, its emails' button). Each change is checked (a colour is six hex digits; an icon a square PNG, 128–1024 pixels, at most 1 MiB; the logo a PNG, at most 1 MiB; the background a PNG or JPEG, at most 5 MiB), stored and applied at once: the hub restarts for a message colour (a few seconds without notifications), authentik for the accent (its emails' template; a few seconds without the portal). `default` goes back to the shipped one. What you set in authentik's own screens stays yours. doctor checks the files — see "Notifications (Apprise)" and "The portal's look" |
 | `set-user-facing [<svc> true\|false]` | show or change which services notify the household (the `users` stream) when they're updated; no args lists the current set. The fragment ships a default; an override lands in `.env` only when it differs |
 | `trash-sync [--dry-run]` | TRaSH Guides quality profiles via Recyclarr; rides the nightly update. `--dry-run` previews the drift (`recyclarr --preview`) and changes nothing |
 | `traefik-setup` | ask Traefik's questions again (`configure` asks them first): domain, Cloudflare token — checked with Cloudflare when pasted, with the domain's zone — and the cert environment (the dashboard's login is one of the stack's own: `set-credentials traefik`) |
@@ -1086,6 +1086,25 @@ and its port listens on 127.0.0.1 only — `notify` does what its UI would. Afte
 enabling authentik, run `./mediastack.sh wire` once: it waits for the portal's
 first start, attaches the gate, adds the admin cards to your dashboard and
 switches Jellyfin's sign-in to the portal (doctor fails until it has).
+
+### The portal's look
+
+The portal takes the household's kit (`brand`): its sign-in page says
+*Welcome to* your name (`PORTAL_TITLE`), and in `custom/branding/` your
+`logo.png` sits above the sign-in card and on the dashboard, your `icon.png`
+is the browser tab's icon, and your `background.png` (or `.jpg`) is behind
+the sign-in card. `brand accent '#E6701E'` colours its buttons and links,
+and the button in its emails (quote the `#`, or leave it out). Each app's card
+on the dashboard shows the app's own icon — mediastack ships one for each
+(`services/<service>/icon.png`; where they come from:
+`services/NOTICE-icons.md`) — or yours: `brand app-icon jellyfin
+<file.png>` puts it in `custom/branding/icons/`, and an app you added
+yourself takes one the same way. Without a file of yours the portal keeps
+authentik's own (and its emails their blue). `wire authentik` keeps it so;
+`brand` applies a change at once. A logo, icon or colour you set in
+authentik's own screens is yours: mediastack leaves it as it is. The emails
+carry the name and the accent but no logo: an image in an email needs an
+address the Internet can reach, and the portal is on your network only.
 
 ## Invites (Wizarr)
 

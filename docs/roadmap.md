@@ -307,7 +307,20 @@ agreed first:
    mediastack's back. Deferred: the background picture and
    accent colour (slice 3, the portal: nothing else shows them); a public
    icon address for platforms that cannot take an upload (Slack, ntfy) —
-   when one is set up. Next: slice 3, the portal.
+   when one is set up. **Slice 3 built 24 Nov 2026** (the portal): a spike
+   on the test box first (authentik 2026.8 serves a file in its own media
+   folder by name, and its brand's custom CSS reaches every component: the
+   sign-in button took the accent, its hover darker); then the logo
+   (`logo.png`), the tab icon (`icon.png`), the sign-in background
+   (`background.png|.jpg`) and the accent (`BRAND_ACCENT`: buttons and
+   links) on authentik's brand, the sign-in title *Welcome to* the name, each
+   app card's icon (shipped per service from Dashboard Icons, Apache-2.0 —
+   `services/NOTICE-icons.md`; yours in `custom/branding/icons/`), the
+   emails' button in the accent. Set by `wire authentik` and `brand`, each
+   value only while it is authentik's own or mediastack's last; files named
+   by their content in authentik's media folder. No logo in the emails (an
+   image needs a public address). Not yet proven live. Next: slice 4, app by
+   app (Jellyfin first).
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless

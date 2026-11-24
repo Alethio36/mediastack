@@ -243,8 +243,10 @@ authentik_template_render() { # authentik_template_render FILE TITLE -> the temp
         t=${t//\{/$'\x01'}; t=${t//\}/$'\x02'}
         t=${t//$'\x01'/"{% templatetag openbrace %}"}; t=${t//$'\x02'/"{% templatetag closebrace %}"}
     fi
+    body=${body//@@ACCENT@@/$(authentik_email_accent)}
     printf '%s\n' "${body//@@PORTAL_TITLE@@/"$t"}"
 }
+authentik_email_accent() { local a; a=$(env_get BRAND_ACCENT); echo "${a:-2563eb}"; }   # the emails' button: the kit's accent, else theirs as it always was (byte for byte, so an upgrade restarts nothing; six hex digits, checked by .env's schema)
 
 authentik_templates_sync() { # authentik renders CONFIG_ROOT/authentik/templates: keep mediastack's there, with the portal's name in them
     local dst uid f out n=""
@@ -838,6 +840,7 @@ wire_authentik() {
     wire_authentik_gate
     panel_config_follow
     panel_signin_check
+    authentik_brand_apply   # the household's kit on the portal (services/authentik/kit.sh)
 }
 
 wire_authentik_identity() { # people cannot change their own email or username: apps find their account by them
@@ -1433,6 +1436,7 @@ wire_authentik_cards() { # every gated app its own gate and card; household apps
     ak_card_prune "$all" mediastack-tool-
     # shellcheck disable=SC2046  # service names, one word each
     ak_card_prune "$all" mediastack-app- $(authentik_gate_apps) $(authentik_household)
+    authentik_kit_icons   # each card its app's icon (services/authentik/kit.sh)
     return 0
 }
 
