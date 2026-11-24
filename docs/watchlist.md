@@ -214,6 +214,80 @@ card (`attachment://name` in the same request).
 image at the upload (worth raising with Apprise) — then Seerr's payload
 attaches the poster, and every service gets it.
 
+### More of the household's look, app by app *(Nov 2026)*
+
+Step 9 carried the kit (`brand`: name, icon, logo, background, accent,
+message colours, app icons) to the messages, the portal, Jellyfin, Seerr's
+and the panel's titles. Every other place it could reach is listed here, so
+none is lost. *Checked* means read in the app's source in Nov 2026; the rest
+is from memory and is checked in the source before any work starts.
+
+**Each app's own screens**
+- **Kavita** — themes are uploadable CSS (its *Theme* settings): the accent,
+  perhaps the logo, as a theme of mediastack's, made the default. Its site
+  name: check whether it has one.
+- **Navidrome** — a sign-in background and a welcome message
+  (`ND_UILOGINBACKGROUNDURL`, `ND_UIWELCOMEMESSAGE`; settings at its start,
+  so a change restarts it). People reach it signed in through the portal, so
+  its sign-in page is rarely seen: worth it only if that changes. The
+  background must be an address the browser can load (not authentik's
+  signed one).
+- **Audiobookshelf** — no branding settings known; check for custom CSS or a
+  server name.
+- **Jellyfin's logo** — its header banner, replaceable only by a picture
+  inside its custom CSS (sent with every page; *checked*); a small logo
+  (say, under 100 KiB) would be affordable. Its **server name**
+  (`JELLYFIN_SERVER_NAME`, what the TV and phone apps list) could default to
+  the household's name. Its fixed blues (sliders, toggles, the loading ring:
+  about 15 places, *checked*) only by CSS against its internals, which breaks
+  across versions.
+- **Seerr** — no logo setting (*checked*: its title only, done); its emails'
+  sender name could take the household's name.
+- **The web panel (OliveTin)** — its `mediastack` theme (`theme.css`,
+  written by `frontdoor-install`) could take the accent for its tiles.
+- **Wizarr** (the sign-up app without the portal) — check for a title, a logo
+  or a welcome text on its invitation pages.
+- **ErsatzTV** (Live TV, step 10) — a channel watermark (a small picture in
+  the corner of the picture): the household's icon on its channels.
+- **The arrs, qBittorrent, Transmission, Pi-hole, Prowlarr** — admin tools
+  with built-in themes only; nothing to brand. qBittorrent's alternative web
+  interfaces (VueTorrent) take themes — not one mediastack ships.
+
+**The portal**
+- **Its footer** — "Powered by authentik"; authentik's footer links are a
+  setting (`footer_links`, *checked*), so a household link (the quick-start
+  page, step 6) could sit beside it.
+- **Its emails' logo** — needs an address the Internet can reach (the portal
+  is on the network only); with the public icon address below, it can.
+- **Its other pages** — the sign-up and password-reset pages' titles carry
+  the name already; their welcome text (the join page's) could take a line
+  of the household's own.
+
+**Messages**
+- **A public icon address** — for the services that cannot take an upload
+  as the Discord webhook does (Slack, ntfy, Matrix avatars by address), and
+  for the emails' logo: one optional setting (an `https://` address of the
+  icon) the kit hands to each.
+- **Email** — if a stream sends email, an Apprise email template (HTML) in the
+  kit's colours and name.
+- **Per-stream senders** — ops and users with different names or icons
+  (e.g. "Mediastack" and the household's name), when they post to different
+  webhooks.
+
+**Beyond the apps**
+- **Error pages** — Traefik's own (a name that does not resolve, an app that
+  is down) are bare; a page in the kit's look, naming the household and what
+  to try, served by Traefik for every app.
+- **Installed web apps** — the name a phone shows when an app is added to its
+  home screen (Seerr's is its title now; Jellyfin's and the portal's are
+  their own).
+- **The quick-start page** (step 6) — in the kit's look from the start.
+
+**Revisit when:** after the step 11 audit, or sooner for one item the
+household asks for — each is checked in its app's source first, then built
+the way step 9's slices were (a spike on the test box, then the kit's rule:
+set only while it is the app's own or mediastack's last).
+
 ### Deferring for other apps' sessions
 
 Scheduled updates and backups wait while someone plays something in Jellyfin

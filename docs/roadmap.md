@@ -342,7 +342,9 @@ agreed first:
    Seerr's tab "Sign In - Mediastack"; back to the defaults, the line kept.
    Found live: a change right after the accent reached authentik while it
    restarted for its email templates — `brand` now waits for it to be ready.
-   **Step 9 done.**
+   **Step 9 done.** Everything else the kit could reach — Kavita's themes,
+   Navidrome's sign-in, Jellyfin's logo and server name, error pages, a
+   public icon address — is in the watchlist ("More of the household's look").
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless
