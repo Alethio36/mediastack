@@ -251,7 +251,9 @@ grep -qxF 'pageTitle: "Tom \"&\" Co"' <<<"$(panel_config_render admin hash)" || 
 # ---- found live: the accent restarts authentik (its email templates); the next change hit it starting ----
 eval "$(sed -n '/^brand_apply_apps() {/,/^}/p' lib/brand.sh | sed '1s/^brand_apply_apps/real_brand_apply_apps/')"   # the real one: stubbed above
 signin_model() { echo authentik; }; c_state() { echo running; }; svc_cname() { echo "c-$1"; }; svc_enabled() { return 1; }
-authentik_url() { echo http://ak; }; authentik_brand_apply() { echo APPLY >> "$T/order"; }
+authentik_url() { echo http://ak; }
+# the stub by eval: defined here as a function, shellcheck 0.9 (CI's) would take the calls above for calls before a definition
+eval 'authentik_brand_apply() { echo APPLY >> "$T/order"; }'
 http_ready() { echo "READY $2" >> "$T/order"; return "${READY_RC:-0}"; }
 : > "$T/order"; real_brand_apply_apps > /dev/null 2>&1
 [[ "$(paste -sd' ' "$T/order")" == "READY http://ak/-/health/ready/ APPLY" ]] || fail_ "the portal: ready first, then the kit: $(cat "$T/order")"; pass
