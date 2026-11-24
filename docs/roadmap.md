@@ -302,8 +302,9 @@ agreed first:
    mediastack's cards and Seerr's alike, each applied at once (the hub
    restarted, about 10 s); a non-square icon refused with its size; back to
    the defaults; doctor's brand section; `brand` shows each colour as itself
-   on a terminal (24-bit). An icon of your own is proven by the tests only
-   (the upload path is the one slice 1 proved live). Deferred: the background picture and
+   on a terminal (24-bit); an icon of your own (a square PNG made on the
+   host) became the webhook's avatar, and `brand icon default` put
+   mediastack's back. Deferred: the background picture and
    accent colour (slice 3, the portal: nothing else shows them); a public
    icon address for platforms that cannot take an upload (Slack, ntfy) —
    when one is set up. Next: slice 3, the portal.
