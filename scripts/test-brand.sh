@@ -117,7 +117,17 @@ brand_file_set icon default >/dev/null; brand_file_set background default >/dev/
 n=0; for f in services/*/icon.png; do
     p=$(brand_icon_problem "$f"); [[ -z "$p" ]] || fail_ "a shipped icon: $p"; n=$((n + 1))
 done; (( n >= 20 )) || fail_ "an icon ships for each app with a card ($n)"; pass
-grep -q 'Apache License 2.0' services/NOTICE-icons.md && grep -q 'MIT License' services/NOTICE-icons.md || fail_ "where the shipped icons come from, and their licences: services/NOTICE-icons.md"; pass
+# their licences honoured (Apache-2.0 §4, MIT): the licence texts shipped, each file naming its source,
+# copyright, licence and the change made to it, and the notice naming them
+for f in services/*/icon.png; do
+    for k in Source Copyright License Modified Trademark; do grep -aq "$k" "$f" || fail_ "$f: no $k field (services/NOTICE-icons.md)"; done
+    lic=$(grep -ao 'LICENSES/[A-Za-z0-9.-]*\.txt' "$f" | sed -n 1p)
+    [[ -n "$lic" && -s "$lic" ]] || fail_ "$f names a licence file that is not shipped: '$lic'"
+    pass
+done
+grep -q 'Copyright (c) 2024 Bjorn Lammers' LICENSES/dashboard-icons.Apache-2.0.txt && grep -q 'Copyright (c) 2024 ArabCoders' LICENSES/watchstate.MIT.txt \
+    && grep -q 'LICENSES/dashboard-icons.Apache-2.0.txt' services/NOTICE-icons.md && grep -q 'LICENSES/watchstate.MIT.txt' services/NOTICE-icons.md \
+    && grep -q 'services/NOTICE-icons.md' README.md || fail_ "the icons' licences: shipped, named in the notice, credited in the README"; pass
 [[ "$(brand_app_icon jellyfin)" == "$SCRIPT_DIR/services/jellyfin/icon.png" && -z "$(brand_app_icon nosuchapp)" ]] || fail_ "an app's icon: the shipped one; none: nothing"; pass
 brand_app_icon_set jellyfin "$(png 200 200)" >/dev/null
 [[ "$(brand_app_icon jellyfin)" == "$BRAND_DIR/icons/jellyfin.png" ]] || fail_ "brand app-icon: yours first"; pass

@@ -1197,3 +1197,10 @@ what would reopen it, in [docs/watchlist.md](docs/watchlist.md).
 ## License
 
 MIT — see [LICENSE](LICENSE). Share it around.
+
+**Others' work it ships:** the apps' icons on the portal's dashboard come from
+[Dashboard Icons](https://github.com/homarr-labs/dashboard-icons) by Homarr
+Labs (Apache License 2.0) and, for WatchState, its own logo by ArabCoders
+(MIT) — thank you. Their licences are in [LICENSES/](LICENSES/); where they
+come from and what was changed: [services/NOTICE-icons.md](services/NOTICE-icons.md).
+The logos are their projects' trademarks, shown to name each app.
