@@ -996,13 +996,17 @@ VERDICT_SAY_EVERY=30   # seconds between wait_verdict's "still waiting" lines
 VERDICT_LOG_SCAN=300   # a failed wait reads this many of the service's last log lines...
 VERDICT_LOG_LINES=5    # ...and shows this many: the error-like ones, else the last
 VERDICT_LOG_RE='error|fatal|panic|fail|denied|refused|exception|traceback|cannot|unable'
+VERDICT_LOG_SKIP='^[[:space:]]*[|│├└]'   # a settings printout (gluetun's tree): its words describe options, not errors
 verdict_evidence() { # verdict_evidence SVC — under a failed wait: the service's own words, its last error lines (else its last lines)
-    local cn lines l what="its last error lines"
+    local cn log lines l what="its last error lines"
     cn=$(svc_cname "$1")
     [[ "$(c_state "$cn")" != absent ]] || return 0   # no container, no log
-    lines=$(sudo docker logs --tail "$VERDICT_LOG_SCAN" "$cn" 2>&1 | grep -iE "$VERDICT_LOG_RE" | tail -n "$VERDICT_LOG_LINES" || true)
+    # its log without a settings printout: "Restart VPN on healthcheck failure: yes"
+    # was shown as gluetun's error, its real story left out (found live Nov 2026)
+    log=$(sudo docker logs --tail "$VERDICT_LOG_SCAN" "$cn" 2>&1 | grep -vE "$VERDICT_LOG_SKIP" || true)
+    lines=$(grep -iE "$VERDICT_LOG_RE" <<<"$log" | tail -n "$VERDICT_LOG_LINES" || true)
     if [[ -z "$lines" ]]; then
-        lines=$(sudo docker logs --tail "$VERDICT_LOG_LINES" "$cn" 2>&1 || true); what="its last lines (none reads as an error)"
+        lines=$(tail -n "$VERDICT_LOG_LINES" <<<"$log"); what="its last lines (none reads as an error)"
     fi
     [[ -n "$lines" ]] || return 0
     info "$1's log, $what — all of it: ./mediastack.sh logs $1"

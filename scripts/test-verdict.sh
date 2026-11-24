@@ -141,6 +141,13 @@ run s1 s2
 [[ "$(sort -u "$T/logs_read")" == mediastack-s1 ]] || fail_ "only the failed service's log is read ($(sort -u "$T/logs_read" | paste -sd' '))"; pass
 reset; ctr s1 exited -; printf '%s\n' 'starting up' 'listening on :8080' 'bye' > "$T/log-mediastack-s1"; run s1
 [[ "$RC" == 1 ]] && grep -q "its last lines (none reads as an error)" <<<"$OUT" && grep -qx '     bye' <<<"$OUT" || fail_ "no error line: its last lines instead ($OUT)"; pass
+# gluetun's case, live Nov 2026: a settings tree whose words read like errors, then a story without any
+reset; ctr s1 running unhealthy
+printf '%s\n' '├── VPN settings:' '|   └── Restart VPN on healthcheck failure: yes' '│   ├── Firewall: denied by default' \
+    'INFO [openvpn] TCP connection established with [AF_INET]187.14.56.132:443' 'INFO [openvpn] Connection reset, restarting [0]' > "$T/log-mediastack-s1"
+run --recover s1
+[[ "$RC" == 1 ]] && ! grep -q 'healthcheck failure\|denied by default' <<<"$OUT" && grep -q "its last lines (none reads as an error)" <<<"$OUT" \
+    && grep -qx '     INFO \[openvpn\] Connection reset, restarting \[0\]' <<<"$OUT" || fail_ "a settings printout is no error: the log's own last lines instead ($OUT)"; pass
 reset; rm -f "$T/logs_read"; run s1
 [[ "$RC" == 1 && ! -e "$T/logs_read" ]] || fail_ "no container: no log asked for"; pass
 echo "OK verdict: $checks checks"
