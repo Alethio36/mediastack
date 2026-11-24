@@ -626,7 +626,22 @@ from its server data stops the tunnel.
    status file instead of up/down commands, the server check narrowed to
    forwarding servers, ProtonVPN's `+pmp`, PureVPN left out. Found while
    building: `support` named only the countries, cities and hostnames of the
-   server choices (all of them now, and forwarding). Not yet proven live.
+   server choices (all of them now, and forwarding).
+   **Slice 4 proven live, 23 Nov 2026** (the test box, NordVPN — which
+   forwards none):
+   - schema 53 → 54 on a running stack: forwarding off, gluetun not
+     recreated (its rendered settings unchanged), leak-test's new way-in check
+     PASS against gluetun's real INPUT rules (policy DROP, loopback, replies,
+     the stack's subnet on eth0 — nothing from the tunnel);
+   - `scripts/pf-sync-live.sh 51234`: a file older than gluetun's start
+     ignored, two ports and an empty file refused, a fresh one read; the port
+     set in qBittorrent and in Transmission through the real sync, read back
+     from each (random port and UPnP off), each client's own settings put back
+     — 10 passed;
+   - `VPN_PORT_FORWARDING=on` with NordVPN: `up` refused, naming the
+     providers that forward, nothing restarted.
+   Not provable here: a provider's real forwarding (no account that forwards),
+   Deluge (not enabled on the test box).
 
 ## Not in this step
 

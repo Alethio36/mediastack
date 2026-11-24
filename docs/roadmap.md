@@ -269,7 +269,9 @@ agreed first:
    before anything restarted). **Slice 4 built 23 Nov 2026** (port
    forwarding: gluetun's own status file read into the download client by its
    own login, static ports for AirVPN and Windscribe, leak-test's way in,
-   doctor, schema 54) — not yet proven live. Next: its live proof, then step 9.
+   doctor, schema 54), **proven live the same day** as far as a NordVPN account
+   allows (the sync into qBittorrent and Transmission, the way in with nothing
+   forwarded, forwarding refused for a provider without it). **Step 8 done.**
 9. **The household's look** — notifications, then branding.
 10. **Live TV (Dispatcharr)** — evaluation, then the build.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
