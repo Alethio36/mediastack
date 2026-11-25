@@ -33,7 +33,13 @@ wire_is_blind() { local r; for r in "${WIRE_BLIND[@]}"; do [[ "$1" == "$r" ]] &&
 WIRE_FAIL_LIST=()   # one line per failure, named by its step, for the summary
 WIRE_STEP=""        # the step running (cmd_wire sets it)
 wfail() {
-    fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1)); WIRE_FAIL_LIST+=("${WIRE_STEP:+$WIRE_STEP: }${1%%$'\n'*}")
+    local line=${1%%$'\n'*} first
+    fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1))
+    # named by its step, unless it already starts with it ("jellyfin: …",
+    # "jellyfin rejected …", "jellyfin's …"): once, not "jellyfin: jellyfin: …"
+    first=${line%%[ :]*}; first=${first%"'s"}
+    if [[ -n "$WIRE_STEP" && "$first" != "$WIRE_STEP" ]]; then line="$WIRE_STEP: $line"; fi
+    WIRE_FAIL_LIST+=("$line")
     wire_unanswered_take && WIRE_FAIL_UNANSWERED+=("$(( ${#WIRE_FAIL_LIST[@]} - 1 ))")   # this failure followed a call that got no answer
     return 0
 }
@@ -119,6 +125,8 @@ wire_fail_summary() { # the failures again, together, after everything else scro
 # end exits 1. A step returning 1 would end the whole run at the error trap
 # (scripts/test-wire.sh holds this). A helper may return 1 to its caller.
 
+WIRE_PENDS=0   # a preview waited on something the real run creates first (w_pends)
+w_pends() { info "$1"; WIRE_PENDS=1; }   # w_pends "what waits on what" — said, and the dry run's closing note follows
 w_would() { # w_would "description" -> 0 if execution should proceed
     WIRE_CHANGES=$((WIRE_CHANGES+1))
     if (( WIRE_DRY )); then echo "  would: $1"; return 1; fi
@@ -315,7 +323,7 @@ cmd_wire() {
         ok "wire --verify: no drift"
     elif (( WIRE_DRY )); then
         info "dry-run complete: $WIRE_CHANGES change(s) would be applied. Run without --dry-run to apply."
-        info "note: items marked as pending on credentials resolve mid-run — the real run creates them in order."
+        if (( WIRE_PENDS )); then info "note: the previews marked as pending above resolve mid-run — the real run creates what they wait on first."; fi
     else
         mkdir -p "$LOCAL_DIR"; touch "$WIRED_FILE"; repo_owned "$LOCAL_DIR" "$WIRED_FILE"
         WIRE_STEP=apply; wire_apply_settings "$pending_before"; WIRE_STEP=""

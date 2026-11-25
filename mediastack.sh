@@ -1253,7 +1253,7 @@ VERBS=(
     "configure~configure [--answers FILE] [--domain D] [--services a,b] [--signin X]~free~Setup~Interactive setup wizard, quick or full: .env, users, folders; --answers: questions answered ahead (docs/design-answers.md). Safe to re-run."
     "add-mount~add-mount~none~Setup~Guided NFS/SMB mount on this host (fstab automount + poison layer)."
     "up~up~none~Run~Start the stack (everything enabled in COMPOSE_PROFILES)."
-"down~down~none~Run~Stop the stack and pause its scheduled jobs until up. Configs and data are untouched."
+    "down~down~none~Run~Stop the stack and pause its scheduled jobs until up. Configs and data are untouched."
     "enable~enable <svc>~max=1~Run~Turn one service on (dependencies come along) and start it as up does (the leak gate first)."
     "disable~disable <svc>~max=1~Run~Turn one service off (refused while others depend on it)."
     "status~status [svc]~max=1~Run~Overview table of every service, or a deep view of one."

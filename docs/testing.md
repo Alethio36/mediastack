@@ -6,7 +6,9 @@ an hour and simulates days of use.
 
 ## CI: every push
 
-`.github/workflows/lint.yml` runs shellcheck over every script, then each
+`.github/workflows/lint.yml` runs shellcheck over every script
+(`scripts/lint.sh` — run it locally: it says when your shellcheck is not
+the version CI runs, which reads the code differently), then each
 `scripts/test-*.sh` and `scripts/check-*.sh`. Each test's header says what it
 proves; run one locally from the repo root (`scripts/test-wire.sh`). A test
 stubs Docker and the apps' APIs, so nothing in it needs a running stack.

@@ -559,8 +559,22 @@ agreed first:
       place input reaches a shell, a file or an API.
     Every finding is written down (here or in its own file) with a verdict —
     fixed, filed, or kept with the reason — so nothing is dropped silently.
-    Big by design: done in slices by area, each with its own fixes. Already
-    noted for it (Nov 2026):
+    Big by design: done in slices by area, each with its own fixes.
+    *The noted items, by what causes them (25 Nov 2026)* — five themes:
+    **A** the tests do not run the code as a run does (another shell mode:
+    `$( )` and conditions drop `set -e`; no ERR trap; another shellcheck);
+    **B** assuming instead of asking (state kept about another app, timings
+    guessed, a container "running" taken for its app answering); **C** one
+    costly action repeated per item (an apply, a restart, an `up`), and a
+    step already done not passed as done; **D** what is printed is not what
+    happened; **E** structure by name. A and B caused every bug step 10
+    found (`login_opt`; the tuner's 502, the portal's expired token), so the
+    audit starts there: A first, as what every later fix is proven by; then
+    B as the deep dive's first sweep — every wait on a container rather than
+    its app, every `sleep`, every value kept about another app. The noted
+    items go in five patches: P1 housekeeping (D, E, the shellcheck),
+    P2 the tests (A), P3 the portal, P4 one action once (C), P5 the arrs'
+    health colour. Already noted for it (Nov 2026):
     - **One apply of the portal's setup takes about four minutes**, an
       unchanged one too (authentik's log, a fresh install) — every first
       wire and every rotation of its settings waits it out. Why, and whether
@@ -570,9 +584,12 @@ agreed first:
       Each such spot looked at for a simpler, app-native way.
     - **A failure summary names its role twice** (`wizarr: wizarr: …`,
       `authentik: authentik: …`): the summary adds the role, and the
-      messages already start with it.
+      messages already start with it. *Done (P1, 25 Nov 2026):* a message
+      that starts with its step is not named again (`test-wire`).
     - **A restore point's stop prints compose's progress scattered across
-      the screen** (its terminal redraws, captured line by line).
+      the screen** (its terminal redraws, captured line by line). *Done
+      (P1):* captured, not drawn — and a failed stop now says compose's
+      reason (`test-down`).
     - **Each secret compose carries runs a full `up`** in `rotate-secrets`
       (the leak gate's minute each); grouping them per service, as the
       portal's settings are, could save minutes per run.
@@ -584,7 +601,7 @@ agreed first:
       one day; their rules belong in the contributor notes.
     - **The verb registry's `down` line has lost its indentation**
       (`mediastack.sh`): harmless to the dispatcher, but a line-based reader
-      of the registry misses it (the docs check of Nov 2026 did).
+      of the registry misses it (the docs check of Nov 2026 did). *Done (P1).*
     - **The same answers file run again is refused** once a one-shot answer
       is done (`PANEL=yes` with the panel installed, `NOTIFY_*` once the hub
       holds them — seen live 15 Nov 2026): loud and nothing written, but an
@@ -622,9 +639,14 @@ agreed first:
       Ubuntu 24.04's (0.9); a newer one (0.11) passed a test file CI failed
       (SC2218), and unstable stayed red until the promote noticed. A lint
       entry point that runs CI's checks and names the version it needs.
+      *Done (P1):* `scripts/lint.sh`, CI's shellcheck step — it says when a
+      local shellcheck is another version, and in CI a changed version fails
+      until it is updated on purpose.
     - **`wire --dry-run` always ends "items marked as pending on credentials
       resolve mid-run"** (25 Nov 2026, anzac4, `wire jellyfin --dry-run`),
-      with nothing marked pending: say it only when a step said so.
+      with nothing marked pending: say it only when a step said so. *Done
+      (P1):* `w_pends` says a preview pends, and only then the note follows
+      (`test-wire-late`).
     - **A gated app's open tab fails with "NetworkError" when its portal
       token runs out** (25 Nov 2026, anzac4, Dispatcharr; authentik's log):
       the outpost answers the app's background calls with a redirect to the

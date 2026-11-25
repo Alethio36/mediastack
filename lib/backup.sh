@@ -348,8 +348,11 @@ stopped_run() { # stopped_run WHAT "SVC..." CMD [ARG...] — stop SVC ("" = what
         trap stopped_restart EXIT
         trap 'exit 130' INT; trap 'exit 143' TERM; trap 'exit 129' HUP
         # set -e is off in here (the caller tests us with ||): check each step
+        # compose's progress captured, not drawn: on a terminal it redraws in
+        # place, and the run's record took each redraw as a line (found live)
+        local out
         # shellcheck disable=SC2086  # a word list
-        DC stop $svcs >/dev/null || { fail "$what: could not stop ${svcs:-the stack}"; exit 1; }
+        out=$(DC stop $svcs 2>&1) || { fail "$what: could not stop ${svcs:-the stack}: $(oneline "$out")"; exit 1; }
         lt_flows_forget "$gip"
         "$@"
     ) || rc=$?

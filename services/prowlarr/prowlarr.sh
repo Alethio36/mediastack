@@ -48,7 +48,7 @@ prowlarr_download_client() { # manual grabs in prowlarr's UI go to the download 
     dl=$(role_pick download-client)
     [[ -n "$dl" ]] || { info "prowlarr: no download client enabled"; return 0; }
     miss=$(role_env_missing "$dl" download-client prowlarr | paste -sd' ' -)
-    [[ -z "$miss" ]] || { info "prowlarr download client $dl pends on its credentials ($miss)"; return 0; }
+    [[ -z "$miss" ]] || { w_pends "prowlarr download client $dl pends on its credentials ($miss)"; return 0; }
     dcs=$(api GET "$base/downloadclient" "$key") \
         || { wfail "prowlarr: could not read its download clients — nothing created [$(oneline "$dcs")]"; return 0; }
     e=$(role_entry "$dl" download-client prowlarr); name=$(jq -r '.name' <<<"$e"); impl=$(jq -r '.implementation' <<<"$e")

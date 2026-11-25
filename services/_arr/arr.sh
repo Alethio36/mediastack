@@ -253,7 +253,7 @@ wire_arr() {
         miss=$(role_env_missing "$dl" download-client arr | paste -sd' ' -)
         if [[ -n "$miss" ]]; then
             if (( WIRE_DRY )); then
-                info "$dl: download-client previews pend on its credentials ($miss) — they're created earlier in the same real run"
+                w_pends "$dl: download-client previews pend on its credentials ($miss) — they're created earlier in the same real run"
             else
                 warn "$dl credentials not set ($miss; scoped run?) — download-client wiring skipped; a full 'wire' sets them"
             fi

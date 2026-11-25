@@ -96,6 +96,17 @@ grep -qx 'DC up -d --no-recreate radarr sonarr' "$T/dc" || fail_ "and only that 
 grep -q 'backup: stopping 2 service(s)' "$T/out" && grep -q 'backup: starting again' "$T/out" \
     || fail_ "a warm backup says what it stops and that it starts them again: $(cat "$T/out")"; pass
 
+# compose's progress during the stop is captured, not printed (seen live: its
+# redraws scattered across the screen and the run's record); a failed stop
+# says compose's own reason
+reset; printf 'radarr\n' > "$T/ps"
+run "$job; DC() { if [[ \$1 == ps ]]; then cat \"\$T/ps\"; return; fi; echo \"DC \$*\" >> \"\$T/dc\"; [[ \$1 == stop ]] && echo ' Container mediastack-radarr Stopping' >&2; return 0; }; stopped_run backup '' job"
+[[ $rc == 0 ]] && ! grep -q 'Container mediastack-radarr Stopping' "$T/out" || fail_ "compose's progress stays off the screen (rc=$rc)"; pass
+reset; printf 'radarr\n' > "$T/ps"
+run "$job; DC() { if [[ \$1 == ps ]]; then cat \"\$T/ps\"; return; fi; echo \"DC \$*\" >> \"\$T/dc\"; if [[ \$1 == stop ]]; then echo 'Error response from daemon: cannot stop' >&2; return 1; fi; }; stopped_run backup '' job"
+[[ $rc == 1 && ! -e "$T/ran" ]] && grep -q 'could not stop radarr: Error response from daemon: cannot stop' "$T/out" \
+    || fail_ "a failed stop: the backup does not run, and compose's reason is said (rc=$rc)"; pass
+
 reset   # no $T/ps: compose cannot list
 run "$job; stopped_run backup '' job"
 [[ $rc == 1 && ! -e "$T/ran" && ! -e "$T/dc" ]] || fail_ "a failed listing stops the backup before anything (rc=$rc)"; pass

@@ -459,7 +459,7 @@ wire_jellyfin() {
     # --- everything below needs an admin session
     if [[ -z "$juser" || -z "$jpass" ]]; then
         if (( WIRE_DRY )); then
-            info "library/API-key previews pend on the admin login — created earlier in the same real run"
+            w_pends "library/API-key previews pend on the admin login — created earlier in the same real run"
         else
             info "jellyfin was configured outside wire and no JELLYFIN_ADMIN_USER/PASSWORD is in .env — libraries and the stack API key stay manual (set them in .env to let wire manage those)"
         fi

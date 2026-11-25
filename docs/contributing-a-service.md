@@ -136,6 +136,8 @@ upstream gaps you found go in `docs/watchlist.md`.
 
 ## 8. Its tests
 
+- `scripts/lint.sh` before anything else: shellcheck as CI runs it, and it
+  says when yours is another version.
 - `scripts/test-<name>.sh`: the entrypoint sourced minus its last line, the
   app's API as stubs. CI runs it by itself (`scripts/ci-unlisted.sh`) — no
   workflow line.

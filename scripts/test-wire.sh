@@ -112,12 +112,16 @@ curl() { echo '{"Success": false, "Data": "", "Error": {"Code": 401, "Message": 
 ll_api_enable >/dev/null 2>&1 && fail_ "LazyLibrarian refusing the written key (JSON, Success false) is a failure"; pass
 unset -f curl
 
-# ---- the summary names every failure by its step ----
+# ---- the summary names every failure by its step, once ----
+# a message that already starts with its step is not named again (seen live:
+# "jellyfin: jellyfin: …", "wizarr: wizarr: …")
 WIRE_FAILS=0; WIRE_FAIL_LIST=()
 WIRE_STEP=seerr; wfail $'library sync failed [HTTP 400]\n     a second line' >/dev/null
-WIRE_STEP=kavita; wfail "kavita refused" >/dev/null; WIRE_STEP=""
-[[ "$(wire_fail_summary)" == $'  - seerr: library sync failed [HTTP 400]\n  - kavita: kavita refused' ]] \
-    || fail_ "one line per failure, its step first: $(wire_fail_summary)"; pass
+WIRE_STEP=kavita; wfail "kavita refused" >/dev/null
+WIRE_STEP=jellyfin; wfail "jellyfin: its tuner did not hold" >/dev/null; wfail "jellyfin's guide refused" >/dev/null
+wfail "jellyfinish is another word" >/dev/null; WIRE_STEP=""
+[[ "$(wire_fail_summary)" == $'  - seerr: library sync failed [HTTP 400]\n  - kavita refused\n  - jellyfin: its tuner did not hold\n  - jellyfin\'s guide refused\n  - jellyfin: jellyfinish is another word' ]] \
+    || fail_ "one line per failure, its step first and once: $(wire_fail_summary)"; pass
 
 # ---- what wire wrote to .env reaches the containers that read it at start;
 # a failed recreate says compose's reason ----
