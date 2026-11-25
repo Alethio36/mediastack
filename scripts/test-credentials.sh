@@ -86,17 +86,32 @@ strict cmd_credentials; out=$(cat "$work/strict")
     || fail_ "the arrs' login once, headed by its name and the services that share it: $out"; pass
 grep -A3 "^kavita$" <<<"$out" | grep -E '^  password +kpw$' >/dev/null || fail_ "a login's password in its service's block: $out"; pass
 grep -A3 "^dispatcharr$" <<<"$out" | grep -E "^  login +Dispatcharr's admin$" >/dev/null || fail_ "a block: its service's name, then what the login is: $out"; pass
-grep -A1 '^seerr$' <<<"$out" | grep -E "^  · its owner is Jellyfin's admin" >/dev/null || fail_ "a service with no login: its name heads its notes, right under it: $out"; pass
+awk '/^seerr$/ { f = 1; next } f && /^[^ ]/ { f = 0 } f' <<<"$out" | grep -E "^  · its owner is Jellyfin's admin" >/dev/null || fail_ "a service with no login: its name heads its block, its notes in it: $out"; pass
 ! grep -E '^::' <<<"$out" | grep -v 'Not shown\|Give an app' >/dev/null || fail_ "no note floats loose (each sits in its block): $out"; pass
 ! grep -q "Navidrome's admin\|Pi-hole" <<<"$out" || fail_ "nothing of a service that is off: $out"; pass
 grep -q '^:: Not shown: the secrets only the stack uses, and your own' <<<"$out" && grep -q 'credentials <service>' <<<"$out" && grep -q 'credentials --all' <<<"$out" \
     || fail_ "credentials says what it leaves out, and how to see it: $out"; pass
-# keys for your apps: each service's <name>_api_key, an arr instance's through its type label
+! grep -q '── Keys for your apps' <<<"$out" || fail_ "no table of keys: each key sits in its service's block: $out"; pass
+# keys for your apps: each service's <name>_api_key, an arr instance's through its type label — in its own block, with its address
 arr_key() { echo "key-$1"; }; bazarr_key() { echo key-bazarr; }; env_set SEERR_API_KEY key-seerr; env_set JELLYFIN_API_KEY key-jf
 profiles gluetun,sonarr,radarr-4k,prowlarr,bazarr,seerr,jellyfin,kavita
-k=$(credentials_api_keys 2>&1 | awk '/^(sonarr|radarr-4k|prowlarr|bazarr|seerr|jellyfin) / { print $1 "=" $NF }' | sort | paste -sd' ')
-[[ "$k" == "bazarr=key-bazarr jellyfin=key-jf prowlarr=key-prowlarr radarr-4k=key-radarr-4k seerr=key-seerr sonarr=key-sonarr" ]] || fail_ "keys for your apps, from the hooks and the arr type label: $k"; pass
-! credentials_api_keys 2>&1 | grep -E '^kavita ' >/dev/null || fail_ "a service with neither a hook nor an arr type: no key row"; pass
+strict cmd_credentials; out=$(cat "$work/strict")
+[[ $SR == 0 ]] || fail_ "credentials with keys, under set -e: rc $SR: $out"
+k=$(awk '/^[a-z0-9-]+$/ { b = $1 } /^  API key / { print b "=" $3 }' <<<"$out" | sort | paste -sd' ')
+[[ "$k" == "bazarr=key-bazarr jellyfin=key-jf prowlarr=key-prowlarr radarr-4k=key-radarr-4k seerr=key-seerr sonarr=key-sonarr" ]] || fail_ "each key in its own service's block, from the hooks and the arr type label: $k"; pass
+grep -A1 -E '^  API key +key-sonarr$' <<<"$out" | grep -E '^  address +https?://' >/dev/null || fail_ "a key, then its address: $out"; pass
+! awk '/^kavita$/,/^[a-z]/' <<<"$out" | grep 'API key' >/dev/null || fail_ "a service with neither a hook nor an arr type: no key row: $out"; pass
+! awk 'prev ~ /^[a-z(]/ && $0 !~ /^  / { bad = 1 } { prev = $0 } END { if (prev ~ /^[a-z(]/) bad = 1; exit !bad }' <<<"$(grep -v '^::' <<<"$out" | grep -v '^──')" \
+    || fail_ "no heading without a block under it (gluetun holds nothing here): $out"; pass
+grep -A3 -x 'seerr' <<<"$out" | sed -n 2p | grep -E '^  API key' >/dev/null || fail_ "rows first, then notes: $out"; pass
+grep -qx 'arr (bazarr, prowlarr, radarr-4k, sonarr)' <<<"$out" && grep -A2 -x 'sonarr' <<<"$out" | grep -E '^  API key' >/dev/null \
+    || fail_ "the shared login its own block; each arr's key under its own name: $out"; pass
+# notes wrap at word boundaries to the terminal's width — values never
+CRED_WIDTH=40; w=$(credentials_lines $'url\thttps://a-very-long-address.example.com/with/a/path?and=query\none two three four five six seven eight nine ten eleven twelve')
+[[ "$(sed -n 1p <<<"$w")" == "  url        https://a-very-long-address.example.com/with/a/path?and=query" ]] || fail_ "a value is never wrapped: $w"; pass
+awk 'NR > 1 && length($0) > 40 { exit 1 }' <<<"$w" && [[ "$(sed -n 3p <<<"$w")" == "    "* ]] && ! grep -qE '[a-z]-$' <<<"$w" || fail_ "a note wraps at words, within the width, indented: $w"; pass
+CRED_WIDTH=0; [[ "$(credentials_lines 'one two three' | wc -l)" == 1 ]] || fail_ "no width (a pipe, a file): never wrapped"; pass
+unset CRED_WIDTH
 profiles gluetun,qbittorrent,sonarr,prowlarr,jellyfin,kavita,dispatcharr
 env_set DISPATCHARR_ADMIN_PASSWORD ""
 grep -A3 "^dispatcharr$" <<<"$(cmd_credentials 2>&1)" | grep -E '^  password +\(not recorded yet' >/dev/null || fail_ "a login not recorded says what records it"; pass

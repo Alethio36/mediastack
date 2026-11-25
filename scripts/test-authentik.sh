@@ -681,18 +681,15 @@ grep -q 'for a in $(arr_instances) $(svc_enabled prowlarr && echo prowlarr)' <<<
     || fail_ "disable authentik restores Prowlarr's login too"; pass
 
 # ---- credentials: the API keys companion apps need, with their addresses ----
-svc_enabled_managed() { printf '%s\n' authentik bazarr prowlarr sonarr; }   # radarr: not enabled
 svc_label() { [[ "$1 $2" == "sonarr mediastack.arrtype" ]] && echo sonarr; return 0; }
 arr_key() { [[ "$1" == sonarr ]] && echo SONKEY; [[ "$1" == prowlarr ]] && echo; return 0; }
 bazarr_key() { echo BAZKEY; }
 svc_url() { echo "https://$1.media.example.com"; }
-hr() { echo "== $*"; }; info() { echo "INFO $*"; }
-out=$(credentials_api_keys)
-grep -qE '^sonarr +https://sonarr.media.example.com +SONKEY$' <<<"$out" || fail_ "an arr: its address and key: $out"; pass
-grep -qE '^bazarr +https://bazarr.media.example.com +BAZKEY$' <<<"$out" || fail_ "bazarr's key"; pass
-grep -qE '^prowlarr .*not created yet' <<<"$out" || fail_ "a key not minted yet says so"; pass
-! grep -q '^radarr' <<<"$out" || fail_ "a service that is not enabled is not listed"; pass
-grep -q 'also sends a device password as a header' <<<"$out" || fail_ "behind the portal: how the app gets through"; pass
+[[ "$(credentials_key_rows sonarr)" == $'API key\tSONKEY\naddress\thttps://sonarr.media.example.com' ]] || fail_ "an arr: its key and address: $(credentials_key_rows sonarr)"; pass
+[[ "$(credentials_key_rows bazarr)" == $'API key\tBAZKEY\naddress\thttps://bazarr.media.example.com' ]] || fail_ "bazarr's key"; pass
+[[ "$(credentials_key_rows prowlarr)" == *'not created yet'* ]] || fail_ "a key not minted yet says so"; pass
+! credentials_key_rows kavita >/dev/null || fail_ "a service with no key for your apps: no rows"; pass
+grep -q 'also sends a device password as a header' lib/access.sh || fail_ "behind the portal: how the app gets through"; pass
 
 # ---- the stack network: Traefik's fixed address outside the pool ----
 cidr_has 172.31.250.0/24 172.31.250.2 && ! cidr_has 172.31.250.128/25 172.31.250.2 && cidr_has 10.0.0.0/8 10.200.3.4 \

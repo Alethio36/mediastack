@@ -241,7 +241,7 @@ its block of `credentials`, printed as it gives them: `label<TAB>value` is
 a row — an address — and any other line a note — who signs in with it; it
 formats nothing itself) and
 `<name>_api_key` (its key, when an app of the user's — nzb360, LunaSea,
-Home Assistant — asks for one: listed with its address under "API keys";
+Home Assistant — asks for one: shown in its block with its address;
 an arr instance's comes from the arr family by its type label). A secret
 only the stack uses, and one the user gave (a VPN key, a token), is left
 out of the plain view but shown by `credentials <name>` / `--all` with

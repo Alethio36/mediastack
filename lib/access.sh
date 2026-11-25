@@ -27,8 +27,9 @@ signin_is() { [[ "$(signin_model)" == "$1" ]]; }   # signin_is MODEL
 #                             rows and notes, shown under its logins
 # (docs/design-install.md, "The service contract"). The portal's admin
 # (akadmin) is not one of these logins: its own target, kept out of `all`.
-#   <service>_api_key         its key an app of yours asks for (an arr
-#                             instance's comes from the arr family's own)
+#   <service>_api_key         its key an app of yours asks for, shown in its
+#                             block with its address (an arr instance's comes
+#                             from the arr family's own)
 # `credentials <service>` / `--all` show everything a service holds, its
 # settings' secrets too (from its env.tsv, with their meaning).
 # No app is named here.
@@ -49,24 +50,32 @@ sc_lines() { # [enabled] -> target<TAB>LINE, one per login of the catalogue (wit
 
 cmd_credentials() { # [SERVICE | --all] — bare: the logins and the keys for your apps; a service, or every one: everything it holds
     load_env; render   # once, here: every $(svc_url) below would render again in its subshell
-    local arg="${1:-}" s
+    local arg="${1:-}" s k
+    # notes wrap at word boundaries to the terminal's width (values never: they are copied);
+    # into a pipe or a file nothing is wrapped
+    local CRED_WIDTH=0
+    if [[ -t 1 ]]; then CRED_WIDTH=$(tput cols 2>/dev/null || echo 0); fi
     case "$arg" in
         "")
-            hr "Credentials — the stack's own logins, and the keys an app of yours asks for"
-            local stem l
+            hr "Credentials"
+            local stem l head any_key=""
             local -A seen=()
-            local head
             for s in $(svc_enabled_managed); do
-                stem=$(svc_label "$s" mediastack.logins); head=$s; l=""
-                if [[ -z "${seen[${stem:-$s}]:-}" ]]; then
-                    seen[${stem:-$s}]=1; l=$(logins_of "$s")
-                    # a login several services share: its name, and theirs (the arrs)
-                    [[ -z "$stem" ]] || head="$stem ($(svc_enabled_managed | while read -r m; do if [[ "$(svc_label "$m" mediastack.logins)" == "$stem" ]]; then echo "$m"; fi; done | paste -sd' ' | sed 's/ /, /g'))"
+                stem=$(svc_label "$s" mediastack.logins)
+                # a login several services share (the arrs): a block of its own, under its name and theirs, once
+                if [[ -n "$stem" && -z "${seen[$stem]:-}" ]]; then
+                    seen[$stem]=1
+                    head="$stem ($(svc_enabled_managed | while read -r m; do if [[ "$(svc_label "$m" mediastack.logins)" == "$stem" ]]; then echo "$m"; fi; done | paste -sd' ' | sed 's/ /, /g'))"
+                    credentials_block "$head" "$(logins_of "$s")" ""
                 fi
-                credentials_block "$head" "$l" "$(credentials_extra "$s")"
+                l=""; [[ -n "$stem" ]] || l=$(logins_of "$s")
+                k=$(credentials_key_rows "$s") && any_key=yes
+                credentials_block "$s" "$l" "$(credentials_extra "$s"; [[ -z "$k" ]] || printf '%s\n' "$k")"
             done
-            credentials_api_keys
-            info "Not shown: the secrets only the stack uses, and your own (the VPN's, Cloudflare's, email's). Everything one service holds: ./mediastack.sh credentials <service> — every one: credentials --all"
+            if [[ -n "$any_key" ]] && signin_is authentik; then
+                cred_say "An app of yours (nzb360, LunaSea, Home Assistant, a dashboard) takes a key with its address. Behind the portal, where an API passes the gate, the app also sends a device password as a header (README: \"A phone app for the arrs\")."
+            fi
+            cred_say "Not shown: the secrets only the stack uses, and your own (the VPN's, Cloudflare's, email's). Everything one service holds: ./mediastack.sh credentials <service> — every one: credentials --all"
             ;;
         --all)
             local -A CRED_SHARED=()   # read by credentials_full (bash's dynamic scope): a shared login's first service
@@ -90,12 +99,13 @@ credentials_block() { # HEADING LOGINS EXTRA — one block under the service's n
     credentials_lines "$extra"
 }
 
-credentials_lines() { # LINES — a "label<TAB>value" line is a row, any other a note
+credentials_lines() { # LINES — a "label<TAB>value" line is a row, any other a note: the rows first, then the notes
     local l
     while IFS= read -r l; do
-        [[ -n "$l" ]] || continue
-        if [[ "$l" == *$'\t'* ]]; then printf '  %-10s %s\n' "${l%%$'\t'*}" "${l#*$'\t'}"
-        else printf '  · %s\n' "$l"; fi
+        if [[ "$l" == *$'\t'* ]]; then printf '  %-10s %s\n' "${l%%$'\t'*}" "${l#*$'\t'}"; fi
+    done <<<"$1"
+    while IFS= read -r l; do
+        if [[ -n "$l" && "$l" != *$'\t'* ]]; then cred_wrap "  · " "    " "$l"; fi
     done <<<"$1"
 }
 
@@ -114,6 +124,28 @@ credentials_key() { # SERVICE -> its key for your apps ("" when it has none): it
     else return 1; fi
 }
 
+credentials_key_rows() { # SERVICE -> its key for your apps and its address, as rows; rc 1 when it has no such key
+    local k
+    k=$(credentials_key "$1") || return 1
+    printf 'API key\t%s\naddress\t%s\n' "${k:-(not created yet — start it once)}" "$(svc_url "$1")"
+}
+
+cred_wrap() { # FIRST NEXT TEXT [FIRST-WIDTH] — TEXT at word boundaries within CRED_WIDTH: its first line after FIRST, the rest after NEXT (FIRST-WIDTH: FIRST's printed width, when it holds colour codes); no width: one line
+    local first=$1 next=$2 pre w line="" width=${CRED_WIDTH:-0} plen
+    local -a words
+    if (( width < 40 )); then printf '%s%s\n' "$first" "$3"; return 0; fi
+    read -r -a words <<<"$3"
+    pre=$first; plen=${4:-${#first}}
+    for w in "${words[@]}"; do
+        if [[ -z "$line" ]]; then line=$w
+        elif (( plen + ${#line} + 1 + ${#w} <= width )); then line+=" $w"
+        else printf '%s%s\n' "$pre" "$line"; pre=$next; plen=${#next}; line=$w; fi
+    done
+    if [[ -n "$line" ]]; then printf '%s%s\n' "$pre" "$line"; fi
+    return 0
+}
+cred_say() { cred_wrap "${C_BLU}::${C_RST} " "   " "$1" 3; }   # info, wrapped like the notes
+
 credentials_full() { # SERVICE [all] — everything it holds: its logins, its lines, its key for your apps, then every secret its settings hold, with what each is for
     # all (credentials --all): a login several services share is shown under the first, pointed at by the rest (CRED_SHARED); a service with nothing is left out
     local s=$1 l k v key typ writer meaning shown=$'\n' f stem out
@@ -130,7 +162,7 @@ credentials_full() { # SERVICE [all] — everything it holds: its logins, its li
     while IFS= read -r f; do if [[ -n "$f" ]]; then shown+="$(env_get "$(cut -f3 <<<"$f")")"$'\n'; fi; done <<<"$l"
     shown+="$(credentials_extra "$s" | awk -F'\t' 'NF > 1 { print $2 }')"$'\n'
     if k=$(credentials_key "$s"); then
-        out+=$'\n'"$(printf '  %-10s %s\n  %-10s %s' "API key" "${k:-(not created yet — start it once)}" address "$(svc_url "$s")")"   # what an app of yours asks for: both
+        out+=$'\n'"$(credentials_lines "$(credentials_key_rows "$s")")"   # what an app of yours asks for: both
         shown+="$k"$'\n'
     fi
     # its settings' secrets (services/<name>/env.tsv, its VPN providers' too): those set, each once,
@@ -141,7 +173,7 @@ credentials_full() { # SERVICE [all] — everything it holds: its logins, its li
         v=$(env_get "$key"); [[ -n "$v" ]] || continue
         [[ "$shown" != *$'\n'"$v"$'\n'* ]] || continue
         shown+="$v"$'\n'
-        one=$(printf '    %s\n      %s\n      · %s' "$key" "$v" "$meaning")
+        one=$(printf '    %s\n      %s\n' "$key" "$v"; cred_wrap "      · " "        " "$meaning")
         if [[ "$writer" == script ]]; then own+=$'\n'"$one"; else yours+=$'\n'"$one"; fi
     done < <(cat "$SCRIPT_DIR/services/$s/env.tsv" "$SCRIPT_DIR/services/$s"/providers/*/env.tsv 2>/dev/null | grep -v '^#' || true)   # soft read: a service with no settings of its own
     [[ -z "$own" ]] || out+=$'\n'"  the stack's own — rotate-secrets changes these; changed by hand, what holds them breaks:$own"
@@ -157,19 +189,6 @@ credentials_full() { # SERVICE [all] — everything it holds: its logins, its li
     return 0
 }
 
-credentials_api_keys() { # the keys an app of yours (nzb360, LunaSea, Home Assistant, a dashboard…) asks for, with the address to give it
-    local s k rows=""
-    for s in $(svc_enabled_managed); do
-        k=$(credentials_key "$s") || continue
-        rows+=$(printf '%-14s %-44s %s' "$s" "$(svc_url "$s")" "${k:-(not created yet — start it once)}")$'\n'
-    done
-    [[ -n "$rows" ]] || return 0
-    hr "Keys for your apps"
-    printf '%s' "$rows"
-    if signin_is authentik; then
-        info "Give an app the https address and the key. Behind the portal, where an API passes the gate, the app also sends a device password as a header (README: \"A phone app for the arrs\")."
-    fi
-}
 
 sc_usage() { # every target the catalogue has, and what it changes
     local t l
