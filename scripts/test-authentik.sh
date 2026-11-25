@@ -681,8 +681,8 @@ grep -q 'for a in $(arr_instances) $(svc_enabled prowlarr && echo prowlarr)' <<<
     || fail_ "disable authentik restores Prowlarr's login too"; pass
 
 # ---- credentials: the API keys companion apps need, with their addresses ----
-arr_instances() { printf '%s\n' sonarr radarr; }
-svc_enabled() { [[ " sonarr prowlarr bazarr authentik " == *" $1 "* ]]; }
+svc_enabled_managed() { printf '%s\n' authentik bazarr prowlarr sonarr; }   # radarr: not enabled
+svc_label() { [[ "$1 $2" == "sonarr mediastack.arrtype" ]] && echo sonarr; return 0; }
 arr_key() { [[ "$1" == sonarr ]] && echo SONKEY; [[ "$1" == prowlarr ]] && echo; return 0; }
 bazarr_key() { echo BAZKEY; }
 svc_url() { echo "https://$1.media.example.com"; }

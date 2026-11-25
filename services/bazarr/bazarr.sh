@@ -157,3 +157,5 @@ bazarr_secret_rotate() { # a new key through its settings form; config.yaml foll
     rotate_proven bazarr "$url/api/system/status" "X-API-KEY: $new" "X-API-KEY: $old" || return 2
     rotate_journal_release
 }
+
+bazarr_api_key() { bazarr_key; }   # credentials' companion apps (lib/access.sh)

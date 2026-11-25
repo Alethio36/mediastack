@@ -37,6 +37,9 @@ broken "a rotation nobody's login names" \
 broken "an explanation for no target" \
     "printf 'sc_explain_ghost() { :; }\\n' >> services/kavita/kavita.sh" \
     "sc_explain_ghost() exists, but no login names the target ghost"
+broken "a companion key for no service" \
+    "printf 'ghost_api_key() { :; }\\n' >> services/kavita/kavita.sh" \
+    "ghost_api_key() exists, but there is no service ghost"
 broken "a credentials note for no service" \
     "printf 'ghost_credentials() { :; }\\n' >> services/kavita/kavita.sh" \
     "ghost_credentials() exists, but there is no service ghost"

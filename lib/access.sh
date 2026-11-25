@@ -26,8 +26,9 @@ signin_is() { [[ "$(signin_model)" == "$1" ]]; }   # signin_is MODEL
 #   <service>_credentials     lines under its logins in `credentials`
 # (docs/design-install.md, "The service contract"). The portal's admin
 # (akadmin) is not one of these logins: its own target, kept out of `all`.
-# No app is named here but in the companion apps' API keys
-# (credentials_api_keys — filed, docs/roadmap.md step 11).
+#   <service>_api_key         its key a companion app asks for (an arr
+#                             instance's comes from the arr family's own)
+# No app is named here.
 
 sc_lines() { # [enabled] -> target<TAB>LINE, one per login of the catalogue (with "enabled": of the enabled services), a shared one once
     local s stem l t
@@ -45,7 +46,7 @@ sc_lines() { # [enabled] -> target<TAB>LINE, one per login of the catalogue (wit
 
 cmd_credentials() {
     load_env; render   # once, here: every $(svc_url) below would render again in its subshell
-    hr "Credentials (stored in .env)"
+    hr "Credentials — the stack's own logins, and the keys an app of yours asks for"
     local s stem l f
     local -A seen=()
     for s in $(svc_enabled_managed); do
@@ -58,6 +59,7 @@ cmd_credentials() {
         if declare -F "$f" >/dev/null; then "$f"; fi
     done
     credentials_api_keys
+    info "Not shown: the secrets only the stack uses (./mediastack.sh rotate-secrets names and changes them), and your own — the VPN's, Cloudflare's, email's — as you gave them, in .env."
 }
 
 credentials_login() { # LINE — one login: its title, then its username and password (or what records them)
@@ -69,27 +71,26 @@ credentials_login() { # LINE — one login: its title, then its username and pas
 }
 
 credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assistant…) ask for, with the address to give them
-    local s k rows=""
-    for s in $(arr_instances) prowlarr bazarr seerr; do
-        svc_enabled "$s" || continue
-        case "$s" in
-            bazarr) k=$(bazarr_key) ;;
-            seerr)  k=$(env_get SEERR_API_KEY) ;;
-            *)      k=$(arr_key "$s") ;;
-        esac
+    # each service's <name>_api_key (found by name); an arr instance's through the arr family's own (its mediastack.arrtype label)
+    local s f k rows=""
+    for s in $(svc_enabled_managed); do
+        f="${s//-/_}_api_key"
+        if declare -F "$f" >/dev/null; then k=$("$f")
+        elif [[ -n "$(svc_label "$s" mediastack.arrtype)" ]]; then k=$(arr_key "$s")
+        else continue; fi
         rows+=$(printf '%-14s %-44s %s' "$s" "$(svc_url "$s")" "${k:-(not created yet — start it once)}")$'\n'
     done
     [[ -n "$rows" ]] || return 0
     hr "API keys (companion apps)"
     printf '%s' "$rows"
     if signin_is authentik; then
-        info "Give an app the https address and the key. Behind the portal the arrs', Prowlarr's and Bazarr's API pass the gate too: the app also sends a device password as a header (README: \"A phone app for the arrs\"). Seerr's API is not behind the gate."
+        info "Give an app the https address and the key. Behind the portal, where an API passes the gate, the app also sends a device password as a header (README: \"A phone app for the arrs\")."
     fi
 }
 
 sc_usage() { # every target the catalogue has, and what it changes
     local t l
-    echo "usage: set-credentials <target|all>"
+    echo "set-credentials <target|all> — the logins it rotates:"
     while IFS=$'\t' read -r t l; do printf '  %-15s %s\n' "$t" "$(cut -f1 <<<"$l")"; done < <(sc_lines)
     printf '  %-15s %s\n' portal "the portal's admin (akadmin) — kept out of all: it guards the rest"
     printf '  %-15s %s\n' all "ONE password across every login above that is set up (usernames stay put)"
@@ -102,7 +103,8 @@ cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, ato
     if [[ -n "$target" && "$target" != portal && "$target" != all ]]; then
         line=$(sc_lines | awk -F'\t' -v t="$target" '$1 == t && !f { sub(/^[^\t]*\t/, ""); print; f = 1 }')
     fi
-    [[ "$target" == portal || "$target" == all || -n "$line" ]] || die "$(sc_usage)"
+    if [[ -z "$target" ]]; then sc_usage; return 0; fi   # asked bare: which logins there are — an answer, not an error
+    [[ "$target" == portal || "$target" == all || -n "$line" ]] || die "no login named '$target' — run ./mediastack.sh set-credentials for the list"
     [[ -t 0 ]] || die "set-credentials is interactive — run it at a terminal."
     case "$target" in
         portal) sc_portal ;;

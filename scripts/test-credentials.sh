@@ -40,6 +40,10 @@ profiles gluetun
 got=$(sc_lines | cut -f1 | sort | paste -sd' ')
 [[ "$got" == "arr audiobookshelf deluge dispatcharr jellyfin kavita navidrome panel pihole qbit traefik transmission" ]] \
     || fail_ "the catalogue's targets: $got"; pass
+strict cmd_set_credentials; u=$(cat "$work/strict")
+[[ $SR == 0 && "$u" != *ERROR* ]] || fail_ "set-credentials asked bare: the list, not an error (rc $SR): $u"; pass
+strict cmd_set_credentials nosuch
+[[ $SR != 0 ]] && grep -q "no login named 'nosuch'" "$work/strict" || fail_ "an unknown target: an error naming it: $(cat "$work/strict")"; pass
 strict sc_usage; u=$(cat "$work/strict")
 [[ $SR == 0 ]] || fail_ "usage, under set -e: rc $SR: $u"
 for t in $got portal all; do grep -qE "^  $t +" <<<"$u" || fail_ "usage names $t: $u"; done; pass
@@ -79,14 +83,21 @@ grep -A2 "^Kavita's admin$" <<<"$out" | grep -E '^  password +kpw$' >/dev/null |
 grep -A2 "^Dispatcharr's admin$" <<<"$out" | grep -E '^  password +x$' >/dev/null || fail_ "dispatcharr's login listed: $out"; pass
 grep -qE '^  API key ' <<<"$out" || fail_ "jellyfin's note (its API key) under its logins: $out"; pass
 ! grep -q "Navidrome's admin\|Pi-hole" <<<"$out" || fail_ "nothing of a service that is off: $out"; pass
+grep -q '^:: Not shown: the secrets only the stack uses' <<<"$out" || fail_ "credentials says what it leaves out, and where it is: $out"; pass
+# companion keys: each service's <name>_api_key, an arr instance's through its type label
+arr_key() { echo "key-$1"; }; bazarr_key() { echo key-bazarr; }; env_set SEERR_API_KEY key-seerr
+profiles gluetun,sonarr,radarr-4k,prowlarr,bazarr,seerr,jellyfin
+k=$(credentials_api_keys 2>&1 | awk '/^(sonarr|radarr-4k|prowlarr|bazarr|seerr) / { print $1 "=" $NF }' | sort | paste -sd' ')
+[[ "$k" == "bazarr=key-bazarr prowlarr=key-prowlarr radarr-4k=key-radarr-4k seerr=key-seerr sonarr=key-sonarr" ]] || fail_ "companion keys from the hooks and the arr type label: $k"; pass
+! credentials_api_keys 2>&1 | grep -E '^jellyfin ' >/dev/null || fail_ "a service with neither a hook nor an arr type: not a companion row"; pass
+profiles gluetun,qbittorrent,sonarr,prowlarr,jellyfin,kavita,dispatcharr
 env_set DISPATCHARR_ADMIN_PASSWORD ""
 grep -A2 "^Dispatcharr's admin$" <<<"$(cmd_credentials 2>&1)" | grep -E '^  password +\(not recorded yet' >/dev/null || fail_ "a login not recorded says what records it"; pass
 
-# ---- the core names no app for them (docs/design-install.md: each piece lands with this test) ----
+# ---- the core names no app for them, companion keys included (docs/design-install.md: each piece lands with this test) ----
 cd "$repo"
 apps=$(for d in services/*/; do d=${d%/}; d=${d#services/}; [[ "$d" =~ ^(_arr|gluetun|traefik|authentik|apprise)$ ]] || echo "$d"; done | paste -sd'|')   # the platform services may be named
-code=$(awk '/^# ---- the stack.s own logins/,/^cmd_reset_password\(\)/' lib/access.sh \
-       | awk '/^credentials_api_keys\(\)/,/^}/ { next } { print }' | grep -v '^[[:space:]]*#')
+code=$(awk '/^# ---- the stack.s own logins/,/^cmd_reset_password\(\)/' lib/access.sh | grep -v '^[[:space:]]*#')
 hits=$(grep -nwE "$apps" <<<"$code" || true)   # none: the point
 [[ -z "$hits" ]] || fail_ "credentials / set-credentials name an app: $hits"; pass
 [[ "$(wc -l <<<"$code")" -gt 50 ]] || fail_ "the section was read"; pass

@@ -236,10 +236,13 @@ username too). That line is all `credentials` and `set-credentials` need:
 the login is listed and rotated by it, through `sc_rotate_<target>` in the
 folder (the new password; with `ask_user`, the username first) — no list to
 add it to. Optional, found by name: `sc_explain_<target>` (what a rotation
-moves, shown before the question) and `<name>_credentials` (lines
-under its logins in `credentials`: an address, an API key, who signs in
-with it). `scripts/check-registries.sh` fails a login without its rotation
-and a rotation, explanation or note with nothing behind it. Several services sharing one login name it with the
+moves, shown before the question), `<name>_credentials` (lines under its
+logins in `credentials`: an address, who signs in with it) and
+`<name>_api_key` (its key, when an app of the user's — nzb360, LunaSea,
+Home Assistant — asks for one: listed with its address under "API keys";
+an arr instance's comes from the arr family by its type label). A secret
+only the stack uses is not shown: `rotate-secrets` owns it. `scripts/check-registries.sh` fails a login without its rotation
+and a rotation, explanation, note or key with nothing behind it. Several services sharing one login name it with the
 `mediastack.logins` label (the arrs: `arr`, so `arr_logins`). configure
 records it under the one stack username, its password generated, unified
 or typed (`lib/logins.sh`); `up` and `enable` fill one enabled later the

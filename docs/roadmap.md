@@ -402,9 +402,12 @@ agreed first:
       every login to its rotation, `scripts/test-credentials.sh` the verbs
       to the old target list. What `credentials` prints changed shape: one
       block per login (its title, then user and password), only for
-      services that are on. Still named in `lib/access.sh`: the account
-      model's (the portal's admin, Wizarr's own) and the companion apps'
-      API keys.
+      services that are on. The companion apps' keys followed
+      (`<name>_api_key`; an arr instance's by its type label), and the view
+      now says what it leaves out — the secrets only the stack uses
+      (`rotate-secrets`' list) and the user's own (VPN, Cloudflare, email);
+      `set-credentials` asked bare lists the logins instead of failing with
+      its usage. `lib/access.sh` names no app (its test fails if it does).
     - **Finding, fixed in this step:** a new service bumped the `.env`
       schema with a migration that did nothing — CI's schema-bump rule
       could not tell a new service's own lines from a layout change. It now
@@ -510,10 +513,6 @@ agreed first:
       health messages should take the warning (or failure) colour — through
       the hub entry's type, a per-title rule, or whatever their Apprise
       settings offer (check their source first).
-    - **The companion apps' API keys are listed by name**
-      (`credentials_api_keys`, `lib/access.sh`: the arrs, Prowlarr, Bazarr,
-      Seerr) — the last list of services in `credentials`; a
-      `<name>_api_key` hook would end it (24 Nov 2026).
     - **`authentik_prepare` is called by name** from `up` and `enable`;
       with `<name>_provision` now found by name, see whether its part fits
       there (it needs the edge first).

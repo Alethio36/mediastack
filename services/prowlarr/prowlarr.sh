@@ -259,3 +259,5 @@ prowlarr_indexers_retest() { # after a stack start: once FlareSolverr is up, Pro
 }
 
 support_prowlarr() { support_arr prowlarr; }   # support: its own view, as the arrs give theirs (services/_arr/arr.sh)
+
+prowlarr_api_key() { arr_key prowlarr; }   # credentials' companion apps (lib/access.sh)
