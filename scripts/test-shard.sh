@@ -18,6 +18,8 @@ trap 'rm -f "$lib"' EXIT
 sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 
 checks=0
 pass()  { checks=$((checks+1)); }
@@ -91,7 +93,7 @@ load_env() { :; }; repo_owned() { :; }; ok() { echo "OK $*"; }
 DC() { echo "DC $*" >> "$P/log"; }
 PINS_FILE=$P/pins.yml
 printf 'services:\n  idp:\n    image: x:1\n  idp-worker:\n    image: x:1\n  idp-db:\n    image: y:1\n  radarr:\n    image: r:1\n' > "$PINS_FILE"
-out=$(cmd_unpin idp-worker)
+as_run cmd_unpin idp-worker; out=$OUT
 [[ "$(cat "$PINS_FILE")" == $'services:\n  radarr:\n    image: r:1' ]] || fail_ "unpin by a member releases the whole shard, nothing else: $(cat "$PINS_FILE")"; pass
 [[ ! -e "$P/log" && "$out" == *"Unpinned idp idp-db idp-worker"*"Next 'update'"* ]] \
     || fail_ "unpin only records — no compose call (the next update applies it, through its restore point and gates); every pin named: $out / $(cat "$P/log" 2>/dev/null)"; pass

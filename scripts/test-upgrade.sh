@@ -18,6 +18,8 @@ trap 'rm -rf "$lib" "$T"' EXIT
 sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 
 checks=0
 pass()  { checks=$((checks+1)); }
@@ -90,7 +92,8 @@ eq "the second half finishes, never pulls" "$(paste -sd'|' "$LOG")" "finish aaa1
     MAINT_LOCK=$T/maint.lock; : > "$LOG"
     ( flock 9; sleep 5 ) 9>"$MAINT_LOCK" & holder=$!
     sleep 0.3
-    out=$( (cmd_upgrade) 2>&1 ) && { kill "$holder"; fail_ "upgrade must refuse while the maintenance lock is held"; }
+    as_run cmd_upgrade; out=$OUT
+    if (( RC == 0 )); then kill "$holder"; fail_ "upgrade must refuse while the maintenance lock is held"; fi
     kill "$holder" 2>/dev/null || true
     [[ "$out" == *"upgrade refused"* ]] || fail_ "the refusal must say what was refused: $out"
     ! grep -q pull "$LOG" || fail_ "upgrade pulled while the lock was held"

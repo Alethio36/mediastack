@@ -46,6 +46,8 @@ sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
 set +e +E; trap - ERR   # each check reads its own status
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 
 checks=0
 pass()  { checks=$((checks+1)); }
@@ -137,16 +139,16 @@ grep -q "Every check proven" "$T/bodies" && ! grep -q "stay stopped" "$T/bodies"
 # ---- wire and trash-sync name the gate ----
 RUNNING="jellyfin"; ENABLED="gluetun qbittorrent sonarr jellyfin"
 state_set "$LEAK_GATE" "2026-11-03 10:00:00: firewall lets traffic out"
-out=$( (wire_gate sonarr jellyfin) 2>&1 ) && fail_ "a group member held by the gate: refused"; pass
+as_run wire_gate sonarr jellyfin; out=$OUT; (( RC != 0 )) || fail_ "a group member held by the gate: refused"; pass
 [[ "$out" == *"Cannot wire: sonarr is in the VPN group: the leak gate stopped the VPN group (2026-11-03 10:00:00: firewall lets traffic out)"* ]] \
     || fail_ "names the gate, not 'start the stack' (found live, Nov 2026) — $out"; pass
 # the group as long as the real one, written slowly: a `| grep -q` read dies of SIGPIPE under pipefail (found live, Nov 2026)
 vpn_group() { local i; echo bazarr; echo sonarr; for i in $(seq 1 2000); do echo "member$i"; done; }
-out=$( (wire_gate sonarr jellyfin) 2>&1 )
+as_run wire_gate sonarr jellyfin; out=$OUT
 [[ "$out" == *"sonarr is in the VPN group"* ]] || fail_ "a member early in a long group is still found — $out"; pass
 unset -f vpn_group; source services/gluetun/gate.sh
 state_del "$LEAK_GATE"
-out=$( (wire_gate sonarr jellyfin) 2>&1 ) && fail_ "gate open, sonarr down: refused"; pass
+as_run wire_gate sonarr jellyfin; out=$OUT; (( RC != 0 )) || fail_ "gate open, sonarr down: refused"; pass
 [[ "$out" == *"Cannot wire: not running: sonarr"* ]] || fail_ "the plain reason when the gate is open — $out"; pass
 
 # ---- up: two phases ----
@@ -162,27 +164,28 @@ sudo() { :; }
 leak_gate_up() { echo "gate" >> "$UP_LOG"; (( GATE_RC != 1 )) || exit 1; }
 gluetun_recreates() { return 1; }   # unchanged; the changed case below
 GATE_RC=0; : > "$UP_LOG"
-(cmd_up) > /dev/null 2>&1 || fail_ "up runs through — $(cat "$UP_LOG")"; pass
+as_run cmd_up; (( RC == 0 )) || fail_ "up runs through — $(cat "$UP_LOG") — $OUT"; pass
 [[ "$(paste -sd'|' "$UP_LOG")" == "DC config --format json|DC up -d --remove-orphans gluetun jellyfin|wait --recover gluetun|gate|DC up -d --remove-orphans|guard" ]] \
     || fail_ "everything but the group, gluetun proven, then the group ($(paste -sd'|' "$UP_LOG"))"; pass
 GATE_RC=1; : > "$UP_LOG"
-(cmd_up) > /dev/null 2>&1 && fail_ "a FAIL at the gate ends up"; pass
+as_run cmd_up; (( RC != 0 )) || fail_ "a FAIL at the gate ends up"; pass
 [[ "$(paste -sd'|' "$UP_LOG")" == "DC config --format json|DC up -d --remove-orphans gluetun jellyfin|wait --recover gluetun|gate" ]] \
     || fail_ "and the group is never started ($(paste -sd'|' "$UP_LOG"))"; pass
 # gluetun changed (a new provider, key or image): the running group stops, then
 # gluetun, its flows forgotten; after the gate the stopped members re-join it
 : > "$UP_LOG"
-( gluetun_recreates() { return 0; }; GATE_RC=0
+( set -eE; trap on_err ERR; gluetun_recreates() { return 0; }; GATE_RC=0
   RUNNING=" gluetun jellyfin qbittorrent sonarr "
   c_state() { [[ "$RUNNING" == *" ${1#mediastack-} "* ]] && echo running || echo exited; }
   c_id() { echo gid-new; }; c_netmode() { echo container:gid-old; }
   gluetun_addr() { echo 172.31.250.5; }; lt_flows_forget() { echo "forget $1" >> "$UP_LOG"; }
   DC() { echo "DC $*" >> "$UP_LOG"; local x; if [[ "$1" == stop ]]; then for x in "${@:2}"; do RUNNING=${RUNNING// $x / }; done; fi; }
-  cmd_up ) > /dev/null 2>&1 || fail_ "up with gluetun changed runs through — $(cat "$UP_LOG")"; pass
+  cmd_up ) > "$T/upout" 2>&1; RC=$?
+(( RC == 0 )) || fail_ "up with gluetun changed runs through — $(cat "$UP_LOG") — $(cat "$T/upout")"; pass
 [[ "$(paste -sd'|' "$UP_LOG")" == "DC config --format json|DC stop qbittorrent sonarr|DC stop gluetun|forget 172.31.250.5|DC up -d --remove-orphans gluetun jellyfin|wait --recover gluetun|gate|DC up --no-start --force-recreate --no-deps qbittorrent sonarr|DC up -d --remove-orphans|guard" ]] \
     || fail_ "gluetun changed: its group stopped first, gluetun stopped, forgotten; after the gate the group re-joins the new one ($(paste -sd'|' "$UP_LOG"))"; pass
 ENABLED="qbittorrent sonarr jellyfin"; : > "$UP_LOG"
-out=$( (cmd_up) 2>&1 ) && fail_ "VPN'd services without gluetun: refused"; pass
+as_run cmd_up; out=$OUT; (( RC != 0 )) || fail_ "VPN'd services without gluetun: refused"; pass
 [[ "$out" == *"but gluetun is not"* && ! -s "$UP_LOG" ]] || fail_ "before anything starts — $out"; pass
 # a re-point that fails: said by wire_repoint_pending, kept for the next up —
 # the rest of up still runs (the forwarded port into the download client),
@@ -200,11 +203,11 @@ rc=$?; out=$(cat "$T/upout")
 [[ "$(grep -E '^(repoint|retest|pfsync)$' "$UP_LOG" | paste -sd'|')" == "repoint|retest|pfsync" ]] || fail_ "a failed re-point: the rest of up still runs ($(paste -sd"|" "$UP_LOG")) — $out"; pass
 [[ "$out" != *"unhandled failure"* && "$out" != *"Check on it"* ]] || fail_ "a failed re-point: handled, not the ERR trap's, no all-well text — $out"; pass
 ENABLED="jellyfin"; : > "$UP_LOG"
-(cmd_up) > /dev/null 2>&1 || fail_ "no VPN at all: up as before"; pass
+as_run cmd_up; (( RC == 0 )) || fail_ "no VPN at all: up as before — $OUT"; pass
 [[ "$(paste -sd'|' "$UP_LOG")" == "DC config --format json|DC up -d --remove-orphans|guard" ]] || fail_ "one phase, no gate ($(paste -sd'|' "$UP_LOG"))"; pass
 
 # ---- the verb's arguments ----
-out=$( (cmd_leak_test --bogus) 2>&1 ) && fail_ "an unknown argument: refused"; pass
+as_run cmd_leak_test --bogus; out=$OUT; (( RC != 0 )) || fail_ "an unknown argument: refused"; pass
 [[ "$out" == *"usage: leak-test [--killswitch|--local]"* ]] || fail_ "with the usage — $out"; pass
 
 # ---- proven: which gluetun the last full run vouched for ----
@@ -414,22 +417,22 @@ pin_service() { :; }
 lt_flows_forget() { echo "forget $1" >> "$R/log"; }
 eval 'update_apply() { echo "apply $*" >> "$R/log"; }'
 ENABLED="gluetun qbittorrent jellyfin"
-: > "$R/log"; ( cmd_restore --service qbittorrent --from 20261101-030000 ) > /dev/null 2>&1
+: > "$R/log"; as_run cmd_restore --service qbittorrent --from 20261101-030000
 [[ "$(paste -sd'|' "$R/log")" == "DC stop qbittorrent|apply qbittorrent" ]] \
     || fail_ "restore a VPN'd service: stopped, restored, started as update applies (the gate) — no compose up of its own ($(paste -sd'|' "$R/log"))"; pass
-: > "$R/log"; ( cmd_restore --service gluetun --from 20261101-030000 ) > /dev/null 2>&1
+: > "$R/log"; as_run cmd_restore --service gluetun --from 20261101-030000
 [[ "$(paste -sd'|' "$R/log")" == "DC stop gluetun|forget 172.31.250.3|apply --restore gluetun" ]] \
     || fail_ "restore gluetun: its tracked connections forgotten, then applied as a changed gluetun ($(paste -sd'|' "$R/log"))"; pass
 eval 'cmd_up() { echo "UP" >> "$R/log"; }'
-: > "$R/log"; out=$( ( cmd_restore --all --from 20261101-030000 ) 2>&1 )
+: > "$R/log"; as_run cmd_restore --all --from 20261101-030000; out=$OUT
 [[ "$(paste -sd'|' "$R/log")" == "DC stop deluge|DC stop gluetun|forget 172.31.250.3|DC stop jellyfin|DC stop qbittorrent|UP" ]] \
     || fail_ "restore --all: every point restored, then the stack started as up starts it — its checks, the gate (found live Nov 2026) ($(paste -sd'|' "$R/log"))"; pass
 [[ "$out" == *"deluge not enabled — restored, not started"* ]] || fail_ "a disabled service with an archive: restored, not started, and said — $out"; pass
 printf 'gluetun g:1\n' > "$R/b/20261101-030000/images.lock"; svc_managed() { printf '%s\n' gluetun lidarr; }
-out=$( ( cmd_restore --all --from 20261101-030000 ) 2>&1 )
+as_run cmd_restore --all --from 20261101-030000; out=$OUT
 [[ "$out" != *"lidarr"* ]] || fail_ "a disabled service with nothing in the point is not called restored — $out"; pass
 svc_managed() { printf '%s\n' deluge gluetun jellyfin qbittorrent; }
-: > "$R/log"; out=$( ( cmd_restore --service deluge --from 20261101-030000 ) 2>&1 )
+: > "$R/log"; as_run cmd_restore --service deluge --from 20261101-030000; out=$OUT
 [[ "$(paste -sd'|' "$R/log")" == "DC stop deluge" && "$out" == *"deluge not enabled — restored, not started"* ]] \
     || fail_ "a disabled service is restored, not started, and says so ($(paste -sd'|' "$R/log") / $out)"; pass
 # update_apply --restore: a restored gluetun takes the changed path whatever compose would do; messages name restore

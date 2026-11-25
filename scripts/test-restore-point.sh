@@ -32,6 +32,8 @@ trap 'rm -rf "$lib" "$T"' EXIT
 sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 ENV_FILE=$T/.env
 printf 'BACKUP_ROOT=%s/bk\n' "$T" > "$ENV_FILE"
 
@@ -183,9 +185,9 @@ out=$(point_record "$T/pr2" manual "" sonarr nodigest gone 2>&1)
 [[ "$(cat "$T/log")" == *"NOTIFY Restore point incomplete"* ]] || fail_ "the gap reaches ops: $(cat "$T/log" 2>/dev/null)"; pass
 unset -f c_state
 backup_take() { echo "TAKE $1|$2"; }
-[[ "$(cmd_backup --note "before jellyfin 12")" == "TAKE manual|before jellyfin 12" ]] || fail_ "backup --note: a manual point with the note"; pass
-[[ "$(cmd_backup)" == "TAKE manual|" ]] || fail_ "backup: a manual point"; pass
-( cmd_backup --note ) >/dev/null 2>&1 && fail_ "--note without text is refused"; pass
+as_run cmd_backup --note "before jellyfin 12"; [[ "$OUT" == "TAKE manual|before jellyfin 12" ]] || fail_ "backup --note: a manual point with the note"; pass
+as_run cmd_backup; [[ "$OUT" == "TAKE manual|" ]] || fail_ "backup: a manual point"; pass
+as_run cmd_backup --note; (( RC != 0 )) || fail_ "--note without text is refused"; pass
 ( cmd_backup --bogus ) >/dev/null 2>&1 && fail_ "an unknown argument is refused"; pass
 grep -q 'backup_take update ""' <(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh) || fail_ "a full update's point is kind 'update'"; pass
 grep -q 'backup_take manual "before the first wire"' lib/wire.sh || fail_ "the first wire's point is manual, with a note"; pass
@@ -216,9 +218,9 @@ grep -q '20260928-120000  update-scoped  *sha256:old14  *rollback' <<<"$one" || 
 grep -q '20260928-030000  update  *4.0.14 *$' <<<"$one" || fail_ "an older version, unmarked: $one"; pass
 grep -q '20260928-120000  update-scoped  *sha256:old14' <<<"$one" || fail_ "a scoped point from before meta: update-scoped, its digest: $one"; pass
 grep -q '20260927-120000  unknown  *sha256:old13' <<<"$one" || fail_ "a full point from before meta: unknown, its digest: $one"; pass
-( cmd_backup_list radarr ) >/dev/null 2>&1 && fail_ "an unknown service is refused"; pass
+as_run cmd_backup_list radarr; (( RC != 0 )) || fail_ "an unknown service is refused"; pass
 printf 'BACKUP_ROOT=%s/none\n' "$T" > "$ENV_FILE"
-[[ -z "$(cmd_backup_list 2>/dev/null)" ]] || fail_ "no points: a hint, no table"; pass
+as_run eval 'cmd_backup_list 2>/dev/null'; [[ $RC == 0 && -z "$OUT" ]] || fail_ "no points: a hint, no table"; pass
 
 # ---- rollback: the image that ran before, shown and confirmed first ----
 printf 'BACKUP_ROOT=%s/bl\n' "$T" > "$ENV_FILE"

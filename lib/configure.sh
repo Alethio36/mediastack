@@ -18,7 +18,7 @@ _configure_selfheal() {
         if ! grep -qE "^${ref}=" "$ENV_FILE"; then
             if [[ "$ref" == *_UID ]]; then
                 local max
-                max=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+                max=$(uid_max)
                 env_set "$ref" "$(( ${max:-$base} + 1 ))"
                 info "New service variable $ref -> $(env_get "$ref")"
             elif [[ "$ref" == *_UPDATE ]]; then

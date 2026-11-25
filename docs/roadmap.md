@@ -598,7 +598,13 @@ agreed first:
       dashboard's. One regeneration at the end would do.
     - **Grep the code for checks that use `grep -q` in a pipe or a `$( )`
       that can die** — test-pipes and test-reasons caught three new ones in
-      one day; their rules belong in the contributor notes.
+      one day; their rules belong in the contributor notes. *Done (P2, 25
+      Nov 2026):* the rules in `docs/testing.md` and the recipe; the sweep of
+      `x=$(grep …)` found one latent bug, eight times over — the highest UID
+      looked up through a pipe (configure's self-heal and seven migrations)
+      ended a run on an `.env` with no UID yet, before its `UID_BASE`
+      fallback. Now `uid_max`: no match is none, an unreadable `.env` still
+      fails (`test-authentik`, failing with the old pipe).
     - **The verb registry's `down` line has lost its indentation**
       (`mediastack.sh`): harmless to the dispatcher, but a line-based reader
       of the registry misses it (the docs check of Nov 2026 did). *Done (P1).*
@@ -615,17 +621,34 @@ agreed first:
       said `by: panel` — the message read the record a second time, so what
       the check saw was lost; 0 failures in 40 runs under full CPU load after.
       The checks now print what they read and the records folder then.
+      *Watched (P2): nothing to do until it recurs.*
     - **Tests that call the code through `$( )` cannot see a `set -e` stop**
       (24 Nov 2026, `login_opt`, above): read every test for calls whose
       failure only a real run would hit — `test-credentials`' `strict` is
-      one way to run them as a run does.
+      one way to run them as a run does. *Done for the entry points (P2, 25
+      Nov 2026):* worse than noted — bash ignores `set -e` inside anything
+      called in a condition, subshells included, even when it sets it again,
+      so no runner called as `run … || fail_` could ever see a stop.
+      `scripts/testlib.sh`'s `as_run` (set -eE, the ERR trap, `RC`, `OUT`),
+      called plainly; every verb, wire role, rotation and hook a test ran in
+      a condition or a `$( )` now runs through it or a runner of the same
+      rules (test-gate, -authentik, -rotate, -wire, -wire-late,
+      -restore-point, -upgrade, -audit, -notify, -shard, -email,
+      -credentials, -livetv, -dispatcharr), and `check-test-runners` fails a
+      runner in a condition. None exposed a bug the code had — the sweep
+      below did. Left for the deep dive's slices: the helpers those tests
+      call one by one with `set -e` off (test-wire's 126 checks among
+      them), each area's tests read as its slice comes up.
     - **The configure tests run without the ERR trap** (`set +e +E; trap -
       ERR` in test-configure, test-questions and test-answers, so each check
       reads its own status): an unguarded failure inside configure's code,
       which a real run stops on and names (`on_err`), carries on there and
       can pass. Run the code under test with the entrypoint's own `set -eE`
       and trap, each check in its own subshell, so a test sees what a run
-      would.
+      would. *Done (P2):* their runners run the code under the run's rules
+      and record `RC`; a stray failure in the questionnaire, the services
+      step or the answers file now fails them (shown by putting one in),
+      and the real code passes.
     - **The arrs' health failures arrive as blue info cards** (seen 24 Nov
       2026 on Discord): Radarr, Sonarr and Prowlarr send every message to
       the hub as one type, so "Health Check Failure" looks like news. Their

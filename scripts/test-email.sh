@@ -13,6 +13,8 @@ trap 'rm -rf "$lib" "$T"' EXIT
 sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 ENV_FILE=$T/.env; STATE_DIR=$T/state; mkdir -p "$STATE_DIR"
 
 checks=0
@@ -121,7 +123,7 @@ ak_api() { echo '{"results":[
   {"username":"tom","type":"internal","name":"","email":"","is_active":false,"groups_obj":[]},
   {"username":"mediastack-ldap-search","type":"internal","name":"mediastack LDAP search (Jellyfin)","email":"","is_active":true,"groups_obj":[]},
   {"username":"ak-outpost-x","type":"internal_service_account","name":"","email":"","is_active":true,"groups_obj":[]}]}'; }
-out=$(cmd_users)
+as_run cmd_users; out=$OUT
 [[ "$out" == *USERNAME*EMAIL*GROUPS* && "$out" == *"ana"*"ana@home.lan"*"media-users,admins"*"yes"* && "$out" == *"tom"*"-"*"off"* ]] \
     || fail_ "people listed with email and groups, blanks as -, a deactivated one 'off': $out"; pass
 [[ "$out" != *"ak-outpost-x"* && "$out" != *"mediastack-ldap-search  "* && "$(grep -c '^akadmin' <<<"$out")" == 0 ]] \

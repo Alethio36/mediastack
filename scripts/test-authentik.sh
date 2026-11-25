@@ -83,6 +83,8 @@ trap 'rm -rf "$lib" "$T"' EXIT
 sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 
 checks=0
 pass()  { checks=$((checks+1)); }
@@ -203,6 +205,13 @@ u=$(env_get AUTHENTIK_UID)
 [[ -z "$(grep -E '_UID=[0-9]+$' "$ENV_FILE" | cut -d= -f2 | sort | uniq -d)" ]] || fail_ "allocated UIDs must be unique"; pass
 before=$(cat "$ENV_FILE"); rm -f "$T/info"; _configure_selfheal
 [[ "$(cat "$ENV_FILE")" == "$before" && ! -e "$T/info" ]] || fail_ "a second run changes nothing and says nothing"; pass
+# an .env with no numeric UID yet: UID_BASE + 1, not a run stopped by grep's
+# "no match" before its fallback (it was a pipe under pipefail, Nov 2026)
+printf 'UID_BASE=13000\n' > "$ENV_FILE"
+as_run _configure_selfheal; (( RC == 0 )) && [[ "$(env_get AUTHENTIK_UID)" =~ ^130[0-9][0-9]$ ]] \
+    || fail_ "no UID yet: the base + 1, the run carrying on (rc $RC): $OUT"; pass
+ENV_FILE=$T/no-such.env as_run uid_max
+(( RC != 0 )) || fail_ "an unreadable .env is a failure, not 'no UID'"; pass
 grep -q '^    _configure_selfheal' <(sed -n '/^provision() {/,/^}/p' mediastack.sh) \
     || fail_ "provision (up, enable) must allocate new services' UIDs"; pass
 
@@ -1050,10 +1059,10 @@ grep -q '^POST /init {"newRoot":{"username":"admin","password":"Pw0123456789ab"}
     || fail_ "a fresh Audiobookshelf: the stack's root account, as configure recorded it"; pass
 grep -q '^POST /login' "$T/calls" || fail_ "then it logs in with it"; pass
 rm -f "$T/calls"; printf 'STACK_DOMAIN=media.example.com\n' > "$ENV_FILE"; WIRE_FAILS=0
-out=$(wire_audiobookshelf 2>&1) || true
+as_run wire_audiobookshelf; out=$OUT
 ! grep -q '^POST /init' "$T/calls" && [[ "$out" == *"root login is not in .env"* ]] || fail_ "no recorded login: wire makes none — it says so"; pass
 rm -f "$T/calls"; printf '' > "$ENV_FILE"; ABS_INIT=true; WIRE_FAILS=0
-out=$(wire_audiobookshelf 2>&1) || true
+as_run wire_audiobookshelf; out=$OUT
 ! grep -q '^POST /init' "$T/calls" && [[ "$out" == *"set up by hand"*"ABS_ADMIN_USER"* ]] || fail_ "one set up by hand is never taken over — it says what to do"; pass
 # admin sync: portal-linked accounts follow admins; root and local ones are untouched
 rm -f "$T/calls"
@@ -1286,7 +1295,7 @@ kav_api() { echo "$1 $2 ${4:-}" >> "$T/calls"
         "POST /api/account/reset-password") jq -r .password <<<"$4" > "$T/kav-pw"; echo '{}' ;;
     esac; }
 rm -f "$T/calls"
-( sc_rotate_kavita NEWK >/dev/null ) || fail_ "set-credentials kavita failed"
+as_run sc_rotate_kavita NEWK; (( RC == 0 )) || fail_ "set-credentials kavita failed: $OUT"
 grep -q '^POST /api/account/reset-password {"userName":"mediastack","oldPassword":"OLDK","password":"NEWK"}' "$T/calls" \
     && [[ "$(env_get KAVITA_ADMIN_PASSWORD)" == NEWK && "$(grep -c '^POST /api/account/login' "$T/calls")" == 2 ]] \
     || fail_ "Kavita's admin password: changed with the old one, stored, verified by signing in"; pass
@@ -1395,8 +1404,8 @@ authentik_admin_rotate NEWAK >/dev/null && grep -q '^POST /core/users/7/set_pass
     || fail_ "akadmin's password is set through authentik's API, then stored (the bootstrap value is read only once)"; pass
 # set-credentials portal leaves no pending change: the worker (which carries the value) is recreated
 rm -f "$T/calls"
-( svc_enabled() { [[ "$1" == authentik ]]; }; c_health() { echo healthy; }; DC() { echo "DC $*" >> "$T/calls"; }
-  sc_rotate_portal NEWER >/dev/null ) || fail_ "set-credentials portal failed"
+as_run eval 'svc_enabled() { [[ "$1" == authentik ]]; }; c_health() { echo healthy; }; DC() { echo "DC $*" >> "$T/calls"; }
+  sc_rotate_portal NEWER'; (( RC == 0 )) || fail_ "set-credentials portal failed: $OUT"
 grep -q '^DC up -d --no-deps authentik-worker$' "$T/calls" || fail_ "set-credentials portal recreates the worker (found live: 'up' reported it pending)"; pass
 rm -f "$T/calls"
 out=$(authentik_recover "jo ann" 2>&1)

@@ -68,7 +68,7 @@ migrate_env_6_to_7() {
     # never renders unset variables (configure's self-heal only runs there).
     if ! grep -qE '^WIZARR_UID=' "$ENV_FILE"; then
         local max
-        max=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        max=$(uid_max)
         env_set WIZARR_UID "$(( ${max:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable WIZARR_UID -> $(env_get WIZARR_UID)"
     fi
@@ -78,14 +78,14 @@ migrate_env_7_to_8() {
     # wave 5 adds apprise (+ cleanuparr later in the wave)
     if ! grep -qE '^APPRISE_UID=' "$ENV_FILE"; then
         local max
-        max=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        max=$(uid_max)
         env_set APPRISE_UID "$(( ${max:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable APPRISE_UID -> $(env_get APPRISE_UID)"
     fi
     grep -qE '^APPRISE_UPDATE=' "$ENV_FILE" || env_set APPRISE_UPDATE true
     if ! grep -qE '^CLEANUPARR_UID=' "$ENV_FILE"; then
         local cmax
-        cmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        cmax=$(uid_max)
         env_set CLEANUPARR_UID "$(( ${cmax:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable CLEANUPARR_UID -> $(env_get CLEANUPARR_UID)"
     fi
@@ -95,7 +95,7 @@ migrate_env_8_to_9() {
     # watchstate joins as an official service
     if ! grep -qE '^WATCHSTATE_UID=' "$ENV_FILE"; then
         local wmax
-        wmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        wmax=$(uid_max)
         env_set WATCHSTATE_UID "$(( ${wmax:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable WATCHSTATE_UID -> $(env_get WATCHSTATE_UID)"
     fi
@@ -104,7 +104,7 @@ migrate_env_8_to_9() {
 migrate_env_9_to_10() {
     if ! grep -qE '^NAVIDROME_UID=' "$ENV_FILE"; then
         local nmax
-        nmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        nmax=$(uid_max)
         env_set NAVIDROME_UID "$(( ${nmax:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable NAVIDROME_UID -> $(env_get NAVIDROME_UID)"
     fi
@@ -116,7 +116,7 @@ migrate_env_10_to_11() {
     for svc in AUDIOBOOKSHELF KAVITA; do
         var="${svc}_UID"
         if ! grep -qE "^${var}=" "$ENV_FILE"; then
-            last=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+            last=$(uid_max)
             env_set "$var" "$(( ${last:-$(env_get UID_BASE)} + 1 ))"
             info "New service variable $var -> $(env_get "$var")"
         fi
@@ -126,7 +126,7 @@ migrate_env_10_to_11() {
 migrate_env_11_to_12() {
     if ! grep -qE '^LAZYLIBRARIAN_UID=' "$ENV_FILE"; then
         local lmax
-        lmax=$(grep -E '_UID=[0-9]+' "$ENV_FILE" | cut -d= -f2 | sort -n | tail -1)
+        lmax=$(uid_max)
         env_set LAZYLIBRARIAN_UID "$(( ${lmax:-$(env_get UID_BASE)} + 1 ))"
         info "New service variable LAZYLIBRARIAN_UID -> $(env_get LAZYLIBRARIAN_UID)"
     fi

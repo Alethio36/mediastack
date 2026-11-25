@@ -30,6 +30,8 @@ trap 'rm -rf "$lib" "$T"' EXIT
 sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 
 checks=0
 pass()  { checks=$((checks+1)); }
@@ -182,8 +184,8 @@ if (audit_report_args --bogus) 2>/dev/null; then fail_ "an unknown report argume
 out=$(audit_report_format "A B.MKV" < scripts/fixtures/audit.expected)
 [[ "$out" == *".x y/a b.mkv"* && "$out" != *"/.t"* ]] || fail_ "report --path must match case-insensitively and only the match:
 $out"; pass
-if (cmd_audit on extra) 2>/dev/null; then fail_ "'audit on extra' must be refused"; fi; pass
-if (cmd_audit bogus) 2>/dev/null; then fail_ "an unknown audit action must be refused"; fi; pass
+as_run cmd_audit on extra; (( RC != 0 )) || fail_ "'audit on extra' must be refused"; pass
+as_run cmd_audit bogus; (( RC != 0 )) || fail_ "an unknown audit action must be refused"; pass
 
 # ---- teardown ----
 # a fake kernel, on root's PATH only: auditctl -l lists $T/loaded, -D -k

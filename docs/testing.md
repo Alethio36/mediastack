@@ -43,6 +43,22 @@ Rules these taught, Nov 2026:
   `*_problem(s)`, `*_hint`) to that: empty input, everything unreachable,
   return 0. A new one is picked up by its name — and so is every getter whose
   header promises `""` when there is nothing (unless it names an rc of its own).
+- **The code under test runs as a run runs it — outside a condition.** In
+  `f || fail_`, `if f`, `! f` or a `[[ "$(f)" … ]] ||`, bash ignores
+  `set -e` inside `f`, subshells included, even when `f` sets it again: a
+  failure a real run stops on passes there (the questionnaire's, configure's
+  and the answers file's tests could not see one, until Nov 2026). Call it
+  with `as_run` (`scripts/testlib.sh`: set -eE and the ERR trap in its own
+  subshell, the status in `RC`, the output in `OUT`), plainly, and check
+  `RC` after; a runner of a test's own sets the same rules and records `RC`.
+  `scripts/check-test-runners.sh` fails a runner called in a condition. A
+  plain `x=$(f)` keeps `set -e` when `f` sets it.
+- **A `grep` that may find nothing is an answer, not a failure — say so.**
+  In a pipe under `pipefail`, or as an assignment's `$( )`, its "no match"
+  (exit 1) ends a run; a fallback written after it (`${x:-default}`) is
+  never reached. Read the result as `x=$(grep …) || [[ $? == 1 ]]` — no
+  match is fine, an unreadable file still fails (`uid_max`, `lib/common.sh`,
+  was eight copies of the pipe until Nov 2026).
 - **New checks are mutation-checked** before they count: break the code they
   guard, see them fail, restore it.
 - **CI's runner is not your machine.** It runs gawk 5.3 (a gawk bug there

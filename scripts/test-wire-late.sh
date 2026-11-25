@@ -24,6 +24,8 @@ sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
 set +e +E; trap - ERR
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 
 checks=0
 pass()  { checks=$((checks+1)); }
@@ -91,7 +93,7 @@ WIRE_STEP=jellyfin;  echo x > "$WIRE_UNANSWERED_F"; wfail "proxies — no answer
 WIRE_STEP=arr;       echo x > "$WIRE_UNANSWERED_F"; wfail "radarr root folder — no answer" >/dev/null
 WIRE_STEP=seerr;     echo x > "$WIRE_UNANSWERED_F"; wfail "settings — no answer" >/dev/null
 WIRE_STEP=""
-out=$(wire_recheck 2>&1; echo "FAILS=$WIRE_FAILS"; printf 'LIST=%s\n' "${WIRE_FAIL_LIST[@]}")
+as_run eval 'wire_recheck; echo "FAILS=$WIRE_FAILS"; printf "LIST=%s\n" "${WIRE_FAIL_LIST[@]}"'; out=$OUT
 [[ "$out" == *"authentik: read back — everything is in place, so the 1 failure(s) from calls that got no answer are taken back"* \
    && "$out" == *"arr: read back — everything is in place"* ]] || fail_ "clean roles: their unanswered failures taken back: $out"; pass
 [[ "$out" == *"jellyfin: read back — not everything is in place"*"would: jellyfin: set Known proxies"* ]] || fail_ "drift: the failure stands, what is missing shown: $out"; pass
@@ -99,7 +101,7 @@ out=$(wire_recheck 2>&1; echo "FAILS=$WIRE_FAILS"; printf 'LIST=%s\n' "${WIRE_FA
 [[ "$out" == *"FAILS=3"* && "$out" == *"LIST=authentik: a card refused"* && "$out" == *"LIST=jellyfin: proxies — no answer"* \
    && "$out" == *"LIST=seerr: settings — no answer"* && "$out" != *"LIST=arr:"* && "$out" != *"LIST=authentik: the gate"* ]] \
     || fail_ "what stands: the other failure of a clean role, the drift, the blind one: $out"; pass
-fresh; out=$(wire_recheck 2>&1); [[ -z "$out" ]] || fail_ "nothing got no answer: no read-back, no wait: $out"; pass
+fresh; as_run wire_recheck; out=$OUT; [[ -z "$out" ]] || fail_ "nothing got no answer: no read-back, no wait: $out"; pass
 
 # ---- one app at a time: a second one is refused, never dropped (found live, 17 Nov 2026) ----
 wargs() { ( load_env() { :; }; render() { :; }; maint_lock() { :; }; wire_navidrome() { echo RAN-navidrome; if [[ -n "${PEND:-}" ]]; then w_pends "$PEND"; fi; }

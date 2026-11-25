@@ -78,10 +78,10 @@ STD=gluetun,jellyfin,jellysearch,meilisearch,prowlarr,qbittorrent,radarr,seerr,s
 # a .env in its own directory, fresh from .env.example
 fresh() { rm -rf "$T/w"; mkdir -p "$T/w/local/state"; cp .env.example "$T/w/.env"; }
 # typed STDIN [ARGS] — the questionnaire asked; filed FILE STDIN [ARGS] — the answers file (no terminal unless Q_TERMINAL)
-typed() { ( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
-            printf '%b' "$1" | questionnaire_run "${@:2}" ) > "$T/out" 2>&1; }
-filed() { ( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
-            printf '%b' "$2" | questionnaire_answers_run --answers "$1" -- "${@:3}" ) > "$T/out" 2>&1; }
+typed() { ( set -eE; trap on_err ERR; ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
+            printf '%b' "$1" | questionnaire_run "${@:2}" ) > "$T/out" 2>&1; RC=$?; return "$RC"; }
+filed() { ( set -eE; trap on_err ERR; ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
+            printf '%b' "$2" | questionnaire_answers_run --answers "$1" -- "${@:3}" ) > "$T/out" 2>&1; RC=$?; return "$RC"; }
 answers() { printf '%b' "$1" > "$T/a.env"; chmod 600 "$T/a.env"; }   # answers LINES — the file, 0600
 masked() { sed -E 's/^([A-Z_]*(PASSWORD|MASTER_KEY))=.+/\1=<generated>/' "$1"; }
 snapshot() { masked "$T/w/.env" > "$1.env"; cp -r "$T/w/local/state" "$1.state"; }
@@ -136,10 +136,10 @@ dc_args() { ( sudo() { echo "$*" > "$T/dc"; }; user_compose_files() { USER_FILES
     || fail_ "a written path is expanded as a typed one (~ = home, relative = the repo's)"; pass
 
 # ---- typed and written: the same .env and local/state ----
-fresh; typed '1\n1\n1\n\nTOKEN\n' --fresh || fail_ "typed quick, fresh"
+fresh; typed '1\n1\n1\n\nTOKEN\n' --fresh; (( RC == 0 )) || fail_ "typed quick, fresh"
 snapshot "$T/typed"
 fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\n'
-filed "$T/a.env" '' --fresh || fail_ "the same answers, written, with no terminal: $(cat "$T/out")"
+filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "the same answers, written, with no terminal: $(cat "$T/out")"
 snapshot "$T/filed"
 diff "$T/typed.env" "$T/filed.env" >&2 && diff -r "$T/typed.state" "$T/filed.state" >&2 || fail_ "typed and written answers give the same .env and local/state"; pass
 has "Services: " && has "Accounts: none (from the answers file)" && ! has "== Accounts" || fail_ "written answers are said, not asked"; pass
@@ -147,25 +147,25 @@ has "Services: " && has "Accounts: none (from the answers file)" && ! has "== Ac
 
 # ---- with no terminal, what would be asked is missing; with one, only the gaps ----
 fresh; cp "$T/w/.env" "$T/before.env"; answers 'ENABLE_SONARR=y\n'
-filed "$T/a.env" '' --fresh; [[ $? == 4 ]] || fail_ "missing answers with no terminal: exit 4"
+filed "$T/a.env" '' --fresh; (( RC == 4 )) || fail_ "missing answers with no terminal: exit 4"
 has "Sign-in is not answered — set SIGNIN" && has "VPN is not answered" && [[ "$(problems)" == 2 ]] || fail_ "each missing answer named, nothing else: $(cat "$T/out")"; pass
 cmp -s "$T/w/.env" "$T/before.env" || fail_ "missing answers: nothing written"; pass
 fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\n'
-Q_TERMINAL=1 filed "$T/a.env" '\nTOKEN\n' --fresh || fail_ "a partial file with a terminal: $(cat "$T/out")"
+Q_TERMINAL=1 filed "$T/a.env" '\nTOKEN\n' --fresh; (( RC == 0 )) || fail_ "a partial file with a terminal: $(cat "$T/out")"
 snapshot "$T/partial"
 diff "$T/typed.env" "$T/partial.env" >&2 || fail_ "only the gaps asked — the same .env"; pass
 ! has "== Accounts" && has "NordVPN token" || fail_ "the file's answers are not asked, the gaps are"; pass
 
 # ---- a re-run: a blank keeps what is set ----
-fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\n'; filed "$T/a.env" '' --fresh || fail_ "first run"
+fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\n'; filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "first run"
 cp "$T/w/.env" "$T/run1.env"; answers 'TZ=Europe/Berlin\n'
-filed "$T/a.env" '' || fail_ "re-run with one answer: $(cat "$T/out")"
+filed "$T/a.env" ''; (( RC == 0 )) || fail_ "re-run with one answer: $(cat "$T/out")"
 [[ "$(diff "$T/run1.env" "$T/w/.env" | grep -c '^[<>]')" == 2 && "$(envv TZ)" == Europe/Berlin ]] || fail_ "only TZ changed: $(diff "$T/run1.env" "$T/w/.env")"; pass
 
 # ---- refused answers ----
 refused() { # refused LINES WHAT... — each WHAT is in the list, and nothing was written
     fresh; cp "$T/w/.env" "$T/before.env"; answers "$1"; shift
-    filed "$T/a.env" '' --fresh; [[ $? == 4 ]] || fail_ "refused: exit 4 — $(cat "$T/out")"
+    filed "$T/a.env" '' --fresh; (( RC == 4 )) || fail_ "refused: exit 4 — $(cat "$T/out")"
     local w; for w in "$@"; do has "$w" || fail_ "refused: '$w' named — $(cat "$T/out")"; done
     cmp -s "$T/w/.env" "$T/before.env" || fail_ "refused: nothing written"
 }
@@ -188,7 +188,7 @@ refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=airvpn\nWIREGUARD_PRIVATE_KE
     "airvpn forwards the port you set on its site — write it as VPN_FORWARDED_PORT"; pass
 # server choices as gluetun reads them; checked against its server list when its image is here
 fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\nVPN_SERVER_CATEGORIES=P2P\nVPN_SERVER_COUNTRIES=Switzerland , Netherlands\nVPN_SERVER_CITIES=any\n'
-filed "$T/a.env" '' --fresh || fail_ "server choices run: $(cat "$T/out")"
+filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "server choices run: $(cat "$T/out")"
 [[ "$(envv VPN_SERVER_CATEGORIES)" == P2P && "$(envv VPN_SERVER_COUNTRIES)" == Switzerland,Netherlands && -z "$(envv VPN_SERVER_CITIES)" ]] \
     || fail_ "a list as gluetun reads one (no space around a value), any is no limit: $(grep '^VPN_SERVER' "$T/w/.env")"; pass
 printf '%s\n' '[{"vpn":"wireguard","country":"Switzerland","city":"Zurich","categories":["Standard VPN servers","P2P"],"hostname":"ch1"}]' > "$T/servers.json"
@@ -202,11 +202,11 @@ refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=expressvpn\nVPN_TYPE=openvpn
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_PROVIDER=cyberghost\nOPENVPN_USER=u\nOPENVPN_PASSWORD=p\n' "the VPN (cyberghost, openvpn) needs OPENVPN_CERT" "the VPN (cyberghost, openvpn) needs OPENVPN_KEY"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nNORDVPN_TOKEN=TOKEN\nOPENVPN_PROTOCOL=tcp\n' "OPENVPN_PROTOCOL: only for VPN_TYPE=openvpn — VPN_TYPE is wireguard"; pass
 # NordVPN over OpenVPN: the token gives its service login; cyberghost alone is OpenVPN, so its type need not be written
-fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nVPN_TYPE=openvpn\nNORDVPN_TOKEN=TOKEN\n'; filed "$T/a.env" '' --fresh || fail_ "nordvpn over OpenVPN runs: $(cat "$T/out")"
+fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nVPN_TYPE=openvpn\nNORDVPN_TOKEN=TOKEN\n'; filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "nordvpn over OpenVPN runs: $(cat "$T/out")"
 [[ "$(envv VPN_TYPE)" == openvpn && "$(envv OPENVPN_USER)" == NORDUSER && "$(envv OPENVPN_PASSWORD)" == NORDPASS && "$(envv OPENVPN_PROTOCOL)" == udp && -z "$(envv WIREGUARD_PRIVATE_KEY)" ]] \
     || fail_ "the token's OpenVPN login, over UDP (its only one), no WireGuard key: $(grep -E '^(VPN_TYPE|OPENVPN_|WIREGUARD_PRIVATE)' "$T/w/.env")"; pass
 refused 'SIGNIN=none\nENABLE_SONARR=y\nVPN_TYPE=openvpn\nOPENVPN_PROTOCOL=tcp\nNORDVPN_TOKEN=TOKEN\n' "OPENVPN_PROTOCOL=tcp: nordvpn has OpenVPN servers over udp only"; pass
-fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nVPN_PROVIDER=expressvpn\nOPENVPN_USER=u\nOPENVPN_PASSWORD=p\n'; filed "$T/a.env" '' --fresh || fail_ "an OpenVPN-only provider runs: $(cat "$T/out")"
+fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nVPN_PROVIDER=expressvpn\nOPENVPN_USER=u\nOPENVPN_PASSWORD=p\n'; filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "an OpenVPN-only provider runs: $(cat "$T/out")"
 [[ "$(envv VPN_TYPE)" == openvpn && "$(envv OPENVPN_PROTOCOL)" == udp ]] || fail_ "its only tunnel and protocol taken: $(envv VPN_TYPE) $(envv OPENVPN_PROTOCOL)"; pass
 
 refused 'CONFIGURE_MODE=full\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\n' "CONFIGURE_MODE=full asks every question — it needs a terminal"; pass
@@ -226,7 +226,7 @@ all+='TZ=Europe/Berlin\nSTACK_DOMAIN=Media.Example.com\nACME_EMAIL=a@b.co\nCF_DN
 all+='SMTP_HOST=SMTP.x.co\nSMTP_PORT=587\nSMTP_STARTTLS=true\nSMTP_TLS=false\nSMTP_USER=me@x.co\nSMTP_PASSWORD=ab cd ef\nSMTP_FROM=me@x.co\n'
 all+='NOTIFY_OPS=ntfy://ntfy.sh/ops\nCLOUDFLARE_TUNNEL_TOKEN=TUN\nSTACK_USER=boss\nUPDATE_SCHEDULE=Sun 03:00\nPANEL=no\n'
 fresh; answers "$all"
-filed "$T/a.env" '' --fresh || fail_ "every hook answered: $(cat "$T/out")"
+filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "every hook answered: $(cat "$T/out")"
 for kv in TZ=Europe/Berlin STACK_DOMAIN=media.example.com ACME_EMAIL=a@b.co CF_DNS_API_TOKEN=CFTOK PORTAL_TITLE=Home JELLYFIN_SERVER_NAME=Den \
           SMTP_HOST=smtp.x.co SMTP_PASSWORD=abcdef SMTP_FROM=me@x.co CLOUDFLARE_TUNNEL_TOKEN=TUN STACK_USER=boss VPN_SERVER_COUNTRIES=Sweden \
           "UPDATE_SCHEDULE=Sun 03:00" "BACKUP_SCHEDULE=*-*-* 04:00"; do
@@ -235,7 +235,7 @@ done; pass
 [[ "$(ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state state_get "$NOTIFY_URLS_STATE")" == $'ops\tntfy://ntfy.sh/ops' ]] || fail_ "Apprise's URLs held for wire"; pass
 [[ -z "$(ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state state_get "$PANEL_STATE")" ]] || fail_ "PANEL=no: no panel"; pass
 fresh; answers "$(sed 's/CLOUDFLARE_TUNNEL_TOKEN=TUN/CLOUDFLARE_TUNNEL_TOKEN=/' <<<"$all")"
-filed "$T/a.env" '' --fresh || fail_ "the tunnel left blank: $(cat "$T/out")"
+filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "the tunnel left blank: $(cat "$T/out")"
 [[ ",$(envv COMPOSE_PROFILES)," != *,cloudflared,* ]] || fail_ "no one to ask for an optional token: the tunnel stays off"; pass
 
 # ---- full mode with a terminal: the check pass reaches every question and asks none ----
@@ -275,21 +275,21 @@ out=$( (answers_opts --signin) 2>&1 ) && fail_ "an option needs its value"
 [[ "$out" == *"--signin: give it a value"* ]] || fail_ "and says so: $out"; pass
 
 # ---- START: configure's closing question, answered ahead ----
-fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\nSTART=no\n'; filed "$T/a.env" '' --fresh || fail_ "START=no: $(cat "$T/out")"
+fresh; answers 'ENABLE_SONARR=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\nSTART=no\n'; filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "START=no: $(cat "$T/out")"
 ( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state WIRED_FILE=$T/none; out=$(chain_wanted </dev/null 2>&1); rc=$?
   (( rc == 1 )) && [[ "$out" == *"Start: no (from the answers)"* && -z "$(state_get "$START_STATE")" ]] ) || fail_ "START=no: nothing started, nothing asked, the answer used once"; pass
-answers 'START=yes\n'; filed "$T/a.env" '' || fail_ "START=yes on a re-run"
+answers 'START=yes\n'; filed "$T/a.env" ''; (( RC == 0 )) || fail_ "START=yes on a re-run"
 ( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state WIRED_FILE=$T/w/.env; chain_wanted </dev/null >/dev/null 2>&1 ) || fail_ "START=yes: applied without asking, even on a live stack"; pass
-answers 'TZ=Europe/Berlin\n'; filed "$T/a.env" '' || fail_ "blank START"
+answers 'TZ=Europe/Berlin\n'; filed "$T/a.env" ''; (( RC == 0 )) || fail_ "blank START"
 [[ -z "$(ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state state_get "$START_STATE")" ]] || fail_ "a blank START keeps configure's own default"; pass
 
 # ---- sudo with no one to type its password ----
-nosudo() { ( id() { [[ "$1" == -u ]] && echo 1000; }; sudo() { [[ "$*" == "-n true" ]] && return "$1"; }; ANSWERS_OPTS=("${@:2}")
-             sudo() { return "$SUDO_RC"; }; SUDO_RC=$1 sudo_unattended_check </dev/null ) 2>&1; }
-out=$(nosudo 1 --signin none) && fail_ "answers, no terminal, sudo wants a password: refused up front"
+nosudo() { ( set -eE; trap on_err ERR; id() { [[ "$1" == -u ]] && echo 1000; }; ANSWERS_OPTS=("${@:2}")
+             sudo() { return "$SUDO_RC"; }; SUDO_RC=$1 sudo_unattended_check </dev/null ) > "$T/out" 2>&1; RC=$?; out=$(cat "$T/out"); return "$RC"; }
+nosudo 1 --signin none; (( RC != 0 )) || fail_ "answers, no terminal, sudo wants a password: refused up front"
 [[ "$out" == *"sudo needs its password, and with no terminal nothing can ask for it — run 'sudo -v' first"* ]] || fail_ "and says what to do: $out"; pass
-nosudo 0 --signin none >/dev/null || fail_ "sudo already open (sudo -v, or NOPASSWD): carries on"; pass
-nosudo 1 >/dev/null || fail_ "no answers given: no check (the questionnaire says it needs a terminal)"; pass
+nosudo 0 --signin none; (( RC == 0 )) || fail_ "sudo already open (sudo -v, or NOPASSWD): carries on: $out"; pass
+nosudo 1; (( RC == 0 )) || fail_ "no answers given: no check (the questionnaire says it needs a terminal): $out"; pass
 grep -q 'exec bash "$SCRIPT_DIR/mediastack.sh" configure "${ANSWERS_OPTS\[@\]}"' lib/lifecycle.sh \
     && grep -q '^    sudo_unattended_check' <(awk '/^cmd_install\(\)/,/^}/' lib/lifecycle.sh) || fail_ "install checks sudo first and hands its answers to configure"; pass
 
@@ -302,7 +302,7 @@ missing=$(env_schema_rows | awk -F'\t' '$6 != "-" && $1 !~ /</ { print $1 }' | w
 grep -q '^ENABLE_SONARR=$' answers.example && grep -q '^TRASH_PROFILE_RADARR=$' answers.example && ! grep -q '^ENABLE_OLIVETIN=' answers.example \
     && ! grep -q '^ENABLE_WIZARR=' answers.example || fail_ "the families: a line per service it can switch on, per arr TRaSH manages"; pass
 fresh; sed 's/^SIGNIN=$/SIGNIN=none/; s/^NORDVPN_TOKEN=$/NORDVPN_TOKEN=TOKEN/; s/^ENABLE_SONARR=$/ENABLE_SONARR=y/' answers.example > "$T/a.env"; chmod 600 "$T/a.env"
-filed "$T/a.env" '' --fresh || fail_ "answers.example with three lines filled runs unattended: $(cat "$T/out")"
+filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "answers.example with three lines filled runs unattended: $(cat "$T/out")"
 snapshot "$T/template"; diff "$T/typed.env" "$T/template.env" >&2 || fail_ "and gives what typing the same three answers gives"; pass
 grep -q '^/answers\*\.env$' .gitignore || fail_ "your answers (answers*.env) are git-ignored"; pass
 

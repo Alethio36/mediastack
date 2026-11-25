@@ -64,7 +64,7 @@ dsp_api() { # stub: settings as ROWS holds them; a PATCH saves into BACK; read b
 }
 curl() { echo "$PROOF"; }   # the proof's POST from this host: its status
 sg() { # sg CURRENT-VALUE — dsp_signin's run: fails, then the calls made
-    ( : > "$CALLS"; WIRE_FAILS=0; ROWS=$(row "$1"); echo "$1" > "$T/back"; dsp_signin tok > "$T/out" 2>&1; echo "fails=$WIRE_FAILS"; cut -d' ' -f1,2 "$CALLS" | paste -sd, - )
+    ( set -eE; trap on_err ERR; : > "$CALLS"; WIRE_FAILS=0; ROWS=$(row "$1"); echo "$1" > "$T/back"; dsp_signin tok > "$T/out" 2>&1; echo "fails=$WIRE_FAILS"; cut -d' ' -f1,2 "$CALLS" | paste -sd, - )
 }
 PROOF=401
 r=$(sg '{"enabled":true,"header":"X-Mediastack-User"}')
@@ -89,9 +89,9 @@ PROOF=000
 r=$(sg '{"enabled":true,"header":"X-Mediastack-User"}')
 [[ "$r" == fails=1* ]] || fail_ "the proof unanswered: a failure: $r"; pass
 PROOF=401
-r=$( ROWS=x; : > "$CALLS"; WIRE_FAILS=0; ROWS='[{"id":3,"key":"stream_settings","value":{}}]'; dsp_signin tok > "$T/out" 2>&1; echo "fails=$WIRE_FAILS"; grep -c PATCH "$CALLS" || true )
+r=$( set -eE; trap on_err ERR; ROWS=x; : > "$CALLS"; WIRE_FAILS=0; ROWS='[{"id":3,"key":"stream_settings","value":{}}]'; dsp_signin tok > "$T/out" 2>&1; echo "fails=$WIRE_FAILS"; grep -c PATCH "$CALLS" || true )
 [[ "$r" == $'fails=1\n0' ]] && grep -q 'no reverse_proxy_auth setting' "$T/out" || fail_ "its setting missing: a failure, nothing written: $r"; pass
-r=$( : > "$CALLS"; WIRE_FAILS=0; ROWS=""; dsp_signin tok > "$T/out" 2>&1; echo "fails=$WIRE_FAILS"; grep -c PATCH "$CALLS" || true )
+r=$( set -eE; trap on_err ERR; : > "$CALLS"; WIRE_FAILS=0; ROWS=""; dsp_signin tok > "$T/out" 2>&1; echo "fails=$WIRE_FAILS"; grep -c PATCH "$CALLS" || true )
 [[ "$r" == $'fails=1\n0' ]] || fail_ "its settings unreadable: a failure, nothing written: $r"; pass
 
 # ---- disable authentik: off while the portal still runs ----
@@ -99,13 +99,13 @@ dsp_login() { echo tok; }
 r=$( : > "$CALLS"; WIRE_FAILS=0; ROWS=$(row '{"enabled":true,"header":"X-Mediastack-User"}'); echo '{}' > "$T/back"
      GATE_UNTRUSTED=1 dispatcharr_gate_login > "$T/out" 2>&1; echo "fails=$WIRE_FAILS" )
 [[ "$r" == fails=0 ]] && grep -q '"enabled":false' "$CALLS" || fail_ "disable authentik: header sign-in off before the port reopens: $r $(cat "$T/out")"; pass
-r=$( dsp_login() { echo "dispatcharr rejected the stored admin login: x"; return 1; }; WIRE_FAILS=0; dispatcharr_gate_login > "$T/out" 2>&1; echo "fails=$WIRE_FAILS" )
+r=$( set -eE; trap on_err ERR; dsp_login() { echo "dispatcharr rejected the stored admin login: x"; return 1; }; WIRE_FAILS=0; dispatcharr_gate_login > "$T/out" 2>&1; echo "fails=$WIRE_FAILS" )
 [[ "$r" == fails=1 ]] || fail_ "disable authentik: no sign-in is a failure (authentik stays): $r"; pass
 
 # ---- wire: the stack's admin on a fresh install; one set up by hand fails loud ----
 wire_gate() { :; }; dsp_ready() { :; }; dsp_signin() { echo SIGNIN >> "$CALLS"; }
 wd() { # wd FIRST-RUN-STATE [no-login] — wire_dispatcharr's run: fails, then the calls made
-    ( : > "$CALLS"; WIRE_FAILS=0; ST=$1; NL=${2:-}
+    ( set -eE; trap on_err ERR; : > "$CALLS"; WIRE_FAILS=0; ST=$1; NL=${2:-}
       dsp_api() { echo "$1 $2" >> "$CALLS"; case "$1 $2" in
           "GET /api/accounts/initialize-superuser/") [[ "$ST" != refused ]] || { echo refused; return 1; }; echo "$ST" ;;
           "POST /api/accounts/initialize-superuser/") echo '{"superuser_exists":true}' ;; esac; }

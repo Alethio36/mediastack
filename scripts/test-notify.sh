@@ -31,6 +31,8 @@ trap 'rm -rf "$lib" "$T"' EXIT
 sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 
 checks=0
 pass()  { checks=$((checks+1)); }
@@ -294,7 +296,7 @@ ENV_FILE=$T/env
                printf '%s' "$1" > "$SENT/$n.tag"; printf '%s' "$2" > "$SENT/$n.title"
                printf '%s' "$3" > "$SENT/$n.body"; printf '%s' "$4" > "$SENT/$n.type"; }
     sends() { find "$SENT" -name '*.tag' | wc -l; }
-    ( cmd_unit_failed sshd.service ) 2>/dev/null && fail_ "unit-failed must refuse a unit that is not mediastack's"; pass
+    as_run cmd_unit_failed sshd.service; (( RC != 0 )) || fail_ "unit-failed must refuse a unit that is not mediastack's"; pass
     cmd_unit_failed mediastack-update.service >/dev/null
     [[ "$(cat "$SENT/1.tag")" == ops && "$(cat "$SENT/1.type")" == failure ]] || fail_ "unit-failed sends to ops as a failure"; pass
     [[ "$(cat "$SENT/1.title")" == "mediastack-update.service failed" ]] || fail_ "the title names the unit: $(cat "$SENT/1.title")"; pass

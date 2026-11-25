@@ -223,6 +223,12 @@ secret_problem() { secret_ok "$1" || echo "$SECRET_RULE"; }   # secret_problem V
 # loaded once per run (env_defaults_load, lib/env.sh) — the only place one is written
 declare -gA ENV_DEFAULT=()
 env_or_note() { local v; v=$(env_get "$1"); echo "${v:-$2}"; }   # env_or_note <key> <note> — for display: the value, or the note when it has none
+uid_max() { # the highest numeric <SVC>_UID in .env; empty when there is none (the callers fall back to UID_BASE)
+    # no UID yet is an answer, an unreadable .env a failure: written as a pipe,
+    # grep's "no match" ended the run under pipefail before any fallback (Nov 2026)
+    local l; l=$(grep -E '_UID=[0-9]+' "$ENV_FILE") || [[ $? == 1 ]] || return 1
+    cut -d= -f2 <<<"$l" | sort -n | tail -1
+}
 env_get() { # env_get <key> -> its .env value; empty or absent: the schema's default (none: empty)
     # one rule for both readers of .env: compose's ${KEY:-x} means the same
     (( $# == 1 )) || die "env_get $1: a default is written in the .env schema (lib/env.schema.tsv, services/*/env.tsv), never at the call"

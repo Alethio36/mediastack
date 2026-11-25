@@ -141,12 +141,13 @@ upstream gaps you found go in `docs/watchlist.md`.
 - `scripts/test-<name>.sh`: the entrypoint sourced minus its last line, the
   app's API as stubs. CI runs it by itself (`scripts/ci-unlisted.sh`) — no
   workflow line.
-- **Run the code the way a run does.** A call inside `$( )`, or in an `if`
-  or `&&`, runs without `set -e`: a failure a real run stops on passes there
-  (`login_opt`'s test passed that way while `set-credentials all` would
-  have stopped at the first login). Run
-  such checks as plain commands in a subshell with the entrypoint's
-  `set -eE` and its ERR trap, and read the status after.
+- **Run the code the way a run does.** A call in a condition (`|| fail_`,
+  `if`, `!`) runs without `set -e`, and a `$( )` does not inherit it: a
+  failure a real run stops on passes there (`login_opt`'s test passed that
+  way while `set-credentials all` would have stopped at the first login).
+  Call the code with `as_run` (`scripts/testlib.sh`), plainly, then check
+  `RC` — `check-test-runners` fails a runner in a condition; see
+  [testing.md](testing.md).
 - **Break it on purpose.** For every rule a test holds, change the code to
   break that rule and watch the test fail — for the reason you meant. A stub
   that answers every call the same can make a duplicate look like an

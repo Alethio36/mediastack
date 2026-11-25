@@ -30,7 +30,7 @@ vpn_gen >/dev/null
 checks=0
 # strict CMD... — run it as a real run does, under set -e (a test's $( ) drops -e, and an
 # `if`/`||` around it too): SR its status, its output in $work/strict
-strict() { set +e; ( set -e; "$@" ) > "$work/strict" 2>&1; SR=$?; set -e; }
+strict() { set +e; ( set -eE; trap on_err ERR; "$@" ) > "$work/strict" 2>&1; SR=$?; set -e; }
 pass()  { checks=$((checks+1)); }
 fail_() { echo "FAIL: $*" >&2; exit 1; }
 profiles() { env_set COMPOSE_PROFILES "$1"; RENDERED_JSON=""; render; }
@@ -116,7 +116,7 @@ CRED_WIDTH=0; [[ "$(credentials_lines 'one two three' | wc -l)" == 1 ]] || fail_
 unset CRED_WIDTH
 profiles gluetun,qbittorrent,sonarr,prowlarr,jellyfin,kavita,dispatcharr
 env_set DISPATCHARR_ADMIN_PASSWORD ""
-grep -A3 "^dispatcharr$" <<<"$(cmd_credentials 2>&1)" | grep -E '^  password +\(not recorded yet' >/dev/null || fail_ "a login not recorded says what records it"; pass
+strict cmd_credentials; grep -A3 "^dispatcharr$" "$work/strict" | grep -E '^  password +\(not recorded yet' >/dev/null || fail_ "a login not recorded says what records it"; pass
 
 # ---- credentials <service>: everything it holds, each secret once, whose it is ----
 env_set AUTHENTIK_ADMIN_PASSWORD akpw; env_set AUTHENTIK_DB_PASSWORD dbpw; env_set SMTP_PASSWORD smtppw; env_set AUTHENTIK_LDAP_TOKEN ""
@@ -128,10 +128,10 @@ owner() { awk -v k="$1" '/^  the stack.s own — rotate-secrets changes these/ {
 [[ "$(grep -c "rotate-secrets changes these" <<<"$out")" == 1 ]] || fail_ "whose they are: said once for the group, not under each: $out"; pass
 ! grep -q 'AUTHENTIK_LDAP_TOKEN' <<<"$out" || fail_ "a secret not set: not listed: $out"; pass
 env_set WIREGUARD_PRIVATE_KEY wgkey; env_set GLUETUN_CONTROL_APIKEY ctlkey
-out=$(cmd_credentials gluetun 2>&1)
+strict cmd_credentials gluetun; out=$(cat "$work/strict")
 grep -A2 '^    GLUETUN_CONTROL_APIKEY$' <<<"$out" | grep 'closed' >/dev/null && [[ "$(owner WIREGUARD_PRIVATE_KEY "$out")" == yours && "$(owner GLUETUN_CONTROL_APIKEY "$out")" == own ]] \
     || fail_ "gluetun: its control key with why no app can use it, your VPN key as yours: $out"; pass
-out=$(cmd_credentials jellyfin 2>&1)
+strict cmd_credentials jellyfin; out=$(cat "$work/strict")
 [[ "$(grep -c 'key-jf' <<<"$out")" == 1 ]] && grep -qE '^  API key +key-jf$' <<<"$out" || fail_ "jellyfin: its key once, as its key for your apps: $out"; pass
 grep -A1 -E '^  API key ' <<<"$out" | grep -E '^  address +https?://' >/dev/null || fail_ "its key, then its address as a row of its own (an app asks for both): $out"; pass
 strict cmd_credentials nosuch
@@ -147,7 +147,7 @@ awk 'NR > 1 && /^── / && prev != "" { bad = 1 } { prev = $0 } END { exit bad
     || fail_ "--all: a blank line between sections, none before the first: $out"; pass
 [[ "$(grep -c '^  user ' <<<"$(awk '/── (prowlarr|radarr|sonarr) ─/,0' <<<"$out")")" -ge 1 && "$(grep -c 'the arrs (one login for every one of them) — shown under prowlarr' <<<"$out")" == 2 ]] \
     || fail_ "--all: the arrs' login in full once (prowlarr's), the others point at it: $out"; pass
-out=$(cmd_credentials flaresolverr 2>&1)
+strict cmd_credentials flaresolverr; out=$(cat "$work/strict")
 grep -q 'the stack keeps no login, key or secret for it' <<<"$out" || fail_ "a service asked for by name that holds nothing: said so: $out"; pass
 
 # ---- the core names no app for them, companion keys included (docs/design-install.md: each piece lands with this test) ----

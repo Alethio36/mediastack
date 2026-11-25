@@ -34,6 +34,8 @@ sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
 set +e +E; trap - ERR   # each check reads its own status
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 
 checks=0
 pass()  { checks=$((checks+1)); }
@@ -62,13 +64,13 @@ re no no >/dev/null; ! grep -qE 'OLDVALUE|NEWVALUE' "$T/out" || fail_ "a value w
 
 # ---- a rotation that never finished ----
 rotate_journal_start 20261113-120000; rotate_journal_hold K a b
-r=$( (cmd_rotate_secrets) 2>&1 </dev/null; echo "rc=$?")
+as_run cmd_rotate_secrets </dev/null; r="$OUT"$'\n'"rc=$RC"
 [[ "$r" == *"K was in flight"*"restore --all --from 20261113-120000"*"rc=1" ]] || fail_ "in flight: refused, the way back named: $r"; pass
 D_FAILS=0; r=$(run_unfinished() { :; }; _doctor_runs 2>&1)
 [[ "$r" == *"a rotation never finished: K"* ]] || fail_ "doctor names a rotation in flight: $r"; pass
 rotate_journal_release
 [[ -z "$(rotate_inflight)" ]] || fail_ "settled between secrets: nothing in flight"; pass
-r=$( (cmd_rotate_secrets) 2>&1 </dev/null; echo "rc=$?")
+as_run cmd_rotate_secrets </dev/null; r="$OUT"$'\n'"rc=$RC"
 [[ "$r" == *"interactive"*"rc=1" ]] || fail_ "stopped between secrets is no refusal; no terminal is: $r"; pass
 
 # ---- the closing warning ----

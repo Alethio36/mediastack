@@ -85,8 +85,9 @@ run() {
     [[ -f "$T/w/.env" ]] || { mkdir -p "$T/w"; cp .env.example "$T/w/.env"; }
     : > "$T/calls"
     # shellcheck disable=SC2034  # read by the questionnaire
-    ( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
+    ( set -eE; trap on_err ERR; ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local FSTAB=$T/fstab PATH=$SHIMS
       printf '%b' "$1" | questionnaire_run "${@:2}" ) > "$T/out" 2>&1
+    RC=$?; return "$RC"
 }
 envv() { ENV_FILE=$T/w/.env env_get "$1"; }
 clean() { rm -rf "$T/w"; }
@@ -94,7 +95,7 @@ written() { (cd "$T/w" && find . -type f | sort | tr '\n' ' '); }
 : > "$T/fstab"
 
 # ---- quick, fresh: the services, sign-in and the VPN — nothing else ----
-clean; run '1\n1\n1\n\nTOKEN\n' --fresh || fail_ "quick on a fresh .env runs"
+clean; run '1\n1\n1\n\nTOKEN\n' --fresh; (( RC == 0 )) || fail_ "quick on a fresh .env runs"
 [[ ! -s "$T/calls" ]] || fail_ "quick ran what it may not: $(cat "$T/calls")"; pass
 [[ "$(written)" == "./.env ./local/state/roots " ]] || fail_ "only .env and local/state are written: $(written)"; pass
 [[ "$(envv COMPOSE_PROFILES | tr ',' '\n' | sort | paste -sd, -)" == "$STD" ]] || fail_ "standard: $(envv COMPOSE_PROFILES)"; pass
@@ -111,19 +112,19 @@ gen_keys='^(MEILI_MASTER_KEY|[A-Z_]*_PASSWORD)='
 quick_env=$(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env")
 
 # ---- full, fresh: Enter through every question gives what quick takes ----
-clean; run '2\n\n\n\n\n\n\n1\n1\n\n\nTOKEN\n\n\n\n\n\n\n\n\n\n\n\n\n\n' --fresh || fail_ "full on a fresh .env runs"
+clean; run '2\n\n\n\n\n\n\n1\n1\n\n\nTOKEN\n\n\n\n\n\n\n\n\n\n\n\n\n\n' --fresh; (( RC == 0 )) || fail_ "full on a fresh .env runs"
 [[ ! -s "$T/calls" ]] || fail_ "full ran what it may not: $(cat "$T/calls")"; pass
 [[ "$(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env")" == "$quick_env" ]] \
     || fail_ "Enter through full = quick: $(diff <(echo "$quick_env") <(sed -E "s/$gen_keys.+/\1<generated>/" "$T/w/.env"))"; pass
 
 # ---- quick on a configured stack: nothing asked, a "never" kept ----
 sed -i 's/^UPDATE_SCHEDULE=.*/UPDATE_SCHEDULE=/' "$T/w/.env"; before=$(cat "$T/w/.env")
-run '1\n' || fail_ "quick re-run asks nothing beyond the mode"
+run '1\n'; (( RC == 0 )) || fail_ "quick re-run asks nothing beyond the mode"
 [[ "$(cat "$T/w/.env")" == "$before" ]] || fail_ "quick re-run changes nothing: $(diff <(echo "$before") "$T/w/.env")"; pass
 grep -q 'Services: keep the current' "$T/out" && grep -q 'VPN: keep nordvpn' "$T/out" || fail_ "and says what it kept"; pass
 
 # ---- quick with the portal: email left alone, the panel recorded ----
-clean; run '1\n2\n3\n\nTOKEN\nmedia.example.com\nme@example.com\nCFTOK\n' --fresh || fail_ "quick, everything, the portal runs"
+clean; run '1\n2\n3\n\nTOKEN\nmedia.example.com\nme@example.com\nCFTOK\n' --fresh; (( RC == 0 )) || fail_ "quick, everything, the portal runs"
 [[ ! -s "$T/calls" ]] || fail_ "ran what it may not: $(cat "$T/calls")"; pass
 [[ ",$(envv COMPOSE_PROFILES)," == *,traefik,* && ",$(envv COMPOSE_PROFILES)," == *,authentik,* && ",$(envv COMPOSE_PROFILES)," != *,npm,* \
    && ",$(envv COMPOSE_PROFILES)," != *,deluge,* ]] || fail_ "one client, traefik for the portal: $(envv COMPOSE_PROFILES)"; pass
@@ -151,23 +152,23 @@ done
 
 # ---- Traefik's questions: the token checked with Cloudflare, never on curl's command line ----
 # shellcheck disable=SC2034  # read by traefik_questions
-tq() { ( ENV_FILE=$T/t.env Q_MODE=${2:-full}; printf '%b' "$1" | traefik_questions ) > "$T/out" 2>&1; }
+tq() { ( set -eE; trap on_err ERR; ENV_FILE=$T/t.env Q_MODE=${2:-full}; printf '%b' "$1" | traefik_questions ) > "$T/out" 2>&1; RC=$?; return "$RC"; }
 tv() { ENV_FILE=$T/t.env env_get "$1"; }
 printf 'COMPOSE_PROFILES=traefik\n' > "$T/t.env"; : > "$T/curl.args"; : > "$T/curl.stdin"
-tq '\nmedia.example.com\nme@example.com\nBAD\n\nCFTOK\n' || fail_ "a refused token, then a live one, runs"
+tq '\nmedia.example.com\nme@example.com\nBAD\n\nCFTOK\n'; (( RC == 0 )) || fail_ "a refused token, then a live one, runs"
 grep -q 'Cloudflare refused the token (Invalid API Token)' "$T/out" && grep -q 'this value is required' "$T/out" && [[ "$(tv CF_DNS_API_TOKEN)" == CFTOK ]] \
     || fail_ "a refused token is said, Enter cannot keep it, the next one counts: $(tv CF_DNS_API_TOKEN)"; pass
 ! grep -q 'CFTOK\|BAD' "$T/curl.args" && grep -q 'header = "Authorization: Bearer CFTOK"' "$T/curl.stdin" \
     || fail_ "the token reaches curl on stdin, never its command line: $(cat "$T/curl.args")"; pass
 printf 'COMPOSE_PROFILES=traefik,authentik\n' > "$T/t.env"
-tq '\nmedia.example.om\nme@example.com\nCFTOK\nmedia.example.com\n\n' || fail_ "a domain without a zone, then the right one, runs"
+tq '\nmedia.example.om\nme@example.com\nCFTOK\nmedia.example.com\n\n'; (( RC == 0 )) || fail_ "a domain without a zone, then the right one, runs"
 grep -q 'the token sees no Cloudflare zone for media.example.om (looked for: media.example.om, example.om)' "$T/out" && [[ "$(tv STACK_DOMAIN)" == media.example.com ]] \
     || fail_ "a typo in the domain is caught by its zone and asked again, the token kept: $(tv STACK_DOMAIN)"; pass
 [[ -z "$(tv TRAEFIK_DASH_USER)" ]] || fail_ "Traefik's questions leave the dashboard's login to the logins"; pass
-before=$(cat "$T/t.env"); tq '' quick || fail_ "quick with Traefik answered asks nothing"
+before=$(cat "$T/t.env"); tq '' quick; (( RC == 0 )) || fail_ "quick with Traefik answered asks nothing"
 [[ "$(cat "$T/t.env")" == "$before" ]] && grep -q 'HTTPS: keep media.example.com' "$T/out" || fail_ "and keeps it, saying so"; pass
 printf 'COMPOSE_PROFILES=traefik\n' > "$T/t.env"
-( CURL_DOWN=1; tq '\nmedia.example.com\nme@example.com\nCFTOK\n' ) && fail_ "Cloudflare unreachable stops the questions"
+CURL_DOWN=1 tq '\nmedia.example.com\nme@example.com\nCFTOK\n'; (( RC != 0 )) || fail_ "Cloudflare unreachable stops the questions"
 grep -q "Could not reach Cloudflare's API" "$T/out" && [[ -z "$(tv CF_DNS_API_TOKEN)" ]] || fail_ "loud, nothing recorded"; pass
 
 # ---- its source names no sudo, Docker, users or folders ----
@@ -178,7 +179,7 @@ bad=$(grep -nE '(^|[;&|(]|\$\()[[:space:]]*(sudo|DC|docker|useradd|groupadd|chow
 [[ -z "$bad" ]] || fail_ "the questionnaire acts instead of asking: $bad"; pass
 
 # ---- exit codes ----
-( cmd_questionnaire ) </dev/null > "$T/out" 2>&1; rc=$?
+( set -eE; trap on_err ERR; cmd_questionnaire ) </dev/null > "$T/out" 2>&1; rc=$?
 [[ "$rc" == 3 ]] && grep -q 'configure asks questions — run it in a terminal' "$T/out" || fail_ "no terminal: exit 3 ($rc)"; pass
 mkdir -p "$T/fake"
 child() { printf '#!/usr/bin/env bash\n%s\n' "$1" > "$T/fake/mediastack.sh"; chmod +x "$T/fake/mediastack.sh"; }
@@ -201,32 +202,32 @@ sudo() { "$@"; }   # as this user, on the test's folders
 c_inspect_all() { INSPECT_JSON='[]'; }
 mkdir -p "$T/a/old" "$T/a/keep"; echo x > "$T/a/old/file"; echo y > "$T/a/keep/file"
 # shellcheck disable=SC2034  # read by state_set and roots_apply
-apply() { ( ENV_FILE=$T/a/.env STATE_DIR=$T/a/state LOCAL_DIR=$T/a; state_set "$ROOTS_STATE" "$1"; roots_apply ) > "$T/out" 2>&1; }
+apply() { ( set -eE; trap on_err ERR; ENV_FILE=$T/a/.env STATE_DIR=$T/a/state LOCAL_DIR=$T/a; state_set "$ROOTS_STATE" "$1"; roots_apply ) > "$T/out" 2>&1; RC=$?; return "$RC"; }
 printf 'CONFIG_ROOT=%s\nCACHE_ROOT=%s\n' "$T/a/old" "$T/a/keep" > "$T/a/.env"
-apply "CONFIG_ROOT	$T/a/new	move" || fail_ "a move applies"
+apply "CONFIG_ROOT	$T/a/new	move"; (( RC == 0 )) || fail_ "a move applies"
 [[ -f "$T/a/new/file" && ! -e "$T/a/old/file" ]] && grep -qx "CONFIG_ROOT=$T/a/new" "$T/a/.env" && grep -q '^CONFIG_ROOT_SOURCE=.' "$T/a/.env" \
     || fail_ "moved, recorded with its mount: $(cat "$T/a/.env")"; pass
 [[ ! -e "$T/a/state/$ROOTS_STATE" ]] || fail_ "the answers are gone once applied"; pass
-apply "CACHE_ROOT	$T/a/other	" && fail_ "contents the questions never saw stop configure"
+apply "CACHE_ROOT	$T/a/other	"; (( RC != 0 )) || fail_ "contents the questions never saw stop configure"
 grep -qx "CACHE_ROOT=$T/a/keep" "$T/a/.env" && grep -q 'configure did not see when it asked' "$T/out" \
     || fail_ "and leave that folder as it was: $(cat "$T/a/.env")"; pass
-apply "CACHE_ROOT	$T/a/other	leave" || fail_ "leave applies"
+apply "CACHE_ROOT	$T/a/other	leave"; (( RC == 0 )) || fail_ "leave applies"
 grep -qx "CACHE_ROOT=$T/a/other" "$T/a/.env" && grep -qx "CACHE_ROOT_PREVIOUS=$T/a/keep" "$T/a/.env" && [[ -f "$T/a/keep/file" ]] \
     || fail_ "leave: the new folder, the old one noted for doctor: $(cat "$T/a/.env")"; pass
 
 # ---- the stack's own logins (lib/logins.sh) ----
 # quick, standard (the first run above): every login of the enabled services, generated, one username
-clean; run '1\n1\n1\n\nTOKEN\n' --fresh || fail_ "quick, fresh, for the logins"
+clean; run '1\n1\n1\n\nTOKEN\n' --fresh; (( RC == 0 )) || fail_ "quick, fresh, for the logins"
 for k in ARR JELLYFIN_ADMIN QBITTORRENT; do
     [[ "$(envv "${k}_USER")" == admin && "$(envv "${k}_PASSWORD")" =~ ^[A-Za-z0-9]{16}$ ]] || fail_ "$k: admin and a generated password ($(envv "${k}_USER"))"
 done; pass
 [[ "$(printf '%s\n' "$(envv ARR_PASSWORD)" "$(envv JELLYFIN_ADMIN_PASSWORD)" "$(envv QBITTORRENT_PASSWORD)" | sort -u | wc -l)" == 3 ]] \
     || fail_ "generated: a different password for each"; pass
 grep -q 'Logins: admin, passwords generated (recommended)' "$T/out" || fail_ "quick says what it took"; pass
-before=$(cat "$T/w/.env"); run '2\n\n\n\n\n\n\n0\n0\n\nn\n\n\n\n\n\n\n\n\n\n\n' || fail_ "full re-run, everything kept"
+before=$(cat "$T/w/.env"); run '2\n\n\n\n\n\n\n0\n0\n\nn\n\n\n\n\n\n\n\n\n\n\n'; (( RC == 0 )) || fail_ "full re-run, everything kept"
 [[ "$(cat "$T/w/.env")" == "$before" ]] && ! grep -q 'Username for all of them' "$T/out" || fail_ "every login made: no logins question, nothing changed"; pass
 # full, unified: one typed password for all; a short one and a mismatch refused first
-clean; run '2\n\n\n\n\n\n\n1\n1\n\n\nTOKEN\n\n\n\n\n\nab\nops\n2\nshort\nshort\nAbcdefghijkl1\nAbcdefghijkX\nAbcdefghijkl1\nAbcdefghijkl1\n\n\n\n\n\n\n' --fresh || fail_ "full, unified"
+clean; run '2\n\n\n\n\n\n\n1\n1\n\n\nTOKEN\n\n\n\n\n\nab\nops\n2\nshort\nshort\nAbcdefghijkl1\nAbcdefghijkX\nAbcdefghijkl1\nAbcdefghijkl1\n\n\n\n\n\n\n' --fresh; (( RC == 0 )) || fail_ "full, unified"
 grep -q "'ab' won't do: qBittorrent's WebUI needs at least 3 characters" "$T/out" && grep -q "That password won't do: at least 12 characters" "$T/out" \
     && grep -q 'Passwords do not match' "$T/out" || fail_ "a name and a password the logins refuse are said, and asked again"; pass
 [[ "$(envv ARR_USER)/$(envv QBITTORRENT_USER)/$(envv JELLYFIN_ADMIN_USER)" == ops/ops/ops && "$(envv STACK_LOGINS)" == unified ]] \
@@ -262,31 +263,31 @@ done
 
 # ---- Apprise's URLs: asked once, held 0600 for wire, not asked once the hub has them ----
 # shellcheck disable=SC2034  # read by the questions
-aq() { ( ENV_FILE=$T/a.env STATE_DIR=$T/as LOCAL_DIR=$T Q_MODE=${2:-full}; printf '%b' "$1" | apprise_questions ) > "$T/out" 2>&1; }
+aq() { ( set -eE; trap on_err ERR; ENV_FILE=$T/a.env STATE_DIR=$T/as LOCAL_DIR=$T Q_MODE=${2:-full}; printf '%b' "$1" | apprise_questions ) > "$T/out" 2>&1; RC=$?; return "$RC"; }
 pend() { ( STATE_DIR=$T/as; state_get "$NOTIFY_URLS_STATE" ); }
 : > "$T/a.env"; rm -rf "$T/as"
-aq 'ntfy://ntfy.sh/a\n\n' quick || fail_ "quick asks the URLs (no recommended answer)"
+aq 'ntfy://ntfy.sh/a\n\n' quick; (( RC == 0 )) || fail_ "quick asks the URLs (no recommended answer)"
 [[ "$(pend)" == $'ops\tntfy://ntfy.sh/a' && "$(stat -c %a "$T/as/$NOTIFY_URLS_STATE")" == 600 ]] || fail_ "ops recorded, users skipped, the file private: $(pend)"; pass
 ! grep -q 'ntfy.sh/a' "$T/a.env" || fail_ "never in .env"; pass
-aq '\ndiscord://1/x\n' || fail_ "a re-run before wire"
+aq '\ndiscord://1/x\n'; (( RC == 0 )) || fail_ "a re-run before wire"
 [[ "$(pend)" == $'ops\tntfy://ntfy.sh/a\nusers\tdiscord://1/x' ]] || fail_ "Enter keeps the URLs given before: $(pend)"; pass
-aq 'nonsense\nntfy://ntfy.sh/z\n\n' || fail_ "a malformed URL"
+aq 'nonsense\nntfy://ntfy.sh/z\n\n'; (( RC == 0 )) || fail_ "a malformed URL"
 grep -q 'is not a URL' "$T/out" && [[ "$(pend)" == *ntfy.sh/z* ]] || fail_ "a malformed URL is refused and asked again"; pass
 # shellcheck disable=SC2034  # read by the sourced functions
-( STATE_DIR=$T/as LOCAL_DIR=$T; state_set "$NOTIFY_STORED_STATE" yes ); aq '' quick || fail_ "the hub holds endpoints"
+( STATE_DIR=$T/as LOCAL_DIR=$T; state_set "$NOTIFY_STORED_STATE" yes ); aq '' quick; (( RC == 0 )) || fail_ "the hub holds endpoints"
 ! grep -q 'URLs for ops' "$T/out" && grep -q 'kept in the hub' "$T/out" || fail_ "the hub holds them: not asked again"; pass
 
 # ---- Recyclarr's profiles: a companion's hook (always there), presets from labels ----
 # shellcheck disable=SC2034  # read by the sourced functions
-rq() { ( ENV_FILE=$T/r.env Q_MODE=${2:-full}
+rq() { ( set -eE; trap on_err ERR; ENV_FILE=$T/r.env Q_MODE=${2:-full}
          trash_instances() { echo sonarr radarr radarr-4k; }
          svc_label() { [[ "$1/$2" == radarr-4k/mediastack.trashprofile ]] && echo uhd; return 0; }
-         printf '%b' "$1" | recyclarr_questions ) > "$T/out" 2>&1; }
+         printf '%b' "$1" | recyclarr_questions ) > "$T/out" 2>&1; RC=$?; return "$RC"; }
 rv() { ENV_FILE=$T/r.env env_get "$1"; }
-: > "$T/r.env"; rq '' quick || fail_ "quick, profiles"
+: > "$T/r.env"; rq '' quick; (( RC == 0 )) || fail_ "quick, profiles"
 [[ "$(rv TRASH_PROFILE_SONARR)/$(rv TRASH_PROFILE_RADARR)/$(rv TRASH_PROFILE_RADARR_4K)" == 1080p/1080p/uhd ]] \
     || fail_ "quick takes 1080p, a preset its label: $(grep TRASH "$T/r.env" | paste -sd' ')"; pass
-rq '4k\nbogus\n720p\n' || fail_ "full, profiles"
+rq '4k\nbogus\n720p\n'; (( RC == 0 )) || fail_ "full, profiles"
 [[ "$(rv TRASH_PROFILE_SONARR)/$(rv TRASH_PROFILE_RADARR)" == 4k/720p ]] && grep -q 'Type 1080p, 720p, 4k or skip' "$T/out" \
     || fail_ "full asks each (current as default), a bad answer asked again"; pass
 ( ENV_FILE=$T/r.env; trash_instances() { echo sonarr lidarrish; }; svc_label() { :; }; trash_profiles_ready ) > "$T/out" 2>&1 \
@@ -308,7 +309,7 @@ grep -q 'leak_gate_closed' <<<"$(awk '/^prowlarr_indexers_retest\(\)/,/^}/' serv
     || fail_ "the indexer retest does not wait for a Prowlarr the gate holds stopped"; pass
 
 # ---- enable's questions (--for): only what it brings, quick, its login too ----
-clean; run '1\n1\n1\n\nTOKEN\n' --fresh || fail_ "a configured stack, for enable"
+clean; run '1\n1\n1\n\nTOKEN\n' --fresh; (( RC == 0 )) || fail_ "a configured stack, for enable"
 sed -i 's/^COMPOSE_PROFILES=.*/&,traefik/' "$T/w/.env"
 ( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state LOCAL_DIR=$T/w/local PATH=$SHIMS
   jellyfin_questions() { echo "ASKED jellyfin"; }

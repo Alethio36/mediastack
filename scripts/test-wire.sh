@@ -43,6 +43,8 @@ sed '$d' mediastack.sh > "$lib"
 # shellcheck disable=SC1090
 source "$lib"
 set +e +E; trap - ERR   # each check reads its own status
+# shellcheck source=scripts/testlib.sh
+source scripts/testlib.sh   # as_run: the code under test as a run runs it
 
 checks=0
 pass()  { checks=$((checks+1)); }
@@ -259,7 +261,7 @@ cv() { # cv STORED-KEY-STATE(ok|refused|none) -> the writes a dry run sent, then
               "GET /configuration/notification_providers") echo '{"providers":[]}' ;;
               *) echo '{}' ;;
           esac; }
-      out=$(wire_cleanuparr 2>&1)
+      as_run wire_cleanuparr; out=$OUT
       { grep -vE '^GET' "$T/c" 2>/dev/null || true; } | paste -sd' ' -; grep -o 'would: cleanuparr: [A-Za-z ]*' <<<"$out" | paste -sd'|' - )
 }
 r=$(cv ok)

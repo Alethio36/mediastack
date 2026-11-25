@@ -69,38 +69,39 @@ services() {
     printf 'COMPOSE_PROFILES=%s\nPORTAL_TITLE=Mediastack\n' "${3:-$PRESET}" > "$ENV_FILE"   # as .env.example ships it
     # shellcheck disable=SC2034  # read by _configure_services
     CONFIGURE_FRESH=${2:-0}
-    printf '%b' "$1" | _configure_services > "$T/out" 2>&1
+    printf '%b' "$1" | ( set -eE; trap on_err ERR; _configure_services ) > "$T/out" 2>&1
+    RC=$?; return "$RC"
 }
 
 # ---- a fresh .env holds no choice ----
-services '\n3\n\n' 1 || fail_ "fresh: Enter + portal runs"
+services '\n3\n\n' 1; (( RC == 0 )) || fail_ "fresh: Enter + portal runs"
 ! grep -q 'keep current' "$T/out" || fail_ "a fresh .env offers nothing to keep"; pass
 for s in ${PRESET//,/ }; do has "$s" || fail_ "fresh: Enter is standard (missing $s): $(profiles)"; done; pass
 has traefik && has authentik || fail_ "the portal brings traefik: $(profiles)"; pass
 grep -q '+ traefik (required by authentik' "$T/out" || fail_ "and says why"; pass
-services '0\n0\n' 0 || fail_ "re-run: keep current runs"
+services '0\n0\n' 0; (( RC == 0 )) || fail_ "re-run: keep current runs"
 grep -q '0) keep current: 9 enabled' "$T/out" || fail_ "a configured .env offers to keep"; pass
 [[ "$(env_get COMPOSE_PROFILES)" == "$PRESET" ]] || fail_ "keep current changes nothing"; pass
 
 # ---- a typo is asked again; the portal needs a name ----
-services 'x\n1\n1\n' 1 || fail_ "a typo at Services is asked again"
+services 'x\n1\n1\n' 1; (( RC == 0 )) || fail_ "a typo at Services is asked again"
 grep -q 'Pick 1-3' "$T/out" && has sonarr || fail_ "and the next answer counts: $(profiles)"; pass
 printf 'COMPOSE_PROFILES=traefik,authentik\nPORTAL_TITLE=\n' > "$ENV_FILE"
 printf '\n\n' | authentik_questions > "$T/out" 2>&1 || fail_ "an empty portal name line runs"
 [[ "$(env_get PORTAL_TITLE)" == Mediastack ]] && ! grep -q 'The portal needs a name' "$T/out" \
     || fail_ "an empty PORTAL_TITLE= line offers the schema's default: $(env_get PORTAL_TITLE)"; pass
 
-services '1\n' 1 && fail_ "input that ends before Accounts stops configure"
+services '1\n' 1; (( RC != 0 )) || fail_ "input that ends before Accounts stops configure"
 grep -q "no answer to 'Choice': the input ended" "$T/out" || fail_ "and says why"; pass
 
 # ---- everything: one download client, or all; the panel is not part of it ----
-services '2\n1\n1\n\n' 1 || fail_ "everything + one client runs"
+services '2\n1\n1\n\n' 1; (( RC == 0 )) || fail_ "everything + one client runs"
 has qbittorrent && ! has deluge && ! has transmission || fail_ "1 keeps qbittorrent only: $(profiles)"; pass
-services '2\n4\n1\n\n' 1 || fail_ "everything + all clients runs"
+services '2\n4\n1\n\n' 1; (( RC == 0 )) || fail_ "everything + all clients runs"
 has qbittorrent && has deluge && has transmission || fail_ "all three are kept: $(profiles)"; pass
 ! has olivetin && grep -q 'olivetin — web panel: set up by its own command, not here: ./mediastack.sh frontdoor-install' "$T/out" \
     || fail_ "everything leaves out the panel, with the command that sets it up: $(profiles)"; pass
-services '2\n1\n1\n\n' 0 "$PRESET,olivetin" || fail_ "everything on a stack with the panel runs"
+services '2\n1\n1\n\n' 0 "$PRESET,olivetin"; (( RC == 0 )) || fail_ "everything on a stack with the panel runs"
 has olivetin || fail_ "an installed panel stays: $(profiles)"; pass
 printf 'COMPOSE_PROFILES=sonarr\nCONFIG_ROOT=%s\n' "$T/cfg" > "$ENV_FILE"
 ( load_env() { :; }; cmd_enable olivetin ) > "$T/out" 2>&1 && fail_ "enable olivetin refuses"
@@ -115,14 +116,14 @@ rmdir "$T/cfg/olivetin/passwd"; : > "$T/cfg/olivetin/passwd"
 ( frontdoor_require ) > "$T/out" 2>&1 || fail_ "an installed panel starts"; pass
 
 # ---- two front doors: one of them ----
-services '2\n1\n3\n\n' 1 || fail_ "everything + portal runs"
+services '2\n1\n3\n\n' 1; (( RC == 0 )) || fail_ "everything + portal runs"
 has traefik && ! has npm || fail_ "with the portal, traefik is kept: $(profiles)"; pass
 grep -q 'npm left out: the portal' "$T/out" && ! grep -q 'Choose one: npm or traefik' "$T/out" \
     || fail_ "without a question"; pass
-services '2\n1\n1\n\n' 1 || fail_ "everything + none runs (Enter at the front door)"
+services '2\n1\n1\n\n' 1; (( RC == 0 )) || fail_ "everything + none runs (Enter at the front door)"
 grep -q 'Choose one: npm or traefik' "$T/out" || fail_ "everything asks which front door"; pass
 has traefik && ! has npm || fail_ "Enter keeps traefik: $(profiles)"; pass
-services '2\n1\n1\n1\n' 1 || fail_ "everything + none runs (npm picked)"
+services '2\n1\n1\n1\n' 1; (( RC == 0 )) || fail_ "everything + none runs (npm picked)"
 has npm && ! has traefik || fail_ "1 keeps npm: $(profiles)"; pass
 for f in services/traefik/compose.yml services/npm/compose.yml; do
     other=traefik; [[ "$f" == *traefik* ]] && other=npm
@@ -235,9 +236,9 @@ printf 'COMPOSE_PROFILES=traefik\nSTACK_DOMAIN=media.example.com\nACME_EMAIL=me@
 
 # ---- the panel, offered at the end when Traefik serves it; configure installs it ----
 printf 'COMPOSE_PROFILES=traefik,sonarr\n' > "$ENV_FILE"
-printf '\n' | _configure_panel_offer > "$T/out" 2>&1
+printf '\n' | ( set -eE; trap on_err ERR; _configure_panel_offer ) > "$T/out" 2>&1
 [[ "$(state_get "$PANEL_STATE")" == yes ]] || fail_ "Enter installs the panel (default yes)"; pass
-printf 'n\n' | _configure_panel_offer > "$T/out" 2>&1
+printf 'n\n' | ( set -eE; trap on_err ERR; _configure_panel_offer ) > "$T/out" 2>&1
 [[ -z "$(state_get "$PANEL_STATE")" ]] && grep -q 'Later: ./mediastack.sh frontdoor-install' "$T/out" || fail_ "n leaves it, with the command for later"; pass
 printf 'COMPOSE_PROFILES=sonarr\n' > "$ENV_FILE"
 _configure_panel_offer </dev/null > "$T/out" 2>&1; [[ ! -s "$T/out" ]] || fail_ "without Traefik nothing is offered"; pass

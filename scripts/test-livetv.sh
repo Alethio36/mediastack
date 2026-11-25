@@ -81,7 +81,12 @@ curl() {
     echo "$body"
 }
 
-run()    { : > "$CALLS"; : > "$T/curled"; echo 0 > "$T/served"; WIRE_FAILS=0; jf_livetv tok > "$T/out" 2>&1; }
+# jf_livetv as wire runs it (set -eE, the ERR trap): it never stops a run —
+# a failure is wfail and return 0 — so stopping here fails the test
+run()    { : > "$CALLS"; : > "$T/curled"; echo 0 > "$T/served"; rm -f "$T/fails"; WIRE_FAILS=0
+           set +e; ( set -eE; trap on_err ERR; jf_livetv tok; echo "$WIRE_FAILS" > "$T/fails" ) > "$T/out" 2>&1; RC=$?; set -e
+           (( RC == 0 )) && [[ -s "$T/fails" ]] || fail_ "jf_livetv stopped where a run would stop (rc $RC): $(cat "$T/out")"
+           WIRE_FAILS=$(cat "$T/fails"); }
 writes() { grep -c '^POST' "$CALLS" || true; }
 tuner()  { jq -r --arg k "$1" '[.TunerHosts[] | select(.DeviceId == "12345678")][0][$k]' "$CFG"; }
 guide()  { jq -r --arg k "$1" '[.ListingProviders[] | select(.Path | endswith(":9191/output/epg"))][0][$k]' "$CFG"; }
