@@ -80,4 +80,22 @@ broken "a card path that does not follow the address" \
     "sed -i 's|mediastack.card.path: \"/oidc/login\"|mediastack.card.path: \"oidc/login\"|' services/kavita/compose.yml" \
     "mediastack.card.path in services/kavita/compose.yml is \"oidc/login\": it follows the app's address, so it starts with /"
 
+# a service's hooks live in its folder, and a hook found by name needs that name
+broken "a hook in another service's folder" \
+    "sed -i '/^dispatcharr_provision()/,/^}/d' services/dispatcharr/dispatcharr.sh && printf 'dispatcharr_provision() { :; }\\n' >> services/kavita/kavita.sh" \
+    "dispatcharr_provision() is dispatcharr's hook, but lives in services/kavita/kavita.sh"
+broken "a hook in lib/ instead of its folder" \
+    "printf 'kavita_questions() { :; }\\n' >> lib/common.sh" \
+    "kavita_questions() is kavita's hook, but lives in lib/common.sh"
+broken "a hook named for no service (a typo)" \
+    "sed -i 's/^dispatcharr_provision()/dispatchar_provision()/' services/dispatcharr/dispatcharr.sh" \
+    "dispatchar_provision() is a hook found by its service's name, but no service is named dispatchar"
+# an app behind the portal ships its icon, and its icon says where it is from
+broken "an app behind the portal without its icon" \
+    "rm services/dispatcharr/icon.png" \
+    "dispatcharr is behind the portal but ships no icon.png"
+broken "an icon without its licence" \
+    "python3 -I -c 'import sys; p=sys.argv[1]; d=open(p,\"rb\").read(); open(p,\"wb\").write(d.replace(b\"tEXtLicense\", b\"tEXtLicensX\"))' services/kavita/icon.png" \
+    "services/kavita/icon.png carries no License text field"
+
 echo "OK registries: $checks checks"

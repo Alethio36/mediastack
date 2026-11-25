@@ -345,7 +345,7 @@ agreed first:
    **Step 9 done.** Everything else the kit could reach — Kavita's themes,
    Navidrome's sign-in, Jellyfin's logo and server name, error pages, a
    public icon address — is in the watchlist ("More of the household's look").
-10. **Live TV (Dispatcharr)** — evaluation, then the build. *Reframed 24 Nov
+10. **Live TV (Dispatcharr)** — *done 25 Nov 2026* — evaluation, then the build. *Reframed 24 Nov
     2026:* also the first service added under the folder contract ("Organised
     by service" below), and its proof. A shipped service should slot in as
     `services/dispatcharr/` — its fragment, settings rows, questions, wire
@@ -494,9 +494,43 @@ agreed first:
         `up`, unhandled — the ERR trap's "unhandled failure", and the rest of
         `up` skipped: Prowlarr's indexer re-test and the forwarded port's
         sync into the download client. Now said once, the rest runs, `up`
-        exits 1 (`test-gate`, run as a plain command: inside `$( )` it
-        passed without the fix — step 11's blind spot again).
+        exits 1 (`test-gate`, run as a plain command: written first inside
+        `$( )`, it failed without the fix for the wrong reason — the stop it
+        checks never happens there; step 11's blind spot again).
+      *The VPN toggle, both ways (25 Nov 2026, anzac4):* `vpn dispatcharr
+      on`, `up` — once the retry ran (above), the tuner and the guide
+      re-pointed in place to `gluetun:9191`; `off`, `up` — back to
+      `dispatcharr:9191`, no FAIL, doctor clean for it. Across both: one
+      tuner, one guide, the user's own "Allow hardware transcoding" off kept;
+      a channel playing out of the VPN (in it, below). (Out of the VPN the leak gate gives Dispatcharr
+      50 s to start: no wait; into it, below, the wait.)
+      Again into the VPN with the fix (25 Nov 2026): `waiting for
+      dispatcharr's API` for 30 s, then re-pointed in one run — the wait
+      proven live. Channels would not play in it: measured, the same 10
+      Bold stream opened in 16 s inside, 1 s outside; per request DNS
+      0.17 s, connect 0.17 s, TLS 0.84 s against ~0.01 s/0.05 s outside —
+      the exit's distance, not the tunnel (49 Mbit/s) nor gluetun's DNS.
+      Past Dispatcharr's 8 s startup timeout; written into its README,
+      and the reason its VPN stays off by default.
+      **Part 2 done.**
       ErsatzTV's template is unproven live.
+    - *Part 3 — the recipe (25 Nov 2026):* `docs/contributing-a-service.md`,
+      the order a shipped service is added in — evaluate from source and a
+      spike, the folder, its settings, logins, hooks, wiring, the portal,
+      its README, its tests, the live proof, and the list of what it took
+      outside the folder — each step pointing into `docs/adding-a-service.md`
+      for the detail and naming what CI holds; Dispatcharr's folder is the
+      worked example, and walked against it. Held by `check-registries` where
+      checkable, three rules new (none broken in the tree when added): a
+      `<service>_<hook>` outside its service's folder; a hook found by its
+      service's name with no such service and no caller (a typo never runs);
+      an app behind the portal without its icon, or an icon whose PNG text
+      fields do not say its source, copyright, licence, change and trademark
+      (what `services/NOTICE-icons.md` promises). Each shown failing in
+      `scripts/test-registries.sh` (22 cases). Not checkable, so written
+      down: a README in the folder (only Dispatcharr has one so far — the
+      older services' are step 12's).
+      **Step 10 done (25 Nov 2026).**
     - **Finding, filed for step 12:** the README's service table and
       `docs/edge.md`'s list of addresses are written by hand (both lines
       added); the README rewrite decides whether they are made from the
@@ -979,7 +1013,7 @@ Docker's restart the stack — so only Docker's join its update.
     force a live transcode, whatever the files are.
   *Nov 9 2026:* after the MVP; not critical.
 - **Live TV from outside sources — Dispatcharr** *(chosen to try, Oct 2026;
-  evaluated and spiked 24 Nov 2026 — building in step 10)*.
+  evaluated and spiked 24 Nov 2026 — built in step 10, done 25 Nov 2026)*.
   An IPTV manager in the arr style: it takes M3U playlists and Xtream Codes
   accounts, matches the programme guide (EPG), and hands the result to
   Jellyfin as one tuner (M3U + XMLTV, or an HDHomeRun-style device); it

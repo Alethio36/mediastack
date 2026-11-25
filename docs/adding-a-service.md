@@ -125,6 +125,10 @@ applied after them). See docs/vpn-membership.md for a worked example.
 
 ## For contributors: shipped fragments
 
+Adding one? Follow [contributing-a-service.md](contributing-a-service.md) —
+the order to do it in, from evaluating the app to proving it live; this
+section and those below are the reference it points into.
+
 One service per folder: service `x` lives in `services/x/compose.yml` — no bucket
 files, no judgment calls. Every fragment carries its own `x-logging` and
 `x-armour` anchors (YAML anchors do not cross `include:` boundaries).
@@ -172,7 +176,16 @@ order it runs or prints them; a service's part lives in its folder. So far:
 `wire` (`WIRE_ROLES` in `lib/wire.sh` -> `wire_<role>`), `rotate-secrets`
 (`ROTATE_ORDER` in `lib/rotate.sh` -> `<stem>_secrets` and
 `<stem>_secret_rotate`) and doctor's app checks (`DOCTOR_APPS` in
-`lib/doctor.sh` -> `<name>_doctor`).
+`lib/doctor.sh` -> `<name>_doctor`). Every `<name>_<hook>` lives in its
+service's folder (the arr family's in `services/_arr/`), and a hook found by
+its service's name needs a service of that name — `check-registries` fails
+one outside its folder, and one named for no service (a typo never runs).
+
+**An app behind the portal brings its icon**: `services/x/icon.png`, square,
+its PNG text fields carrying its Source, Copyright, License, Modified and
+Trademark note, and its source and licence in `services/NOTICE-icons.md`.
+`check-registries` fails an app with `mediastack.auth` and no icon, and an
+icon without those fields; without one its card shows a letter.
 
 **Every secret follows one rule, and `.env` carries any value.** A
 `secret` row's value — typed, pasted, answered or generated — is one line

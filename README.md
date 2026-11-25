@@ -1186,6 +1186,7 @@ what would reopen it, in [docs/watchlist.md](docs/watchlist.md).
 * [docs/vpn-membership.md](docs/vpn-membership.md) — moving services in/out of the VPN
 * [docs/privacy.md](docs/privacy.md) — what leaves your box, to whom, from which address
 * [docs/adding-a-service.md](docs/adding-a-service.md) — extend the stack
+* [docs/contributing-a-service.md](docs/contributing-a-service.md) — adding a service to mediastack itself, in order: evaluate, folder, hooks, tests, prove it live
 * [docs/migration-existing.md](docs/migration-existing.md) — adopt an existing deployment
 * [docs/disaster-recovery.md](docs/disaster-recovery.md) — full rebuild from a restore point
 * [docs/troubleshooting.md](docs/troubleshooting.md) — problems that look like the stack but aren't (e.g. Android phones blocked from the LAN)

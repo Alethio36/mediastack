@@ -56,7 +56,13 @@ Its first start takes about half a minute (its database is made then).
 - **Workers:** 2 web and 2 background workers — about 950 MiB of memory idle.
   More: `UWSGI_WORKERS` / `CELERY_MAX_WORKERS` in `custom/override.yml`.
 - **VPN:** outside it by default; `./mediastack.sh vpn dispatcharr on` moves
-  it in (its sources are then fetched through the tunnel).
+  it in (its sources are then fetched through the tunnel). Every request to
+  a source then crosses the VPN server: on the test box a channel took 16 s
+  to open inside (1 s outside) — each of its requests ~2 s against a far
+  exit — past Dispatcharr's 8 s startup timeout, so channels would not
+  start. In the VPN, pick a server near your sources, or raise that timeout
+  in Dispatcharr's proxy settings. gluetun's DNS also refuses hosts on its
+  malicious list (`BLOCK_MALICIOUS`), some IPTV sources among them.
 
 ## What it stores where
 

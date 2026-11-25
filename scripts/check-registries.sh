@@ -2,8 +2,11 @@
 # check-registries.sh — a verb that covers several services keeps an explicit,
 # ordered list of them; each listed name's part lives with its service. This
 # fails a listed name without exactly one matching function under services/
-# (or with one defined outside it), and a <service>_* function a lib calls by
-# name that nothing defines.
+# (or with one defined outside it), a <service>_* function a lib calls by
+# name that nothing defines, a service's hook outside its folder or found by
+# a name no service has, and an app behind the portal without its icon (or
+# an icon that does not say where it is from). The contributor's recipe
+# (docs/contributing-a-service.md) names each rule where it applies.
 #
 #   scripts/check-registries.sh     run (exit 1 on any gap, every gap listed)
 set -euo pipefail
@@ -102,6 +105,37 @@ done
 for f in services/*/compose.yml; do
     p=$(sed -n 's/^[[:space:]]*mediastack\.card\.path: "\(.*\)".*/\1/p' "$f")
     [[ -z "$p" || "$p" == /* ]] || { echo "FAIL mediastack.card.path in $f is \"$p\": it follows the app's address, so it starts with /"; rc=1; }
+done
+# a hook belongs to its service: <svc>_<hook> lives in services/<svc>/ (the
+# arr family's in services/_arr/) — a service's part lives in its folder. A
+# hook found only by its service's name (<svc>_provision, _questions,
+# _summary, _gate_sync) with no service of that name is never run, unless
+# something calls it by its own name (gluetun_vpn_questions, vpn_summary)
+hooks='provision|questions|summary|logins|gate_sync|gate_login|login_middleware|people_follow|listen_port|credentials|api_key|doctor|secrets|secret_rotate'
+while IFS=: read -r file fn; do
+    fn=${fn%"()"}
+    stem=$(sed -E "s/_($hooks)\$//" <<<"$fn"); dir=${stem//_/-}; [[ "$stem" == arr ]] && dir=_arr
+    if [[ -d "services/$dir" ]]; then
+        [[ "$file" == "services/$dir/"* ]] || { echo "FAIL ${fn}() is $dir's hook, but lives in $file — a service's part lives in its folder (services/$dir/)"; rc=1; }
+    elif [[ "$fn" =~ _(provision|questions|summary|gate_sync)$ ]]; then
+        n=$({ grep -rhwE "$fn" lib mediastack.sh services --include='*.sh' || true; } | { grep -vcE "^$fn\(\)" || true; })   # none is a count, not an error
+        (( n > 0 )) || { echo "FAIL ${fn}() is a hook found by its service's name, but no service is named $dir and nothing calls it — it never runs (a typo in the name?)"; rc=1; }
+    fi
+done < <(grep -oHE "^[a-z0-9_]+_($hooks)\(\)" lib/*.sh mediastack.sh services/*/*.sh)
+# a portal card shows its app's icon: every app the portal fronts
+# (mediastack.auth) ships services/<svc>/icon.png — the portal itself aside —
+# and every shipped icon says where it is from, as services/NOTICE-icons.md
+# promises: its PNG text fields carry its source, copyright, licence, change
+# and trademark note
+for f in services/*/compose.yml; do
+    s=$(basename "$(dirname "$f")")
+    [[ "$s" != authentik ]] && grep -qE '^\s*mediastack\.auth: "' "$f" || continue
+    [[ -f "services/$s/icon.png" ]] || { echo "FAIL $s is behind the portal but ships no icon.png — its card would show a letter (services/NOTICE-icons.md)"; rc=1; }
+done
+for i in services/*/icon.png; do
+    for k in Source Copyright License Modified Trademark; do
+        LC_ALL=C grep -qaE "(tEXt|iTXt|zTXt)$k" "$i" || { echo "FAIL $i carries no $k text field — every icon says where it is from (services/NOTICE-icons.md)"; rc=1; }
+    done
 done
 # doctor: DOCTOR_APPS -> <app>_doctor
 for a in $(list lib/doctor.sh 's/^DOCTOR_APPS=(\(.*\))$/\1/p'); do want_one DOCTOR_APPS "${a}_doctor"; done
