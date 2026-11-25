@@ -69,7 +69,8 @@ cmd_credentials() { # [SERVICE | --all] — bare: the logins and the keys for yo
             info "Not shown: the secrets only the stack uses, and your own (the VPN's, Cloudflare's, email's). Everything one service holds: ./mediastack.sh credentials <service> — every one: credentials --all"
             ;;
         --all)
-            for s in $(svc_enabled_managed); do credentials_full "$s"; done ;;
+            local -A CRED_SHARED=()   # read by credentials_full (bash's dynamic scope): a shared login's first service
+            for s in $(svc_enabled_managed); do credentials_full "$s" all; done ;;
         *)
             svc_exists "$arg" || die "no service named '$arg' — the enabled ones: $(svc_enabled_managed | paste -sd' ' -)"
             credentials_full "$arg" ;;
@@ -81,10 +82,10 @@ credentials_extra() { # SERVICE -> its own lines (its <name>_credentials, found 
     if declare -F "$f" >/dev/null; then "$f"; fi
 }
 
-credentials_block() { # HEADING LOGINS EXTRA — one block under the service's name: each login (what it is, user, password), then its own rows and notes
+credentials_block() { # HEADING LOGINS EXTRA — one block under the service's name (none: "" — a section's own heading says it): each login (what it is, user, password), then its own rows and notes
     local logins=$2 extra=$3 l
     [[ -n "$logins$extra" ]] || return 0
-    echo "$1"
+    [[ -z "$1" ]] || echo "$1"
     while IFS= read -r l; do [[ -n "$l" ]] && credentials_login "$l"; done <<<"$logins"
     credentials_lines "$extra"
 }
@@ -113,16 +114,23 @@ credentials_key() { # SERVICE -> its key for your apps ("" when it has none): it
     else return 1; fi
 }
 
-credentials_full() { # SERVICE — everything it holds: its logins, its lines, its key for your apps, then every secret its settings hold, with what each is for
-    local s=$1 l k v key typ writer meaning shown=$'\n' f
-    hr "$s$(svc_enabled "$s" || echo ' (not enabled)')"
+credentials_full() { # SERVICE [all] — everything it holds: its logins, its lines, its key for your apps, then every secret its settings hold, with what each is for
+    # all (credentials --all): a login several services share is shown under the first, pointed at by the rest (CRED_SHARED); a service with nothing is left out
+    local s=$1 l k v key typ writer meaning shown=$'\n' f stem out
+    stem=$(svc_label "$s" mediastack.logins)
     l=$(logins_of "$s")
-    credentials_block "$s" "$l" "$(credentials_extra "$s")"
+    out=$(
+        if [[ "${2:-}" == all && -n "$stem" && -n "${CRED_SHARED[$stem]:-}" ]]; then
+            printf '  %-10s %s\n' login "$(cut -f1 <<<"$l" | sed -n 1p) — shown under ${CRED_SHARED[$stem]}"
+            credentials_lines "$(credentials_extra "$s")"
+        else
+            credentials_block "" "$l" "$(credentials_extra "$s")"
+        fi
+    )
     while IFS= read -r f; do [[ -n "$f" ]] && shown+="$(env_get "$(cut -f3 <<<"$f")")"$'\n'; done <<<"$l"
     shown+="$(credentials_extra "$s" | awk -F'\t' 'NF > 1 { print $2 }')"$'\n'
     if k=$(credentials_key "$s"); then
-        printf '  %-10s %s\n' "API key" "${k:-(not created yet — start it once)}"
-        printf '  · for your apps, with its address: %s\n' "$(svc_url "$s")"
+        out+=$'\n'"$(printf '  %-10s %s\n  · for your apps, with its address: %s' "API key" "${k:-(not created yet — start it once)}" "$(svc_url "$s")")"
         shown+="$k"$'\n'
     fi
     # its settings' secrets (services/<name>/env.tsv, its VPN providers' too): those set, each once
@@ -131,10 +139,19 @@ credentials_full() { # SERVICE — everything it holds: its logins, its lines, i
         v=$(env_get "$key"); [[ -n "$v" ]] || continue
         [[ "$shown" != *$'\n'"$v"$'\n'* ]] || continue
         shown+="$v"$'\n'
-        printf '  %s\n    %s\n    · %s\n' "$key" "$v" "$meaning"
-        if [[ "$writer" == script ]]; then echo "    · the stack's own — rotate-secrets changes it (changed by hand, what holds it breaks)"
-        else echo "    · yours, as you gave it"; fi
+        out+=$'\n'"$(printf '  %s\n    %s\n    · %s' "$key" "$v" "$meaning")"
+        if [[ "$writer" == script ]]; then out+=$'\n'"    · the stack's own — rotate-secrets changes it (changed by hand, what holds it breaks)"
+        else out+=$'\n'"    · yours, as you gave it"; fi
     done < <(cat "$SCRIPT_DIR/services/$s/env.tsv" "$SCRIPT_DIR/services/$s"/providers/*/env.tsv 2>/dev/null | grep -v '^#' || true)   # soft read: a service with no settings of its own
+    out=$(sed '/^$/d' <<<"$out")
+    if [[ -z "$out" ]]; then
+        [[ "${2:-}" == all ]] && return 0
+        out="  · the stack keeps no login, key or secret for it"
+    fi
+    hr "$s$(svc_enabled "$s" || echo ' (not enabled)')"
+    printf '%s\n' "$out"
+    if [[ "${2:-}" == all && -n "$stem" && -z "${CRED_SHARED[$stem]:-}" && -n "$l" ]]; then CRED_SHARED[$stem]=$s; fi
+    return 0
 }
 
 credentials_api_keys() { # the keys an app of yours (nzb360, LunaSea, Home Assistant, a dashboard…) asks for, with the address to give it

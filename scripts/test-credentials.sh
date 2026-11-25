@@ -114,8 +114,17 @@ out=$(cmd_credentials jellyfin 2>&1)
 [[ "$(grep -c 'key-jf' <<<"$out")" == 1 ]] && grep -qE '^  API key +key-jf$' <<<"$out" || fail_ "jellyfin: its key once, as its key for your apps: $out"; pass
 strict cmd_credentials nosuch
 [[ $SR != 0 ]] && grep -q "no service named 'nosuch'" "$work/strict" || fail_ "an unknown service: an error naming it: $(cat "$work/strict")"; pass
-out=$(cmd_credentials --all 2>&1)
+profiles gluetun,qbittorrent,sonarr,radarr,prowlarr,jellyfin,kavita,dispatcharr,flaresolverr
+env_set ARR_USER admin
+strict cmd_credentials --all; out=$(cat "$work/strict")
+[[ $SR == 0 ]] || fail_ "--all, under set -e: rc $SR: $out"
 for s in gluetun jellyfin kavita dispatcharr; do grep -qE "── $s ─" <<<"$out" || fail_ "--all: $s's section: $out"; done; pass
+! grep -A1 -E '^── [a-z0-9-]+ ─' <<<"$out" | grep -xE '[a-z0-9][a-z0-9-]*' >/dev/null || fail_ "--all: a section names its service once (its heading), not again under it: $out"; pass
+! grep -q '── flaresolverr' <<<"$out" || fail_ "--all: a service holding nothing is left out: $out"; pass
+[[ "$(grep -c '^  user ' <<<"$(awk '/── (prowlarr|radarr|sonarr) ─/,0' <<<"$out")")" -ge 1 && "$(grep -c 'the arrs (one login for every one of them) — shown under prowlarr' <<<"$out")" == 2 ]] \
+    || fail_ "--all: the arrs' login in full once (prowlarr's), the others point at it: $out"; pass
+out=$(cmd_credentials flaresolverr 2>&1)
+grep -q 'the stack keeps no login, key or secret for it' <<<"$out" || fail_ "a service asked for by name that holds nothing: said so: $out"; pass
 
 # ---- the core names no app for them, companion keys included (docs/design-install.md: each piece lands with this test) ----
 cd "$repo"
