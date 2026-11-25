@@ -76,7 +76,10 @@ grep -q '^EXPLAIN One password across the stack' "$REC" || fail_ "all: explained
 # ---- credentials: one block per service — its logins once, then its own lines ----
 env_set ARR_PASSWORD arrpw; env_set KAVITA_ADMIN_USER admin; env_set KAVITA_ADMIN_PASSWORD kpw
 signin_is() { [[ "$1" == none ]]; }
-profiles gluetun,qbittorrent,sonarr,prowlarr,jellyfin,kavita,dispatcharr,seerr
+# watchstate last: the last enabled service shares no login (live, 25 Nov 2026: the shared login's
+# heading died there — a loop ending in a false test)
+profiles gluetun,qbittorrent,sonarr,prowlarr,jellyfin,kavita,dispatcharr,seerr,watchstate
+[[ "$(svc_enabled_managed | tail -n 1)" == watchstate ]] || fail_ "the profile's last service is one with no shared login"
 strict cmd_credentials; out=$(cat "$work/strict")
 [[ $SR == 0 ]] || fail_ "credentials, under set -e: rc $SR: $out"
 [[ "$(grep -c 'the arrs (one login for every one of them)$' <<<"$out")" == 1 ]] && grep -qx 'arr (prowlarr, sonarr)' <<<"$out" \

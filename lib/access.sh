@@ -61,7 +61,7 @@ cmd_credentials() { # [SERVICE | --all] — bare: the logins and the keys for yo
                 if [[ -z "${seen[${stem:-$s}]:-}" ]]; then
                     seen[${stem:-$s}]=1; l=$(logins_of "$s")
                     # a login several services share: its name, and theirs (the arrs)
-                    [[ -z "$stem" ]] || head="$stem ($(svc_enabled_managed | while read -r m; do [[ "$(svc_label "$m" mediastack.logins)" == "$stem" ]] && echo "$m"; done | paste -sd' ' | sed 's/ /, /g'))"
+                    [[ -z "$stem" ]] || head="$stem ($(svc_enabled_managed | while read -r m; do if [[ "$(svc_label "$m" mediastack.logins)" == "$stem" ]]; then echo "$m"; fi; done | paste -sd' ' | sed 's/ /, /g'))"
                 fi
                 credentials_block "$head" "$l" "$(credentials_extra "$s")"
             done
@@ -86,7 +86,7 @@ credentials_block() { # HEADING LOGINS EXTRA — one block under the service's n
     local logins=$2 extra=$3 l
     [[ -n "$logins$extra" ]] || return 0
     [[ -z "$1" ]] || echo "$1"
-    while IFS= read -r l; do [[ -n "$l" ]] && credentials_login "$l"; done <<<"$logins"
+    while IFS= read -r l; do if [[ -n "$l" ]]; then credentials_login "$l"; fi; done <<<"$logins"
     credentials_lines "$extra"
 }
 
@@ -127,7 +127,7 @@ credentials_full() { # SERVICE [all] — everything it holds: its logins, its li
             credentials_block "" "$l" "$(credentials_extra "$s")"
         fi
     )
-    while IFS= read -r f; do [[ -n "$f" ]] && shown+="$(env_get "$(cut -f3 <<<"$f")")"$'\n'; done <<<"$l"
+    while IFS= read -r f; do if [[ -n "$f" ]]; then shown+="$(env_get "$(cut -f3 <<<"$f")")"$'\n'; fi; done <<<"$l"
     shown+="$(credentials_extra "$s" | awk -F'\t' 'NF > 1 { print $2 }')"$'\n'
     if k=$(credentials_key "$s"); then
         out+=$'\n'"$(printf '  %-10s %s\n  · for your apps, with its address: %s' "API key" "${k:-(not created yet — start it once)}" "$(svc_url "$s")")"
@@ -148,7 +148,7 @@ credentials_full() { # SERVICE [all] — everything it holds: its logins, its li
     [[ -z "$yours" ]] || out+=$'\n'"  yours, as you gave them:$yours"
     out=$(sed '/^$/d' <<<"$out")
     if [[ -z "$out" ]]; then
-        [[ "${2:-}" == all ]] && return 0
+        if [[ "${2:-}" == all ]]; then return 0; fi
         out="  · the stack keeps no login, key or secret for it"
     fi
     hr "$s$(svc_enabled "$s" || echo ' (not enabled)')"
