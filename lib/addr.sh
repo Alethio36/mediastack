@@ -59,11 +59,11 @@ addr_repoint() { # addr_repoint <what> <stored> <want> -- <command...> — re-po
 # (svc_addr), so after the move these roles re-run and re-point their entries
 # (wire_repoint_pending, from `up`). "arr" stands for every arr instance.
 # recyclarr's arr addresses need no role: trash-sync regenerates them each run.
+# A role's provider needs no line: the templates it ships name its callers
+# (wire_callers reads them) — only addresses written outside roles are here.
 # CI (scripts/test-repoint.sh) fails if wire points at a service not listed.
 declare -A WIRE_CALLERS=(
-    [qbittorrent]="arr prowlarr cleanuparr lazylibrarian"
-    [deluge]="arr prowlarr cleanuparr"
-    [transmission]="arr prowlarr cleanuparr"
+    [qbittorrent]="lazylibrarian"
     [apprise]="apprise authentik cleanuparr seerr"
     [arr]="prowlarr cleanuparr seerr bazarr"
     [prowlarr]="prowlarr"
@@ -72,8 +72,15 @@ declare -A WIRE_CALLERS=(
     [jellyfin]="seerr"
 )
 wire_callers() { # wire_callers <svc> -> the roles that write an address of <svc>, one per line
-    local key="$1"; [[ -n "$(svc_label "$1" mediastack.arrtype)" ]] && key=arr
-    tr ' ' '\n' <<<"${WIRE_CALLERS[$key]:-}" | awk NF
+    # the table, and every consumer of a role template <svc> ships (services/<svc>/provides/<role>.<consumer>.json):
+    # a provider says who reaches it by the files it ships, so a new one needs no line here
+    local key="$1" f c; [[ -n "$(svc_label "$1" mediastack.arrtype)" ]] && key=arr
+    { tr ' ' '\n' <<<"${WIRE_CALLERS[$key]:-}"
+      for f in "$SCRIPT_DIR/services/$1"/provides/*.json; do
+          [[ -e "$f" ]] || continue
+          c=$(basename "$f" .json); echo "${c#*.}"
+      done
+    } | awk 'NF && !seen[$0]++'
 }
 repoint_mark() { # repoint_mark <svc> — its address is about to move: re-point its callers after `up`
     local cur; cur=$(state_get WIRE_REPOINT)

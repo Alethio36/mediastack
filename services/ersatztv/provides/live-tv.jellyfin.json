@@ -1,0 +1,17 @@
+{
+  "priority": 2,
+  "name": "ErsatzTV",
+  "tuner": {
+    "Type": "hdhomerun",
+    "Url": "http://{self.addr}",
+    "FriendlyName": "ErsatzTV",
+    "ImportFavoritesOnly": false,
+    "AllowHWTranscoding": true,
+    "AllowStreamSharing": true
+  },
+  "guide": {
+    "Type": "xmltv",
+    "Path": "http://{self.addr}/iptv/xmltv.xml",
+    "EnableAllTuners": true
+  }
+}

@@ -36,10 +36,18 @@ Its first start takes about half a minute (its database is made then).
 - **Without the portal:** its own login page asks for the stack's admin, and
   its header sign-in is off (`wire` turns it off; Traefik removes the header).
   `disable authentik` turns it off before the port reopens.
-- **Jellyfin:** not wired to it yet — its tuner and guide are the next part
-  of this step (docs/roadmap.md, step 10). Meanwhile, add them by hand in
-  Jellyfin's Live TV settings: tuner `http://dispatcharr:9191/hdhr`
-  (HDHomeRun), guide `http://dispatcharr:9191/output/epg` (XMLTV).
+- **Jellyfin:** `wire jellyfin` adds Dispatcharr as Jellyfin's Live TV
+  tuner (HDHomeRun, `http://dispatcharr:9191/hdhr`) and guide (XMLTV,
+  `http://dispatcharr:9191/output/epg`), and reads both back. A VPN toggle
+  re-points both in place; their other settings — name, tuner count, channel
+  mappings — are yours. Channels appear once Dispatcharr has some: add a
+  source (M3U and EPG) in its UI, put channels in, then refresh the guide in
+  Jellyfin (Dashboard → Live TV). Wired from `provides/live-tv.jellyfin.json`
+  — the live-tv role, which ErsatzTV provides too; with both on, Dispatcharr
+  is the one wired, and ErsatzTV's channels reach Jellyfin through it: add
+  `http://ersatztv:8409/iptv/channels.m3u` as a source in Dispatcharr (guide
+  `http://ersatztv:8409/iptv/xmltv.xml`). A tuner you added by hand for it is taken over (found by
+  its DeviceID), not doubled.
 - **Workers:** 2 web and 2 background workers — about 950 MiB of memory idle.
   More: `UWSGI_WORKERS` / `CELERY_MAX_WORKERS` in `custom/override.yml`.
 - **VPN:** outside it by default; `./mediastack.sh vpn dispatcharr on` moves

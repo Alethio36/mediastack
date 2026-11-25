@@ -437,6 +437,50 @@ agreed first:
       (`strict`), and fails without the fix. The same blind spot as step
       11's "configure tests run without the ERR trap", wider: any test that
       calls the code through `$( )`.
+    - *Part 1 proven live (25 Nov 2026, anzac4):* `enable dispatcharr`,
+      wire, doctor and verify clean; in a browser, `iptv.` opened signed in
+      as the stack's admin (Reverse Proxy Auth on, header
+      `X-Mediastack-User`); signed out of the portal, it sent the browser to
+      the portal's login.
+    - *Part 2 — Jellyfin's tuner and guide (25 Nov 2026):* a role,
+      `live-tv`, consumer Jellyfin: Dispatcharr ships
+      `provides/live-tv.jellyfin.json` (an HDHomeRun tuner, an XMLTV guide,
+      at `{self.addr}`) — and so does ErsatzTV, which makes it a role by the
+      rule ("a role only where providers are interchangeable": two exist).
+      Jellyfin's side is written once against the role
+      (`services/jellyfin/livetv.sh`, one line in `wire_jellyfin`): its tuner
+      found by the provider's DeviceID, its guide by port and path, added or
+      re-pointed in place (the user's settings on them kept), read back;
+      Jellyfin's other tuners and guides never touched
+      (`scripts/test-livetv.sh`, each rule shown to fail when broken).
+      **Outside the two folders:**
+      - **Finding, made generic here:** `ROLE_CONSUMERS` was one list for
+        every role (`arr prowlarr cleanuparr`), so a second role could not
+        have other consumers; now per role, and a role's setting
+        (`ROLE_SETTING`) optional — without one, the first in priority order
+        (`lib/roles.sh`; `lib/questionnaire.sh`'s one caller;
+        `test-roles` reads them per role and holds every consumer to a wire
+        role).
+      - **Finding, made generic here:** `WIRE_CALLERS` (`lib/addr.sh`) was
+        written by hand, and `test-repoint`'s check that it is complete
+        greps `svc_addr <name>` literals — which code written against a
+        role never has: a new provider would have been missed by the check
+        and not re-pointed after a VPN toggle. `wire_callers` now adds the
+        consumers of every template the service ships; the table lost the
+        download clients' lines (only LazyLibrarian's call to qBittorrent,
+        outside the role, stays).
+      - *Not touched:* the questionnaire's questions, configure, the
+        installer, doctor, the edge, `WIRE_ROLES` (Jellyfin is already a
+        role; it runs after Dispatcharr).
+      - *Decided:* a tuner the user added for the same device by hand is
+        taken over (found by DeviceID) rather than doubled — two tuners for
+        one device double every channel. With both providers on, only
+        Dispatcharr is wired: ErsatzTV becomes one of its sources (by hand,
+        in Dispatcharr's UI — its README says how), one tuner and one guide
+        in Jellyfin, as the entry under "Decisions pending" planned.
+      Live proof pending (anzac4: a free playlist in Dispatcharr, `wire
+      jellyfin`, channels in Jellyfin's Live TV, then a VPN toggle).
+      ErsatzTV's template is unproven live.
     - **Finding, filed for step 12:** the README's service table and
       `docs/edge.md`'s list of addresses are written by hand (both lines
       added); the README rewrite decides whether they are made from the

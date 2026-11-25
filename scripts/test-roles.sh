@@ -3,7 +3,8 @@
 # test-roles.sh — wiring by role (lib/roles.sh). Pins:
 #   * every template parses, is named <role>.<consumer>.json for a known role
 #     and consumer, and uses only the placeholder vocabulary
-#   * a provider of a role ships a template for every consumer of it
+#   * a provider of a role ships a template for every consumer of it; every
+#     role has consumers, and each consumer is a wire role (it re-points)
 #   * placeholders resolve once: .env values are never read as placeholders
 #     (braces, backslashes and & in a password survive), {self.port} is a number
 #   * providers are the enabled ones, in their priority order; missing
@@ -38,7 +39,7 @@ for f in services/*/provides/*.json; do
     [[ -e "$f" ]] || continue
     b=$(basename "$f" .json); role=${b%.*}; cons=${b#*.}
     [[ " ${ROLES[*]} " == *" $role "* ]] || fail_ "$f: unknown role '$role' (roles: ${ROLES[*]})"
-    [[ " ${ROLE_CONSUMERS[*]} " == *" $cons "* ]] || fail_ "$f: unknown consumer '$cons' (consumers: ${ROLE_CONSUMERS[*]})"
+    [[ " $(role_consumers "$role") " == *" $cons "* ]] || fail_ "$f: $cons is no consumer of $role (its consumers: $(role_consumers "$role"))"
     p=${f#services/}; p=${p%%/*}
     (role_entry "$p" "$role" "$cons" >/dev/null) 2>/dev/null || fail_ "$f: does not resolve (bad JSON or an unknown placeholder)"
 done; pass
@@ -46,11 +47,24 @@ for d in services/*/provides; do
     [[ -d "$d" ]] || continue
     for role in "${ROLES[@]}"; do
         ls "$d/$role".*.json >/dev/null 2>&1 || continue
-        for cons in "${ROLE_CONSUMERS[@]}"; do
+        for cons in $(role_consumers "$role"); do
             [[ -e "$d/$role.$cons.json" ]] || fail_ "$d provides $role but ships no template for $cons"
         done
     done
 done; pass
+for role in "${ROLES[@]}"; do
+    [[ -n "$(role_consumers "$role")" ]] || fail_ "role $role has no consumers in ROLE_CONSUMERS"
+    for cons in $(role_consumers "$role"); do
+        [[ " ${WIRE_ROLES[*]} " == *" $cons "* ]] || fail_ "$role's consumer $cons is no wire role (WIRE_ROLES)"
+    done
+done; pass
+# a provider names its callers by the templates it ships: a VPN toggle on it re-points them
+[[ " $(wire_callers ersatztv | paste -sd' ') " == *" jellyfin "* ]] || fail_ "wire_callers: ersatztv ships a jellyfin template, so jellyfin calls it (got: $(wire_callers ersatztv | paste -sd' '))"; pass
+for p in qbittorrent deluge transmission; do
+    [[ "$(wire_callers "$p" | sort | paste -sd' ')" == *"arr cleanuparr"*"prowlarr"* ]] || fail_ "wire_callers: $p's templates name arr, prowlarr and cleanuparr (got: $(wire_callers "$p" | paste -sd' '))"
+done; pass
+eq_q=$(wire_callers qbittorrent | sort | paste -sd' ')
+[[ "$eq_q" == "arr cleanuparr lazylibrarian prowlarr" ]] || fail_ "wire_callers qbittorrent: the table's lazylibrarian and its templates' consumers, once each (got: $eq_q)"; pass
 
 # ---- resolution ----
 e=$(role_entry qbittorrent download-client arr)

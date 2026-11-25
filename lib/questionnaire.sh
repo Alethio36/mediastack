@@ -517,7 +517,7 @@ accounts_record() { # accounts_record none|wizarr|authentik CURRENT-PROFILES SVC
     ok "Accounts: $c${ACCOUNTS_NOTE:-}"
 }
 
-download_clients_enabled() { role_providers download-client "${ROLE_CONSUMERS[0]}"; }   # in priority order, one per line
+download_clients_enabled() { role_providers download-client "$(role_consumer_first download-client)"; }   # in priority order, one per line
 
 _configure_download_client() { # several download clients enabled: the one the arrs, Prowlarr and Cleanuparr use
     local enabled cur n i c def=1

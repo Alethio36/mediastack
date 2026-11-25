@@ -12,11 +12,17 @@
 #                                         (VPN-aware: svc_host / svc_cport / svc_addr);
 #                                         a value that is exactly "{self.port}" becomes a number
 #   {env.NAME}                            a setting from .env
-ROLES=(download-client)
-ROLE_CONSUMERS=(arr prowlarr cleanuparr)
+ROLES=(download-client live-tv)
+# each role's consumers: the apps that hold an entry for its provider — each a
+# wire role, which re-points its entries when a VPN toggle moves the provider
+declare -A ROLE_CONSUMERS=([download-client]="arr prowlarr cleanuparr" [live-tv]="jellyfin")
 # the .env setting naming the provider the stack uses when several are enabled
-# (empty: the first in priority order); the others' entries are switched off
+# (empty: the first in priority order); the others' entries are switched off.
+# A role without one always takes the first in priority order.
 declare -A ROLE_SETTING=([download-client]=DOWNLOAD_CLIENT)
+
+role_consumers() { echo "${ROLE_CONSUMERS[$1]:-}"; }                       # role_consumers ROLE -> its consumers
+role_consumer_first() { local c; c=$(role_consumers "$1"); echo "${c%% *}"; }   # the one whose templates say which providers exist
 
 role_file() { echo "services/$1/provides/$2.$3.json"; }   # role_file PROVIDER ROLE CONSUMER
 
@@ -39,9 +45,9 @@ role_all_providers() { # role_all_providers ROLE CONSUMER -> every provider ship
 }
 
 role_pick() { # role_pick ROLE -> the one provider the stack uses ("" when none is enabled); dies on a setting it cannot honour
-    local var="${ROLE_SETTING[$1]}" want enabled
-    want=$(env_get "$var")
-    enabled=$(role_providers "$1" "${ROLE_CONSUMERS[0]}")
+    local var="${ROLE_SETTING[$1]:-}" want="" enabled
+    if [[ -n "$var" ]]; then want=$(env_get "$var"); fi
+    enabled=$(role_providers "$1" "$(role_consumer_first "$1")")
     if [[ -n "$want" ]]; then
         grep -qx "$want" <<<"$enabled" \
             || die "$var=$want, but $want is not an enabled $1 (enabled: ${enabled//$'\n'/ }) — enable it, or change it: ./mediastack.sh configure"
@@ -54,9 +60,10 @@ role_pick() { # role_pick ROLE -> the one provider the stack uses ("" when none 
 role_pick_note() { # role_pick_note ROLE -> one line naming the choice, when there is one to make
     local chosen others
     chosen=$(role_pick "$1")
-    others=$(role_providers "$1" "${ROLE_CONSUMERS[0]}" | { grep -vx "$chosen" || true; } | paste -sd' ' -)   # none left is no error
+    others=$(role_providers "$1" "$(role_consumer_first "$1")" | { grep -vx "$chosen" || true; } | paste -sd' ' -)   # none left is no error
     [[ -n "$others" ]] || return 0
-    info "$1: $chosen (also enabled: $others) — change: ./mediastack.sh configure, then: ./mediastack.sh wire"
+    if [[ -n "${ROLE_SETTING[$1]:-}" ]]; then info "$1: $chosen (also enabled: $others) — change: ./mediastack.sh configure, then: ./mediastack.sh wire"
+    else info "$1: $chosen (also enabled: $others — the first in priority order is the one wired)"; fi
 }
 
 role_entry_name() { # role_entry_name PROVIDER ROLE CONSUMER -> the name its entry carries in the consumer (no resolving needed)
@@ -74,7 +81,7 @@ role_env_missing() { # role_env_missing PROVIDER ROLE CONSUMER -> the settings i
 role_entry() { # role_entry PROVIDER ROLE CONSUMER -> the template, resolved (JSON); dies on an unknown placeholder
     local p="$1" f env="{}" v bad
     [[ " ${ROLES[*]} " == *" $2 "* ]] || die "role: unknown role '$2' (roles: ${ROLES[*]})"
-    [[ " ${ROLE_CONSUMERS[*]} " == *" $3 "* ]] || die "role: unknown consumer '$3' (consumers: ${ROLE_CONSUMERS[*]})"
+    [[ " $(role_consumers "$2") " == *" $3 "* ]] || die "role: $3 is no consumer of $2 (its consumers: $(role_consumers "$2"))"
     f=$(role_file "$@")
     [[ -r "$f" ]] || die "role: $p ships no $2 template for $3 ($f)"
     jq -e . "$f" >/dev/null 2>&1 || die "role: $f is not valid JSON"

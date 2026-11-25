@@ -1,0 +1,17 @@
+{
+  "priority": 1,
+  "name": "Dispatcharr",
+  "tuner": {
+    "Type": "hdhomerun",
+    "Url": "http://{self.addr}/hdhr",
+    "FriendlyName": "Dispatcharr",
+    "ImportFavoritesOnly": false,
+    "AllowHWTranscoding": true,
+    "AllowStreamSharing": true
+  },
+  "guide": {
+    "Type": "xmltv",
+    "Path": "http://{self.addr}/output/epg",
+    "EnableAllTuners": true
+  }
+}

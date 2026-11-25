@@ -284,19 +284,23 @@ failure rather than on someone's install.
 ### Providing a role (wiring by role)
 
 Some connections are a *role* one service plays for others: a download client
-for the arrs, Prowlarr and Cleanuparr. The consumers' code is written once
+for the arrs, Prowlarr and Cleanuparr; a live TV source (tuner and guide) for
+Jellyfin. The consumers' code is written once
 against the role (`lib/roles.sh`); a provider ships, per consumer type, how
 that consumer reaches it — `services/x/provides/<role>.<consumer>.json`:
 
 * **Data and placeholders only.** `{self.host}`, `{self.port}` (a number when
   it is the whole value), `{self.addr}` and `{env.NAME}` (a `.env` setting) —
   nothing else resolves, and anything that needs a decision is code.
-* **One file per consumer type** of the role (`download-client.arr.json`,
-  `.prowlarr.json`, `.cleanuparr.json`); `"priority"` orders the providers.
-* **The stack uses one provider per role:** the role's setting
-  (`DOWNLOAD_CLIENT`), else the first enabled; the others' entries are
-  switched off, never deleted. A new provider joins that setting's `enum:` in
-  `lib/env.schema.tsv`.
+* **One file per consumer of the role** (`ROLE_CONSUMERS` in `lib/roles.sh`:
+  `download-client.arr.json`, `.prowlarr.json`, `.cleanuparr.json`;
+  `live-tv.jellyfin.json`); `"priority"` orders the providers.
+* **The stack uses one provider per role:** the role's setting, if it has one
+  (`DOWNLOAD_CLIENT`), else the first enabled in priority order; the others'
+  entries are switched off, never deleted. A new provider joins that
+  setting's `enum:` in `lib/env.schema.tsv`.
+* **No `WIRE_CALLERS` line:** the templates a provider ships name who calls
+  it, so a VPN toggle on it re-points them (`wire_callers`, `lib/addr.sh`).
 * `scripts/test-roles.sh` fails an unknown role, consumer or placeholder, and
   a provider missing a consumer's file. qBittorrent's are the worked example.
 * **A role only where providers are interchangeable.** A relationship becomes
@@ -351,7 +355,8 @@ If a `wire` role writes this service's address into another app's settings:
   `<svc>:<port>` outside). CI (`scripts/test-addr.sh`) rejects a hard-coded
   loopback or gluetun address.
 * **List who calls it in `WIRE_CALLERS`** (`lib/addr.sh`), so a VPN
-  toggle re-points those roles. CI (`scripts/test-repoint.sh`) fails if `wire`
+  toggle re-points those roles — unless it reaches them through a role
+  template (above), which says so itself. CI (`scripts/test-repoint.sh`) fails if `wire`
   writes an address for a service the table doesn't list.
 * **A read that decides whether to create something must fail loud.** A refused
   API read must never look like "nothing configured" — that creates duplicates.

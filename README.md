@@ -261,7 +261,7 @@ service needs is refused with an explanation.
 | pihole / cloudflared | ad-blocking DNS / expose without port-forwarding |
 | flaresolverr | captcha bypass helper for some indexers |
 | deluge / transmission | other torrent clients (most people need neither). With more than one enabled, `DOWNLOAD_CLIENT` (asked by `configure`) names the one the arrs, Prowlarr and Cleanuparr use — the others' entries are switched off. `wire deluge` sets Deluge up: its own password, downloads on the data tree, the Label plugin, transfers bound to tun0; `wire transmission` gives Transmission a login (its container carries it) and downloads on the data tree — it binds by address, not interface, so gluetun's kill switch is what keeps it in the tunnel |
-| ersatztv | virtual live-TV channels from your library |
+| ersatztv | virtual live-TV channels from your library; `wire jellyfin` adds them to Jellyfin's Live TV (tuner and guide) when Dispatcharr is not on |
 | dispatcharr | Live TV: IPTV playlists and their programme guide, kept in one place and handed to Jellyfin as one tuner ([services/dispatcharr/README.md](services/dispatcharr/README.md)) |
 | olivetin | the web front door — the stack's safe verbs as buttons ([docs/frontdoor.md](docs/frontdoor.md)) |
 

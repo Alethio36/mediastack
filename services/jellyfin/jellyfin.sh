@@ -476,6 +476,7 @@ wire_jellyfin() {
     jf_known_proxies "$tok"
     jf_plugin_webhook "$tok"
     jf_ldap "$tok"
+    jf_livetv "$tok"   # the live-tv role's provider as its tuner and guide (services/jellyfin/livetv.sh)
 
     # --- libraries: create-if-path-missing, derived from the arrs' own
     # rootfolder labels. Match by the HOST directory a library's location
