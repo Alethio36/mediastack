@@ -411,6 +411,41 @@ The same risk stands over UDP: NordVPN's own `.ovpn` files now list UDP on
 us8219). If NordVPN over OpenVPN/UDP ever stops connecting, check 1194 first;
 WireGuard (51820) is not affected.
 
+### Dispatcharr's channels in IPTV players on the LAN *(Nov 2026)*
+
+**Verdict:** parked (24 Nov 2026). Dispatcharr can serve its channels to
+players other than Jellyfin (TiviMate and the like) as M3U + XMLTV or an
+Xtream Codes login. mediastack ships Jellyfin as its only consumer: no route
+to Dispatcharr skips the admin gate. A route that did would carry any header
+a client sent from Traefik's address — the one address Dispatcharr trusts
+for its header sign-in — so a client naming the admin would be signed in as
+it (proven in the step 10 spike). The household watches through Jellyfin,
+which reaches Dispatcharr inside the stack.
+
+**Revisit when:** the household needs a player Jellyfin does not cover. Then
+a route for the player paths only (`/output/`, `/player_api.php`, the
+stream paths), the header stripped on it (`mediastack-strip`'s rule), each
+player signing in with its own Dispatcharr account (its XC users), proven
+from a LAN address before it ships.
+
+### Dispatcharr upstream gaps *(Nov 2026)*
+
+**Verdict:** parked (24 Nov 2026, v0.34.1, from source and the spike):
+
+- **The version check has no switch.** It asks `api.github.com` for the
+  latest release when its worker starts and then daily
+  (`core.tasks.check_for_version_update`); the stack turns off what it can
+  (`DISPATCHARR_ENABLE_IP_LOOKUP=false`, the public-IP lookup).
+- **`/data/uploads` is made root's.** Its start script runs `mkdir -p` of
+  `uploads/m3us` and `uploads/epgs` as root and hands only those two to
+  `PUID`; nothing writes into `uploads/` itself, but doctor would call it a
+  mis-owned config folder. The stack makes the folder, owned right, before
+  the first start.
+
+**Revisit when:** a release adds a switch for the version check (then the
+stack sets it), or makes `uploads/` itself `PUID`'s (then the stack's
+pre-made folder goes).
+
 ## Deferred services
 
 Services assessed for the stack and consciously *not* shipped yet. Adding any

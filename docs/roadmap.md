@@ -359,6 +359,10 @@ agreed first:
     contributor's section beside `docs/adding-a-service.md`, which covers
     your own services in `custom/compose.d/`), held by `check-registries`
     where a rule can be checked.
+    *Evaluated and spiked 24 Nov 2026* (the Dispatcharr entry under "Decisions
+    pending" holds the results and the decisions): Jellyfin its only consumer,
+    no route past the gate. Next: `services/dispatcharr/`, then Jellyfin's
+    tuner and guide.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless
     complexity, each finding fixed or filed. Before the README, so it
@@ -816,50 +820,61 @@ Docker's restart the stack — so only Docker's join its update.
     remote playback over a slow uplink and picture-based subtitles still
     force a live transcode, whatever the files are.
   *Nov 9 2026:* after the MVP; not critical.
-- **Live TV from outside sources — Dispatcharr** *(chosen to try, Oct 2026)*.
+- **Live TV from outside sources — Dispatcharr** *(chosen to try, Oct 2026;
+  evaluated and spiked 24 Nov 2026 — building in step 10)*.
   An IPTV manager in the arr style: it takes M3U playlists and Xtream Codes
   accounts, matches the programme guide (EPG), and hands the result to
   Jellyfin as one tuner (M3U + XMLTV, or an HDHomeRun-style device); it
   proxies streams (fewer connections to a provider), records (DVR), and has
-  VOD, users and plugins. Where it meets ErsatzTV: ErsatzTV makes channels
-  from the household's own library and also outputs M3U + XMLTV, so it could
-  be one of Dispatcharr's sources — one guide and one tuner in Jellyfin for
-  both. To look into before deciding:
-  * **Need:** Jellyfin's own M3U tuner may be enough for a household with
-    one source; Dispatcharr earns its place with several sources, a
-    provider's connection limit, or recording. Alternatives weighed (Oct 13
-    2026, from each repo's history): **Threadfin** — dormant, no commit since
-    Sept 2025; **StreamMaster** — its original repo was deleted in early 2025
-    and the surviving fork has had no commit since Sept 2025; **TVHeadend** — the mature one (since 2007, still active, a
-    maintained Jellyfin plugin) but no tagged release since 4.2.8 (2019,
-    rolling builds since) and built around tuners and muxes, so pruning
-    thousands of IPTV channels is exactly the hard part it doesn't solve;
-    **m3u-editor** — the closest match (v0.13, since Dec 2024, ~36
-    contributors a year; adds .strm files for VOD in Jellyfin's libraries);
-    **Dispatcharr** — the most active and the most complete (v0.32, since Feb
-    2025, ~90 contributors a year, ~500 commits in 90 days). Nothing more
-    mature does the same job; Dispatcharr is the one to try for a feature-rich setup,
-    its youth answered by pinning a version (it tags
-    releases now) and backing up its database.
-  * **Fit with the house rules:** its all-in-one image bundles its database
-    and cache (one shard — check whether they can be kept private to it);
-    its guide and stream addresses must reach Jellyfin inside the stack
-    only, its UI behind the admin gate (does it do OIDC or headers?); the
-    VPN side — a provider's streams through the tunnel or not, and what
-    each choice ties to whom.
-  * **Versions:** pre-1.0 and fast-moving; the docs show only `:latest` —
-    check for version tags we can pin. Licence: AGPL-3.0 now (an older
-    copy said CC BY-NC-SA) — confirm on the official repo.
-  * **Sources are the household's:** mediastack ships no playlist and no
-    provider, as it ships no indexer. Free, legal channel lists exist and
-    are the default to document.
+  VOD, users and plugins. ErsatzTV also outputs M3U + XMLTV, so it could be
+  one of Dispatcharr's sources later — one guide and one tuner in Jellyfin.
+  Alternatives weighed (Oct 13 2026, from each repo's history): Threadfin
+  (dormant), StreamMaster (repo deleted, fork dormant), TVHeadend (mature but
+  built around tuners and muxes — pruning thousands of IPTV channels is the
+  part it doesn't solve), m3u-editor (closest, smaller); Dispatcharr is the
+  most active and the most complete.
+  * **Evaluated from source, v0.34.1 (24 Nov 2026):** AGPL-3.0; versions are
+    tagged (`ghcr.io/dispatcharr/dispatcharr:0.34.1`, 3.7 GiB); the
+    all-in-one image bundles PostgreSQL, Redis, Celery, uWSGI, Daphne and its
+    own nginx, all on one `/data` folder; it switches to `PUID`/`PGID`
+    itself. Header sign-in ("Reverse Proxy Auth", a setting) trusts a header
+    only from `DISPATCHARR_TRUSTED_PROXIES`, which must be set explicitly
+    (its private-network default is never trusted for sign-in). The first
+    admin comes from `initialize-superuser` (open to private addresses until
+    an admin exists). Sign-ins — password and header alike — share a limit of
+    3 a minute per client address.
+  * **The spike (24 Nov 2026, the test box, 30 checks passed):** behind its
+    own nginx, `REMOTE_ADDR` is Traefik's — with only Traefik's `/32`
+    trusted, Traefik's header signs in as the admin, a client's own copy is
+    overwritten, the same header from another container is refused (its
+    nginx's 9191 and uWSGI's own 5656 alike), and the underscore spelling is
+    dropped by its nginx. A route that skips the gate passes a client's
+    header through from Traefik's address, so it **signs in as the admin**.
+    Idle with 2 uWSGI + 2 Celery workers and no sources: 948 MiB. First
+    start 30 s. Its HDHomeRun `BaseURL` follows the address it is called on
+    (stack-internal stays internal); the lineup, M3U and guide answer without
+    a login. Its own backup (a `pg_dump` in a zip, through its API) took
+    under 10 s. Workers run as `PUID`; the entrypoint, `su` and nginx's
+    master as root. Root-owned by design: `/data/jwt` (its token-signing
+    key, read by the root entrypoint); by an upstream slip: `/data/uploads`
+    (`mkdir -p` of its subfolders as root — nothing writes there directly).
+    Phone-home: the public-IP lookup has a switch
+    (`DISPATCHARR_ENABLE_IP_LOOKUP`); the version check to `api.github.com`
+    (at start, then daily) has none.
+  * **Decided (24 Nov 2026):** the all-in-one image, pinned (pre-1.0, so
+    the pin leads step 14 by one service); VPN off by default, toggleable;
+    one Dispatcharr admin — the stack's own login — signed in by a header
+    Traefik adds past the admin gate (no per-admin accounts, no people-sync);
+    `DISPATCHARR_TRUSTED_PROXIES` = Traefik's address alone. **Jellyfin is its
+    only consumer**: Jellyfin reaches it inside the stack, the admin through
+    the gate, and no route skips the gate — so no client can ever bring the
+    header in (IPTV players pulling its M3U/Xtream output from the LAN: the
+    watchlist). Sources are the household's: mediastack ships no playlist
+    and no provider, as it ships no indexer; built generically for lists of
+    thousands of channels (organising them is Dispatcharr's job).
   * **Hidden cost:** guide matching across thousands of channels, live
-    transcodes in Jellyfin (IPTV formats rarely direct-play everywhere),
-    and one more database to back up and restore.
-  Decide in the watchlist before shipping.
-  *Nov 9 2026: into the MVP* (plan step 10) — the evaluation above first, then
-  the build as the modular-service proof, born with the access tiers, secret
-  rotation and run records in place.
+    transcodes in Jellyfin (IPTV formats rarely direct-play everywhere), one
+    more database to back up, and 3.7 GiB of image.
 
 ### Storage layout — decided (Sept 2026), after the MVP
 - **No mergerfs in the tooling** — pooling drives is a host storage decision,
