@@ -169,8 +169,7 @@ is a fragment only. A service with nothing to wire (Navidrome, say) has no
 
 A verb that covers several services keeps its own short list of them, in the
 order it runs or prints them; a service's part lives in its folder. So far:
-`wire` (`WIRE_ROLES` in `lib/wire.sh` -> `wire_<role>`), `set-credentials`
-(the target list in `lib/access.sh` -> `sc_rotate_<target>`), `rotate-secrets`
+`wire` (`WIRE_ROLES` in `lib/wire.sh` -> `wire_<role>`), `rotate-secrets`
 (`ROTATE_ORDER` in `lib/rotate.sh` -> `<stem>_secrets` and
 `<stem>_secret_rotate`) and doctor's app checks (`DOCTOR_APPS` in
 `lib/doctor.sh` -> `<name>_doctor`).
@@ -231,7 +230,16 @@ defines `<name>_logins`, printing one line per login:
 `title<TAB>USER_KEY<TAB>PASS_KEY[<TAB>options]` (`-` for a login with no
 name). Options: `reserve` (nobody may join the portal under its name),
 `pw_max=N`, `user_min=N`, `user_re=ERE` — the app's own limits, from its
-source. Several services sharing one login name it with the
+source; `target=NAME` (its `set-credentials` target, when not the stem —
+qBittorrent's is `qbit`) and `ask_user` (`set-credentials` asks its
+username too). That line is all `credentials` and `set-credentials` need:
+the login is listed and rotated by it, through `sc_rotate_<target>` in the
+folder (the new password; with `ask_user`, the username first) — no list to
+add it to. Optional, found by name: `sc_explain_<target>` (what a rotation
+moves, shown before the question) and `<name>_credentials` (lines
+under its logins in `credentials`: an address, an API key, who signs in
+with it). `scripts/check-registries.sh` fails a login without its rotation
+and a rotation, explanation or note with nothing behind it. Several services sharing one login name it with the
 `mediastack.logins` label (the arrs: `arr`, so `arr_logins`). configure
 records it under the one stack username, its password generated, unified
 or typed (`lib/logins.sh`); `up` and `enable` fill one enabled later the
@@ -251,6 +259,12 @@ by `scripts/test-wire.sh`:
 * **A failure is reported with `wfail` and the function returns 0** — the step
   itself and any helper it calls unguarded. Under `set -e` a `return 1` ends
   the entire `wire`, not just this app.
+
+**Its own test runs in CI by itself.** `scripts/test-<name>.sh` (sourcing
+the entrypoint minus its last line, its app's API as stubs — see
+`scripts/test-dispatcharr.sh`) is run by CI's last step when no step names
+it (`scripts/ci-unlisted.sh`); give it a step of its own only to name it in
+the run's list.
 
 A service that cannot work without another declares it with `depends_on`
 (`condition: service_started` when it only needs the other one present):
@@ -291,6 +305,11 @@ A service's own `.env` settings are described beside it, in
 shared ones); `lib/env.sh` reads them all as one schema. The settings
 themselves still go in `.env.example` — the one file people read to
 understand theirs — and `scripts/test-env.sh` holds the two together.
+A new service's own lines there (its `<SVC>_UID`, `<SVC>_UPDATE` and its
+`env.tsv` keys) need no `ENV_SCHEMA` bump and no migration: an install gets
+its UID when it first starts it, its logins when it is enabled, and every
+other key reads its default. Any other change to a setting's line does
+(`scripts/check-schema-bump.sh`, run by CI).
 
 **A default is written once: in the schema's `default` column.** `env_get
 KEY` returns it when the value is empty or absent, and takes no default of

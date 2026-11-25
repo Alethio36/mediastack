@@ -276,3 +276,5 @@ seerr_secret_rotate() { # Seerr makes its own (regenerate); .env takes it
     rotate_proven seerr "$(seerr_url)/api/v1/settings/main" "X-Api-Key: $new" "X-Api-Key: $old" || return 2
     rotate_journal_release
 }
+
+seerr_credentials() { info "Seerr's owner is the Jellyfin admin; every Seerr sign-in is a Jellyfin account (Seerr keeps no passwords of its own)."; }   # credentials (lib/access.sh)

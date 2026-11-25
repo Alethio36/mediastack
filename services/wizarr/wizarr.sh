@@ -210,3 +210,9 @@ wizarr_reset_link() { # wizarr_reset_link USER — Wizarr's single-use reset lin
     echo "  (single-use, until $when — a newer link voids this one)"
     info "Send it to them privately. They choose their own password; no one else sees it."
 }
+
+wizarr_credentials() { # credentials (lib/access.sh): its API key, and its admin (its own, not one of the stack's)
+    printf '  %-10s %s\n' "API key" "$(env_or_note WIZARR_API_KEY '(not set — run wire wizarr)')"
+    info "Wizarr's Add Server form asks for the Jellyfin API key (above)."
+    info "Wizarr's ADMIN login is its own account — set-credentials does not cover it; rotate it in Wizarr's UI."
+}

@@ -20,7 +20,7 @@
 # on lib/frontdoor.sh (PANEL, PANEL_GROUP_NOTE, _fd_panel_argv, FRONTDOOR_USER,
 # fd_config_write, fd_panel_restart) at call time.
 
-olivetin_logins() { printf "the web panel's admin\tPANEL_ADMIN_USER\tPANEL_ADMIN_PASSWORD\treserve\n"; }   # lib/logins.sh — with the portal, admins sign in through it and this is the fallback
+olivetin_logins() { printf "the web panel's admin\tPANEL_ADMIN_USER\tPANEL_ADMIN_PASSWORD\treserve target=panel\n"; }   # lib/logins.sh — with the portal, admins sign in through it and this is the fallback
 
 # how OliveTin reaches the host: one narrow ssh call per button, landing on the
 # forced-command wrapper (lib/frontdoor.sh)
@@ -62,6 +62,13 @@ panel_installed_login() { # -> "USER<TAB>HASH" of the installed config's admin (
     sudo awk -F"'" '/^    - username: /{u=$2} /^      password: /{print u "\t" $2; exit}' "$cfg"
 }
 
+sc_explain_panel() { echo "The panel's own admin — with the portal, its way in when the portal is
+down. Only its hash is written to the panel's config; the panel restarts to
+read it (a few seconds)."; }   # set-credentials panel (lib/access.sh)
+olivetin_credentials() { # credentials (lib/access.sh)
+    signin_is authentik && info "With the portal, the admin group signs in to the panel through it — that panel admin is the way in without the portal."
+    return 0
+}
 sc_rotate_panel() { # PASS — set-credentials panel: .env, then the installed config (its hash), then the panel restarted to read it
     local pass="$1" hash
     svc_enabled olivetin || { info "the web panel is not enabled — skipped"; return 0; }

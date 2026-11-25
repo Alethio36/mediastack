@@ -28,8 +28,6 @@ jobs:
         run: scripts/test-pihole.sh
       - name: Transmission asks no login behind the portal — Traefik adds it past the gate (scripts/test-transmission.sh)
         run: scripts/test-transmission.sh
-      - name: Dispatcharr signs its admin in by Traefik's header past the gate alone, and drops it first when the portal goes (scripts/test-dispatcharr.sh)
-        run: scripts/test-dispatcharr.sh
       - name: WatchState trusts Traefik's address alone behind the portal, and asks again first when the portal goes (scripts/test-watchstate.sh)
         run: scripts/test-watchstate.sh
       - name: Cleanuparr signs in through the portal — never exclusive — and drops its button first when the portal goes (scripts/test-cleanuparr.sh)
@@ -199,8 +197,8 @@ jobs:
               echo "no previous tip to diff against (new branch or force-push) — skipped"; exit 0
             fi
           fi
-          # a setting's line (KEY=value) is what installs migrate; a comment is not
-          if git diff -U0 "$base" HEAD -- .env.example | grep -qE '^[+-][A-Z][A-Z0-9_]*='; then
-            git diff "$base" HEAD -- .env.example | grep -q '^[+-]ENV_SCHEMA=' \
-              || { echo "::error::.env.example changed without bumping ENV_SCHEMA (and adding a migration)"; exit 1; }
-          fi
+          # a setting's line (KEY=value) is what installs migrate; a comment is not —
+          # nor a new service's own lines (scripts/check-schema-bump.sh says why)
+          scripts/check-schema-bump.sh "$base"
+      - name: every other test script — one no step above names runs here, a new service's own test included (scripts/ci-unlisted.sh)
+        run: scripts/ci-unlisted.sh

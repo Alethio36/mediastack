@@ -320,7 +320,7 @@ required):
 | `<name>_questions` | asks its questions, records them | the questions in configure, `up`, `wire`, `trash-sync` |
 | `<name>_logins` | its stack-owned account's username and password keys | the logins list |
 | `<name>_wire` | wires it (today's role functions, renamed) | the dispatch in lib/wire.sh |
-| `<name>_credentials` | prints its rows for `credentials` | the listing in lib/access.sh |
+| `<name>_credentials` | prints its rows for `credentials` beyond its logins (an address, an API key, a note) — **built 24 Nov 2026**, with `sc_explain_<target>` and the logins' `target=`/`ask_user` options: `credentials` and `set-credentials` are made from the logins | the listing in lib/access.sh |
 | `<name>_doctor` | its own checks | the named checks in lib/doctor.sh (some already are: `jellyfin_doctor_*`, `gluetun_doctor`) |
 
 **Already drop-in today:** the compose fragment and its labels, the service's
@@ -335,7 +335,8 @@ joined from another), migrations (history), the panel (its own service).
 **The order of the work:**
 1. The questionnaire, built on `<name>_questions` and `<name>_logins` — the
    contract's first use, needed anyway.
-2. After the MVP, one piece at a time: `<name>_credentials`; then the wire
+2. After the MVP, one piece at a time: `<name>_credentials` (*done 24 Nov
+   2026*, brought forward by adding Dispatcharr); then the wire
    phase and calls labels with `<name>_wire`; then the preset label; then
    `<name>_doctor` for what remains central.
 3. Each piece lands with a test that fails if the core names an app for it.

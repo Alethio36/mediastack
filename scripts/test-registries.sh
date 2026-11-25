@@ -24,6 +24,23 @@ broken() { # broken "WHAT" "SHELL EDIT" "EXPECTED FAIL TEXT" — the check, run 
     pass
 }
 
+# set-credentials: every declared login has its rotation; nothing without a login
+broken "a login without its rotation" \
+    "sed -i 's/^sc_rotate_kavita() {/kav_rotate_gone() {/' services/kavita/kavita.sh" \
+    "FAIL set-credentials (kavita_logins): 0 definitions of sc_rotate_kavita()"
+broken "a target renamed on the login, not on its rotation" \
+    "sed -i 's/target=qbit /target=qbt /' services/qbittorrent/qbittorrent.sh" \
+    "FAIL set-credentials (qbittorrent_logins): 0 definitions of sc_rotate_qbt()"
+broken "a rotation nobody's login names" \
+    "printf 'sc_rotate_ghost() { :; }\\n' >> services/kavita/kavita.sh" \
+    "sc_rotate_ghost() exists, but no login names the target ghost"
+broken "an explanation for no target" \
+    "printf 'sc_explain_ghost() { :; }\\n' >> services/kavita/kavita.sh" \
+    "sc_explain_ghost() exists, but no login names the target ghost"
+broken "a credentials note for no service" \
+    "printf 'ghost_credentials() { :; }\\n' >> services/kavita/kavita.sh" \
+    "ghost_credentials() exists, but there is no service ghost"
+
 # mediastack.people: every app people sign in to says what happens to their accounts
 broken "an app under the rule loses its label" \
     "sed -i '/mediastack.people/d' services/kavita/compose.yml" \

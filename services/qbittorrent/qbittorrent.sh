@@ -5,7 +5,7 @@
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
 
-qbittorrent_logins() { printf "qBittorrent's WebUI\tQBITTORRENT_USER\tQBITTORRENT_PASSWORD\tuser_min=3\n"; }   # lib/logins.sh; its WebUI refuses a shorter name
+qbittorrent_logins() { printf "qBittorrent's WebUI\tQBITTORRENT_USER\tQBITTORRENT_PASSWORD\tuser_min=3 target=qbit ask_user\n"; }   # lib/logins.sh; its WebUI refuses a shorter name
 
 # ---- qbit ----
 QB_COOKIE=""
@@ -223,6 +223,8 @@ wire_qbit() {
         -- qb_api /torrents/createCategory "category=prowlarr" "savePath=/data/torrent/prowlarr"
 }
 
+sc_explain_qbit() { echo "Changes the WebUI login and updates everything that stores it: each
+arr's download-client entry and cleanuparr's connection."; }   # set-credentials qbit (lib/access.sh)
 sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
         local user="$1" pass="$2" s
         svc_enabled qbittorrent || { info "qbittorrent not enabled — skipped"; return 0; }

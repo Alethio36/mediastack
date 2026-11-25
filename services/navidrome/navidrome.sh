@@ -66,6 +66,12 @@ wire_navidrome() {
     navidrome_people_sync "$ND_TOKEN"
 }
 
+sc_explain_navidrome() { echo "The admin is the stack's own account (people sign in with their own; with
+the portal, the people sync signs in as it). Only this password and .env move."; }   # set-credentials navidrome (lib/access.sh)
+navidrome_credentials() { # credentials (lib/access.sh)
+    signin_is authentik && info "With the portal, that Navidrome admin is the stack's own (used on this host only) — people sign in through the portal; Navidrome admin rights follow the portal's $PORTAL_ADMIN group."
+    return 0
+}
 sc_rotate_navidrome() { # PASS — the stack's admin, through Navidrome's API (its own password: the current one goes with the new)
     svc_enabled navidrome || die "navidrome is not enabled — there is no admin to rotate"
     nd_ready || die "navidrome is not answering — ./mediastack.sh status navidrome"

@@ -24,9 +24,25 @@ list() { # list <file> <sed expression printing the list's words>
 
 # wire: WIRE_ROLES -> wire_<role>
 for r in $(list lib/wire.sh 's/^WIRE_ROLES=(\(.*\))$/\1/p'); do want_one WIRE_ROLES "wire_$r"; done
-# set-credentials: its accepted targets -> sc_rotate_<target> ("all" is the verb's own)
-for t in $(list lib/access.sh 's/^    case "$target" in \([a-z|]*\)) ;; \*)$/\1/p' | tr '|' ' '); do
-    [[ "$t" == all ]] || want_one set-credentials "sc_rotate_$t"
+# set-credentials: each login a service declares (<stem>_logins) is a target —
+# its target= option, else the stem — rotated by sc_rotate_<target>; the
+# portal's admin is the verb's own target. A rotation, an explanation
+# (sc_explain_<target>) or a credentials note (<service>_credentials)
+# with no login or service behind it is never reached.
+targets=" portal "
+while IFS=: read -r _ line; do
+    stem=${line%%_logins()*}
+    t=$(sed -nE 's/.*target=([a-z0-9_]+).*/\1/p' <<<"$line"); t=${t:-$stem}
+    want_one "set-credentials (${stem}_logins)" "sc_rotate_$t"; targets+="$t "
+done < <(grep -hnE '^[a-z0-9_]+_logins\(\)' services/*/*.sh)
+[[ "$targets" == *" arr "* ]] || { echo "FAIL set-credentials: no <stem>_logins line read — the services were not read"; rc=1; }
+for f in $(grep -hoE '^sc_(rotate|explain)_[a-z0-9_]+\(\)' services/*/*.sh | sed 's/()$//'); do
+    t=${f#sc_rotate_}; t=${t#sc_explain_}
+    [[ "$targets" == *" $t "* ]] || { echo "FAIL ${f}() exists, but no login names the target $t (a <stem>_logins line, or target=$t on one) — set-credentials never runs it"; rc=1; }
+done
+for f in $(grep -hoE '^[a-z0-9_]+_credentials\(\)' services/*/*.sh | sed 's/()$//'); do
+    s=${f%_credentials}
+    [[ -d "services/${s//_/-}" ]] || { echo "FAIL ${f}() exists, but there is no service ${s//_/-} — credentials never prints it"; rc=1; }
 done
 # rotate-secrets: ROTATE_ORDER -> <stem>_secrets and <stem>_secret_rotate
 for s in $(list lib/rotate.sh 's/^ROTATE_ORDER=(\(.*\))$/\1/p'); do

@@ -16,60 +16,56 @@ signin_model() { # -> authentik | wizarr | none: who signs people in (the instal
 }
 signin_is() { [[ "$(signin_model)" == "$1" ]]; }   # signin_is MODEL
 
+# ---- the stack's own logins, as their services declare them ----
+# Every login is a service's `<stem>_logins` line (lib/logins.sh): its title,
+# its keys, and options — `target=NAME` (its set-credentials target; else the
+# stem) and `ask_user` (set-credentials asks its username too). Its rotation
+# is sc_rotate_<target> in the service's folder, taking the new password —
+# with ask_user, the username first. A service may add, found by name:
+#   sc_explain_<target>       what a rotation moves, printed before the question
+#   <service>_credentials     lines under its logins in `credentials`
+# (docs/design-install.md, "The service contract"). The portal's admin
+# (akadmin) is not one of these logins: its own target, kept out of `all`.
+# No app is named here but in the companion apps' API keys
+# (credentials_api_keys — filed, docs/roadmap.md step 11).
+
+sc_lines() { # [enabled] -> target<TAB>LINE, one per login of the catalogue (with "enabled": of the enabled services), a shared one once
+    local s stem l t
+    local -A seen=()
+    for s in $( if [[ "${1:-}" == enabled ]]; then svc_enabled_managed; else svc_managed; fi ); do
+        stem=$(svc_label "$s" mediastack.logins); stem=${stem:-$s}
+        [[ -z "${seen[$stem]:-}" ]] || continue; seen[$stem]=1
+        while IFS= read -r l; do
+            [[ -n "$l" ]] || continue
+            t=$(login_opt "$l" target); t=${t:-${stem//-/_}}
+            printf '%s\t%s\n' "$t" "$l"
+        done < <(logins_of "$s")
+    done
+}
+
 cmd_credentials() {
-    load_env; render   # once, here: every $(svc_url) and $(arr_instances) below would render again in its subshell
+    load_env; render   # once, here: every $(svc_url) below would render again in its subshell
     hr "Credentials (stored in .env)"
-    printf '%-22s %s\n' "Arr apps user"        "$(env_or_note ARR_USER '(not set — run wire)')"
-    printf '%-22s %s\n' "Arr apps password"    "$(env_or_note ARR_PASSWORD '(not set — run wire)')"
-    printf '%-22s %s\n' "qBittorrent user"     "$(env_or_note QBITTORRENT_USER '(not set — run wire)')"
-    printf '%-22s %s\n' "qBittorrent password" "$(env_or_note QBITTORRENT_PASSWORD '(not set — run wire)')"
-    svc_enabled deluge && printf '%-22s %s\n' "Deluge password" "$(env_or_note DELUGE_PASSWORD '(not set — run wire deluge)')"
-    if svc_enabled transmission; then
-        printf '%-22s %s\n' "Transmission user"     "$(env_or_note TRANSMISSION_USER '(not set — run wire transmission)')"
-        printf '%-22s %s\n' "Transmission password" "$(env_or_note TRANSMISSION_PASSWORD '(not set — run wire transmission)')"
-    fi
-    printf '%-22s %s\n' "Pi-hole password"     "$(env_or_note PIHOLE_PASSWORD '(dns profile not configured)')"
-    printf '%-22s %s\n' "Traefik dash user"    "$(env_or_note TRAEFIK_DASH_USER '(traefik not configured)')"
-    printf '%-22s %s\n' "Traefik dash password" "$(env_or_note TRAEFIK_DASH_PASSWORD '(traefik not configured)')"
-    printf '%-22s %s\n' "Jellyfin admin user"   "$(env_or_note JELLYFIN_ADMIN_USER '(not set — run wire)')"
-    printf '%-22s %s\n' "Jellyfin admin password" "$(env_or_note JELLYFIN_ADMIN_PASSWORD '(not set — run wire)')"
-    signin_is authentik && info "With the portal, that Jellyfin admin is the stack's own local account (and the emergency login) — people sign in with their portal accounts; Jellyfin administrator rights follow the portal's $PORTAL_ADMIN group."
-    printf '%-22s %s\n' "Jellyfin API key"      "$(env_or_note JELLYFIN_API_KEY '(not set — run wire jellyfin)')"
-    if svc_enabled audiobookshelf; then
-        printf '%-22s %s\n' "Audiobookshelf root"   "$(env_or_note ABS_ADMIN_USER '(not set — run wire audiobookshelf)')"
-        printf '%-22s %s\n' "Audiobookshelf root pw" "$(env_or_note ABS_ADMIN_PASSWORD '(not set — run wire audiobookshelf)')"
-        signin_is authentik && printf '%-22s %s\n' "Audiobookshelf root at" "$(svc_url audiobookshelf)/audiobookshelf/login?autoLaunch=0   (its login page otherwise goes straight to the portal)"
-    fi
-    if svc_enabled kavita; then
-        printf '%-22s %s\n' "Kavita admin"          "$(env_or_note KAVITA_ADMIN_USER '(not set — run wire kavita)')"
-        printf '%-22s %s\n' "Kavita admin pw"       "$(env_or_note KAVITA_ADMIN_PASSWORD '(not set — run wire kavita)')"
-        signin_is authentik && printf '%-22s %s\n' "Kavita admin at" "$(svc_url kavita)/login?skipAutoLogin=true   (its login page otherwise goes straight to the portal)"
-    fi
-    if svc_enabled navidrome; then
-        printf '%-22s %s\n' "Navidrome admin"       "$(env_or_note NAVIDROME_ADMIN_USER '(not set — run wire navidrome)')"
-        printf '%-22s %s\n' "Navidrome admin pw"    "$(env_or_note NAVIDROME_ADMIN_PASSWORD '(not set — run wire navidrome)')"
-        signin_is authentik && info "With the portal, that Navidrome admin is the stack's own (used on this host only) — people sign in through the portal; Navidrome admin rights follow the portal's $PORTAL_ADMIN group."
-    fi
-    if svc_enabled dispatcharr; then
-        printf '%-22s %s\n' "Dispatcharr admin"     "$(env_or_note DISPATCHARR_ADMIN_USER '(not set — run wire dispatcharr)')"
-        printf '%-22s %s\n' "Dispatcharr admin pw"  "$(env_or_note DISPATCHARR_ADMIN_PASSWORD '(not set — run wire dispatcharr)')"
-        signin_is authentik && info "With the portal, admins are signed in to Dispatcharr as that admin — its password is the way in without the portal."
-    fi
-    if svc_enabled olivetin; then
-        printf '%-22s %s\n' "Panel admin"           "$(env_or_note PANEL_ADMIN_USER '(not set — run frontdoor-install)')"
-        printf '%-22s %s\n' "Panel admin pw"        "$(env_or_note PANEL_ADMIN_PASSWORD '(not set — run frontdoor-install)')"
-        signin_is authentik && info "With the portal, the admin group signs in to the panel through it — that panel admin is the way in without the portal."
-    fi
-    if signin_is authentik; then
-        printf '%-22s %s\n' "Portal admin user"     "akadmin"
-        printf '%-22s %s\n' "Portal admin password" "$(env_or_note AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"
-    fi
-    printf '%-22s %s\n' "Wizarr API key"        "$(env_or_note WIZARR_API_KEY '(not set — run wire wizarr)')"
+    local s stem l f
+    local -A seen=()
+    for s in $(svc_enabled_managed); do
+        stem=$(svc_label "$s" mediastack.logins); stem=${stem:-$s}
+        if [[ -z "${seen[$stem]:-}" ]]; then
+            seen[$stem]=1
+            while IFS= read -r l; do [[ -n "$l" ]] && credentials_login "$l"; done < <(logins_of "$s")
+        fi
+        f="${s//-/_}_credentials"
+        if declare -F "$f" >/dev/null; then "$f"; fi
+    done
     credentials_api_keys
-    info "Seerr owner = the Jellyfin admin above; all Seerr sign-ins use Jellyfin accounts (no separate Seerr passwords exist)."
-    info "The Jellyfin API key is what Wizarr's Add Server form asks for."
-    info "Wizarr's ADMIN login is its own account — set-credentials does not cover it; rotate in Wizarr's UI."
-    info "Meilisearch master key is machine-to-machine — apps use it, you never need it."
+}
+
+credentials_login() { # LINE — one login: its title, then its username and password (or what records them)
+    local ukey pkey none='(not recorded yet — ./mediastack.sh up records it)'
+    ukey=$(cut -f2 <<<"$1"); pkey=$(cut -f3 <<<"$1")
+    echo "$(cut -f1 <<<"$1")"
+    [[ "$ukey" == - ]] || printf '  %-10s %s\n' user "$(env_or_note "$ukey" "$none")"
+    printf '  %-10s %s\n' password "$(env_or_note "$pkey" "$none")"
 }
 
 credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assistant…) ask for, with the address to give them
@@ -91,164 +87,77 @@ credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assist
     fi
 }
 
+sc_usage() { # every target the catalogue has, and what it changes
+    local t l
+    echo "usage: set-credentials <target|all>"
+    while IFS=$'\t' read -r t l; do printf '  %-15s %s\n' "$t" "$(cut -f1 <<<"$l")"; done < <(sc_lines)
+    printf '  %-15s %s\n' portal "the portal's admin (akadmin) — kept out of all: it guards the rest"
+    printf '  %-15s %s\n' all "ONE password across every login above that is set up (usernames stay put)"
+    echo "Someone else locked out of the portal: ./mediastack.sh reset-password <username>"
+}
+
 cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, atomically
     load_env; render
-    local target="${1:-}"
-    case "$target" in arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|navidrome|dispatcharr|panel|portal|all) ;; *)
-        die "usage: set-credentials <arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|navidrome|dispatcharr|panel|portal|all>
-  arr             the shared login of every arr app (+ cleanuparr's account password)
-  qbit            qBittorrent's WebUI login (+ every place that stores it)
-  deluge          Deluge's web password (+ every download-client entry holding it)
-  transmission    Transmission's password (recreated to take it; + every entry holding it)
-  jellyfin        the Jellyfin admin password (Seerr/Wizarr need no change)
-  pihole          the Pi-hole admin password
-  traefik         the Traefik dashboard password
-  audiobookshelf  its root password (every session signed in as root ends)
-  kavita          its admin password (the stack's own account)
-  navidrome       its admin password (the stack's own account)
-  dispatcharr     its admin password (the stack's own account)
-  panel           the web panel's admin password (the panel restarts to read it)
-  portal          the portal's admin (akadmin) password
-  all             ONE password across all of the above except portal (usernames stay put)
-Someone else locked out of the portal: ./mediastack.sh reset-password <username>" ;; esac
+    local target="${1:-}" line=""
+    if [[ -n "$target" && "$target" != portal && "$target" != all ]]; then
+        line=$(sc_lines | awk -F'\t' -v t="$target" '$1 == t && !f { sub(/^[^\t]*\t/, ""); print; f = 1 }')
+    fi
+    [[ "$target" == portal || "$target" == all || -n "$line" ]] || die "$(sc_usage)"
     [[ -t 0 ]] || die "set-credentials is interactive — run it at a terminal."
-
     case "$target" in
-    arr)
-        local user pass
-        explain "Rotate the arr login" \
-"One login for Sonarr/Radarr/Lidarr/Prowlarr/Bazarr — and cleanuparr's
-account password follows it, as does LazyLibrarian's page (unless the
-portal guards it). Cleanuparr's USERNAME cannot be changed via
-its API: if you change the username here, sign-in to cleanuparr keeps the
-old one."
-        user=$(env_get ARR_USER); ask SC_U "Username" "${user:-admin}"; user="$REPLY_VAL"
-        login_pass_ask "New password" ARR_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_arr "$user" "$pass"
-        ;;
-    qbit)
-        local user pass
-        explain "Rotate the qBittorrent login" \
-"Changes the WebUI login and updates everything that stores it: each
-arr's download-client entry and cleanuparr's connection."
-        user=$(env_get QBITTORRENT_USER); ask SC_QU "Username" "${user:-admin}"; user="$REPLY_VAL"
-        login_pass_ask "New password" QBITTORRENT_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_qbit "$user" "$pass"
-        ;;
-    deluge)
-        local pass
-        login_pass_ask "New Deluge password" DELUGE_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_deluge "$pass"
-        ;;
-    transmission)
-        local pass
-        login_pass_ask "New Transmission password" TRANSMISSION_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_transmission "$pass"
-        ;;
-    pihole)
-        local pass
-        login_pass_ask "New Pi-hole password" PIHOLE_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_pihole "$pass"
-        ;;
-    traefik)
-        local pass
-        login_pass_ask "New dashboard password" TRAEFIK_DASH_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_traefik "$pass"
-        ;;
-    jellyfin)
-        local npass
-        explain "Rotate the Jellyfin admin password" \
-"Seerr federates to Jellyfin (nothing to change there) and Wizarr connects
-by API key (unchanged). Only this password and .env move."
-        login_pass_ask "New password" JELLYFIN_ADMIN_PASSWORD; npass="$REPLY_VAL"
-        sc_rotate_jellyfin "$npass"
-        ;;
-    audiobookshelf)
-        local pass
-        explain "Rotate Audiobookshelf's root password" \
-"The root account is the stack's own (people sign in with their own
-accounts). A password change ends every session signed in as root: other
-browsers and apps must sign in again (a page already open keeps working up
-to an hour)."
-        login_pass_ask "New password" ABS_ADMIN_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_audiobookshelf "$pass"
-        ;;
-    kavita)
-        local pass
-        explain "Rotate Kavita's admin password" \
-"The admin is the stack's own account (people sign in with their own).
-Only this password and .env move."
-        login_pass_ask "New password" KAVITA_ADMIN_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_kavita "$pass"
-        ;;
-    navidrome)
-        local pass
-        explain "Rotate Navidrome's admin password" \
-"The admin is the stack's own account (people sign in with their own; with
-the portal, the people sync signs in as it). Only this password and .env move."
-        login_pass_ask "New password" NAVIDROME_ADMIN_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_navidrome "$pass"
-        ;;
-    dispatcharr)
-        local pass
-        explain "Rotate Dispatcharr's admin password" \
-"The admin is the stack's own account; with the portal, admins are signed in
-as it. Only this password and .env move."
-        login_pass_ask "New password" DISPATCHARR_ADMIN_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_dispatcharr "$pass"
-        ;;
-    panel)
-        local pass
-        explain "Rotate the web panel's admin password" \
-"The panel's own admin — with the portal, its way in when the portal is
-down. Only its hash is written to the panel's config; the panel restarts to
-read it (a few seconds)."
-        login_pass_ask "New password" PANEL_ADMIN_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_panel "$pass"
-        ;;
-    portal)
-        local pass
-        explain "Rotate the portal's admin password" \
+        portal) sc_portal ;;
+        all)    sc_all ;;
+        *)      sc_one "$target" "$line" ;;
+    esac
+}
+
+sc_one() { # TARGET LINE — explained, asked, then its own rotation
+    local t=$1 l=$2 user pass
+    if declare -F "sc_explain_$t" >/dev/null; then explain "Rotate $(cut -f1 <<<"$l")" "$("sc_explain_$t")"; fi
+    if [[ "$(login_opt "$l" ask_user)" == yes ]]; then
+        user=$(env_get "$(cut -f2 <<<"$l")"); ask SC_U "Username" "${user:-admin}"; user="$REPLY_VAL"
+        login_pass_ask "New password" "$(cut -f3 <<<"$l")"; pass="$REPLY_VAL"
+        "sc_rotate_$t" "$user" "$pass"
+    else
+        login_pass_ask "New password for $(cut -f1 <<<"$l")" "$(cut -f3 <<<"$l")"; pass="$REPLY_VAL"
+        "sc_rotate_$t" "$pass"
+    fi
+}
+
+sc_portal() {
+    local pass
+    explain "Rotate the portal's admin password" \
 "akadmin guards every admin tool behind the portal. Set here, through
 authentik's API, and stored in .env (AUTHENTIK_ADMIN_PASSWORD is otherwise
 read only at authentik's first start). Kept out of 'all' on purpose: the
 shared password also sits in the arrs' and qBittorrent's settings."
-        login_pass_ask "New password" AUTHENTIK_ADMIN_PASSWORD; pass="$REPLY_VAL"
-        sc_rotate_portal "$pass"
-        ;;
-    all)
-        local pass
-        explain "One password across the stack" \
-"Sets a single password on the arr login (6 apps; cleanuparr and LazyLibrarian follow),
-qBittorrent (and everything storing its login), Deluge and Transmission once
-wire has set them up (and every entry holding them), the Jellyfin admin,
-Pi-hole, the Traefik dashboard, Audiobookshelf's root, Kavita's admin,
-Navidrome's admin, Dispatcharr's admin and the web panel's admin.
-Usernames stay as they are. Deliberate trade-off: one reused password
+    login_pass_ask "New password" AUTHENTIK_ADMIN_PASSWORD; pass="$REPLY_VAL"
+    sc_rotate_portal "$pass"
+}
+
+sc_all() { # one password on every login of an enabled service that is set up (its password stored)
+    local t l pass ukey u titles="" done_=()
+    while IFS=$'\t' read -r t l; do titles+="  - $(cut -f1 <<<"$l")"$'\n'; done < <(sc_lines enabled)
+    explain "One password across the stack" \
+"Sets a single password on each of these that is set up:
+${titles}Usernames stay as they are. Deliberate trade-off: one reused password
 means one leak opens everything — use a strong, stack-unique one.
 NOT covered: the portal's admin (set-credentials portal — it guards the
-rest), and Wizarr's admin account — rotate that in Wizarr's UI
-(Settings -> Account) yourself."
-        login_pass_ask "New stack password"; pass="$REPLY_VAL"
-        local au qu; au=$(env_get ARR_USER); qu=$(env_get QBITTORRENT_USER)
-        sc_rotate_arr "${au:-admin}" "$pass"
-        sc_rotate_qbit "${qu:-admin}" "$pass"
-        if svc_enabled deluge && [[ -n "$(env_get DELUGE_PASSWORD)" ]]; then sc_rotate_deluge "$pass"; fi
-        if svc_enabled transmission && [[ -n "$(env_get TRANSMISSION_USER)" ]]; then sc_rotate_transmission "$pass"; fi
-        sc_rotate_jellyfin "$pass"
-        sc_rotate_pihole "$pass"
-        sc_rotate_traefik "$pass"
-        sc_rotate_audiobookshelf "$pass"
-        sc_rotate_kavita "$pass"
-        if svc_enabled navidrome && [[ -n "$(env_get NAVIDROME_ADMIN_PASSWORD)" ]]; then sc_rotate_navidrome "$pass"; fi
-        if svc_enabled dispatcharr && [[ -n "$(env_get DISPATCHARR_ADMIN_PASSWORD)" ]]; then sc_rotate_dispatcharr "$pass"; fi
-        if svc_enabled olivetin; then sc_rotate_panel "$pass"; fi
-        warn "Wizarr's admin password is NOT rotated by this — change it in Wizarr's UI."
-        signin_is authentik && info "the portal's admin keeps its own password: ./mediastack.sh set-credentials portal"
-        ok "one password now covers arr + qbit + deluge/transmission (if set up) + jellyfin + pihole + traefik + audiobookshelf + kavita + navidrome + dispatcharr (if set up) + the web panel (if installed) — view: ./mediastack.sh credentials"
-        ;;
-    esac
+rest), and an app's own admin that is not one of the stack's logins
+(Wizarr's — credentials says which): rotate those in the app's UI."
+    login_pass_ask "New stack password"; pass="$REPLY_VAL"
+    while IFS=$'\t' read -r t l; do
+        if [[ -z "$(env_get "$(cut -f3 <<<"$l")")" ]]; then info "$(cut -f1 <<<"$l"): not set up yet — skipped"; continue; fi
+        if [[ "$(login_opt "$l" ask_user)" == yes ]]; then
+            ukey=$(cut -f2 <<<"$l"); u=$(env_get "$ukey")
+            "sc_rotate_$t" "${u:-admin}" "$pass"
+        else "sc_rotate_$t" "$pass"; fi
+        done_+=("$t")
+    done < <(sc_lines enabled)
+    signin_is authentik && info "the portal's admin keeps its own password: ./mediastack.sh set-credentials portal"
+    ok "one password now covers: ${done_[*]:-nothing (none set up)} — view: ./mediastack.sh credentials"
 }
+
 
 cmd_reset_password() { # someone locked out: a single-use link — the portal's sign-in link, or (Wizarr) Wizarr's reset link
     load_env; render

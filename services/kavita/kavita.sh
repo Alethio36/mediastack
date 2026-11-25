@@ -283,6 +283,12 @@ kav_people_access() { # kav_people_access TOKEN — portal accounts follow the r
     return 0
 }
 
+sc_explain_kavita() { echo "The admin is the stack's own account (people sign in with their own).
+Only this password and .env move."; }   # set-credentials kavita (lib/access.sh)
+kavita_credentials() { # credentials (lib/access.sh): where its admin signs in, past the portal's redirect
+    signin_is authentik && printf '  %-10s %s\n' "at" "$(svc_url kavita)/login?skipAutoLogin=true   (its login page otherwise goes straight to the portal)"
+    return 0
+}
 sc_rotate_kavita() { # PASS — its admin (the stack's own), changed with the old one, then proven
         svc_enabled kavita || { info "kavita not enabled — skipped"; return 0; }
         local new="$1" user old out tok

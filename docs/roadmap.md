@@ -371,9 +371,9 @@ agreed first:
     - *As the contract says* — `lib/wire.sh` (`WIRE_ROLES`, before
       `jellyfin`), `.env.example` (its UID, update flag and login) and so
       `ENV_SCHEMA` 55 with an empty migration (`lib/migrations.sh`,
-      `SCRIPT_SCHEMA`),
-      `docker-compose.yml` (its `include:` line; `test-render` fails a
-      fragment left out), `lib/access.sh`'s target list.
+      `SCRIPT_SCHEMA`) — no longer needed, below — `docker-compose.yml`
+      (its `include:` line; `test-render` fails a fragment left out),
+      `lib/access.sh`'s target list — gone, below.
     - *Made by the tools, not by hand* — `answers.example`
       (`gen-answers.sh`: configure's picker and its login came from its
       labels and `dispatcharr_logins` — no questionnaire code), the
@@ -391,19 +391,41 @@ agreed first:
       (its `uploads/` and token key) left doctor a mis-owned config —
       `provision` now runs `<name>_provision`, found by name
       (`mediastack.sh`, 3 lines; the contract in `docs/adding-a-service.md`).
-    - **Finding, filed for step 11:** `lib/access.sh` names every login by
+    - **Finding, fixed in this step:** `lib/access.sh` named every login by
       hand — `credentials`' printout, `set-credentials`' usage text, its
       branch, and `all`'s call and both its texts: six edits for one login
       whose facts its `<stem>_logins` line and `sc_rotate_<stem>` already
-      hold. Not converted here: half the logins one way and half the other
-      is worse than either.
-    - **Finding, filed for step 11:** a new service bumps the `.env`
-      schema with a migration that does nothing — CI's schema-bump rule
-      cannot tell a new service's own lines from a layout change. Its UID,
-      login and update flag all arrive without one.
-    - **Finding, filed for step 11:** a service's own test needs its own
-      line in `.github/workflows/lint.yml`; `scripts/test-*.sh` are not
-      found by themselves.
+      held. Both verbs are now made from the logins the services declare
+      (`target=` and `ask_user` options; `sc_explain_<target>` and
+      `<name>_credentials`, found by name, carry each service's words
+      into its own folder), all twelve at once; `check-registries` holds
+      every login to its rotation, `scripts/test-credentials.sh` the verbs
+      to the old target list. What `credentials` prints changed shape: one
+      block per login (its title, then user and password), only for
+      services that are on. Still named in `lib/access.sh`: the account
+      model's (the portal's admin, Wizarr's own) and the companion apps'
+      API keys.
+    - **Finding, fixed in this step:** a new service bumped the `.env`
+      schema with a migration that did nothing — CI's schema-bump rule
+      could not tell a new service's own lines from a layout change. It now
+      passes lines added for a service added in the same range (its UID,
+      update flag and `env.tsv` keys) and nothing else
+      (`scripts/check-schema-bump.sh`, tested on a scratch repo).
+    - **Finding, fixed in this step:** a service's own test needed its own
+      line in `.github/workflows/lint.yml`. CI's last step now runs every
+      `scripts/test-*.sh` / `check-*.sh` no step names
+      (`scripts/ci-unlisted.sh`); Dispatcharr's line went, its test runs
+      there.
+    - **Found while fixing them:** `login_opt` (`lib/logins.sh`) returned 1
+      for an option a login does not carry; its callers survived only
+      because each ran inside `$( )`, where bash drops `set -e`. The new
+      verbs read the logins through `<( )`, where it holds: `set-credentials
+      all` would have stopped at the first login without `target=` —
+      while its test, calling through `$( )` too, passed. Fixed in the
+      helper; `test-credentials` now runs the verbs under `set -e`
+      (`strict`), and fails without the fix. The same blind spot as step
+      11's "configure tests run without the ERR trap", wider: any test that
+      calls the code through `$( )`.
     - **Finding, filed for step 12:** the README's service table and
       `docs/edge.md`'s list of addresses are written by hand (both lines
       added); the README rewrite decides whether they are made from the
@@ -471,6 +493,10 @@ agreed first:
       said `by: panel` — the message read the record a second time, so what
       the check saw was lost; 0 failures in 40 runs under full CPU load after.
       The checks now print what they read and the records folder then.
+    - **Tests that call the code through `$( )` cannot see a `set -e` stop**
+      (24 Nov 2026, `login_opt`, above): read every test for calls whose
+      failure only a real run would hit — `test-credentials`' `strict` is
+      one way to run them as a run does.
     - **The configure tests run without the ERR trap** (`set +e +E; trap -
       ERR` in test-configure, test-questions and test-answers, so each check
       reads its own status): an unguarded failure inside configure's code,
@@ -484,20 +510,10 @@ agreed first:
       health messages should take the warning (or failure) colour — through
       the hub entry's type, a per-title rule, or whatever their Apprise
       settings offer (check their source first).
-    - **`lib/access.sh` names every login by hand** (found adding
-      Dispatcharr, 24 Nov 2026): `credentials` and `set-credentials` —
-      usage, branch, `all` — could be made from `logins_list` (title and
-      keys) and `sc_rotate_<stem>`, with an optional note per service and
-      the few special ones (the arrs' shared login, the portal, the panel)
-      kept as they are.
-    - **A new service bumps the `.env` schema for nothing** (24 Nov 2026):
-      the schema-bump rule could pass `.env.example` lines that are a
-      service's own (its `<SVC>_UID`/`_UPDATE`, its `env.tsv` rows) when
-      nothing else changed — every service since September (Wizarr,
-      Apprise, Navidrome, …) added a migration only to write lines the
-      code no longer needs.
-    - **A service's test is listed by hand in CI** (24 Nov 2026): run every
-      `scripts/test-*.sh` the workflow does not name, or fail one it misses.
+    - **The companion apps' API keys are listed by name**
+      (`credentials_api_keys`, `lib/access.sh`: the arrs, Prowlarr, Bazarr,
+      Seerr) — the last list of services in `credentials`; a
+      `<name>_api_key` hook would end it (24 Nov 2026).
     - **`authentik_prepare` is called by name** from `up` and `enable`;
       with `<name>_provision` now found by name, see whether its part fits
       there (it needs the edge first).

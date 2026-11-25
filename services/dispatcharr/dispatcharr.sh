@@ -134,6 +134,12 @@ dispatcharr_login_middleware() {
     printf '    dispatcharr-login:\n      headers:\n        customRequestHeaders:\n          %s: "%s"\n' "$DSP_HEADER" "$v"
 }
 
+sc_explain_dispatcharr() { echo "The admin is the stack's own account; with the portal, admins are signed in
+as it. Only this password and .env move."; }   # set-credentials dispatcharr (lib/access.sh)
+dispatcharr_credentials() { # credentials (lib/access.sh)
+    signin_is authentik && info "With the portal, admins are signed in to Dispatcharr as that admin — its password is the way in without the portal."
+    return 0
+}
 sc_rotate_dispatcharr() { # PASS — its admin (the stack's own), changed signed in with the old one, then proven
     svc_enabled dispatcharr || { info "dispatcharr not enabled — skipped"; return 0; }
     local new="$1" user old out tok

@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC2034  # globals set here are read by the sourced libraries
+# test-credentials.sh — `credentials` and `set-credentials` are made from the
+# logins the services declare (lib/access.sh), not from a list of them:
+#   * the targets are every <stem>_logins line's (target=, else the stem) —
+#     exactly the ones the hand-kept list had — and the usage names each
+#   * a target with ask_user asks the username and passes it first; others
+#     the password alone; its own explanation, when it has one, first
+#   * `all` rotates every enabled login that is set up, usernames kept, and
+#     skips one not set up yet
+#   * `credentials` prints each enabled service's logins once (a shared one
+#     once) and its own note, and nothing of a service that is off
+# Renders the real catalogue from .env.example in a scratch copy of the repo;
+# every rotation and question is a stub.
+#
+#   scripts/test-credentials.sh     run (exit 1 on the first failed check)
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+repo=$PWD
+work=$(mktemp -d); trap 'rm -rf "$work"' EXIT
+git -C "$repo" ls-files -z | (cd "$repo" && xargs -0 cp --parents -t "$work")
+cd "$work"
+cp .env.example .env
+sed '$d' mediastack.sh > .test-credentials-lib.sh
+# shellcheck disable=SC1091
+source ./.test-credentials-lib.sh
+set +E; trap - ERR
+vpn_gen >/dev/null
+
+checks=0
+# strict CMD... — run it as a real run does, under set -e (a test's $( ) drops -e, and an
+# `if`/`||` around it too): SR its status, its output in $work/strict
+strict() { set +e; ( set -e; "$@" ) > "$work/strict" 2>&1; SR=$?; set -e; }
+pass()  { checks=$((checks+1)); }
+fail_() { echo "FAIL: $*" >&2; exit 1; }
+profiles() { env_set COMPOSE_PROFILES "$1"; RENDERED_JSON=""; render; }
+
+# ---- the targets: every declared login, exactly what the hand-kept list had ----
+profiles gluetun
+got=$(sc_lines | cut -f1 | sort | paste -sd' ')
+[[ "$got" == "arr audiobookshelf deluge dispatcharr jellyfin kavita navidrome panel pihole qbit traefik transmission" ]] \
+    || fail_ "the catalogue's targets: $got"; pass
+strict sc_usage; u=$(cat "$work/strict")
+[[ $SR == 0 ]] || fail_ "usage, under set -e: rc $SR: $u"
+for t in $got portal all; do grep -qE "^  $t +" <<<"$u" || fail_ "usage names $t: $u"; done; pass
+[[ "$(sc_lines | awk -F'\t' '$1 == "arr"' | wc -l)" == 1 ]] || fail_ "the arrs' shared login is one target, once"; pass
+
+# ---- one target: its explanation, its question(s), its own rotation ----
+REC=$work/rec
+for t in $got; do eval "sc_rotate_$t() { echo \"$t \$*\" >> \"$REC\"; }"; done
+login_pass_ask() { REPLY_VAL=Newpass123456; }
+ask() { REPLY_VAL=${ASKED:-$3}; }
+explain() { echo "EXPLAIN $1" >> "$REC"; }
+one() { : > "$REC"; local l; l=$(sc_lines | awk -F'\t' -v t="$1" '$1 == t { sub(/^[^\t]*\t/, ""); print }'); strict sc_one "$1" "$l"; [[ $SR == 0 ]] || echo "rc $SR: $(cat "$work/strict")"; paste -sd'|' "$REC"; }
+env_set ARR_USER ops
+[[ "$(one arr)" == "EXPLAIN Rotate the arrs (one login for every one of them)|arr ops Newpass123456" ]] || fail_ "arr: explained, its username asked (current offered), then both: $(one arr)"; pass
+[[ "$(ASKED=newname one qbit)" == "EXPLAIN Rotate qBittorrent's WebUI|qbit newname Newpass123456" ]] || fail_ "qbit: target=qbit, its username asked: $(ASKED=newname one qbit)"; pass
+[[ "$(one pihole)" == "pihole Newpass123456" ]] || fail_ "no explanation, no username: the password alone: $(one pihole)"; pass
+[[ "$(one panel)" == "EXPLAIN Rotate the web panel's admin|panel Newpass123456" ]] || fail_ "panel: the panel's login, target=panel: $(one panel)"; pass
+
+# ---- all: every enabled login that is set up, usernames kept ----
+profiles gluetun,qbittorrent,sonarr,prowlarr,jellyfin,kavita,dispatcharr
+env_set ARR_PASSWORD x; env_set QBITTORRENT_USER qb; env_set QBITTORRENT_PASSWORD x; env_set JELLYFIN_ADMIN_PASSWORD x
+env_set KAVITA_ADMIN_PASSWORD ""; env_set DISPATCHARR_ADMIN_PASSWORD x
+: > "$REC"; strict sc_all; out=$(cat "$work/strict")
+[[ $SR == 0 ]] || fail_ "all, under set -e: rc $SR: $out"
+got=$(grep -v EXPLAIN "$REC" | sort | paste -sd'|')
+[[ "$got" == "arr ops Newpass123456|dispatcharr Newpass123456|jellyfin Newpass123456|qbit qb Newpass123456" ]] || fail_ "all: the enabled ones that are set up, usernames kept: $got"; pass
+grep -q "Kavita's admin: not set up yet — skipped" <<<"$out" || fail_ "all: one not set up is said and skipped: $out"; pass
+grep -q '^EXPLAIN One password across the stack' "$REC" || fail_ "all: explained first"; pass
+
+# ---- credentials: each enabled service's logins once, and its note ----
+env_set ARR_PASSWORD arrpw; env_set KAVITA_ADMIN_USER admin; env_set KAVITA_ADMIN_PASSWORD kpw
+signin_is() { [[ "$1" == none ]]; }
+strict cmd_credentials; out=$(cat "$work/strict")
+[[ $SR == 0 ]] || fail_ "credentials, under set -e: rc $SR: $out"
+[[ "$(grep -c '^the arrs (one login for every one of them)$' <<<"$out")" == 1 ]] || fail_ "the arrs' login printed once for sonarr and prowlarr: $out"; pass
+grep -A2 "^Kavita's admin$" <<<"$out" | grep -E '^  password +kpw$' >/dev/null || fail_ "a login's password under its title: $out"; pass
+grep -A2 "^Dispatcharr's admin$" <<<"$out" | grep -E '^  password +x$' >/dev/null || fail_ "dispatcharr's login listed: $out"; pass
+grep -qE '^  API key ' <<<"$out" || fail_ "jellyfin's note (its API key) under its logins: $out"; pass
+! grep -q "Navidrome's admin\|Pi-hole" <<<"$out" || fail_ "nothing of a service that is off: $out"; pass
+env_set DISPATCHARR_ADMIN_PASSWORD ""
+grep -A2 "^Dispatcharr's admin$" <<<"$(cmd_credentials 2>&1)" | grep -E '^  password +\(not recorded yet' >/dev/null || fail_ "a login not recorded says what records it"; pass
+
+# ---- the core names no app for them (docs/design-install.md: each piece lands with this test) ----
+cd "$repo"
+apps=$(for d in services/*/; do d=${d%/}; d=${d#services/}; [[ "$d" =~ ^(_arr|gluetun|traefik|authentik|apprise)$ ]] || echo "$d"; done | paste -sd'|')   # the platform services may be named
+code=$(awk '/^# ---- the stack.s own logins/,/^cmd_reset_password\(\)/' lib/access.sh \
+       | awk '/^credentials_api_keys\(\)/,/^}/ { next } { print }' | grep -v '^[[:space:]]*#')
+hits=$(grep -nwE "$apps" <<<"$code" || true)   # none: the point
+[[ -z "$hits" ]] || fail_ "credentials / set-credentials name an app: $hits"; pass
+[[ "$(wc -l <<<"$code")" -gt 50 ]] || fail_ "the section was read"; pass
+
+echo "OK credentials: $checks checks"

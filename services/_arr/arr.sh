@@ -6,7 +6,7 @@
 # Sourced by the entrypoint; relies on lib/wire.sh, lib/addr.sh and the
 # entrypoint's helpers at call time.
 
-arr_logins() { printf 'the arrs (one login for every one of them)\tARR_USER\tARR_PASSWORD\n'; }   # lib/logins.sh: every arr-family fragment names it (mediastack.logins)
+arr_logins() { printf 'the arrs (one login for every one of them)\tARR_USER\tARR_PASSWORD\task_user\n'; }   # lib/logins.sh: every arr-family fragment names it (mediastack.logins)
 
 arr_key() { # arr_key <svc> -> api key from its config.xml ("" while initialising)
     sudo grep -oP '<ApiKey>\K[^<]+' "$(env_get CONFIG_ROOT)/$1/config.xml" 2>/dev/null | sed -n 1p || true
@@ -338,6 +338,11 @@ wire_arr() {
     done
 }
 
+sc_explain_arr() { echo "One login for Sonarr/Radarr/Lidarr/Prowlarr/Bazarr — and cleanuparr's
+account password follows it, as does LazyLibrarian's page (unless the
+portal guards it). Cleanuparr's USERNAME cannot be changed via
+its API: if you change the username here, sign-in to cleanuparr keeps the
+old one."; }   # set-credentials arr (lib/access.sh)
 sc_rotate_arr() { # USER PASS — every arr-family app + cleanuparr follows
         local user="$1" pass="$2" olduser oldpass s
         olduser=$(env_get ARR_USER); oldpass=$(env_get ARR_PASSWORD)

@@ -229,6 +229,14 @@ abs_people_access() { # abs_people_access TOKEN — portal-linked accounts follo
     return 0
 }
 
+sc_explain_audiobookshelf() { echo "The root account is the stack's own (people sign in with their own
+accounts). A password change ends every session signed in as root: other
+browsers and apps must sign in again (a page already open keeps working up
+to an hour)."; }   # set-credentials audiobookshelf (lib/access.sh)
+audiobookshelf_credentials() { # credentials (lib/access.sh): where root signs in, past the portal's redirect
+    signin_is authentik && printf '  %-10s %s\n' "at" "$(svc_url audiobookshelf)/audiobookshelf/login?autoLaunch=0   (its login page otherwise goes straight to the portal)"
+    return 0
+}
 sc_rotate_audiobookshelf() { # PASS — its root account; every root session ends
         svc_enabled audiobookshelf || { info "audiobookshelf not enabled — skipped"; return 0; }
         abs_root_rotate "$1" || die "Audiobookshelf's root password was not rotated (see above)"

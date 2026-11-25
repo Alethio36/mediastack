@@ -7,9 +7,11 @@
 # `<stem>_logins` function in its folder; the stem is the service's name, or
 # its mediastack.logins label when several share one login (the arrs) —
 # printing one TSV line per login:
-#   title  USER_KEY|-  PASS_KEY  [reserve] [pw_max=N] [user_min=N] [user_re=ERE]
+#   title  USER_KEY|-  PASS_KEY  [reserve] [pw_max=N] [user_min=N] [user_re=ERE] [target=NAME] [ask_user]
 # `reserve`: a person joining the portal under this name could be taken for
-# the account (authentik refuses it at sign-up). The questionnaire asks;
+# the account (authentik refuses it at sign-up). `target=` and `ask_user` are
+# set-credentials' (lib/access.sh): its target when not the stem; ask the
+# username too. The questionnaire asks;
 # logins_fill records what is missing without asking (up, enable);
 # login_ensure records one a verb is about to use (frontdoor-install). Sourced
 # by the entrypoint; relies on lib/common.sh and the service helpers.
@@ -40,6 +42,7 @@ login_opt() { # login_opt "LINE" NAME -> the value of NAME=... in its options ("
         [[ "$o" == "$2" ]] && { echo yes; return 0; }
         [[ "$o" == "$2="* ]] && { echo "${o#*=}"; return 0; }
     done
+    return 0   # absent is an answer (""), not a failure: under set -e a caller outside $( ) would stop
 }
 
 login_user_problem() { # login_user_problem NAME -> why NAME cannot be the stack's username ("" when it can)

@@ -550,6 +550,13 @@ wire_jellyfin() {
     jellyfin_brand_apply   # the household's kit on Jellyfin (services/jellyfin/kit.sh)
 }
 
+sc_explain_jellyfin() { echo "Seerr federates to Jellyfin (nothing to change there) and Wizarr connects
+by API key (unchanged). Only this password and .env move."; }   # set-credentials jellyfin (lib/access.sh)
+jellyfin_credentials() { # credentials (lib/access.sh): its API key, and who signs in with that admin
+    printf '  %-10s %s\n' "API key" "$(env_or_note JELLYFIN_API_KEY '(not set — run wire jellyfin)')"
+    signin_is authentik && info "With the portal, that Jellyfin admin is the stack's own local account (and the emergency login) — people sign in with their portal accounts; Jellyfin administrator rights follow the portal's $PORTAL_ADMIN group."
+    return 0
+}
 sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
         local npass="$1" juser jpass auth tok
         svc_enabled jellyfin || { info "jellyfin not enabled — skipped"; return 0; }
