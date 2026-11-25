@@ -92,6 +92,8 @@ awk '/^seerr$/ { f = 1; next } f && /^[^ ]/ { f = 0 } f' <<<"$out" | grep -E "^ 
 grep -q '^:: Not shown: the secrets only the stack uses, and your own' <<<"$out" && grep -q 'credentials <service>' <<<"$out" && grep -q 'credentials --all' <<<"$out" \
     || fail_ "credentials says what it leaves out, and how to see it: $out"; pass
 ! grep -q '── Keys for your apps' <<<"$out" || fail_ "no table of keys: each key sits in its service's block: $out"; pass
+awk 'NR > 2 && /^[a-z(]/ && prev != "" { bad = 1 } { prev = $0 } END { exit bad }' <<<"$out" && [[ "$(sed -n 2p <<<"$out")" != "" ]] \
+    || fail_ "a blank line between services, none before the first: $out"; pass
 # keys for your apps: each service's <name>_api_key, an arr instance's through its type label — in its own block, with its address
 arr_key() { echo "key-$1"; }; bazarr_key() { echo key-bazarr; }; env_set SEERR_API_KEY key-seerr; env_set JELLYFIN_API_KEY key-jf
 profiles gluetun,sonarr,radarr-4k,prowlarr,bazarr,seerr,jellyfin,kavita
@@ -141,6 +143,8 @@ strict cmd_credentials --all; out=$(cat "$work/strict")
 for s in gluetun jellyfin kavita dispatcharr; do grep -qE "── $s ─" <<<"$out" || fail_ "--all: $s's section: $out"; done; pass
 ! grep -A1 -E '^── [a-z0-9-]+ ─' <<<"$out" | grep -xE '[a-z0-9][a-z0-9-]*' >/dev/null || fail_ "--all: a section names its service once (its heading), not again under it: $out"; pass
 ! grep -q '── flaresolverr' <<<"$out" || fail_ "--all: a service holding nothing is left out: $out"; pass
+awk 'NR > 1 && /^── / && prev != "" { bad = 1 } { prev = $0 } END { exit bad }' <<<"$out" && [[ "$(sed -n 1p <<<"$out")" == "── "* ]] \
+    || fail_ "--all: a blank line between sections, none before the first: $out"; pass
 [[ "$(grep -c '^  user ' <<<"$(awk '/── (prowlarr|radarr|sonarr) ─/,0' <<<"$out")")" -ge 1 && "$(grep -c 'the arrs (one login for every one of them) — shown under prowlarr' <<<"$out")" == 2 ]] \
     || fail_ "--all: the arrs' login in full once (prowlarr's), the others point at it: $out"; pass
 out=$(cmd_credentials flaresolverr 2>&1)

@@ -53,7 +53,7 @@ cmd_credentials() { # [SERVICE | --all] — bare: the logins and the keys for yo
     local arg="${1:-}" s k
     # notes wrap at word boundaries to the terminal's width (values never: they are copied);
     # into a pipe or a file nothing is wrapped
-    local CRED_WIDTH=0
+    local CRED_WIDTH=0 CRED_GAP=""   # CRED_GAP: a block or section printed already — the next one starts after a blank line
     if [[ -t 1 ]]; then CRED_WIDTH=$(tput cols 2>/dev/null || echo 0); fi
     case "$arg" in
         "")
@@ -73,8 +73,10 @@ cmd_credentials() { # [SERVICE | --all] — bare: the logins and the keys for yo
                 credentials_block "$s" "$l" "$(credentials_extra "$s"; [[ -z "$k" ]] || printf '%s\n' "$k")"
             done
             if [[ -n "$any_key" ]] && signin_is authentik; then
+                echo
                 cred_say "An app of yours (nzb360, LunaSea, Home Assistant, a dashboard) takes a key with its address. Behind the portal, where an API passes the gate, the app also sends a device password as a header (README: \"A phone app for the arrs\")."
             fi
+            echo
             cred_say "Not shown: the secrets only the stack uses, and your own (the VPN's, Cloudflare's, email's). Everything one service holds: ./mediastack.sh credentials <service> — every one: credentials --all"
             ;;
         --all)
@@ -94,7 +96,11 @@ credentials_extra() { # SERVICE -> its own lines (its <name>_credentials, found 
 credentials_block() { # HEADING LOGINS EXTRA — one block under the service's name (none: "" — a section's own heading says it): each login (what it is, user, password), then its own rows and notes
     local logins=$2 extra=$3 l
     [[ -n "$logins$extra" ]] || return 0
-    [[ -z "$1" ]] || echo "$1"
+    if [[ -n "$1" ]]; then
+        if [[ -n "${CRED_GAP:-}" ]]; then echo; fi   # a blank line between services
+        CRED_GAP=yes
+        echo "$1"
+    fi
     while IFS= read -r l; do if [[ -n "$l" ]]; then credentials_login "$l"; fi; done <<<"$logins"
     credentials_lines "$extra"
 }
@@ -183,6 +189,8 @@ credentials_full() { # SERVICE [all] — everything it holds: its logins, its li
         if [[ "${2:-}" == all ]]; then return 0; fi
         out="  · the stack keeps no login, key or secret for it"
     fi
+    if [[ -n "${CRED_GAP:-}" ]]; then echo; fi   # a blank line between sections (--all)
+    CRED_GAP=yes
     hr "$s$(svc_enabled "$s" || echo ' (not enabled)')"
     printf '%s\n' "$out"
     if [[ "${2:-}" == all && -n "$stem" && -z "${CRED_SHARED[$stem]:-}" && -n "$l" ]]; then CRED_SHARED[$stem]=$s; fi
