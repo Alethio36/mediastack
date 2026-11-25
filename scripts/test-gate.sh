@@ -184,6 +184,21 @@ GATE_RC=1; : > "$UP_LOG"
 ENABLED="qbittorrent sonarr jellyfin"; : > "$UP_LOG"
 out=$( (cmd_up) 2>&1 ) && fail_ "VPN'd services without gluetun: refused"; pass
 [[ "$out" == *"but gluetun is not"* && ! -s "$UP_LOG" ]] || fail_ "before anything starts — $out"; pass
+# a re-point that fails: said by wire_repoint_pending, kept for the next up —
+# the rest of up still runs (the forwarded port into the download client),
+# then up exits 1 as a handled failure, never the ERR trap's (found live 25 Nov
+# 2026: up stopped at the re-point, "unhandled failure", the port never synced)
+ENABLED="gluetun qbittorrent sonarr jellyfin"; GATE_RC=0; : > "$UP_LOG"
+# a plain command, not inside $( ) or a condition: there bash drops set -e,
+# and the run this pins would never be seen
+( wire_repoint_pending() { echo "repoint" >> "$UP_LOG"; return 1; }
+  prowlarr_indexers_retest() { echo "retest" >> "$UP_LOG"; }; vpn_pf_sync() { echo "pfsync" >> "$UP_LOG"; }
+  leak_gate_closed() { return 1; }
+  set -eE; trap on_err ERR; cmd_up ) > "$T/upout" 2>&1
+rc=$?; out=$(cat "$T/upout")
+(( rc == 1 )) || fail_ "a failed re-point: up exits 1 (rc $rc) — $out"; pass
+[[ "$(grep -E '^(repoint|retest|pfsync)$' "$UP_LOG" | paste -sd'|')" == "repoint|retest|pfsync" ]] || fail_ "a failed re-point: the rest of up still runs ($(paste -sd"|" "$UP_LOG")) — $out"; pass
+[[ "$out" != *"unhandled failure"* && "$out" != *"Check on it"* ]] || fail_ "a failed re-point: handled, not the ERR trap's, no all-well text — $out"; pass
 ENABLED="jellyfin"; : > "$UP_LOG"
 (cmd_up) > /dev/null 2>&1 || fail_ "no VPN at all: up as before"; pass
 [[ "$(paste -sd'|' "$UP_LOG")" == "DC config --format json|DC up -d --remove-orphans|guard" ]] || fail_ "one phase, no gate ($(paste -sd'|' "$UP_LOG"))"; pass

@@ -478,8 +478,24 @@ agreed first:
         Dispatcharr is wired: ErsatzTV becomes one of its sources (by hand,
         in Dispatcharr's UI — its README says how), one tuner and one guide
         in Jellyfin, as the entry under "Decisions pending" planned.
-      Live proof pending (anzac4: a free playlist in Dispatcharr, `wire
-      jellyfin`, channels in Jellyfin's Live TV, then a VPN toggle).
+      *Proven live (25 Nov 2026, anzac4):* `wire jellyfin` added the tuner
+      and the guide (dry run first: exactly those two), a second run changed
+      nothing; iptv-org's US and AU playlists in Dispatcharr, four channels,
+      and they play in Jellyfin through `dispatcharr:9191` (H.264 passed
+      through). Not ours, written into Dispatcharr's README: its add form
+      starts on Xtream Codes (a plain playlist is Standard), and Jellyfin
+      keeps the guide file up to an hour (saving the guide drops its copy).
+      - **Found by the VPN toggle, fixed:** `up` re-pointed Jellyfin 17 s
+        after Dispatcharr's container started, while its nginx answered 502
+        for the app behind it — read as the tuner's answer, a FAIL. Running
+        is not answering: the tuner's `discover.json` is now waited for
+        (`http_ready`) and read with `curl -f`.
+      - **Found by the same run, fixed:** a failed re-point returned 1 into
+        `up`, unhandled — the ERR trap's "unhandled failure", and the rest of
+        `up` skipped: Prowlarr's indexer re-test and the forwarded port's
+        sync into the download client. Now said once, the rest runs, `up`
+        exits 1 (`test-gate`, run as a plain command: inside `$( )` it
+        passed without the fix — step 11's blind spot again).
       ErsatzTV's template is unproven live.
     - **Finding, filed for step 12:** the README's service table and
       `docs/edge.md`'s list of addresses are written by hand (both lines
@@ -572,6 +588,19 @@ agreed first:
       Ubuntu 24.04's (0.9); a newer one (0.11) passed a test file CI failed
       (SC2218), and unstable stayed red until the promote noticed. A lint
       entry point that runs CI's checks and names the version it needs.
+    - **`wire --dry-run` always ends "items marked as pending on credentials
+      resolve mid-run"** (25 Nov 2026, anzac4, `wire jellyfin --dry-run`),
+      with nothing marked pending: say it only when a step said so.
+    - **A gated app's open tab fails with "NetworkError" when its portal
+      token runs out** (25 Nov 2026, anzac4, Dispatcharr; authentik's log):
+      the outpost answers the app's background calls with a redirect to the
+      portal's authorize page, which a background call cannot follow
+      (another site, no portal cookie): every call fails until a reload,
+      which re-authorizes silently from the portal session. Every gated
+      single-page app shares it (the arrs, qBittorrent, …). The blueprint
+      sets no token validity on the proxy providers, so authentik's default
+      decides how often: read it, then set it to the portal session's length
+      (signing out of the portal already ends the apps' sessions).
     - **The leak gate closed once on `up` right after gluetun was recreated**
       (16 Nov 2026, anzac4, 18:55): a FAIL, not shown because the run's
       output was discarded; `leak-test` passed minutes later and every

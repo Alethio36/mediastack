@@ -764,9 +764,14 @@ cmd_up()   {
     svc_enabled authentik && authentik_release_record
     sudo rm -f "$STOP_MARKER"   # everything is up: a cut-off backup's marker is settled
     ok "Stack started."
-    wire_repoint_pending # a VPN toggle moved a service: re-point what calls it
+    # a VPN toggle moved a service: re-point what calls it. A failure is said
+    # there and kept for the next up; the rest of up still runs, the forwarded
+    # port above all — then up exits 1 (found live 25 Nov 2026: it stopped here)
+    local repointed=1
+    wire_repoint_pending || repointed=0
     prowlarr_indexers_retest
     if svc_enabled gluetun && ! leak_gate_closed; then vpn_pf_sync; fi   # the forwarded port into the download client (services/gluetun/portfwd.sh)
+    (( repointed )) || exit 1
     cat <<'EOT'
 Check on it:   ./mediastack.sh status    (what's running, health, versions)
 Verify it:     ./mediastack.sh doctor    (full audit with fixes)

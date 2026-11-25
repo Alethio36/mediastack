@@ -41,8 +41,13 @@ Its first start takes about half a minute (its database is made then).
   `http://dispatcharr:9191/output/epg`), and reads both back. A VPN toggle
   re-points both in place; their other settings — name, tuner count, channel
   mappings — are yours. Channels appear once Dispatcharr has some: add a
-  source (M3U and EPG) in its UI, put channels in, then refresh the guide in
-  Jellyfin (Dashboard → Live TV). Wired from `provides/live-tv.jellyfin.json`
+  source (M3U and EPG) in its UI — a plain playlist URL is account type
+  **Standard** (its form starts on Xtream Codes) — and make channels from
+  its streams (the Streams pane's create-channels button, or a stream's own
+  green +), then refresh the guide in Jellyfin (Dashboard → Live TV).
+  Jellyfin keeps the guide file up to an hour: after changing channels,
+  open the XMLTV guide there and save it unchanged (that drops its copy),
+  then Refresh Guide Data. Wired from `provides/live-tv.jellyfin.json`
   — the live-tv role, which ErsatzTV provides too; with both on, Dispatcharr
   is the one wired, and ErsatzTV's channels reach Jellyfin through it: add
   `http://ersatztv:8409/iptv/channels.m3u` as a source in Dispatcharr (guide

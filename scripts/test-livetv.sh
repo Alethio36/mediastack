@@ -7,6 +7,7 @@
 #     the settings the user changed kept, nothing added
 #   * the user's own tuners and guides are never touched
 #   * dry run says what it would do and calls nothing that writes
+#   * a tuner whose nginx answers 502 while the app starts is waited for
 #   * a change that does not hold, a tuner that does not answer, a provider
 #     not running: each a wire failure, said; no provider enabled: nothing
 #   * ErsatzTV works from its own template alone; with both, Dispatcharr (priority 1)
@@ -64,10 +65,23 @@ jf_api() {
         *) echo "unexpected"; return 1 ;;
     esac
 }
-DISC_OK=yes
-curl() { local u="${*: -1}"; echo "$u" >> "$T/curled"; [[ $DISC_OK == yes ]] || { echo "connection refused"; return 7; }; echo '{"DeviceID":"12345678","FriendlyName":"Dispatcharr HDHomeRun"}'; }
+# the tuner as Dispatcharr's nginx serves it: no socket (DISC_OK=no), or 502
+# for its first STARTING calls (the app behind still starting), then the device
+DISC_OK=yes STARTING=0
+echo 0 > "$T/served"
+sleep() { :; }
+curl() {
+    local u="${*: -1}" n code=200 body='{"DeviceID":"12345678","FriendlyName":"Dispatcharr HDHomeRun"}'
+    echo "$u" >> "$T/curled"
+    [[ $DISC_OK == yes ]] || { [[ " $* " == *" -w "* ]] && echo 000; return 7; }
+    n=$(( $(cat "$T/served") + 1 )); echo "$n" > "$T/served"
+    (( n > STARTING )) || { code=502; body='<html><head><title>502 Bad Gateway</title></head></html>'; }
+    if [[ " $* " == *" -w "* ]]; then echo "$code"; return 0; fi          # http_ready asks only the code
+    if [[ $code != 200 && " $* " == *" -f"* ]]; then echo "curl: (22) The requested URL returned error: $code"; return 22; fi
+    echo "$body"
+}
 
-run()    { : > "$CALLS"; : > "$T/curled"; WIRE_FAILS=0; jf_livetv tok > "$T/out" 2>&1; }
+run()    { : > "$CALLS"; : > "$T/curled"; echo 0 > "$T/served"; WIRE_FAILS=0; jf_livetv tok > "$T/out" 2>&1; }
 writes() { grep -c '^POST' "$CALLS" || true; }
 tuner()  { jq -r --arg k "$1" '[.TunerHosts[] | select(.DeviceId == "12345678")][0][$k]' "$CFG"; }
 guide()  { jq -r --arg k "$1" '[.ListingProviders[] | select(.Path | endswith(":9191/output/epg"))][0][$k]' "$CFG"; }
@@ -83,7 +97,7 @@ run
 [[ "$(tuner Url)" == http://dispatcharr:9191/hdhr ]] || fail_ "fresh: tuner at Dispatcharr's address: $(cat "$CFG")"; pass
 [[ "$(tuner Type)/$(tuner AllowStreamSharing)" == hdhomerun/true ]] || fail_ "fresh: the template's tuner as it is: $(cat "$CFG")"; pass
 [[ "$(guide Path)/$(guide Type)" == http://dispatcharr:9191/output/epg/xmltv ]] || fail_ "fresh: its guide: $(cat "$CFG")"; pass
-grep -qx 'http://127.0.0.1:9191/hdhr/discover.json' "$T/curled" || fail_ "its DeviceID asked from this host, by the published port: $(cat "$T/curled")"; pass
+[[ "$(sort -u "$T/curled")" == http://127.0.0.1:9191/hdhr/discover.json ]] || fail_ "its DeviceID asked from this host, by the published port: $(cat "$T/curled")"; pass
 grep -q 'OK jellyfin: live TV tuner dispatcharr' "$T/out" && grep -q 'OK jellyfin: live TV guide from dispatcharr' "$T/out" || fail_ "fresh: both said: $(cat "$T/out")"; pass
 [[ "$(jq -c '[.TunerHosts[] | select(.Id == "tun-mine")][0]' "$CFG")" == "$mine" && "$(jq -c '[.ListingProviders[] | select(.Id == "lst-mine")][0]' "$CFG")" == "$mineg" ]] || fail_ "the user's own tuner and guide untouched: $(cat "$CFG")"; pass
 
@@ -114,8 +128,14 @@ grep -q 'would: jellyfin: dispatcharr as a live TV tuner' "$T/out" && grep -q "w
 # ---- failures, said ----
 HOLD=1; run; HOLD=
 [[ $WIRE_FAILS == 1 ]] && grep -q 'did not hold' "$T/out" || fail_ "a tuner that does not hold: a failure, and the guide not tried: $(cat "$T/out")"; pass
-DISC_OK=no; run; DISC_OK=yes
-[[ $WIRE_FAILS == 1 && "$(writes)" == 0 ]] && grep -q 'does not answer' "$T/out" || fail_ "a tuner that does not answer: a failure, nothing written: $(cat "$T/out")"; pass
+DISC_OK=no; API_WAIT=0; run; DISC_OK=yes; API_WAIT=90
+[[ $WIRE_FAILS == 1 && "$(writes)" == 0 ]] && grep -q "dispatcharr's API never became ready" "$T/out" || fail_ "a tuner that does not answer: a failure, nothing written: $(cat "$T/out")"; pass
+# just moved by a VPN toggle: running, its nginx answering 502 while the app
+# starts — waited for, never read as the tuner's answer (found live 25 Nov 2026)
+jq -cn --argjson t "$mine" '{TunerHosts:[$t], ListingProviders:[]}' > "$CFG"
+HOST=dispatcharr STARTING=3; run; STARTING=0
+[[ $WIRE_FAILS == 0 && "$(tuner Url)" == http://dispatcharr:9191/hdhr ]] && grep -q 'waiting for dispatcharr' "$T/out" \
+    || fail_ "502 while it starts: waited for, then wired: $(cat "$T/out")"; pass
 RUNNING=no; run; RUNNING=yes
 [[ $WIRE_FAILS == 1 && ! -s "$CALLS" ]] && grep -q 'dispatcharr is not running' "$T/out" || fail_ "provider not running: a failure, Jellyfin not asked: $(cat "$T/out")"; pass
 profiles jellyfin; run
