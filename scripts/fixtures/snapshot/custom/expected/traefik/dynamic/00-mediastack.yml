@@ -33,6 +33,10 @@ http:
     mediastack-portal-only:
       ipAllowList:
         sourceRange: ["127.0.0.1/32"]   # addr-ok: nobody — Traefik never sees a request from its own loopback
+    dispatcharr-login:
+      headers:
+        customRequestHeaders:
+          X-Mediastack-User: ""
     transmission-login:
       headers:
         customResponseHeaders:

@@ -50,7 +50,7 @@ own certificate expires.
 Defaults: dash (traefik dashboard), panel (olivetin front door), jellyfin,
 requests (seerr), invites (wizarr), notify (apprise), cleanup (cleanuparr),
 watch (watchstate), music (navidrome), audiobooks (audiobookshelf), books
-(kavita), books-dl (lazylibrarian), tv (ersatztv), pihole, qbit, sonarr,
+(kavita), books-dl (lazylibrarian), tv (ersatztv), iptv (dispatcharr), pihole, qbit, sonarr,
 radarr, prowlarr, lidarr, bazarr, radarr-4k, sonarr-anime, deluge,
 transmission — all under `STACK_DOMAIN`. Rename any of them with the guided pass:
 

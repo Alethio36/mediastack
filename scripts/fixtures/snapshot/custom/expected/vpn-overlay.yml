@@ -125,6 +125,20 @@ services:
     labels:
       mediastack.vpn: "true"
     restart: "no"
+  dispatcharr:
+    networks: [mediastack]
+    dns_search: ["."]
+    ports:
+      - "${MEDIASTACK_GATE_BIND:-}${DISPATCHARR_PORT:-9191}:9191"
+    labels:
+      mediastack.vpn: "false"
+      traefik.enable: "true"
+      traefik.http.routers.dispatcharr.rule: "Host(`${DISPATCHARR_HOST:-iptv}.${STACK_DOMAIN:-unset.invalid}`)"
+      traefik.http.routers.dispatcharr.entrypoints: "websecure"
+      traefik.http.routers.dispatcharr.tls: "true"
+      traefik.http.routers.dispatcharr.service: "dispatcharr"
+      traefik.http.services.dispatcharr.loadbalancer.server.port: "9191"
+      traefik.http.routers.dispatcharr.middlewares: "mediastack-gate@file,dispatcharr-login@file"
   hello:
     networks: [mediastack]
     dns_search: ["."]

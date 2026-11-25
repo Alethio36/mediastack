@@ -36,7 +36,7 @@ CGROUP_FILE=/proc/self/cgroup                     # scheduled_run reads it (a te
 STATE_DIR="$LOCAL_DIR/state"                      # pending work: one file per marker (state_get/state_set)
 ENV_BACKUP_DIR="$LOCAL_DIR/env-backups"           # .env before each schema migration
 ENV_BACKUP_KEEP=10                                # the oldest (your original) + the newest 9
-SCRIPT_SCHEMA=54
+SCRIPT_SCHEMA=55
 
 # Libraries — sourced, never executed (mode 644); every source line lives
 # here so the load order is visible in one place. Each lib says at its top
@@ -572,6 +572,10 @@ provision() {
                 | select($i.target | startswith($o.target + "/"))
                 | $o.source + ($i.target | ltrimstr($o.target)) ]
             | unique | .[]' <<<"$RENDERED_JSON")
+        # its own step before its first start, found by name (services/<name>/:
+        # <name>_provision) — what its image would otherwise make root's
+        local pf; pf="${s//-/_}_provision"
+        if declare -F "$pf" >/dev/null; then "$pf"; fi
     done
     # per-instance data dirs from the label contract
     local dd

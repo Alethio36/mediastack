@@ -1,0 +1,70 @@
+# Live TV: Dispatcharr — IPTV sources (M3U playlists, Xtream Codes accounts)
+# and their programme guide, managed in one place and handed to Jellyfin as
+# one tuner. An admin tool: the household watches through Jellyfin.
+# support: nothing yet — the stack part and doctor cover it (lib/support.sh)
+#
+# The all-in-one image: PostgreSQL, Redis, its workers and its own nginx in
+# one container, everything kept in /data. Pinned: it is young and moves
+# fast (docs/roadmap.md, its entry). Its README: services/dispatcharr/README.md.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: ${LOG_MAX_SIZE:-10m}
+    max-file: ${LOG_MAX_FILE:-3}
+
+x-armour: &no-foreign-watchtower
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  dispatcharr:
+    image: ghcr.io/dispatcharr/dispatcharr:0.34.1
+    container_name: ${DISPATCHARR_NAME:-mediastack-dispatcharr}
+    profiles: ["dispatcharr"]
+    environment:
+      - DISPATCHARR_ENV=aio
+      - REDIS_HOST=localhost
+      - CELERY_BROKER_URL=redis://localhost:6379/0
+      - DISPATCHARR_LOG_LEVEL=info
+      # the image switches to these itself (its workers and its database run as them)
+      - PUID=${DISPATCHARR_UID}
+      - PGID=${MEDIA_GROUP_GID:-13000}
+      - TZ=${TZ:-Etc/UTC}
+      # a household's load: 2 web + 2 background workers (948 MiB idle, the spike)
+      - UWSGI_WORKERS=2
+      - CELERY_MAX_WORKERS=2
+      - CELERY_MIN_WORKERS=1
+      # the one address whose header names who signs in: Traefik's (the admin
+      # gate in front, dispatcharr_login_middleware past it). Set, never left
+      # to its private-network default — that one it never trusts for sign-in.
+      - DISPATCHARR_TRUSTED_PROXIES=${TRAEFIK_ADDRESS:-172.31.250.2}/32
+      # no phone-home it lets us turn off: its public-IP lookup (ipify)
+      - DISPATCHARR_ENABLE_IP_LOOKUP=false
+    volumes:
+      - ${CONFIG_ROOT}/dispatcharr:/data
+      # recordings are media, not settings: in the data tree, out of every restore point
+      - ${DATA_ROOT}/media/recordings:/data/recordings
+    labels:
+      <<: *no-foreign-watchtower
+      mediastack.managed: "true"
+      mediastack.port: "9191"
+      mediastack.desc: "Live TV — IPTV channels and their guide, one tuner in Jellyfin"
+      mediastack.vpn: "false"
+      mediastack.vpntoggle: "true"
+      mediastack.config: "true"
+      mediastack.datadirs: "media/recordings"
+      mediastack.subdomain: "iptv"
+      mediastack.auth: "gate"   # an admin tool: behind the portal (mediastack-gate)
+      mediastack.auth.inject: "true"   # past the gate Traefik names its admin (dispatcharr_login_middleware)
+      mediastack.tier: "admin"   # channels and sources are set up here; the household watches in Jellyfin
+      # its log lines carry their level after the time (2026-11-24 21:12:04,060 -0800 ERROR …); nginx's in brackets
+      mediastack.errors: '^[0-9-]+ [0-9:,]+ [+-][0-9]{4} (error|critical) |\[(error|crit|alert|emerg)\]'
+    healthcheck:
+      # its version endpoint answers without a login once nginx and Django run
+      test: ["CMD-SHELL", "curl -fsS --max-time 5 http://127.0.0.1:9191/api/core/version/ >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    logging: *logging
+    restart: unless-stopped

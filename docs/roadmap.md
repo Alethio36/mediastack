@@ -363,6 +363,51 @@ agreed first:
     pending" holds the results and the decisions): Jellyfin its only consumer,
     no route past the gate. Next: `services/dispatcharr/`, then Jellyfin's
     tuner and guide.
+    *The service folder (24 Nov 2026)* — `services/dispatcharr/`: its
+    fragment, settings rows, wire role, provision hook, login middleware,
+    `set-credentials` rotation, icon, README; its own test
+    (`scripts/test-dispatcharr.sh`). **Every file it touched outside its
+    folder:**
+    - *As the contract says* — `lib/wire.sh` (`WIRE_ROLES`, before
+      `jellyfin`), `.env.example` (its UID, update flag and login) and so
+      `ENV_SCHEMA` 55 with an empty migration (`lib/migrations.sh`,
+      `SCRIPT_SCHEMA`),
+      `docker-compose.yml` (its `include:` line; `test-render` fails a
+      fragment left out), `lib/access.sh`'s target list.
+    - *Made by the tools, not by hand* — `answers.example`
+      (`gen-answers.sh`: configure's picker and its login came from its
+      labels and `dispatcharr_logins` — no questionnaire code), the
+      snapshot fixtures (`--bless`: its route on every fixture, its header
+      removed while it is not enabled).
+    - *Not touched at all* — the installer and configure (its UID from
+      `_configure_selfheal`, its login from `logins_fill`), the
+      questionnaire, doctor (its runtime and ownership audits pass), backup
+      (restore points stop the stack: its database is copied cold), the
+      edge (its route from its labels, its middleware found by name), the
+      `disable authentik` path (`dispatcharr_gate_login`, found by name),
+      migrations.
+    - **Finding, made generic here:** no hook ran before a service's first
+      start, so an image that makes files root's before switching user
+      (its `uploads/` and token key) left doctor a mis-owned config —
+      `provision` now runs `<name>_provision`, found by name
+      (`mediastack.sh`, 3 lines; the contract in `docs/adding-a-service.md`).
+    - **Finding, filed for step 11:** `lib/access.sh` names every login by
+      hand — `credentials`' printout, `set-credentials`' usage text, its
+      branch, and `all`'s call and both its texts: six edits for one login
+      whose facts its `<stem>_logins` line and `sc_rotate_<stem>` already
+      hold. Not converted here: half the logins one way and half the other
+      is worse than either.
+    - **Finding, filed for step 11:** a new service bumps the `.env`
+      schema with a migration that does nothing — CI's schema-bump rule
+      cannot tell a new service's own lines from a layout change. Its UID,
+      login and update flag all arrive without one.
+    - **Finding, filed for step 11:** a service's own test needs its own
+      line in `.github/workflows/lint.yml`; `scripts/test-*.sh` are not
+      found by themselves.
+    - **Finding, filed for step 12:** the README's service table and
+      `docs/edge.md`'s list of addresses are written by hand (both lines
+      added); the README rewrite decides whether they are made from the
+      labels or give way to the services' own READMEs.
 11. **An audit of mediastack itself** (*agreed 14 Nov 2026*) — the whole
     repo read for inefficiencies, dead code, redundancies and needless
     complexity, each finding fixed or filed. Before the README, so it
@@ -439,6 +484,23 @@ agreed first:
       health messages should take the warning (or failure) colour — through
       the hub entry's type, a per-title rule, or whatever their Apprise
       settings offer (check their source first).
+    - **`lib/access.sh` names every login by hand** (found adding
+      Dispatcharr, 24 Nov 2026): `credentials` and `set-credentials` —
+      usage, branch, `all` — could be made from `logins_list` (title and
+      keys) and `sc_rotate_<stem>`, with an optional note per service and
+      the few special ones (the arrs' shared login, the portal, the panel)
+      kept as they are.
+    - **A new service bumps the `.env` schema for nothing** (24 Nov 2026):
+      the schema-bump rule could pass `.env.example` lines that are a
+      service's own (its `<SVC>_UID`/`_UPDATE`, its `env.tsv` rows) when
+      nothing else changed — every service since September (Wizarr,
+      Apprise, Navidrome, …) added a migration only to write lines the
+      code no longer needs.
+    - **A service's test is listed by hand in CI** (24 Nov 2026): run every
+      `scripts/test-*.sh` the workflow does not name, or fail one it misses.
+    - **`authentik_prepare` is called by name** from `up` and `enable`;
+      with `<name>_provision` now found by name, see whether its part fits
+      there (it needs the edge first).
     - **Contributors' shellcheck is not CI's** (found 24 Nov 2026): CI runs
       Ubuntu 24.04's (0.9); a newer one (0.11) passed a test file CI failed
       (SC2218), and unstable stayed red until the promote noticed. A lint

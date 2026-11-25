@@ -13,6 +13,7 @@ include:
   - services/cleanuparr/compose.yml
   - services/cloudflared/compose.yml
   - services/deluge/compose.yml
+  - services/dispatcharr/compose.yml
   - services/ersatztv/compose.yml
   - services/flaresolverr/compose.yml
   - services/gluetun/compose.yml

@@ -196,6 +196,17 @@ what to do. `scripts/test-rotate.sh` fails CI on one that is none of these. A ve
 needs one service's code at one spot calls it by name — `<name>_<what>`
 (`jellyfin_sessions_active` in the update, `link_<app>_*` in link-account).
 
+**What its image would make root's, it makes first — a hook found by
+name.** An image whose start script runs as root and creates files or
+folders in its config before switching user (Dispatcharr: its
+`uploads/` folder and its token key) leaves them root's, and doctor calls
+them mis-owned config. Define `<name>_provision` in its folder: `provision`
+(run by `up`, `enable` and `configure`, before anything starts) calls it
+for each enabled service, after making its folders. It creates only what
+is missing, owned by `<SVC>_UID` and the `mediacenter` group, through one
+`sudo sh -c` with a single-quoted body (paths as arguments), and never
+replaces what exists.
+
 **Questions are a hook, found by name.** A service that needs an answer
 from the operator — a token, a name, a secret it generates once — defines
 `<name>_questions` in its folder (`-` in the name becomes `_`). configure's

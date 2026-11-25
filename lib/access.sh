@@ -50,6 +50,11 @@ cmd_credentials() {
         printf '%-22s %s\n' "Navidrome admin pw"    "$(env_or_note NAVIDROME_ADMIN_PASSWORD '(not set — run wire navidrome)')"
         signin_is authentik && info "With the portal, that Navidrome admin is the stack's own (used on this host only) — people sign in through the portal; Navidrome admin rights follow the portal's $PORTAL_ADMIN group."
     fi
+    if svc_enabled dispatcharr; then
+        printf '%-22s %s\n' "Dispatcharr admin"     "$(env_or_note DISPATCHARR_ADMIN_USER '(not set — run wire dispatcharr)')"
+        printf '%-22s %s\n' "Dispatcharr admin pw"  "$(env_or_note DISPATCHARR_ADMIN_PASSWORD '(not set — run wire dispatcharr)')"
+        signin_is authentik && info "With the portal, admins are signed in to Dispatcharr as that admin — its password is the way in without the portal."
+    fi
     if svc_enabled olivetin; then
         printf '%-22s %s\n' "Panel admin"           "$(env_or_note PANEL_ADMIN_USER '(not set — run frontdoor-install)')"
         printf '%-22s %s\n' "Panel admin pw"        "$(env_or_note PANEL_ADMIN_PASSWORD '(not set — run frontdoor-install)')"
@@ -89,8 +94,8 @@ credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assist
 cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, atomically
     load_env; render
     local target="${1:-}"
-    case "$target" in arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|navidrome|panel|portal|all) ;; *)
-        die "usage: set-credentials <arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|navidrome|panel|portal|all>
+    case "$target" in arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|navidrome|dispatcharr|panel|portal|all) ;; *)
+        die "usage: set-credentials <arr|qbit|deluge|transmission|jellyfin|pihole|traefik|audiobookshelf|kavita|navidrome|dispatcharr|panel|portal|all>
   arr             the shared login of every arr app (+ cleanuparr's account password)
   qbit            qBittorrent's WebUI login (+ every place that stores it)
   deluge          Deluge's web password (+ every download-client entry holding it)
@@ -101,6 +106,7 @@ cmd_set_credentials() { # rotate a stored credential in the app(s) AND .env, ato
   audiobookshelf  its root password (every session signed in as root ends)
   kavita          its admin password (the stack's own account)
   navidrome       its admin password (the stack's own account)
+  dispatcharr     its admin password (the stack's own account)
   panel           the web panel's admin password (the panel restarts to read it)
   portal          the portal's admin (akadmin) password
   all             ONE password across all of the above except portal (usernames stay put)
@@ -183,6 +189,14 @@ the portal, the people sync signs in as it). Only this password and .env move."
         login_pass_ask "New password" NAVIDROME_ADMIN_PASSWORD; pass="$REPLY_VAL"
         sc_rotate_navidrome "$pass"
         ;;
+    dispatcharr)
+        local pass
+        explain "Rotate Dispatcharr's admin password" \
+"The admin is the stack's own account; with the portal, admins are signed in
+as it. Only this password and .env move."
+        login_pass_ask "New password" DISPATCHARR_ADMIN_PASSWORD; pass="$REPLY_VAL"
+        sc_rotate_dispatcharr "$pass"
+        ;;
     panel)
         local pass
         explain "Rotate the web panel's admin password" \
@@ -209,7 +223,7 @@ shared password also sits in the arrs' and qBittorrent's settings."
 qBittorrent (and everything storing its login), Deluge and Transmission once
 wire has set them up (and every entry holding them), the Jellyfin admin,
 Pi-hole, the Traefik dashboard, Audiobookshelf's root, Kavita's admin,
-Navidrome's admin and the web panel's admin.
+Navidrome's admin, Dispatcharr's admin and the web panel's admin.
 Usernames stay as they are. Deliberate trade-off: one reused password
 means one leak opens everything — use a strong, stack-unique one.
 NOT covered: the portal's admin (set-credentials portal — it guards the
@@ -227,10 +241,11 @@ rest), and Wizarr's admin account — rotate that in Wizarr's UI
         sc_rotate_audiobookshelf "$pass"
         sc_rotate_kavita "$pass"
         if svc_enabled navidrome && [[ -n "$(env_get NAVIDROME_ADMIN_PASSWORD)" ]]; then sc_rotate_navidrome "$pass"; fi
+        if svc_enabled dispatcharr && [[ -n "$(env_get DISPATCHARR_ADMIN_PASSWORD)" ]]; then sc_rotate_dispatcharr "$pass"; fi
         if svc_enabled olivetin; then sc_rotate_panel "$pass"; fi
         warn "Wizarr's admin password is NOT rotated by this — change it in Wizarr's UI."
         signin_is authentik && info "the portal's admin keeps its own password: ./mediastack.sh set-credentials portal"
-        ok "one password now covers arr + qbit + deluge/transmission (if set up) + jellyfin + pihole + traefik + audiobookshelf + kavita + navidrome + the web panel (if installed) — view: ./mediastack.sh credentials"
+        ok "one password now covers arr + qbit + deluge/transmission (if set up) + jellyfin + pihole + traefik + audiobookshelf + kavita + navidrome + dispatcharr (if set up) + the web panel (if installed) — view: ./mediastack.sh credentials"
         ;;
     esac
 }

@@ -39,6 +39,10 @@ http:
           - X-authentik-email
           - X-authentik-name
           - X-authentik-uid
+    dispatcharr-login:
+      headers:
+        customRequestHeaders:
+          X-Mediastack-User: ""
     transmission-login:
       headers:
         customResponseHeaders:

@@ -53,6 +53,10 @@ ENABLE_CLOUDFLARED=
 #   yes | no — recommended: no
 ENABLE_DELUGE=
 
+# Live TV — IPTV channels and their guide, one tuner in Jellyfin
+#   yes | no — recommended: no
+ENABLE_DISPATCHARR=
+
 # virtual live-TV channels from your library
 #   yes | no — recommended: no
 ENABLE_ERSATZTV=
@@ -272,6 +276,12 @@ CLOUDFLARE_TUNNEL_TOKEN=
 # Deluge's web password — one of the stack's own (configure records it; set-credentials deluge)
 #   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
 DELUGE_PASSWORD=
+
+# ------------------------------------------------------------ dispatcharr --
+
+# Dispatcharr's admin password (configure records it; set-credentials dispatcharr)
+#   a secret on one line, with no control characters (a newline or a tab) — only with STACK_LOGINS=each, where blank asks it (generated otherwise, or STACK_PASSWORD's) — a secret: keep this file yours alone (chmod 600)
+DISPATCHARR_ADMIN_PASSWORD=
 
 # ------------------------------------------------------------ gluetun --
 
