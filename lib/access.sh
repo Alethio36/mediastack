@@ -133,16 +133,19 @@ credentials_full() { # SERVICE [all] — everything it holds: its logins, its li
         out+=$'\n'"$(printf '  %-10s %s\n  · for your apps, with its address: %s' "API key" "${k:-(not created yet — start it once)}" "$(svc_url "$s")")"
         shown+="$k"$'\n'
     fi
-    # its settings' secrets (services/<name>/env.tsv, its VPN providers' too): those set, each once
+    # its settings' secrets (services/<name>/env.tsv, its VPN providers' too): those set, each once,
+    # under whose they are — said once for each group, not under every one
+    local own="" yours="" one
     while IFS=$'\t' read -r key typ _ writer _ _ meaning; do
         [[ "$typ" == secret && "$writer" != answers ]] || continue
         v=$(env_get "$key"); [[ -n "$v" ]] || continue
         [[ "$shown" != *$'\n'"$v"$'\n'* ]] || continue
         shown+="$v"$'\n'
-        out+=$'\n'"$(printf '  %s\n    %s\n    · %s' "$key" "$v" "$meaning")"
-        if [[ "$writer" == script ]]; then out+=$'\n'"    · the stack's own — rotate-secrets changes it (changed by hand, what holds it breaks)"
-        else out+=$'\n'"    · yours, as you gave it"; fi
+        one=$(printf '    %s\n      %s\n      · %s' "$key" "$v" "$meaning")
+        if [[ "$writer" == script ]]; then own+=$'\n'"$one"; else yours+=$'\n'"$one"; fi
     done < <(cat "$SCRIPT_DIR/services/$s/env.tsv" "$SCRIPT_DIR/services/$s"/providers/*/env.tsv 2>/dev/null | grep -v '^#' || true)   # soft read: a service with no settings of its own
+    [[ -z "$own" ]] || out+=$'\n'"  the stack's own — rotate-secrets changes these; changed by hand, what holds them breaks:$own"
+    [[ -z "$yours" ]] || out+=$'\n'"  yours, as you gave them:$yours"
     out=$(sed '/^$/d' <<<"$out")
     if [[ -z "$out" ]]; then
         [[ "${2:-}" == all ]] && return 0

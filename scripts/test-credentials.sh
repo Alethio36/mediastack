@@ -103,12 +103,13 @@ env_set AUTHENTIK_ADMIN_PASSWORD akpw; env_set AUTHENTIK_DB_PASSWORD dbpw; env_s
 strict cmd_credentials authentik; out=$(cat "$work/strict")
 [[ $SR == 0 ]] || fail_ "credentials authentik, under set -e: rc $SR: $out"
 [[ "$(grep -c 'akpw' <<<"$out")" == 1 ]] || fail_ "the portal admin's password once (its row), not again as a setting: $out"; pass
-grep -A3 '^  AUTHENTIK_DB_PASSWORD$' <<<"$out" | grep "the stack's own — rotate-secrets changes it" >/dev/null || fail_ "a secret the stack made: said so, and what changes it: $out"; pass
-grep -A3 '^  SMTP_PASSWORD$' <<<"$out" | grep 'yours, as you gave it' >/dev/null || fail_ "a secret you gave: said so: $out"; pass
+owner() { awk -v k="$1" '/^  the stack.s own — rotate-secrets changes these/ { g = "own" } /^  yours, as you gave them:/ { g = "yours" } $1 == k { print g }' <<<"$2"; }
+[[ "$(owner AUTHENTIK_DB_PASSWORD "$out")" == own && "$(owner SMTP_PASSWORD "$out")" == yours ]] || fail_ "each secret under whose it is — the stack's own, or yours: $out"; pass
+[[ "$(grep -c "rotate-secrets changes these" <<<"$out")" == 1 ]] || fail_ "whose they are: said once for the group, not under each: $out"; pass
 ! grep -q 'AUTHENTIK_LDAP_TOKEN' <<<"$out" || fail_ "a secret not set: not listed: $out"; pass
 env_set WIREGUARD_PRIVATE_KEY wgkey; env_set GLUETUN_CONTROL_APIKEY ctlkey
 out=$(cmd_credentials gluetun 2>&1)
-grep -A3 '^  GLUETUN_CONTROL_APIKEY$' <<<"$out" | grep 'closed' >/dev/null && grep -A3 '^  WIREGUARD_PRIVATE_KEY$' <<<"$out" | grep 'yours' >/dev/null \
+grep -A2 '^    GLUETUN_CONTROL_APIKEY$' <<<"$out" | grep 'closed' >/dev/null && [[ "$(owner WIREGUARD_PRIVATE_KEY "$out")" == yours && "$(owner GLUETUN_CONTROL_APIKEY "$out")" == own ]] \
     || fail_ "gluetun: its control key with why no app can use it, your VPN key as yours: $out"; pass
 out=$(cmd_credentials jellyfin 2>&1)
 [[ "$(grep -c 'key-jf' <<<"$out")" == 1 ]] && grep -qE '^  API key +key-jf$' <<<"$out" || fail_ "jellyfin: its key once, as its key for your apps: $out"; pass
