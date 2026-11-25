@@ -116,6 +116,7 @@ grep -A2 '^    GLUETUN_CONTROL_APIKEY$' <<<"$out" | grep 'closed' >/dev/null && 
     || fail_ "gluetun: its control key with why no app can use it, your VPN key as yours: $out"; pass
 out=$(cmd_credentials jellyfin 2>&1)
 [[ "$(grep -c 'key-jf' <<<"$out")" == 1 ]] && grep -qE '^  API key +key-jf$' <<<"$out" || fail_ "jellyfin: its key once, as its key for your apps: $out"; pass
+grep -A1 -E '^  API key ' <<<"$out" | grep -E '^  address +https?://' >/dev/null || fail_ "its key, then its address as a row of its own (an app asks for both): $out"; pass
 strict cmd_credentials nosuch
 [[ $SR != 0 ]] && grep -q "no service named 'nosuch'" "$work/strict" || fail_ "an unknown service: an error naming it: $(cat "$work/strict")"; pass
 profiles gluetun,qbittorrent,sonarr,radarr,prowlarr,jellyfin,kavita,dispatcharr,flaresolverr

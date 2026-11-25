@@ -130,7 +130,7 @@ credentials_full() { # SERVICE [all] — everything it holds: its logins, its li
     while IFS= read -r f; do if [[ -n "$f" ]]; then shown+="$(env_get "$(cut -f3 <<<"$f")")"$'\n'; fi; done <<<"$l"
     shown+="$(credentials_extra "$s" | awk -F'\t' 'NF > 1 { print $2 }')"$'\n'
     if k=$(credentials_key "$s"); then
-        out+=$'\n'"$(printf '  %-10s %s\n  · for your apps, with its address: %s' "API key" "${k:-(not created yet — start it once)}" "$(svc_url "$s")")"
+        out+=$'\n'"$(printf '  %-10s %s\n  %-10s %s' "API key" "${k:-(not created yet — start it once)}" address "$(svc_url "$s")")"   # what an app of yours asks for: both
         shown+="$k"$'\n'
     fi
     # its settings' secrets (services/<name>/env.tsv, its VPN providers' too): those set, each once,
