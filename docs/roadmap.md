@@ -408,6 +408,14 @@ agreed first:
       (`rotate-secrets`' list) and the user's own (VPN, Cloudflare, email);
       `set-credentials` asked bare lists the logins instead of failing with
       its usage. `lib/access.sh` names no app (its test fails if it does).
+      Then (25 Nov 2026, agreed): one block per service under its name —
+      its logins, then its own rows and notes, none floating loose — and
+      `credentials <service>` / `--all`, showing everything a service
+      holds, its settings' secrets too, each with its meaning and whose it
+      is (the stack's own: `rotate-secrets`; yours: as you gave it), made
+      from the schema: a service added later is covered with nothing to
+      list. The owner of the box can read `.env` anyway; the plain view's
+      leaving them out is for reading, not for hiding.
     - **Finding, fixed in this step:** a new service bumped the `.env`
       schema with a migration that did nothing — CI's schema-bump rule
       could not tell a new service's own lines from a layout change. It now

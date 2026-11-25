@@ -66,7 +66,7 @@ sc_explain_panel() { echo "The panel's own admin — with the portal, its way in
 down. Only its hash is written to the panel's config; the panel restarts to
 read it (a few seconds)."; }   # set-credentials panel (lib/access.sh)
 olivetin_credentials() { # credentials (lib/access.sh)
-    signin_is authentik && info "With the portal, the admin group signs in to the panel through it — that panel admin is the way in without the portal."
+    signin_is authentik && echo "with the portal, the admin group signs in to the panel through it — this login is the way in without the portal"
     return 0
 }
 sc_rotate_panel() { # PASS — set-credentials panel: .env, then the installed config (its hash), then the panel restarted to read it

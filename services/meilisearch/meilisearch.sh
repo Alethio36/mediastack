@@ -27,5 +27,3 @@ meili_key_proven() { # meili_key_proven NEW OLD — Meilisearch takes NEW and re
     [[ "$code" == 403 ]] || { fail "meilisearch: the key it should refuse answers HTTP $code"; return 1; }
     ok "meilisearch: takes the key it should, refuses the other"
 }
-
-meilisearch_credentials() { info "Meilisearch's master key is machine-to-machine — apps use it, you never need it."; }   # credentials (lib/access.sh)

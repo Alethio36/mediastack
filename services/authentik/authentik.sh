@@ -1441,9 +1441,10 @@ wire_authentik_cards() { # every gated app its own gate and card; household apps
 }
 
 authentik_credentials() { # credentials (lib/access.sh): the portal's admin — not one of the stack's logins (set-credentials portal)
-    echo "the portal's admin"
-    printf '  %-10s %s\n' user akadmin
-    printf '  %-10s %s\n' password "$(env_or_note AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"
+    printf "login\tthe portal's own admin\n"
+    printf 'user\takadmin\n'
+    printf 'password\t%s\n' "$(env_or_note AUTHENTIK_ADMIN_PASSWORD '(generated at the first up)')"
+    echo "not one of the stack's logins: kept out of set-credentials all — change it: ./mediastack.sh set-credentials portal"
 }
 sc_rotate_portal() { # PASS — akadmin, through authentik's API
         svc_enabled authentik || die "authentik is not enabled — there is no portal admin"

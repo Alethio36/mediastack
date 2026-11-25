@@ -23,11 +23,14 @@ signin_is() { [[ "$(signin_model)" == "$1" ]]; }   # signin_is MODEL
 # is sc_rotate_<target> in the service's folder, taking the new password —
 # with ask_user, the username first. A service may add, found by name:
 #   sc_explain_<target>       what a rotation moves, printed before the question
-#   <service>_credentials     lines under its logins in `credentials`
+#   <service>_credentials     its own lines in `credentials`: "label<TAB>value"
+#                             rows and notes, shown under its logins
 # (docs/design-install.md, "The service contract"). The portal's admin
 # (akadmin) is not one of these logins: its own target, kept out of `all`.
-#   <service>_api_key         its key a companion app asks for (an arr
+#   <service>_api_key         its key an app of yours asks for (an arr
 #                             instance's comes from the arr family's own)
+# `credentials <service>` / `--all` show everything a service holds, its
+# settings' secrets too (from its env.tsv, with their meaning).
 # No app is named here.
 
 sc_lines() { # [enabled] -> target<TAB>LINE, one per login of the catalogue (with "enabled": of the enabled services), a shared one once
@@ -44,44 +47,104 @@ sc_lines() { # [enabled] -> target<TAB>LINE, one per login of the catalogue (wit
     done
 }
 
-cmd_credentials() {
+cmd_credentials() { # [SERVICE | --all] — bare: the logins and the keys for your apps; a service, or every one: everything it holds
     load_env; render   # once, here: every $(svc_url) below would render again in its subshell
-    hr "Credentials — the stack's own logins, and the keys an app of yours asks for"
-    local s stem l f
-    local -A seen=()
-    for s in $(svc_enabled_managed); do
-        stem=$(svc_label "$s" mediastack.logins); stem=${stem:-$s}
-        if [[ -z "${seen[$stem]:-}" ]]; then
-            seen[$stem]=1
-            while IFS= read -r l; do [[ -n "$l" ]] && credentials_login "$l"; done < <(logins_of "$s")
-        fi
-        f="${s//-/_}_credentials"
-        if declare -F "$f" >/dev/null; then "$f"; fi
-    done
-    credentials_api_keys
-    info "Not shown: the secrets only the stack uses (./mediastack.sh rotate-secrets names and changes them), and your own — the VPN's, Cloudflare's, email's — as you gave them, in .env."
+    local arg="${1:-}" s
+    case "$arg" in
+        "")
+            hr "Credentials — the stack's own logins, and the keys an app of yours asks for"
+            local stem l
+            local -A seen=()
+            local head
+            for s in $(svc_enabled_managed); do
+                stem=$(svc_label "$s" mediastack.logins); head=$s; l=""
+                if [[ -z "${seen[${stem:-$s}]:-}" ]]; then
+                    seen[${stem:-$s}]=1; l=$(logins_of "$s")
+                    # a login several services share: its name, and theirs (the arrs)
+                    [[ -z "$stem" ]] || head="$stem ($(svc_enabled_managed | while read -r m; do [[ "$(svc_label "$m" mediastack.logins)" == "$stem" ]] && echo "$m"; done | paste -sd' ' | sed 's/ /, /g'))"
+                fi
+                credentials_block "$head" "$l" "$(credentials_extra "$s")"
+            done
+            credentials_api_keys
+            info "Not shown: the secrets only the stack uses, and your own (the VPN's, Cloudflare's, email's). Everything one service holds: ./mediastack.sh credentials <service> — every one: credentials --all"
+            ;;
+        --all)
+            for s in $(svc_enabled_managed); do credentials_full "$s"; done ;;
+        *)
+            svc_exists "$arg" || die "no service named '$arg' — the enabled ones: $(svc_enabled_managed | paste -sd' ' -)"
+            credentials_full "$arg" ;;
+    esac
+}
+
+credentials_extra() { # SERVICE -> its own lines (its <name>_credentials, found by name): "label<TAB>value" rows and notes
+    local f="${1//-/_}_credentials"
+    if declare -F "$f" >/dev/null; then "$f"; fi
+}
+
+credentials_block() { # HEADING LOGINS EXTRA — one block under the service's name: each login (what it is, user, password), then its own rows and notes
+    local logins=$2 extra=$3 l
+    [[ -n "$logins$extra" ]] || return 0
+    echo "$1"
+    while IFS= read -r l; do [[ -n "$l" ]] && credentials_login "$l"; done <<<"$logins"
+    credentials_lines "$extra"
+}
+
+credentials_lines() { # LINES — a "label<TAB>value" line is a row, any other a note
+    local l
+    while IFS= read -r l; do
+        [[ -n "$l" ]] || continue
+        if [[ "$l" == *$'\t'* ]]; then printf '  %-10s %s\n' "${l%%$'\t'*}" "${l#*$'\t'}"
+        else printf '  · %s\n' "$l"; fi
+    done <<<"$1"
 }
 
 credentials_login() { # LINE — one login: its title, then its username and password (or what records them)
     local ukey pkey none='(not recorded yet — ./mediastack.sh up records it)'
     ukey=$(cut -f2 <<<"$1"); pkey=$(cut -f3 <<<"$1")
-    echo "$(cut -f1 <<<"$1")"
+    printf '  %-10s %s\n' login "$(cut -f1 <<<"$1")"
     [[ "$ukey" == - ]] || printf '  %-10s %s\n' user "$(env_or_note "$ukey" "$none")"
     printf '  %-10s %s\n' password "$(env_or_note "$pkey" "$none")"
 }
 
-credentials_api_keys() { # the keys companion apps (nzb360, LunaSea, Home Assistant…) ask for, with the address to give them
-    # each service's <name>_api_key (found by name); an arr instance's through the arr family's own (its mediastack.arrtype label)
-    local s f k rows=""
+credentials_key() { # SERVICE -> its key for your apps ("" when it has none): its <name>_api_key, an arr instance's through the arr family (its mediastack.arrtype); rc 1 when it has no such key at all
+    local f="${1//-/_}_api_key"
+    if declare -F "$f" >/dev/null; then "$f"
+    elif [[ -n "$(svc_label "$1" mediastack.arrtype)" ]]; then arr_key "$1"
+    else return 1; fi
+}
+
+credentials_full() { # SERVICE — everything it holds: its logins, its lines, its key for your apps, then every secret its settings hold, with what each is for
+    local s=$1 l k v key typ writer meaning shown=$'\n' f
+    hr "$s$(svc_enabled "$s" || echo ' (not enabled)')"
+    l=$(logins_of "$s")
+    credentials_block "$s" "$l" "$(credentials_extra "$s")"
+    while IFS= read -r f; do [[ -n "$f" ]] && shown+="$(env_get "$(cut -f3 <<<"$f")")"$'\n'; done <<<"$l"
+    shown+="$(credentials_extra "$s" | awk -F'\t' 'NF > 1 { print $2 }')"$'\n'
+    if k=$(credentials_key "$s"); then
+        printf '  %-10s %s\n' "API key" "${k:-(not created yet — start it once)}"
+        printf '  · for your apps, with its address: %s\n' "$(svc_url "$s")"
+        shown+="$k"$'\n'
+    fi
+    # its settings' secrets (services/<name>/env.tsv, its VPN providers' too): those set, each once
+    while IFS=$'\t' read -r key typ _ writer _ _ meaning; do
+        [[ "$typ" == secret && "$writer" != answers ]] || continue
+        v=$(env_get "$key"); [[ -n "$v" ]] || continue
+        [[ "$shown" != *$'\n'"$v"$'\n'* ]] || continue
+        shown+="$v"$'\n'
+        printf '  %s\n    %s\n    · %s\n' "$key" "$v" "$meaning"
+        if [[ "$writer" == script ]]; then echo "    · the stack's own — rotate-secrets changes it (changed by hand, what holds it breaks)"
+        else echo "    · yours, as you gave it"; fi
+    done < <(cat "$SCRIPT_DIR/services/$s/env.tsv" "$SCRIPT_DIR/services/$s"/providers/*/env.tsv 2>/dev/null | grep -v '^#' || true)   # soft read: a service with no settings of its own
+}
+
+credentials_api_keys() { # the keys an app of yours (nzb360, LunaSea, Home Assistant, a dashboard…) asks for, with the address to give it
+    local s k rows=""
     for s in $(svc_enabled_managed); do
-        f="${s//-/_}_api_key"
-        if declare -F "$f" >/dev/null; then k=$("$f")
-        elif [[ -n "$(svc_label "$s" mediastack.arrtype)" ]]; then k=$(arr_key "$s")
-        else continue; fi
+        k=$(credentials_key "$s") || continue
         rows+=$(printf '%-14s %-44s %s' "$s" "$(svc_url "$s")" "${k:-(not created yet — start it once)}")$'\n'
     done
     [[ -n "$rows" ]] || return 0
-    hr "API keys (companion apps)"
+    hr "Keys for your apps"
     printf '%s' "$rows"
     if signin_is authentik; then
         info "Give an app the https address and the key. Behind the portal, where an API passes the gate, the app also sends a device password as a header (README: \"A phone app for the arrs\")."

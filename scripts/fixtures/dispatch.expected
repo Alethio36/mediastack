@@ -138,8 +138,7 @@ CALL cmd_invite [1] --bogus
 ## credentials
 CALL cmd_credentials [0]
 ## credentials x
-ERROR 'credentials' takes no arguments (got: x)
-rc=1
+CALL cmd_credentials [1] x
 ## set-credentials
 CALL cmd_set_credentials [0]
 ## set-credentials a

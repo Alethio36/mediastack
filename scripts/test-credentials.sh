@@ -73,26 +73,49 @@ got=$(grep -v EXPLAIN "$REC" | sort | paste -sd'|')
 grep -q "Kavita's admin: not set up yet — skipped" <<<"$out" || fail_ "all: one not set up is said and skipped: $out"; pass
 grep -q '^EXPLAIN One password across the stack' "$REC" || fail_ "all: explained first"; pass
 
-# ---- credentials: each enabled service's logins once, and its note ----
+# ---- credentials: one block per service — its logins once, then its own lines ----
 env_set ARR_PASSWORD arrpw; env_set KAVITA_ADMIN_USER admin; env_set KAVITA_ADMIN_PASSWORD kpw
 signin_is() { [[ "$1" == none ]]; }
+profiles gluetun,qbittorrent,sonarr,prowlarr,jellyfin,kavita,dispatcharr,seerr
 strict cmd_credentials; out=$(cat "$work/strict")
 [[ $SR == 0 ]] || fail_ "credentials, under set -e: rc $SR: $out"
-[[ "$(grep -c '^the arrs (one login for every one of them)$' <<<"$out")" == 1 ]] || fail_ "the arrs' login printed once for sonarr and prowlarr: $out"; pass
-grep -A2 "^Kavita's admin$" <<<"$out" | grep -E '^  password +kpw$' >/dev/null || fail_ "a login's password under its title: $out"; pass
-grep -A2 "^Dispatcharr's admin$" <<<"$out" | grep -E '^  password +x$' >/dev/null || fail_ "dispatcharr's login listed: $out"; pass
-grep -qE '^  API key ' <<<"$out" || fail_ "jellyfin's note (its API key) under its logins: $out"; pass
+[[ "$(grep -c 'the arrs (one login for every one of them)$' <<<"$out")" == 1 ]] && grep -qx 'arr (prowlarr, sonarr)' <<<"$out" \
+    || fail_ "the arrs' login once, headed by its name and the services that share it: $out"; pass
+grep -A3 "^kavita$" <<<"$out" | grep -E '^  password +kpw$' >/dev/null || fail_ "a login's password in its service's block: $out"; pass
+grep -A3 "^dispatcharr$" <<<"$out" | grep -E "^  login +Dispatcharr's admin$" >/dev/null || fail_ "a block: its service's name, then what the login is: $out"; pass
+grep -A1 '^seerr$' <<<"$out" | grep -E "^  · its owner is Jellyfin's admin" >/dev/null || fail_ "a service with no login: its name heads its notes, right under it: $out"; pass
+! grep -E '^::' <<<"$out" | grep -v 'Not shown\|Give an app' >/dev/null || fail_ "no note floats loose (each sits in its block): $out"; pass
 ! grep -q "Navidrome's admin\|Pi-hole" <<<"$out" || fail_ "nothing of a service that is off: $out"; pass
-grep -q '^:: Not shown: the secrets only the stack uses' <<<"$out" || fail_ "credentials says what it leaves out, and where it is: $out"; pass
-# companion keys: each service's <name>_api_key, an arr instance's through its type label
-arr_key() { echo "key-$1"; }; bazarr_key() { echo key-bazarr; }; env_set SEERR_API_KEY key-seerr
-profiles gluetun,sonarr,radarr-4k,prowlarr,bazarr,seerr,jellyfin
-k=$(credentials_api_keys 2>&1 | awk '/^(sonarr|radarr-4k|prowlarr|bazarr|seerr) / { print $1 "=" $NF }' | sort | paste -sd' ')
-[[ "$k" == "bazarr=key-bazarr prowlarr=key-prowlarr radarr-4k=key-radarr-4k seerr=key-seerr sonarr=key-sonarr" ]] || fail_ "companion keys from the hooks and the arr type label: $k"; pass
-! credentials_api_keys 2>&1 | grep -E '^jellyfin ' >/dev/null || fail_ "a service with neither a hook nor an arr type: not a companion row"; pass
+grep -q '^:: Not shown: the secrets only the stack uses, and your own' <<<"$out" && grep -q 'credentials <service>' <<<"$out" && grep -q 'credentials --all' <<<"$out" \
+    || fail_ "credentials says what it leaves out, and how to see it: $out"; pass
+# keys for your apps: each service's <name>_api_key, an arr instance's through its type label
+arr_key() { echo "key-$1"; }; bazarr_key() { echo key-bazarr; }; env_set SEERR_API_KEY key-seerr; env_set JELLYFIN_API_KEY key-jf
+profiles gluetun,sonarr,radarr-4k,prowlarr,bazarr,seerr,jellyfin,kavita
+k=$(credentials_api_keys 2>&1 | awk '/^(sonarr|radarr-4k|prowlarr|bazarr|seerr|jellyfin) / { print $1 "=" $NF }' | sort | paste -sd' ')
+[[ "$k" == "bazarr=key-bazarr jellyfin=key-jf prowlarr=key-prowlarr radarr-4k=key-radarr-4k seerr=key-seerr sonarr=key-sonarr" ]] || fail_ "keys for your apps, from the hooks and the arr type label: $k"; pass
+! credentials_api_keys 2>&1 | grep -E '^kavita ' >/dev/null || fail_ "a service with neither a hook nor an arr type: no key row"; pass
 profiles gluetun,qbittorrent,sonarr,prowlarr,jellyfin,kavita,dispatcharr
 env_set DISPATCHARR_ADMIN_PASSWORD ""
-grep -A2 "^Dispatcharr's admin$" <<<"$(cmd_credentials 2>&1)" | grep -E '^  password +\(not recorded yet' >/dev/null || fail_ "a login not recorded says what records it"; pass
+grep -A3 "^dispatcharr$" <<<"$(cmd_credentials 2>&1)" | grep -E '^  password +\(not recorded yet' >/dev/null || fail_ "a login not recorded says what records it"; pass
+
+# ---- credentials <service>: everything it holds, each secret once, whose it is ----
+env_set AUTHENTIK_ADMIN_PASSWORD akpw; env_set AUTHENTIK_DB_PASSWORD dbpw; env_set SMTP_PASSWORD smtppw; env_set AUTHENTIK_LDAP_TOKEN ""
+strict cmd_credentials authentik; out=$(cat "$work/strict")
+[[ $SR == 0 ]] || fail_ "credentials authentik, under set -e: rc $SR: $out"
+[[ "$(grep -c 'akpw' <<<"$out")" == 1 ]] || fail_ "the portal admin's password once (its row), not again as a setting: $out"; pass
+grep -A3 '^  AUTHENTIK_DB_PASSWORD$' <<<"$out" | grep "the stack's own — rotate-secrets changes it" >/dev/null || fail_ "a secret the stack made: said so, and what changes it: $out"; pass
+grep -A3 '^  SMTP_PASSWORD$' <<<"$out" | grep 'yours, as you gave it' >/dev/null || fail_ "a secret you gave: said so: $out"; pass
+! grep -q 'AUTHENTIK_LDAP_TOKEN' <<<"$out" || fail_ "a secret not set: not listed: $out"; pass
+env_set WIREGUARD_PRIVATE_KEY wgkey; env_set GLUETUN_CONTROL_APIKEY ctlkey
+out=$(cmd_credentials gluetun 2>&1)
+grep -A3 '^  GLUETUN_CONTROL_APIKEY$' <<<"$out" | grep 'closed' >/dev/null && grep -A3 '^  WIREGUARD_PRIVATE_KEY$' <<<"$out" | grep 'yours' >/dev/null \
+    || fail_ "gluetun: its control key with why no app can use it, your VPN key as yours: $out"; pass
+out=$(cmd_credentials jellyfin 2>&1)
+[[ "$(grep -c 'key-jf' <<<"$out")" == 1 ]] && grep -qE '^  API key +key-jf$' <<<"$out" || fail_ "jellyfin: its key once, as its key for your apps: $out"; pass
+strict cmd_credentials nosuch
+[[ $SR != 0 ]] && grep -q "no service named 'nosuch'" "$work/strict" || fail_ "an unknown service: an error naming it: $(cat "$work/strict")"; pass
+out=$(cmd_credentials --all 2>&1)
+for s in gluetun jellyfin kavita dispatcharr; do grep -qE "── $s ─" <<<"$out" || fail_ "--all: $s's section: $out"; done; pass
 
 # ---- the core names no app for them, companion keys included (docs/design-install.md: each piece lands with this test) ----
 cd "$repo"

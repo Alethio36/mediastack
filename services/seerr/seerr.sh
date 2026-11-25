@@ -277,5 +277,5 @@ seerr_secret_rotate() { # Seerr makes its own (regenerate); .env takes it
     rotate_journal_release
 }
 
-seerr_credentials() { info "Seerr's owner is the Jellyfin admin; every Seerr sign-in is a Jellyfin account (Seerr keeps no passwords of its own)."; }   # credentials (lib/access.sh)
+seerr_credentials() { echo "its owner is Jellyfin's admin; every Seerr sign-in is a Jellyfin account (Seerr keeps no passwords of its own)"; }   # credentials (lib/access.sh)
 seerr_api_key() { env_get SEERR_API_KEY; }   # credentials' companion apps (lib/access.sh)

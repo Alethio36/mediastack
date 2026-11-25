@@ -155,3 +155,5 @@ lazylibrarian_secret_rotate() { # a new key into config.ini while it is stopped 
     if ll_api_enable "$old" >/dev/null && ll_key_takes "$old"; then rotate_journal_release; return 1; fi
     fail "lazylibrarian: the old key is not proven either"; return 2
 }
+
+lazylibrarian_api_key() { ll_key; }   # credentials' keys for your apps (lib/access.sh)

@@ -1263,7 +1263,7 @@ VERBS=(
     "upgrade~upgrade~none~Maintain~Mediastack itself: git pull + .env migration, then says whether up has anything to apply (images stay put: update)."
     "wire~wire [app] [--dry-run|--verify]~free~Connect~Connect the apps to each other; idempotent, GUI changes never overwritten (addresses it made follow VPN toggles)."
     "invite~invite [--expires 1|7|30] [--email ADDRESS]~free~Connect~Mint an invitation (the portal's, or Wizarr's) and print the ready-to-share URL; with the portal and working email, --email sends it."
-    "credentials~credentials~none~Connect~Show the app logins wire created/stored."
+    "credentials~credentials [service|--all]~max=1~Connect~The stack's own logins and the keys your apps ask for; one service's every secret, or every service's (--all)."
     "set-credentials~set-credentials <target|all>~max=1~Connect~Rotate a stored login everywhere it lives, atomically."
     "rotate-secrets~rotate-secrets~none~Connect~Give every secret the stack made for itself a new value, rewire what holds it, prove it (docs/design-rotate.md)."
     "reset-password~reset-password <user>~max=1~Connect~Someone locked out: the portal's single-use sign-in link, or with Wizarr its single-use reset link."

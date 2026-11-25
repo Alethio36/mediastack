@@ -319,7 +319,7 @@ Connect
 | `traefik-setup` | ask Traefik's questions again (`configure` asks them first): domain, Cloudflare token — checked with Cloudflare when pasted, with the domain's zone — and the cert environment (the dashboard's login is one of the stack's own: `set-credentials traefik`) |
 | `traefik-setup --hosts` | guided rename of every service's subdomain |
 | `traefik-setup --certs` | where the certificate comes from — Let's Encrypt, your own files, or staging — applied end to end ([docs/certificates.md](docs/certificates.md)) |
-| `credentials` | every login the stack created or stores, and the API keys companion apps ask for (the arrs, Prowlarr, Bazarr, Seerr) with the address to give them |
+| `credentials [service\|--all]` | bare: every login the stack keeps for the services that are on, one block per service with its notes, and the keys an app of yours asks for (nzb360, LunaSea, Home Assistant, a dashboard) with the address to give it. `credentials <service>`: everything that service holds — its logins, its key, and every secret in its settings, each saying what it is for and whose it is (the stack's own: `rotate-secrets` changes it; yours: as you gave it). `--all`: that, for every service that is on |
 
 Check
 | command | what it does |
