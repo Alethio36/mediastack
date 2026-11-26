@@ -756,13 +756,28 @@ AK_APPS='{"results":[
   {"slug":"mediastack-app-navidrome","pk":"a-nav","provider":42,"group":"Media","meta_launch_url":"https://navidrome.media.example.com"}]}'
 gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards against a stateful authentik; calls in $T/calls
     ( WIRE_DRY=${1:-0} WIRE_FAILS=0 NOBIND=${2:-0}
-      rm -f "$T/calls" "$T/made" "$T/patched"; printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: the household and its admins
+      rm -f "$T/calls" "$T/made" "$T/patched" "$T/written"; touch "$T/written"; eval "$(declare -f ak_written | sed 's/^ak_written ()/ak_written_ ()/')"
+      ak_written() { echo "$*" >> "$T/written"; ak_written_ "$@"; }   # what this run wrote, for the read-back check below
+      printf 'a-nav g-mu\na-nav g-adm\n' > "$T/bind"   # Navidrome's card as wired before: the household and its admins
       printf 'a-ldap g-mu\na-ldap g-adm\n' >> "$T/bind"   # the LDAP application, as the blueprint bound it before slice B
       printf 'admin g-adm\nfrontend g-mu\n' > "$T/groups"; echo '[6]' > "$T/op"; echo 'mediastack-ldap a-ldap' > "$T/apps"
       svc_enabled() { [[ " sonarr navidrome jellyfin seerr kavita " == *" $1 "* ]]; }
       ak_api() { echo "$1 $2 ${3:-}" >> "$T/calls"
         case "$1 $2" in
-          "GET /core/applications/?superuser_full_list=true&page_size=500") echo "$AK_APPS" ;;
+          # the lists wire's cards read once (ak_snapshot_take), from the same state the one-item reads answer from
+          "GET /core/applications/?superuser_full_list=true&page=1&page_size=100")
+              awk '{printf "%s{\"slug\":\"%s\",\"pk\":\"%s\"}", (n++?",":""), $1, $2} BEGIN{printf "["} END{print "]"}' "$T/apps" \
+                  | jq -c --argjson a "$AK_APPS" '{results: ($a.results + [.[] | select(.slug as $s | $a.results | map(.slug) | index($s) | not)]), pagination: {next: 0}}' ;;
+          "GET /core/groups/?include_users=false&page=1&page_size=100")
+              awk '{printf "%s{\"name\":\"%s\",\"pk\":\"%s\"}", (n++?",":""), $1, $2} BEGIN{printf "{\"results\":["} END{print "],\"pagination\":{\"next\":0}}"}' "$T/groups" ;;
+          "GET /providers/proxy/?page=1&page_size=100")
+              son='[]'
+              if [[ -n "${MOVED:-}" ]]; then son='[{"name":"mediastack-app-sonarr","pk":50,"external_host":"https://old.example.com","access_token_validity":"hours=24"}]'
+              elif [[ -n "${SHORT:-}" ]]; then son='[{"name":"mediastack-app-sonarr","pk":50,"external_host":"https://sonarr.media.example.com","access_token_validity":"hours=1"}]'
+              elif [[ -f "$T/made" ]]; then son='[{"name":"mediastack-app-sonarr","pk":50,"external_host":"https://sonarr.media.example.com","access_token_validity":"hours=24"}]'; fi
+              jq -cn --argjson s "$son" '{results: ([{"name":"mediastack-house-navidrome","pk":42,"external_host":"https://navidrome.media.example.com"}] + $s), pagination: {next: 0}}' ;;
+          "GET /policies/bindings/?page=1&page_size=100")
+              awk '{printf "%s{\"target\":\"%s\",\"group\":\"%s\",\"pk\":\"%s~%s\"}", (n++?",":""), $1, $2, $1, $2} BEGIN{printf "{\"results\":["} END{print "],\"pagination\":{\"next\":0}}"}' "$T/bind" ;;
           "GET /core/groups/?search="*) awk -v q="${2#*=}" 'index($1,q){printf "%s{\"name\":\"%s\",\"pk\":\"%s\"}", (n++?",":""), $1, $2} BEGIN{printf "{\"results\":["} END{print "]}"}' "$T/groups" ;;
           "POST /core/groups/") n=$(jq -r .name <<<"$3"); echo "$n g-$n" >> "$T/groups"; echo "{\"pk\":\"g-$n\"}" ;;
           "GET /providers/proxy/?name__iexact=mediastack-house-navidrome") echo '{"results":[{"pk":42,"external_host":"https://navidrome.media.example.com"}]}' ;;
@@ -797,6 +812,17 @@ gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards again
 }
 binds() { awk -v t="$1" '$1==t{print $2}' "$T/bind" | sort | paste -sd, -; }
 [[ "$(gates_run)" == fails=0 ]] || fail_ "every gated app wired without a failure: $(gates_run)"; pass
+# each list read once, not each app's own one at a time (the audit, 26 Nov 2026: ~80 s of an idle 2-minute wire);
+# what this run wrote is read from authentik again — a card's rule is read back before its gate reaches the outpost
+! grep -qE '^GET /core/groups/\?search=|^GET /providers/proxy/\?name__iexact=' "$T/calls" || fail_ "groups and gates from the lists read once: $(grep -E 'search=|name__iexact=' "$T/calls" | sed -n 1,3p)"; pass
+[[ "$(grep -c '^GET /policies/bindings/?page=' "$T/calls")" == 1 && "$(grep -c '^GET /core/applications/?superuser_full_list' "$T/calls")" == 1 ]] || fail_ "the bindings and the applications read once each"; pass
+for t in $(grep -oE '^GET /policies/bindings/\?target=[^ ]+' "$T/calls" | sed 's/.*target=//' | sort -u); do
+    grep -qw -- "$t" "$T/written" || fail_ "a rule read one at a time though this run did not write it: $t"
+done; pass
+api_pages() { ( ak_api() { echo "$2" >> "$T/pg"; case "$2" in *page=1\&*) echo '{"results":[{"pk":1}],"pagination":{"next":2}}' ;; *page=2\&*) echo '{"results":[{"pk":2}],"pagination":{"next":0}}' ;; esac; }
+                rm -f "$T/pg"; ak_api_all "/core/groups/?include_users=false" ) }
+[[ "$(api_pages)" == '{"results":[{"pk":1},{"pk":2}]}' && "$(wc -l < "$T/pg")" == 2 ]] || fail_ "every page, whatever page_size asks (authentik caps a page): $(api_pages)"; pass
+[[ "$( ( gates_run >/dev/null; echo "${AK_SNAP_APPS:-}${AK_SNAP_BINDINGS:-}" ) )" == "" ]] || fail_ "the snapshot is dropped after the cards"; pass
 grep -q '^POST /core/groups/ .*"name":"app-sonarr"' "$T/calls" && grep -q '^POST /core/groups/ .*"name":"app-navidrome"' "$T/calls" \
     || fail_ "each gated app gets its own app-<svc> group"; pass
 grep -q '^POST /providers/proxy/ .*"name":"mediastack-app-sonarr".*"mode":"forward_single".*"external_host":"https://sonarr.media.example.com".*"access_token_validity":"hours=24"' "$T/calls" \

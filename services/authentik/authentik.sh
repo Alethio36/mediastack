@@ -1133,8 +1133,59 @@ wire_authentik_ldap_token() { # fetch the mediastack-ldap outpost's token into .
         || wfail "the LDAP outpost did not start: ./mediastack.sh logs authentik"
 }
 
+ak_api_all() { # ak_api_all PATH -> {"results":[...]}: every page (authentik caps a page at its tenant's maximum, whatever page_size asks); rc 1 when a page is unreadable
+    local p=1 out all="[]" sep='?'
+    [[ "$1" != *'?'* ]] || sep='&'
+    while :; do
+        out=$(ak_api GET "$1${sep}page=$p&page_size=100") || { echo "$out"; return 1; }
+        all=$(jq -c --argjson a "$all" '$a + (.results // [])' <<<"$out") || return 1
+        p=$(jq -r '.pagination.next // 0' <<<"$out")
+        (( p > 0 )) || break
+    done
+    jq -cn --argjson r "$all" '{results: $r}'
+}
+
+# wire's cards read each list once — the groups, the gates (proxy providers),
+# the applications, every binding — not each app's own one call at a time:
+# ~3 calls an app were ~80 s of an idle wire's 2 minutes on anzac4 (the audit,
+# 26 Nov 2026). Taken at the start of wire_authentik_cards, dropped at its end.
+# Whatever this run writes is read from authentik again, never from the
+# snapshot: a card's rule is read back before its gate reaches the outpost.
+AK_SNAP_GROUPS=""; AK_SNAP_PROXY=""; AK_SNAP_APPS=""; AK_SNAP_BINDINGS=""; AK_SNAP_DIRTY=" "; AK_SNAP_WHY=""
+ak_snapshot_take() { # rc 1 with AK_SNAP_WHY when a list is unreadable (not printed: a $( ) would lose the snapshot)
+    local g p a b
+    AK_SNAP_WHY=""
+    g=$(ak_api_all "/core/groups/?include_users=false") || { AK_SNAP_WHY="groups: $(oneline "$g")"; ak_snapshot_drop; return 1; }
+    p=$(ak_api_all "/providers/proxy/") || { AK_SNAP_WHY="gates: $(oneline "$p")"; ak_snapshot_drop; return 1; }
+    a=$(ak_api_all "/core/applications/?superuser_full_list=true") || { AK_SNAP_WHY="applications: $(oneline "$a")"; ak_snapshot_drop; return 1; }
+    b=$(ak_api_all "/policies/bindings/") || { AK_SNAP_WHY="bindings: $(oneline "$b")"; ak_snapshot_drop; return 1; }
+    AK_SNAP_GROUPS=$g; AK_SNAP_PROXY=$p; AK_SNAP_APPS=$a; AK_SNAP_BINDINGS=$b; AK_SNAP_DIRTY=" "
+}
+ak_snapshot_drop() { AK_SNAP_GROUPS=""; AK_SNAP_PROXY=""; AK_SNAP_APPS=""; AK_SNAP_BINDINGS=""; AK_SNAP_DIRTY=" "; }
+ak_written() { AK_SNAP_DIRTY+="$* "; }   # ak_written KEY... — an application (slug or pk) this run changed: read from authentik from now on
+ak_app_of() { # ak_app_of SLUG -> the application (rc 1: none, or unreadable)
+    if [[ -n "$AK_SNAP_APPS" && "$AK_SNAP_DIRTY" != *" $1 "* ]]; then
+        jq -ce --arg sl "$1" '[.results[] | select(.slug == $sl)][0] // empty' <<<"$AK_SNAP_APPS"; return
+    fi
+    ak_api GET "/core/applications/$1/"
+}
+ak_bindings_of() { # ak_bindings_of TARGET-PK -> {"results":[...]}: its bindings (rc 1: unreadable)
+    if [[ -n "$AK_SNAP_BINDINGS" && "$AK_SNAP_DIRTY" != *" $1 "* ]]; then
+        jq -c --arg t "$1" '{results: [.results[] | select(.target == $t)]}' <<<"$AK_SNAP_BINDINGS"; return
+    fi
+    ak_api GET "/policies/bindings/?target=$1"
+}
+ak_proxy_named() { # ak_proxy_named NAME -> {"results":[...]}: the proxy provider so named, any case (rc 1: unreadable)
+    if [[ -n "$AK_SNAP_PROXY" ]]; then
+        jq -c --arg n "$1" '{results: [.results[] | select((.name | ascii_downcase) == ($n | ascii_downcase))]}' <<<"$AK_SNAP_PROXY"; return
+    fi
+    ak_api GET "/providers/proxy/?name__iexact=$1"
+}
+
 ak_group_pk() { # ak_group_pk NAME -> its pk (exact name, not a lookalike)
-    local g; g=$(ak_api GET "/core/groups/?search=$(jq -rn --arg n "$1" '$n | @uri')") || return 1   # a name may hold a space ("authentik Admins")
+    local g
+    if [[ -n "$AK_SNAP_GROUPS" ]]; then g=$AK_SNAP_GROUPS
+    else g=$(ak_api GET "/core/groups/?search=$(jq -rn --arg n "$1" '$n | @uri')") || return 1; fi   # a name may hold a space ("authentik Admins")
     jq -r --arg n "$1" '[.results[]? | select(.name == $n) | .pk][0] // empty' <<<"$g"
 }
 
@@ -1239,12 +1290,12 @@ authentik_app_provider() { # authentik_app_provider SVC -> APP_PK: the app's own
     # host (its ProxyProviderSerializer.validate; refused live, 16 Nov 2026)
     local s="$1" name="mediastack-app-$1" url out pk host tv want=$AUTHENTIK_TOKEN_VALIDITY
     url=$(svc_url "$s")
-    out=$(ak_api GET "/providers/proxy/?name__iexact=$name") || { wfail "authentik: providers unreadable"; return 1; }
+    out=$(ak_proxy_named "$name") || { wfail "authentik: providers unreadable"; return 1; }
     pk=$(jq -r '.results[0].pk // empty' <<<"$out"); host=$(jq -r '.results[0].external_host // empty' <<<"$out")
     tv=$(jq -r '.results[0].access_token_validity // empty' <<<"$out")
     if [[ -z "$pk" ]]; then
         # Navidrome's household gate before Nov 2026: the same provider, renamed in place (its sessions kept)
-        out=$(ak_api GET "/providers/proxy/?name__iexact=mediastack-house-$s") || { wfail "authentik: providers unreadable"; return 1; }
+        out=$(ak_proxy_named "mediastack-house-$s") || { wfail "authentik: providers unreadable"; return 1; }
         pk=$(jq -r '.results[0].pk // empty' <<<"$out")
         if [[ -n "$pk" ]]; then
             w_would "authentik: $s's household gate becomes its own gate ($name)" || return 1
@@ -1286,15 +1337,16 @@ ak_app_group() { # ak_app_group SVC -> APP_GROUP: the pk of app-<svc>, made when
             || { wfail "authentik refused the group $n: $(head -c160 <<<"$out")"; return 1; }
         pk=$(jq -r '.pk // empty' <<<"$out")
         [[ -n "$pk" ]] || { wfail "authentik made the group $n but gave no pk back"; return 1; }
+        if [[ -n "$AK_SNAP_GROUPS" ]]; then AK_SNAP_GROUPS=$(jq -c --arg n "$n" --arg p "$pk" '.results += [{name: $n, pk: $p}]' <<<"$AK_SNAP_GROUPS"); fi   # the list read at the start, with the one made
     fi
     APP_GROUP=$pk
 }
 
 ak_card_bound() { # ak_card_bound SLUG GROUP-PK... -> 0 when the card exists and each group is bound to it (read back, not assumed)
     local app pk bind g
-    app=$(ak_api GET "/core/applications/$1/") || return 1
+    app=$(ak_app_of "$1") || return 1
     pk=$(jq -r '.pk // empty' <<<"$app"); [[ -n "$pk" ]] || return 1
-    bind=$(ak_api GET "/policies/bindings/?target=$pk") || return 1
+    bind=$(ak_bindings_of "$pk") || return 1
     for g in "${@:2}"; do jq -e --arg g "$g" 'any(.results[]?; .group == $g)' <<<"$bind" >/dev/null || return 1; done
 }
 
@@ -1335,33 +1387,34 @@ ak_card() { # ak_card ALL SLUG NAME URL DESC SECTION PROVIDER GROUP-PK... — a 
     if [[ -z "$have" ]]; then
         w_would "authentik: add the $section card for $name" || return 0
         app=$(ak_api POST /core/applications/ "$body") || { wfail "authentik refused the card for $name: $(head -c160 <<<"$app")"; return 0; }
-        changed=1
+        changed=1; ak_written "$slug" "$(jq -r '.pk' <<<"$app")"
     elif [[ "$(jq -r '.meta_launch_url' <<<"$have")" != "$url" || "$(jq -r '.provider // "" | tostring' <<<"$have" | sed 's/^null$//')" != "$prov" \
             || "$(jq -r '.group // ""' <<<"$have")" != "$section" ]]; then
         w_would "authentik: update $name's card" || return 0
         app=$(ak_api PATCH "/core/applications/$slug/" "$body") || { wfail "authentik refused to update $name's card"; return 0; }
-        changed=1
+        changed=1; ak_written "$slug" "$(jq -r '.pk' <<<"$app")"
     else
         app=$have
     fi
-    bind=$(ak_api GET "/policies/bindings/?target=$(jq -r '.pk' <<<"$app")") || { wfail "authentik: bindings unreadable"; return 0; }
+    bind=$(ak_bindings_of "$(jq -r '.pk' <<<"$app")") || { wfail "authentik: bindings unreadable"; return 0; }
     for g in "$@"; do
         jq -e --arg g "$g" '.results[] | select(.group == $g)' <<<"$bind" >/dev/null && continue
         ak_api POST /policies/bindings/ "$(jq -cn --arg t "$(jq -r '.pk' <<<"$app")" --arg g "$g" '{target:$t, group:$g, order:0}')" >/dev/null \
             || { wfail "authentik: could not limit $name's card"; return 0; }
-        changed=1
+        changed=1; ak_written "$slug" "$(jq -r '.pk' <<<"$app")"
     done
     if (( changed || ! ${AK_CARDS_QUIET:-0} )); then ok "authentik: $name card ($section)"; fi
 }
 
 ak_card_unbind() { # ak_card_unbind SLUG GROUP-PK [NAME] — that group's binding off our application (its app's tier moved away from it)
     local app pk bind b n=${3:-${1#mediastack-app-}}
-    app=$(ak_api GET "/core/applications/$1/") || return 0   # no card yet: nothing bound
+    app=$(ak_app_of "$1") || return 0   # no card yet: nothing bound
     pk=$(jq -r '.pk // empty' <<<"$app"); [[ -n "$pk" ]] || return 0
-    bind=$(ak_api GET "/policies/bindings/?target=$pk") || { wfail "authentik: $n's rule is unreadable: $(oneline "$bind")"; return 0; }
+    bind=$(ak_bindings_of "$pk") || { wfail "authentik: $n's rule is unreadable: $(oneline "$bind")"; return 0; }
     for b in $(jq -r --arg g "$2" '.results[]? | select(.group == $g) | .pk' <<<"$bind"); do
         w_would "authentik: $n is for $PORTAL_ADMIN only — the household's binding goes" || return 0
         ak_api DELETE "/policies/bindings/$b/" >/dev/null || { wfail "authentik refused to take the household off $n"; return 0; }
+        ak_written "$1" "$pk"
         ok "authentik: $n — the household's binding removed (its tier: $PORTAL_ADMIN)"
     done
 }
@@ -1369,14 +1422,15 @@ ak_card_unbind() { # ak_card_unbind SLUG GROUP-PK [NAME] — that group's bindin
 AK_LDAP_APP=mediastack-ldap   # the LDAP application Jellyfin signs people in through (the blueprint's app-ldap)
 ak_rule_bind() { # ak_rule_bind SLUG NAME GROUP-PK... — each group bound to an application that exists (read back), the rest left
     local app pk bind g
-    app=$(ak_api GET "/core/applications/$1/") || { wfail "authentik: $2 is unreadable (has the portal's setup applied? ./mediastack.sh doctor): $(oneline "$app")"; return 1; }
+    app=$(ak_app_of "$1") || { wfail "authentik: $2 is unreadable (has the portal's setup applied? ./mediastack.sh doctor): $(oneline "$app")"; return 1; }
     pk=$(jq -r '.pk // empty' <<<"$app"); [[ -n "$pk" ]] || { wfail "authentik: $2 has no application yet"; return 1; }
-    bind=$(ak_api GET "/policies/bindings/?target=$pk") || { wfail "authentik: $2's rule is unreadable: $(oneline "$bind")"; return 1; }
+    bind=$(ak_bindings_of "$pk") || { wfail "authentik: $2's rule is unreadable: $(oneline "$bind")"; return 1; }
     for g in "${@:3}"; do
         jq -e --arg g "$g" 'any(.results[]?; .group == $g)' <<<"$bind" >/dev/null && continue
         w_would "authentik: $2 admits one more group (its rule)" || continue
         ak_api POST /policies/bindings/ "$(jq -cn --arg t "$pk" --arg g "$g" '{target:$t, group:$g, order:0}')" >/dev/null \
             || { wfail "authentik refused a group on $2"; return 1; }
+        ak_written "$1" "$pk"
         ok "authentik: $2 admits one more group (its rule)"
     done
     (( WIRE_DRY )) || ak_card_bound "$1" "${@:3}" || { wfail "authentik answered, but $2 does not carry its rule"; return 1; }
@@ -1415,9 +1469,15 @@ ak_card_prune() { # ak_card_prune ALL PREFIX WANTED... — cards mediastack made
 }
 
 wire_authentik_cards() { # every gated app its own gate and card; household apps for the household (and admins); ours only, by slug prefix
+    ak_snapshot_take || { wfail "authentik: its $AK_SNAP_WHY unreadable"; return 0; }
+    wire_authentik_cards_ || true
+    ak_snapshot_drop
+    return 0
+}
+wire_authentik_cards_() {
     local all adm mu s prov
     APP_GATES=()   # name=provider-pk of every gate whose card's rule is in: ak_app_gate fills it
-    all=$(ak_api GET "/core/applications/?superuser_full_list=true&page_size=500") || { wfail "authentik: applications unreadable"; return 0; }
+    all=$AK_SNAP_APPS
     adm=$(ak_group_pk "$PORTAL_ADMIN"); mu=$(ak_group_pk "$PORTAL_FRONTEND")
     [[ -n "$adm" && -n "$mu" ]] || { wfail "authentik: groups '$PORTAL_ADMIN'/'$PORTAL_FRONTEND' missing (the blueprint makes them — has it applied? ./mediastack.sh doctor)"; return 0; }
     # every app behind the gate by its tier: frontend — the household and its

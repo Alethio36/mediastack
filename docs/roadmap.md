@@ -640,6 +640,13 @@ agreed first:
       authentik` reads each gated app's provider, group and bindings one
       call at a time — ~3 calls an app, ~80 s of an idle run's 2 minutes on
       anzac4 (18 cards); one list read of each would do.
+      *Done (C2, 26 Nov 2026):* `wire_authentik_cards` reads the groups, the
+      gates, the applications and every binding once each, all pages
+      (`ak_api_all`: authentik caps a page at its tenant's maximum, so the
+      old `page_size=500` read could have missed applications past it);
+      whatever the run writes is read from authentik again, so a card's
+      rule is still read back before its gate reaches the outpost
+      (`test-authentik`).
     - **A failure summary names its role twice** (`wizarr: wizarr: …`,
       `authentik: authentik: …`): the summary adds the role, and the
       messages already start with it. *Done (P1, 25 Nov 2026):* a message
