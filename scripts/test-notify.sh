@@ -256,6 +256,10 @@ WIRE_FAILS=0; API_RC=1
 sync_ "$notes" > "$T/o" 2>&1
 (( WIRE_FAILS == 1 )) || fail_ "a refused change is a wire failure"; pass
 unset API_RC
+# an app whose Apprise form has no type field: a failure, never "current" (nothing to set, nothing to differ)
+WIRE_FAILS=0; : > "$T/calls"
+sync_ "$(jq -c 'map(if .name == "mediastack-apprise" then .fields |= map(select(.name != "notificationType")) else . end)' <<<"[$(cat "$T/put")]")" > "$T/o" 2>&1
+(( WIRE_FAILS == 1 )) && grep -q 'has no notification type' "$T/o" && [[ ! -s "$T/calls" ]] || fail_ "no type field: said as a failure, nothing written: $(cat "$T/o")"; pass
 # the two health entries are made when missing, each its own type and event
 SCHEMA='[{"implementation":"Apprise","name":"","onGrab":false,"onDownload":false,"onUpgrade":false,"onApplicationUpdate":false,"onHealthIssue":false,"onHealthRestored":false,
   "includeHealthWarnings":false,"fields":[{"name":"serverUrl","value":""},{"name":"configurationKey","value":""},{"name":"notificationType","value":0},{"name":"tags","value":[]}]}]'

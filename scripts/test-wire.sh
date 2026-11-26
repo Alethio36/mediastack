@@ -499,4 +499,18 @@ r=$(ws '{"servers":[{"server_type":"jellyfin","external_url":" https://jellyfin.
 [[ "$(ws '{"servers":[]}')" == *"no Jellyfin server yet"* ]] || fail_ "no Jellyfin server: said how to add one"; pass
 [[ "$(ws 'not json')" == "rc=0 its servers are unreadable"* ]] || fail_ "an unreadable answer: said, never right, never a failure of its own"; pass
 
+# ---- qBittorrent: a login just set is asked for, not waited out (the audit, 26 Nov 2026:
+#      a fixed 2 s stood in for "long enough"); few tries, under its ban of 5 ----
+qn() { # qn TAKES-AT — the login works from try TAKES-AT on (0: never) -> "rc=N tries=M slept=S"
+    ( n=0; slept=0; sleep() { slept=$((slept + $1)); }
+      qb_login() { n=$((n + 1)); if (( $1 > 0 && n >= $1 )); then return 0; fi; QB_LOGIN_BODY="[HTTP 401] Fails."; return 1; }
+      rc=0; qb_login_new "$1" p || rc=$?; echo "rc=$rc tries=$n slept=$slept" )
+}
+qb_login_orig=$(declare -f qb_login)
+[[ "$(qn 1)" == "rc=0 tries=1 slept=1" ]] || fail_ "taken at once: one try: $(qn 1)"; pass
+[[ "$(qn 3)" == "rc=0 tries=3 slept=7" ]] || fail_ "taken late: tried again, spaced: $(qn 3)"; pass
+[[ "$(qn 0)" == "rc=1 tries=3 slept=7" ]] || fail_ "never taken: three tries (qBittorrent bans at 5), its refusal kept: $(qn 0)"; pass
+eval "$qb_login_orig"
+! grep -nE '^\s*sleep [0-9]+\s*(#.*)?$' services/qbittorrent/qbittorrent.sh || fail_ "no bare sleep left in qBittorrent's wiring"; pass
+
 echo "OK wire: $checks checks"

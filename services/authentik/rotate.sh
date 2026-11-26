@@ -65,13 +65,28 @@ authentik_rotate_ldap_token() { # the LDAP outpost's token: a new key on the sam
     env_set AUTHENTIK_LDAP_TOKEN "$new"
     # shellcheck disable=SC2034  # the render cache lives in the entrypoint (read by DC's callers)
     RENDERED_JSON=""
+    # proven by authentik hearing from it on the new token, not by its container's
+    # health, which shows the process runs, not that it connected (the audit, 26 Nov 2026)
+    local seen new_ seen_before
+    seen_before=$(ak_outpost_seen "$pk") || seen_before=""
     DC up -d --no-deps authentik-ldap >/dev/null 2>&1 || { fail "authentik: the LDAP outpost did not start again — ./mediastack.sh logs authentik-ldap"; return 2; }
-    for _ in $(seq 1 30); do [[ "$(c_health "$(svc_cname authentik-ldap)")" == healthy ]] && break; sleep 2; done
-    [[ "$(c_health "$(svc_cname authentik-ldap)")" == healthy ]] || { fail "authentik: the LDAP outpost is not healthy on its new token"; return 2; }
+    for _ in $(seq 1 45); do
+        seen=$(ak_outpost_seen "$pk") || seen=""
+        new_=$(LC_ALL=C comm -13 <(printf '%s\n' "$seen_before") <(printf '%s\n' "$seen") | grep . || true)
+        [[ -z "$new_" ]] || break
+        sleep 2
+    done
+    [[ -n "$new_" ]] || { fail "authentik: the LDAP outpost has not reached authentik on its new token within 90s — ./mediastack.sh logs authentik-ldap"; return 2; }
     rotate_proven "authentik's LDAP outpost token" "$(authentik_url)/api/v3/core/users/me/" "Authorization: Bearer $new" "Authorization: Bearer $old" || return 2
     rotate_journal_release
 }
 
+ak_outpost_seen() { # ak_outpost_seen PK -> "UID LAST-SEEN" per instance authentik has heard from, sorted; rc 1 when unreadable
+    # compared before and after, never against this host's clock: authentik stamps last_seen
+    # with its own naive local time (outposts/consumer.py), which its API reads as UTC
+    local out; out=$(ak_api GET "/outposts/instances/$1/health/") || return 1
+    jq -r '.[]? | "\(.uid) \(.last_seen)"' <<<"$out" | LC_ALL=C sort
+}
 ak_db_password_set() { # ak_db_password_set PASSWORD — the database role's password (SQL on stdin: never in a process list)
     printf "ALTER ROLE authentik WITH PASSWORD '%s';\n" "$1" \
         | sudo docker exec -i "$(svc_cname authentik-db)" psql -q -v ON_ERROR_STOP=1 -U authentik -d authentik >/dev/null 2>&1
@@ -100,8 +115,7 @@ authentik_settings_proven() { # authentik_settings_proven DB-PASSWORD OTHER-DB-P
     for _ in $(seq 1 30); do [[ "$(rotate_http_code "$(authentik_url)/-/health/ready/" "X-Probe: 1")" =~ ^2 ]] && break; sleep 2; done
     MAINT_LOCKED=1 "$SCRIPT_DIR/mediastack.sh" wire authentik >/dev/null 2>&1 \
         || { fail "authentik: wire authentik failed on its settings — see: ./mediastack.sh wire authentik"; return 1; }
-    local rc=0; authentik_blueprint_inputs_changed >/dev/null || rc=$?
-    (( rc == 1 )) || { fail "authentik: its portal setup was not applied with the worker's values"; return 1; }
+    authentik_applied_by_this_worker || { fail "authentik: its portal setup was not applied since its worker took the new values"; return 1; }
     ok "authentik: runs on its settings — the database, the signing key, the setup applied with them"
 }
 

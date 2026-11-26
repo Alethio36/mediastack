@@ -606,6 +606,23 @@ agreed first:
     - **State kept about another app, timings guessed** — where the bugs of
       Nov 2026 clustered (the blueprint's applied values, the apply's wait).
       Each such spot looked at for a simpler, app-native way.
+      *The sweep (B, 26 Nov 2026), every spot read:* 29 of 31 fixed waits
+      poll the app itself, bounded; 26 of 27 health checks are `up`'s wait,
+      status and doctor, or authentik's own readiness; 42 "running" checks
+      skip what is not running (a call after one waits or fails loud); 16 of
+      17 kept values are by design (the kit's "last set by us" markers, the
+      VPN endpoint pin, the port-forward notice, gluetun's provider list per
+      image). Fixed: qBittorrent's fixed 2 s after setting its login, now
+      tried until it signs in (three tries, under its ban of five:
+      `qb_login_new`, `test-wire`); rotate-secrets proving the LDAP
+      outpost's new token by its container's health, now by authentik
+      hearing from it after the restart (`ak_outpost_seen`, compared before
+      and after: authentik stamps it in its own naive local time;
+      `test-rotate`); and the digest of the worker's values at the last
+      apply, gone — authentik answers it: its last successful apply after
+      this worker was made (`authentik_applied_by_this_worker`, now
+      three-way, unreadable never "current"; `test-authentik`). Its cost:
+      one apply after a worker is recreated with the same values.
     - **A failure summary names its role twice** (`wizarr: wizarr: …`,
       `authentik: authentik: …`): the summary adds the role, and the
       messages already start with it. *Done (P1, 25 Nov 2026):* a message
@@ -716,6 +733,12 @@ agreed first:
       ones, takes the health events off the old one, and keeps the three's
       tag, type and events (`apprise_arr_hub`, Prowlarr through the same;
       `test-notify`).
+      *Proved live (26 Nov 2026, anzac4):* each app's two new entries'
+      Test buttons — red for the failing check, green for the restored, in
+      Radarr, Sonarr and Prowlarr (whose form has the type too). *Left,
+      for the next patch:* an app whose Apprise form has no type field
+      would be reported "current" — nothing to set, nothing to differ; say
+      so as a failure instead. *Done (B, 26 Nov 2026):* `apprise_entry_typed`.
     - **`authentik_prepare` is called by name** from `up` and `enable`;
       with `<name>_provision` now found by name, see whether its part fits
       there (it needs the edge first). *Decided (P3, 25 Nov 2026): it stays

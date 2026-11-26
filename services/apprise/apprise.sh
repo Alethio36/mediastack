@@ -47,9 +47,15 @@ apprise_entry_drift() { # apprise_entry_drift HAVE-JSON WANT-JSON "ALL-EVENTS" -
             ([$all | split(" ")[] | . as $k | select($w | has($k)) | select($h[$k] != $w[$k]) | "\(.) \(if $w[.] then "on" else "off" end)"] | if length > 0 then join(", ") else empty end)
           ] | join("; ")'
 }
+apprise_entry_typed() { # apprise_entry_typed SVC ENTRY-JSON — its Apprise form has the type field; else a failure, never "current" (nothing to set would differ from nothing)
+    jq -e '[.fields[]? | select(.name == "notificationType")] | length > 0' <<<"$2" >/dev/null 2>&1 && return 0
+    wfail "$1: its Apprise form has no notification type — its health messages cannot take their colour (an older $1?)"
+    return 1
+}
 apprise_entry_sync() { # apprise_entry_sync SVC API-BASE KEY LIST-JSON NAME TYPE "EVENTS" "ALL-EVENTS" — an existing entry made what mediastack wants: tag, type, events
     local s="$1" base="$2" key="$3" name="$5" have want drift out
     have=$(jq -c --arg n "$name" '[.[]? | select(.name == $n)][0]' <<<"$4")
+    apprise_entry_typed "$s" "$have" || return 0
     want=$(apprise_entry_want "$have" "$name" "$6" "$7" "$8")
     drift=$(apprise_entry_drift "$have" "$want" "$8")
     [[ -n "$drift" ]] || { ok "$s: its hub entry $name is current ($6)"; return 0; }
@@ -94,6 +100,7 @@ apprise_arr_hub() { # apprise_arr_hub SVC "NEWS-EVENTS" — the app's hub entrie
         fi
         tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
         [[ -n "$tmpl" ]] || { wfail "$s: its API offers no Apprise notification type — is the image very old?"; return 0; }
+        apprise_entry_typed "$s" "$tmpl" || return 0
         body=$(apprise_entry_want "$tmpl" "$name" "$type" "$evs" "$all" | jq -c --arg srv "http://$(svc_addr apprise)" '
             .fields = [ .fields[] | if .name == "serverUrl" then .value = $srv elif .name == "configurationKey" then .value = "mediastack" else . end ]')
         resp=$(api POST "$url/api/$ver/notification" "$key" "$body") \

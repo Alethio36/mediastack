@@ -221,6 +221,25 @@ ss() { # ss LEFT(none|one) -> "rc=N deletes=N"
 [[ "$(ss none)" == "rc=0 deletes=2" ]] || fail_ "sessions: every one ended (one opened since is not ours to fail on): $(ss none)"; pass
 [[ "$(ss one)" == "rc=1 deletes=2" ]] || fail_ "sessions: one still there after its delete: a failure: $(ss one)"; pass
 
+# the LDAP outpost's token: proven by authentik hearing from the outpost after its restart,
+# not by its container's health (the audit, 26 Nov 2026: healthy says the process runs)
+lt() { # lt HEARD(yes|no) -> "rc=N held=N"
+    ( rm -f "$T/c"; sleep() { :; }; env_set() { :; }; gen_secret() { echo NEW; }
+      env_get() { [[ "$1" == AUTHENTIK_LDAP_TOKEN ]] && echo OLD; return 0; }
+      ak_token_set_key() { :; }; rotate_proven() { :; }
+      DC() { touch "$T/c"; }   # the outpost restarted
+      c_health() { echo healthy; }   # its container would say healthy either way
+      ak_api() { case "$2" in
+          "/outposts/instances/?name__iexact=mediastack-ldap") echo '{"results":[{"pk":"op-l"}]}' ;;
+          "/outposts/instances/op-l/health/")
+              if [[ -f "$T/c" && "$HEARD" == yes ]]; then echo '[{"uid":"a","last_seen":"2026-11-26T08:00:00Z"},{"uid":"b","last_seen":"2026-11-26T08:10:00Z"}]'
+              else echo '[{"uid":"a","last_seen":"2026-11-26T08:00:00Z"}]'; fi ;;
+      esac; }
+      HEARD=$1; rc=0; authentik_rotate_ldap_token >/dev/null 2>&1 || rc=$?; echo "rc=$rc held=$(rotate_inflight | wc -w)" )
+}
+[[ "$(lt yes)" == "rc=0 held=0" ]] || fail_ "LDAP token: authentik heard from the restarted outpost: settled: $(lt yes)"; pass
+[[ "$(lt no)" == "rc=2 held=1" ]] || fail_ "LDAP token: a healthy container authentik never heard from: not proven, held: $(lt no)"; pass
+
 # the database's password check goes where a password is asked (found live: loopback is trusted, any password passes)
 r=$(declare -f ak_db_password_opens)
 [[ "$r" != *127.0.0.1* && "$r" != *localhost* && "$r" != *"::1"* && "$r" == *'svc_cname authentik-db'* ]] \

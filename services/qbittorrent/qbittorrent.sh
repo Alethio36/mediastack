@@ -119,6 +119,18 @@ qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = 
     rm -f "$jar"
     [[ -n "$QB_COOKIE" ]] || return 1
 }
+QB_NEWLOGIN_WAITS=(1 2 4)   # seconds before each try of a login just set: three tries, under qBittorrent's ban (5 failed sign-ins from one address)
+qb_login_new() { # qb_login_new USER PASS — a login just written with setPreferences signs in; tried until it does (qBittorrent may take the write a moment), rc as qb_login
+    # Asked, not waited out: a fixed 2 s used to stand in for "long enough" (found in the
+    # audit, 26 Nov 2026). Each failed try counts toward qBittorrent's ban, so few and spaced.
+    local w rc=1
+    for w in "${QB_NEWLOGIN_WAITS[@]}"; do
+        sleep "$w"
+        rc=0; qb_login "$1" "$2" || rc=$?
+        (( rc != 0 )) || return 0
+    done
+    return "$rc"
+}
 qb_api() { # qb_api PATH [data...] (form-encoded) -> body on stdout, rc from http
     local p="$1"; shift
     local args=(); local a; for a in "$@"; do args+=(--data-urlencode "$a"); done
@@ -194,8 +206,7 @@ wire_qbit() {
         if w_would "set qBittorrent's login from .env (view: credentials)"; then
             qb_api /app/setPreferences \
                 "json={\"web_ui_username\":\"$user\",\"web_ui_password\":\"$pass\"}" >/dev/null || true  # re-login below is the verdict
-            sleep 2   # let the preference write settle
-            local vrc=0; qb_login "$user" "$pass" || vrc=$?
+            local vrc=0; qb_login_new "$user" "$pass" || vrc=$?
             (( vrc == 0 )) \
                 || die "qBittorrent did not accept the new credentials (rc=$vrc). Server said: $QB_LOGIN_BODY — inspect: logs qbittorrent"
             ok "permanent credentials set and verified"
@@ -231,8 +242,7 @@ sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
         qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" \
             || die "cannot sign in to qBittorrent with the stored credentials — fix that first (wire qbit)"
         qb_api /app/setPreferences "json=$(jq -cn --arg u "$user" --arg p "$pass" '{web_ui_username:$u,web_ui_password:$p}')" >/dev/null || true  # re-login below is the verdict
-        sleep 2
-        qb_login "$user" "$pass" || die "qBittorrent did not accept the new credentials — inspect: logs qbittorrent"
+        qb_login_new "$user" "$pass" || die "qBittorrent did not accept the new credentials — inspect: logs qbittorrent"
         env_set QBITTORRENT_USER "$user"; env_set QBITTORRENT_PASSWORD "$pass"
         ok "qBittorrent login rotated and verified"
         local key url cur id ent

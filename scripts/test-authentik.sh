@@ -289,7 +289,7 @@ exp=$(jq -r '.expires' <<<"$body"); want=$(date -u -d '+7 days' +%s); got=$(date
 
 # ---- the base URL: set when unset or still ours, never over one set in the UI ----
 # (the worker's values: as applied, unless a section below says otherwise)
-authentik_blueprint_inputs_changed() { return 1; }; authentik_blueprint_inputs_record() { :; }; authentik_applied_by_this_worker() { return 1; }
+authentik_applied_by_this_worker() { return 0; }
 state_get() { cat "$T/state" 2>/dev/null || true; }
 state_set() { echo "$2" > "$T/state"; }
 wire_gate() { :; }; http_ready() { :; }; hr() { :; }; info() { :; }; svc_enabled() { [[ "$1" == authentik ]]; }
@@ -433,68 +433,32 @@ q=$(cat "$T/q")
 for s in "${AUTHENTIK_TASK_INFLIGHT[@]}"; do [[ "$q" == *"aggregated_status=$s"* ]] || fail_ "in flight includes $s: $q"; done
 [[ "$q" != *"=done"* && "$q" != *"=rejected"* ]] || fail_ "a finished task is not in flight: $q"; pass
 
-# ---- the worker's values (the blueprint's !Env) ----
-inputs() { ( sudo() { [[ "$*" == "docker inspect -f "* ]] || return 1; [[ -z "$NOWORKER" ]] || return 1; printf '%s\n' "${ENVS[@]}"; }
-             svc_cname() { echo w; }; unset -f authentik_blueprint_inputs_changed authentik_blueprint_inputs_record
-             # shellcheck disable=SC1090  # the three real functions, back from their stubs
-             source <(sed -n '/^authentik_blueprint_inputs() {/,/^}/p; /^authentik_blueprint_inputs_changed() {/,/^}/p; /^authentik_blueprint_inputs_record() {/,/^}/p' services/authentik/authentik.sh)
-             state_get() { cat "$T/st-$1" 2>/dev/null || true; }; state_set() { printf '%s\n' "$2" > "$T/st-$1"; }
-             "$@" ) }
-rm -f "$T"/st-*; NOWORKER=
-ENVS=(PATH=/bin MEDIASTACK_PORTAL_TITLE=Mediastack MEDIASTACK_LDAP_BIND_PASSWORD='s3cr=t' AUTHENTIK_SECRET_KEY=k)
-out=$(inputs authentik_blueprint_inputs)
-[[ "$(cut -d' ' -f1 <<<"$out" | paste -sd' ' -)" == "MEDIASTACK_LDAP_BIND_PASSWORD MEDIASTACK_PORTAL_TITLE" ]] || fail_ "only the MEDIASTACK_ values, sorted: $out"; pass
-! grep -qE 's3cr=t|Mediastack' <<<"$out" || fail_ "a digest per value, never the value: $out"; pass
-r=$(inputs authentik_blueprint_inputs_changed; echo "rc=$?")
-[[ "$r" == *"no record"*"rc=0" ]] || fail_ "nothing recorded (an install from before this): apply once: $r"; pass
-inputs authentik_blueprint_inputs_record
-[[ "$(inputs authentik_blueprint_inputs_changed; echo "rc=$?")" == "rc=1" ]] || fail_ "as applied: nothing to do"; pass
-ENVS=(PATH=/bin MEDIASTACK_PORTAL_TITLE=Rotatetest MEDIASTACK_LDAP_BIND_PASSWORD='s3cr=t' MEDIASTACK_KAVITA_URL=https://k)
-r=$(inputs authentik_blueprint_inputs_changed; echo "rc=$?")
-[[ "$r" == $'MEDIASTACK_KAVITA_URL MEDIASTACK_PORTAL_TITLE\nrc=0' ]] || fail_ "a changed and a new value are named, the rest not: $r"; pass
-r=$(NOWORKER=1 inputs authentik_blueprint_inputs_changed; echo "rc=$?")
-[[ "$r" == "rc=2" ]] || fail_ "no worker to read: unreadable, never 'unchanged': $r"; pass
-# wire: a changed worker is applied; --verify says so and does not call it applied
-changed_wire() { # changed_wire DRY CHANGED-RC -> "applied|not recorded|not ok-line|ok-line" (what wire did)
+# ---- the worker's values (the blueprint's !Env): authentik answers whether it
+#      has them — its last apply after this worker was made — no copy kept here
+#      (the audit, 26 Nov 2026: the digest record was where this step's bugs clustered) ----
+by_wire() { # by_wire DRY BY-RC -> "applied|none fails=N ok-lines why"
     ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
       authentik_blueprint_status() { echo successful; }
-      authentik_blueprint_inputs_changed() { (( CRC == 0 )) && echo MEDIASTACK_PORTAL_TITLE; return "$CRC"; }
-      authentik_blueprint_inputs_record() { echo recorded > "$T/rec"; }
+      authentik_applied_by_this_worker() { return "$BYRC"; }
       authentik_blueprint_apply() { echo applied > "$T/app"; echo successful; }
       c_state() { echo exited; }; ok() { echo "OK $*"; }
       wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_app_password_lifetime() { :; }; wire_authentik_lockout_alerts() { :; }
       wire_authentik_gate() { :; }; panel_signin_check() { :; }
-      rm -f "$T/rec" "$T/app"; WIRE_DRY=$1 CRC=$2 WIRE_FAILS=0
+      rm -f "$T/app"; WIRE_DRY=$1 BYRC=$2 WIRE_FAILS=0
       wire_authentik > "$T/wout" 2>&1   # not in $( ): WIRE_FAILS is counted in this shell
-      echo "$(cat "$T/app" 2>/dev/null || echo none) $(cat "$T/rec" 2>/dev/null || echo none) fails=$WIRE_FAILS $(grep -c 'portal setup applied' "$T/wout")$(grep -o 'values changed: [A-Z_]*' "$T/wout" | sed 's/^/ /')" )
+      echo "$(cat "$T/app" 2>/dev/null || echo none) fails=$WIRE_FAILS $(grep -c 'portal setup applied' "$T/wout")$(grep -o 'before its worker was made' "$T/wout" | sed -n '1s/^/ /p')" )
 }
-[[ "$(changed_wire 0 0)" == "applied recorded fails=0 1" ]] || fail_ "the worker changed: applied, recorded: $(changed_wire 0 0)"; pass
-[[ "$(changed_wire 1 0)" == "none none fails=0 0 values changed: MEDIASTACK_PORTAL_TITLE" ]] || fail_ "--verify: named, nothing applied, not called applied: $(changed_wire 1 0)"; pass
-[[ "$(changed_wire 0 1)" == "none none fails=0 1" ]] || fail_ "as applied: no apply: $(changed_wire 0 1)"; pass
-[[ "$(changed_wire 0 2)" == "none none fails=1 0" ]] || fail_ "the worker unreadable: a failure: $(changed_wire 0 2)"; pass
-# no record, but the last apply ran on this worker (a first wire: the restore point waited out its first pass): recorded, never applied again
-nr_wire() { # nr_wire DRY BY-THIS-WORKER(yes|no) -> "applied|none recorded|none"
-    ( ak_api() { [[ "$1 $2" == "GET /admin/settings/" ]] && echo '{"base_url":"https://portal.media.example.com"}' || echo '{}'; }
-      authentik_blueprint_status() { echo successful; }; state_get() { :; }
-      authentik_applied_by_this_worker() { [[ "$BY" == yes ]]; }
-      authentik_blueprint_inputs_changed() { echo "no record"; return 0; }
-      authentik_blueprint_inputs_record() { echo recorded > "$T/rec"; }
-      authentik_blueprint_apply() { echo applied > "$T/app"; echo successful; }
-      c_state() { echo exited; }; ok() { :; }
-      wire_authentik_identity() { :; }; wire_authentik_recovery() { :; }; wire_authentik_show_password() { :; }; wire_authentik_web_tokens() { :; }; wire_authentik_app_password_lifetime() { :; }; wire_authentik_lockout_alerts() { :; }
-      wire_authentik_gate() { :; }; panel_signin_check() { :; }
-      rm -f "$T/rec" "$T/app"; WIRE_DRY=$1 BY=$2 WIRE_FAILS=0
-      wire_authentik > /dev/null 2>&1
-      echo "$(cat "$T/app" 2>/dev/null || echo none) $(cat "$T/rec" 2>/dev/null || echo none)" )
-}
-[[ "$(nr_wire 0 yes)" == "none recorded" ]] || fail_ "applied on this worker already: recorded, not applied again: $(nr_wire 0 yes)"; pass
-[[ "$(nr_wire 1 yes)" == "none none" ]] || fail_ "a dry run: no drift, nothing written: $(nr_wire 1 yes)"; pass
-[[ "$(nr_wire 0 no)" == "applied recorded" ]] || fail_ "no record and an older apply: applied, then recorded: $(nr_wire 0 no)"; pass
-abw() { # abw LAST-APPLIED CREATED [STARTED] -> yes|no
-    ( authentik_blueprint_instance() { jq -cn --arg a "$A" '{last_applied: $a}'; }
-      sudo() { case "$*" in *'{{.Created}}'*) echo "$S" ;; *'{{.State.StartedAt}}'*) echo "$R" ;; esac; }
+[[ "$(by_wire 0 0)" == "none fails=0 1" ]] || fail_ "applied since this worker was made: current, no apply: $(by_wire 0 0)"; pass
+[[ "$(by_wire 0 1)" == "applied fails=0 1" ]] || fail_ "applied before this worker was made: applied again: $(by_wire 0 1)"; pass
+[[ "$(by_wire 1 1)" == "none fails=0 0 before its worker was made" ]] || fail_ "--verify: named, nothing applied, not called applied: $(by_wire 1 1)"; pass
+[[ "$(by_wire 0 2)" == "none fails=1 0" ]] || fail_ "unreadable: a failure, never 'current': $(by_wire 0 2)"; pass
+! grep -qE 'AUTHENTIK_BLUEPRINT_INPUTS|authentik_blueprint_inputs' services/authentik/*.sh || fail_ "no copy of the worker's values is kept"; pass
+abw() { # abw LAST-APPLIED CREATED [STARTED] -> yes|no|unreadable ("-" for CREATED: the worker unreadable; LAST-APPLIED "x": authentik unreadable)
+    ( authentik_blueprint_instance() { [[ "$A" != x ]] || return 1; jq -cn --arg a "$A" '{last_applied: $a}'; }
+      sudo() { case "$*" in *'{{.Created}}'*) [[ "$S" != - ]] || return 1; echo "$S" ;; *'{{.State.StartedAt}}'*) echo "$R" ;; esac; }
       svc_cname() { echo w; }; A=$1 S=$2 R=${3:-$2}
-      authentik_applied_by_this_worker && echo yes || echo no )
+      rc=0; authentik_applied_by_this_worker || rc=$?
+      case $rc in 0) echo yes ;; 1) echo no ;; *) echo unreadable ;; esac )
 }
 unset -f authentik_applied_by_this_worker
 # shellcheck disable=SC1090  # the real one, back from its stub
@@ -504,7 +468,8 @@ source <(sed -n '/^authentik_applied_by_this_worker() {/,/^}/p' services/authent
 [[ "$(abw 2026-11-15T10:28:40Z 2026-11-15T10:24:57.30760565Z 2026-11-15T10:31:36.037480597Z)" == yes ]] \
     || fail_ "restarted after the apply (the first wire's restore point): still its values, never applied twice (found live 15 Nov 2026)"; pass
 [[ "$(abw '' 2026-11-14T07:05:46Z)" == no ]] || fail_ "never applied: not current"; pass
-authentik_applied_by_this_worker() { return 1; }
+[[ "$(abw 2026-11-14T07:12:13Z -)" == unreadable && "$(abw x 2026-11-14T07:05:46Z)" == unreadable ]] || fail_ "the worker or authentik unreadable: unreadable, never 'not current'"; pass
+authentik_applied_by_this_worker() { return 0; }
 
 # ---- a first start: one `wire` finishes it — authentik before jellyfin, and
 #      wire waits (bounded) for the blueprint to be discovered ----

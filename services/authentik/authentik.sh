@@ -358,43 +358,26 @@ authentik_blueprint_status() { # -> successful | warning | error | … | outdate
 
 # authentik applies a blueprint only when its file changes: the values it reads
 # from the worker's environment (!Env: the portal's name, addresses, the LDAP
-# bind password, the OIDC client secrets) reach it only on the next apply. So
-# wire records what the worker held when the blueprint was last applied, and
-# applies again when that differs (found live Nov 2026: a new PORTAL_TITLE in
-# the worker, the old one in authentik, and wire --verify clean).
-AUTHENTIK_INPUTS_STATE=AUTHENTIK_BLUEPRINT_INPUTS   # local/state: one "NAME digest" line per value
-authentik_blueprint_inputs() { # -> the running worker's MEDIASTACK_* values, "NAME digest" per line (a digest: never the value); rc 1 when unreadable
-    local envs l
-    envs=$(sudo docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$(svc_cname authentik-worker)" 2>/dev/null) || return 1
-    while IFS= read -r l; do
-        [[ "$l" == MEDIASTACK_*=* ]] || continue
-        printf '%s %s\n' "${l%%=*}" "$(printf '%s' "${l#*=}" | sha256sum | cut -c1-16)"
-    done <<<"$envs" | LC_ALL=C sort
-}
-authentik_blueprint_inputs_changed() { # -> the names whose value differs from the last apply's; rc 0 when any (or none recorded), 1 when none, 2 when unreadable
-    local now was
-    now=$(authentik_blueprint_inputs) || return 2
-    was=$(state_get "$AUTHENTIK_INPUTS_STATE")
-    [[ -n "$was" ]] || { echo "no record of the values it was applied with"; return 0; }
-    [[ "$now" != "$was" ]] || return 1
-    LC_ALL=C comm -3 <(printf '%s\n' "$was") <(printf '%s\n' "$now") | awk '{print $1}' | LC_ALL=C sort -u | paste -sd' ' -
-}
-authentik_applied_by_this_worker() { # authentik's last apply of the portal setup finished after this worker was created: it ran on the values this worker holds
-    # (a first wire: the restore point waited out authentik's own first pass —
-    # applying again would cost minutes for nothing, found live Nov 2026).
+# bind password, the OIDC client secrets) reach it only on the next apply
+# (found live Nov 2026: a new PORTAL_TITLE in the worker, the old one in
+# authentik, and wire --verify clean). A container's values are fixed when it
+# is created, so authentik itself answers whether it has them: its last
+# successful apply finished after this worker was created. No copy of them is
+# kept here — the digest record that was (Nov 2026) is where this step's bugs
+# clustered (the audit, 26 Nov 2026). Its cost: one apply (~30-40 s) after a
+# worker is recreated with the same values (an image update).
+authentik_applied_by_this_worker() { # rc 0: authentik's last successful apply of the portal setup finished after this worker was created (it has this worker's values); 1: not; 2: unreadable
     # Created, not started: a container's values are fixed when it is created,
-    # and that restore point restarts the worker after the apply — measured
-    # from its start, every first portal install applied twice (found live
-    # 15 Nov 2026: created 10:24:57, the apply, restarted 10:31:36)
-    local at created
-    at=$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied // empty' 2>/dev/null) || return 1
-    created=$(sudo docker inspect -f '{{.Created}}' "$(svc_cname authentik-worker)" 2>/dev/null) || return 1
-    [[ -n "$at" && -n "$created" ]] || return 1
+    # and the first wire's restore point restarts the worker after the apply —
+    # measured from its start, every first portal install applied twice (found
+    # live 15 Nov 2026: created 10:24:57, the apply, restarted 10:31:36)
+    local inst at created
+    inst=$(authentik_blueprint_instance 2>/dev/null) || return 2
+    at=$(jq -r '.last_applied // empty' <<<"$inst" 2>/dev/null) || return 2
+    [[ -n "$at" ]] || return 1   # never applied
+    created=$(sudo docker inspect -f '{{.Created}}' "$(svc_cname authentik-worker)" 2>/dev/null) || return 2
+    [[ -n "$created" ]] || return 2
     (( $(date -d "$at" +%s) > $(date -d "$created" +%s) ))
-}
-authentik_blueprint_inputs_record() { # after a successful apply: what the worker held is what authentik has
-    local now; now=$(authentik_blueprint_inputs) || return 1
-    state_set "$AUTHENTIK_INPUTS_STATE" "$now"
 }
 
 AUTHENTIK_DISCOVER_WAIT=300   # seconds: how long a first start may take to discover the blueprint
@@ -714,12 +697,11 @@ _doctor_accounts() { # the account model: one of the services that conflict, and
             local st; st=$(authentik_blueprint_status)
             case "$st" in
                 successful)
-                    local changed rc=0
-                    if [[ -z "$(state_get "$AUTHENTIK_INPUTS_STATE")" ]] && authentik_applied_by_this_worker; then rc=1   # applied on this worker's values; wire records them
-                    else changed=$(authentik_blueprint_inputs_changed) || rc=$?; fi
+                    local rc=0
+                    authentik_applied_by_this_worker || rc=$?
                     case $rc in
-                        1) ok "authentik: mediastack's portal setup applied (groups, sign-up by invitation)" ;;
-                        0) warn "authentik: mediastack's portal setup was applied with other values than the worker has now ($changed) — apply them: ./mediastack.sh wire authentik" ;;
+                        0) ok "authentik: mediastack's portal setup applied (groups, sign-up by invitation)" ;;
+                        1) warn "authentik: mediastack's portal setup was applied before its worker was made — its values may have changed since: ./mediastack.sh wire authentik" ;;
                         *) warn "authentik: the worker's values are unreadable, so whether the portal setup has them is unknown — is authentik-worker running? ./mediastack.sh status" ;;
                     esac ;;
                 "") warn "authentik has not applied mediastack's portal setup yet (it does within minutes of starting): ./mediastack.sh wire authentik" ;;
@@ -822,28 +804,21 @@ wire_authentik() {
             wfail "authentik has not applied mediastack's portal setup within $((AUTHENTIK_DISCOVER_WAIT / 60)) minutes of a first start — ./mediastack.sh logs authentik-worker --no-follow | grep -i blueprint"
             return 0
         fi
-        if [[ "$st" == successful ]]; then authentik_blueprint_inputs_record || wfail "authentik: the worker's values are unreadable — is authentik-worker running? ./mediastack.sh status"; fi
     fi
-    # why it is not current: a failed apply, an older file, or values the worker has that authentik has not
-    local why="" changed rc=0
+    # why it is not current: a failed apply, an older file, or a worker made since it was applied
+    local why="" rc=0
     case "$st" in
         outdated) why="an earlier version is in place" ;;
         error)    why="its last apply failed" ;;
         successful)
-            if [[ -z "$(state_get "$AUTHENTIK_INPUTS_STATE")" ]] && authentik_applied_by_this_worker; then
-                rc=1   # no record, but its last apply ran on this worker: current — recorded, not applied again
-                (( WIRE_DRY )) || authentik_blueprint_inputs_record || wfail "authentik: the worker's values are unreadable — is authentik-worker running? ./mediastack.sh status"
-            else
-                changed=$(authentik_blueprint_inputs_changed) || rc=$?
-            fi
+            authentik_applied_by_this_worker || rc=$?
             case $rc in
-                0) why="the worker's values changed: $changed" ;;
-                2) wfail "authentik: the worker's values are unreadable — is authentik-worker running? ./mediastack.sh status"; return 0 ;;
+                1) why="applied before its worker was made — the worker's values may have changed" ;;
+                2) wfail "authentik: whether the portal setup has the worker's values is unreadable — is authentik-worker running? ./mediastack.sh status"; return 0 ;;
             esac ;;
     esac
     if [[ -n "$why" ]] && w_would "authentik: apply mediastack's current portal setup now ($why)"; then
         st=$(authentik_blueprint_apply); applied=1
-        if [[ "$st" == successful ]]; then authentik_blueprint_inputs_record || wfail "authentik: the worker's values are unreadable after the apply — is authentik-worker running? ./mediastack.sh status"; fi
     fi
     # the LDAP outpost caches bind results: a changed setup starts it afresh,
     # so an answer from before the change cannot outlive it (found live)
