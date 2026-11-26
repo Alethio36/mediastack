@@ -212,6 +212,16 @@ STRIP
       chain:
         middlewares: [mediastack-gate]
 ONLY
+        # the portal's authorize page, per client address (services/authentik/compose.yml,
+        # router authentik-authorize): past the burst, a 429 from Traefik — authentik
+        # never sees it. Clients are seen directly: no forwarded-header trust here
+        cat <<'LIMIT'
+    mediastack-authorize-limit:
+      rateLimit:
+        average: 2
+        period: 1s
+        burst: 20
+LIMIT
         # authentik's built-in outpost decides (services/authentik/authentik.sh attaches the gate to it)
         cat <<'GATE'
     mediastack-gate:

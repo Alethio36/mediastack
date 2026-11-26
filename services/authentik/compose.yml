@@ -106,6 +106,16 @@ services:
       traefik.http.routers.authentik.entrypoints: "websecure"
       traefik.http.routers.authentik.tls: "true"
       traefik.http.services.authentik.loadbalancer.server.port: "9000"
+      # authorize, rate-limited per address: a gated app's page that retries a
+      # call the gate turned into a redirect costs a 5 s authorize each time —
+      # one Dispatcharr tab sent ~8 a second and slowed every sign-in (found
+      # live 25 Nov 2026). A person makes one per app opened. The longer rule
+      # wins over the router above (Traefik orders routers by rule length)
+      traefik.http.routers.authentik-authorize.rule: "Host(`${AUTHENTIK_HOST:-portal}.${STACK_DOMAIN:-unset.invalid}`) && PathPrefix(`/application/o/authorize`)"
+      traefik.http.routers.authentik-authorize.entrypoints: "websecure"
+      traefik.http.routers.authentik-authorize.tls: "true"
+      traefik.http.routers.authentik-authorize.service: "authentik"
+      traefik.http.routers.authentik-authorize.middlewares: "mediastack-authorize-limit@file"
     healthcheck: *authentik-health
     networks: [mediastack, mediastack-authentik-db]   # its database's network (docker-compose.yml)
     logging: *logging

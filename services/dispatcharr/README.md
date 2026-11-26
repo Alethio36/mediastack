@@ -83,6 +83,13 @@ Its first start takes about half a minute (its database is made then).
   players on the LAN").
 - **Sign-ins are limited** to 3 a minute from one address (its own rule,
   password and header alike). A refused sign-in says to wait a minute.
+- **A tab left open past the portal's day-long sign-in stops working** —
+  reload it. Its page renews its own sign-in every 30 minutes; once the
+  portal's has run out, that renewal is sent to the portal, fails, and is
+  retried at once, about 8 a second, until the tab is reloaded or closed.
+  The portal's authorize page is rate-limited per address, so the cost is
+  Traefik's refusals, not authentik's time ([watchlist](../../docs/watchlist.md),
+  "Dispatcharr upstream gaps").
 
 ## Troubleshooting
 

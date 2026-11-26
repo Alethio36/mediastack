@@ -319,6 +319,14 @@ AK_ON=1; mw=$(traefik_gate_middleware)
     || fail_ "with authentik: the gate asks its outpost"; pass
 AK_ON=; mw=$(traefik_gate_middleware)
 [[ "$mw" == *"mediastack-gate:"* && "$mw" != *forwardAuth* ]] || fail_ "without authentik: the gate is a no-op (Wizarr mode keeps today's access)"; pass
+# the portal's authorize page, rate-limited per address: one stale Dispatcharr
+# tab retried its token refresh ~8 a second through the gate (found live 25 Nov 2026)
+AK_ON=1; mw=$(traefik_gate_middleware)
+[[ "$mw" == *$'mediastack-authorize-limit:\n      rateLimit:\n        average: 2\n        period: 1s\n        burst: 20'* ]] \
+    || fail_ "with authentik: the authorize page's limit is defined: $mw"; pass
+grep -qF 'traefik.http.routers.authentik-authorize.middlewares: "mediastack-authorize-limit@file"' services/authentik/compose.yml \
+    && grep -qF 'traefik.http.routers.authentik-authorize.service: "authentik"' services/authentik/compose.yml \
+    || fail_ "the authorize router carries the limit, onto authentik"; pass
 # a tool with no login of its own: through the portal, or nobody
 AK_ON=1; mw=$(traefik_gate_middleware)
 [[ "$mw" == *$'mediastack-portal-only:\n      chain:\n        middlewares: [mediastack-gate]'* ]] || fail_ "with authentik: portal-only is the gate"; pass

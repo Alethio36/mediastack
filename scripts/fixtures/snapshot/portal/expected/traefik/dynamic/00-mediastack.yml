@@ -29,6 +29,11 @@ http:
     mediastack-portal-only:
       chain:
         middlewares: [mediastack-gate]
+    mediastack-authorize-limit:
+      rateLimit:
+        average: 2
+        period: 1s
+        burst: 20
     mediastack-gate:
       forwardAuth:
         address: "http://authentik:9000/outpost.goauthentik.io/auth/traefik"

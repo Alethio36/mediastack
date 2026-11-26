@@ -441,6 +441,15 @@ from a LAN address before it ships.
   `PUID`; nothing writes into `uploads/` itself, but doctor would call it a
   mis-owned config folder. The stack makes the folder, owned right, before
   the first start.
+- **A failed token refresh is retried at once, without end** (found live
+  25 Nov 2026, v0.34.1). Its page renews its own access token (30 minutes,
+  `SIMPLE_JWT`) at `/api/accounts/token/refresh/`; behind the portal's gate,
+  once the gate's sign-in has run out, that call is redirected to the
+  portal and fails, and the page retries with no delay: 9,304 calls in 20
+  minutes from one tab, each a 5 s authorize in authentik, every sign-in
+  slowed. Its WebSocket and notifications back off; the refresh does not.
+  The stack rate-limits the portal's authorize page per address
+  (`mediastack-authorize-limit`); to report upstream (drafted 25 Nov 2026).
 
 **Revisit when:** a release adds a switch for the version check (then the
 stack sets it), or makes `uploads/` itself `PUID`'s (then the stack's

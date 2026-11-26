@@ -15,6 +15,8 @@
 #              only, and only while the portal runs
 #   dashboard  Traefik's dashboard always has a login (the gate or its own)
 #   ldap       the LDAP route answers the stack network only
+#   authorize  with the portal on, its authorize page is rate-limited per
+#              address — a page retrying a gated call cannot flood authentik
 #   socket     only Traefik mounts the Docker socket, and read-only
 #   acme       the certificate server is staging exactly when ACME_ENV says so
 #   panelauth  the panel trusts the gate's identity headers only while the
@@ -36,7 +38,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 fixtures=scripts/fixtures/snapshot
-RULES=(vpn torrent edge gated strip trust dashboard ldap socket acme panelauth secrets)
+RULES=(vpn torrent edge gated strip trust dashboard ldap authorize socket acme panelauth secrets)
 HOST_RULES=(panel units)
 
 # ---- helpers: D is a case folder (env.set + expected/) ----
@@ -105,6 +107,17 @@ rule_ldap() {
     subnet=$(jq -r '.networks.mediastack.ipam.config[0].subnet' "$(cj "$1")")
     range=$(awk '/mediastack-ldap-allow:/{m=1} m && /sourceRange:/{sub(/^ +/, ""); print; exit}' "$f")
     [[ "$range" == *"[\"$subnet\"]"* ]] || echo "mediastack-ldap-allow: '$range' (want only the stack network $subnet)"
+}
+rule_authorize() {
+    portal_on "$1" || return 0
+    local f=$1/expected/traefik/dynamic/00-mediastack.yml L
+    L=$(jq -c '[.services[].labels // {} | to_entries[]] | from_entries' "$(cj "$1")")
+    [[ "$(jq -r '.["traefik.http.routers.authentik-authorize.rule"] // ""' <<<"$L")" == *'PathPrefix(`/application/o/authorize`)'* ]] \
+        || echo "authentik-authorize: no router for the authorize page"
+    [[ "$(jq -r '.["traefik.http.routers.authentik-authorize.middlewares"] // ""' <<<"$L")" == mediastack-authorize-limit@file ]] \
+        || echo "authentik-authorize: the router lacks mediastack-authorize-limit"
+    awk '/^    mediastack-authorize-limit:/{m=1; next} m && /^    [a-z]/{exit} m' "$f" | grep 'rateLimit:' >/dev/null \
+        || echo "mediastack-authorize-limit: not a rateLimit"
 }
 rule_socket() {
     jq -r '.services | to_entries[] | .key as $s | (.value.volumes // [])[] | select(.source == "/var/run/docker.sock")
@@ -207,6 +220,7 @@ broken() { # broken RULE -> a portal copy (plus the host files) with exactly tha
         trust)     jq '.services.navidrome.environment.ND_EXTAUTH_TRUSTEDSOURCES = "0.0.0.0/0"' "$c" ;;
         dashboard) sed -i 's/middlewares: \[mediastack-gate\]/middlewares: []/' "$b/expected/traefik/dynamic/00-mediastack.yml"; cat "$c" ;;
         ldap)      sed -i 's|sourceRange: \["172.31.250.0/24"\]|sourceRange: ["0.0.0.0/0"]|' "$b/expected/traefik/dynamic/00-mediastack.yml"; cat "$c" ;;
+        authorize) jq 'del(.services.authentik.labels["traefik.http.routers.authentik-authorize.middlewares"])' "$c" ;;
         socket)    jq '.services.jellyfin.volumes += [{"type":"bind","source":"/var/run/docker.sock","target":"/var/run/docker.sock"}]' "$c" ;;
         acme)      echo 'ACME_ENV=staging' >> "$b/env.set"; cat "$c" ;;
         secrets)   jq '.services.jellyfin.labels.leak = "fixture-secret-wireguard"' "$c" ;;

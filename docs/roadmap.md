@@ -734,6 +734,19 @@ agreed first:
       forward-auth code: the request's `Sec-Fetch-Mode` /
       `X-Requested-With`), so a stale tab costs a cheap refusal, not an
       authorize; and whether Traefik can rate-limit the authorize path.
+      *Found (25 Nov 2026):* the outpost has no such case — its Traefik
+      handler redirects every unauthenticated call (2026.8,
+      `proxyv2/application/mode_forward.go`), after saving a login state.
+      The calls' `state` names what they were for: 9,304 of 9,307 were
+      Dispatcharr's own token refresh (`/api/accounts/token/refresh/`),
+      retried with no delay once the gate's sign-in had run out; its
+      WebSocket and notifications back off (reproduced: a 2-minute gate
+      token, a restart — 1 authorize a minute). *Done (P3c):* the portal's
+      authorize page rate-limited per address at Traefik (2 a second, a
+      burst of 20: `mediastack-authorize-limit`, `test-safety`'s
+      `authorize`); Dispatcharr's README and the watchlist say it;
+      the upstream issue drafted. Left: the forward-auth check itself (~0.1 s and a
+      login state saved per call) still runs at the tab's rate.
     - **The leak gate closed once on `up` right after gluetun was recreated**
       (16 Nov 2026, anzac4, 18:55): a FAIL, not shown because the run's
       output was discarded; `leak-test` passed minutes later and every
