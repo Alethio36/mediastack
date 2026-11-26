@@ -44,7 +44,7 @@ jf_livetv_tuner() { # TOKEN PROVIDER ENTRY CONFIG — rc 1 when the tuner cannot
     # running is not answering: right after `up` moved it, Dispatcharr's nginx
     # answers 502 while the app behind it starts (found live 25 Nov 2026)
     http_ready "$p" "$durl" '^200$' || return 1
-    disc=$(curl -fsS -m 10 "$durl" 2>&1) \
+    disc=$(scurl -fsS -m 10 "$durl" 2>&1) \
         || { wfail "jellyfin: $p's tuner does not answer (its discover.json): $(oneline "$disc") — inspect: ./mediastack.sh logs $p"; return 1; }
     dev=$(jq -r '.DeviceID // empty' <<<"$disc" 2>/dev/null || true)   # soft read: no DeviceID is said on the next line
     [[ -n "$dev" ]] || { wfail "jellyfin: $p's tuner answered without a DeviceID: $(oneline "$disc")"; return 1; }

@@ -14,7 +14,7 @@ SEERR_CODE_F="${TMPDIR:-/tmp}/.mediastack-seerr-code.$$"
 seerr_code() { cat "$SEERR_CODE_F" 2>/dev/null || echo 000; }
 seerr_api() { # seerr_api METHOD PATH JAR [json-body] -> body; rc = http 2xx
     local m="$1" p="$2" jar="$3" b="${4:-}" out code
-    out=$(curl -sS -m 30 -X "$m" -b "$jar" -c "$jar" -H "Content-Type: application/json" \
+    out=$(scurl -sS -m 30 -X "$m" -b "$jar" -c "$jar" -H "Content-Type: application/json" \
           ${b:+-d "$b"} -w $'\n%{http_code}' "$(seerr_url)/api/v1$p" 2>&1) \
         || { local rc=$?; printf '000' > "$SEERR_CODE_F"; api_timed_out "$rc" && api_unanswered "$m" 30 || echo "$out"; return 1; }
     code=${out##*$'\n'}; printf '%s' "$code" > "$SEERR_CODE_F"
@@ -227,7 +227,7 @@ wire_seerr() {
 
 seerr_doctor() { # doctor: apps — initialised
     local spub
-    spub=$(curl -s -m 10 "$(seerr_url)/api/v1/settings/public" 2>/dev/null || true)
+    spub=$(scurl -s -m 10 "$(seerr_url)/api/v1/settings/public" 2>/dev/null || true)
     case "$(jq -r '.initialized' <<<"$spub" 2>/dev/null)" in
         true)  ok "seerr initialised"; seerr_doctor_key ;;
         false) warn "seerr not initialised yet — run: ./mediastack.sh wire seerr" ;;
@@ -239,7 +239,7 @@ seerr_doctor_key() { # doctor: the stored key opens Seerr's API (notify's test a
     local key code
     key=$(env_get SEERR_API_KEY)
     [[ -n "$key" ]] || { warn "seerr: no API key stored yet — ./mediastack.sh wire seerr"; return 0; }
-    code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-Api-Key: $key" "$(seerr_url)/api/v1/settings/main" 2>/dev/null || true)
+    code=$(scurl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-Api-Key: $key" "$(seerr_url)/api/v1/settings/main" 2>/dev/null || true)
     case "$code" in
         2*)      ok "seerr accepts the stack API key (SEERR_API_KEY)" ;;
         401|403) d_fail "seerr rejects the stack API key (HTTP $code)" "it was regenerated in Seerr's settings" "./mediastack.sh wire seerr  # stores Seerr's current key" ;;
@@ -266,7 +266,7 @@ seerr_secret_rotate() { # Seerr makes its own (regenerate); .env takes it
     old=$(env_get SEERR_API_KEY)
     http_ready seerr "$(seerr_url)/api/v1/settings/public" '^200$' || return 1   # after the restore point's restart: up before it is asked
     rotate_journal_hold SEERR_API_KEY "$old" ""
-    out=$(curl -sS -m 20 -X POST -H "X-Api-Key: $old" -w $'\n%{http_code}' "$(seerr_url)/api/v1/settings/main/regenerate" 2>&1) || true
+    out=$(scurl -sS -m 20 -X POST -H "X-Api-Key: $old" -w $'\n%{http_code}' "$(seerr_url)/api/v1/settings/main/regenerate" 2>&1) || true
     code=${out##*$'\n'}; out=${out%$'\n'*}
     if ! [[ "$code" =~ ^2 ]]; then fail "seerr: refused the regenerate (HTTP $code) — its key is unchanged"; rotate_journal_release; return 1; fi
     new=$(jq -r '.apiKey // empty' <<<"$out" 2>/dev/null)
@@ -285,10 +285,10 @@ seerr_notify_test() { # `notify test`: Seerr sends its own test through its hub 
     local key cur out code
     key=$(env_get SEERR_API_KEY)
     [[ -n "$key" ]] || { info "seerr: no API key stored yet (wire seerr) — its test skipped"; return 0; }
-    cur=$(curl -sS -m 10 -H "X-Api-Key: $key" "$(seerr_url)/api/v1/settings/notifications/webhook" 2>&1) \
+    cur=$(scurl -sS -m 10 -H "X-Api-Key: $key" "$(seerr_url)/api/v1/settings/notifications/webhook" 2>&1) \
         || { fail "seerr: unreachable — $(oneline "$cur")"; return 1; }
     jq -e '.enabled' <<<"$cur" >/dev/null 2>&1 || { info "seerr: its hub agent is off — its test skipped (wire seerr sets it up)"; return 0; }
-    out=$(curl -sS -m 20 -X POST -H "X-Api-Key: $key" -H "Content-Type: application/json" -d "$cur" \
+    out=$(scurl -sS -m 20 -X POST -H "X-Api-Key: $key" -H "Content-Type: application/json" -d "$cur" \
           -w $'\n%{http_code}' "$(seerr_url)/api/v1/settings/notifications/webhook/test" 2>&1) || true   # judged by its code
     code=${out##*$'\n'}
     if [[ "$code" =~ ^2 ]]; then ok "seerr: sent its own test through the hub — it should arrive on ops (the route Seerr's events take)"

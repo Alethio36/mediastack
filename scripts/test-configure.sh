@@ -142,15 +142,15 @@ _configure_roots > "$T/out" 2>&1
 ( fsdev_of() { [[ "$1" == */torrent ]] && echo 99 || echo 1; }; _configure_roots ) > "$T/out" 2>&1
 grep -q 'different filesystems' "$T/out" || fail_ "an existing one on another filesystem warns"; pass
 
-# ---- secrets read hidden; the token never on curl's command line ----
-curl() { printf '%s\n' "$*" > "$T/curl.args"; cat > "$T/curl.stdin"; echo '{"nordlynx_private_key":"KEY","username":"NORDUSER","password":"NORDPASS"}'; }
+# ---- secrets read hidden; the token goes to scurl, never on curl's command line ----
+scurl() { printf '%s\n' "$*" > "$T/curl.args"; echo '{"nordlynx_private_key":"KEY","username":"NORDUSER","password":"NORDPASS"}'; }
 printf 'COMPOSE_PROFILES=sonarr\n' > "$ENV_FILE"
 gluetun_vpn_questions </dev/null > "$T/out" 2>&1 && [[ ! -s "$T/out" ]] || fail_ "nothing in the VPN: no VPN question"; pass
 printf 'COMPOSE_PROFILES=gluetun\n' > "$ENV_FILE"
 printf 'nordvpn\n\nTOKEN123\n\n\n\n\n' | gluetun_vpn_questions > "$T/out" 2>&1 || fail_ "nord step runs: $(cat "$T/out")"
 [[ "$(env_get WIREGUARD_PRIVATE_KEY)" == KEY ]] || fail_ "the key is fetched: $(cat "$ENV_FILE")"; pass
-! grep -q TOKEN123 "$T/curl.args" && grep -qx 'user = "token:TOKEN123"' "$T/curl.stdin" \
-    || fail_ "the token goes on stdin, not the command line: $(cat "$T/curl.args")"; pass
+[[ "$(cat "$T/curl.args")" == *"-u token:TOKEN123 "* ]] \
+    || fail_ "the token goes to scurl as the login (scurl keeps it off curl's command line: test-secrets): $(cat "$T/curl.args")"; pass
 # a provider chosen by its number; a key the old provider made is not offered
 # again (Enter refused, a bad key refused, then a good one); its address asked
 WGK=wOEI9rqqbDwnN8/Bpp22sVz48T71vJ4fYmFWujulwUU=
@@ -265,7 +265,7 @@ cp "$ENV_FILE" "$T/checks.before"
 [[ -z "$(traefik_domain_problem Media.Example.com)" && -n "$(traefik_domain_problem 'Bad Domain')" ]] || fail_ "a domain (any case)"; pass
 cmp -s "$ENV_FILE" "$T/checks.before" || fail_ "a check writes nothing"; pass
 vpnp_load nordvpn
-( curl() { cat >/dev/null; echo '{"nordlynx_private_key":"K1"}'; }; [[ "$(nord_wg_key T)" == K1 ]] ) || fail_ "Nord's key for a token"; pass
-( curl() { cat >/dev/null; echo '{}'; }; ! out=$(nord_wg_key T) && [[ "$out" == "Token rejected by NordVPN"* ]] ) || fail_ "a rejected token: rc 1 and why"; pass
+( scurl() { echo '{"nordlynx_private_key":"K1"}'; }; [[ "$(nord_wg_key T)" == K1 ]] ) || fail_ "Nord's key for a token"; pass
+( scurl() { echo '{}'; }; ! out=$(nord_wg_key T) && [[ "$out" == "Token rejected by NordVPN"* ]] ) || fail_ "a rejected token: rc 1 and why"; pass
 
 echo "OK configure: $checks checks"

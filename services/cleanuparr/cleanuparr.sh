@@ -33,7 +33,7 @@ cup_instance_key() { # cup_instance_key SVC TYPE KEY AUTHHDR — the arr's key C
 
 cup_api() { # cup_api METHOD PATH AUTHHDR [json-body] -> body; rc = http 2xx
     local m="$1" p="$2" hdr="$3" b="${4:-}" out code
-    out=$(curl -sS -m 20 -X "$m" ${hdr:+-H "$hdr"} -H "Content-Type: application/json" \
+    out=$(scurl -sS -m 20 -X "$m" ${hdr:+-H "$hdr"} -H "Content-Type: application/json" \
           ${b:+-d "$b"} -w $'\n%{http_code}' "$(cup_url)/api$p" 2>&1) \
         || { local rc=$?; printf '000' > "$CUP_CODE_F"; api_timed_out "$rc" && api_unanswered "$m" 20 || echo "$out"; return 1; }
     code=${out##*$'\n'}; printf '%s' "$code" > "$CUP_CODE_F"

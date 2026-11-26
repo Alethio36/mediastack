@@ -16,7 +16,7 @@ ll_api() { # ll_api cmd [k=v ...] -> body; the &cmd= API, apikey-authenticated
     local q kv
     q="apikey=$(ll_key)&cmd=$cmd"
     for kv in "$@"; do q+="&$kv"; done
-    curl -sS -m 15 "$(ll_url)/api?$q" 2>/dev/null
+    scurl -sS -m 15 "$(ll_url)/api?$q" 2>/dev/null
 }
 
 ll_api_enable() { # ll_api_enable [KEY] — api_enabled + KEY (a new one when none is given) into config.ini's [GENERAL], written while it is stopped
@@ -75,12 +75,12 @@ lazylibrarian_gate_login() { ll_login || true; }   # `disable authentik` (GATE_U
 
 ll_login_proven() { # ll_login_proven USER PASS — the page refuses a stranger and admits the login ("" "": admits anyone)
     local anon with
-    anon=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$(ll_url)/" || true)
+    anon=$(scurl -s -m 10 -o /dev/null -w '%{http_code}' "$(ll_url)/" || true)
     if [[ -z "$1" ]]; then
         [[ "$anon" =~ ^[23] ]] && { ok "lazylibrarian: its own login is off — the portal guards it"; return 0; }
         wfail "lazylibrarian still asks for a login after it was removed (HTTP $anon) — inspect its config.ini"; return 1
     fi
-    with=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -u "$1:$2" "$(ll_url)/" || true)
+    with=$(scurl -s -m 10 -o /dev/null -w '%{http_code}' -u "$1:$2" "$(ll_url)/" || true)
     [[ "$anon" == 401 && "$with" =~ ^[23] ]] && { ok "lazylibrarian: its page asks for the arr login ('$1')"; return 0; }
     wfail "lazylibrarian did not take the login written to its config.ini (no login: HTTP $anon, with it: HTTP $with) — inspect: ./mediastack.sh logs lazylibrarian"
     return 1
@@ -142,7 +142,7 @@ wire_lazylibrarian() {
 # ---- rotate-secrets (lib/rotate.sh) ----
 lazylibrarian_secrets() { svc_enabled lazylibrarian && [[ -n "$(ll_key)" ]] && printf 'lazylibrarian API key\t\n'; return 0; }
 ll_key_takes() { # ll_key_takes KEY — LazyLibrarian answers KEY as its own (a wrong key gets JSON too: {"Success": false, … 401}, found live)
-    curl -sS -m 15 "$(ll_url)/api?apikey=$1&cmd=getVersion" 2>/dev/null | jq -e '.Success == true' >/dev/null 2>&1
+    scurl -sS -m 15 "$(ll_url)/api?apikey=$1&cmd=getVersion" 2>/dev/null | jq -e '.Success == true' >/dev/null 2>&1
 }
 lazylibrarian_secret_rotate() { # a new key into config.ini while it is stopped (ll_api_enable); Prowlarr's copy follows at the run's wire
     local old new

@@ -133,7 +133,7 @@ wire_apprise() {
 
     # --- notification endpoints: stored once under key 'mediastack';
     # an existing config is never touched (edit in apprise's UI or re-add)
-    code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$(hub_local_url)/get/mediastack" 2>/dev/null || echo 000)
+    code=$(scurl -s -m 10 -o /dev/null -w '%{http_code}' -X POST "$(hub_local_url)/get/mediastack" 2>/dev/null || echo 000)
     if [[ "$code" == 200 ]]; then
         state_set "$NOTIFY_STORED_STATE" yes   # configure asks no more
         if [[ -n "$(state_get "$NOTIFY_URLS_STATE")" ]]; then

@@ -136,14 +136,14 @@ jf() { # jf NEW-OPENS(yes|no) -> "rc=N env=K calls"
 
 sr() { # sr CODE -> "rc=N env=K"
     ( echo "SEERR_API_KEY=SOLD" > "$T/env"; echo "point	p" > "$ROTATE_JOURNAL"
-      seerr_url() { echo http://s; }; curl() { printf '{"apiKey":"SNEW"}\n%s' "$C"; }
+      seerr_url() { echo http://s; }; scurl() { printf '{"apiKey":"SNEW"}\n%s' "$C"; }
       rotate_proven() { :; }; C=$1; rc=0; seerr_secret_rotate >/dev/null 2>&1 || rc=$?
       echo "rc=$rc env=$(env_get SEERR_API_KEY)" )
 }
 [[ "$(sr 200)" == "rc=0 env=SNEW" ]] || fail_ "seerr: regenerated: .env takes it: $(sr 200)"; pass
 [[ "$(sr 403)" == "rc=1 env=SOLD" ]] || fail_ "seerr: the regenerate refused: unchanged: $(sr 403)"; pass
 
-bz() { ( echo "point	p" > "$ROTATE_JOURNAL"; bazarr_key() { echo BOLD; }; arr_url() { echo http://b; }; curl() { echo "$C"; }
+bz() { ( echo "point	p" > "$ROTATE_JOURNAL"; bazarr_key() { echo BOLD; }; arr_url() { echo http://b; }; scurl() { echo "$C"; }
          rotate_proven() { :; }; C=$1; rc=0; bazarr_secret_rotate >/dev/null 2>&1 || rc=$?; echo "rc=$rc inflight=$(rotate_inflight)" ); }
 [[ "$(bz 204)" == "rc=0 inflight=" && "$(bz 400)" == "rc=1 inflight=" ]] || fail_ "bazarr: taken -> done; refused -> unchanged: $(bz 204) / $(bz 400)"; pass
 
@@ -163,13 +163,13 @@ r=$(svc_cname() { echo g; }; sudo() { return 1; }; gluetun_control_code K)
 
 # an app still starting (after the restore point's restart) is waited for; never answering, nothing changes
 r=$( ( echo "point	p" > "$ROTATE_JOURNAL"; rm -f "$T/c"; http_ready() { return 1; }; bazarr_key() { echo BOLD; }; arr_url() { echo http://b; }
-       curl() { echo POST >> "$T/c"; echo 204; }; rc=0; bazarr_secret_rotate >/dev/null 2>&1 || rc=$?; echo "rc=$rc posts=$( { cat "$T/c" 2>/dev/null || true; } | wc -l)" ) )
+       scurl() { echo POST >> "$T/c"; echo 204; }; rc=0; bazarr_secret_rotate >/dev/null 2>&1 || rc=$?; echo "rc=$rc posts=$( { cat "$T/c" 2>/dev/null || true; } | wc -l)" ) )
 [[ "$r" == "rc=1 posts=0" ]] || fail_ "an app that never answers: kept, nothing sent: $r"; pass
 for f in jellyfin_secret_rotate arr_secret_rotate seerr_secret_rotate cleanuparr_secret_rotate bazarr_secret_rotate lazylibrarian_secret_rotate; do
     declare -f "$f" | grep 'http_ready' >/dev/null || fail_ "$f asks its app without waiting for it to be up"
 done; pass
 # LazyLibrarian answers a wrong key with JSON too: only Success true is its own (found live)
-lk() { ( ll_url() { echo http://l; }; curl() { echo "$A"; }; A=$1; ll_key_takes K && echo takes || echo refused ); }
+lk() { ( ll_url() { echo http://l; }; scurl() { echo "$A"; }; A=$1; ll_key_takes K && echo takes || echo refused ); }
 [[ "$(lk '{"Success": true, "current_version": "x"}')" == takes ]] || fail_ "lazylibrarian: its own key: taken"; pass
 [[ "$(lk '{"Success": false, "Data": "", "Error": {"Code": 401, "Message": "Incorrect API key"}}')" == refused ]] || fail_ "lazylibrarian: a wrong key's JSON: refused"; pass
 [[ "$(lk '')" == refused ]] || fail_ "lazylibrarian: no answer: refused"; pass

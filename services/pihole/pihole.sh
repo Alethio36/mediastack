@@ -28,7 +28,7 @@ pihole_gate_login() { # `disable authentik` (GATE_UNTRUSTED=1): its password bac
     DC up -d pihole >/dev/null 2>&1 || { wfail "pihole: could not recreate it with its own password — inspect: ./mediastack.sh logs pihole"; return 0; }
     url="http://127.0.0.1:$(svc_hostport pihole)/api/auth"
     # Pi-hole v6's GET /api/auth: valid true for anyone while it has no password
-    until out=$(curl -s -m 5 "$url" 2>/dev/null) && jq -e '.session.valid | type == "boolean"' <<<"$out" >/dev/null 2>&1; do
+    until out=$(scurl -s -m 5 "$url" 2>/dev/null) && jq -e '.session.valid | type == "boolean"' <<<"$out" >/dev/null 2>&1; do
         (( t >= PIHOLE_AUTH_WAIT )) && { wfail "pihole: its API did not answer within ${PIHOLE_AUTH_WAIT}s of its recreate — inspect: ./mediastack.sh logs pihole"; return 0; }
         sleep 3; t=$((t + 3))
     done

@@ -96,7 +96,7 @@ rotate_tags() { # rotate_tags LIST -> each cost tag the list carries, once, in f
 # ---------------------------------------------------------------- helpers --
 rotate_http_code() { # rotate_http_code URL HEADER -> the HTTP code URL answers a request carrying HEADER with (000: no answer)
     local c
-    c=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "$2" "$1" 2>/dev/null) || true
+    c=$(scurl -s -m 10 -o /dev/null -w '%{http_code}' -H "$2" "$1" 2>/dev/null) || true
     echo "${c:-000}"
 }
 rotate_proven() { # rotate_proven WHAT URL NEW-HEADER OLD-HEADER — the new key opens URL (waited for, up to a minute), the old one is refused (401/403)

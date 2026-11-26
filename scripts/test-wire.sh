@@ -113,7 +113,7 @@ printf '[GENERAL]\nimp_preflang = en\napi_enabled = 0\n\n[LOGGING]\nlog_dir = /c
 sudo()       { "$@"; }
 DC()         { echo "DC $*" >> "$T/dc"; }
 http_ready() { :; }; render() { :; }; ll_url() { echo http://127.0.0.1:5299; }
-curl()       { [[ "$*" == *"apikey=$(ll_key)&cmd=getVersion"* ]] && echo '{"Success": true, "current_version":"x"}' || echo '{"Success": false, "Error": {"Code": 401, "Message": "Incorrect API key"}}'; }
+scurl()       { [[ "$*" == *"apikey=$(ll_key)&cmd=getVersion"* ]] && echo '{"Success": true, "current_version":"x"}' || echo '{"Success": false, "Error": {"Code": 401, "Message": "Incorrect API key"}}'; }
 out=$(ll_api_enable 2>&1) || fail_ "switching the API on runs: $out"
 [[ "$(grep -E '^DC (stop|start) ' "$T/dc")" == $'DC stop lazylibrarian\nDC start lazylibrarian' ]] || fail_ "written while stopped: $(cat "$T/dc")"; pass
 [[ "$(sed -n 2p "$ini")" == "api_enabled = 1" && "$(sed -n 3p "$ini")" =~ ^api_key\ =\ [0-9a-f]{32}$ ]] \
@@ -121,13 +121,13 @@ out=$(ll_api_enable 2>&1) || fail_ "switching the API on runs: $out"
 [[ "$(grep -c '^api_enabled' "$ini")" == 1 && "$(sed -n '/^\[LOGGING\]/,$p' "$ini" | grep -c '^api_')" == 0 ]] \
     || fail_ "the old api_enabled replaced, nothing in other sections: $(cat "$ini")"; pass
 [[ "$(ll_key)" =~ ^[0-9a-f]{32}$ ]] || fail_ "ll_key reads the key back"; pass
-curl() { echo 'API not enabled'; }; : > "$T/dc"
+scurl() { echo 'API not enabled'; }; : > "$T/dc"
 ll_api_enable >/dev/null 2>&1 && fail_ "an API that does not answer after the write is a failure"
 (( WIRE_FAILS > 0 )) || fail_ "and it is counted"; pass
 # a wrong key gets JSON too (found live Nov 2026): only Success true proves the key written
-curl() { echo '{"Success": false, "Data": "", "Error": {"Code": 401, "Message": "Incorrect API key"}}'; }; : > "$T/dc"
+scurl() { echo '{"Success": false, "Data": "", "Error": {"Code": 401, "Message": "Incorrect API key"}}'; }; : > "$T/dc"
 ll_api_enable >/dev/null 2>&1 && fail_ "LazyLibrarian refusing the written key (JSON, Success false) is a failure"; pass
-unset -f curl
+unset -f scurl
 
 # ---- the summary names every failure by its step, once ----
 # a message that already starts with its step is not named again (seen live:
@@ -166,11 +166,11 @@ bad=$(grep -rn -A2 'ensure_resource "' lib services | grep -iE '^[^:]+-[0-9]+-.*
 [[ -z "$bad" ]] || fail_ "an ensure_resource success text says 'already' — it is also printed after a write: $bad"; pass
 
 # a call that times out is unanswered, not refused: a write may still have been made (found live Nov 2026)
-tmo() { ( curl() { echo "curl: (28) Operation timed out after 20002 milliseconds"; return 28; }; api "$1" http://x k ) 2>&1; }
+tmo() { ( scurl() { echo "curl: (28) Operation timed out after 20002 milliseconds"; return 28; }; api "$1" http://x k ) 2>&1; }
 [[ "$(tmo PUT)" == "no answer within 20s — the change may still have been made: wire reads it back at the end" ]] \
     || fail_ "a write that timed out: unanswered, maybe made ($(tmo PUT))"; pass
 [[ "$(tmo GET)" == "no answer within 20s" ]] || fail_ "a read that timed out: unanswered ($(tmo GET))"; pass
-[[ "$( ( curl() { echo "curl: (7) Failed to connect"; return 7; }; api GET http://x k ) 2>&1)" == *"Failed to connect"* ]] \
+[[ "$( ( scurl() { echo "curl: (7) Failed to connect"; return 7; }; api GET http://x k ) 2>&1)" == *"Failed to connect"* ]] \
     || fail_ "any other failure: curl's own words"; pass
 
 # ---- an arr's key in Prowlarr and Seerr follows the arr (found live Nov 2026:
@@ -292,7 +292,7 @@ bw() { # bw DRY KEY-AFTER-N-LOOKS -> "fails=N looks=N"
     ( WIRE_DRY=$1 WIRE_FAILS=0 AFTER=$2; echo 0 > "$T/looks"
       svc_enabled() { [[ "$1" == bazarr ]]; }; wire_gate() { :; }; hr() { :; }; sleep() { :; }
       bazarr_key() { n=$(( $(cat "$T/looks") + 1 )); echo "$n" > "$T/looks"; (( n > AFTER )) && echo BK; return 0; }
-      arr_url() { echo http://b; }; curl() { echo 200; }; bazarr_analytics_off() { :; }; bazarr_login() { :; }   # past the key: the rest is not this check's
+      arr_url() { echo http://b; }; scurl() { echo 200; }; bazarr_analytics_off() { :; }; bazarr_login() { :; }   # past the key: the rest is not this check's
       wire_bazarr >/dev/null 2>&1; echo "fails=$WIRE_FAILS looks=$(cat "$T/looks")" )
 }
 [[ "$(bw 0 3)" == "fails=0 looks=4" ]] || fail_ "no key yet: wire waits for it, then goes on: $(bw 0 3)"; pass
@@ -305,7 +305,7 @@ bl() { # bl TRUSTED(0|1) TYPE USER DRY NOTAKE [force] -> "fails=N posts=N type=T
       printf '{"auth":{"type":%s,"username":"%s","password":"HASH","apikey":"BK"}}' "$2" "$3" > "$T/bl"
       bazarr_key() { echo BK; }; arr_url() { echo http://b; }; gate_trusted() { (( TR )); }
       env_get() { case "$1" in ARR_USER) echo "${BU-admin}" ;; ARR_PASSWORD) echo "${BP-secretpass12}" ;; esac; }
-      curl() { [[ " $* " == *" X-API-KEY: BK "* ]] || { echo 401; return 0; }
+      scurl() { [[ " $* " == *" X-API-KEY: BK "* ]] || { echo 401; return 0; }
           if [[ " $* " == *" -X POST "* ]]; then
               local a f=() t="" un=""; for a in "$@"; do [[ "$a" == settings-* ]] && f+=("$a"); done
               printf '%s\n' "${f[*]}" >> "$T/bl-posts"
@@ -388,7 +388,7 @@ wr() { # wr USERS-JSON RESET-REPLY DISABLED(0|1) NAME -> "rc=N calls" (output in
       env_get() { case "$1" in WIZARR_API_KEY) echo KEY ;; JELLYFIN_ADMIN_USER) echo Admin ;; STACK_DOMAIN) echo media.example.com ;; esac; }
       c_state() { echo running; }; svc_cname() { echo "c-$1"; }; wizarr_url() { echo http://w; }; svc_subdomain() { echo invites; }
       jellyfin_disabled() { echo "jf-disabled $1" >> "$T/c"; (( DIS )); }
-      curl() { local m=GET a; for a in "$@"; do [[ "$a" == POST ]] && m=POST; done
+      scurl() { local m=GET a; for a in "$@"; do [[ "$a" == POST ]] && m=POST; done
           [[ " $* " == *" X-API-Key: KEY "* ]] || { printf '{}\n401'; return 0; }
           case "$m ${*: -1}" in
               "GET http://w/api/users") echo "GET users" >> "$T/c"; printf '%s\n200' "$UJ" ;;
@@ -423,7 +423,7 @@ grep -n 'jellyfin_reset_password\|Temporary password' mediastack.sh lib/*.sh ser
 ba() { # ba MARKED(0|1) ENABLED(true|false) DRY NOTAKE -> "fails=N posts=N now=V marked=M"
     ( WIRE_DRY=$3 WIRE_FAILS=0 NOTAKE=$4 STATE_DIR="$T/st-ba"; rm -rf "$STATE_DIR" "$T/bp"; mkdir -p "$STATE_DIR"
       (( $1 )) && echo 1 > "$STATE_DIR/BAZARR_ANALYTICS_OFF"; echo "$2" > "$T/bv"
-      curl() { if [[ " $* " == *" -X POST "* ]]; then echo p >> "$T/bp"
+      scurl() { if [[ " $* " == *" -X POST "* ]]; then echo p >> "$T/bp"
                    [[ " $* " == *" settings-analytics-enabled=false "* ]] && (( ! NOTAKE )) && echo false > "$T/bv"; echo 200
                else printf '{"analytics":{"enabled":%s},"general":{}}' "$(cat "$T/bv")"; fi; }
       bazarr_analytics_off KEY http://b >/dev/null 2>&1
@@ -504,7 +504,7 @@ grep -n 'API Keys' services/wizarr/wizarr.sh >/dev/null && fail_ "Wizarr's keys 
 # ---- Wizarr's Jellyfin entry: its External URL is where a new user lands (found live: empty, they landed elsewhere) ----
 ws() { # ws SERVERS-JSON -> "rc=N why"
     ( svc_url() { echo https://jellyfin.media.example.com; }; svc_addr() { echo jellyfin:8096; }; wizarr_url() { echo http://w; }
-      curl() { echo "$SJ"; }; SJ=$1; rc=0; why=$(wizarr_server_problem KEY) || rc=$?; echo "rc=$rc $why" )
+      scurl() { echo "$SJ"; }; SJ=$1; rc=0; why=$(wizarr_server_problem KEY) || rc=$?; echo "rc=$rc $why" )
 }
 [[ "$(ws '{"servers":[{"server_type":"jellyfin","external_url":"https://jellyfin.media.example.com/"}]}')" == "rc=0 " ]] || fail_ "the stack's Jellyfin as its External URL (a trailing slash too): right"; pass
 [[ "$(ws '{"servers":[{"server_type":"jellyfin","external_url":null}]}')" == *"External URL is empty"*"set it to https://jellyfin.media.example.com"* ]] || fail_ "no External URL: said, with the address to set"; pass

@@ -18,7 +18,7 @@ jf_guid() { tr -d '-' <<<"$1" | tr '[:upper:]' '[:lower:]'; }
 
 jf_repo_reach() { # jf_repo_reach URL -> "" when Jellyfin itself reaches it; else what stopped it (asked from inside its container)
     local out code msg
-    out=$(sudo docker exec "$(svc_cname jellyfin)" curl -sS -m 10 -o /dev/null -w '\n%{http_code}' "$1" 2>&1) || true
+    out=$(sudo docker exec "$(svc_cname jellyfin)" curl -sS -m 10 -o /dev/null -w '\n%{http_code}' "$1" 2>&1) || true   # curl-ok: inside a container
     code=${out##*$'\n'}; msg=${out%$'\n'*}; [[ "$out" == *$'\n'* ]] || msg=""
     [[ "$code" =~ ^[23][0-9][0-9]$ ]] && return 0
     if [[ -n "$msg" ]]; then oneline "$msg"; else echo "HTTP ${code:-none}"; fi
@@ -397,7 +397,7 @@ jf_code() { cat "$JF_CODE_F" 2>/dev/null || echo 000; }
 jf_url() { local p; p=$(svc_hostport jellyfin) || return 1; echo "http://127.0.0.1:$p"; }
 jf_api() { # jf_api METHOD PATH TOKEN [json-body] -> body on stdout; rc = http 2xx
     local m="$1" p="$2" tok="$3" b="${4:-}" out code
-    out=$(curl -sS -m 20 -X "$m" -H "$(jf_auth_hdr "$tok")" \
+    out=$(scurl -sS -m 20 -X "$m" -H "$(jf_auth_hdr "$tok")" \
           -H "Content-Type: application/json" \
           ${b:+-d "$b"} -w $'\n%{http_code}' "$(jf_url)$p" 2>&1) \
         || { local rc=$?; printf '000' > "$JF_CODE_F"; api_timed_out "$rc" && api_unanswered "$m" 20 || echo "$out"; return 1; }
@@ -598,7 +598,7 @@ sc_rotate_jellyfin() { # PASS — the Jellyfin admin (Seerr/Wizarr unaffected)
 
 jellyfin_doctor() { # doctor: apps — claimed, and the stack key works
     local jpub
-    jpub=$(curl -s -m 10 "$(jf_url)/System/Info/Public" 2>/dev/null || true)
+    jpub=$(scurl -s -m 10 "$(jf_url)/System/Info/Public" 2>/dev/null || true)
     case "$(jq -r '.StartupWizardCompleted' <<<"$jpub" 2>/dev/null)" in
         true)  ok "jellyfin first-run wizard completed" ;;
         false) d_fail "jellyfin first-run wizard NOT completed" "an unclaimed jellyfin lets any visitor create the admin account" "./mediastack.sh wire jellyfin" ;;
@@ -710,7 +710,7 @@ jellyfin_sessions_active() {
     local key host; key=$(env_get JELLYFIN_API_KEY); host=$(jf_url)
     [[ -n "$key" ]] || return 1
     local n
-    n=$(curl -fsS --max-time 5 -H "$(jf_auth_hdr "$key")" "$host/Sessions" 2>/dev/null \
+    n=$(scurl -fsS --max-time 5 -H "$(jf_auth_hdr "$key")" "$host/Sessions" 2>/dev/null \
         | jq '[.[] | select(.NowPlayingItem != null)] | length' 2>/dev/null || echo 0)
     (( n > 0 ))
 }

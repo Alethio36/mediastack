@@ -163,7 +163,11 @@ the code. A change you did not mean is what it is there to catch.
 
 A service's code lives in its folder beside its fragment:
 `services/x/x.sh` holds the app's API client and its `wire` role
-(`wire_x`), sourced by the entrypoint. A new role is also appended to
+(`wire_x`), sourced by the entrypoint. The client calls `scurl`
+(`lib/common.sh`), never `curl`: it takes curl's options and sends the
+headers, login, body, cookie and URL through a pipe, off the command line
+`ps` shows; `test-secrets` fails a bare host `curl`. A secret for a command
+inside a container goes in on stdin, never as an argument (sudo logs them). A new role is also appended to
 `WIRE_ROLES` in `lib/wire.sh` — that list sets the order `wire` runs in, and
 CI fails a role without exactly one `wire_<role>` under `services/`. The arr
 family shares one implementation in `services/_arr/arr.sh`; an arr instance

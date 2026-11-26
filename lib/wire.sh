@@ -146,7 +146,7 @@ api() { # api METHOD URL APIKEY [json-body] -> body on stdout, rc from http
     # API_TIMEOUT (seconds, default 20): a call the app answers only after
     # slow work of its own sets it for that one call (API_TIMEOUT=180 api ...)
     local m="$1" u="$2" k="$3" b="${4:-}" out code
-    out=$(curl -sS -m "${API_TIMEOUT:-20}" -X "$m" -H "X-Api-Key: $k" -H "Content-Type: application/json" \
+    out=$(scurl -sS -m "${API_TIMEOUT:-20}" -X "$m" -H "X-Api-Key: $k" -H "Content-Type: application/json" \
           ${b:+-d "$b"} -w '\n%{http_code}' "$u" 2>&1) \
         || { local rc=$?; if api_timed_out "$rc"; then api_unanswered "$m" "${API_TIMEOUT:-20}"; else echo "$out"; fi; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
@@ -222,7 +222,7 @@ http_ready() {
     if (( until )); then deadline=$until; else deadline=$(( t0 + API_WAIT )); fi
     while :; do
         # curl already prints 000 when there is no socket — no "|| echo 000"
-        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$@" "$url" 2>/dev/null) || true
+        code=$(scurl -s -m 5 -o /dev/null -w '%{http_code}' "$@" "$url" 2>/dev/null) || true
         [[ "${code:=000}" =~ $re ]] && return 0
         if (( $(date +%s) >= deadline )); then
             wfail "$svc's API never became ready within $(( deadline - t0 ))s (last: HTTP $code) — inspect: ./mediastack.sh logs $svc"

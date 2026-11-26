@@ -230,7 +230,7 @@ jf_api() {
 }
 jf_code() { echo 200; }; jf_url() { echo http://jf; }
 jellyfin_splash_upload() { echo "UPLOAD $2" >> "$T/jfcalls"; }
-curl() { [[ " $* " == *" DELETE "* ]] && echo DELETE >> "$T/jfcalls"; return 0; }
+scurl() { [[ " $* " == *" DELETE "* ]] && echo DELETE >> "$T/jfcalls"; return 0; }
 echo JELLYFIN_API_KEY=k >> "$ENV_FILE"; sed -i '/^BRAND_ACCENT=/d' "$ENV_FILE"; echo BRAND_ACCENT=E6701E >> "$ENV_FILE"
 cp "$T/bg.jpg" "$BRAND_DIR/background.jpg"
 : > "$T/jfcalls"; jellyfin_brand_apply > "$T/out" 2>&1
@@ -245,17 +245,17 @@ rm -f "$BRAND_DIR/background.jpg"; sed -i '/^BRAND_ACCENT=/d' "$ENV_FILE"
 [[ "$(jq -r .LoginDisclaimer "$JFB")" == "Ask Nick for an account." && "$(jq -r .CustomCss "$JFB")" == ".mine{}" && "$(jq -r .SplashscreenEnabled "$JFB")" == false ]] \
     && grep -qx DELETE "$T/jfcalls" && grep -q "written in its dashboard — yours, untouched" "$T/out" \
     || fail_ "the kit emptied: your line and CSS kept, mediastack's block and picture gone: $(cat "$JFB") $(cat "$T/jfcalls")"; pass
-unset -f curl jf_api
+unset -f scurl jf_api
 
 # ---- Seerr's title; the panel's ----
 SEERR=$T/seerr.json; echo '{"applicationTitle":"Seerr"}' > "$SEERR"
-curl() { local a; for a in "$@"; do [[ "$a" == POST ]] && { jq -c --argjson p "$(sed -n 's/.*-d \({.*}\) .*/\1/p' <<<"$*")" '. + $p' "$SEERR" > "$SEERR.n" && mv "$SEERR.n" "$SEERR"; echo '{}'; return 0; }; done; cat "$SEERR"; }
+scurl() { local a; for a in "$@"; do [[ "$a" == POST ]] && { jq -c --argjson p "$(sed -n 's/.*-d \({.*}\) .*/\1/p' <<<"$*")" '. + $p' "$SEERR" > "$SEERR.n" && mv "$SEERR.n" "$SEERR"; echo '{}'; return 0; }; done; cat "$SEERR"; }
 seerr_url() { echo http://seerr; }; echo SEERR_API_KEY=s >> "$ENV_FILE"
 seerr_brand_apply > "$T/out" 2>&1
 [[ "$(jq -r .applicationTitle "$SEERR")" == "Our House" ]] || fail_ "Seerr's title: the household's name: $(cat "$SEERR")"; pass
 echo '{"applicationTitle":"Film Club"}' > "$SEERR"; seerr_brand_apply > "$T/out" 2>&1
 [[ "$(jq -r .applicationTitle "$SEERR")" == "Film Club" ]] && grep -q "yours, untouched" "$T/out" || fail_ "a title written in Seerr's settings: yours"; pass
-unset -f curl
+unset -f scurl
 echo 'PORTAL_TITLE="Tom \"&\" Co"' >> "$ENV_FILE"
 grep -qxF 'pageTitle: "Tom \"&\" Co"' <<<"$(panel_config_render admin hash)" || fail_ "the panel's title: the household's name, a YAML string: $(panel_config_render admin hash | grep pageTitle)"; pass
 
@@ -263,10 +263,10 @@ grep -qxF 'pageTitle: "Tom \"&\" Co"' <<<"$(panel_config_render admin hash)" || 
 # the portal's kit waits for it ready itself (services/authentik/kit.sh), whoever calls it
 authentik_url() { echo http://ak; }
 http_ready() { echo "READY $2" >> "$T/order"; return "${READY_RC:-0}"; }
-curl() { echo "CURL $*" >> "$T/order"; return 1; }
+scurl() { echo "CURL $*" >> "$T/order"; return 1; }
 : > "$T/order"; rc=0; READY_RC=1 authentik_brand_apply > /dev/null 2>&1 || rc=$?
 [[ "$(cat "$T/order")" == "READY http://ak/-/health/ready/" && $rc == 0 ]] || fail_ "the portal never ready: its kit sends nothing (its wait says why, a wire step's helper returns 0): rc=$rc $(cat "$T/order")"; pass
-unset -f curl
+unset -f scurl
 
 # ---- every app that shows the kit is reached: <svc>_brand_apply, found by its name ----
 eval "$(sed -n '/^brand_apply_apps() {/,/^}/p' lib/brand.sh | sed '1s/^brand_apply_apps/real_brand_apply_apps/')"   # the real one: stubbed above

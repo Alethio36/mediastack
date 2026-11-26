@@ -41,7 +41,7 @@ sudo() { # runs the command; install's owner flags dropped (the test is not root
         command install "${a[@]}"
     else "$@"; fi
 }
-curl() { # plays LazyLibrarian: a login in config.ini means 401 without it, 303 with it
+scurl() { # plays LazyLibrarian: a login in config.ini means 401 without it, 303 with it
     local u="" a; for a in "$@"; do [[ ${prev:-} == -u ]] && u=$a; prev=$a; done
     local fu fp; fu=$(sed -n 's/^http_user = //p' "$F"); fp=$(sed -n 's/^http_pass = //p' "$F")
     if [[ -z $fu || $IGNORES == 1 ]]; then echo 303

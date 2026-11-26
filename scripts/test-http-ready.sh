@@ -22,7 +22,7 @@ NOW=0
 date()  { if [[ "${1:-}" == +%s ]]; then echo "$NOW"; else command date "$@"; fi; }
 sleep() { NOW=$(( NOW + ${1%.*} )); }
 # $T/plan: "<from-second> <status>" lines, last applicable wins; 000 = no socket
-curl() {
+scurl() {
     printf '%s\n' "$*" > "$T/args"
     local from st code=000
     while read -r from st; do (( NOW >= from )) && code=$st; done < "$T/plan"

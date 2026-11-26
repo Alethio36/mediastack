@@ -104,7 +104,7 @@ qb_login() { # rc: 0 = logged in (QB_COOKIE set), 1 = credentials rejected, 2 = 
     local r
     local jar r code
     jar=$(mktemp)
-    if ! r=$(curl -sS -m 10 -c "$jar" -w $'\n%{http_code}' \
+    if ! r=$(scurl -sS -m 10 -c "$jar" -w $'\n%{http_code}' \
         --data-urlencode "username=$1" --data-urlencode "password=$2" \
         "$(qb_url)/api/v2/auth/login" 2>&1); then
         QB_LOGIN_BODY="unreachable: ${r:-<no detail>}"
@@ -135,7 +135,7 @@ qb_api() { # qb_api PATH [data...] (form-encoded) -> body on stdout, rc from htt
     local p="$1"; shift
     local args=(); local a; for a in "$@"; do args+=(--data-urlencode "$a"); done
     local out code
-    out=$(curl -sS -m 20 -b "$QB_COOKIE" "${args[@]}" -w '\n%{http_code}' \
+    out=$(scurl -sS -m 20 -b "$QB_COOKIE" "${args[@]}" -w '\n%{http_code}' \
           "$(qb_url)/api/v2$p" 2>&1) || { api_timed_out $? && api_unanswered "$( (( $# )) && echo POST || echo GET)" 20 || echo "$out"; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]

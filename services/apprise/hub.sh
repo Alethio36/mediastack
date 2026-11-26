@@ -36,12 +36,12 @@ hub_local_url() { local p; p=$(svc_hostport "$HUB_SVC") || return 1; echo "http:
 hub_notify_url() { echo "http://$(svc_addr "$HUB_SVC")/notify/$HUB_KEY"; }
 
 hub_configured() {
-    hub_enabled && [[ "$(curl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(hub_local_url)/get/$HUB_KEY" 2>/dev/null || echo 000)" == 200 ]]
+    hub_enabled && [[ "$(scurl -s -m 5 -o /dev/null -w '%{http_code}' -X POST "$(hub_local_url)/get/$HUB_KEY" 2>/dev/null || echo 000)" == 200 ]]
 }
 
 hub_send() { # hub_send TAG TITLE BODY TYPE -> "code<TAB>body" of the hub's answer; rc 1 when unreachable
     local out
-    out=$(curl -sS -m 10 -X POST -H "Content-Type: application/json" \
+    out=$(scurl -sS -m 10 -X POST -H "Content-Type: application/json" \
           -d "$(jq -cn --arg t "$2" --arg b "$3" --arg g "$1" --arg y "$4" \
                 '{title:$t,body:$b,tag:$g,type:$y,format:"markdown"}')" \
           -w $'\n%{http_code}' "$(hub_local_url)/notify/$HUB_KEY" 2>&1) || { printf '000\t%s\n' "$(oneline "$out")"; return 1; }
@@ -59,7 +59,7 @@ hub_outcome() { # hub_outcome CODE BODY -> "" when delivered, else why not (for 
 
 hub_cfg_get() { # the hub's stored configuration text (empty when none)
     local out code
-    out=$(curl -sS -m 10 -X POST -w $'\n%{http_code}' "$(hub_local_url)/get/$HUB_KEY" 2>&1) \
+    out=$(scurl -sS -m 10 -X POST -w $'\n%{http_code}' "$(hub_local_url)/get/$HUB_KEY" 2>&1) \
         || die "the notification hub is unreachable: $(oneline "$out")"
     code=${out##*$'\n'}
     case "$code" in
@@ -82,9 +82,9 @@ hub_cfg_put() { # hub_cfg_put TEXT — store it, YAML or Apprise's text format (
     local out code fmt=text
     if grep -qE '^(version|urls):' <<<"$1"; then fmt=yaml; hub_templates_sync; fi   # what it names must be there first
     if [[ -z "$(grep -v '^[[:space:]]*$' <<<"$1" || true)" ]]; then   # nothing left to store
-        out=$(curl -sS -m 10 -X POST -w $'\n%{http_code}' "$(hub_local_url)/del/$HUB_KEY" 2>&1) || die "the hub is unreachable: $(oneline "$out")"
+        out=$(scurl -sS -m 10 -X POST -w $'\n%{http_code}' "$(hub_local_url)/del/$HUB_KEY" 2>&1) || die "the hub is unreachable: $(oneline "$out")"
     else
-        out=$(curl -sS -m 10 -X POST -H "Content-Type: application/json" \
+        out=$(scurl -sS -m 10 -X POST -H "Content-Type: application/json" \
               -d "$(jq -cn --arg c "$1" --arg f "$fmt" '{config:$c,format:$f}')" \
               -w $'\n%{http_code}' "$(hub_local_url)/add/$HUB_KEY" 2>&1) || die "the hub is unreachable: $(oneline "$out")"
     fi

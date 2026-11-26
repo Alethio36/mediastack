@@ -54,7 +54,7 @@ LOCAL_DIR="$T/local"; HOSTID_FILE="$LOCAL_DIR/host-identity"
 NOW=1000000
 date() { [[ "${1:-}" == +%s ]] && echo "$NOW" || command date "$@"; }
 RIPE_IP=198.51.100.7 RIPE_ASN=64500 RIPE_FAIL=""
-curl() { # curl -4 -sS -m 15 -w ... URL: RIPEstat's three answers, then the HTTP code
+scurl() { # curl -4 -sS -m 15 -w ... URL: RIPEstat's three answers, then the HTTP code
     local url=${*: -1}
     echo "$url" >> "$T/curl"   # who was asked, and how often
     [[ -n "$RIPE_FAIL" ]] && { printf 'curl: (6) Could not resolve host: stat.ripe.net\n000'; return 6; }
@@ -315,7 +315,7 @@ ctl "000 7" "  HTTP/1.1 401 Unauthorized"; [[ $(lt_exit_code) == 0 ]] || fail_ "
 ctl "401 0" "  HTTP/1.1 401 Unauthorized"; [[ $(lt_exit_code) == 1 ]] || fail_ "answers the network: FAIL"; pass
 ctl "000 6" "  HTTP/1.1 401 Unauthorized"; [[ $(lt_exit_code) == 2 ]] || fail_ "name unresolved: UNPROVEN, not a pass"; pass
 ctl "000 7" "  HTTP/1.1 200 OK"; [[ $(lt_exit_code) == 1 ]] || fail_ "no password inside: FAIL"; pass
-unset -f sudo curl date
+unset -f sudo scurl date
 
 # ---- attachment: the container joined, then the namespace itself ----
 # gluetun restarted in place keeps its ID but builds a new namespace; the

@@ -20,6 +20,7 @@ fi
 jellysearch_update_probe() { # after an update: the search index exists and is not empty; rc 1 when it is
     local docs stats="http://127.0.0.1:7700/stats"   # addr-ok: inside meilisearch's own container
     # the key goes in on stdin: sudo logs every command line to the journal
+    # curl-ok: inside meilisearch's container, the key read from stdin (the next line)
     docs=$(printf '%s' "$(env_get MEILI_MASTER_KEY)" | sudo docker exec -i "$(svc_cname meilisearch)" sh -c \
            'k=$(cat); printf "Authorization: Bearer %s\n" "$k" | curl -fsS -m 20 -H @- "$1" \
             || wget -qO- -T 20 --header="Authorization: Bearer $k" "$1"' _ "$stats" \

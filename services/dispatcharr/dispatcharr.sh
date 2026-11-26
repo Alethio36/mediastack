@@ -20,7 +20,7 @@ DSP_HEADER=X-Mediastack-User   # the header Traefik adds past the gate, and Disp
 dsp_url() { local p; p=$(svc_hostport dispatcharr) || return 1; echo "http://127.0.0.1:$p"; }
 dsp_api() { # dsp_api METHOD PATH TOKEN [json] -> body; rc from HTTP
     local out code
-    out=$(curl -sS -m 30 -X "$1" -H "Content-Type: application/json" ${3:+-H "Authorization: Bearer $3"} \
+    out=$(scurl -sS -m 30 -X "$1" -H "Content-Type: application/json" ${3:+-H "Authorization: Bearer $3"} \
           ${4:+-d "$4"} -w '\n%{http_code}' "$(dsp_url)$2" 2>&1) || { api_timed_out $? && api_unanswered "$1" 30 || echo "$out"; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]
@@ -112,7 +112,7 @@ dsp_signin() { # dsp_signin TOKEN — its header sign-in follows the gate, read 
         ok "dispatcharr: header sign-in $(dsp_signin_words "$want")"
     fi
     # proven from this host — an address that is not Traefik's: refused (401), whatever the setting
-    code=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -X POST -H "$DSP_HEADER: $(env_get DISPATCHARR_ADMIN_USER)" \
+    code=$(scurl -s -m 10 -o /dev/null -w '%{http_code}' -X POST -H "$DSP_HEADER: $(env_get DISPATCHARR_ADMIN_USER)" \
            "$(dsp_url)/api/accounts/auth/proxy-login/" 2>/dev/null) || true   # soft read: curl prints 000 when nothing answers, judged below
     if [[ "$code" == 401 ]]; then ok "dispatcharr: its header signs nobody in from anywhere but Traefik"
     else wfail "dispatcharr: its header from this host answered HTTP $code, not 401 — it believes more than Traefik: check DISPATCHARR_TRUSTED_PROXIES in its container (./mediastack.sh up recreates it)"; fi

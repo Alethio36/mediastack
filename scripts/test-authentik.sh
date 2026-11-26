@@ -1650,7 +1650,7 @@ grep -q 'authentik_recovery_refresh' <(awk '/^cmd_email\(\)/,/^}/' services/auth
 grep -q '{% autoescape off %}' services/authentik/templates/mediastack-invitation.txt || fail_ "invitation txt: no HTML escaping in plain text"; pass
 ( printf 'AUTHENTIK_HOST=portal\nSTACK_DOMAIN=media.example.com\nAUTHENTIK_API_TOKEN=TOK\n' > "$T/ienv"; ENV_FILE=$T/ienv
   authentik_url() { echo http://127.0.0.1:9000; }; authentik_portal() { echo https://portal.media.example.com; }
-  curl() { printf '%s\n' "$@" > "$T/curl"; printf '\n%s' "${CURL_CODE:-204}"; }
+  scurl() { printf '%s\n' "$@" > "$T/curl"; printf '\n%s' "${CURL_CODE:-204}"; }
   CURL_CODE=204 out=$(authentik_invite_email inv-1 milo@example.com 2>&1) || fail_ "a 204 is a send: $out"
   grep -qx 'Host: portal.media.example.com' "$T/curl" && grep -qx 'X-Forwarded-Proto: https' "$T/curl" \
       || fail_ "asked as the portal over https (authentik builds the link from the request's address)"
@@ -1800,7 +1800,7 @@ TB='["authentik.core.auth.InbuiltBackend","authentik.core.auth.TokenBackend"]'; 
 showpw false "" >/dev/null; [[ "$(cat "$T/patch-wait")" == "$AUTHENTIK_STAGE_WAIT" ]] && (( AUTHENTIK_STAGE_WAIT >= 60 )) \
     || fail_ "show password: its write waits AUTHENTIK_STAGE_WAIT ($(cat "$T/patch-wait"))"; pass
 : > "$T/mt"
-( curl() { local a prev=""; for a in "$@"; do [[ "$prev" == -m ]] && echo "$a" >> "$T/mt"; prev=$a; done; printf '{}\n200'; }
+( scurl() { local a prev=""; for a in "$@"; do [[ "$prev" == -m ]] && echo "$a" >> "$T/mt"; prev=$a; done; printf '{}\n200'; }
   eval "$(awk '/^ak_api\(\)/,/^}/' services/authentik/authentik.sh)"   # the real one: earlier checks stub it
   env_get() { :; }; authentik_url() { echo http://x; }; API_TIMEOUT=77 ak_api GET /x >/dev/null; ak_api GET /y >/dev/null )
 mt=$(paste -sd' ' "$T/mt")

@@ -438,7 +438,7 @@ recyclarr_pin_notice() { # the pin on recyclarr's major (":8") is deliberate, a 
     local rc_pin rc_latest
     # a notice never fails its caller: GitHub unreachable means no notice tonight
     rc_pin=$(grep -oE 'recyclarr/recyclarr:[0-9]+' services/recyclarr/compose.yml 2>/dev/null | cut -d: -f2 || true)
-    rc_latest=$(curl -sf -m 10 https://github.com/recyclarr/recyclarr/releases.atom 2>/dev/null \
+    rc_latest=$(scurl -sf -m 10 https://github.com/recyclarr/recyclarr/releases.atom 2>/dev/null \
                 | grep -oE '<title>v[0-9]+' | sed -n 1p | grep -oE '[0-9]+' || true)
     if [[ -n "$rc_pin" && -n "$rc_latest" ]] && (( rc_latest > rc_pin )); then
         warn "recyclarr v$rc_latest is out; the stack pins major v$rc_pin — review the breaking changes, then bump the tag in services/recyclarr/compose.yml when ready"

@@ -132,4 +132,27 @@ KEY=s3cr3t-$RANDOM$RANDOM
   grep -F "FAIL .env can be read by others (mode 644)" "$T/doc" >/dev/null ) || fail_ "doctor fails a .env others can read: $(cat "$T/doc")"; pass
 grep -nE 'chmod 600 "\$ENV_FILE" \|\| true' lib/*.sh >/dev/null && fail_ "making .env private is never || true"; pass
 
+# ---- scurl: what curl carries goes through a pipe, never its command line (ps shows any user it) ----
+mkdir -p "$T/fakebin"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" > "%s/curl.argv"; while (( $# )); do [[ "$1" == -K ]] && cat "$2" > "%s/curl.cfg"; shift; done\n' "$T" "$T" > "$T/fakebin/curl"
+chmod +x "$T/fakebin/curl"
+PW='p@ss w"o\rd$x&y	z'
+( PATH=$T/fakebin:$PATH
+  scurl -sS -m 5 -X POST -H "X-Api-Key: KEYH" -u "admin:$PW" -d "{\"p\":\"$PW\"}" --data-urlencode "password=$PW" -b "SID=CK" \
+        -w '%{http_code}' -o /dev/null "http://127.0.0.1:1/api?apikey=KEYQ" )
+! grep -E 'KEYH|KEYQ|admin:|p@ss|SID=CK' "$T/curl.argv" >/dev/null || fail_ "scurl leaves nothing secret on curl's command line: $(cat "$T/curl.argv")"; pass
+[[ "$(cat "$T/curl.argv")" == "-K /dev/fd/"*" -sS -m 5 -X POST -w %{http_code} -o /dev/null" ]] || fail_ "only the timing and output options stay: $(cat "$T/curl.argv")"; pass
+want=$(printf '%s\n' 'header = "X-Api-Key: KEYH"' 'user = "admin:p@ss w\"o\\rd$x&y\tz"' 'data = "{\"p\":\"p@ss w\"o\\rd$x&y\tz\"}"' \
+       'data-urlencode = "password=p@ss w\"o\\rd$x&y\tz"' 'cookie = "SID=CK"' 'url = "http://127.0.0.1:1/api?apikey=KEYQ"')
+[[ "$(cat "$T/curl.cfg")" == "$want" ]] || fail_ "the config carries every value, escaped as curl reads it:
+$(cat "$T/curl.cfg")
+want:
+$want"; pass
+( PATH=$T/fakebin:$PATH; scurl -sS --insecure http://x ) >/dev/null 2>&1 && fail_ "an option scurl does not know is refused (a valued one would take the next argument for a URL)"; pass
+# no host curl runs bare: scurl, or a line marked with its reason (inside a container) on it or just above
+bare=$(awk 'FNR==1 { p1=""; p2="" } { l=$0; if (l !~ /^[[:space:]]*#/ && l ~ /(^|[^[:alnum:]_\/.:-])curl -/ && (l p1 p2) !~ /curl-ok/) print FILENAME ":" FNR ": " l; p2=p1; p1=l }' \
+       mediastack.sh lib/*.sh services/*/*.sh services/*/providers/*/*.sh)
+[[ -z "$bare" ]] || fail_ "host curl runs through scurl (lib/common.sh), or the line says why not (# curl-ok: …):
+$bare"; pass
+
 echo "OK secrets: $checks checks"

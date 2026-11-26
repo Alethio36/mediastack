@@ -33,13 +33,13 @@ transmission_gate_login() { # `disable authentik` (GATE_UNTRUSTED=1): its own lo
 
 transmission_url() { local p; p=$(svc_hostport transmission) || return 1; echo "http://127.0.0.1:$p/transmission/rpc"; }
 transmission_code_anon() { # -> the RPC's HTTP status without a login: 401 when it asks for one
-    curl -s -m 10 -o /dev/null -w '%{http_code}' "$(transmission_url)" 2>/dev/null || echo 000
+    scurl -s -m 10 -o /dev/null -w '%{http_code}' "$(transmission_url)" 2>/dev/null || echo 000
 }
 transmission_rpc() { # transmission_rpc METHOD ARGUMENTS-JSON -> its .arguments (JSON); rc 1 with the reason on stdout
     local body out code
     body=$(jq -cn --arg m "$1" --argjson a "$2" '{method: $m, arguments: $a}')
     for _ in 1 2; do   # the first answer may be 409 with the session id to use
-        out=$(curl -sS -m 20 -u "$(env_get TRANSMISSION_USER):$(env_get TRANSMISSION_PASSWORD)" \
+        out=$(scurl -sS -m 20 -u "$(env_get TRANSMISSION_USER):$(env_get TRANSMISSION_PASSWORD)" \
               -H "X-Transmission-Session-Id: $TRANSMISSION_SID" -D - --data "$body" "$(transmission_url)" 2>&1) \
             || { api_timed_out $? && api_unanswered POST 20 || echo "unreachable: $out"; return 1; }
         code=$(sed -n '1s/^HTTP\/[0-9.]* \([0-9]*\).*/\1/p' <<<"$out")

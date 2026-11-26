@@ -44,7 +44,7 @@ jellyfin_kit_disclaimer() { # -> the sign-in line: with the portal, the househol
 jellyfin_splash_upload() { # jellyfin_splash_upload TOKEN FILE — the picture behind its sign-in page (rc from HTTP)
     local ty
     case "$(brand_file_kind "$2")" in png) ty=image/png ;; jpg) ty=image/jpeg ;; *) return 1 ;; esac
-    base64 -w0 < "$2" | curl -fsS -m 60 -X POST -H "$(jf_auth_hdr "$1")" -H "Content-Type: $ty" --data-binary @- "$(jf_url)/Branding/Splashscreen" >/dev/null
+    base64 -w0 < "$2" | scurl -fsS -m 60 -X POST -H "$(jf_auth_hdr "$1")" -H "Content-Type: $ty" --data-binary @- "$(jf_url)/Branding/Splashscreen" >/dev/null
 }
 
 jellyfin_brand_apply() { # the kit onto Jellyfin: its accent, the picture behind its sign-in, the sign-in line
@@ -81,7 +81,7 @@ jellyfin_brand_apply() { # the kit onto Jellyfin: its accent, the picture behind
         fi
     elif [[ -z "$hash" && -z "$bg" && -n "$have_hash" ]] && w_would "jellyfin: its own picture behind its sign-in again"; then
         if (( ! WIRE_DRY )); then
-            if curl -fsS -m 20 -X DELETE -H "$(jf_auth_hdr "$tok")" "$(jf_url)/Branding/Splashscreen" >/dev/null; then state_del jellyfin-kit-splash; changed+=(picture)
+            if scurl -fsS -m 20 -X DELETE -H "$(jf_auth_hdr "$tok")" "$(jf_url)/Branding/Splashscreen" >/dev/null; then state_del jellyfin-kit-splash; changed+=(picture)
             else wfail "jellyfin refused to remove the kit's sign-in picture"; fi
         fi
     fi

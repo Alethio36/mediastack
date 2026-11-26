@@ -53,7 +53,7 @@ support_stamp() { # the system: enough to rule the host out, or to build one lik
     echo "bash: ${BASH_VERSION}"
     sp_try "awk" bash -c 'awk --version 2>/dev/null | sed -n 1p || awk -W version 2>&1 | sed -n 1p'
     sp_try "jq" jq --version
-    sp_try "curl" bash -c 'curl --version | sed -n 1p'
+    sp_try "curl" bash -c 'curl --version | sed -n 1p'   # curl-ok: prints its version
     sp_try "sudo" bash -c 'sudo -V | sed -n 1p'
     echo; echo "## network and clocks"
     if [[ -n "$(ip -6 route show default 2>/dev/null || true)" ]]; then echo "ipv6: a default route"; else echo "ipv6: no default route"; fi
@@ -153,7 +153,7 @@ support_reach() {
     for e in "${SUPPORT_REACH[@]}"; do
         label=${e%%|*}; url=${e#*|}; host=${url#https://}; host=${host%%/*}
         if [[ -z "$(getent ahosts "$host" 2>/dev/null || true)" ]]; then echo "$label ($host): its name does not resolve"; continue; fi
-        if out=$(curl -sS -o /dev/null -m "$SUPPORT_REACH_WAIT" -w '%{http_code} %{time_total}' "$url" 2>&1); then
+        if out=$(scurl -sS -o /dev/null -m "$SUPPORT_REACH_WAIT" -w '%{http_code} %{time_total}' "$url" 2>&1); then
             printf '%s (%s): HTTP %s in %.0f ms\n' "$label" "$host" "${out%% *}" "$(awk -v s="${out#* }" 'BEGIN { print s * 1000 }')"
         else echo "$label ($host): no answer — $(oneline "$out")"; fi
     done

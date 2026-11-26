@@ -10,7 +10,7 @@
 # it: in a condition (`as_run … || fail_`, `if as_run`, `! as_run`) bash
 # ignores set -e inside it, subshells included, and the check is blind again
 # (scripts/check-test-runners.sh fails such a call). For stubs only this call
-# should see, pass a string: as_run eval 'curl() { …; }; wire_x'.
+# should see, pass a string: as_run eval 'scurl() { …; }; wire_x'.
 as_run() {
     local e=0 f; [[ $- == *e* ]] && e=1
     f=$(mktemp)

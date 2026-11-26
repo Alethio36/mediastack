@@ -209,7 +209,7 @@ authentik_url()    { echo "http://127.0.0.1:$(svc_hostport authentik)"; }       
 AUTHENTIK_STAGE_WAIT=90   # seconds: saving a stage took 22s on a first start (Nov 2026), past ak_api's 20
 ak_api() { # ak_api METHOD PATH [json] -> body on stdout; rc from HTTP (authentik's API, as the script's token); API_TIMEOUT=N for one slow call
     local m="$1" p="$2" b="${3:-}" out code
-    out=$(curl -sS -m "${API_TIMEOUT:-20}" -X "$m" -H "Authorization: Bearer $(env_get AUTHENTIK_API_TOKEN)" \
+    out=$(scurl -sS -m "${API_TIMEOUT:-20}" -X "$m" -H "Authorization: Bearer $(env_get AUTHENTIK_API_TOKEN)" \
           -H "Content-Type: application/json" ${b:+-d "$b"} -w '\n%{http_code}' "$(authentik_url)/api/v3$p" 2>&1) \
         || { local rc=$?; if api_timed_out "$rc"; then api_unanswered "$m" "${API_TIMEOUT:-20}"; else echo "$out"; fi; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
@@ -572,7 +572,7 @@ authentik_invite_email() { # authentik_invite_email INVITATION-PK ADDRESS — au
     # script's http://127.0.0.1 address. Its subject is authentik's own.
     local pk="$1" to="$2" host out code
     host=$(authentik_portal); host=${host#https://}
-    out=$(curl -sS -m 20 -X POST -H "Authorization: Bearer $(env_get AUTHENTIK_API_TOKEN)" -H "Content-Type: application/json" \
+    out=$(scurl -sS -m 20 -X POST -H "Authorization: Bearer $(env_get AUTHENTIK_API_TOKEN)" -H "Content-Type: application/json" \
           -H "Host: $host" -H "X-Forwarded-Proto: https" \
           -d "$(jq -cn --arg a "$to" '{email_addresses:[$a], template:"mediastack-invitation.html"}')" \
           -w $'\n%{http_code}' "$(authentik_url)/api/v3/stages/invitation/invitations/$pk/send_email/" 2>&1) \

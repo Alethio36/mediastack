@@ -96,7 +96,7 @@ RIPESTAT_BODY=""
 ripestat() { # ripestat PATH — asked from the host (IPv4): the JSON answer in RIPESTAT_BODY; non-zero with the evidence in RIPESTAT_ERR
     local out code   # (globals, not stdout: a $( ) subshell would lose the error)
     RIPESTAT_BODY=""
-    out=$(curl -4 -sS -m 15 -w '\n%{http_code}' "$RIPESTAT/$1" 2>&1) || { RIPESTAT_ERR="RIPEstat ${1%%/*}: $(oneline "${out%$'\n'*}")"; return 1; }
+    out=$(scurl -4 -sS -m 15 -w '\n%{http_code}' "$RIPESTAT/$1" 2>&1) || { RIPESTAT_ERR="RIPEstat ${1%%/*}: $(oneline "${out%$'\n'*}")"; return 1; }
     code=${out##*$'\n'}; out=${out%$'\n'*}
     if [[ "$code" != 200 ]] || ! jq -e '.data' >/dev/null 2>&1 <<<"$out"; then
         RIPESTAT_ERR="RIPEstat ${1%%/*}: HTTP $code $(oneline "$out")"; return 1

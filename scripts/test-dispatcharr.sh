@@ -62,7 +62,7 @@ dsp_api() { # stub: settings as ROWS holds them; a PATCH saves into BACK; read b
         *) echo "unexpected $1 $2"; return 1 ;;
     esac
 }
-curl() { echo "$PROOF"; }   # the proof's POST from this host: its status
+scurl() { echo "$PROOF"; }   # the proof's POST from this host: its status
 sg() { # sg CURRENT-VALUE — dsp_signin's run: fails, then the calls made
     ( set -eE; trap on_err ERR; : > "$CALLS"; WIRE_FAILS=0; ROWS=$(row "$1"); echo "$1" > "$T/back"; dsp_signin tok > "$T/out" 2>&1; echo "fails=$WIRE_FAILS"; cut -d' ' -f1,2 "$CALLS" | paste -sd, - )
 }

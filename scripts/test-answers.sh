@@ -42,13 +42,13 @@ done
 SHIMS=$T/bin:$PATH
 
 render() { :; }
-# NordVPN's and Cloudflare's APIs: CFTOK is a live token for the zone example.com
-curl() {
-    local in; in=$(cat); printf '%s\n' "$*" >> "$T/curl.args"; printf '%s\n' "$in" >> "$T/curl.stdin"
+# NordVPN's and Cloudflare's APIs (through scurl): CFTOK is a live token for the zone example.com
+scurl() {
+    local in="$* "; printf '%s\n' "$*" >> "$T/curl.args"   # scurl's own arguments: it keeps the token off curl's (test-secrets)
     [[ -z "${CURL_DOWN:-}" ]] || return 7
     case "$*" in
         *nordvpn*)        echo '{"nordlynx_private_key":"KEY","username":"NORDUSER","password":"NORDPASS"}' ;;
-        *tokens/verify*)  if [[ "$in" == *"Bearer CFTOK\""* ]]; then echo '{"success":true,"result":{"status":"active"}}'
+        *tokens/verify*)  if [[ "$in" == *"Authorization: Bearer CFTOK "* ]]; then echo '{"success":true,"result":{"status":"active"}}'
                           else echo '{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}]}'; fi ;;
         *zones?name=example.com*) echo '{"success":true,"result":[{"id":"z1","name":"example.com","status":"active"}]}' ;;
         *zones?name=*)    echo '{"success":true,"result":[]}' ;;

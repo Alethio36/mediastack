@@ -16,7 +16,7 @@ DELUGE_JAR="${TMPDIR:-/tmp}/.mediastack-deluge.$$"
 deluge_url() { local p; p=$(svc_hostport deluge) || return 1; echo "http://127.0.0.1:$p"; }
 deluge_rpc() { # deluge_rpc METHOD PARAMS-JSON-ARRAY -> its .result (JSON); rc 1 with the reason on stdout
     local out
-    out=$(curl -sS -m 20 -b "$DELUGE_JAR" -c "$DELUGE_JAR" -H 'Content-Type: application/json' \
+    out=$(scurl -sS -m 20 -b "$DELUGE_JAR" -c "$DELUGE_JAR" -H 'Content-Type: application/json' \
           --data "$(jq -cn --arg m "$1" --argjson p "$2" '{method: $m, params: $p, id: 1}')" \
           "$(deluge_url)/json" 2>&1) || { api_timed_out $? && api_unanswered POST 20 || echo "unreachable: $out"; return 1; }
     jq -e '.error == null' <<<"$out" >/dev/null 2>&1 || { echo "$(jq -r '.error.message // .' <<<"$out" 2>/dev/null || echo "$out")"; return 1; }

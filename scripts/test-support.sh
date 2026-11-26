@@ -41,7 +41,7 @@ getent() { case "\$1 \$2" in
     "ahostsv4 portal.media.example-real.com") echo "192.168.70.36 STREAM portal" ;;
     ahosts*) echo "1.2.3.4 STREAM \$2" ;;
     *) command getent "\$@" ;; esac; }
-curl() { [[ "\$*" == *api.nordvpn.com* ]] && { echo "curl: (28) Connection timed out after 8001 ms"; return 28; }; printf '200 0.120000'; }
+scurl() { [[ "\$*" == *api.nordvpn.com* ]] && { echo "curl: (28) Connection timed out after 8001 ms"; return 28; }; printf '200 0.120000'; }
 hostname() { [[ "\${1:-}" == -I ]] && echo "192.168.70.36 172.17.0.1" || command hostname "\$@"; }
 journalctl() { case "\$*" in
     "-k "*) echo "2026-11-12T03:00:00 kernel: Out of memory: Killed process 4242 (jellyfin)"; echo "2026-11-12T03:00:01 kernel: unrelated line" ;;

@@ -160,7 +160,7 @@ unset -f sudo; eval "$(declare -f real_env_get | sed '1s/^real_//')"
 
 # ---- the sender on Discord: the webhook's own name and icon ----
 DREQ=$T/dreq; : > "$DREQ"; DGET='{"name":"mediastack","avatar":null}'; DPATCH='{"name":"Mediastack","avatar":"abc123"}'; DCODE=200
-curl() {
+scurl() {
     local a; for a in "$@"; do [[ "$a" == PATCH ]] && { cat > "$T/dbody"; echo PATCH >> "$DREQ"; printf '%s\n%s' "$DPATCH" "$DCODE"; return 0; }; done
     echo GET >> "$DREQ"; printf '%s\n200' "$DGET"
 }
@@ -186,7 +186,7 @@ DGET=$DPATCH; DPATCH='{"name":"Our House","avatar":"ghi789"}'; : > "$DREQ"; out=
 echo 'PORTAL_TITLE="Discord Night"' > "$ENV_FILE"; DGET=$DPATCH; : > "$DREQ"; out=$(discord_sender_sync discord://555/tok) && fail_ "a name Discord refuses: not sent"
 [[ "$out" == *"the name 'Discord Night' (PORTAL_TITLE)"*configure* && "$(paste -sd' ' "$DREQ")" == GET ]] || fail_ "a name Discord refuses: said before anything is sent ($out)"; pass
 rm -rf "$BRAND_DIR"; BRAND_DIR=$CUSTOM_DIR/branding; : > "$ENV_FILE"
-unset -f curl
+unset -f scurl
 
 # ---- a message too long for a card is cut, never refused whole ----
 svc_enabled() { return 0; }; svc_cname() { echo x; }; c_state() { echo running; }
@@ -207,7 +207,7 @@ done
 # ---- sending: judged by the hub's answer, recorded per stream ----
 svc_enabled() { return 0; }; svc_cname() { echo x; }; c_state() { echo running; }; hub_local_url() { echo http://hub; }
 CODE=200
-curl() { printf 'body\n%s' "$CODE"; }
+scurl() { printf 'body\n%s' "$CODE"; }
 notify ops "t" "b"
 [[ -n "$(state_get notify-ops-ok)" && -z "$(state_get notify-ops-fail)" ]] || fail_ "a 200 must be recorded as delivered"; pass
 CODE=424; rm -f "$T/out"; notify users "t" "b"; notify users "t" "b"
@@ -424,7 +424,7 @@ ENV_FILE=$T/.env; : > "$ENV_FILE"
 wa() { # wa HUB-GET-CODE — wire apprise's endpoint step, the hub stubbed; the hub's calls in $T/hub
     ( svc_enabled() { [[ "$1" == apprise ]]; }; wire_gate() { :; }; http_ready() { :; }; wire_arrs_ready() { :; }
       arr_instances() { :; }; notify() { echo "SENT $1" >> "$T/hub"; }; hub_cfg_get() { :; }; hub_local_url() { echo http://hub; }
-      curl() { local a; for a in "$@"; do [[ "$a" == http://hub/* ]] && echo "$a ${*: -3:1}" >> "$T/hub"; done
+      scurl() { local a; for a in "$@"; do [[ "$a" == http://hub/* ]] && echo "$a ${*: -3:1}" >> "$T/hub"; done
                case "$*" in *"/get/mediastack"*) printf '%s' "$GETCODE" ;; *"/add/mediastack"*) printf 'ok\n200' ;; esac; }
       GETCODE=$1; wire_apprise ) > "$T/out" 2>&1
 }

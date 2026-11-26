@@ -34,13 +34,13 @@ fresh() { WIRE_FAILS=0; WIRE_FAIL_LIST=(); WIRE_FAIL_UNANSWERED=(); WIRE_UNANSWE
 
 # ---- the helpers mark a timeout, and only a timeout ----
 fresh
-curl() { return "${CURL_RC:-28}"; }
+scurl() { return "${CURL_RC:-28}"; }
 out=$(api PUT http://x/thing k '{}'); rc=$?
 (( rc == 1 )) && [[ "$out" == "no answer within 20s — the change may still have been made: wire reads it back at the end" && -s "$WIRE_UNANSWERED_F" ]] \
     || fail_ "a write that timed out: failed, said, marked ($rc): $out"; pass
 fresh; out=$(CURL_RC=7 api PUT http://x/thing k '{}')
 [[ ! -s "$WIRE_UNANSWERED_F" ]] || fail_ "a refused connection is not a timeout"; pass
-unset -f curl
+unset -f scurl
 for h in api ak_api jf_api seerr_api nd_api abs_api kav_api qb_api cup_api deluge_rpc transmission_rpc; do
     grep -q 'api_timed_out' <(declare -f "$h") || fail_ "$h does not mark a call that got no answer"
 done; pass

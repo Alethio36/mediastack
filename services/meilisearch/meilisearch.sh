@@ -14,7 +14,7 @@ meilisearch_secret_rotate() { rotate_env MEILI_MASTER_KEY "$(gen_secret 44)" mei
 meili_key_code() { # meili_key_code KEY -> the HTTP code Meilisearch answers KEY with (000 when it does not answer)
     local c
     # the key on stdin, into curl as a header file: sudo logs a command line, ps shows one (printf is the shell's own)
-    c=$(printf '%s' "$1" | sudo docker exec -i "$(svc_cname meilisearch)" sh -c 'printf "Authorization: Bearer %s\n" "$(cat)" | curl -s -m 5 -o /dev/null -w "%{http_code}" -H @- http://127.0.0.1:7700/keys' 2>/dev/null) || true   # addr-ok: Meilisearch's own localhost, from inside its container (curl prints 000 when nothing answers)
+    c=$(printf '%s' "$1" | sudo docker exec -i "$(svc_cname meilisearch)" sh -c 'printf "Authorization: Bearer %s\n" "$(cat)" | curl -s -m 5 -o /dev/null -w "%{http_code}" -H @- http://127.0.0.1:7700/keys' 2>/dev/null) || true   # addr-ok: Meilisearch's own localhost, from inside its container (curl prints 000 when nothing answers)   # curl-ok: inside a container
     echo "${c:-000}"
 }
 meili_key_proven() { # meili_key_proven NEW OLD — Meilisearch takes NEW and refuses OLD (it may take a few seconds to start)

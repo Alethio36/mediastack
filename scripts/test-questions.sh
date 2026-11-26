@@ -47,13 +47,13 @@ done
 SHIMS=$T/bin:$PATH
 
 render() { :; }
-# NordVPN's and Cloudflare's APIs: CFTOK is a live token for the zone example.com
-curl() {
-    local in; in=$(cat); printf '%s\n' "$*" >> "$T/curl.args"; printf '%s\n' "$in" >> "$T/curl.stdin"
+# NordVPN's and Cloudflare's APIs (through scurl): CFTOK is a live token for the zone example.com
+scurl() {
+    local in="$* "; printf '%s\n' "$*" >> "$T/curl.args"   # scurl's own arguments: it keeps the token off curl's (test-secrets)
     [[ -z "${CURL_DOWN:-}" ]] || return 7
     case "$*" in
         *nordvpn*)        echo '{"nordlynx_private_key":"KEY"}' ;;
-        *tokens/verify*)  if [[ "$in" == *"Bearer CFTOK\""* ]]; then echo '{"success":true,"result":{"status":"active"}}'
+        *tokens/verify*)  if [[ "$in" == *"Authorization: Bearer CFTOK "* ]]; then echo '{"success":true,"result":{"status":"active"}}'
                           else echo '{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}]}'; fi ;;
         *zones?name=example.com*) echo '{"success":true,"result":[{"id":"z1","name":"example.com","status":"active"}]}' ;;
         *zones?name=*)    echo '{"success":true,"result":[]}' ;;
@@ -154,12 +154,12 @@ done
 # shellcheck disable=SC2034  # read by traefik_questions
 tq() { ( set -eE; trap on_err ERR; ENV_FILE=$T/t.env Q_MODE=${2:-full}; printf '%b' "$1" | traefik_questions ) > "$T/out" 2>&1; RC=$?; return "$RC"; }
 tv() { ENV_FILE=$T/t.env env_get "$1"; }
-printf 'COMPOSE_PROFILES=traefik\n' > "$T/t.env"; : > "$T/curl.args"; : > "$T/curl.stdin"
+printf 'COMPOSE_PROFILES=traefik\n' > "$T/t.env"; : > "$T/curl.args"
 tq '\nmedia.example.com\nme@example.com\nBAD\n\nCFTOK\n'; (( RC == 0 )) || fail_ "a refused token, then a live one, runs"
 grep -q 'Cloudflare refused the token (Invalid API Token)' "$T/out" && grep -q 'this value is required' "$T/out" && [[ "$(tv CF_DNS_API_TOKEN)" == CFTOK ]] \
     || fail_ "a refused token is said, Enter cannot keep it, the next one counts: $(tv CF_DNS_API_TOKEN)"; pass
-! grep -q 'CFTOK\|BAD' "$T/curl.args" && grep -q 'header = "Authorization: Bearer CFTOK"' "$T/curl.stdin" \
-    || fail_ "the token reaches curl on stdin, never its command line: $(cat "$T/curl.args")"; pass
+grep -F -- '-H Authorization: Bearer CFTOK ' "$T/curl.args" >/dev/null \
+    || fail_ "the token goes to scurl as a header (scurl keeps it off curl's command line: test-secrets): $(cat "$T/curl.args")"; pass
 printf 'COMPOSE_PROFILES=traefik,authentik\n' > "$T/t.env"
 tq '\nmedia.example.om\nme@example.com\nCFTOK\nmedia.example.com\n\n'; (( RC == 0 )) || fail_ "a domain without a zone, then the right one, runs"
 grep -q 'the token sees no Cloudflare zone for media.example.om (looked for: media.example.om, example.om)' "$T/out" && [[ "$(tv STACK_DOMAIN)" == media.example.com ]] \

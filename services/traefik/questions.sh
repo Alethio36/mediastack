@@ -12,8 +12,8 @@
 CF_API=https://api.cloudflare.com/client/v4
 
 cf_api() { # cf_api TOKEN PATH -> Cloudflare's JSON reply; rc 1 when Cloudflare could not be reached
-    # the token goes in on stdin (-K -), never on the command line where ps shows it
-    curl -sS --max-time 20 -K - "$CF_API$2" <<<"header = \"Authorization: Bearer $1\""
+    # scurl: the token goes through a pipe, never on the command line where ps shows it
+    scurl -sS --max-time 20 -H "Authorization: Bearer $1" "$CF_API$2"
 }
 
 cf_errors() { jq -r '[.errors[]?.message] | join("; ")' <<<"$1" 2>/dev/null || true; }   # cf_errors REPLY -> Cloudflare's own words

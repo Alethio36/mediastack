@@ -31,7 +31,7 @@ fail_() { echo "FAIL: $*" >&2; exit 1; }
 as_stack() { ( set -Eeuo pipefail; trap 'echo "TRAPPED at $BASH_COMMAND"; exit 9' ERR; "$@" ) 2>&1; }
 
 LOCAL_DIR="$T/local"; STATE_DIR="$LOCAL_DIR/state"
-sudo() { return 1; }; curl() { return 7; }; env_get() { :; }; svc_cname() { echo "mediastack-$1"; }
+sudo() { return 1; }; scurl() { return 7; }; env_get() { :; }; svc_cname() { echo "mediastack-$1"; }
 RENDERED_JSON='{"services":{}}'
 
 # ---- every reason function, empty input, everything unreachable ----

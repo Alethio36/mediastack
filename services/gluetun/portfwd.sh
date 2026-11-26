@@ -140,7 +140,7 @@ VPN_PF_READY_WAIT=60   # seconds a client's API gets to answer before the sync c
 vpn_pf_client_ready() { # vpn_pf_client_ready URL RE — the client's API answers with a status matching RE (nothing said meanwhile); rc 1 when it never does
     local t0 code; t0=$(date +%s)
     while :; do
-        code=$(curl -s -m 5 -o /dev/null -w '%{http_code}' "$1" 2>/dev/null) || true
+        code=$(scurl -s -m 5 -o /dev/null -w '%{http_code}' "$1" 2>/dev/null) || true
         [[ "${code:-000}" =~ $2 ]] && return 0
         (( $(date +%s) - t0 < VPN_PF_READY_WAIT )) || return 1
         sleep 3

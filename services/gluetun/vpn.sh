@@ -282,12 +282,12 @@ leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2
             [[ "$(c_state "$tcn")" == running && "$(vpn_join "$tcn" "$gid" "$gns")" == ok ]] && { pcn=$tcn; break; }
         done
         if [[ -z "$pcn" ]]; then lt_unproven "hard stop: no torrent client is running in the tunnel to probe from"
-        elif ! sudo docker exec "$pcn" curl -fsS --max-time 10 https://github.com -o /dev/null >/dev/null 2>&1; then
+        elif ! sudo docker exec "$pcn" curl -fsS --max-time 10 https://github.com -o /dev/null >/dev/null 2>&1; then   # curl-ok: inside a container
             lt_unproven "hard stop: the probe $pcn cannot reach out even with gluetun up — skipped (it would prove nothing)"
         else
             warn "Hard-stop proof: stopping gluetun ENTIRELY (~30s of downtime)..."
             sudo docker stop "$gcn" >/dev/null; INSPECT_JSON=""
-            if sudo docker exec "$pcn" curl -fsS --max-time 6 https://github.com -o /dev/null >/dev/null 2>&1; then
+            if sudo docker exec "$pcn" curl -fsS --max-time 6 https://github.com -o /dev/null >/dev/null 2>&1; then   # curl-ok: inside a container
                 lt_fail "egress SUCCEEDED from a dependent with gluetun STOPPED — containment broken"
             else lt_pass "zero egress from dependents with gluetun dead (they reached out a moment before — fail-safe)"; fi
             if sudo docker exec "$pcn" sh -c 'ip route 2>/dev/null | grep default >/dev/null'; then
@@ -606,8 +606,10 @@ gluetun_secrets() { svc_enabled gluetun && printf 'GLUETUN_CONTROL_APIKEY\tvpn\n
 gluetun_secret_rotate() { rotate_env GLUETUN_CONTROL_APIKEY "$(gen_secret 32)" gluetun_control_key_proven; }
 gluetun_control_code() { # gluetun_control_code KEY -> the HTTP code gluetun's control server answers KEY with ("" when it does not answer)
     local out
-    # the key on stdin: sudo logs its command line (gluetun's busybox wget still takes it as an argument, inside its namespace)
-    out=$(printf '%s' "$1" | sudo docker exec -i "$(svc_cname gluetun)" sh -c 'k=$(cat); wget -qS -O /dev/null --timeout=5 --header "X-API-Key: $k" http://127.0.0.1:8008/v1/vpn/status 2>&1' 2>/dev/null) || true   # addr-ok: gluetun's control server, from inside its namespace
+    # the key on stdin, into a request the shell writes itself (printf is its own) and busybox nc sends:
+    # sudo logs a command line and ps shows one — wget would take the header as an argument
+    out=$(printf '%s' "$1" | sudo docker exec -i "$(svc_cname gluetun)" sh -c \
+          'printf "GET /v1/vpn/status HTTP/1.0\r\nHost: 127.0.0.1\r\nX-API-Key: %s\r\n\r\n" "$(cat)" | nc -w 5 127.0.0.1 8008' 2>/dev/null) || true   # addr-ok: gluetun's control server, from inside its namespace
     sed -n 's/^ *HTTP\/[0-9.]* \([0-9][0-9]*\).*/\1/p' <<<"$out" | sed -n 1p
 }
 gluetun_control_key_proven() { # gluetun_control_key_proven NEW OLD — the control server opens to NEW and refuses OLD

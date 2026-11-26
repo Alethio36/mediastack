@@ -24,7 +24,7 @@ bazarr_login() { # bazarr_login [force] — Bazarr's own login follows gate_trus
         [[ -n "$u" && -n "$p" ]] || { info "bazarr: the shared arr login is not set yet — 'wire arr' creates it"; return 0; }
         want='.auth.type == "form" and .auth.username == $u'
     fi
-    cur=$(curl -sS -m 20 -H "X-API-KEY: $key" "$url/api/system/settings" 2>&1) && jq -e '.auth | type == "object"' <<<"$cur" >/dev/null 2>&1 \
+    cur=$(scurl -sS -m 20 -H "X-API-KEY: $key" "$url/api/system/settings" 2>&1) && jq -e '.auth | type == "object"' <<<"$cur" >/dev/null 2>&1 \
         || { wfail "bazarr: could not read its settings to check its login — $(oneline "$cur")"; return 0; }
     # the password is stored hashed: a match is the type and the name; force never matches
     if [[ "${1:-}" != force ]] && jq -e --arg u "$u" "$want" <<<"$cur" >/dev/null; then
@@ -39,10 +39,10 @@ bazarr_login() { # bazarr_login [force] — Bazarr's own login follows gate_trus
         w_would "bazarr: its page asks for the arr login ('$u')" || return 0
         form=(--data-urlencode "settings-auth-type=form" --data-urlencode "settings-auth-username=$u" --data-urlencode "settings-auth-password=$p")
     fi
-    out=$(curl -sS -m 20 -w $'\n%{http_code}' -X POST -H "X-API-KEY: $key" "${form[@]}" "$url/api/system/settings" 2>&1) || out+=$'\n000'
+    out=$(scurl -sS -m 20 -w $'\n%{http_code}' -X POST -H "X-API-KEY: $key" "${form[@]}" "$url/api/system/settings" 2>&1) || out+=$'\n000'
     code=${out##*$'\n'}
     [[ "$code" =~ ^2 ]] || { wfail "bazarr: its login change was refused [HTTP $code]: $(oneline "${out%$'\n'*}")"; return 0; }
-    cur=$(curl -sS -m 20 -H "X-API-KEY: $key" "$url/api/system/settings" 2>&1)
+    cur=$(scurl -sS -m 20 -H "X-API-KEY: $key" "$url/api/system/settings" 2>&1)
     if jq -e --arg u "$u" "$want" <<<"$cur" >/dev/null 2>&1; then
         if gate_trusted bazarr; then ok "bazarr: no login of its own — the portal guards it"
         else ok "bazarr: its page asks for the arr login ('$u')"; fi
@@ -73,7 +73,7 @@ wire_bazarr() {
     # wire reaches it and resets the connection (HTTP 000). Poll before posting.
     if (( ! WIRE_DRY )); then
         local waited=0 bprobe
-        until bprobe=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+        until bprobe=$(scurl -sS -m 5 -o /dev/null -w '%{http_code}' \
                 -H "X-API-KEY: $bkey" "$burl/api/system/status" 2>&1) \
                 && [[ "$bprobe" == 200 ]]; do
             if (( waited >= 90 )); then
@@ -108,7 +108,7 @@ wire_bazarr() {
         local args=() a
         for a in "${form[@]}"; do args+=(--data-urlencode "$a"); done
         local bresp bcode
-        bresp=$(curl -sS -m 20 -w $'\n%{http_code}' -X POST -H "X-API-KEY: $bkey" \
+        bresp=$(scurl -sS -m 20 -w $'\n%{http_code}' -X POST -H "X-API-KEY: $bkey" \
                 "${args[@]}" "$burl/api/system/settings" 2>&1) || bresp="${bresp}"$'\n000'
         bcode=${bresp##*$'\n'}
         if [[ "$bcode" =~ ^2 ]]; then
@@ -122,7 +122,7 @@ wire_bazarr() {
 
 bazarr_analytics_read() { # KEY URL -> true|false (anything else: Bazarr's answer, rc 1)
     local out v
-    out=$(curl -sS -m 20 -H "X-API-KEY: $1" "$2/api/system/settings" 2>&1) || { echo "$out"; return 1; }
+    out=$(scurl -sS -m 20 -H "X-API-KEY: $1" "$2/api/system/settings" 2>&1) || { echo "$out"; return 1; }
     v=$(jq -r '.analytics.enabled' <<<"$out" 2>/dev/null) || v=""
     [[ "$v" == true || "$v" == false ]] || { echo "$out"; return 1; }
     echo "$v"
@@ -136,7 +136,7 @@ bazarr_analytics_off() { # KEY URL — Bazarr's Google Analytics (an event per s
     fi
     [[ -z "$(state_get BAZARR_ANALYTICS_OFF)" ]] || { ok "bazarr: analytics were turned on in its UI — untouched"; return 0; }
     w_would "bazarr: stop its analytics (Google Analytics: an event for every subtitle download)" || return 0
-    code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST -H "X-API-KEY: $1" \
+    code=$(scurl -s -m 20 -o /dev/null -w '%{http_code}' -X POST -H "X-API-KEY: $1" \
            --data-urlencode "settings-analytics-enabled=false" "$2/api/system/settings" 2>/dev/null) || true
     cur=$(bazarr_analytics_read "$1" "$2") || cur=""
     [[ "$cur" == false ]] || { wfail "bazarr did not stop its analytics (HTTP ${code:-000}; it reads: ${cur:-unreadable})"; return 0; }
@@ -151,7 +151,7 @@ bazarr_secret_rotate() { # a new key through its settings form; config.yaml foll
     # after the restore point's restart: Bazarr is the slowest to answer (found live: HTTP 000, 31s after it)
     http_ready bazarr "$url/api/system/status" '^200$' -H "X-API-KEY: $old" || return 1
     rotate_journal_hold "bazarr API key" "$old" "$new"
-    code=$(curl -s -m 20 -o /dev/null -w '%{http_code}' -X POST -H "X-API-KEY: $old" \
+    code=$(scurl -s -m 20 -o /dev/null -w '%{http_code}' -X POST -H "X-API-KEY: $old" \
            --data-urlencode "settings-auth-apikey=$new" "$url/api/system/settings" 2>/dev/null) || true
     if ! [[ "$code" =~ ^2 ]]; then fail "bazarr: refused the new key (HTTP ${code:-000}) — its key is unchanged"; rotate_journal_release; return 1; fi
     rotate_proven bazarr "$url/api/system/status" "X-API-KEY: $new" "X-API-KEY: $old" || return 2

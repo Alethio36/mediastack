@@ -23,7 +23,7 @@ discord_sender_sync() { # discord_sender_sync URL — the webhook shows mediasta
     local id tok cur name av rec want out img rname rav rwant sname icon p
     read -r id tok <<<"$(discord_webhook_parts "$1")" || true
     [[ -n "${id:-}" ]] || { echo "not a Discord webhook URL"; return 1; }
-    cur=$(curl -sS -m 20 -w $'\n%{http_code}' "$DISCORD_API/$id/$tok" 2>&1) || { echo "Discord unreachable: $(oneline "$cur")"; return 1; }
+    cur=$(scurl -sS -m 20 -w $'\n%{http_code}' "$DISCORD_API/$id/$tok" 2>&1) || { echo "Discord unreachable: $(oneline "$cur")"; return 1; }
     [[ "${cur##*$'\n'}" == 200 ]] || { echo "Discord answered HTTP ${cur##*$'\n'} for the webhook (deleted, or its token changed?)"; return 1; }
     cur=${cur%$'\n'*}
     name=$(jq -r '.name // ""' <<<"$cur"); av=$(jq -r '.avatar // ""' <<<"$cur")
@@ -38,7 +38,7 @@ discord_sender_sync() { # discord_sender_sync URL — the webhook shows mediasta
     p=$(brand_icon_problem "$icon"); [[ -z "$p" ]] || { echo "the icon: $p — ./mediastack.sh brand icon <file.png> (or brand icon default)"; return 1; }
     img="data:image/png;base64,$(base64 -w0 < "$icon")"
     out=$(jq -cn --arg n "$sname" --arg a "$img" '{name: $n, avatar: $a}' \
-          | curl -sS -m 20 -w $'\n%{http_code}' -X PATCH -H 'Content-Type: application/json' --data-binary @- "$DISCORD_API/$id/$tok" 2>&1) \
+          | scurl -sS -m 20 -w $'\n%{http_code}' -X PATCH -H 'Content-Type: application/json' --data-binary @- "$DISCORD_API/$id/$tok" 2>&1) \
         || { echo "Discord unreachable: $(oneline "$out")"; return 1; }
     [[ "${out##*$'\n'}" == 200 ]] || { echo "Discord refused the name and icon [HTTP ${out##*$'\n'}]: $(oneline "${out%$'\n'*}")"; return 1; }
     out=${out%$'\n'*}

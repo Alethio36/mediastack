@@ -374,6 +374,40 @@ sched_words() { # sched_words EXPR -> the wizard's words for it ("never" when em
 
 # ------------------------------------------------------------ filesystem --
 abspath() { case "$1" in /*) echo "$1" ;; *) echo "$SCRIPT_DIR/${1#./}" ;; esac; }
+# scurl: curl with what it carries off its command line, which ps shows any
+# user on the host — the headers (keys, tokens), the login, the body, the
+# cookie and the URL (some carry a key: ?apikey=, a webhook's token) go into a
+# config read through a pipe; only the timing and output options stay. Takes
+# curl's own options; one it does not know is refused (a valued one would
+# take the next argument for a URL). Inside a container (another curl, not
+# the host's), a line may run curl itself, marked: # curl-ok: <why>
+scurl() {
+    local cfg="" a v
+    local -a keep=()
+    while (( $# )); do
+        a=$1; shift
+        case "$a" in
+            -H|--header|-u|--user|-d|--data|--data-raw|--data-binary|--data-urlencode|-b|--cookie)
+                (( $# )) || die "scurl: $a needs a value"
+                case "$a" in -H) a=header ;; -u) a=user ;; -d) a=data ;; -b) a=cookie ;; *) a=${a#--} ;; esac
+                # curl's config: a quoted value takes \\ \" \t \n \r as escapes
+                v=${1//\\/\\\\}; v=${v//\"/\\\"}; v=${v//$'\t'/\\t}; v=${v//$'\n'/\\n}; v=${v//$'\r'/\\r}
+                cfg+="$a = \"$v\""$'\n'; shift ;;
+            -m|--max-time|--connect-timeout|-X|--request|-o|--output|-w|--write-out|-c|--cookie-jar|-D|--dump-header)
+                (( $# )) || die "scurl: $a needs a value"
+                keep+=("$a" "$1"); shift ;;
+            -*)
+                [[ "$a" =~ ^-[sSfL46]+$ || "$a" =~ ^--(silent|show-error|fail|location|ipv4|ipv6)$ ]] \
+                    || die "scurl: '$a' is not an option it knows — add it to scurl (lib/common.sh), with a value or without"
+                keep+=("$a") ;;
+            *)
+                v=${a//\\/\\\\}; v=${v//\"/\\\"}
+                cfg+="url = \"$v\""$'\n' ;;
+        esac
+    done
+    command curl -K <(printf '%s' "$cfg") "${keep[@]}"   # curl-ok: scurl itself
+}
+
 # A root is deleted whole by nuke (CONFIG/CACHE/TRANSCODE) or uninstall (CONFIG):
 # never a system or shared folder, the home folder, or one holding this repo.
 ROOT_SHARED=(/ /bin /boot /dev /etc /home /lib /lib32 /lib64 /media /mnt /opt /proc /root /run /sbin /srv /sys /tmp /usr /var)

@@ -10,7 +10,7 @@ audiobookshelf_logins() { printf "Audiobookshelf's root\tABS_ADMIN_USER\tABS_ADM
 abs_url() { local p; p=$(svc_hostport audiobookshelf) || return 1; echo "http://127.0.0.1:$p"; }
 abs_api() { # abs_api METHOD PATH TOKEN [json] -> body; rc from HTTP
     local out code
-    out=$(curl -sS -m 20 -X "$1" -H "Content-Type: application/json" ${3:+-H "Authorization: Bearer $3"} \
+    out=$(scurl -sS -m 20 -X "$1" -H "Content-Type: application/json" ${3:+-H "Authorization: Bearer $3"} \
           ${4:+-d "$4"} -w '\n%{http_code}' "$(abs_url)$2" 2>&1) || { api_timed_out $? && api_unanswered "$1" 20 || echo "$out"; return 1; }
     code=${out##*$'\n'}; echo "${out%$'\n'*}"
     [[ "$code" =~ ^2 ]]

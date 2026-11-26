@@ -21,7 +21,7 @@ WIZARR_KEY_WHERE="Settings → General, at the bottom of the page"   # where its
 WZ_CODE=""   # wizarr_key_works' last answer (a global: a $( ) would lose it)
 wizarr_key_works() { # wizarr_key_works KEY — Wizarr takes it (WZ_CODE: its HTTP answer, 000 none)
     local out
-    out=$(curl -sS -m 15 -H "X-API-Key: $1" -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1) || { WZ_CODE=000; return 1; }
+    out=$(scurl -sS -m 15 -H "X-API-Key: $1" -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1) || { WZ_CODE=000; return 1; }
     WZ_CODE=${out##*$'\n'}
     [[ "$WZ_CODE" =~ ^2 ]]
 }
@@ -32,7 +32,7 @@ wizarr_server_problem() { # KEY -> why Wizarr's Jellyfin entry sends people the 
     # user to http://jellyfin:8096, which the LAN resolved to another server.
     local u out want got
     u=$(wizarr_url 2>/dev/null) || { echo "it is not reachable from this host — ./mediastack.sh status wizarr"; return 0; }
-    out=$(curl -sS -m 15 -H "X-API-Key: $1" "$u/api/servers" 2>/dev/null) || out=""
+    out=$(scurl -sS -m 15 -H "X-API-Key: $1" "$u/api/servers" 2>/dev/null) || out=""
     jq -e '.servers' <<<"$out" >/dev/null 2>&1 || { echo "its servers are unreadable — ./mediastack.sh logs wizarr"; return 0; }
     want=$(svc_url jellyfin 2>/dev/null) || want=""
     [[ "$(jq '[.servers[] | select(.server_type == "jellyfin")] | length' <<<"$out")" != 0 ]] \
@@ -124,7 +124,7 @@ wizarr_doctor() { # doctor: apps — its stored API key works ('invite' needs it
     if [[ -z "$wkey" ]]; then
         warn "wizarr has no stored API key — invites need it: ./mediastack.sh wire wizarr"
     else
-        wcode=$(curl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-API-Key: $wkey" \
+        wcode=$(scurl -s -m 10 -o /dev/null -w '%{http_code}' -H "X-API-Key: $wkey" \
                 "$(wizarr_url)/api/invitations" 2>/dev/null || echo 000)
         if [[ "$wcode" =~ ^2 ]]; then
             ok "wizarr API key works ('invite' is ready)"
@@ -145,7 +145,7 @@ wizarr_invite() { # wizarr_invite [EXPIRES-DAYS] — mint a Wizarr invitation an
     # server discovery: a create without server_ids deliberately answers 400
     # WITH the available_servers list (upstream-documented behaviour)
     local disc dcode ids out code url exp_line
-    disc=$(curl -sS -m 15 -X POST -H "X-API-Key: $key" -H "Content-Type: application/json" \
+    disc=$(scurl -sS -m 15 -X POST -H "X-API-Key: $key" -H "Content-Type: application/json" \
            -d '{}' -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1) \
         || die "wizarr unreachable: $(head -c200 <<<"$disc")"
     dcode=${disc##*$'\n'}; disc=${disc%$'\n'*}
@@ -154,7 +154,7 @@ wizarr_invite() { # wizarr_invite [EXPIRES-DAYS] — mint a Wizarr invitation an
     ids=$(jq -c '[.available_servers[]?.id]' <<<"$disc" 2>/dev/null)
     [[ "$ids" != "[]" && -n "$ids" ]] || die "wizarr has no verified media server yet — finish its one-time
   first-run in the UI (see: wire wizarr), then retry."
-    out=$(curl -sS -m 15 -X POST -H "X-API-Key: $key" -H "Content-Type: application/json" \
+    out=$(scurl -sS -m 15 -X POST -H "X-API-Key: $key" -H "Content-Type: application/json" \
           -d "$(jq -cn --argjson ids "$ids" --argjson e "${expires:-null}" \
                '{server_ids:$ids} + (if $e then {expires_in_days:$e} else {} end)')" \
           -w $'\n%{http_code}' "$(wizarr_url)/api/invitations" 2>&1) \
@@ -179,7 +179,7 @@ wizarr_reset_link() { # wizarr_reset_link USER — Wizarr's single-use reset lin
     [[ "${user,,}" != "${admin,,}" ]] \
         || die "'$user' is the stack's own Jellyfin admin — its password: ./mediastack.sh set-credentials jellyfin"
     # Wizarr's id, not Jellyfin's; its list syncs from Jellyfin when stale, so a slow answer is normal
-    out=$(curl -sS -m 60 -H "X-API-Key: $key" -w $'\n%{http_code}' "$(wizarr_url)/api/users" 2>&1) \
+    out=$(scurl -sS -m 60 -H "X-API-Key: $key" -w $'\n%{http_code}' "$(wizarr_url)/api/users" 2>&1) \
         || die "wizarr unreachable: $(oneline "$out")"
     code=${out##*$'\n'}; all=${out%$'\n'*}
     [[ "$code" =~ ^2 ]] || die "wizarr refused its user list [HTTP $code]: $(oneline "$all")  (401 = stale API key: ./mediastack.sh wire wizarr)"
@@ -193,7 +193,7 @@ wizarr_reset_link() { # wizarr_reset_link USER — Wizarr's single-use reset lin
     esac
     # asked before the link exists: a new link voids the person's last one
     local disabled=0; jellyfin_disabled "$user" && disabled=1
-    out=$(curl -sS -m 15 -X POST -H "X-API-Key: $key" -w $'\n%{http_code}' \
+    out=$(scurl -sS -m 15 -X POST -H "X-API-Key: $key" -w $'\n%{http_code}' \
           "$(wizarr_url)/api/users/$(jq -r '.[0].id' <<<"$u")/reset-password" 2>&1) \
         || die "wizarr unreachable while making the link: $(oneline "$out")"
     code=${out##*$'\n'}; out=${out%$'\n'*}

@@ -45,8 +45,8 @@ vpnp_nordvpn_protocols() { echo udp; }
 
 nord_creds() { # nord_creds TOKEN TYPE -> NordVPN's service credentials for TOKEN (JSON), holding what TYPE needs; rc 1 with the reason instead
     local out need
-    # the login goes in on stdin (-K -), never on the command line where ps shows it
-    out=$(curl -fsS -K - "https://api.nordvpn.com/v1/users/services/credentials" <<<"user = \"token:${1}\"") \
+    # scurl: the login goes through a pipe, never on the command line where ps shows it
+    out=$(scurl -fsS -m 20 -u "token:$1" "https://api.nordvpn.com/v1/users/services/credentials") \
         || { echo "Could not reach Nord's API. Check connectivity and retry."; return 1; }
     case "$2" in
         wireguard) need='(.nordlynx_private_key // "") != ""' ;;

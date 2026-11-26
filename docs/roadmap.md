@@ -711,9 +711,19 @@ agreed first:
       `ps` — F2b). `env_set` rewrites a value the same way, off sed's
       command line. `.env` is made 600 from its first byte (configure and
       `env_set`), configure's `chmod` fails loud, and doctor fails a `.env`
-      others can read. `test-secrets`. *F2b, secrets (to decide):* every API
-      helper puts its key and password bodies on curl's command line (`ps`
-      shows them): 78 host curl calls in 24 files, 17 tests stub `curl`. *F3 (to do):* verbs that change the
+      others can read. `test-secrets`. *F2b, secrets (done):* every API
+      helper put its key, login and body on curl's command line, where `ps`
+      shows any user them — some keys in the URL itself (LazyLibrarian's
+      `?apikey=`, a Discord webhook's token). `scurl` (lib/common.sh) takes
+      curl's options and sends those through a config read from a pipe (`-K
+      /dev/fd/N`), keeping only the timing and output options; an option it
+      does not know is refused. Proven byte-identical to curl against a local
+      server (headers, Basic, form, binary and JSON bodies, cookies,
+      `-D -`). Every host call converted (65), NordVPN's and Cloudflare's
+      included (NordVPN's gains the timeout F4 listed); gluetun's key check
+      writes its own request into busybox `nc`, off every command line. The
+      tests' 17 `curl` stubs became `scurl` stubs. `test-secrets` fails a
+      bare host `curl` (a call inside a container says why: `# curl-ok:`). *F3 (to do):* verbs that change the
       stack (`down`, `restart`, `enable`/`disable`, `set-credentials`,
       `configure`, nuke/uninstall, `brand` …) run without the maintenance
       lock — a lock column in `VERBS`, taken by the dispatcher. *F4 (to do):*

@@ -70,7 +70,7 @@ jf_api() {
 DISC_OK=yes STARTING=0
 echo 0 > "$T/served"
 sleep() { :; }
-curl() {
+scurl() {
     local u="${*: -1}" n code=200 body='{"DeviceID":"12345678","FriendlyName":"Dispatcharr HDHomeRun"}'
     echo "$u" >> "$T/curled"
     [[ $DISC_OK == yes ]] || { [[ " $* " == *" -w "* ]] && echo 000; return 7; }

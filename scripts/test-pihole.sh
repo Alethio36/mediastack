@@ -65,7 +65,7 @@ gl() { # gl VALID(true|false|none) DCRC -> "fails=N" ($T/gl: its output, $T/dc: 
       printf 'MEDIASTACK_GATE_BIND=127.0.0.1:\nPIHOLE_WEB_PASSWORD=\n' > "$ENV_FILE"
       DC() { echo "DC $* web=$(grep -c '^PIHOLE_WEB_PASSWORD=' "$ENV_FILE")" >> "$T/dc"; return "$DCRC"; }
       svc_hostport() { echo 8083; }
-      curl() { [[ "${*: -1}" == http://127.0.0.1:8083/api/auth ]] || return 7; [[ $VALID == none ]] && return 7
+      scurl() { [[ "${*: -1}" == http://127.0.0.1:8083/api/auth ]] || return 7; [[ $VALID == none ]] && return 7
                printf '{"session":{"valid":%s,"totp":false,"sid":null,"validity":-1}}' "$VALID"; }
       GATE_UNTRUSTED=1 pihole_gate_login > "$T/gl" 2>&1; echo "fails=$WIRE_FAILS" )
 }
