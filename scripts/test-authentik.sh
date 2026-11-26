@@ -766,7 +766,9 @@ gates_run() { # gates_run [DRY] [REFUSE-BINDINGS] — wire_authentik_cards again
           "GET /core/groups/?search="*) awk -v q="${2#*=}" 'index($1,q){printf "%s{\"name\":\"%s\",\"pk\":\"%s\"}", (n++?",":""), $1, $2} BEGIN{printf "{\"results\":["} END{print "]}"}' "$T/groups" ;;
           "POST /core/groups/") n=$(jq -r .name <<<"$3"); echo "$n g-$n" >> "$T/groups"; echo "{\"pk\":\"g-$n\"}" ;;
           "GET /providers/proxy/?name__iexact=mediastack-house-navidrome") echo '{"results":[{"pk":42,"external_host":"https://navidrome.media.example.com"}]}' ;;
-          "GET /providers/proxy/?name__iexact=mediastack-app-sonarr") if [[ -f "$T/made" || -n "${MOVED:-}" ]]; then echo '{"results":[{"pk":50,"external_host":"https://old.example.com"}]}'; else echo '{"results":[]}'; fi ;;
+          "GET /providers/proxy/?name__iexact=mediastack-app-sonarr") if [[ -n "${MOVED:-}" ]]; then echo '{"results":[{"pk":50,"external_host":"https://old.example.com","access_token_validity":"hours=24"}]}'
+              elif [[ -n "${SHORT:-}" ]]; then echo '{"results":[{"pk":50,"external_host":"https://sonarr.media.example.com","access_token_validity":"hours=1"}]}'
+              elif [[ -f "$T/made" ]]; then echo '{"results":[{"pk":50,"external_host":"https://sonarr.media.example.com","access_token_validity":"hours=24"}]}'; else echo '{"results":[]}'; fi ;;
           "GET /providers/proxy/?name__iexact="*) echo '{"results":[]}' ;;
           "POST /providers/proxy/") echo made > "$T/made"; [[ -n "${LATE:-}" ]] && { echo 'no answer within 90s'; return 1; }; echo '{"pk":50}' ;;
           "PATCH /providers/proxy/"*)   # authentik checks a partial update as a full proxy unless mode says otherwise
@@ -797,9 +799,9 @@ binds() { awk -v t="$1" '$1==t{print $2}' "$T/bind" | sort | paste -sd, -; }
 [[ "$(gates_run)" == fails=0 ]] || fail_ "every gated app wired without a failure: $(gates_run)"; pass
 grep -q '^POST /core/groups/ .*"name":"app-sonarr"' "$T/calls" && grep -q '^POST /core/groups/ .*"name":"app-navidrome"' "$T/calls" \
     || fail_ "each gated app gets its own app-<svc> group"; pass
-grep -q '^POST /providers/proxy/ .*"name":"mediastack-app-sonarr".*"mode":"forward_single".*"external_host":"https://sonarr.media.example.com"' "$T/calls" \
+grep -q '^POST /providers/proxy/ .*"name":"mediastack-app-sonarr".*"mode":"forward_single".*"external_host":"https://sonarr.media.example.com".*"access_token_validity":"hours=24"' "$T/calls" \
     || fail_ "an admin tool gets a gate of its own: forward auth for its one address"; pass
-grep -qF 'PATCH /providers/proxy/42/ {"name":"mediastack-app-navidrome","mode":"forward_single","external_host":"https://navidrome.media.example.com"}' "$T/calls" \
+grep -qF 'PATCH /providers/proxy/42/ {"name":"mediastack-app-navidrome","mode":"forward_single","external_host":"https://navidrome.media.example.com","access_token_validity":"hours=24"}' "$T/calls" \
     && ! grep -q '^POST /providers/proxy/ .*mediastack-app-navidrome' "$T/calls" || fail_ "Navidrome's household gate is renamed in place, not made anew"; pass
 grep -q '^POST /core/applications/ .*"slug":"mediastack-app-sonarr".*"group":"Admin tools".*"provider":50' "$T/calls" \
     || fail_ "the tool's card carries its gate: $(grep 'POST /core/applications/' "$T/calls")"; pass
@@ -858,8 +860,16 @@ grep -q '^POST /core/groups/ .*"name":"app-jellyfin"' "$T/calls" && ! grep -q '"
     || fail_ "tier frontend: Kavita's sign-in application admits the household, admins, app-kavita: $(binds a-mediastack-app-kavita)"; pass
 [[ "$(KT="admin" gates_run)" == fails=0 && "$(binds a-mediastack-app-kavita)" == "g-adm,g-app-kavita" ]] && [[ "$(binds a-ldap)" == "g-adm,g-app-jellyfin,g-mu" ]] \
     || fail_ "Kavita to admin: the household off its sign-in; Jellyfin's left as it was: $(binds a-mediastack-app-kavita) / $(binds a-ldap)"; pass
-[[ "$(MOVED=1 gates_run)" == fails=0 ]] && grep -qF 'PATCH /providers/proxy/50/ {"mode":"forward_single","external_host":"https://sonarr.media.example.com"}' "$T/calls" \
+[[ "$(MOVED=1 gates_run)" == fails=0 ]] && grep -qF 'PATCH /providers/proxy/50/ {"mode":"forward_single","external_host":"https://sonarr.media.example.com","access_token_validity":"hours=24"}' "$T/calls" \
     || fail_ "an app's address changed: its gate follows, the update saying its mode (authentik refuses one without): $(grep 'PATCH /providers/proxy/50' "$T/calls")"; pass
+# a gate keeps a sign-in for a day: authentik's own hour broke an open tab's
+# calls each hour until it was reloaded (found live, Nov 2026)
+rm -f "$T/calls"; [[ "$(SHORT=1 gates_run)" == fails=0 ]] && grep -qF 'PATCH /providers/proxy/50/ {"mode":"forward_single","external_host":"https://sonarr.media.example.com","access_token_validity":"hours=24"}' "$T/calls" \
+    || fail_ "a gate made with authentik's hour: set to a day: $(grep 'PATCH /providers/proxy/50' "$T/calls")"; pass
+rm -f "$T/calls"; touch "$T/made"; [[ "$(gates_run)" == fails=0 ]] && ! grep -q 'PATCH /providers/proxy/50' "$T/calls" \
+    || fail_ "a gate already right: left alone"; pass
+grep -qE "^      access_token_validity: ${AUTHENTIK_TOKEN_VALIDITY}\$" services/authentik/blueprints/mediastack-portal.yaml \
+    || fail_ "the shared gate in the blueprint keeps a sign-in as long as every app's own ($AUTHENTIK_TOKEN_VALIDITY)"; pass
 
 # ---- LDAP: the outpost gets its token from authentik; the route answers the stack only ----
 rm -f "$T/calls"; printf '' > "$ENV_FILE"

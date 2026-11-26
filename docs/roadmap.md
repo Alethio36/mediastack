@@ -657,7 +657,12 @@ agreed first:
       settings offer (check their source first).
     - **`authentik_prepare` is called by name** from `up` and `enable`;
       with `<name>_provision` now found by name, see whether its part fits
-      there (it needs the edge first).
+      there (it needs the edge first). *Decided (P3, 25 Nov 2026): it stays
+      named.* `provision` runs silenced at `up` and `enable`, and in
+      `configure`; `authentik_prepare` speaks (the release step) and may
+      refuse (no edge yet) — as a hook it would refuse where nobody reads
+      why. A pre-start hook only when a second service needs one; the reason
+      sits at the call.
     - **Contributors' shellcheck is not CI's** (found 24 Nov 2026): CI runs
       Ubuntu 24.04's (0.9); a newer one (0.11) passed a test file CI failed
       (SC2218), and unstable stayed red until the promote noticed. A lint
@@ -671,7 +676,11 @@ agreed first:
       (P1):* `w_pends` says a preview pends, and only then the note follows
       (`test-wire-late`).
     - **A gated app's open tab fails with "NetworkError" when its portal
-      token runs out** (25 Nov 2026, anzac4, Dispatcharr; authentik's log):
+      token runs out** *(done, P3, 25 Nov 2026: read live, authentik's own
+      hour on every gate — now a day, `AUTHENTIK_TOKEN_VALIDITY`, made so
+      and set back by `wire`, the shared gate's in the blueprint; nothing
+      waits on it to lock anyone out — signing out and losing an app end
+      sessions there and then)* (25 Nov 2026, anzac4, Dispatcharr; authentik's log):
       the outpost answers the app's background calls with a redirect to the
       portal's authorize page, which a background call cannot follow
       (another site, no portal cookie): every call fails until a reload,

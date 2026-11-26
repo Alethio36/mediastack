@@ -464,6 +464,9 @@ entries:
       cookie_domain: !Env [MEDIASTACK_DOMAIN, ""]
       authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
       invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+      # a day signed in before it asks the portal again, as every app's own
+      # gate (AUTHENTIK_TOKEN_VALIDITY, services/authentik/authentik.sh, says why)
+      access_token_validity: hours=24
   - model: authentik_core.application
     id: app-gate
     identifiers:

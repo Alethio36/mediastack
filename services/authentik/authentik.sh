@@ -318,6 +318,7 @@ gate_trusted() { # gate_trusted <svc> -> 0 when <svc> may drop its own login: th
 }
 
 authentik_prepare() { # before `up`/`enable` start it: the edge, secrets, the release step, its setup files
+    # called by name from up and enable (not authentik_provision: see cmd_up)
     svc_enabled authentik || return 0
     # the API is published on 127.0.0.1 only: people reach the portal through Traefik
     svc_enabled traefik && [[ -n "$(env_get STACK_DOMAIN)" ]] \
@@ -1211,6 +1212,15 @@ authentik_app_gates_doctor() { # doctor: each gated app on its own gate; none of
     else ok "authentik: every gated app has a gate of its own, its card saying who may open it"; fi
 }
 
+# how long a gate keeps someone signed in to its app before asking the portal
+# again: authentik's own default is an hour, and a tab left open past it fails
+# every call it makes until reloaded (its calls are redirected to the portal,
+# which a page's background call cannot follow — found live, Nov 2026). A day,
+# because nothing waits on it to lock anyone out: signing out of the portal,
+# and losing an app (access, people-sync), end their sessions there and then
+# (signin_sessions_end). The shared gate's, in the blueprint, says the same.
+AUTHENTIK_TOKEN_VALIDITY="hours=24"
+
 ak_app_provider_read() { # ak_app_provider_read NAME FIELD -> that field of the proxy provider so named (empty: none, or unreadable)
     ak_api GET "/providers/proxy/?name__iexact=$1" 2>/dev/null | jq -r --arg f "$2" '.results[0][$f] // empty | tostring' 2>/dev/null || true
 }
@@ -1221,20 +1231,21 @@ authentik_app_provider() { # authentik_app_provider SVC -> APP_PK: the app's own
     # every update carries mode: authentik checks a partial update as if the
     # provider were a full proxy (mode defaults to it) and asks for an internal
     # host (its ProxyProviderSerializer.validate; refused live, 16 Nov 2026)
-    local s="$1" name="mediastack-app-$1" url out pk host
+    local s="$1" name="mediastack-app-$1" url out pk host tv want=$AUTHENTIK_TOKEN_VALIDITY
     url=$(svc_url "$s")
     out=$(ak_api GET "/providers/proxy/?name__iexact=$name") || { wfail "authentik: providers unreadable"; return 1; }
     pk=$(jq -r '.results[0].pk // empty' <<<"$out"); host=$(jq -r '.results[0].external_host // empty' <<<"$out")
+    tv=$(jq -r '.results[0].access_token_validity // empty' <<<"$out")
     if [[ -z "$pk" ]]; then
         # Navidrome's household gate before Nov 2026: the same provider, renamed in place (its sessions kept)
         out=$(ak_api GET "/providers/proxy/?name__iexact=mediastack-house-$s") || { wfail "authentik: providers unreadable"; return 1; }
         pk=$(jq -r '.results[0].pk // empty' <<<"$out")
         if [[ -n "$pk" ]]; then
             w_would "authentik: $s's household gate becomes its own gate ($name)" || return 1
-            out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg n "$name" --arg u "$url" '{name:$n, mode:"forward_single", external_host:$u}')") \
+            out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg n "$name" --arg u "$url" --arg v "$want" '{name:$n, mode:"forward_single", external_host:$u, access_token_validity:$v}')") \
                 || [[ "$(ak_app_provider_read "$name" pk)" == "$pk" ]] \
                 || { wfail "authentik did not rename $s's household gate: $(oneline "$out")"; return 1; }
-            host=$url
+            host=$url; tv=$want
         fi
     fi
     if [[ -z "$pk" ]]; then
@@ -1242,18 +1253,19 @@ authentik_app_provider() { # authentik_app_provider SVC -> APP_PK: the app's own
         w_would "authentik: a gate of its own for $s ($url)" || return 1
         az=$(ak_flow_pk default-provider-authorization-implicit-consent); inv=$(ak_flow_pk default-provider-invalidation-flow)
         [[ -n "$az" && -n "$inv" ]] || { wfail "authentik: its default provider flows are missing"; return 1; }
-        if out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api POST /providers/proxy/ "$(jq -cn --arg n "$name" --arg u "$url" --arg a "$az" --arg i "$inv" \
-            '{name:$n, mode:"forward_single", external_host:$u, authorization_flow:$a, invalidation_flow:$i}')"); then
+        if out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api POST /providers/proxy/ "$(jq -cn --arg n "$name" --arg u "$url" --arg a "$az" --arg i "$inv" --arg v "$want" \
+            '{name:$n, mode:"forward_single", external_host:$u, authorization_flow:$a, invalidation_flow:$i, access_token_validity:$v}')"); then
             pk=$(jq -r '.pk // empty' <<<"$out")
         else
             pk=$(ak_app_provider_read "$name" pk)   # made after all, its answer late (read back, never made twice)
             [[ -n "$pk" ]] || { wfail "authentik did not make $s's gate: $(oneline "$out")"; return 1; }
         fi
-    elif [[ "$host" != "$url" ]]; then
-        w_would "authentik: move $s's gate to $url (its address changed)" || return 1
-        out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg u "$url" '{mode:"forward_single", external_host:$u}')") \
-            || [[ "$(ak_app_provider_read "$name" external_host)" == "$url" ]] \
-            || { wfail "authentik did not move $s's gate: $(oneline "$out")"; return 1; }
+    elif [[ "$host" != "$url" || "$tv" != "$want" ]]; then
+        if [[ "$host" != "$url" ]]; then w_would "authentik: move $s's gate to $url (its address changed)" || return 1
+        else w_would "authentik: $s's gate keeps a sign-in for $want (was ${tv:-unset})" || return 1; fi
+        out=$(API_TIMEOUT=$AUTHENTIK_STAGE_WAIT ak_api PATCH "/providers/proxy/$pk/" "$(jq -cn --arg u "$url" --arg v "$want" '{mode:"forward_single", external_host:$u, access_token_validity:$v}')") \
+            || [[ "$(ak_app_provider_read "$name" external_host)|$(ak_app_provider_read "$name" access_token_validity)" == "$url|$want" ]] \
+            || { wfail "authentik did not update $s's gate: $(oneline "$out")"; return 1; }
     fi
     APP_PK=$pk
 }

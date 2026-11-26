@@ -722,6 +722,9 @@ cmd_up()   {
     provision >/dev/null
     uid_handover
     traefik_ensure
+    # by name, not a <service>_provision hook: it speaks (the release step) and
+    # may refuse (no edge yet), and provision runs silenced — refused there, in
+    # configure too, nobody would read why. One service needs it (audit, Nov 2026)
     authentik_prepare
     network_ensure
     # two phases: everything outside the VPN group (gluetun with it) first,
