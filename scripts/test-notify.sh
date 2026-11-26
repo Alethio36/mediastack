@@ -474,4 +474,14 @@ grep -q 'apply_timer mediastack-doctor "Mediastack scheduled doctor" "doctor --s
     && grep -q 'doctor_tell_ops' <(awk '/^cmd_doctor\(\)/,/^}/' lib/doctor.sh) \
     || fail_ "doctor --scheduled from its timer exits 0 with problems; by hand, 1"; pass
 
+# ---- notify test: every app that sends to the hub itself is asked for its own test, found by its name ----
+( svc_enabled_managed() { printf '%s\n' sonarr seerr; }
+  seerr_notify_test() { echo SEERR >> "$T/apptests"; }
+  : > "$T/apptests"; notify_test_apps
+  [[ "$(cat "$T/apptests")" == SEERR ]] ) || fail_ "notify test asks Seerr for its own test (seerr_notify_test, its folder)"; pass
+( svc_enabled_managed() { printf '%s\n' ghost; }
+  eval 'ghost_notify_test() { return 1; }'
+  ! notify_test_apps ) || fail_ "an app's failed own test fails notify test"; pass
+[[ "$(grep -cE 'seerr_[a-z_]+\(\)|SEERR_' lib/notify.sh || true)" == 0 ]] || fail_ "lib/notify.sh holds none of Seerr's parts (services/seerr/): $(grep -nE 'seerr_|SEERR_' lib/notify.sh)"; pass
+
 echo "OK notify: $checks checks"

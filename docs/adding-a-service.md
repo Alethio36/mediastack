@@ -176,7 +176,13 @@ order it runs or prints them; a service's part lives in its folder. So far:
 `wire` (`WIRE_ROLES` in `lib/wire.sh` -> `wire_<role>`), `rotate-secrets`
 (`ROTATE_ORDER` in `lib/rotate.sh` -> `<stem>_secrets` and
 `<stem>_secret_rotate`) and doctor's app checks (`DOCTOR_APPS` in
-`lib/doctor.sh` -> `<name>_doctor`). Every `<name>_<hook>` lives in its
+`lib/doctor.sh` -> `<name>_doctor`; `check-registries` fails a
+`<name>_doctor` that list leaves out and nothing calls). A verb where order
+does not matter keeps no list: it runs each enabled service's hook, found by
+its name — `notify test` (`<name>_notify_test`: the app asked to send its own
+test through the hub), `update` (`<name>_update_probe`: its check after an
+update, rc 1 when it fails) and `brand` (`<name>_brand_apply`: the kit onto
+the running app; the hub's colours aside). Every `<name>_<hook>` lives in its
 service's folder (the arr family's in `services/_arr/`), and a hook found by
 its service's name needs a service of that name — `check-registries` fails
 one outside its folder, and one named for no service (a typo never runs).

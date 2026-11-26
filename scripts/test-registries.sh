@@ -24,6 +24,17 @@ broken() { # broken "WHAT" "SHELL EDIT" "EXPECTED FAIL TEXT" — the check, run 
     pass
 }
 
+# hooks found by their service's name: each one runs
+broken "a doctor check doctor never runs" \
+    "sed -i 's/^DOCTOR_APPS=(jellyfin seerr kavita wizarr olivetin)/DOCTOR_APPS=(jellyfin seerr wizarr olivetin)/' lib/doctor.sh" \
+    "FAIL kavita_doctor() is kavita's doctor check, but DOCTOR_APPS (lib/doctor.sh) does not list it"
+broken "an update probe for no service" \
+    "printf 'jellysrch_update_probe() { :; }\\n' >> services/jellysearch/jellysearch.sh" \
+    "FAIL jellysrch_update_probe() is a hook found by its service's name, but no service is named jellysrch"
+broken "a kit hook outside its folder" \
+    "printf 'seerr_notify_test() { :; }\\n' >> lib/notify.sh" \
+    "FAIL seerr_notify_test() is seerr's hook, but lives in lib/notify.sh"
+
 # set-credentials: every declared login has its rotation; nothing without a login
 broken "a login without its rotation" \
     "sed -i 's/^sc_rotate_kavita() {/kav_rotate_gone() {/' services/kavita/kavita.sh" \

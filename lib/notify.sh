@@ -19,8 +19,9 @@
 # `notify set` / `wire apprise` rewrite its tags; any other line (your own
 # tags, untagged URLs) is never touched. Each send's outcome is kept per
 # stream in local/state/ for `notify status` and doctor.
-# Sourced by the entrypoint; relies on lib/common.sh, the svc/c_state helpers
-# and, for Seerr's own test, SEERR_API_KEY at call time.
+# What Seerr sends the hub (its agent, its events' bits) is Seerr's:
+# services/seerr/hub.sh. Sourced by the entrypoint; relies on lib/common.sh
+# and the svc/c_state helpers.
 
 NOTIFY_STREAMS=(ops users)
 # which Seerr events each stream receives (Seerr's own names; test -> ops)
@@ -28,52 +29,7 @@ declare -A NOTIFY_EVENTS=(
     [users]="MEDIA_AVAILABLE"
     [ops]="MEDIA_PENDING MEDIA_APPROVED MEDIA_AUTO_APPROVED MEDIA_DECLINED MEDIA_FAILED MEDIA_AUTO_REQUESTED ISSUE_CREATED ISSUE_COMMENT ISSUE_RESOLVED ISSUE_REOPENED TEST_NOTIFICATION"
 )
-# Seerr's bit per event (server/lib/notifications/index.ts); the agent's
-# "types" is their sum — every event but the test, which is always sent
-declare -A SEERR_EVENT_BIT=(
-    [MEDIA_PENDING]=2 [MEDIA_APPROVED]=4 [MEDIA_AVAILABLE]=8 [MEDIA_FAILED]=16
-    [MEDIA_DECLINED]=64 [MEDIA_AUTO_APPROVED]=128 [ISSUE_CREATED]=256 [ISSUE_COMMENT]=512
-    [ISSUE_RESOLVED]=1024 [ISSUE_REOPENED]=2048 [MEDIA_AUTO_REQUESTED]=4096
-)
-# the payload Seerr sends: the title (with its year) as the card's title, its
-# overview as the text; the event name as the tag (the routing). The poster,
-# the event and who asked (or reported) are per-message values of the hub's,
-# placed by the card's template: a blank one takes the configuration's
-# default — Seerr's own test has no event and nobody asking, and its card
-# reads "Seerr · test" instead of empty markup. Seerr fills every {{...}} it
-# knows, nested ones too, and an empty one with nothing. The text ends in a
-# zero-width space: the hub refuses an empty text, and a title with no
-# overview would be lost.
-# shellcheck disable=SC2034  # these three are read by wire_seerr (services/seerr/seerr.sh)
-SEERR_HUB_PAYLOAD='{"title":"{{subject}}","body":"{{message}}​","tag":"{{notification_type}}","type":"info","format":"markdown","template":{"poster":"{{image}}","event":"{{event}}","who":"{{requestedBy_username}}{{reportedBy_username}}"}}'
-# every template wire seerr wrote before (tag "activity", the stream before
-# ops; then "ops"; then the plain one before the cards; then the first card,
-# its event line in Seerr's text): a template mediastack
-# wrote is mediastack's to update — the events turned on and the poster
-# setting stay whoever set them
-SEERR_HUB_PAYLOADS_BEFORE=(
-    '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"activity","type":"info"}'
-    '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"ops","type":"info"}'
-    '{"title":"Seerr","body":"{{event}}\n{{subject}}\n{{message}}","tag":"{{notification_type}}","type":"info"}'
-    '{"title":"{{subject}}","body":"**{{event}}** · {{requestedBy_username}}{{reportedBy_username}}\n{{message}}","tag":"{{notification_type}}","type":"info","format":"markdown","template":{"poster":"{{image}}"}}'
-)
-SEERR_HUB_TYPES_BEFORE=222   # the events every earlier version turned on
 NOTIFY_LEGACY_TAGS=(activity) # streams mediastack no longer has
-
-
-seerr_agent_next() { # seerr_agent_next AGENT-JSON -> the agent as it should be; "same" when current; "yours" when not mediastack's
-    local have_p have_t want_t p mine=0
-    have_p=$(jq -r '.options.jsonPayload // ""' <<<"$1"); have_t=$(jq -r '.types // 0' <<<"$1")
-    want_t=$(seerr_hub_types)
-    [[ "$have_p" == "$SEERR_HUB_PAYLOAD" ]] && mine=1
-    for p in "${SEERR_HUB_PAYLOADS_BEFORE[@]}"; do [[ "$have_p" == "$p" ]] && mine=1; done
-    (( mine )) || { echo yours; return 0; }
-    # the template is mediastack's; the events turned on stay as set, unless
-    # still the old default — then the current one (it adds the issue events)
-    [[ "$have_t" == "$SEERR_HUB_TYPES_BEFORE" ]] && have_t=$want_t
-    if [[ "$have_p" == "$SEERR_HUB_PAYLOAD" && "$have_t" == "$(jq -r '.types // 0' <<<"$1")" ]]; then echo same; return 0; fi
-    jq -c --arg p "$SEERR_HUB_PAYLOAD" --argjson t "$have_t" '.types = $t | .options.jsonPayload = $p' <<<"$1"
-}
 
 notify_legacy_lines() { # stdin: the stored configuration -> the tags of entries for streams mediastack no longer has (URLs never printed)
     local line tags t
@@ -89,12 +45,6 @@ notify_legacy_lines() { # stdin: the stored configuration -> the tags of entries
 
 notify_legacy_note() { # the sentence wire, status and doctor say about a leftover line
     echo "the hub has a URL tagged '$1' — a stream mediastack no longer has (it became ops): nothing is sent to it. Remove that line in Apprise's UI ($(svc_url "$HUB_SVC" 2>/dev/null || echo "port 8000")/cfg/$HUB_KEY)"
-}
-
-seerr_hub_types() { # the agent's types: every routed event's bit, summed
-    local e n=0
-    for e in "${!SEERR_EVENT_BIT[@]}"; do n=$(( n + SEERR_EVENT_BIT[$e] )); done
-    echo "$n"
 }
 
 # ---------------------------------------------------------------- sending --
@@ -331,24 +281,19 @@ notify_test() {
         if [[ -z "$why" ]]; then ok "$s: the hub delivered the test — check it arrived"
         else fail "$s: $why"; rc=1; fi
     done
-    [[ -n "${1:-}" && "$1" != ops ]] || notify_test_seerr || rc=1
+    [[ -n "${1:-}" && "$1" != ops ]] || notify_test_apps || rc=1
     return "$rc"
 }
 
-notify_test_seerr() { # ask Seerr to send its own test through its hub agent: proves Seerr -> hub -> ops
-    svc_enabled seerr && [[ "$(c_state "$(svc_cname seerr)")" == running ]] || return 0
-    local key cur out code
-    key=$(env_get SEERR_API_KEY)
-    [[ -n "$key" ]] || { info "seerr: no API key stored yet (wire seerr) — its test skipped"; return 0; }
-    cur=$(curl -sS -m 10 -H "X-Api-Key: $key" "$(seerr_url)/api/v1/settings/notifications/webhook" 2>&1) \
-        || { fail "seerr: unreachable — $(oneline "$cur")"; return 1; }
-    jq -e '.enabled' <<<"$cur" >/dev/null 2>&1 || { info "seerr: its hub agent is off — its test skipped (wire seerr sets it up)"; return 0; }
-    out=$(curl -sS -m 20 -X POST -H "X-Api-Key: $key" -H "Content-Type: application/json" -d "$cur" \
-          -w $'\n%{http_code}' "$(seerr_url)/api/v1/settings/notifications/webhook/test" 2>&1) || true   # judged by its code
-    code=${out##*$'\n'}
-    if [[ "$code" =~ ^2 ]]; then ok "seerr: sent its own test through the hub — it should arrive on ops (the route Seerr's events take)"
-    else fail "seerr: its test failed [HTTP $code]: $(oneline "${out%$'\n'*}")"; return 1; fi
+notify_test_apps() { # each enabled app that sends to the hub itself asks its own test through: <svc>_notify_test (its folder), on ops
+    local s rc=0
+    for s in $(svc_enabled_managed); do
+        declare -F "${s//-/_}_notify_test" >/dev/null || continue
+        "${s//-/_}_notify_test" || rc=1
+    done
+    return "$rc"
 }
+
 
 notify_urls_ok() { # notify_urls_ok STREAM "URL,URL" — 0 when every entry is one URL; says what it got (masked) or what is wrong
     # the URLs are typed hidden (each is a password), so a doubled or half paste

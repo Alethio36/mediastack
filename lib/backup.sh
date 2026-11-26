@@ -871,6 +871,14 @@ update_apply() { # update_apply [--restore] TARGET... — apply the pulled image
     UPDATE_GCHG=$gchg
 }
 
+update_probes_failed() { # -> each enabled app whose own check after an update failed, one per line: <svc>_update_probe, in its folder
+    local s
+    for s in $(svc_enabled_managed); do
+        declare -F "${s//-/_}_update_probe" >/dev/null || continue
+        "${s//-/_}_update_probe" >&2 || echo "$s(its after-update check)"
+    done
+}
+
 cmd_update() {
     load_env; require_mounts
     render   # once, here: the target discovery below calls helpers in $( ) subshells, each of which would render again
@@ -1027,10 +1035,7 @@ cmd_update() {
         (( krc != 1 )) || bad+=("gluetun(kill-switch)")
     fi
     prowlarr_indexers_retest
-    # search functional probe: index must exist and be non-empty
-    if svc_enabled jellysearch; then
-        jellysearch_update_probe || bad+=("jellysearch(index)")
-    fi
+    local pr; for pr in $(update_probes_failed); do bad+=("$pr"); done
 
     echo; hr "Update summary"
     (( ${#changed[@]} )) && printf '  %s\n' "${changed[@]}" || echo "  no version changes"

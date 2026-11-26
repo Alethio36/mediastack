@@ -111,17 +111,26 @@ done
 # hook found only by its service's name (<svc>_provision, _questions,
 # _summary, _gate_sync) with no service of that name is never run, unless
 # something calls it by its own name (gluetun_vpn_questions, vpn_summary)
-hooks='provision|questions|summary|logins|gate_sync|gate_login|login_middleware|people_follow|listen_port|credentials|api_key|doctor|secrets|secret_rotate'
+hooks='provision|questions|summary|logins|gate_sync|gate_login|login_middleware|people_follow|listen_port|credentials|api_key|doctor|secrets|secret_rotate|update_probe|notify_test|brand_apply'
 while IFS=: read -r file fn; do
     fn=${fn%"()"}
     stem=$(sed -E "s/_($hooks)\$//" <<<"$fn"); dir=${stem//_/-}; [[ "$stem" == arr ]] && dir=_arr
     if [[ -d "services/$dir" ]]; then
         [[ "$file" == "services/$dir/"* ]] || { echo "FAIL ${fn}() is $dir's hook, but lives in $file — a service's part lives in its folder (services/$dir/)"; rc=1; }
-    elif [[ "$fn" =~ _(provision|questions|summary|gate_sync)$ ]]; then
+    elif [[ "$fn" =~ _(provision|questions|summary|gate_sync|update_probe|notify_test|brand_apply)$ ]]; then
         n=$({ grep -rhwE "$fn" lib mediastack.sh services --include='*.sh' || true; } | { grep -vcE "^$fn\(\)" || true; })   # none is a count, not an error
         (( n > 0 )) || { echo "FAIL ${fn}() is a hook found by its service's name, but no service is named $dir and nothing calls it — it never runs (a typo in the name?)"; rc=1; }
     fi
 done < <(grep -oHE "^[a-z0-9_]+_($hooks)\(\)" lib/*.sh mediastack.sh services/*/*.sh)
+# a service's doctor check runs: doctor's apps section lists it (DOCTOR_APPS,
+# its print order) or doctor calls it by its own name — else it never runs
+doctor_apps=" $(sed -n 's/^DOCTOR_APPS=(\(.*\))$/\1/p' lib/doctor.sh) "
+while IFS=: read -r file fn; do
+    fn=${fn%"()"}
+    [[ "$doctor_apps" == *" ${fn%_doctor} "* ]] && continue
+    n=$({ grep -rhwE "$fn" lib mediastack.sh services --include='*.sh' || true; } | { grep -vcE "^$fn\(\)|^[[:space:]]*#" || true; })
+    (( n > 0 )) || { echo "FAIL ${fn}() is ${fn%_doctor}'s doctor check, but DOCTOR_APPS (lib/doctor.sh) does not list it and nothing calls it — it never runs"; rc=1; }
+done < <(grep -oHE "^[a-z0-9_]+_doctor\(\)" services/*/*.sh)
 # a portal card shows its app's icon: every app the portal fronts
 # (mediastack.auth) ships services/<svc>/icon.png — the portal itself aside —
 # and every shipped icon says where it is from, as services/NOTICE-icons.md

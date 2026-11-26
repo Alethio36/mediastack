@@ -173,6 +173,7 @@ ak_api() {
 authentik_dir() { echo "$T/ak"; }
 sudo() { local a=() skip=0 x; for x in "$@"; do if (( skip )); then skip=0; continue; fi; case "$x" in -o|-g) skip=1 ;; *) a+=("$x") ;; esac; done; "${a[@]}"; }
 authentik_templates_sync() { :; }
+http_ready() { :; }   # the portal answers ready (its wait: the case further down)
 echo 'PORTAL_TITLE="Our House"' >> "$ENV_FILE"
 brand_file_set logo "$(png 600 150)" >/dev/null 2>&1 || true   # stored; brand_apply_apps is the stub here
 : > "$AKP"; authentik_brand_apply > "$T/out" 2>&1
@@ -259,15 +260,23 @@ echo 'PORTAL_TITLE="Tom \"&\" Co"' >> "$ENV_FILE"
 grep -qxF 'pageTitle: "Tom \"&\" Co"' <<<"$(panel_config_render admin hash)" || fail_ "the panel's title: the household's name, a YAML string: $(panel_config_render admin hash | grep pageTitle)"; pass
 
 # ---- found live: the accent restarts authentik (its email templates); the next change hit it starting ----
-eval "$(sed -n '/^brand_apply_apps() {/,/^}/p' lib/brand.sh | sed '1s/^brand_apply_apps/real_brand_apply_apps/')"   # the real one: stubbed above
-signin_model() { echo authentik; }; c_state() { echo running; }; svc_cname() { echo "c-$1"; }; svc_enabled() { return 1; }
+# the portal's kit waits for it ready itself (services/authentik/kit.sh), whoever calls it
 authentik_url() { echo http://ak; }
-# the stub by eval: defined here as a function, shellcheck 0.9 (CI's) would take the calls above for calls before a definition
-eval 'authentik_brand_apply() { echo APPLY >> "$T/order"; }'
 http_ready() { echo "READY $2" >> "$T/order"; return "${READY_RC:-0}"; }
-: > "$T/order"; real_brand_apply_apps > /dev/null 2>&1
-[[ "$(paste -sd' ' "$T/order")" == "READY http://ak/-/health/ready/ APPLY" ]] || fail_ "the portal: ready first, then the kit: $(cat "$T/order")"; pass
-: > "$T/order"; READY_RC=1 real_brand_apply_apps > /dev/null 2>&1
-[[ "$(cat "$T/order")" == "READY http://ak/-/health/ready/" ]] || fail_ "the portal never ready: nothing sent (its wait says why)"; pass
+curl() { echo "CURL $*" >> "$T/order"; return 1; }
+: > "$T/order"; rc=0; READY_RC=1 authentik_brand_apply > /dev/null 2>&1 || rc=$?
+[[ "$(cat "$T/order")" == "READY http://ak/-/health/ready/" && $rc != 0 ]] || fail_ "the portal never ready: its kit sends nothing, and fails (its wait says why): rc=$rc $(cat "$T/order")"; pass
+unset -f curl
+
+# ---- every app that shows the kit is reached: <svc>_brand_apply, found by its name ----
+eval "$(sed -n '/^brand_apply_apps() {/,/^}/p' lib/brand.sh | sed '1s/^brand_apply_apps/real_brand_apply_apps/')"   # the real one: stubbed above
+svc_enabled_managed() { printf '%s\n' apprise authentik jellyfin seerr sonarr; }
+c_state() { [[ "$1" == c-jellyfin ]] && echo exited || echo running; }; svc_cname() { echo "c-$1"; }
+# the stubs by eval: defined here as functions, shellcheck 0.9 (CI's) would take the calls above for calls before a definition
+eval 'authentik_brand_apply() { echo authentik >> "$T/order"; }; jellyfin_brand_apply() { echo jellyfin >> "$T/order"; }
+      seerr_brand_apply() { echo seerr >> "$T/order"; }; apprise_brand_apply() { echo apprise >> "$T/order"; }'
+: > "$T/order"; out=$(real_brand_apply_apps 2>&1)
+[[ "$(paste -sd' ' "$T/order")" == "authentik seerr" ]] || fail_ "each running app with a kit hook, the hub aside (its colours: brand_apply_messages): $(paste -sd' ' "$T/order")"; pass
+grep -F "jellyfin is not running" <<<"$out" >/dev/null || fail_ "an app with a kit that is stopped says when it takes it: $out"; pass
 
 echo "OK brand: $checks checks"

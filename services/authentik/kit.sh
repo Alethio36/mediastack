@@ -92,6 +92,8 @@ authentik_kit_field() { # authentik_kit_field LABEL STATE-KEY CUR WANT DEFAULT -
 authentik_brand_apply() { # the kit onto the portal: its brand, the sign-in title, the cards' icons, the emails' accent
     local brand uuid cur body="{}" k want label dirty=() title flow f p kind
     declare -A wants=()
+    # ready first: a change just before may have restarted it (the accent rewrites its email templates)
+    http_ready authentik "$(authentik_url)/-/health/ready/" '^2' || return 1
     # your file's name in authentik's media, or authentik's own; an unusable
     # file of yours: nothing (the portal keeps what it shows, said)
     for k in branding_logo branding_favicon branding_default_flow_background; do

@@ -421,4 +421,12 @@ out=$(wiz '6\n6\nn\n2\nWed\n03:00\n\n\n\n'); [[ "$out" == *"U=Wed 03:00|B=*-*-* 
 out=$(wiz '\n\n\n'); [[ "$out" == *"0) keep current: Wed 03:00"* && "$out" == *"U=Wed 03:00|B=*-*-* 04:00" ]] || fail_ "a re-run keeps both on Enter: $out"; pass
 out=$(wiz '5\nevery day\n5\n*-*-01 03:00\n\n\n\n'); [[ "$out" == *"'every day' is not a valid schedule"* && "$out" == *"U=*-*-01 03:00|"* ]] || fail_ "a custom expression is validated: $out"; pass
 
+# ---- an update: each app's own after-update check, found by its name ----
+( svc_enabled_managed() { printf '%s\n' sonarr jellysearch ghost; }
+  jellysearch_update_probe() { echo "PROBE jellysearch" >&2; return 1; }
+  eval 'ghost_update_probe() { return 0; }'
+  [[ "$(update_probes_failed 2>/dev/null)" == "jellysearch(its after-update check)" ]] ) \
+    || fail_ "an update's probes: each app's own, the failed ones named"; pass
+[[ "$(awk '/^cmd_update\(\)/,/^}/' lib/backup.sh | grep -c 'jellysearch' || true)" == 0 ]] || fail_ "cmd_update names no app's probe: each lives in its folder"; pass
+
 echo "OK restore-point: $checks checks"

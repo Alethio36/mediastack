@@ -662,6 +662,30 @@ agreed first:
       enabled starts the VPN'd services unproven at boot). `test-footprint`.
       Found and fixed before this sweep: the own certificate's "reloads it by
       itself" (P4), the LDAP outpost "healthy on its new token" (B).
+    - **The sweep of E, structure by name (26 Nov 2026)** — every app named
+      in `lib/` and `mediastack.sh` outside the migrations, sorted. *Fixed:*
+      three verbs ran a service's hook from a list of one, by hand —
+      `notify test` called Seerr's test from `lib/notify.sh`, `update`
+      called JellySearch's probe by name, `brand` reached the portal and
+      Jellyfin only (Seerr's title never followed a `brand` change, only its
+      next wire). Each now runs every enabled service's `<svc>_notify_test`,
+      `<svc>_update_probe`, `<svc>_brand_apply`, found by its name
+      (`notify_test_apps`, `update_probes_failed`, `brand_apply_apps`); the
+      portal's kit waits for it ready itself. Seerr's hub agent (its
+      payloads, its events' bits) moved from `lib/notify.sh` to
+      `services/seerr/hub.sh`. `check-registries` now fails a `<svc>_doctor`
+      that `DOCTOR_APPS` leaves out and nothing calls (it never ran), and the
+      three new hooks named for no service. `test-brand`, `test-notify`,
+      `test-restore-point`, `test-registries`. *Kept, with why:* the ordered
+      lists (`WIRE_ROLES`, `ROTATE_ORDER`, `DOCTOR_APPS`) — order is the
+      reason they exist, and CI checks each; `WIRE_CALLERS` and
+      `ROLE_CONSUMERS` — checked by `test-repoint`; `WIRE_BLIND` — three
+      roles, a property only their wire knows; `signout` and the Wizarr
+      reset — Jellyfin is the stack's media server, the verbs are about it;
+      the update's user notice for Jellyfin (the one app with a live-session
+      check); audiobookshelf's media-tree handover — one migration's, run
+      once; the setup's closing hints and `support`'s reachability list —
+      words about named things, nothing run by name.
     - **A failure summary names its role twice** (`wizarr: wizarr: …`,
       `authentik: authentik: …`): the summary adds the role, and the
       messages already start with it. *Done (P1, 25 Nov 2026):* a message

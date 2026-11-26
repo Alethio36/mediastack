@@ -225,19 +225,16 @@ brand_apply_messages() { # the kit as it is now reaches the hub (colours) and th
     info "see it: ./mediastack.sh notify test"
 }
 
-brand_apply_apps() { # the kit as it is now reaches the apps that show it: the portal (authentik) and Jellyfin
+brand_apply_apps() { # the kit as it is now reaches every app that shows it: <svc>_brand_apply, in its folder (the hub's colours: brand_apply_messages)
     render
-    if signin_is authentik; then
-        if [[ "$(c_state "$(svc_cname authentik)")" == running ]]; then
-            # ready first: the change before may have restarted it (the accent rewrites its email templates)
-            http_ready authentik "$(authentik_url)/-/health/ready/" '^2' && authentik_brand_apply
-        else info "the portal is not running — it takes the kit at its next start: ./mediastack.sh up, then ./mediastack.sh wire authentik"; fi
-    fi
-    if svc_enabled jellyfin; then
-        if [[ "$(c_state "$(svc_cname jellyfin)")" == running ]]; then jellyfin_brand_apply
-        else info "jellyfin is not running — it takes the kit at: ./mediastack.sh up, then ./mediastack.sh wire jellyfin"; fi
-    fi
-    info "see it: the portal's and Jellyfin's sign-in pages, in a private window"
+    local s f shown=()
+    for s in $(svc_enabled_managed); do
+        f="${s//-/_}_brand_apply"
+        [[ "$s" != "$HUB_SVC" ]] && declare -F "$f" >/dev/null || continue
+        if [[ "$(c_state "$(svc_cname "$s")")" == running ]]; then "$f"; shown+=("$s")
+        else info "$s is not running — it takes the kit at: ./mediastack.sh up, then ./mediastack.sh wire $s"; fi
+    done
+    (( ${#shown[@]} == 0 )) || info "see it: ${shown[*]} — their sign-in pages, in a private window"
 }
 
 _doctor_brand() {

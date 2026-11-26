@@ -279,3 +279,18 @@ seerr_secret_rotate() { # Seerr makes its own (regenerate); .env takes it
 
 seerr_credentials() { echo "its owner is Jellyfin's admin; every Seerr sign-in is a Jellyfin account (Seerr keeps no passwords of its own)"; }   # credentials (lib/access.sh)
 seerr_api_key() { env_get SEERR_API_KEY; }   # credentials' companion apps (lib/access.sh)
+
+seerr_notify_test() { # `notify test`: Seerr sends its own test through its hub agent — proves Seerr -> hub -> ops
+    [[ "$(c_state "$(svc_cname seerr)")" == running ]] || return 0
+    local key cur out code
+    key=$(env_get SEERR_API_KEY)
+    [[ -n "$key" ]] || { info "seerr: no API key stored yet (wire seerr) — its test skipped"; return 0; }
+    cur=$(curl -sS -m 10 -H "X-Api-Key: $key" "$(seerr_url)/api/v1/settings/notifications/webhook" 2>&1) \
+        || { fail "seerr: unreachable — $(oneline "$cur")"; return 1; }
+    jq -e '.enabled' <<<"$cur" >/dev/null 2>&1 || { info "seerr: its hub agent is off — its test skipped (wire seerr sets it up)"; return 0; }
+    out=$(curl -sS -m 20 -X POST -H "X-Api-Key: $key" -H "Content-Type: application/json" -d "$cur" \
+          -w $'\n%{http_code}' "$(seerr_url)/api/v1/settings/notifications/webhook/test" 2>&1) || true   # judged by its code
+    code=${out##*$'\n'}
+    if [[ "$code" =~ ^2 ]]; then ok "seerr: sent its own test through the hub — it should arrive on ops (the route Seerr's events take)"
+    else fail "seerr: its test failed [HTTP $code]: $(oneline "${out%$'\n'*}")"; return 1; fi
+}
