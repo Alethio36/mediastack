@@ -33,13 +33,12 @@ wire_is_blind() { local r; for r in "${WIRE_BLIND[@]}"; do [[ "$1" == "$r" ]] &&
 WIRE_FAIL_LIST=()   # one line per failure, named by its step, for the summary
 WIRE_STEP=""        # the step running (cmd_wire sets it)
 wfail() {
-    local line=${1%%$'\n'*} first
     fail "$@"; WIRE_FAILS=$((WIRE_FAILS+1))
-    # named by its step, unless it already starts with it ("jellyfin: …",
-    # "jellyfin rejected …", "jellyfin's …"): once, not "jellyfin: jellyfin: …"
-    first=${line%%[ :]*}; first=${first%"'s"}
-    if [[ -n "$WIRE_STEP" && "$first" != "$WIRE_STEP" ]]; then line="$WIRE_STEP: $line"; fi
-    WIRE_FAIL_LIST+=("$line")
+    # "<step>: <first line>", always: the read-back finds a failure's step by
+    # that prefix (wire_unanswered_roles). The summary drops it where the
+    # message already starts with its step — dropped here, the read-back took
+    # "authentik refused the sign-in title" for four steps (found live, Nov 2026)
+    WIRE_FAIL_LIST+=("${WIRE_STEP:+$WIRE_STEP: }${1%%$'\n'*}")
     wire_unanswered_take && WIRE_FAIL_UNANSWERED+=("$(( ${#WIRE_FAIL_LIST[@]} - 1 ))")   # this failure followed a call that got no answer
     return 0
 }
@@ -117,8 +116,13 @@ wire_apply_settings() { # wire_apply_settings "PENDING-BEFORE" — recreate what
     out=$(DC up -d "${new[@]}" 2>&1) || wfail "recreating ${new[*]} failed — compose: $(oneline "$out") — apply with: ./mediastack.sh up"
 }
 wire_fail_summary() { # the failures again, together, after everything else scrolled past
-    local f
-    for f in "${WIRE_FAIL_LIST[@]}"; do echo "  - $f"; done
+    # each named by its step once: "jellyfin: jellyfin rejected …" reads "jellyfin rejected …"
+    local f step rest first
+    for f in "${WIRE_FAIL_LIST[@]}"; do
+        step=${f%%: *}; rest=${f#*: }
+        first=${rest%%[ :]*}; first=${first%"'s"}
+        if [[ "$f" == *": "* && "$first" == "$step" ]]; then echo "  - $rest"; else echo "  - $f"; fi
+    done
 }
 # A wire step (wire_<role>) reports a failure with wfail and returns 0: the
 # failure is counted, the run goes on to the next app, and the summary at the

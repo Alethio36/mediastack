@@ -585,7 +585,14 @@ agreed first:
     - **A failure summary names its role twice** (`wizarr: wizarr: …`,
       `authentik: authentik: …`): the summary adds the role, and the
       messages already start with it. *Done (P1, 25 Nov 2026):* a message
-      that starts with its step is not named again (`test-wire`).
+      that starts with its step is not named again (`test-wire`). *P1
+      broke the read-back, fixed (25 Nov 2026):* the trim was made in the
+      failure list itself, which the read-back also reads for each
+      failure's step — "authentik refused the sign-in title" came back as
+      steps `refused`, `the`, `sign-in`, `title` (found live, P3's first
+      run). The list keeps `step: message` always; only the summary trims
+      (`test-wire-late`, failing on the P1 code). P1's test held the
+      summary and not the other reader of the same list.
     - **A restore point's stop prints compose's progress scattered across
       the screen** (its terminal redraws, captured line by line). *Done
       (P1):* captured, not drawn — and a failed stop now says compose's

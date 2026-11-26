@@ -102,6 +102,14 @@ as_run eval 'wire_recheck; echo "FAILS=$WIRE_FAILS"; printf "LIST=%s\n" "${WIRE_
    && "$out" == *"LIST=seerr: settings — no answer"* && "$out" != *"LIST=arr:"* && "$out" != *"LIST=authentik: the gate"* ]] \
     || fail_ "what stands: the other failure of a clean role, the drift, the blind one: $out"; pass
 fresh; as_run wire_recheck; out=$OUT; [[ -z "$out" ]] || fail_ "nothing got no answer: no read-back, no wait: $out"; pass
+# a message that starts with its step (as the summary prints it, once) still
+# reads back that step and only it — the summary's trim once reached the list,
+# and the read-back ran `wire refused`, `wire the`, … (found live, Nov 2026)
+fresh; WIRE_STEP=authentik; echo x > "$WIRE_UNANSWERED_F"; wfail "authentik refused the sign-in title" >/dev/null; WIRE_STEP=""
+[[ "$(wire_unanswered_roles)" == authentik ]] || fail_ "its step is read back, not the message's words: $(wire_unanswered_roles | paste -sd' ')"; pass
+[[ "$(wire_fail_summary)" == "  - authentik refused the sign-in title" ]] || fail_ "the summary still names it once: $(wire_fail_summary)"; pass
+as_run eval 'wire_recheck; echo "FAILS=$WIRE_FAILS"'; [[ "$OUT" == *"authentik: read back — everything is in place"* && "$OUT" == *FAILS=0* && "$OUT" != *"called as"* ]] \
+    || fail_ "read back as authentik, and taken back: $OUT"; pass
 
 # ---- one app at a time: a second one is refused, never dropped (found live, 17 Nov 2026) ----
 wargs() { ( load_env() { :; }; render() { :; }; maint_lock() { :; }; wire_navidrome() { echo RAN-navidrome; if [[ -n "${PEND:-}" ]]; then w_pends "$PEND"; fi; }
