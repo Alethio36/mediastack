@@ -626,6 +626,20 @@ agreed first:
       one apply after a worker is recreated with the same values. *Proved
       live (26 Nov 2026, anzac4):* current, no apply; the worker recreated,
       applied once ("applied before its worker was made"); current again.
+    - **The sweep of C, one costly action per item (26 Nov 2026)** — every
+      restart, recreate, `up` and wire-in-a-loop read. *Fixed:* a first
+      `wire jellyfin` restarted Jellyfin up to three times — its proxies,
+      the Webhook plugin, the LDAP plugin, each with a notice to the
+      household; now each queues what it changed, the plugins install
+      together, and one restart loads all, then each is read back
+      (`jf_restart_pending`; `test-wire`, `test-jf-proxies`). *Decided,
+      kept:* LazyLibrarian's two stop-writes (its API key, its login) meet
+      only on a first wire without the portal; rotate-secrets' wire, then
+      wire --verify (the second is the proof); the authentik templates'
+      restart of server and worker (each reads them). *Next (C2):* `wire
+      authentik` reads each gated app's provider, group and bindings one
+      call at a time — ~3 calls an app, ~80 s of an idle run's 2 minutes on
+      anzac4 (18 cards); one list read of each would do.
     - **A failure summary names its role twice** (`wizarr: wizarr: …`,
       `authentik: authentik: …`): the summary adds the role, and the
       messages already start with it. *Done (P1, 25 Nov 2026):* a message

@@ -85,11 +85,26 @@ unguarded=$(for f in services/*/*.sh; do awk -v F="$f" -v R="^(wire_($roles)|sc_
 # ---- Jellyfin's plugins, read softly ----
 [[ "$(jf_plugin_ids '<html>Jellyfin is starting</html>')" == "||" ]] || fail_ "a startup page is no plugin seen"; pass
 [[ "$(jf_plugin_ids '[{"Id":"A-B"},{"Id":"c"}]')" == "|ab|c|" ]] || fail_ "ids, dashes gone, lower case"; pass
-# the Webhook plugin (and its Jellyfin restart) only for WatchState, its one consumer
-wanted=$( svc_enabled() { [[ $1 == watchstate ]]; }; jf_plugins_ensure() { echo "ENSURE $2"; }; jf_plugin_webhook tok )
-[[ "$wanted" == "ENSURE Webhook|"* ]] || fail_ "WatchState on: the Webhook plugin is ensured ($wanted)"; pass
-wanted=$( svc_enabled() { return 1; }; jf_plugins_ensure() { echo "ENSURE $2"; }; jf_plugin_webhook tok )
-[[ -z "$wanted" ]] || fail_ "WatchState off: no Webhook plugin, no restart ($wanted)"; pass
+# the Webhook plugin only for WatchState, its one consumer; LDAP with the portal (and its outpost's token); together
+wanted=$( svc_enabled() { [[ $1 == watchstate ]]; }; signin_is() { return 1; }; jf_plugins_ensure() { shift; printf 'ENSURE %s\n' "${@%%|*}"; }; jf_plugins_wanted tok )
+[[ "$wanted" == "ENSURE Webhook" ]] || fail_ "WatchState on: the Webhook plugin is ensured ($wanted)"; pass
+wanted=$( svc_enabled() { return 1; }; signin_is() { return 1; }; jf_plugins_ensure() { echo ENSURE; }; jf_plugins_wanted tok )
+[[ -z "$wanted" ]] || fail_ "WatchState off, no portal: no plugin, no restart ($wanted)"; pass
+wanted=$( svc_enabled() { [[ $1 == watchstate ]]; }; signin_is() { [[ $1 == authentik ]]; }; env_get() { [[ $1 == AUTHENTIK_LDAP_TOKEN ]] && echo t; return 0; }
+          jf_plugins_ensure() { shift; echo "ENSURE $#"; }; jf_plugins_wanted tok )
+[[ "$wanted" == "ENSURE 2" ]] || fail_ "both plugins in one call, so one restart loads them ($wanted)"; pass
+# ---- Jellyfin restarts once for all it reads at start (the audit, 26 Nov 2026: a first wire
+#      restarted it for its proxies, the Webhook plugin and the LDAP plugin, a household notice each) ----
+jr=$( ( DC() { echo "DC $*" >> "$T/jr"; }; jf_ready() { :; }; is_user_facing() { return 0; }
+        notify_interruption() { echo NOTICE >> "$T/jr"; }; jf_known_proxies() { echo "PROXIES-READBACK" >> "$T/jr"; }
+        jf_api() { echo '[{"Id":"71552a5a5c5c4350a2aeebe451a30173"},{"Id":"958aad6637844d2ab89aa7b6fab6e25c"}]'; }
+        rm -f "$T/jr"; JF_RESTART_FOR=("its proxies" "plugins (Webhook LDAP Authentication)"); JF_PROXIES_CHANGED=1
+        JF_PLUGINS_LOADED=("Webhook|71552A5A-5C5C-4350-A2AE-EBE451A30173" "LDAP Authentication|958aad66-3784-4d2a-b89a-a7b6fab6e25c")
+        jf_restart_pending tok >/dev/null 2>&1; cat "$T/jr"
+        jf_restart_pending tok >/dev/null 2>&1; echo "again:$(wc -l < "$T/jr")" ) )
+[[ "$jr" == $'NOTICE\nDC restart jellyfin\nPROXIES-READBACK\nagain:3' ]] || fail_ "one notice, one restart, the proxies read back; nothing left for a second call: $jr"; pass
+[[ "$(grep -c 'DC restart jellyfin' services/jellyfin/jellyfin.sh)" == 1 && "$(grep -c 'jf_restart_pending' <(awk '/^wire_jellyfin\(\)/,/^}/' services/jellyfin/jellyfin.sh))" == 1 ]] \
+    || fail_ "jellyfin is restarted in one place only (jf_restart_pending), called once in wire"; pass
 
 # ---- LazyLibrarian's API switched on ----
 ENV_FILE=$T/.env; printf 'CONFIG_ROOT=%s\n' "$T/cfg" > "$ENV_FILE"

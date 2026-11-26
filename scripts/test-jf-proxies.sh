@@ -41,9 +41,9 @@ jf_api() { # GET answers $T/net.json; POST stores the body (or is rejected)
               printf '%s' "$4" > "$T/net.json"; echo "POST" >> "$T/posts" ;;
     esac
 }
-fresh() { rm -f "$T/dc" "$T/posts" "$T/code"; printf '%s' "$1" > "$T/net.json"; WIRE_FAILS=0; WIRE_DRY=0; D_FAILS=0; TRAEFIK=on POST_OK=1 LOSE=0; }
+fresh() { rm -f "$T/dc" "$T/posts" "$T/code"; printf '%s' "$1" > "$T/net.json"; WIRE_FAILS=0; WIRE_DRY=0; D_FAILS=0; TRAEFIK=on POST_OK=1 LOSE=0; JF_RESTART_FOR=(); JF_PROXIES_CHANGED=""; }
 proxies() { jq -c '.KnownProxies' "$T/net.json"; }
-run() { jf_known_proxies tok > "$T/out" 2>&1 || true; }
+run() { { jf_known_proxies tok; jf_restart_pending tok; } > "$T/out" 2>&1 || true; }   # as wire runs them: the restart queued, done once
 
 fresh '{"KnownProxies":[],"EnableIPv6":false}'; run
 [[ $(proxies) == '["172.31.250.2"]' ]] || fail_ "Traefik on: its address is added ($(proxies))"; pass

@@ -42,7 +42,15 @@ jf_catalog_reason() { # jf_catalog_reason TOKEN -> why Jellyfin has nothing to i
     else echo ", Jellyfin's plugin catalog is empty (its repository answers now — retry)"; fi
 }
 
-jf_plugins_ensure() { # jf_plugins_ensure TOKEN "Name|GUID|why"... — install what is missing, then ONE jellyfin restart
+# Jellyfin reads its plugins and its network settings only at start. Each step
+# that changes one queues it (JF_RESTART_FOR), and wire restarts it once for all
+# of them, then reads each back (jf_restart_pending): a first wire used to
+# restart it up to three times — its proxies, the Webhook plugin, the LDAP
+# plugin — each with its own notice to the household (the audit, 26 Nov 2026).
+JF_RESTART_FOR=()      # what this run changed that Jellyfin reads at start
+JF_PLUGINS_LOADED=()   # "Name|GUID" installed this run: checked loaded after the restart
+JF_PROXIES_CHANGED=""  # its Known proxies written this run: read back after the restart
+jf_plugins_ensure() { # jf_plugins_ensure TOKEN "Name|GUID|why"... — install what is missing; its restart is jf_restart_pending's
     local tok="$1"; shift
     local plist plugins spec name guid why missing=() mguids=()
     plist=$(jf_api GET /Plugins "$tok") \
@@ -59,24 +67,42 @@ jf_plugins_ensure() { # jf_plugins_ensure TOKEN "Name|GUID|why"... — install w
         missing+=("$name"); mguids+=("$guid")
     done
     (( ${#missing[@]} )) || return 0
-    info "plugin(s) downloaded (${missing[*]}) — restarting jellyfin once to load them..."
+    info "plugin(s) downloaded (${missing[*]}) — they load at jellyfin's restart, below"
+    JF_RESTART_FOR+=("plugins (${missing[*]})")
+    for i in "${!missing[@]}"; do JF_PLUGINS_LOADED+=("${missing[$i]}|${mguids[$i]}"); done
+}
+
+jf_restart_pending() { # jf_restart_pending TOKEN — one restart for all this run changed that Jellyfin reads at start, then each read back
+    local tok="$1" plist plugins spec name guid rc=0
+    (( ${#JF_RESTART_FOR[@]} )) || return 0
+    info "jellyfin reads $(printf '%s, ' "${JF_RESTART_FOR[@]}" | sed 's/, $//') at start — restarting it once..."
+    JF_RESTART_FOR=()
     is_user_facing jellyfin && notify_interruption "Jellyfin maintenance" "Jellyfin is restarting briefly for maintenance — back in a moment."
     DC restart jellyfin >/dev/null 2>&1 || { wfail "jellyfin restart failed — restart it, then re-run wire jellyfin"; return 1; }
     jf_ready || return 1
-    plist=$(jf_api GET /Plugins "$tok" || true)   # soft read: re-check after the install: empty FAILs below
-    plugins=$(jf_plugin_ids "$plist")
-    local i rc=0
-    for i in "${!missing[@]}"; do
-        if [[ "$plugins" == *"|$(jf_guid "${mguids[$i]}")|"* ]]; then ok "${missing[$i]} plugin installed and loaded"
-        else wfail "${missing[$i]} plugin not visible after restart — check Dashboard -> Plugins (a repository fetch may have failed)"; rc=1; fi
-    done
+    if (( ${#JF_PLUGINS_LOADED[@]} )); then
+        plist=$(jf_api GET /Plugins "$tok" || true)   # soft read: re-check after the install: empty FAILs below
+        plugins=$(jf_plugin_ids "$plist")
+        for spec in "${JF_PLUGINS_LOADED[@]}"; do
+            name=${spec%%|*}; guid=${spec#*|}
+            if [[ "$plugins" == *"|$(jf_guid "$guid")|"* ]]; then ok "$name plugin installed and loaded"
+            else wfail "$name plugin not visible after restart — check Dashboard -> Plugins (a repository fetch may have failed)"; rc=1; fi
+        done
+        JF_PLUGINS_LOADED=()
+    fi
+    if [[ -n "$JF_PROXIES_CHANGED" ]]; then JF_PROXIES_CHANGED=""; JF_AFTER_RESTART=1 jf_known_proxies "$tok"; fi
     return $rc
 }
 
-jf_plugin_webhook() { # its only consumer is WatchState (the hub hears Seerr, not Jellyfin): without it, no plugin and no restart
-    svc_enabled watchstate || return 0
-    jf_plugins_ensure "$1" "Webhook|71552A5A-5C5C-4350-A2AE-EBE451A30173|WatchState's webhooks need it" || return 0   # reported by it
+jf_plugins_wanted() { # the plugins this stack's Jellyfin needs, installed together (loaded by one restart, jf_restart_pending's)
+    local specs=()
+    # Webhook: its only consumer is WatchState (the hub hears Seerr, not Jellyfin)
+    if svc_enabled watchstate; then specs+=("Webhook|71552A5A-5C5C-4350-A2AE-EBE451A30173|WatchState's webhooks need it"); fi
+    if signin_is authentik && [[ -n "$(env_get AUTHENTIK_LDAP_TOKEN)" ]]; then specs+=("LDAP Authentication|$JF_LDAP_GUID|portal accounts sign in to Jellyfin"); fi
+    (( ${#specs[@]} )) || return 0
+    jf_plugins_ensure "$1" "${specs[@]}" || true   # a failure is reported by it
 }
+
 
 jf_ldap_want() { # the LDAP plugin's settings mediastack manages, as JSON (the rest stay yours)
     local dn=dc=ldap,dc=mediastack host skip=false groups
@@ -139,8 +165,8 @@ jf_ldap() { # with the portal: Jellyfin checks passwords against it (LDAP), admi
     local tok="$1"
     signin_is authentik || return 0
     [[ -n "$(env_get AUTHENTIK_LDAP_TOKEN)" ]] || { info "the portal's LDAP outpost has no token yet — run 'wire authentik' first, then 'wire jellyfin'"; return 0; }
-    jf_plugins_ensure "$tok" "LDAP Authentication|$JF_LDAP_GUID|portal accounts sign in to Jellyfin" || return 0
-    (( WIRE_DRY )) && ! jf_api GET "/Plugins/$JF_LDAP_GUID/Configuration" "$tok" >/dev/null && return 0   # not installed yet: nothing to compare
+    # installed by jf_plugins_wanted, loaded by jf_restart_pending; not there: its failure was said there (a dry run: not installed yet)
+    jf_api GET "/Plugins/$JF_LDAP_GUID/Configuration" "$tok" >/dev/null || return 0
     jf_ldap_configure "$tok" || return 0
     people_follow_on jellyfin
     jf_admin_sync "$tok"
@@ -331,8 +357,14 @@ jf_known_proxies() {
     have=$(jf_proxy_trusted "$cfg" "$addr")
     [[ -n "$have" ]] || { wfail "jellyfin's network settings have no KnownProxies — the setting moved in this version; set Dashboard -> Networking -> Known proxies by hand (Traefik: $addr)"; return 0; }
     if [[ "$have" == "$want" ]]; then
-        if [[ "$want" == true ]]; then ok "jellyfin trusts Traefik ($addr) to name each client's own address"
+        if (( ${JF_AFTER_RESTART:-0} )) && [[ "$want" == true ]]; then ok "jellyfin now trusts Traefik ($addr) — sessions show each client's own address"
+        elif (( ${JF_AFTER_RESTART:-0} )); then ok "jellyfin no longer trusts $addr"
+        elif [[ "$want" == true ]]; then ok "jellyfin trusts Traefik ($addr) to name each client's own address"
         else ok "jellyfin trusts no proxy of the stack's (Traefik is off)"; fi
+        return 0
+    fi
+    if (( ${JF_AFTER_RESTART:-0} )); then
+        wfail "jellyfin's Known proxies did not read back as changed after its restart [HTTP $(jf_code)]: $(jq -c '.KnownProxies' <<<"$cfg" 2>/dev/null || head -c200 <<<"$cfg") — check Dashboard -> Networking"
         return 0
     fi
     if [[ "$want" == true ]]; then
@@ -344,18 +376,7 @@ jf_known_proxies() {
     fi
     jf_api POST /System/Configuration/network "$tok" "$new" >/dev/null \
         || { wfail "jellyfin rejected its network settings [HTTP $(jf_code)] — set Dashboard -> Networking -> Known proxies by hand"; return 0; }
-    info "jellyfin reads its proxies at start — restarting it once..."
-    is_user_facing jellyfin && notify_interruption "Jellyfin maintenance" "Jellyfin is restarting briefly for maintenance — back in a moment."
-    DC restart jellyfin >/dev/null 2>&1 || { wfail "jellyfin restart failed — restart it, then re-run wire jellyfin"; return 0; }
-    jf_ready || return 0
-    cfg=$(jf_api GET /System/Configuration/network "$tok" || true)   # soft read: judged on the next line
-    if [[ "$(jf_proxy_trusted "$cfg" "$addr")" == "$want" ]]; then
-        if [[ "$want" == true ]]; then ok "jellyfin now trusts Traefik ($addr) — sessions show each client's own address"
-        else ok "jellyfin no longer trusts $addr"; fi
-    else
-        wfail "jellyfin's Known proxies did not read back as changed after its restart [HTTP $(jf_code)]: $(jq -c '.KnownProxies' <<<"$cfg" 2>/dev/null || head -c200 <<<"$cfg") — check Dashboard -> Networking"
-        return 0
-    fi
+    JF_RESTART_FOR+=("its proxies"); JF_PROXIES_CHANGED=1   # restarted once with the rest, then read back (jf_restart_pending)
 }
 
 # ---- jellyfin (wave 4) ----
@@ -474,7 +495,8 @@ wire_jellyfin() {
     jf_server_name "$tok"
     jf_transcode_path "$tok"
     jf_known_proxies "$tok"
-    jf_plugin_webhook "$tok"
+    jf_plugins_wanted "$tok"
+    jf_restart_pending "$tok" || true   # a failure is reported by it
     jf_ldap "$tok"
     jf_livetv "$tok"   # the live-tv role's provider as its tuner and guide (services/jellyfin/livetv.sh)
 
