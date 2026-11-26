@@ -578,7 +578,27 @@ agreed first:
     - **One apply of the portal's setup takes about four minutes**, an
       unchanged one too (authentik's log, a fresh install) — every first
       wire and every rotation of its settings waits it out. Why, and whether
-      the blueprint can be made cheaper.
+      the blueprint can be made cheaper. *Found (25 Nov 2026, anzac4,
+      profiled in the worker):* 93% of an apply is waiting on PostgreSQL,
+      half of that on row locks; 330 of 432 s were the four
+      `metaapplyblueprint` entries re-applying authentik's defaults (the
+      default brand pulls in its four default flows) inside every apply of
+      ours, holding their rows for the whole transaction. Sign-ins and API
+      calls queued behind them: the 20 s `ak_api` timeouts. authentik
+      itself queues two applies per file change (its file watcher and its
+      discovery), and discovery queues another while the file's hash still
+      differs; two at once took 7-10 minutes each, one past its 10-minute
+      task limit and run again. An idle dry run: 140 s; with two applies
+      beside it: 328-432 s. *Fixed (P3b):* no meta entries — the defaults
+      are required references, so ours fails as a whole until they exist,
+      which wire already waits out; the brand found by its pk (by domain it
+      would have made a brand before authentik's, and authentik's would
+      then fail on the domain); wire never adds an apply while one is
+      queued or running (authentik's task list), and waits until none is
+      left, so a failure is said when it ends, not after ten minutes
+      (`test-authentik`). *Still authentik's:* the two applies it queues
+      for one change, upstream. *Watch:* anzac4's load (4 cores, load
+      13-15 that evening) — every wait there is longer.
     - **State kept about another app, timings guessed** — where the bugs of
       Nov 2026 clustered (the blueprint's applied values, the apply's wait).
       Each such spot looked at for a simpler, app-native way.

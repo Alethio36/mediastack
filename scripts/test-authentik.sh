@@ -377,20 +377,53 @@ BP_STATUS=successful
 BP_APPLIED=old; sleep() { :; }
 [[ "$(authentik_blueprint_apply)" == successful ]] || fail_ "applying on demand brings the current file in"; pass
 grep -q '^POST /managed/blueprints/bp-1/apply/' "$T/calls" || fail_ "the apply goes through authentik's API"; pass
-# an unchanged file says "successful" before the apply runs: wait for the apply asked for
-applied_after() { # applied_after POLLS -> "STATUS after N sleeps" (authentik applies after POLLS looks)
-    ( echo 0 > "$T/tick"; sleep() { echo $(( $(cat "$T/tick") + 1 )) > "$T/tick"; }
-      ak_api() { case "$1 $2" in
-          "GET /managed/blueprints/?page_size=200")
-              at=t1; (( $(cat "$T/tick") >= POLLS )) && at=t2
-              jq -cn --arg h "$BP_CUR" --arg at "$at" '{results:([{name:"Mediastack - Portal", status:"successful", last_applied_hash:$h, last_applied:$at, pk:"bp-1"}]
-                  + ($ARGS.positional | map({path: ., status: "successful"})))}' --args "${AUTHENTIK_BLUEPRINT_NEEDS[@]}" ;;
-          *) echo '{}' ;; esac; }
-      POLLS=$1; st=$(authentik_blueprint_apply); echo "$st after $(cat "$T/tick")" )
+# ---- one apply at a time (found live 25 Nov 2026: two at once took 7-10
+#      minutes each, locking each other's rows; one ran past authentik's
+#      10-minute limit) — one already queued or running is waited for ----
+applies() { # -> "STATUS posts=N looks=M". BUSY: an apply in flight before ours, bringing in the cur(rent) or old file; RUN: looks an apply stays in flight; ST: what a requested apply leaves; UNREAD: task-list looks unanswered
+    echo 0 > "$T/looks"; echo 0 > "$T/posts"; echo old > "$T/hash"; echo successful > "$T/st"
+    echo "${BUSY:+$RUN}" > "$T/left"; echo "${BUSY:-}" > "$T/brings"
+    sleep() { :; }; info() { :; }
+    ak_api() { local l left b; case "$1 $2" in
+        "GET /managed/blueprints/?page_size=200")
+            h=deadbeef; if [[ "$(cat "$T/hash")" == cur ]]; then h=$BP_CUR; fi
+            jq -cn --arg h "$h" --arg st "$(cat "$T/st")" '{results:([{name:"Mediastack - Portal", status:$st, last_applied_hash:$h, last_applied:"t1", pk:"bp-1"}]
+                + ($ARGS.positional | map({path: ., status: "successful"})))}' --args "${AUTHENTIK_BLUEPRINT_NEEDS[@]}" ;;
+        "GET /tasks/tasks/"*)
+            echo "$2" > "$T/q"; l=$(( $(cat "$T/looks") + 1 )); echo "$l" > "$T/looks"
+            if [[ " ${UNREAD:-} " == *" $l "* ]]; then return 1; fi
+            left=$(cat "$T/left"); left=${left:-0}
+            if (( left == 0 )); then echo '{"results":[]}'; return 0; fi
+            echo $(( left - 1 )) > "$T/left"
+            if (( left == 1 )); then b=$(cat "$T/brings")   # this apply ends: what it leaves
+                if [[ "$b" == cur || ( "$b" == posted && "${ST:-successful}" == successful ) ]]; then echo cur > "$T/hash"; fi
+                if [[ "$b" == posted ]]; then echo "${ST:-successful}" > "$T/st"; fi
+            fi
+            echo '{"results":[{"state":"running"}]}' ;;
+        "POST /managed/blueprints/bp-1/apply/")
+            echo $(( $(cat "$T/posts") + 1 )) > "$T/posts"; echo "$RUN" > "$T/left"; echo posted > "$T/brings"; echo '{}' ;;
+        *) echo '{}' ;; esac; }
+    st=$(authentik_blueprint_apply); echo "$st posts=$(cat "$T/posts") looks=$(cat "$T/looks")"
 }
-[[ "$(applied_after 3)" == "successful after 3" ]] || fail_ "the file already applied: wait for authentik to apply again, not its old status: $(applied_after 3)"; pass
-[[ "$(applied_after 9999)" == "outdated after $(( AUTHENTIK_APPLY_WAIT / 2 ))" ]] || fail_ "an apply that never runs: bounded, and not a success: $(applied_after 9999)"; pass
-[[ "$(applied_after 125)" == "successful after 125" ]] || fail_ "an apply of four minutes is waited for (4m10s live): $(applied_after 125)"; pass
+RUN=3 as_run applies
+[[ "$OUT" == "successful posts=1 looks=5" ]] || fail_ "nothing in flight: one apply asked for, waited for until none is left: $OUT"; pass
+BUSY=cur RUN=3 as_run applies
+[[ "$OUT" == "successful posts=0 looks=4" ]] || fail_ "authentik's own apply already in flight: waited for, no second one started: $OUT"; pass
+BUSY=old RUN=3 as_run applies
+[[ "$OUT" == "successful posts=1 looks=9" ]] || fail_ "the one in flight applied the file as it was: then the current one, once: $OUT"; pass
+ST=error RUN=3 as_run applies
+[[ "$OUT" == "error posts=1 looks=5" ]] || fail_ "a failed apply is said as soon as it ends, not after the whole wait: $OUT"; pass
+RUN=999999 as_run applies
+[[ "$OUT" == "outdated posts=1 looks=$(( AUTHENTIK_APPLY_WAIT / 2 + 1 ))" ]] || fail_ "an apply that never ends: bounded, and not a success: $OUT"; pass
+RUN=3 UNREAD=1 as_run applies
+[[ "$OUT" == "unreadable (authentik's task list) posts=0 looks=1" ]] || fail_ "its task list unreadable: nothing asked for, said: $OUT"; pass
+RUN=5 UNREAD="3 4" as_run applies
+[[ "$OUT" == "successful posts=1 looks=9" ]] || fail_ "a look unanswered mid-apply (its API slows then) is looked at again: $OUT"; pass
+q=$(cat "$T/q")
+[[ "$q" == *"actor_name=authentik.blueprints.v1.tasks.apply_blueprint&"* && "$q" == *"rel_obj_id=bp-1&"* ]] \
+    || fail_ "the task list asked for applies of this blueprint only: $q"; pass
+for s in "${AUTHENTIK_TASK_INFLIGHT[@]}"; do [[ "$q" == *"aggregated_status=$s"* ]] || fail_ "in flight includes $s: $q"; done
+[[ "$q" != *"=done"* && "$q" != *"=rejected"* ]] || fail_ "a finished task is not in flight: $q"; pass
 
 # ---- the worker's values (the blueprint's !Env) ----
 inputs() { ( sudo() { [[ "$*" == "docker inspect -f "* ]] || return 1; [[ -z "$NOWORKER" ]] || return 1; printf '%s\n' "${ENVS[@]}"; }
@@ -556,24 +589,16 @@ settled() { # settled STATE READABLE-AT HASH -> "looks=N waited|nowait" (a clock
 [[ "$(settled running 0 abc)" == "looks=1 nowait" ]] || fail_ "applied before (a hash): not a first start, no wait: $(settled running 0 abc)"; pass
 [[ "$(settled running 3 "")" == "looks=4 waited" ]] || fail_ "a first start: its API first, then its own first pass: $(settled running 3 "")"; pass
 [[ "$(settled running 9999 "")" == "looks=$(( AUTHENTIK_DISCOVER_WAIT / 5 + 1 )) nowait" ]] || fail_ "never readable: bounded, and the restore point goes ahead: $(settled running 9999 "")"; pass
-# what our blueprint builds on is applied first, in its own run: authentik's
-# first pass applied ours before its defaults (found live Nov 2026)
-bpe=$(python3 - <<'PY'
-import yaml
-class L(yaml.SafeLoader): pass
-L.add_multi_constructor('!', lambda l, s, n: None)
-e=yaml.load(open('services/authentik/blueprints/mediastack-portal.yaml'), Loader=L)['entries']
-n=0
-for x in e:
-    if x['model'] != 'authentik_blueprints.metaapplyblueprint': break
-    print(x['attrs']['identifiers']['path'], x['attrs'].get('required')); n+=1
-print('rest-meta', sum(1 for x in e[n:] if x['model'] == 'authentik_blueprints.metaapplyblueprint'))
-PY
-)
-for p in "${AUTHENTIK_BLUEPRINT_NEEDS[@]}"; do
-    grep -qx "$p True" <<<"$bpe" || fail_ "the blueprint applies $p first, required: $bpe"
-done; pass
-grep -qx 'rest-meta 0' <<<"$bpe" || fail_ "the prerequisites come before every other entry"; pass
+# what our blueprint builds on is never applied from inside it: that
+# re-applied authentik's defaults on every apply of ours, holding their rows
+# locked (330 of 432 s, found live 25 Nov 2026)
+! grep -q 'model: authentik_blueprints.metaapplyblueprint' services/authentik/blueprints/mediastack-portal.yaml \
+    || fail_ "the blueprint applies another blueprint from inside its own apply"; pass
+# the default brand by its pk: never by its domain, which would make a brand
+# of our own before authentik's, and its own would then fail on the domain
+grep -qF 'pk: !Find [authentik_brands.brand, [default, true]]' services/authentik/blueprints/mediastack-portal.yaml \
+    && ! grep -qE '^ +domain: authentik-default' services/authentik/blueprints/mediastack-portal.yaml \
+    || fail_ "the portal's name is set on authentik's default brand, found by its pk"; pass
 # every object the blueprint looks up (!Find) comes from a prerequisite, or is
 # made by authentik before any blueprint runs: the scope mappings were missed
 # once (found live 12 Nov 2026: ours failed, providers-oauth2 applied after it)
@@ -587,6 +612,8 @@ while IFS= read -r f; do
             want=default/flow-default-provider-invalidation.yaml ;;
         '!Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-'*)
             want=system/providers-oauth2.yaml ;;
+        '!Find [authentik_brands.brand, [default, true]]')
+            want=default/default-brand.yaml ;;
         '!Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]')
             continue ;;   # made at start (authentik/crypto/apps.py, self_signed), before any blueprint
         '!Find [authentik_core.group, [name, media-users]]'|'!Find [authentik_core.group, [name, admins]]')
@@ -1703,14 +1730,12 @@ WN='["authentik.core.auth.InbuiltBackend","authentik.sources.kerberos.auth.Kerbe
     || fail_ "no answer, read back as not made: a failure: $(PATCH_DROP=1 webtok "$WT")"; pass
 grep -q 'wire_authentik_web_tokens' <(awk '/^wire_authentik\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "wire authentik makes the website refuse app passwords"; pass
 grep -q 'an app password signs into the portal.s website' <(awk '/^_doctor_accounts\(\)/,/^}/' services/authentik/authentik.sh) || fail_ "doctor fails while the website takes app passwords"; pass
-# our blueprint applies authentik's default brand, which applies its default sign-in flow and with it
-# TokenBackend on the website (found live 15 Nov 2026): our blueprint takes it out again, after that
+# authentik's default sign-in flow puts TokenBackend on the website each time it is applied
+# (found live 15 Nov 2026): our blueprint takes it out too, beside wire_authentik_web_tokens
 bpf=services/authentik/blueprints/mediastack-portal.yaml
 wpw=$(awk '/name: default-authentication-password/{f=1} f && /^  - model:/{exit} f' "$bpf")
 [[ -n "$wpw" ]] && ! grep -q 'TokenBackend' <<<"$wpw" && grep -q 'authentik.core.auth.InbuiltBackend' <<<"$wpw" \
     || fail_ "our blueprint sets the website's password step without TokenBackend: $wpw"; pass
-(( $(grep -n 'name: default-authentication-password' "$bpf" | cut -d: -f1) > $(grep -n 'path: default/default-brand.yaml' "$bpf" | cut -d: -f1) )) \
-    || fail_ "...after the default brand is applied (which puts it back)"; pass
 
 # ---- LDAP_APP_PASSWORDS (docs/design-access.md, slice 2) ----
 # the blueprint: the LDAP bind's step takes app passwords only with the switch, read through !If on the value up writes

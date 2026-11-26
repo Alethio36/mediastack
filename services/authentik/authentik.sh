@@ -398,7 +398,7 @@ authentik_blueprint_inputs_record() { # after a successful apply: what the worke
 }
 
 AUTHENTIK_DISCOVER_WAIT=300   # seconds: how long a first start may take to discover the blueprint
-AUTHENTIK_APPLY_WAIT=600      # seconds: how long one apply of the portal setup may take (4m10s seen live)
+AUTHENTIK_APPLY_WAIT=600      # seconds: how long the applies of the portal setup in flight may take (7m20s seen live, two at once)
 authentik_blueprint_discovered() { # wait for authentik to discover the blueprint; -> its status ("" if it never does)
     local st waited=0
     while :; do
@@ -452,7 +452,8 @@ authentik_first_pass_settle() { # before the first wire's restore point: let a f
 
 authentik_blueprint_why() { # authentik's own reasons for rejecting mediastack's blueprint (its validator, dry run — nothing applied)
     # its logs and task records keep no reasons; this command states them. Never
-    # fails: it is how a failure is reported (found live: an empty result ended wire)
+    # fails: it is how a failure is reported (found live: an empty result ended wire).
+    # A dry run is a whole apply, rolled back: called only after a failure
     local out why
     out=$(sudo docker exec "$(svc_cname authentik-worker)" ak apply_blueprint --dry-run mediastack/mediastack-portal.yaml 2>&1) || true
     why=$(grep -E 'Entry invalid|Error|exception|Traceback|invalid' <<<"$out" | grep -v 'Imported related module' \
@@ -460,9 +461,10 @@ authentik_blueprint_why() { # authentik's own reasons for rejecting mediastack's
     echo "${why:-its validator finds nothing wrong now — the apply may have met authentik mid-start: ./mediastack.sh wire authentik again}"
 }
 
-# the defaults mediastack's blueprint applies first (its metaapplyblueprint
-# entries). Found is not enough: until authentik has applied them, an apply of
-# ours meets its own pass over the same objects and fails (found live Nov 2026)
+# the defaults mediastack's blueprint builds on (its references to them fail
+# it as a whole until they exist). Found is not enough: until authentik has
+# applied them, an apply of ours meets its own pass over the same objects and
+# fails (found live Nov 2026)
 AUTHENTIK_BLUEPRINT_NEEDS=(default/default-brand.yaml default/flow-default-provider-authorization-implicit-consent.yaml default/flow-default-provider-invalidation.yaml system/providers-oauth2.yaml)
 authentik_blueprint_needs_pending() { # -> the prerequisites authentik has not applied successfully yet, space-separated ("" when none); rc 1 when unreadable
     local out p miss=""
@@ -482,25 +484,54 @@ authentik_blueprint_needs_applied() { # 0 once authentik has applied every bluep
     done
 }
 
+AUTHENTIK_APPLY_TASK=authentik.blueprints.v1.tasks.apply_blueprint   # authentik's task for one blueprint
+AUTHENTIK_TASK_INFLIGHT=(waiting_for_dependencies queued consumed preprocess running postprocess)   # its states before done/rejected
+authentik_blueprint_inflight() { # authentik_blueprint_inflight PK -> how many applies of that blueprint authentik has queued or running; rc 1 when unreadable
+    local q s out
+    q="actor_name=$AUTHENTIK_APPLY_TASK&rel_obj_id=$1&page_size=50"
+    for s in "${AUTHENTIK_TASK_INFLIGHT[@]}"; do q+="&aggregated_status=$s"; done
+    out=$(ak_api GET "/tasks/tasks/?$q") || return 1
+    jq -er '[.results[]?] | length' <<<"$out" 2>/dev/null || return 1
+}
+authentik_blueprint_settled() { # authentik_blueprint_settled PK -> 0 once no apply of it is queued or running; rc 1 after AUTHENTIK_APPLY_WAIT
+    local t n
+    for (( t = 2; t <= AUTHENTIK_APPLY_WAIT; t += 2 )); do
+        sleep 2
+        # its API answers slowly mid-apply (20 s timeouts, found live): an unanswered look is looked at again
+        n=$(authentik_blueprint_inflight "$1") || n=unread
+        [[ "$n" == 0 ]] && return 0
+        if (( t % 30 == 0 )); then info "authentik is still applying mediastack's portal setup (${t}s)..." >&2; fi
+    done
+    return 1
+}
+
 authentik_blueprint_apply() { # apply the current file now instead of waiting for the worker; -> its status
-    local inst pk st t miss
+    local inst pk st n miss posted=0 round
     # an apply before authentik has applied its own defaults fails on them
     miss=$(authentik_blueprint_needs_applied) || { echo "unreadable (authentik has not applied its own $miss yet)"; return 0; }
     inst=$(authentik_blueprint_instance 2>&1) || { echo "$inst"; return 0; }
     pk=$(jq -r '.pk // empty' <<<"$inst"); [[ -n "$pk" ]] || { echo ""; return 0; }
-    ak_api POST "/managed/blueprints/$pk/apply/" >/dev/null || { echo "unreadable (apply refused)"; return 0; }
-    local was; was=$(jq -r '.last_applied // ""' <<<"$inst")
-    # done once authentik has applied since we asked (an unchanged file already
-    # says "successful" before this apply ran). An apply takes minutes: 4m10s
-    # live on a fresh install (Nov 2026), past the three this waited before.
-    for (( t = 0; t < AUTHENTIK_APPLY_WAIT; t += 2 )); do
-        if [[ "$(authentik_blueprint_instance 2>/dev/null | jq -r '.last_applied // ""' 2>/dev/null)" != "$was" ]]; then
-            authentik_blueprint_status; return 0
+    # One apply at a time. Each runs in one transaction holding the rows it
+    # changes, so a second waits on the first's locks: two together took 7-10
+    # minutes each, one past authentik's 10-minute task limit and run again
+    # (found live 25 Nov 2026 — authentik's file watcher and its discovery
+    # each queue one for a single change of the file). One already queued or
+    # running is waited for, not joined. Done when none is left: its status
+    # then is the answer (a failed apply keeps its old last_applied, so a
+    # change there never told a failure from a wait).
+    for round in 1 2; do
+        n=$(authentik_blueprint_inflight "$pk") || { echo "unreadable (authentik's task list)"; return 0; }
+        if (( n )); then
+            info "authentik is already applying mediastack's portal setup — waiting for that apply, not starting another" >&2
+        else
+            ak_api POST "/managed/blueprints/$pk/apply/" >/dev/null || { echo "unreadable (apply refused)"; return 0; }
+            posted=1
         fi
-        if (( t && t % 30 == 0 )); then info "authentik is still applying mediastack's portal setup (${t}s — an apply takes minutes)..." >&2; fi
-        sleep 2
+        authentik_blueprint_settled "$pk" || { echo outdated; return 0; }
+        st=$(authentik_blueprint_status)
+        # one that began before the file changed applied the old file: apply the current one
+        if [[ "$st" != outdated ]] || (( posted || round == 2 )); then echo "$st"; return 0; fi
     done
-    echo outdated
 }
 
 authentik_gate_attached() { # -> 0 when the gate's provider sits on the built-in outpost

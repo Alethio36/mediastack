@@ -12,44 +12,27 @@ metadata:
   labels:
     blueprints.goauthentik.io/description: "mediastack: groups, sign-up by invitation, password reset by email, the portal's name"
 entries:
-  # -- what this setup builds on: authentik's own defaults, applied first --
-  # On a first start authentik applies every blueprint in one pass, and ours
-  # came before the defaults it references (the default brand, two provider
-  # flows, the OAuth2 scope mappings): it failed until a later pass (found live
-  # Nov 2026, the scope mappings again on 12 Nov). These apply them first, in
-  # this blueprint's own run (authentik_blueprints.metaapplyblueprint). The
-  # self-signed certificate needs none: authentik makes it at start, before
-  # any blueprint runs (authentik/crypto/apps.py, self_signed).
-  - model: authentik_blueprints.metaapplyblueprint
-    attrs:
-      identifiers:
-        path: default/default-brand.yaml
-      required: true
-  - model: authentik_blueprints.metaapplyblueprint
-    attrs:
-      identifiers:
-        path: default/flow-default-provider-authorization-implicit-consent.yaml
-      required: true
-  - model: authentik_blueprints.metaapplyblueprint
-    attrs:
-      identifiers:
-        path: default/flow-default-provider-invalidation.yaml
-      required: true
-  - model: authentik_blueprints.metaapplyblueprint
-    attrs:
-      identifiers:
-        path: system/providers-oauth2.yaml
-      required: true
+  # -- what this setup builds on: authentik's own defaults ----------------
+  # The default brand, two provider flows and the OAuth2 scope mappings
+  # (AUTHENTIK_BLUEPRINT_NEEDS in services/authentik/authentik.sh). On a first
+  # start authentik applies every blueprint in one pass, in no set order, and
+  # ours can come first. Then it fails as a whole, never in part: each of
+  # those is a required reference here (the brand by its pk, below), and the
+  # importer applies all entries or none. wire waits for the defaults, then
+  # applies again (authentik_first_pass_wait, authentik_blueprint_apply).
+  # Not applied from here (metaapplyblueprint): that re-applied authentik's
+  # defaults inside every apply of ours, holding their rows locked for the
+  # whole transaction — 330 of 432 s, and every sign-in and API call queued
+  # behind it (found live 25 Nov 2026). The self-signed certificate is made
+  # at start, before any blueprint runs (authentik/crypto/apps.py).
 
   # -- the portal's website refuses app passwords (docs/design-access.md) --
   # authentik's sign-in checks passwords with TokenBackend too, so a device's
-  # app password signed into the website as its owner. The default brand
-  # above applies authentik's default sign-in flow again, putting it back on
-  # every apply of this blueprint (found live 15 Nov 2026) — so it is taken
-  # out here, after it; the other backends as authentik's default lists them.
-  # An authentik upgrade that applies its default flow by itself puts it back
-  # until the next `wire authentik` (wire_authentik_web_tokens), which doctor
-  # asks for.
+  # app password signed into the website as its owner. authentik's own
+  # default sign-in flow puts it back each time authentik applies that
+  # blueprint (found live 15 Nov 2026), so it is taken out here and by every
+  # `wire authentik` (wire_authentik_web_tokens), which doctor asks for; the
+  # other backends as authentik's default lists them.
   - model: authentik_stages_password.passwordstage
     identifiers:
       name: default-authentication-password
@@ -100,9 +83,13 @@ entries:
       is_superuser: false
 
   # -- the portal's name --------------------------------------------------
+  # The default brand, by its pk: before authentik's default-brand blueprint
+  # has made it, the pk is empty and this entry fails (no domain), so the
+  # whole setup waits for it. By domain it would make a brand of its own,
+  # and authentik's own then fails on the taken domain, leaving no default.
   - model: authentik_brands.brand
     identifiers:
-      domain: authentik-default
+      pk: !Find [authentik_brands.brand, [default, true]]
     attrs:
       branding_title: !Env [MEDIASTACK_PORTAL_TITLE, Mediastack]
 
