@@ -597,8 +597,12 @@ agreed first:
       queued or running (authentik's task list), and waits until none is
       left, so a failure is said when it ends, not after ten minutes
       (`test-authentik`). *Still authentik's:* the two applies it queues
-      for one change, upstream. *Watch:* anzac4's load (4 cores, load
-      13-15 that evening) — every wait there is longer.
+      for one change, upstream. *Proved live (25 Nov 2026, anzac4, the
+      flood below stopped):* a dry run 24 s (9 of them `ak`'s start), from
+      140 s idle and 328-432 s loaded; `wire authentik` found authentik's
+      own apply in flight and added none; the next wire 4m08s, clean, and
+      item 17's day-long token on all 13 gates. Most of the evening's
+      slowness was the flood (item 17's entry), not the blueprint.
     - **State kept about another app, timings guessed** — where the bugs of
       Nov 2026 clustered (the blueprint's applied values, the apply's wait).
       Each such spot looked at for a simpler, app-native way.
@@ -716,6 +720,20 @@ agreed first:
       sets no token validity on the proxy providers, so authentik's default
       decides how often: read it, then set it to the portal session's length
       (signing out of the portal already ends the apps' sessions).
+      **Worse than a failure: a flood** *(found 25 Nov 2026, anzac4, 21:20,
+      authentik's request log)*: one Firefox tab on Dispatcharr
+      (`iptv.…`) whose token had run out retried at once on every failed
+      call — 1,357 forward-auth checks and 1,356 authorize calls in 3
+      minutes, ~7.5 a second, each authorize ~5 s. authentik's database
+      at 154% CPU, its server at 117%, load 13-15 on anzac4's 4 cores:
+      every API call 2-10 s (wire's 20 s timeouts, "applications
+      unreadable") and every blueprint apply slowed beneath it — the
+      evening's timings were all taken under it. The tab closed: zero.
+      The day-long token only makes it rarer. To find: whether authentik's
+      outpost can answer a background call 401 instead of a redirect (its
+      forward-auth code: the request's `Sec-Fetch-Mode` /
+      `X-Requested-With`), so a stale tab costs a cheap refusal, not an
+      authorize; and whether Traefik can rate-limit the authorize path.
     - **The leak gate closed once on `up` right after gluetun was recreated**
       (16 Nov 2026, anzac4, 18:55): a FAIL, not shown because the run's
       output was discarded; `leak-test` passed minutes later and every
