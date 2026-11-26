@@ -265,7 +265,7 @@ authentik_url() { echo http://ak; }
 http_ready() { echo "READY $2" >> "$T/order"; return "${READY_RC:-0}"; }
 curl() { echo "CURL $*" >> "$T/order"; return 1; }
 : > "$T/order"; rc=0; READY_RC=1 authentik_brand_apply > /dev/null 2>&1 || rc=$?
-[[ "$(cat "$T/order")" == "READY http://ak/-/health/ready/" && $rc != 0 ]] || fail_ "the portal never ready: its kit sends nothing, and fails (its wait says why): rc=$rc $(cat "$T/order")"; pass
+[[ "$(cat "$T/order")" == "READY http://ak/-/health/ready/" && $rc == 0 ]] || fail_ "the portal never ready: its kit sends nothing (its wait says why, a wire step's helper returns 0): rc=$rc $(cat "$T/order")"; pass
 unset -f curl
 
 # ---- every app that shows the kit is reached: <svc>_brand_apply, found by its name ----
