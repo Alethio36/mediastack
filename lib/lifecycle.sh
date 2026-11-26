@@ -260,14 +260,7 @@ cmd_nuke() {
         sudo docker network rm "$net" >/dev/null 2>&1 && ok "network $net removed" || true
     done
 
-    local gid u
-    gid=$(getent group mediacenter | cut -d: -f3 || true)
-    if [[ -n "$gid" ]]; then
-        for u in $(awk -F: -v g="$gid" '$4==g{print $1}' /etc/passwd); do
-            sudo userdel "$u" 2>/dev/null && ok "user $u removed"
-        done
-        sudo groupdel mediacenter 2>/dev/null && ok "group mediacenter removed"
-    fi
+    stack_users_remove
 
     local croot cache tcode
     croot=$(_nuke_root CONFIG_ROOT config); cache=$(_nuke_root CACHE_ROOT cache); tcode=$(_nuke_root TRANSCODE_ROOT transcodes)
@@ -287,6 +280,22 @@ cmd_nuke() {
 
 systemd_units_teardown() { footprint_remove timers; }   # every mediastack timer/unit but the panel's and audit's
 
+stack_users_remove() { # the users mediastack made (those whose own group is mediacenter), then the group — each said, a refusal too
+    # Never by service name: up makes a service's user only when no user of that
+    # name exists, so a host's own "jellyfin" (a native install) is not ours —
+    # uninstall removed users by name and claimed them all removed whatever happened
+    # (the audit, 26 Nov 2026)
+    local gid u left=""
+    gid=$(getent group mediacenter | cut -d: -f3 || true)
+    [[ -n "$gid" ]] || { info "no group mediacenter — no users of mediastack's to remove"; return 0; }
+    for u in $(getent passwd | awk -F: -v g="$gid" '$4 == g { print $1 }'); do
+        if sudo userdel "$u" 2>/dev/null; then ok "user $u removed"; else warn "user $u was not removed (sudo userdel $u says why)"; left+=" $u"; fi
+    done
+    if [[ -n "$left" ]]; then warn "group mediacenter kept: users of its are left (${left# })"
+    elif sudo groupdel mediacenter 2>/dev/null; then ok "group mediacenter removed"
+    else warn "group mediacenter was not removed (sudo groupdel mediacenter says why)"; fi
+}
+
 cmd_uninstall() {
     if [[ "${1:-}" == --nuke ]]; then cmd_nuke; return; fi
     load_env
@@ -303,8 +312,7 @@ cmd_uninstall() {
     footprint_mounts_offer
     echo; echo "Tier 2: remove the service system users + group"
     if confirm "Also remove users/group?"; then
-        local s; for s in $(svc_managed); do sudo userdel "$s" 2>/dev/null || true; done
-        sudo groupdel mediacenter 2>/dev/null || true; ok "users removed"
+        stack_users_remove
     fi
     echo; echo "Tier 3: DELETE ALL SERVICE CONFIGS at $(env_get CONFIG_ROOT) — irreversible."
     local really; read -r -p "Type 'delete my configs' to proceed (anything else skips): " really

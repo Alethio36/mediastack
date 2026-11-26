@@ -120,4 +120,28 @@ want=$(awk '/^networks:/{n=1; next} n && /^[^ #]/{n=0} n && /^    name:/{print $
 got=$(grep -oE 'for net in [a-z -]+; do' lib/lifecycle.sh | sed -E 's/for net in (.*); do/\1/' | tr ' ' '\n' | sort | tr '\n' ' ')
 [[ -n "$want" && "$want" == "$got" ]] || fail_ "uninstall removes networks '$got', docker-compose.yml names '$want'"; pass
 
+# ---- uninstall and nuke remove mediastack's users only, and say what happened (the audit, 26 Nov 2026:
+#      uninstall removed users by service name — a host's own "jellyfin" too — and said "users removed" whatever) ----
+ur() { # ur USERDEL-FAILS-FOR GROUPDEL-RC -> calls and words
+    ( getent() { case "$1" in group) echo "mediacenter:x:13000:" ;;
+                     passwd) printf '%s\n' 'jellyfin:x:997:997::/var/lib/jellyfin:/usr/sbin/nologin' 'sonarr:x:13001:13000::/:/usr/sbin/nologin' 'radarr:x:13002:13000::/:/usr/sbin/nologin' ;; esac; }
+      sudo() { echo "$*" >> "$T/ur"; case "$1" in userdel) [[ "$2" != "$FAILU" ]] ;; groupdel) return "$GRC" ;; esac; }
+      ok() { echo "OK $*" >> "$T/ur"; }; warn() { echo "WARN $*" >> "$T/ur"; }
+      rm -f "$T/ur"; FAILU=$1 GRC=$2; stack_users_remove; cat "$T/ur" )
+}
+r=$(ur none 0)
+[[ "$r" != *"userdel jellyfin"* && "$r" == *"OK user sonarr removed"*"OK user radarr removed"*"OK group mediacenter removed"* ]] \
+    || fail_ "only users whose own group is mediacenter, each said, then the group: $r"; pass
+r=$(ur radarr 0)
+[[ "$r" == *"WARN user radarr was not removed"*"WARN group mediacenter kept: users of its are left (radarr)"* && "$r" != *groupdel* ]] \
+    || fail_ "a user that stays: said, and the group kept, never claimed: $r"; pass
+r=$(ur none 1)
+[[ "$r" == *"WARN group mediacenter was not removed"* && "$r" != *"OK group"* ]] || fail_ "a group that stays: said: $r"; pass
+! grep -nE 'userdel "\$s"|users removed"' lib/lifecycle.sh || fail_ "no removal by service name, no blanket 'users removed'"; pass
+# a mount whose folder stays (not empty) is not called removed
+mb=$(awk '/sudo rmdir "\$m"/,/^    fi$/' lib/footprint.sh)
+[[ "$mb" == *'if sudo rmdir "$m"'*"and folder"*else*"the folder is kept"* ]] || fail_ "the folder named removed only when rmdir took it: $mb"; pass
+# a unit that does not enable stops the run, never a silent || true
+! grep -nE 'systemctl enable[^|]*\|\| true' lib/*.sh services/*/*.sh || fail_ "a unit's enable is checked"; pass
+
 echo "OK footprint: $checks checks"

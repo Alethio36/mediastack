@@ -127,7 +127,9 @@ EOF
         sudo install -m 644 "$tmp" "$VPNGUARD_UNIT"
         failure_unit_ensure
         sudo systemctl daemon-reload
-        sudo systemctl enable mediastack-vpnguard.service >/dev/null 2>&1 || true
+        # said, never assumed: without it, a boot starts the VPN'd services before gluetun is proven
+        sudo systemctl enable mediastack-vpnguard.service >/dev/null 2>&1 \
+            || die "the VPN boot guard did not enable — at boot the VPN'd services would start unproven: systemctl status mediastack-vpnguard.service"
         info "VPN boot-guard unit installed/updated"
     fi
     rm -f "$tmp"

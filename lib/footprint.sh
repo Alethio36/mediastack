@@ -173,8 +173,12 @@ mount_remove() { # mount_remove MOUNTPOINT — unmount, drop the fstab entry, it
     sudo systemctl daemon-reload
     [[ -n "$cred" ]] && sudo rm -f "$cred"
     sudo chattr -i "$m" 2>/dev/null || true   # set by add-mount only where the filesystem supports it
-    sudo rmdir "$m" 2>/dev/null || warn "$m is not empty after unmounting — the folder is kept"
-    ok "$m unmounted and removed (its fstab entry${cred:+, stored credentials} and folder; the share itself is untouched)"
+    if sudo rmdir "$m" 2>/dev/null; then
+        ok "$m unmounted and removed (its fstab entry${cred:+, stored credentials} and folder; the share itself is untouched)"
+    else
+        ok "$m unmounted (its fstab entry${cred:+ and stored credentials} removed; the share itself is untouched)"
+        warn "$m is not empty after unmounting — the folder is kept"
+    fi
 }
 
 footprint_mounts_offer() { # uninstall: each marked mount, offered one at a time (default No)

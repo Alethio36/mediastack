@@ -647,6 +647,21 @@ agreed first:
       whatever the run writes is read from authentik again, so a card's
       rule is still read back before its gate reaches the outpost
       (`test-authentik`).
+    - **The sweep of D, what is printed against what happened (26 Nov
+      2026)** — every success message after a step whose failure was let
+      through (`|| true`), and every promise ("by itself", "live", "takes
+      effect"). *Fixed:* uninstall removed the service users by name — a
+      host's own `jellyfin` from a native install too, since up makes a
+      service's user only when none of that name exists — and said "users
+      removed" whatever happened; now uninstall and nuke share one removal
+      (users whose own group is mediacenter, each said, the group kept and
+      said when one stays: `stack_users_remove`); a mount whose folder
+      stayed was still called removed; the panel's refresh timer and the
+      VPN boot guard were enabled with `|| true` and reported installed —
+      now a failed enable stops the run, named (a boot guard that is not
+      enabled starts the VPN'd services unproven at boot). `test-footprint`.
+      Found and fixed before this sweep: the own certificate's "reloads it by
+      itself" (P4), the LDAP outpost "healthy on its new token" (B).
     - **A failure summary names its role twice** (`wizarr: wizarr: …`,
       `authentik: authentik: …`): the summary adds the role, and the
       messages already start with it. *Done (P1, 25 Nov 2026):* a message

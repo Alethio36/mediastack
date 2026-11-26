@@ -388,7 +388,8 @@ cmd_frontdoor_install() {
     _fd_refresh_service_render | sudo tee "$SYSTEMD_DIR/mediastack-frontdoor-refresh.service" >/dev/null
     _fd_refresh_timer_render   | sudo tee "$SYSTEMD_DIR/mediastack-frontdoor-refresh.timer" >/dev/null
     sudo systemctl daemon-reload
-    sudo systemctl enable --now mediastack-frontdoor-refresh.timer >/dev/null 2>&1 || true
+    sudo systemctl enable --now mediastack-frontdoor-refresh.timer >/dev/null 2>&1 \
+        || die "the panel's refresh timer did not start — its lists would go stale: systemctl status mediastack-frontdoor-refresh.timer"
     ok "entity-refresh timer installed (every 5 min)"
     cmd_frontdoor_refresh   # populate now so dropdowns render on first start
 
