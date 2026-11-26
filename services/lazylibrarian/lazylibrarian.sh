@@ -11,12 +11,27 @@ ll_key() { # LazyLibrarian mints its API key on first run into config.ini
     [[ -r "$f" ]] || { sudo cat "$f" 2>/dev/null | sed -n 's/^api_key = *//p' | sed -n 1p; return; }
     sed -n 's/^api_key = *//p' "$f" | sed -n 1p
 }
-ll_api() { # ll_api cmd [k=v ...] -> body; the &cmd= API, apikey-authenticated
+ll_api() { # ll_api cmd [k=v ...] -> body; the &cmd= API, apikey-authenticated — each value URL-encoded
     local cmd="$1"; shift
     local q kv
     q="apikey=$(ll_key)&cmd=$cmd"
-    for kv in "$@"; do q+="&$kv"; done
+    # a password with & # + or a space reached LazyLibrarian cut or changed (whole-code audit, Nov 2026)
+    for kv in "$@"; do q+="&${kv%%=*}=$(jq -rn --arg v "${kv#*=}" '$v | @uri')"; done
     scurl -sS -m 15 "$(ll_url)/api?$q" 2>/dev/null
+}
+
+ll_qbit_login_set() { # ll_qbit_login_set USER PASS — LazyLibrarian's qBittorrent login, then its config reloaded (as wire does)
+    ll_api writeCFG name=USER group=QBITTORRENT "value=$1" >/dev/null \
+        && ll_api writeCFG name=PASS group=QBITTORRENT "value=$2" >/dev/null \
+        && ll_api loadCFG >/dev/null
+}
+
+lazylibrarian_dl_login_resync() { # lazylibrarian_dl_login_resync PROVIDER — after its login changed (set-credentials): LazyLibrarian's copy follows
+    [[ "$1" == qbittorrent ]] || return 0   # wire sets up only qBittorrent in it
+    svc_enabled lazylibrarian && [[ -n "$(ll_key)" ]] || return 0
+    ll_qbit_login_set "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" \
+        && ok "lazylibrarian: its qBittorrent login updated" \
+        || wfail "lazylibrarian: its qBittorrent login was NOT updated — fix in its UI (Config -> Downloaders)"
 }
 
 ll_api_enable() { # ll_api_enable [KEY] — api_enabled + KEY (a new one when none is given) into config.ini's [GENERAL], written while it is stopped
@@ -116,12 +131,12 @@ wire_lazylibrarian() {
             wfail "no qBittorrent credentials in .env — run 'wire qbit' first"
         else
             # LazyLibrarian's qBittorrent settings live in [QBITTORRENT]
-            ll_api writeCFG "name=HOST&group=QBITTORRENT&value=http://$(svc_host qbittorrent)" >/dev/null
-            ll_api writeCFG "name=PORT&group=QBITTORRENT&value=$(svc_cport qbittorrent)" >/dev/null
-            ll_api writeCFG "name=USER&group=QBITTORRENT&value=$qu" >/dev/null
-            ll_api writeCFG "name=PASS&group=QBITTORRENT&value=$qp" >/dev/null
-            ll_api writeCFG "name=LABEL&group=QBITTORRENT&value=prowlarr" >/dev/null
-            ll_api writeCFG "name=TOR_DOWNLOADER&group=General&value=qbittorrent" >/dev/null
+            ll_api writeCFG name=HOST group=QBITTORRENT "value=http://$(svc_host qbittorrent)" >/dev/null
+            ll_api writeCFG name=PORT group=QBITTORRENT "value=$(svc_cport qbittorrent)" >/dev/null
+            ll_api writeCFG name=USER group=QBITTORRENT "value=$qu" >/dev/null
+            ll_api writeCFG name=PASS group=QBITTORRENT "value=$qp" >/dev/null
+            ll_api writeCFG name=LABEL group=QBITTORRENT value=prowlarr >/dev/null
+            ll_api writeCFG name=TOR_DOWNLOADER group=General value=qbittorrent >/dev/null
             ok "qBittorrent set as download client"
         fi
     fi
@@ -129,9 +144,9 @@ wire_lazylibrarian() {
     if (( WIRE_DRY )); then
         w_would "set lazylibrarian's book folders" || true
     else
-        ll_api writeCFG "name=EBOOK_DEST_FOLDER&group=General&value=/data/media/books" >/dev/null
-        ll_api writeCFG "name=AUDIO_DEST_FOLDER&group=General&value=/data/media/audiobooks" >/dev/null
-        ll_api writeCFG "name=DESTINATION_DIR&group=General&value=/data/media/books" >/dev/null
+        ll_api writeCFG name=EBOOK_DEST_FOLDER group=General value=/data/media/books >/dev/null
+        ll_api writeCFG name=AUDIO_DEST_FOLDER group=General value=/data/media/audiobooks >/dev/null
+        ll_api writeCFG name=DESTINATION_DIR group=General value=/data/media/books >/dev/null
         ok "book folders set (/data/media/books, /data/media/audiobooks)"
         ll_api loadCFG >/dev/null
         ok "config reloaded"

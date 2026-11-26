@@ -117,6 +117,5 @@ sc_rotate_transmission() { # PASS — its login (applied by recreating it) + eve
         transmission_login_live || die "Transmission does not take the new password — inspect: logs transmission"
         ok "Transmission password rotated and verified (container recreated)"
         traefik_ensure   # Traefik's copy of it behind the portal (transmission-login)
-        arr_dl_login_resync transmission
-        cleanuparr_dl_login_resync transmission
+        dl_login_follow transmission
 }

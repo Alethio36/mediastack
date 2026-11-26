@@ -235,9 +235,9 @@ wire_qbit() {
 }
 
 sc_explain_qbit() { echo "Changes the WebUI login and updates everything that stores it: each
-arr's download-client entry and cleanuparr's connection."; }   # set-credentials qbit (lib/access.sh)
+arr's download-client entry, cleanuparr's connection and lazylibrarian's."; }   # set-credentials qbit (lib/access.sh)
 sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
-        local user="$1" pass="$2" s
+        local user="$1" pass="$2"
         svc_enabled qbittorrent || { info "qbittorrent not enabled — skipped"; return 0; }
         qb_login "$(env_get QBITTORRENT_USER)" "$(env_get QBITTORRENT_PASSWORD)" \
             || die "cannot sign in to qBittorrent with the stored credentials — fix that first (wire qbit)"
@@ -245,49 +245,9 @@ sc_rotate_qbit() { # USER PASS — qbit + every place that stores its login
         qb_login_new "$user" "$pass" || die "qBittorrent did not accept the new credentials — inspect: logs qbittorrent"
         env_set QBITTORRENT_USER "$user"; env_set QBITTORRENT_PASSWORD "$pass"
         ok "qBittorrent login rotated and verified"
-        local key url cur id ent
-        # every arr-family app holding a qBittorrent entry — prowlarr's (manual
-        # grabs) included: missing it left a stale password there
-        for s in $(arr_instances) prowlarr; do
-            svc_enabled "$s" || continue
-            key=$(arr_key "$s"); url=$(arr_url "$s")
-            cur=$(api GET "$url/api/$(arr_apiver "$s")/downloadclient" "$key") \
-                || { wfail "$s: could not read its download clients — its qBittorrent login was NOT updated; fix in its UI [$(oneline "$cur")]"; continue; }
-            id=$(jq -r '.[] | select(.implementation=="QBittorrent") | .id' <<<"$cur" 2>/dev/null | sed -n 1p)
-            [[ -n "$id" ]] || { info "$s: no qBittorrent download client entry — skipped"; continue; }
-            if [[ -n "$(jq -r --argjson i "$id" '.[] | select(.id==$i) | .fields[]? | select(.name=="apiKey") | .value // ""' <<<"$cur")" ]]; then
-                info "$s: signs in to qBittorrent with its API key — the login rotation does not apply"; continue
-            fi
-            ent=$(jq -c --argjson i "$id" --arg u "$user" --arg p "$pass" '
-                .[] | select(.id==$i)
-                | .fields = [ .fields[]
-                    | if .name=="username" then .value=$u
-                      elif .name=="password" then .value=$p
-                      else . end ]' <<<"$cur")
-            api PUT "$url/api/$(arr_apiver "$s")/downloadclient/$id" "$key" "$ent" >/dev/null \
-                && ok "$s: download-client entry updated" \
-                || wfail "$s: could not update its download-client entry — fix in its UI (Settings -> Download Clients)"
-        done
-        if svc_enabled cleanuparr && [[ -n "$(env_get CLEANUPARR_API_KEY)" ]]; then
-            local KH dcs dcid dcent
-            KH="X-Api-Key: $(env_get CLEANUPARR_API_KEY)"
-            dcs=$(cup_api GET /configuration/download_client "$KH") \
-                || { wfail "cleanuparr: could not read its download clients — its qBittorrent login was NOT updated; fix in its UI [HTTP $(cup_code)]"; dcs=""; }
-            dcid=$(jq -r '.clients[]? | select(.name=="qbittorrent") | .id' <<<"$dcs" 2>/dev/null | sed -n 1p)
-            if [[ -n "$dcid" ]]; then
-                dcent=$(jq -c --arg i "$dcid" --arg u "$user" --arg p "$pass" \
-                        '.clients[] | select(.id==$i) | .username=$u | .password=$p' <<<"$dcs")
-                cup_api PUT "/configuration/download_client/$dcid" "$KH" "$dcent" >/dev/null \
-                    && ok "cleanuparr connection updated" \
-                    || wfail "cleanuparr connection not updated [HTTP $(cup_code)] — fix in its UI"
-            fi
-        fi
-        if svc_enabled lazylibrarian && [[ -n "$(ll_key)" ]]; then
-            ll_api writeCFG "name=USER&group=QBITTORRENT&value=$user" >/dev/null \
-                && ll_api writeCFG "name=PASS&group=QBITTORRENT&value=$pass" >/dev/null \
-                && ok "lazylibrarian qBittorrent login updated" \
-                || wfail "lazylibrarian qBittorrent login not updated — fix in its UI (Settings -> Downloaders)"
-        fi
+        # every copy of the login follows, found by mediastack's own entry name
+        # (it matched the first QBittorrent entry once: a second one of yours took the stack's login)
+        dl_login_follow qbittorrent
 }
 
 qbittorrent_doctor_tun0() { # qbit must be bound to the tunnel interface (wire sets it; doctor: runtime audit)

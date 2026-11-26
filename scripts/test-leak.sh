@@ -381,4 +381,24 @@ grep -q 'ipv4_address: ${GLUETUN_ADDRESS:-172.31.250.3}' services/gluetun/compos
 ! grep -q 'ip link set dev tun0 up' services/gluetun/vpn.sh || fail_ "the tunnel-drop proof sets tun0 up itself"; pass
 grep -q "ip link set dev tun0 down" services/gluetun/vpn.sh && grep -q 'DC restart gluetun' services/gluetun/vpn.sh \
     || fail_ "the tunnel-drop proof drops tun0, then restarts gluetun"; pass
+# ---- the tunnel drop proves something only after egress worked, and only when tun0 went down ----
+ks() { # ks EGRESS-BEFORE EGRESS-AFTER DROP-RC -> what the proof said and did
+    ( n=0 before=$1 after=$2 drop=$3
+      killswitch_egress() { n=$((n+1)); (( n == 1 )) && return "$before"; return "$after"; }
+      sudo() { [[ "$*" == *"ip link set dev tun0 down"* ]] && { echo DROP >> "$T/ks"; (( drop == 0 )) || echo "RTNETLINK: Operation not permitted"; return "$drop"; }; return 0; }
+      DC() { echo "DC $*" >> "$T/ks"; }; wait_verdict() { :; }; vpn_reattach_guard() { :; }; c_id() { echo G2; }
+      lt_pass() { echo "PASS $*" >> "$T/ks"; }; lt_fail() { echo "FAIL $*" >> "$T/ks"; }; lt_unproven() { echo "UNPROVEN $*" >> "$T/ks"; }
+      warn() { :; }; info() { :; }
+      : > "$T/ks"; killswitch_tunnel_drop c-gluetun ) > /dev/null 2>&1
+    sed 's/ —.*//' "$T/ks" | paste -sd'|'
+}
+[[ "$(ks 1 1 0)" == "UNPROVEN tunnel drop: nothing gets out even with the tunnel up (github.com)" ]] \
+    || fail_ "no egress before the drop: unproven, and nothing dropped: $(ks 1 1 0)"; pass
+[[ "$(ks 0 0 1)" == "DROP|UNPROVEN tunnel drop: tun0 could not be taken down (RTNETLINK: Operation not permitted)" ]] \
+    || fail_ "a drop that failed: unproven, never 'NOT working', and no restart: $(ks 0 0 1)"; pass
+[[ "$(ks 0 1 0)" == "DROP|PASS egress blocked with the tunnel down (it got out a moment before)|DC restart gluetun" ]] \
+    || fail_ "blocked after the drop: the switch works, then a clean tunnel: $(ks 0 1 0)"; pass
+[[ "$(ks 0 0 0)" == "DROP|FAIL egress SUCCEEDED with the tunnel down|DC restart gluetun" ]] \
+    || fail_ "out after the drop: the switch is broken: $(ks 0 0 0)"; pass
+
 echo "test-leak: $checks checks passed"

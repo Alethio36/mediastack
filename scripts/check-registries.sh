@@ -111,13 +111,13 @@ done
 # hook found only by its service's name (<svc>_provision, _questions,
 # _summary, _gate_sync) with no service of that name is never run, unless
 # something calls it by its own name (gluetun_vpn_questions, vpn_summary)
-hooks='provision|questions|summary|logins|gate_sync|gate_login|login_middleware|people_follow|listen_port|credentials|api_key|doctor|secrets|secret_rotate|update_probe|notify_test|brand_apply'
+hooks='provision|questions|summary|logins|gate_sync|gate_login|login_middleware|people_follow|listen_port|credentials|api_key|doctor|secrets|secret_rotate|update_probe|notify_test|brand_apply|dl_login_resync'
 while IFS=: read -r file fn; do
     fn=${fn%"()"}
     stem=$(sed -E "s/_($hooks)\$//" <<<"$fn"); dir=${stem//_/-}; [[ "$stem" == arr ]] && dir=_arr
     if [[ -d "services/$dir" ]]; then
         [[ "$file" == "services/$dir/"* ]] || { echo "FAIL ${fn}() is $dir's hook, but lives in $file — a service's part lives in its folder (services/$dir/)"; rc=1; }
-    elif [[ "$fn" =~ _(provision|questions|summary|gate_sync|update_probe|notify_test|brand_apply)$ ]]; then
+    elif [[ "$fn" =~ _(provision|questions|summary|gate_sync|update_probe|notify_test|brand_apply|dl_login_resync)$ ]]; then
         n=$({ grep -rhwE "$fn" lib mediastack.sh services --include='*.sh' || true; } | { grep -vcE "^$fn\(\)" || true; })   # none is a count, not an error
         (( n > 0 )) || { echo "FAIL ${fn}() is a hook found by its service's name, but no service is named $dir and nothing calls it — it never runs (a typo in the name?)"; rc=1; }
     fi

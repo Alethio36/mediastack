@@ -204,7 +204,7 @@ AUTHENTIK_BLUEPRINT="Mediastack - Portal"   # metadata.name in services/authenti
 AUTHENTIK_JOIN_FLOW=mediastack-join          # its sign-up flow's slug (the invitation links)
 
 authentik_portal() { echo "https://$(svc_subdomain authentik).$(env_get STACK_DOMAIN)"; }   # where people go
-authentik_url()    { echo "http://127.0.0.1:$(svc_hostport authentik)"; }                             # where the script goes
+authentik_url()    { local p; p=$(svc_hostport authentik) || return 1; echo "http://127.0.0.1:$p"; }   # where the script goes (no port: its error, never a URL without one)
 
 AUTHENTIK_STAGE_WAIT=90   # seconds: saving a stage took 22s on a first start (Nov 2026), past ak_api's 20
 ak_api() { # ak_api METHOD PATH [json] -> body on stdout; rc from HTTP (authentik's API, as the script's token); API_TIMEOUT=N for one slow call

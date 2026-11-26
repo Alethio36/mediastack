@@ -733,12 +733,21 @@ agreed first:
       timers' waits) or `read`; a line without one is refused. The hold is
       exported with the lock's descriptor, so the children a holder starts
       (configure's up and wire) run inside it; the menu runs each verb
-      through the dispatcher. `test-lock`. *F4 (to do):*
-      qBittorrent's rotation matches the first QBittorrent entry, not
-      mediastack's (the shared resyncs do); the kill-switch proof checks no
-      egress before the drop and reads a failed drop as "NOT working"; no
-      timeout on NordVPN's token call and JellySearch's probe;
-      `authentik_url` builds a URL with no port. *F5 (before step 12):*
+      through the dispatcher. `test-lock`. *F4, correctness (done):*
+      qBittorrent's rotation PUT the stack's login into the first QBittorrent
+      entry of each arr — a second one of yours took it — and hand-rolled
+      Cleanuparr's; every download client's `set-credentials` now goes
+      through `dl_login_follow` (the arrs' entries by mediastack's own name,
+      then each service's `<svc>_dl_login_resync`, found by name —
+      LazyLibrarian's moved to its folder). Found on the way: `ll_api` sent
+      values unencoded, so a password with `&`, `#`, `+` or a space reached
+      LazyLibrarian cut or changed; each value is URL-encoded now. The
+      kill-switch proof first checks egress through the tunnel (none: it is
+      unproven, nothing dropped) and reads a drop that failed as unproven,
+      not "NOT working" (`killswitch_tunnel_drop`). `authentik_url` fails
+      with no host port instead of building `http://127.0.0.1:/`. The
+      timeouts were already in: NordVPN's (F2b), JellySearch's (F2a).
+      `test-dl-login`, `test-leak`, `test-authentik`. *F5 (before step 12):*
       `_doctor_accounts` split to its owners; authentik's calls into Kavita,
       Jellyfin and Audiobookshelf and `sc_rotate_arr`'s follow-ups as hooks
       found by name; one `svc_local_url`; the longest functions split. *F6:*

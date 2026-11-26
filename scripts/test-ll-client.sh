@@ -35,7 +35,7 @@ role_pick()   { echo "$DL"; }
 svc_host()    { echo "$1"; }
 svc_cport()   { echo 8080; }
 env_get()     { case $1 in QBITTORRENT_USER) echo admin ;; QBITTORRENT_PASSWORD) echo pw ;; esac; }
-ll_api()      { echo "$1 ${2:-}" >> "$T/api"; echo '{}'; }
+ll_api()      { local c=$1; shift; local IFS='&'; echo "$c $*" >> "$T/api"; echo '{}'; }   # its arguments joined as the query is
 run() { rm -f "$T/api"; WIRE_FAILS=0; wire_lazylibrarian > "$T/out" 2>&1 || true; }
 
 DL=qbittorrent WIRE_DRY=0; run

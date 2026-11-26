@@ -185,8 +185,10 @@ order it runs or prints them; a service's part lives in its folder. So far:
 does not matter keeps no list: it runs each enabled service's hook, found by
 its name — `notify test` (`<name>_notify_test`: the app asked to send its own
 test through the hub), `update` (`<name>_update_probe`: its check after an
-update, rc 1 when it fails) and `brand` (`<name>_brand_apply`: the kit onto
-the running app; the hub's colours aside). Every `<name>_<hook>` lives in its
+update, rc 1 when it fails), `brand` (`<name>_brand_apply`: the kit onto
+the running app; the hub's colours aside) and a download client's
+`set-credentials` (`<name>_dl_login_resync PROVIDER`: the app's own copy of
+that client's login follows; the arrs' entries follow by name first). Every `<name>_<hook>` lives in its
 service's folder (the arr family's in `services/_arr/`), and a hook found by
 its service's name needs a service of that name — `check-registries` fails
 one outside its folder, and one named for no service (a typo never runs).

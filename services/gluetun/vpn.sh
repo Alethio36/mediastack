@@ -179,6 +179,39 @@ cmd_leak_test() {
     esac
 }
 
+killswitch_tunnel_drop() { # killswitch_tunnel_drop GLUETUN-CONTAINER — the tunnel-drop proof (leak-test --killswitch); a restart sets the caller's gid
+    # the drop proves something only when egress worked through the tunnel
+    # just before it, and only when the tunnel really went down (found in
+    # the whole-code audit: either miss read as a pass or a broken switch)
+    local gcn="$1" dout
+    if ! killswitch_egress "$gcn"; then
+        lt_unproven "tunnel drop: nothing gets out even with the tunnel up (github.com) — skipped, it would prove nothing"
+    else
+        warn "Disruptive proof: dropping the tunnel interface for ~10s..."
+        if ! dout=$(sudo docker exec "$gcn" sh -c 'ip link set dev tun0 down' 2>&1); then
+            lt_unproven "tunnel drop: tun0 could not be taken down ($(oneline "$dout")) — nothing was dropped, nothing proven"
+        else
+            if killswitch_egress "$gcn"; then
+                lt_fail "egress SUCCEEDED with the tunnel down — kill-switch NOT working"
+            else lt_pass "egress blocked with the tunnel down (it got out a moment before) — kill-switch works"; fi
+            # no `ip link ... up`: the restart below brings a clean tunnel back
+            # (setting it up by hand only raised RTNETLINK "Address in use")
+            info "Restarting gluetun to restore a clean tunnel..."
+            DC restart gluetun >/dev/null
+            # the restart left every dependent in the old namespace: re-join them,
+            # or the hard stop below probes from a namespace that is already dead
+            wait_verdict --recover gluetun || die "gluetun ${VERDICT_WHY[gluetun]} after the tunnel-drop proof — inspect: ./mediastack.sh logs gluetun"
+            vpn_reattach_guard
+            gid=$(c_id "$gcn")
+        fi
+    fi
+}
+
+killswitch_egress() { # killswitch_egress GLUETUN-CONTAINER — rc 0 when github.com answers from inside gluetun's namespace
+    sudo docker run --rm --network "container:$1" curlimages/curl:latest \
+        -fsS --max-time 6 https://github.com -o /dev/null >/dev/null 2>&1
+}
+
 leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2); dies when it cannot run at all
     local killswitch=$1 lonly=$2
     local gcn; gcn=$(svc_cname gluetun)
@@ -255,21 +288,7 @@ leak_test_run() { # leak_test_run KILLSWITCH LOCAL -> returns the verdict (0/1/2
     elif (( ! killswitch )); then
         info "the disruptive proofs (tunnel dropped, gluetun stopped) run with --killswitch"
     else
-        warn "Disruptive proof: dropping the tunnel interface for ~10s..."
-        sudo docker exec "$gcn" sh -c 'ip link set dev tun0 down' || true
-        if sudo docker run --rm --network "container:$gcn" curlimages/curl:latest \
-             -fsS --max-time 6 https://github.com -o /dev/null >/dev/null 2>&1; then
-            lt_fail "egress SUCCEEDED with the tunnel down — kill-switch NOT working"
-        else lt_pass "egress blocked with tunnel down — kill-switch works"; fi
-        # no `ip link ... up`: the restart below brings a clean tunnel back
-        # (setting it up by hand only raised RTNETLINK "Address in use")
-        info "Restarting gluetun to restore a clean tunnel..."
-        DC restart gluetun >/dev/null
-        # the restart left every dependent in the old namespace: re-join them,
-        # or the hard stop below probes from a namespace that is already dead
-        wait_verdict --recover gluetun || die "gluetun ${VERDICT_WHY[gluetun]} after the tunnel-drop proof — inspect: ./mediastack.sh logs gluetun"
-        vpn_reattach_guard
-        gid=$(c_id "$gcn")
+        killswitch_tunnel_drop "$gcn"
 
         # any running torrent client in gluetun's live namespace probes it — not
         # just qBittorrent; one moved out of the VPN (vpn ... --i-know) is no

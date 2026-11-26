@@ -105,3 +105,14 @@ role_login_fields() { # role_login_fields LIST-JSON ENTRY-NAME ENTRY-JSON -> fie
     [[ -n "$(arr_entry_field "$1" "$2" apiKey)" ]] && return 0
     jq -r '.fields | to_entries[] | select(.key == "username" or .key == "password") | "\(.key)=\(.value)"' <<<"$3"
 }
+
+dl_login_follow() { # dl_login_follow PROVIDER — after a download client's login changed (set-credentials): every copy of it follows —
+    # the arr family's entries (by mediastack's own entry name), then each enabled
+    # service's <svc>_dl_login_resync PROVIDER, found by its name (Cleanuparr, LazyLibrarian)
+    local s
+    arr_dl_login_resync "$1"
+    for s in $(svc_enabled_managed); do
+        if declare -F "${s//-/_}_dl_login_resync" >/dev/null; then "${s//-/_}_dl_login_resync" "$1"; fi
+    done
+    return 0
+}

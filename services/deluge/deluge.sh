@@ -131,6 +131,5 @@ sc_rotate_deluge() { # PASS — Deluge's web password + every download-client en
         deluge_login "$pass" || die "Deluge did not accept the new password — inspect: logs deluge"
         env_set DELUGE_PASSWORD "$pass"
         ok "Deluge password rotated and verified"
-        arr_dl_login_resync deluge
-        cleanuparr_dl_login_resync deluge
+        dl_login_follow deluge
 }

@@ -2149,4 +2149,9 @@ grep -q 'authentik_app_gates_doctor' <(awk '/^_doctor_accounts\(\)/,/^}/' servic
 grep -qx '      mediastack.card.path: "/oidc/login"' services/kavita/compose.yml \
     || fail_ "Kavita's card starts its sign-in (its page would show unauthorized and its login page first)"; pass
 
+# authentik_url: no host port is its error, never a URL without a port (http://127.0.0.1:/…)
+eval "$(grep '^authentik_url()' services/authentik/authentik.sh | sed 's/^authentik_url()/real_authentik_url()/')"   # the real one: stubbed above
+( svc_port() { echo ""; }; out=$(real_authentik_url 2>/dev/null) && exit 1; [[ -z "$out" ]] ) || fail_ "authentik with no host port: authentik_url fails and prints no URL"; pass
+( svc_port() { echo 9000; }; [[ "$(real_authentik_url)" == http://127.0.0.1:9000 ]] ) || fail_ "authentik_url: its host port"; pass
+
 echo "OK authentik: $checks checks"
