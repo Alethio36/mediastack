@@ -82,10 +82,11 @@ authentik_rotate_ldap_token() { # the LDAP outpost's token: a new key on the sam
 }
 
 ak_outpost_seen() { # ak_outpost_seen PK -> "UID LAST-SEEN" per instance authentik has heard from, sorted; rc 1 when unreadable
-    # compared before and after, never against this host's clock: authentik stamps last_seen
-    # with its own naive local time (outposts/consumer.py), which its API reads as UTC
+    # Compared before and after, not against this host's clock. An instance gone
+    # quiet stays listed with last_seen null (seen live 26 Nov 2026: the old one
+    # after a restart, beside the new): never counted as heard from.
     local out; out=$(ak_api GET "/outposts/instances/$1/health/") || return 1
-    jq -r '.[]? | "\(.uid) \(.last_seen)"' <<<"$out" | LC_ALL=C sort
+    jq -r '.[]? | select(.last_seen != null) | "\(.uid) \(.last_seen)"' <<<"$out" | LC_ALL=C sort
 }
 ak_db_password_set() { # ak_db_password_set PASSWORD — the database role's password (SQL on stdin: never in a process list)
     printf "ALTER ROLE authentik WITH PASSWORD '%s';\n" "$1" \

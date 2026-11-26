@@ -617,12 +617,15 @@ agreed first:
       `qb_login_new`, `test-wire`); rotate-secrets proving the LDAP
       outpost's new token by its container's health, now by authentik
       hearing from it after the restart (`ak_outpost_seen`, compared before
-      and after: authentik stamps it in its own naive local time;
-      `test-rotate`); and the digest of the worker's values at the last
+      and after; an instance gone quiet stays listed with no last-seen, and
+      is never counted — seen live, and caught by the live check: the first
+      version would have counted it; `test-rotate`); and the digest of the worker's values at the last
       apply, gone — authentik answers it: its last successful apply after
       this worker was made (`authentik_applied_by_this_worker`, now
       three-way, unreadable never "current"; `test-authentik`). Its cost:
-      one apply after a worker is recreated with the same values.
+      one apply after a worker is recreated with the same values. *Proved
+      live (26 Nov 2026, anzac4):* current, no apply; the worker recreated,
+      applied once ("applied before its worker was made"); current again.
     - **A failure summary names its role twice** (`wizarr: wizarr: …`,
       `authentik: authentik: …`): the summary adds the role, and the
       messages already start with it. *Done (P1, 25 Nov 2026):* a message

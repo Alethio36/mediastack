@@ -233,12 +233,14 @@ lt() { # lt HEARD(yes|no) -> "rc=N held=N"
           "/outposts/instances/?name__iexact=mediastack-ldap") echo '{"results":[{"pk":"op-l"}]}' ;;
           "/outposts/instances/op-l/health/")
               if [[ -f "$T/c" && "$HEARD" == yes ]]; then echo '[{"uid":"a","last_seen":"2026-11-26T08:00:00Z"},{"uid":"b","last_seen":"2026-11-26T08:10:00Z"}]'
+              elif [[ -f "$T/c" && "$HEARD" == quiet ]]; then echo '[{"uid":"a","last_seen":null}]'
               else echo '[{"uid":"a","last_seen":"2026-11-26T08:00:00Z"}]'; fi ;;
       esac; }
       HEARD=$1; rc=0; authentik_rotate_ldap_token >/dev/null 2>&1 || rc=$?; echo "rc=$rc held=$(rotate_inflight | wc -w)" )
 }
 [[ "$(lt yes)" == "rc=0 held=0" ]] || fail_ "LDAP token: authentik heard from the restarted outpost: settled: $(lt yes)"; pass
 [[ "$(lt no)" == "rc=2 held=1" ]] || fail_ "LDAP token: a healthy container authentik never heard from: not proven, held: $(lt no)"; pass
+[[ "$(lt quiet)" == "rc=2 held=1" ]] || fail_ "LDAP token: the old instance gone quiet (last_seen null), no new one: not proven (found live 26 Nov 2026): $(lt quiet)"; pass
 
 # the database's password check goes where a password is asked (found live: loopback is trusted, any password passes)
 r=$(declare -f ak_db_password_opens)
