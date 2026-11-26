@@ -448,8 +448,16 @@ from a LAN address before it ships.
   portal and fails, and the page retries with no delay: 9,304 calls in 20
   minutes from one tab, each a 5 s authorize in authentik, every sign-in
   slowed. Its WebSocket and notifications back off; the refresh does not.
-  The stack rate-limits the portal's authorize page per address
-  (`mediastack-authorize-limit`); to report upstream (drafted 25 Nov 2026).
+  The cause, in its source (v0.34.1, `frontend/src/store/auth.jsx`,
+  `api.js`): every API call asks `getToken()`, which refreshes an expired
+  access token; a refresh that fails other than with a 401 calls
+  `logout()`, which first calls `API.logout()` — itself an authenticated
+  request, so it asks `getToken()` again, which refreshes again: a
+  recursion with no delay, ended only by a refresh that succeeds. Any
+  non-401 failure starts it (a 502 while Dispatcharr restarts too, until it
+  is back); behind the gate it never ends. The stack rate-limits the
+  portal's authorize page per address (`mediastack-authorize-limit`); to
+  report upstream (drafted 25 Nov 2026).
 
 **Revisit when:** a release adds a switch for the version check (then the
 stack sets it), or makes `uploads/` itself `PUID`'s (then the stack's

@@ -745,8 +745,20 @@ agreed first:
       authorize page rate-limited per address at Traefik (2 a second, a
       burst of 20: `mediastack-authorize-limit`, `test-safety`'s
       `authorize`); Dispatcharr's README and the watchlist say it;
-      the upstream issue drafted. Left: the forward-auth check itself (~0.1 s and a
+      the upstream issue drafted. Its cause, read in Dispatcharr's source: `logout()` → an
+      authenticated `API.logout()` → `getToken()` → refresh → `logout()`
+      (the watchlist). Left: the forward-auth check itself (~0.1 s and a
       login state saved per call) still runs at the tab's rate.
+    - **Dispatcharr's stream URLs need no login** (read 25 Nov 2026 against
+      its docs and source, v0.34.1): `/proxy/ts/stream/<channel>` is open to
+      any address its Network Access lets in, and for streams that default is
+      everyone. With the portal on, nothing outside the stack reaches it
+      (the gate on its one route); without the portal (Wizarr mode) its
+      route stays open with its own login, and a channel's URL plays for
+      anyone who has it. Its docs advise restricting by network. To decide:
+      wire sets Network Access for streams and the XC API to private
+      ranges (Jellyfin and the LAN keep working; playing in its own page
+      from outside stops), perhaps only while the portal is off.
     - **The leak gate closed once on `up` right after gluetun was recreated**
       (16 Nov 2026, anzac4, 18:55): a FAIL, not shown because the run's
       output was discarded; `leak-test` passed minutes later and every
