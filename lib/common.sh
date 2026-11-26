@@ -257,11 +257,12 @@ env_set() { # env_set VAR value  (idempotent upsert, preserves file order)
     # whoever wrote the value. Every writer checks where it asks; this is the backstop
     [[ ! "$2" =~ [[:cntrl:]] ]] || die "refusing to write $var: a value in .env must be $SECRET_RULE"
     val=$(env_encode "$2")   # quoted only where compose would read it differently
-    [[ -e "$ENV_FILE" ]] || { touch "$ENV_FILE"; repo_owned "$ENV_FILE"; }
+    [[ -e "$ENV_FILE" ]] || { ( umask 077; : > "$ENV_FILE" ); repo_owned "$ENV_FILE"; }
     if grep -qE "^${var}=" "$ENV_FILE"; then
-        # sed with | delimiter; escape | and & in value
+        # sed with | delimiter; escape | and & in value. The script goes in on
+        # stdin (-f -): a value is often a secret, and ps shows a command line
         local esc=${val//\\/\\\\}; esc=${esc//|/\\|}; esc=${esc//&/\\&}
-        sed -i "s|^${var}=.*|${var}=${esc}|" "$ENV_FILE"
+        printf 's|^%s=.*|%s=%s|\n' "$var" "$var" "$esc" | sed -i -f - "$ENV_FILE"
     else
         echo "${var}=${val}" >> "$ENV_FILE"
     fi
@@ -379,9 +380,9 @@ ROOT_SHARED=(/ /bin /boot /dev /etc /home /lib /lib32 /lib64 /media /mnt /opt /p
 root_unsafe() { # root_unsafe PATH -> why PATH can never be a mediastack root ("" when it can)
     local p s; p=$(realpath -m -- "$(abspath "$1")")
     for s in "${ROOT_SHARED[@]}"; do
-        [[ "$p" == "$s" ]] && { echo "'$p' is a system or shared folder — mediastack's roots are its own (nuke deletes them whole): give it one inside, e.g. ${p%/}/mediastack"; return 0; }
+        [[ "$p" == "$s" ]] && { echo "'$p' is a system or shared folder — mediastack's roots are its own (nuke deletes them whole): give it a folder of its own"; return 0; }
     done
-    [[ -n "${HOME:-}" && "$p" == "$(realpath -m -- "$HOME")" ]] && { echo "'$p' is your home folder — mediastack's roots are its own (nuke deletes them whole): give it one inside, e.g. $p/mediastack"; return 0; }
+    [[ -n "${HOME:-}" && "$p" == "$(realpath -m -- "$HOME")" ]] && { echo "'$p' is your home folder — mediastack's roots are its own (nuke deletes them whole): give it a folder of its own"; return 0; }
     local repo; repo=$(realpath -m -- "$SCRIPT_DIR")   # paths compared resolved: a symlinked checkout is still the repo
     [[ "$repo/" == "$p/"* ]] && { echo "'$p' holds this repo folder ($repo) — nuke would delete the repo with it: give it a folder of its own"; return 0; }
     return 0

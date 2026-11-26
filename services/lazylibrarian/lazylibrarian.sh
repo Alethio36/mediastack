@@ -26,7 +26,8 @@ ll_api_enable() { # ll_api_enable [KEY] — api_enabled + KEY (a new one when no
     key=${1:-$(rotate_hex)}   # 32 hex, as it mints its own
     DC stop lazylibrarian >/dev/null 2>&1 || { wfail "lazylibrarian: could not stop it to write its API key"; return 1; }
     own=$(sudo stat -c %u:%g "$f")
-    sudo sed -i -e '/^api_enabled *=/d' -e '/^api_key *=/d' -e "/^\[GENERAL\]\$/a api_enabled = 1\napi_key = $key" "$f"
+    # the key in sed's script on stdin (-f -): sudo logs its command line
+    printf '/^api_enabled *=/d\n/^api_key *=/d\n/^\\[GENERAL\\]$/a api_enabled = 1\\\napi_key = %s\n' "$key" | sudo sed -i -f - "$f"
     sudo chown "$own" "$f"
     DC start lazylibrarian >/dev/null 2>&1 || { wfail "lazylibrarian did not start again — inspect: ./mediastack.sh logs lazylibrarian"; return 1; }
     http_ready lazylibrarian "$(ll_url)/" '^([23][0-9][0-9]|401|403)$' || return 1

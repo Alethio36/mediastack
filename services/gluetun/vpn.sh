@@ -606,7 +606,8 @@ gluetun_secrets() { svc_enabled gluetun && printf 'GLUETUN_CONTROL_APIKEY\tvpn\n
 gluetun_secret_rotate() { rotate_env GLUETUN_CONTROL_APIKEY "$(gen_secret 32)" gluetun_control_key_proven; }
 gluetun_control_code() { # gluetun_control_code KEY -> the HTTP code gluetun's control server answers KEY with ("" when it does not answer)
     local out
-    out=$(sudo docker exec "$(svc_cname gluetun)" sh -c 'wget -qS -O /dev/null --timeout=5 --header "X-API-Key: $0" http://127.0.0.1:8008/v1/vpn/status 2>&1' "$1" 2>/dev/null) || true   # addr-ok: gluetun's control server, from inside its namespace
+    # the key on stdin: sudo logs its command line (gluetun's busybox wget still takes it as an argument, inside its namespace)
+    out=$(printf '%s' "$1" | sudo docker exec -i "$(svc_cname gluetun)" sh -c 'k=$(cat); wget -qS -O /dev/null --timeout=5 --header "X-API-Key: $k" http://127.0.0.1:8008/v1/vpn/status 2>&1' 2>/dev/null) || true   # addr-ok: gluetun's control server, from inside its namespace
     sed -n 's/^ *HTTP\/[0-9.]* \([0-9][0-9]*\).*/\1/p' <<<"$out" | sed -n 1p
 }
 gluetun_control_key_proven() { # gluetun_control_key_proven NEW OLD — the control server opens to NEW and refuses OLD

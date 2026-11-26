@@ -207,6 +207,10 @@ env_unknown() { # -> "key<TAB>unknown", "key<TAB>answers" or "key<TAB>retired<TA
 _doctor_env() {
     hr "doctor: .env"
     ok "every value is well-formed (checked before any command runs)"
+    local mode; mode=$(stat -c %a "$ENV_FILE")
+    if (( 8#$mode & 8#077 )); then
+        d_fail ".env can be read by others (mode $mode) — it holds every secret of the stack" "chmod 600 $ENV_FILE"
+    else ok ".env is private (mode $mode)"; fi
     local k kind since n=0
     while IFS=$'\t' read -r k kind since; do
         n=$((n + 1))

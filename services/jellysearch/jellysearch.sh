@@ -21,8 +21,8 @@ jellysearch_update_probe() { # after an update: the search index exists and is n
     local docs stats="http://127.0.0.1:7700/stats"   # addr-ok: inside meilisearch's own container
     # the key goes in on stdin: sudo logs every command line to the journal
     docs=$(printf '%s' "$(env_get MEILI_MASTER_KEY)" | sudo docker exec -i "$(svc_cname meilisearch)" sh -c \
-           'k=$(cat); curl -fsS -H "Authorization: Bearer $k" "$1" \
-            || wget -qO- --header="Authorization: Bearer $k" "$1"' _ "$stats" \
+           'k=$(cat); printf "Authorization: Bearer %s\n" "$k" | curl -fsS -m 20 -H @- "$1" \
+            || wget -qO- -T 20 --header="Authorization: Bearer $k" "$1"' _ "$stats" \
            2>/dev/null | jq '[.indexes[].numberOfDocuments] | add // 0' || echo 0)
     (( docs > 0 )) && ok "search index: $docs documents" \
         || { warn "search index EMPTY after update — try 'docker restart $(svc_cname jellysearch)';"; warn "if it stays empty: ./mediastack.sh rollback jellyfin"; return 1; }

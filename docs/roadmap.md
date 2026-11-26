@@ -701,12 +701,19 @@ agreed first:
       or shared folder, the home folder or one holding the repo
       (`root_unsafe`); nuke lists the folders it deletes; both keep a root
       that holds DATA_ROOT or BACKUP_ROOT and say so. `test-roots`.
-      *F2, secrets (to do):* three keys went through sudo's command line,
+      *F2a, secrets (done):* three keys went through sudo's command line,
       which sudo logs (proven on anzac4: `COMMAND=` carries the arguments) —
       Meilisearch's and gluetun's control key on rotation, LazyLibrarian's
-      when written; every API helper puts its key and password bodies on
-      curl's command line (`ps` shows them); `.env` can be created readable
-      and nothing re-checks its mode. *F3 (to do):* verbs that change the
+      when written. Each now goes in on stdin: Meilisearch's curl and
+      JellySearch's probe read the header with `-H @-`, LazyLibrarian's key
+      is in sed's script (`sed -f -`); gluetun's busybox wget still takes it
+      as an argument inside its own namespace (out of sudo's log, not out of
+      `ps` — F2b). `env_set` rewrites a value the same way, off sed's
+      command line. `.env` is made 600 from its first byte (configure and
+      `env_set`), configure's `chmod` fails loud, and doctor fails a `.env`
+      others can read. `test-secrets`. *F2b, secrets (to decide):* every API
+      helper puts its key and password bodies on curl's command line (`ps`
+      shows them): 78 host curl calls in 24 files, 17 tests stub `curl`. *F3 (to do):* verbs that change the
       stack (`down`, `restart`, `enable`/`disable`, `set-credentials`,
       `configure`, nuke/uninstall, `brand` …) run without the maintenance
       lock — a lock column in `VERBS`, taken by the dispatcher. *F4 (to do):*

@@ -107,4 +107,29 @@ out=$(printf 'tok$en "x"\n' | { ask_secret_token "pw" ""; printf 'GOT:[%s]' "$RE
 # ---- env_get: a value is never an option ----
 env_set ARR_PASSWORD -n; [[ "$(env_get ARR_PASSWORD)" == -n ]] || fail_ "env_get prints -n as itself"; pass
 
+# ---- a secret never on a command line sudo logs (it writes COMMAND= with every argument) ----
+KEY=s3cr3t-$RANDOM$RANDOM
+( sudo() { printf '%s\n' "$*" >> "$T/sudo.argv"; cat >/dev/null; echo 200; }
+  svc_cname() { echo "c-$1"; }
+  : > "$T/sudo.argv"
+  meili_key_code "$KEY" >/dev/null; gluetun_control_code "$KEY" >/dev/null
+  ! grep -F "$KEY" "$T/sudo.argv" ) || fail_ "the Meilisearch and gluetun key checks keep the key out of sudo's command line: $(cat "$T/sudo.argv")"; pass
+( sudo() { case "$1" in test) return 0 ;; stat) echo 1000:1000 ;; sed) printf '%s\n' "$*" >> "$T/sudo.argv"; cat >> "$T/sed.script" ;; *) printf '%s\n' "$*" >> "$T/sudo.argv" ;; esac; }
+  DC() { :; }; http_ready() { :; }; ll_url() { echo http://ll; }; env_get() { echo /cfg; }
+  : > "$T/sudo.argv"; : > "$T/sed.script"
+  ll_api_enable "$KEY" >/dev/null 2>&1 || true
+  ! grep -F "$KEY" "$T/sudo.argv" && grep -F "api_key = $KEY" "$T/sed.script" >/dev/null ) \
+    || fail_ "LazyLibrarian's key goes into sed's script on stdin, never sudo's command line: $(cat "$T/sudo.argv")"; pass
+# env_set: the value is not on sed's command line either (ps shows it)
+( sed() { printf '%s\n' "$*" >> "$T/sed.argv"; command sed "$@"; }
+  : > "$T/sed.argv"; env_set ARR_PASSWORD first; env_set ARR_PASSWORD "$KEY"
+  [[ "$(env_get ARR_PASSWORD)" == "$KEY" ]] && ! grep -F "$KEY" "$T/sed.argv" ) || fail_ "env_set rewrites a value with the value off sed's command line"; pass
+
+# ---- .env is private from the start, and doctor says when it is not ----
+( ENV_FILE=$T/fresh.env; repo_owned() { :; }; umask 022; env_set K v; [[ "$(stat -c %a "$ENV_FILE")" == 600 ]] ) || fail_ "a .env env_set creates is 600, whatever the umask"; pass
+( ENV_FILE=$T/open.env; : > "$ENV_FILE"; chmod 644 "$ENV_FILE"; DOCTOR_FAILS=(); hr() { :; }; ok() { :; }; warn() { :; }; env_unknown() { :; }
+  d_fail() { echo "FAIL $1 | $2" >> "$T/doc"; }; : > "$T/doc"; _doctor_env
+  grep -F "FAIL .env can be read by others (mode 644)" "$T/doc" >/dev/null ) || fail_ "doctor fails a .env others can read: $(cat "$T/doc")"; pass
+grep -nE 'chmod 600 "\$ENV_FILE" \|\| true' lib/*.sh >/dev/null && fail_ "making .env private is never || true"; pass
+
 echo "OK secrets: $checks checks"

@@ -113,10 +113,10 @@ cmd_configure() { # configure [--answers FILE] [--domain D] [--services a,b] [--
     (( ${#ANSWERS_REST[@]} == 0 )) || die "unknown argument '${ANSWERS_REST[0]}' for 'configure' (accepts: --answers FILE, --domain D, --services a,b, --signin none|wizarr|authentik)"
     sudo_unattended_check
     if [[ ! -f "$ENV_FILE" ]]; then
-        cp .env.example "$ENV_FILE"; chmod 600 "$ENV_FILE"; info "Created .env from .env.example"
+        ( umask 077; cp .env.example "$ENV_FILE" ); info "Created .env from .env.example"
         state_set configure-first yes   # until the questions are answered once, the .env holds no choices
     fi
-    chmod 600 "$ENV_FILE" || true
+    chmod 600 "$ENV_FILE" || die "could not make $ENV_FILE private (chmod 600) — it holds every secret of the stack; fix its owner: sudo chown \"$(id -un)\" $ENV_FILE"
     [[ -z "$(state_get configure-first)" ]] || fresh=(--fresh)
     # sudo's password now, before the first question: the questionnaire reads
     # the catalogue through compose (sudo), and it shares this terminal's ticket
