@@ -222,7 +222,25 @@ compose_pending() { # the services `up` would change — Compose's own dry run o
 }
 
 _nuke_root() { # _nuke_root VAR NAME -> VAR's folder: its .env value, or the one configure suggests inside this folder
-    local v; v=$(env_get "$1"); echo "${v:-$SCRIPT_DIR/$2}"
+    local v; v=$(env_get "$1"); realpath -m -- "$(abspath "${v:-$SCRIPT_DIR/$2}")"
+}
+
+root_keep_why() { # root_keep_why PATH -> why a whole-root delete must leave PATH in place ("" to delete it)
+    local why o k; why=$(root_unsafe "$1"); [[ -z "$why" ]] || { echo "$why"; return 0; }
+    for k in DATA_ROOT:data BACKUP_ROOT:backups; do   # the roots nuke and uninstall keep
+        o=$(_nuke_root "${k%%:*}" "${k#*:}")
+        [[ "$o/" == "$1/"* ]] && { echo "it holds ${k%%:*} ($o), which is kept"; return 0; }
+    done
+    return 0
+}
+
+roots_remove() { # roots_remove PATH... — each one deleted whole, unless root_keep_why keeps it (said, never silent)
+    local r why
+    for r in "$@"; do
+        why=$(root_keep_why "$r")
+        if [[ -n "$why" ]]; then warn "$r left in place: $why — delete what you no longer want in it by hand"; continue; fi
+        sudo rm -rf -- "$r"; ok "removed $r"
+    done
 }
 
 cmd_nuke() {
@@ -230,8 +248,14 @@ cmd_nuke() {
     # succeed on a half-deleted deployment. Containers are found by compose
     # project label; users by the mediacenter group in /etc/passwd.
     hr "NUKE: remove everything the installer created"
+    local croot cache tcode r why
+    croot=$(_nuke_root CONFIG_ROOT config); cache=$(_nuke_root CACHE_ROOT cache); tcode=$(_nuke_root TRANSCODE_ROOT transcodes)
     echo "Removes: containers, docker network, systemd units,"
-    echo "         service users + group, CONFIG_ROOT, CACHE_ROOT, TRANSCODE_ROOT,"
+    echo "         service users + group, and these folders, whole:"
+    for r in "$croot" "$cache" "$tcode"; do
+        why=$(root_keep_why "$r")
+        if [[ -z "$why" ]]; then echo "           $r"; else echo "           (kept: $r — $why)"; fi
+    done
     echo "         the deletion-attribution watch (and auditd, if mediastack installed it),"
     echo "         leak-test's tools (conntrack, tcpdump) if mediastack installed them."
     echo "Keeps  : DATA_ROOT (your media), BACKUP_ROOT (restore points),"
@@ -262,13 +286,11 @@ cmd_nuke() {
 
     stack_users_remove
 
-    local croot cache tcode
-    croot=$(_nuke_root CONFIG_ROOT config); cache=$(_nuke_root CACHE_ROOT cache); tcode=$(_nuke_root TRANSCODE_ROOT transcodes)
-    sudo rm -rf "$croot" "$cache" "$tcode"
-    ok "removed $croot, $cache and $tcode"
+    roots_remove "$croot" "$cache" "$tcode"
     local inside=""
-    local d; d=$(_nuke_root DATA_ROOT data); [[ "$d" == "$SCRIPT_DIR/"* ]] && inside+="media ($d) "
-    d=$(_nuke_root BACKUP_ROOT backups); [[ "$d" == "$SCRIPT_DIR/"* ]] && inside+="backups ($d) "
+    local d repo; repo=$(realpath -m -- "$SCRIPT_DIR")
+    d=$(_nuke_root DATA_ROOT data); [[ "$d" == "$repo/"* ]] && inside+="media ($d) "
+    d=$(_nuke_root BACKUP_ROOT backups); [[ "$d" == "$repo/"* ]] && inside+="backups ($d) "
     if [[ -n "$inside" ]]; then
         ok "Nuked. Media and backups untouched."
         warn "Still INSIDE this folder: ${inside}— move them out before deleting it."
@@ -314,11 +336,15 @@ cmd_uninstall() {
     if confirm "Also remove users/group?"; then
         stack_users_remove
     fi
-    echo; echo "Tier 3: DELETE ALL SERVICE CONFIGS at $(env_get CONFIG_ROOT) — irreversible."
-    local really; read -r -p "Type 'delete my configs' to proceed (anything else skips): " really
-    if [[ "$really" == "delete my configs" ]]; then
-        sudo rm -rf "$(env_get CONFIG_ROOT)"; ok "configs deleted"
-    else info "Configs kept."; fi
+    local croot why; croot=$(_nuke_root CONFIG_ROOT config); why=$(root_keep_why "$croot")
+    if [[ -n "$why" ]]; then
+        echo; info "Tier 3 skipped: $croot is left in place — $why. Delete the service configs in it by hand."
+    else
+        echo; echo "Tier 3: DELETE ALL SERVICE CONFIGS at $croot — irreversible."
+        local really; read -r -p "Type 'delete my configs' to proceed (anything else skips): " really
+        if [[ "$really" == "delete my configs" ]]; then roots_remove "$croot"
+        else info "Configs kept."; fi
+    fi
     footprint_leftovers
     ok "Uninstall finished. Media in DATA_ROOT and backups in BACKUP_ROOT were never touched."
 }

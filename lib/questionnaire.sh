@@ -101,6 +101,7 @@ _configure_mode() {
 # would point the stack at an empty folder.
 root_problem() { # root_problem PATH allow_network(yes/no) -> why PATH cannot be this folder ("" when it can)
     local val="$1" allow_net="$2" p="$1" fs
+    local why; why=$(root_unsafe "$val"); [[ -z "$why" ]] || { echo "$why"; return 0; }
     # a backslash is the key beside Enter: kept, it named a folder "\"
     # (found live: CACHE_ROOT=.../mediastack/\, and every later use broke)
     if [[ "$val" == *\\* ]]; then

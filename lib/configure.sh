@@ -87,14 +87,23 @@ root_move_apply() { # root_move_apply VAR old new CHOICE — the old folder's co
     else
         need_cmd rsync
         sudo rsync -a "$old"/ "$new"/ || die "copy failed — nothing was removed; $var still points at $old"
-        # verify before deleting: a dry re-sync must have nothing to do
-        if [[ -n "$(sudo rsync -a -n --itemize-changes "$old"/ "$new"/ | grep -v '^\.d\.\.t')" ]]; then
-            die "copy verification failed — the old copy at $old is intact; $var still points at $old. Compare the two by hand before retrying."
-        fi
+        root_copy_verified "$old" "$new" \
+            || die "copy verification failed ($ROOT_VERIFY_WHY) — the old copy at $old is intact; $var still points at $old. Compare the two by hand before retrying."
         sudo find "$old" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
     fi
     env_del "${var}_PREVIOUS"
     ok "$var contents moved to $new ($n $( (( n == 1 )) && echo entry || echo entries), $size)"
+}
+
+ROOT_VERIFY_WHY=""
+root_copy_verified() { # root_copy_verified OLD NEW — rc 0 only when a dry re-sync ran cleanly with nothing left to do (else ROOT_VERIFY_WHY)
+    local out rc=0 left
+    out=$(sudo rsync -a -n --itemize-changes "$1"/ "$2"/ 2>&1) || rc=$?
+    # its own failure is no verdict: a check that could not read the old copy says nothing about the new one
+    if (( rc != 0 )); then ROOT_VERIFY_WHY="the check itself failed, rsync rc $rc: $(tail -n 2 <<<"$out" | tr '\n' ' ')"; return 1; fi
+    left=$(grep -v '^\.d\.\.t' <<<"$out" || true)   # a folder's time alone is no difference
+    if [[ -n "$left" ]]; then ROOT_VERIFY_WHY="$(wc -l <<<"$left") entries still differ, first: $(sed -n 1p <<<"$left")"; return 1; fi
+    return 0
 }
 
 cmd_configure() { # configure [--answers FILE] [--domain D] [--services a,b] [--signin X] — the questions (answered ahead or asked), then everything they decide

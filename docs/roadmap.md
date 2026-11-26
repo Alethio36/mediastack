@@ -686,6 +686,41 @@ agreed first:
       check); audiobookshelf's media-tree handover — one migration's, run
       once; the setup's closing hints and `support`'s reachability list —
       words about named things, nothing run by name.
+    - **The whole-code audit (26 Nov 2026)** — every file read for bugs,
+      dead code, hard-coded values and what could go wrong, before the
+      promote. No dead code (every function is called or dispatched). Seven
+      bugs and five risks, in patches F1–F6: F1 data safety, F2 secrets, F3
+      the maintenance lock, F4 correctness, F5 modularity, F6 exposure.
+      *F1, data safety (done):* a root moved across disks was deleted after
+      a "verification" whose rsync had failed — the empty answer counted as
+      nothing left (reproduced); `root_copy_verified` judges rsync's own rc
+      first. `BACKUP_KEEP_PREUPDATE=0` pruned the point a targeted update had
+      just made, so its rollback took an older nightly (reproduced); the
+      newest always stays. nuke and uninstall deleted CONFIG/CACHE/TRANSCODE
+      whole with no check of what they were: configure now refuses a system
+      or shared folder, the home folder or one holding the repo
+      (`root_unsafe`); nuke lists the folders it deletes; both keep a root
+      that holds DATA_ROOT or BACKUP_ROOT and say so. `test-roots`.
+      *F2, secrets (to do):* three keys went through sudo's command line,
+      which sudo logs (proven on anzac4: `COMMAND=` carries the arguments) —
+      Meilisearch's and gluetun's control key on rotation, LazyLibrarian's
+      when written; every API helper puts its key and password bodies on
+      curl's command line (`ps` shows them); `.env` can be created readable
+      and nothing re-checks its mode. *F3 (to do):* verbs that change the
+      stack (`down`, `restart`, `enable`/`disable`, `set-credentials`,
+      `configure`, nuke/uninstall, `brand` …) run without the maintenance
+      lock — a lock column in `VERBS`, taken by the dispatcher. *F4 (to do):*
+      qBittorrent's rotation matches the first QBittorrent entry, not
+      mediastack's (the shared resyncs do); the kill-switch proof checks no
+      egress before the drop and reads a failed drop as "NOT working"; no
+      timeout on NordVPN's token call and JellySearch's probe;
+      `authentik_url` builds a URL with no port. *F5 (before step 12):*
+      `_doctor_accounts` split to its owners; authentik's calls into Kavita,
+      Jellyfin and Audiobookshelf and `sc_rotate_arr`'s follow-ups as hooks
+      found by name; one `svc_local_url`; the longest functions split. *F6:*
+      NPM's admin port open to the LAN before its first sign-in; the leak
+      test's unpinned `curlimages/curl`; Traefik's DNS-check resolvers fixed
+      at 1.1.1.1/8.8.8.8.
     - **A failure summary names its role twice** (`wizarr: wizarr: …`,
       `authentik: authentik: …`): the summary adds the role, and the
       messages already start with it. *Done (P1, 25 Nov 2026):* a message

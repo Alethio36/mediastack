@@ -141,7 +141,8 @@ writes it under `BACKUP_ROOT/pre-update/` instead of the top-level pool. The
 grandfather-father-son schedule above **never sees this pool** (it globs
 top-level timestamp dirs only), so scoped update points can't displace a
 daily/weekly/monthly slot. They have their own retention, `BACKUP_KEEP_PREUPDATE`
-(3) — the newest N "undo that update" points, pruned after each targeted update.
+(3) — the newest N "undo that update" points, pruned after each targeted update;
+the newest always stays, even at 0, since it is the one that update rolls back to.
 
 `rollback <svc>` returns a service to the image it ran before: the newest
 point, in either pool, holding a different image than the one running (so a

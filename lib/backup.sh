@@ -517,7 +517,7 @@ preupdate_snapshot() { # preupdate_snapshot CROOT DEST SVC — runs with SVC's s
     sudo tar -C "$croot" --exclude="$s/data/transcodes" -czf "$dest/$s.tar.gz" "$s" || { fail "tar failed for $s"; return "$BACKUP_PARTIAL"; }
 }
 
-# Pre-update pool retention: keep the newest BACKUP_KEEP_PREUPDATE scoped
+# Pre-update pool retention: keep the newest BACKUP_KEEP_PREUPDATE scoped (never fewer than the newest)
 # points, prune the rest. Independent of the GFS prune_backups; only ever
 # touches $BACKUP_ROOT/pre-update/.
 prune_preupdate() {
@@ -532,7 +532,8 @@ prune_preupdate() {
     (( ${#all[@]} )) || return 0
     mapfile -t all < <(printf '%s\n' "${all[@]}" | sort -r)
     for d in "${all[@]}"; do
-        n=$((n+1)); (( n <= keep )) && continue
+        # the newest stays whatever the count: it is the point the update just made, the one its rollback needs
+        n=$((n+1)); (( n <= keep || n == 1 )) && continue
         sudo rm -rf "${pud:?}/$d"; pruned=$((pruned+1))
     done
     ok "pre-update points: kept $(( ${#all[@]} - pruned )), pruned $pruned (BACKUP_KEEP_PREUPDATE=$keep)"

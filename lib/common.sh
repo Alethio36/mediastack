@@ -373,6 +373,19 @@ sched_words() { # sched_words EXPR -> the wizard's words for it ("never" when em
 
 # ------------------------------------------------------------ filesystem --
 abspath() { case "$1" in /*) echo "$1" ;; *) echo "$SCRIPT_DIR/${1#./}" ;; esac; }
+# A root is deleted whole by nuke (CONFIG/CACHE/TRANSCODE) or uninstall (CONFIG):
+# never a system or shared folder, the home folder, or one holding this repo.
+ROOT_SHARED=(/ /bin /boot /dev /etc /home /lib /lib32 /lib64 /media /mnt /opt /proc /root /run /sbin /srv /sys /tmp /usr /var)
+root_unsafe() { # root_unsafe PATH -> why PATH can never be a mediastack root ("" when it can)
+    local p s; p=$(realpath -m -- "$(abspath "$1")")
+    for s in "${ROOT_SHARED[@]}"; do
+        [[ "$p" == "$s" ]] && { echo "'$p' is a system or shared folder — mediastack's roots are its own (nuke deletes them whole): give it one inside, e.g. ${p%/}/mediastack"; return 0; }
+    done
+    [[ -n "${HOME:-}" && "$p" == "$(realpath -m -- "$HOME")" ]] && { echo "'$p' is your home folder — mediastack's roots are its own (nuke deletes them whole): give it one inside, e.g. $p/mediastack"; return 0; }
+    local repo; repo=$(realpath -m -- "$SCRIPT_DIR")   # paths compared resolved: a symlinked checkout is still the repo
+    [[ "$repo/" == "$p/"* ]] && { echo "'$p' holds this repo folder ($repo) — nuke would delete the repo with it: give it a folder of its own"; return 0; }
+    return 0
+}
 fstype_of() { findmnt -rn -o FSTYPE --target "$1" 2>/dev/null || echo unknown; }
 fsdev_of()  { stat -c %d "$1" 2>/dev/null || echo 0; }
 fs_source_of() { # the device behind a path; a btrfs subvolume ("/dev/sda2[/@x]") counts as its filesystem
