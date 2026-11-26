@@ -45,6 +45,12 @@ environment reissues automatically — nothing else to touch. `doctor` warns
 persistently while staging certificates are live, and 30 days before your
 own certificate expires.
 
+Traefik restarts only for what it reads at start: its static config
+(`traefik.yml` — the certificate source, the ACME environment) and your own
+certificate's files, which it does not watch (replace them, then `up`).
+Routes, middlewares and logins live in its dynamic folder, which it watches
+and loads by itself: a password change or a new route drops no connection.
+
 ## Hostnames
 
 Defaults: dash (traefik dashboard), panel (olivetin front door), jellyfin,

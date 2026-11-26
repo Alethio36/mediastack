@@ -238,6 +238,36 @@ fresh; answers "$(sed 's/CLOUDFLARE_TUNNEL_TOKEN=TUN/CLOUDFLARE_TUNNEL_TOKEN=/' 
 filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "the tunnel left blank: $(cat "$T/out")"
 [[ ",$(envv COMPOSE_PROFILES)," != *,cloudflared,* ]] || fail_ "no one to ask for an optional token: the tunnel stays off"; pass
 
+# ---- the same answers file again: what it says is done already passes —
+#      a dropped install carries on by running it again (found live 15 Nov 2026:
+#      PANEL, NOTIFY_*, STACK_PASSWORD refused though they matched) ----
+same='ENABLE_SONARR=y\nENABLE_APPRISE=y\nSIGNIN=none\nNORDVPN_TOKEN=TOKEN\nNOTIFY_OPS=ntfy://ntfy.sh/ops\nSTACK_LOGINS=unified\nSTACK_PASSWORD=Sh4red-pass-1\nPANEL=no\n'
+fresh; answers "$same"; filed "$T/a.env" '' --fresh; (( RC == 0 )) || fail_ "the first run: $(cat "$T/out")"
+# what the chain did after it: wire handed the URLs to the hub, which holds them now
+( ENV_FILE=$T/w/.env STATE_DIR=$T/w/local/state; state_del "$NOTIFY_URLS_STATE"; state_set "$NOTIFY_STORED_STATE" yes )
+NOTIFY_MODEL=$'ops\tntfy://ntfy.sh/ops\n'; NOTIFY_YOURS=""; hubcfg=$(notify_cfg_render)
+hub_cfg_get() { [[ -n "${HUB_DOWN:-}" ]] && { echo "connection refused"; return 1; }; printf '%s\n' "$hubcfg"; }
+cp "$T/w/.env" "$T/run1.env"
+filed "$T/a.env" ''; (( RC == 0 )) || fail_ "the same file again: carries on: $(cat "$T/out")"
+cmp -s "$T/run1.env" "$T/w/.env" && has "Notifications: as the hub holds them" || fail_ "nothing changed, the hub's URLs recognised: $(diff "$T/run1.env" "$T/w/.env")"; pass
+answers "${same/ntfy.sh\/ops/ntfy.sh\/other}"; filed "$T/a.env" ''
+(( RC == 4 )) && has "NOTIFY_OPS: the hub holds other URLs — change them with ./mediastack.sh notify set" && cmp -s "$T/run1.env" "$T/w/.env" \
+    || fail_ "other URLs than the hub's: refused, nothing written: $(cat "$T/out")"; pass
+answers "$same"; HUB_DOWN=1 filed "$T/a.env" ''
+(( RC == 4 )) && has "the hub holds its URLs and cannot be read to compare (connection refused)" || fail_ "the hub unreadable: refused, said why: $(cat "$T/out")"; pass
+answers "${same/Sh4red-pass-1/Other-pass-22}"; filed "$T/a.env" ''
+(( RC == 4 )) && has "STACK_PASSWORD: every login is made already, with another password" && cmp -s "$T/run1.env" "$T/w/.env" \
+    || fail_ "another password: refused, nothing written: $(cat "$T/out")"; pass
+answers "${same/PANEL=no/PANEL=yes}"; filed "$T/a.env" ''
+(( RC == 4 )) && has "PANEL=yes: the web panel needs Traefik on (HTTPS)" || fail_ "a panel with no Traefik: refused: $(cat "$T/out")"; pass
+# the panel installed (frontdoor-install, after the first run)
+sed -i 's/^COMPOSE_PROFILES=\(.*\)/COMPOSE_PROFILES=\1,olivetin/' "$T/w/.env"; cp "$T/w/.env" "$T/run1.env"
+answers "${same/PANEL=no/PANEL=yes}"; filed "$T/a.env" ''
+(( RC == 0 )) && has "Web panel: installed already" || fail_ "PANEL=yes with the panel installed: carries on: $(cat "$T/out")"; pass
+answers "$same"; filed "$T/a.env" ''
+(( RC == 4 )) && has "PANEL=no: the web panel is installed — configure does not take it away" || fail_ "PANEL=no with the panel installed: refused: $(cat "$T/out")"; pass
+unset -f hub_cfg_get
+
 # ---- full mode with a terminal: the check pass reaches every question and asks none ----
 fresh; answers "CONFIGURE_MODE=full\n$all"
 Q_TERMINAL=1 filed "$T/a.env" '' --fresh

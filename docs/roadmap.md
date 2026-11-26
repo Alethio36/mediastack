@@ -623,10 +623,26 @@ agreed first:
       reason (`test-down`).
     - **Each secret compose carries runs a full `up`** in `rotate-secrets`
       (the leak gate's minute each); grouping them per service, as the
-      portal's settings are, could save minutes per run.
+      portal's settings are, could save minutes per run. *Decided (P4, 25
+      Nov 2026): kept as it is.* Three secrets take an `up` on anzac4
+      (authentik's, grouped already; Meilisearch's; gluetun's), ~1.5 min
+      each: grouping saves at most ~3 minutes of a rare, typed command that
+      stops the stack for a restore point anyway, and would cost what each
+      `up` buys — each secret proven, or put back on its old value, alone.
     - **`set-credentials all` restarts Traefik twice** (19 Nov 2026, live):
       once for Transmission's login it adds past the gate, once for the
-      dashboard's. One regeneration at the end would do.
+      dashboard's. One regeneration at the end would do. *Done (P4, 25 Nov
+      2026), at its cause:* `traefik_gen` restarted Traefik for any change to
+      its generated files, the watched dynamic folder too (the August fix
+      was for the static file). Proven live that the folder loads by itself
+      (a route added, served, removed: no restart); now a restart is only for
+      the static file or your own certificate — none for a login, a route or
+      P3c's middleware. Found on the way: `own_cert_install` said "Traefik
+      reloads it by itself", and Traefik watches no certificate file, nor
+      were the files in the restart check — a renewed certificate of your
+      own was installed but not served until something else restarted
+      Traefik (anzac4's runs out 12 Jan 2027). It now restarts it
+      (`test-certs`, failing on the old code).
     - **Grep the code for checks that use `grep -q` in a pipe or a `$( )`
       that can die** — test-pipes and test-reasons caught three new ones in
       one day; their rules belong in the contributor notes. *Done (P2, 25
@@ -644,6 +660,12 @@ agreed first:
       holds them — seen live 15 Nov 2026): loud and nothing written, but an
       unattended install that dropped after its first step cannot simply be
       run again. An answer that matches what is already done should pass.
+      *Done (P4, 25 Nov 2026):* `PANEL=yes` with the panel installed,
+      `PANEL=no` with no Traefik, notification URLs the hub holds (read from
+      the hub, not a copy: `notify set` and Apprise's UI change it), and a
+      password every made login already has pass; a different one is still
+      refused, with the command that changes it (`test-answers`: the same
+      file run twice, then each difference; failing on the old code).
     - **`scripts/test-runs.sh` failed once in CI** (lint #528 on 31fed10,
       15 Nov 2026) and never since; not reproduced locally (22 runs, 10 under
       full CPU load). If it fails again, save the step's log before re-running.

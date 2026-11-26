@@ -16,7 +16,7 @@ notify_pending() { # notify_pending STREAM -> the URLs configure recorded for it
 
 apprise_questions() {
     if [[ -n "$(state_get "$NOTIFY_STORED_STATE")" ]]; then
-        answers_any NOTIFY_OPS NOTIFY_USERS && answer_refused "NOTIFY_OPS/NOTIFY_USERS: the hub holds its URLs already — change them with ./mediastack.sh notify set"
+        if answers_any NOTIFY_OPS NOTIFY_USERS; then notify_answers_held; return 0; fi
         if q_quick; then q_took "Notifications" "kept in the hub (change them: ./mediastack.sh notify)"; fi
         return 0
     fi
@@ -61,6 +61,24 @@ notify_from_answers() { # the streams' URLs from the answers file, checked as ty
     done
     notify_urls_record "$answers"
     q_answered "Notifications" "$(cut -f1 <<<"${answers%$'\n'}" | paste -sd' ' -)"
+}
+
+notify_answers_held() { # the hub holds its URLs: answers that are what it holds pass (the same answers file run again); others are refused
+    # read from the hub, not a copy: `notify set` and Apprise's UI change it
+    local cur st k u have want differ=""
+    local -a us
+    cur=$( (hub_cfg_get) 2>&1 ) || { answer_refused "NOTIFY_OPS/NOTIFY_USERS: the hub holds its URLs and cannot be read to compare ($(oneline "$cur")) — start it (./mediastack.sh up), or leave them out"; return 0; }
+    notify_cfg_read "$cur" || { answer_refused "NOTIFY_OPS/NOTIFY_USERS: the hub's configuration cannot be read to compare ($NOTIFY_CFG_WHY)"; return 0; }
+    for st in ops users; do
+        k=NOTIFY_${st^^}
+        answer "$k" || continue
+        have=$(awk -F'\t' -v s="$st" '$1 == s { print $2 }' <<<"$NOTIFY_MODEL" | LC_ALL=C sort)
+        IFS=, read -ra us <<<"$REPLY_VAL"
+        want=$(for u in "${us[@]}"; do u=${u// /}; [[ -z "$u" ]] || notify_url_canon "$u"; done | LC_ALL=C sort)
+        [[ "$have" == "$want" ]] || differ+="$k "
+    done
+    if [[ -n "$differ" ]]; then answer_refused "${differ% }: the hub holds other URLs — change them with ./mediastack.sh notify set"; return 0; fi
+    q_answered "Notifications" "as the hub holds them"
 }
 
 notify_urls_record() { # notify_urls_record "ops<TAB>urls\nusers<TAB>urls\n" — held 0600 for wire apprise; nothing: notifications stay off

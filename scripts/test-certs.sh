@@ -84,7 +84,30 @@ grep -q "your own certificate (until" "$T/out" || fail_ "the config line names t
 own_cert_install > "$T/out" 2>&1 || fail_ "install a good pair"
 cmp -s "$c/good.full" "$T/cfg/traefik/certs/fullchain.pem" && [[ "$(stat -c %a "$T/cfg/traefik/certs/privkey.pem")" == 600 ]] \
     && grep -q 'your certificate is in place' "$T/out" || fail_ "copied in, the key 600"; pass
+[[ "${TRAEFIK_CERT_CHANGED:-}" == 1 ]] || fail_ "a new pair asks for Traefik's restart (it watches no certificate file)"; pass
+TRAEFIK_CERT_CHANGED=""
 own_cert_install > "$T/out" 2>&1; [[ ! -s "$T/out" ]] || fail_ "unchanged: nothing copied, nothing said"; pass
+[[ -z "${TRAEFIK_CERT_CHANGED:-}" ]] || fail_ "unchanged: no restart asked for"; pass
+
+# ---- Traefik restarts only for what it reads at start (found 25 Nov 2026:
+#      set-credentials all restarted it twice for its watched dynamic folder) ----
+gen() { # gen -> "restart" lines Traefik got, then its words
+    ( signin_is() { false; }; svc_cname() { echo traefik-c; }
+      docker() { case "$1" in ps) echo traefik-c ;; restart) echo "RESTART" >> "$T/restarts" ;; esac; }
+      rm -f "$T/restarts"; traefik_gen > "$T/gen.out" 2>&1; cat "$T/restarts" 2>/dev/null; grep -o '[a-z ]* — restarting traefik' "$T/gen.out" || true )
+}
+gen >/dev/null   # settled: this pair, these values
+[[ -z "$(gen)" ]] || fail_ "nothing changed: no restart: $(gen)"; pass
+sed -i 's/^TRAEFIK_DASH_PASSWORD=.*/TRAEFIK_DASH_PASSWORD=other/' "$ENV_FILE"
+r=$(gen); grep -q 'admin:' "$T/cfg/traefik/dynamic/00-mediastack.yml" && [[ -z "$r" ]] \
+    || fail_ "a dynamic change (the dashboard's password) is loaded by its watch, no restart: $r"; pass
+r=$(TRAEFIK_CERT_CHANGED=1 gen)
+[[ "$r" == *RESTART*"your certificate changed — restarting traefik"* ]] || fail_ "a new certificate: restarted, said why: $r"; pass
+[[ -z "$(gen)" ]] || fail_ "the certificate's restart is asked once, not on every later run"; pass
+printf 'ACME_EMAIL=a@b.c\n' >> "$ENV_FILE"; sed -i 's/^TLS_SOURCE=own/TLS_SOURCE=letsencrypt/' "$ENV_FILE"
+r=$(gen)
+[[ "$r" == *RESTART*"its static config changed — restarting traefik"* ]] || fail_ "a static change (the certificate's source): restarted: $r"; pass
+sed -i 's/^TLS_SOURCE=letsencrypt/TLS_SOURCE=own/' "$ENV_FILE"; gen >/dev/null
 sed -i "s|^TLS_CERT_FILE=.*|TLS_CERT_FILE=$c/nowild.full|; s|^TLS_KEY_FILE=.*|TLS_KEY_FILE=$c/nowild.key|" "$ENV_FILE"
 ( own_cert_install ) > "$T/out" 2>&1 && fail_ "a pair that cannot serve is refused"
 grep -q 'your certificate cannot be served: the certificate does not cover' "$T/out" && cmp -s "$c/good.full" "$T/cfg/traefik/certs/fullchain.pem" \

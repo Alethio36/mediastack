@@ -60,7 +60,7 @@ traefik_gen() {
     fi
     # a fresh install has neither file yet: hash what exists (cat's miss is no
     # failure here — under pipefail it ended every first run; found by the snapshot test)
-    prehash=$( { sudo cat "$croot/traefik/traefik.yml" "$croot/traefik/dynamic/00-mediastack.yml" 2>/dev/null || true; } | sha256sum)
+    prehash=$( { sudo cat "$croot/traefik/traefik.yml" 2>/dev/null || true; } | sha256sum)
     caline=""
     [[ "$acmeenv" == staging ]] && caline='      caServer: "https://acme-staging-v02.api.letsencrypt.org/directory"'
     # Let's Encrypt: the resolver, and the dashboard router asks it for the
@@ -165,12 +165,20 @@ DYNAMIC
     done
     (( n )) && info "$n user proxy file(s) from custom/proxy.d applied"
     ok "traefik config generated ($(traefik_cert_words), domain $domain)"
-    # static config only loads at container start; a content change on a
-    # running traefik needs an explicit restart or it silently stays stale
-    posthash=$(sudo cat "$croot/traefik/traefik.yml" "$croot/traefik/dynamic/00-mediastack.yml" 2>/dev/null | sha256sum)
-    if [[ "$prehash" != "$posthash" ]] \
+    # Restarted only for what it reads at start: its static config, and your
+    # own certificate's files (it watches no certificate file — found 25 Nov
+    # 2026, own_cert_install). The dynamic folder it watches and loads by
+    # itself (proven live 25 Nov 2026: a route added, served, removed, no
+    # restart) — a restart there dropped every stream for nothing
+    # (set-credentials all made two).
+    local why=""
+    posthash=$(sudo cat "$croot/traefik/traefik.yml" | sha256sum)
+    [[ "$prehash" == "$posthash" ]] || why="its static config changed"
+    [[ -z "${TRAEFIK_CERT_CHANGED:-}" ]] || why="${why:+$why and }your certificate changed"
+    TRAEFIK_CERT_CHANGED=""
+    if [[ -n "$why" ]] \
         && sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -x "$(svc_cname traefik)" >/dev/null; then
-        info "config changed — restarting traefik to load it"
+        info "$why — restarting traefik to load it"
         # shellcheck disable=SC2034  # the inspect cache lives in the entrypoint (CACHE RULE at c_inspect)
         INSPECT_JSON=""
         sudo docker restart "$(svc_cname traefik)" >/dev/null \
@@ -317,7 +325,7 @@ cmd_traefik_setup() {
     if [[ "${1:-}" == --hosts ]]; then cmd_traefik_hosts; return; fi
     if [[ "${1:-}" == --certs ]]; then cmd_traefik_certs; return; fi
     traefik_ensure --reconfigure
-    info "Apply with: ./mediastack.sh up   (recreates traefik if config changed)"
+    info "Apply with: ./mediastack.sh up   (restarts traefik only if its static config or your certificate changed)"
     info "Rename service addresses any time: ./mediastack.sh traefik-setup --hosts"
 }
 

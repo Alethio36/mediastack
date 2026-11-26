@@ -707,20 +707,34 @@ logins_answers_fit() { # logins_answers_fit MISSING-LOGIN... — a written passw
     local mode k l made=" "
     mode=$(env_get STACK_LOGINS); answer STACK_LOGINS && mode=$REPLY_VAL
     for l in "$@"; do made+="$(cut -f3 <<<"$l") "; done
+    # A login made already passes with the password it has: the same answers
+    # file run again carries on (docs/design-install.md, a dropped install);
+    # another password is a change, set-credentials' (found live 15 Nov 2026)
     if answers_any STACK_PASSWORD; then
         [[ "$mode" == unified ]] || answer_refused "STACK_PASSWORD is the one password of STACK_LOGINS=unified (it is $mode)"
-        (( $# )) || answer_refused "STACK_PASSWORD: every login is made already — change them with ./mediastack.sh set-credentials all"
+        if (( ! $# )) && answer STACK_PASSWORD && [[ "$(login_unified_password)" != "$REPLY_VAL" ]]; then
+            answer_refused "STACK_PASSWORD: every login is made already, with another password — change them with ./mediastack.sh set-credentials all"
+        fi
     fi
     while read -r k; do
         answers_any "$k" || continue
         [[ "$mode" == each ]] || answer_refused "$k is typed for STACK_LOGINS=each (it is $mode)"
-        [[ "$made" == *" $k "* ]] || answer_refused "$k: that login is made already, or its service does not run — change it with ./mediastack.sh set-credentials"
+        [[ "$made" == *" $k "* ]] && continue
+        answer "$k" || REPLY_VAL=""
+        [[ -n "$(env_get "$k")" && "$(env_get "$k")" == "$REPLY_VAL" ]] \
+            || answer_refused "$k: that login is made already with another password, or its service does not run — change it with ./mediastack.sh set-credentials"
     done < <(env_schema_rows | awk -F'\t' '$4 != "answers" && $6 == "ask" && $1 ~ /_PASSWORD$/ { print $1 }')
 }
 
 _configure_panel_offer() { # with Traefik on and no panel yet: offer it; configure installs it after provisioning
     if ! svc_enabled traefik || svc_enabled olivetin; then
-        answers_any PANEL && answer_refused "PANEL: the web panel is offered only with Traefik on and no panel yet"
+        # an answer that is what is so passes: the same answers file run again carries on
+        if answer PANEL; then
+            if svc_enabled olivetin && [[ "$REPLY_VAL" == yes ]]; then q_answered "Web panel" "installed already"
+            elif svc_enabled olivetin; then answer_refused "PANEL=no: the web panel is installed — configure does not take it away"
+            elif [[ "$REPLY_VAL" == yes ]]; then answer_refused "PANEL=yes: the web panel needs Traefik on (HTTPS)"
+            fi
+        fi
         return 0
     fi
     if answer PANEL; then panel_record "$REPLY_VAL"; q_answered "Web panel" "$REPLY_VAL"; return 0; fi

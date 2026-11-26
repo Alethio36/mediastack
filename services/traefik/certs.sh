@@ -57,7 +57,10 @@ own_cert_install() { # up: the recorded pair, checked, copied into Traefik's fol
     if ! sudo cmp -s "$cert" "$croot/traefik/certs/fullchain.pem" || ! sudo cmp -s "$key" "$croot/traefik/certs/privkey.pem"; then
         sudo install -m 600 "$cert" "$croot/traefik/certs/fullchain.pem"
         sudo install -m 600 "$key" "$croot/traefik/certs/privkey.pem"
-        ok "your certificate is in place (until $(own_cert_until "$cert")) — Traefik reloads it by itself"
+        # Traefik watches no certificate file: traefik_gen, next, restarts it to serve this one
+        # shellcheck disable=SC2034  # read by traefik_gen (services/traefik/edge.sh)
+        TRAEFIK_CERT_CHANGED=1
+        ok "your certificate is in place (until $(own_cert_until "$cert"))"
     fi
 }
 
