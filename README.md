@@ -589,6 +589,14 @@ from the webhook itself, named *Mediastack* with mediastack's icon:
 (uploaded from this host — no public address needed). Change either in
 Discord afterwards and it stays as you set it.
 
+Each arr and Prowlarr sends through three hub entries, because an entry
+sends every event as its one type: its news (grabs, imports, updates) as
+info, a failing health check as failure, and a check that recovered as
+success. Only failing checks are sent, not warnings, as the apps default.
+`wire apprise` keeps the three named `mediastack-apprise`,
+`mediastack-apprise-health` and `mediastack-apprise-restored`; the other
+settings in them are yours.
+
 **Your own look** (`brand`). The sender's name is the household's
 (`PORTAL_TITLE`), its icon `custom/branding/icon.png` when you put one
 there, and each message type's colour is yours to pick:

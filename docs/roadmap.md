@@ -708,6 +708,14 @@ agreed first:
       health messages should take the warning (or failure) colour — through
       the hub entry's type, a per-title rule, or whatever their Apprise
       settings offer (check their source first).
+      *Done (P5, 25 Nov 2026):* their source (Radarr's `Apprise.cs`, the
+      same in each Servarr app) sends every event of an entry with that
+      entry's one `NotificationType`. So three entries each: the news
+      (info), a failing check (failure; warnings stay off, the app's
+      default) and one restored (success); `wire apprise` makes the two new
+      ones, takes the health events off the old one, and keeps the three's
+      tag, type and events (`apprise_arr_hub`, Prowlarr through the same;
+      `test-notify`).
     - **`authentik_prepare` is called by name** from `up` and `enable`;
       with `<name>_provision` now found by name, see whether its part fits
       there (it needs the edge first). *Decided (P3, 25 Nov 2026): it stays

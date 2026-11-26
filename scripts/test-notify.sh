@@ -223,40 +223,69 @@ for bad in "" "ops" "ops t" "family t m" "ops t m --type loud" "ops t m --bogus"
     if (notify_send_cmd $bad) 2>/dev/null; then fail_ "notify send $bad must be refused"; fi; pass
 done
 
-# ---- an arr's hub entry carries mediastack's tag (wire apprise) ----
+# ---- an arr's hub entries: mediastack's tag, their Apprise type, their events (wire apprise) ----
 # An entry made before the ops/users split kept "activity", which no hub line
-# carries: every arr event was answered 424 and lost. --verify must name it,
-# a real run re-tags it and nothing else, and a right tag is left alone.
+# carries: every arr event was answered 424 and lost. And one entry sends every
+# event as its one type: "Health Check Failure" came as a blue info card (24 Nov
+# 2026). Three entries: the news (info), a failing check (failure), one restored
+# (success). --verify names what differs, a real run changes only that.
 notes='[{"id":3,"name":"yours","fields":[{"name":"tags","value":["mine"]}]},
- {"id":7,"name":"mediastack-apprise","fields":[{"name":"serverUrl","value":"http://gluetun:8000"},
-  {"name":"configurationKey","value":"mediastack"},{"name":"authPassword","value":"********"},
-  {"name":"tags","value":["activity"]}]}]'
-api() { echo "$1 $2" >> "$T/calls"; [[ "$1" == PUT ]] && printf '%s' "$4" > "$T/put"; return "${API_RC:-0}"; }
+ {"id":7,"name":"mediastack-apprise","onGrab":true,"onDownload":true,"onHealthIssue":true,"onHealthRestored":true,"onApplicationUpdate":true,
+  "fields":[{"name":"serverUrl","value":"http://gluetun:8000"},{"name":"configurationKey","value":"mediastack"},{"name":"authPassword","value":"********"},
+  {"name":"notificationType","value":0},{"name":"tags","value":["activity"]}]}]'
+ALL="$APPRISE_ARR_NEWS onHealthIssue onHealthRestored"
+api() { echo "$1 $2" >> "$T/calls"; [[ "$1" == PUT ]] && printf '%s' "$4" > "$T/put"; [[ "$1" == POST ]] && printf '%s\n' "$4" >> "$T/post"; return "${API_RC:-0}"; }
+sync_() { apprise_entry_sync radarr http://h/api/v3 k "$1" mediastack-apprise info "$APPRISE_ARR_NEWS" "$ALL"; }
 : > "$T/calls"; WIRE_DRY=1; WIRE_CHANGES=0
-apprise_entry_tag radarr http://h/api/v3 k "$notes" > "$T/o"
-grep -qF 'would: radarr: re-tag its hub entry ["activity"] -> ["ops"]' "$T/o" || fail_ "--verify must name the stale tag: $(cat "$T/o")"; pass
+sync_ "$notes" > "$T/o"
+grep -qF 'would: radarr: its hub entry mediastack-apprise: re-tag ["activity"] -> ["ops"]; onHealthIssue off, onHealthRestored off' "$T/o" \
+    || fail_ "--verify names the stale tag and the health events the news entry still sends: $(cat "$T/o")"; pass
 (( WIRE_CHANGES == 1 )) && [[ ! -s "$T/calls" ]] || fail_ "--verify counts the drift and writes nothing"; pass
 : > "$T/calls"; WIRE_DRY=0; WIRE_CHANGES=0
-apprise_entry_tag radarr http://h/api/v3 k "$notes" > "$T/o"
+sync_ "$notes" > "$T/o"
 [[ "$(cat "$T/calls")" == "PUT http://h/api/v3/notification/7?forceSave=true" ]] \
     || fail_ "one PUT, to mediastack's entry, without the app's own test (forceSave): $(cat "$T/calls")"; pass
-[[ "$(jq -c '.fields | map({(.name): .value}) | add' "$T/put")" == '{"serverUrl":"http://gluetun:8000","configurationKey":"mediastack","authPassword":"********","tags":["ops"]}' ]] \
-    || fail_ "only the tags change; a masked secret goes back as-is: $(cat "$T/put")"; pass
-grep -q 'radarr: hub entry re-tagged to ops' "$T/o" || fail_ "the re-tag is reported"; pass
+[[ "$(jq -c '.fields | map({(.name): .value}) | add' "$T/put")" == '{"serverUrl":"http://gluetun:8000","configurationKey":"mediastack","authPassword":"********","notificationType":0,"tags":["ops"]}' ]] \
+    && [[ "$(jq -c '[.onGrab, .onDownload, .onApplicationUpdate, .onHealthIssue, .onHealthRestored]' "$T/put")" == '[true,true,true,false,false]' ]] \
+    || fail_ "only the tag and the health events change; a masked secret goes back as-is: $(cat "$T/put")"; pass
+grep -q 'radarr: its hub entry mediastack-apprise: re-tag' "$T/o" || fail_ "the change is reported"; pass
 : > "$T/calls"; WIRE_CHANGES=0
-apprise_entry_tag radarr http://h/api/v3 k "${notes/\[\"activity\"\]/[\"ops\"]}" > "$T/o"
-[[ ! -s "$T/calls" ]] && (( WIRE_CHANGES == 0 )) || fail_ "a right tag is left alone"; pass
+sync_ "[$(cat "$T/put")]" > "$T/o"
+[[ ! -s "$T/calls" ]] && (( WIRE_CHANGES == 0 )) && grep -q 'its hub entry mediastack-apprise is current (info)' "$T/o" || fail_ "a current entry is left alone"; pass
 WIRE_FAILS=0; API_RC=1
-apprise_entry_tag radarr http://h/api/v3 k "$notes" > "$T/o" 2>&1
-(( WIRE_FAILS == 1 )) || fail_ "a refused re-tag is a wire failure"; pass
+sync_ "$notes" > "$T/o" 2>&1
+(( WIRE_FAILS == 1 )) || fail_ "a refused change is a wire failure"; pass
 unset API_RC
-# both owners of a hub entry (each arr, and Prowlarr) check it, after any re-point
+# the two health entries are made when missing, each its own type and event
+SCHEMA='[{"implementation":"Apprise","name":"","onGrab":false,"onDownload":false,"onUpgrade":false,"onApplicationUpdate":false,"onHealthIssue":false,"onHealthRestored":false,
+  "includeHealthWarnings":false,"fields":[{"name":"serverUrl","value":""},{"name":"configurationKey","value":""},{"name":"notificationType","value":0},{"name":"tags","value":[]}]}]'
+hub_() { ( arr_key() { echo k; }; arr_url() { echo http://h; }; arr_apiver() { echo v3; }; svc_addr() { echo apprise:8000; }
+           addr_stale() { return 1; }
+           api() { echo "$1 $2" >> "$T/calls"
+                   case "$1 $2" in
+                       "GET http://h/api/v3/notification") printf '%s' "$CUR" ;;
+                       "GET http://h/api/v3/notification/schema") printf '%s' "$SCHEMA" ;;
+                       POST*) printf '%s\n' "$4" >> "$T/post"; echo '{}' ;;
+                   esac; }
+           apprise_arr_hub radarr "$APPRISE_ARR_NEWS" ) > "$T/o" 2>&1; }
+CUR="[$(cat "$T/put")]"; : > "$T/calls"; : > "$T/post"; WIRE_DRY=0
+hub_
+[[ "$(grep -c "^POST" "$T/calls")" == 2 ]] || fail_ "the two health entries are made: $(cat "$T/calls") $(cat "$T/o")"; pass
+[[ "$(jq -c 'select(.name=="mediastack-apprise-health") | [(.fields[]|select(.name=="notificationType").value), .onHealthIssue, .onHealthRestored, .onGrab, .includeHealthWarnings, (.fields[]|select(.name=="tags").value[0]), (.fields[]|select(.name=="serverUrl").value), (.fields[]|select(.name=="configurationKey").value)]' "$T/post")" \
+    == '[3,true,false,false,false,"ops","http://apprise:8000","mediastack"]' ]] \
+    || fail_ "a failing check: its own entry, type failure (red), errors only: $(cat "$T/post")"; pass
+[[ "$(jq -c 'select(.name=="mediastack-apprise-restored") | [(.fields[]|select(.name=="notificationType").value), .onHealthRestored, .onHealthIssue]' "$T/post")" == '[1,true,false]' ]] \
+    || fail_ "a restored check: its own entry, type success (green): $(cat "$T/post")"; pass
+[[ "$(grep -c 'notification/schema' "$T/calls")" == 1 ]] || fail_ "the schema read once for both"; pass
+# both owners of hub entries (each arr, and Prowlarr) go through the one function, Prowlarr with its own news
 body=$(declare -f wire_apprise)
-[[ "$(grep -c 'apprise_entry_tag' <<<"$body")" == 2 ]] || fail_ "wire_apprise must check the tag for the arrs and for prowlarr"; pass
-[[ "$(grep -c 'tag not checked' <<<"$body")" == 2 ]] || fail_ "a re-point must be re-read before the tag check (else the second PUT undoes it)"; pass
+[[ "$(grep -c 'apprise_arr_hub' <<<"$body")" == 2 ]] && grep -q 'apprise_arr_hub prowlarr "$APPRISE_PROWLARR_NEWS"' <<<"$body" \
+    || fail_ "wire_apprise checks the arrs' and Prowlarr's entries"; pass
+body=$(declare -f apprise_arr_hub)
+grep -q 'its hub entries not checked' <<<"$body" || fail_ "a re-point must be re-read before the entry check (else the second PUT undoes it)"; pass
 # the hub entry's address is re-pointed without the app's test too; arr_repoint
 # adds forceSave only when asked (a download client keeps its connection test)
-[[ "$(grep -c 'arr_repoint --force .* notification ' <<<"$body")" == 2 ]] || fail_ "both hub-entry re-points must pass --force"; pass
+grep -q 'arr_repoint --force .* notification ' <<<"$body" || fail_ "the hub entries' re-point passes --force"; pass
 : > "$T/calls"
 arr_repoint --force http://h/api/v3 k notification "$notes" mediastack-apprise "serverUrl=http://apprise:8000" >/dev/null
 [[ "$(cat "$T/calls")" == "PUT http://h/api/v3/notification/7?forceSave=true" ]] || fail_ "--force saves with forceSave: $(cat "$T/calls")"; pass

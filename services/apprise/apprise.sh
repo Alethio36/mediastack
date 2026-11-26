@@ -5,28 +5,101 @@
 # entrypoint's helpers at call time.
 
 # ---- apprise: the notification hub (sending, routing, `notify`: lib/notify.sh) ----
-# The hub entry each arr (and Prowlarr) keeps is mediastack's — named
-# mediastack-apprise — and so is its tag: it decides which stream the events
-# reach. An entry made before the ops/users split still says "activity", which
-# no hub line carries, so the hub answers 424 and the event is lost. Checked on
-# every run like the entry's address; everything else in it stays as you set it.
-# Both are saved with forceSave: the app's own test would send a message out to
-# your endpoint, and a slow one must not block where mediastack points the
-# entry (delivery is what `notify test` checks).
+# The hub entries each arr (and Prowlarr) keeps are mediastack's, by name, and
+# so are their tag (the stream their events reach: an entry made before the
+# ops/users split said "activity", which no hub line carries — 424, the event
+# lost), their Apprise type and which events each sends. The app sends every
+# event of an entry as that entry's one type (Servarr's Apprise.cs: one
+# NotificationType per entry), and the type is the card's colour: a single
+# entry made "Health Check Failure" a blue info card (seen 24 Nov 2026). So
+# three: the news (info), a health check failing (failure — only errors: its
+# "include health warnings" stays off) and one restored (success). Checked on
+# every run like their address; every other setting in them stays as you set
+# it. Saved with forceSave: the app's own test would send a message out to
+# your endpoint, and a slow one must not block where mediastack points them
+# (delivery is what `notify test` checks).
 APPRISE_ENTRY_TAGS='["ops"]'
-apprise_entry_tag() { # apprise_entry_tag <svc> <api base> <key> <notification list JSON>
-    local s="$1" base="$2" key="$3" notes="$4" have entry out
-    have=$(arr_entry_field "$notes" mediastack-apprise tags)
-    [[ "$have" == "$APPRISE_ENTRY_TAGS" ]] && { ok "$s: its hub entry is tagged ops"; return 0; }
-    w_would "$s: re-tag its hub entry ${have:-<none>} -> $APPRISE_ENTRY_TAGS (the stream its events belong to)" || return 0
-    # the entry as read, only its tags changed: masked secrets go back as-is
-    entry=$(jq -c --argjson t "$APPRISE_ENTRY_TAGS" \
-        '[.[]? | select(.name == "mediastack-apprise")][0] | .fields |= map(if .name == "tags" then .value = $t else . end)' <<<"$notes")
-    if out=$(api PUT "$base/notification/$(jq -r '.id' <<<"$entry")?forceSave=true" "$key" "$entry"); then
-        ok "$s: hub entry re-tagged to ops"
+APPRISE_TYPES=(info success warning failure)   # Servarr's AppriseNotificationType: the select's values 0-3, in order
+APPRISE_ARR_ENTRIES=(   # name<TAB>type<TAB>events ("-": the app's news events, given per app)
+    "mediastack-apprise"$'\t'"info"$'\t'"-"
+    "mediastack-apprise-health"$'\t'"failure"$'\t'"onHealthIssue"
+    "mediastack-apprise-restored"$'\t'"success"$'\t'"onHealthRestored"
+)
+APPRISE_ARR_NEWS="onGrab onDownload onUpgrade onReleaseImport onImportComplete onApplicationUpdate"   # an arr's
+APPRISE_PROWLARR_NEWS="onApplicationUpdate"                                                         # Prowlarr's
+
+apprise_type_num() { local i; for i in "${!APPRISE_TYPES[@]}"; do [[ "${APPRISE_TYPES[$i]}" == "$1" ]] && { echo "$i"; return 0; }; done; return 1; }
+
+apprise_entry_want() { # apprise_entry_want ENTRY-JSON NAME TYPE "EVENTS" "ALL-EVENTS" -> the entry as mediastack wants it: its name, tag and type, and of the hub's events exactly its own on
+    jq -c --arg n "$2" --argjson ty "$(apprise_type_num "$3")" --argjson t "$APPRISE_ENTRY_TAGS" --arg on "$4" --arg all "$5" '
+        ($on | split(" ")) as $on | ($all | split(" ")) as $all
+        | .name = $n
+        | .fields = [ .fields[] | if .name == "tags" then .value = $t elif .name == "notificationType" then .value = $ty else . end ]
+        | reduce $all[] as $k (.; if has($k) then .[$k] = ($on | index($k) != null) else . end)' <<<"$1"
+}
+apprise_entry_drift() { # apprise_entry_drift HAVE-JSON WANT-JSON "ALL-EVENTS" -> what differs, in words ("" when nothing)
+    [[ -n "$1" && -n "$2" ]] || return 0
+    jq -rn --argjson h "$1" --argjson w "$2" --arg all "$3" '
+        def f($e; $n): [$e.fields[]? | select(.name == $n) | .value][0];
+        ["info","success","warning","failure"] as $ty
+        | [ (if f($h; "tags") != f($w; "tags") then "re-tag \(f($h; "tags") // [] | tojson) -> \(f($w; "tags") | tojson)" else empty end),
+            (if f($h; "notificationType") != f($w; "notificationType") then "type \($ty[f($h; "notificationType") // 0] // "?") -> \($ty[f($w; "notificationType")])" else empty end),
+            ([$all | split(" ")[] | . as $k | select($w | has($k)) | select($h[$k] != $w[$k]) | "\(.) \(if $w[.] then "on" else "off" end)"] | if length > 0 then join(", ") else empty end)
+          ] | join("; ")'
+}
+apprise_entry_sync() { # apprise_entry_sync SVC API-BASE KEY LIST-JSON NAME TYPE "EVENTS" "ALL-EVENTS" — an existing entry made what mediastack wants: tag, type, events
+    local s="$1" base="$2" key="$3" name="$5" have want drift out
+    have=$(jq -c --arg n "$name" '[.[]? | select(.name == $n)][0]' <<<"$4")
+    want=$(apprise_entry_want "$have" "$name" "$6" "$7" "$8")
+    drift=$(apprise_entry_drift "$have" "$want" "$8")
+    [[ -n "$drift" ]] || { ok "$s: its hub entry $name is current ($6)"; return 0; }
+    w_would "$s: its hub entry $name: $drift" || return 0
+    # the entry as read, only those changed: masked secrets go back as-is
+    if out=$(api PUT "$base/notification/$(jq -r '.id' <<<"$have")?forceSave=true" "$key" "$want"); then
+        ok "$s: its hub entry $name: $drift"
     else
-        wfail "$s: re-tagging its hub entry was rejected — $(oneline "$out")"
+        wfail "$s: its hub entry $name was refused ($drift) — $(oneline "$out")"
     fi
+}
+
+apprise_arr_hub() { # apprise_arr_hub SVC "NEWS-EVENTS" — the app's hub entries (APPRISE_ARR_ENTRIES): re-pointed, made current, made when missing
+    local s="$1" news="$2" key url ver notes row name type evs all have schema="" tmpl body resp st
+    key=$(arr_key "$s"); url=$(arr_url "$s"); ver=$(arr_apiver "$s")
+    [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; return 0; }
+    notes=$(api GET "$url/api/$ver/notification" "$key") \
+        || { wfail "$s: could not read its notifications — nothing created [$(oneline "$notes")]"; return 0; }
+    all="$news onHealthIssue onHealthRestored"
+    for row in "${APPRISE_ARR_ENTRIES[@]}"; do
+        IFS=$'\t' read -r name type evs <<<"$row"
+        [[ "$evs" != - ]] || evs=$news
+        have=$(jq -r '[.[].name] | join(" ")' <<<"$notes" 2>/dev/null || true)
+        if [[ " $have " == *" $name "* ]]; then
+            st=$(addr_of "$(arr_entry_field "$notes" "$name" serverUrl)")
+            if addr_stale "$s -> apprise" apprise "$st"; then
+                addr_repoint "$s -> apprise" "$st" "$(svc_addr apprise)" -- \
+                    arr_repoint --force "$url/api/$ver" "$key" notification "$notes" "$name" "serverUrl=http://$(svc_addr apprise)"
+                # the re-point changed the entry: the rest is checked against what it is now
+                if (( ! WIRE_DRY )); then
+                    notes=$(api GET "$url/api/$ver/notification" "$key") \
+                        || { wfail "$s: could not re-read its notifications — its hub entries not checked [$(oneline "$notes")]"; return 0; }
+                fi
+            fi
+            apprise_entry_sync "$s" "$url/api/$ver" "$key" "$notes" "$name" "$type" "$evs" "$all"
+            continue
+        fi
+        w_would "$s: notify the hub of ${evs// /, } as $type (entry $name, tag ops)" || continue
+        if [[ -z "$schema" ]]; then
+            schema=$(api GET "$url/api/$ver/notification/schema" "$key") \
+                || { wfail "$s: could not read its notification types — nothing created [$(oneline "$schema")]"; return 0; }
+        fi
+        tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
+        [[ -n "$tmpl" ]] || { wfail "$s: its API offers no Apprise notification type — is the image very old?"; return 0; }
+        body=$(apprise_entry_want "$tmpl" "$name" "$type" "$evs" "$all" | jq -c --arg srv "http://$(svc_addr apprise)" '
+            .fields = [ .fields[] | if .name == "serverUrl" then .value = $srv elif .name == "configurationKey" then .value = "mediastack" else . end ]')
+        resp=$(api POST "$url/api/$ver/notification" "$key" "$body") \
+            && ok "$s now notifies the hub of ${evs// /, } ($type)" \
+            || wfail "$s: notification connection $name rejected: $(head -c200 <<<"$resp")"
+    done
 }
 
 apprise_brand_apply() { # the kit (lib/brand.sh) reaches the running hub: its colours, mediastack's entries, the Discord senders
@@ -96,89 +169,13 @@ wire_apprise() {
         fi
     fi
 
-    # --- each arr notifies the hub (tag: ops); create-if-missing by
-    # name, schema-driven so per-type event flags stay version-proof
-    local s ty key url ver have schema tmpl body resp
+    # --- each arr, and Prowlarr, notifies the hub (tag: ops): its three entries
+    local s ty
     for s in $(arr_instances); do
         ty=$(svc_label "$s" mediastack.arrtype)
         arr_known "$ty" || continue
-        key=$(arr_key "$s"); url=$(arr_url "$s"); ver=$(arr_apiver "$s")
-        [[ -n "$key" ]] || { wfail "$s: no ApiKey readable — re-run wire in a minute"; continue; }
-        local notes; notes=$(api GET "$url/api/$ver/notification" "$key") \
-            || { wfail "$s: could not read its notifications — nothing created [$(oneline "$notes")]"; continue; }
-        have=$(jq -r '[.[].name] | join(" ")' <<<"$notes" 2>/dev/null || true)
-        if [[ " $have " == *" mediastack-apprise "* ]]; then
-            ok "$s already notifies the hub"
-            local nst; nst=$(addr_of "$(arr_entry_field "$notes" mediastack-apprise serverUrl)")
-            if addr_stale "$s -> apprise" apprise "$nst"; then
-                addr_repoint "$s -> apprise" "$nst" "$(svc_addr apprise)" -- \
-                    arr_repoint --force "$url/api/$ver" "$key" notification "$notes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
-                # the re-point changed the entry: the tag check works from what it is now
-                if (( ! WIRE_DRY )); then
-                    notes=$(api GET "$url/api/$ver/notification" "$key") \
-                        || { wfail "$s: could not re-read its notifications — tag not checked [$(oneline "$notes")]"; continue; }
-                fi
-            fi
-            apprise_entry_tag "$s" "$url/api/$ver" "$key" "$notes"
-            continue
-        fi
-        if ! w_would "$s: notify the hub on grab/import/health (tag: ops)"; then continue; fi
-        schema=$(api GET "$url/api/$ver/notification/schema" "$key") \
-            || { wfail "$s: could not read its notification types — nothing created [$(oneline "$schema")]"; continue; }
-        tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
-        [[ -n "$tmpl" ]] || { wfail "$s: its API offers no Apprise notification type — is the image very old?"; continue; }
-        body=$(jq -c --arg srv "http://$(svc_addr apprise)" '
-            .name = "mediastack-apprise"
-            | .fields = [ .fields[]
-                | if .name == "serverUrl"         then .value = $srv
-                  elif .name == "configurationKey" then .value = "mediastack"
-                  elif .name == "tags"             then .value = ["ops"]
-                  else . end ]
-            | reduce ("onGrab","onDownload","onUpgrade","onReleaseImport",
-                      "onImportComplete","onHealthIssue","onHealthRestored",
-                      "onApplicationUpdate") as $k
-                (.; if has($k) then .[$k] = true else . end)' <<<"$tmpl")
-        resp=$(api POST "$url/api/$ver/notification" "$key" "$body") \
-            && ok "$s now notifies the hub" \
-            || wfail "$s: notification connection rejected: $(head -c200 <<<"$resp")"
+        apprise_arr_hub "$s" "$APPRISE_ARR_NEWS"
     done
     # prowlarr too — indexer/health events are ops signal
-    if svc_enabled prowlarr; then
-        key=$(arr_key prowlarr); url=$(arr_url prowlarr); ver=$(arr_apiver prowlarr)
-        local pnotes=""
-        if ! pnotes=$(api GET "$url/api/$ver/notification" "$key"); then
-            wfail "prowlarr: could not read its notifications — nothing created [$(oneline "$pnotes")]"
-        elif [[ " $(jq -r '[.[].name] | join(" ")' <<<"$pnotes" 2>/dev/null) " == *" mediastack-apprise "* ]]; then
-            ok "prowlarr already notifies the hub"
-            local pst pok=1; pst=$(addr_of "$(arr_entry_field "$pnotes" mediastack-apprise serverUrl)")
-            if addr_stale "prowlarr -> apprise" apprise "$pst"; then
-                addr_repoint "prowlarr -> apprise" "$pst" "$(svc_addr apprise)" -- \
-                    arr_repoint --force "$url/api/$ver" "$key" notification "$pnotes" mediastack-apprise "serverUrl=http://$(svc_addr apprise)"
-                if (( ! WIRE_DRY )); then
-                    pnotes=$(api GET "$url/api/$ver/notification" "$key") \
-                        || { wfail "prowlarr: could not re-read its notifications — tag not checked [$(oneline "$pnotes")]"; pok=0; }
-                fi
-            fi
-            if (( pok )); then apprise_entry_tag prowlarr "$url/api/$ver" "$key" "$pnotes"; fi
-        elif w_would "prowlarr: notify the hub on indexer/health events (tag: ops)"; then
-            schema=$(api GET "$url/api/$ver/notification/schema" "$key" || true)   # soft read: create path only: an empty schema FAILs below, nothing created
-            tmpl=$(jq -c '[.[] | select(.implementation=="Apprise")][0] // empty' <<<"$schema" 2>/dev/null)
-            if [[ -z "$tmpl" ]]; then
-                wfail "prowlarr: its API offers no Apprise notification type — is the image very old?"
-            else
-                body=$(jq -c --arg srv "http://$(svc_addr apprise)" '
-                    .name = "mediastack-apprise"
-                    | .fields = [ .fields[]
-                        | if .name == "serverUrl"          then .value = $srv
-                          elif .name == "configurationKey" then .value = "mediastack"
-                          elif .name == "tags"             then .value = ["ops"]
-                          else . end ]
-                    | reduce ("onHealthIssue","onHealthRestored","onApplicationUpdate") as $k
-                        (.; if has($k) then .[$k] = true else . end)' <<<"$tmpl")
-                resp=$(api POST "$url/api/$ver/notification" "$key" "$body") \
-                    && ok "prowlarr now notifies the hub" \
-                    || wfail "prowlarr: notification connection rejected: $(head -c200 <<<"$resp")"
-            fi
-        fi
-    fi
+    if svc_enabled prowlarr; then apprise_arr_hub prowlarr "$APPRISE_PROWLARR_NEWS"; fi
 }
