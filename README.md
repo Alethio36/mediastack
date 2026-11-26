@@ -271,6 +271,12 @@ base arrs, prowlarr, jellyfin, search, traefik, seerr.
 
 ## Command reference
 
+One change at a time: a command that changes the stack — starts or stops it,
+or changes `.env` or an app's settings — waits up to two minutes while an
+update, a backup or another such command runs, then refuses and says so.
+Commands that only read (`status`, `logs`, `doctor`, `credentials` …) run any
+time. The scheduled jobs wait their turn the same way.
+
 Setup
 | command | what it does |
 |---|---|

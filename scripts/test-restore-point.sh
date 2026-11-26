@@ -282,7 +282,7 @@ rm -rf "$T/sk"/*; mkdir -p "$T/sk/$(date -d '+120 hours 30 minutes' +%Y%m%d-%H%M
 out=$(sched) || true
 [[ "$out" == *"NOTIFY Scheduled backup skipped"* && "$out" != *TAKE* ]] || fail_ "the lock held past the wait: skipped, alerted: $out"; pass
 out=$( ( MAINT_LOCKED=0; maint_lock backup 0 ) 2>&1 ) && fail_ "a run you start refuses while the lock is held"
-[[ "$out" == *"Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — backup refused"* ]] || fail_ "says why: $out"; pass
+[[ "$out" == *"Another run holds the stack (an update, a backup, the boot guard, or a change such as up, configure or set-credentials) — backup refused"* ]] || fail_ "says why: $out"; pass
 wait "$holder"
 # a short hold (the 5-minute leak check) is waited out by a run you start, not refused
 MAINT_SHORT_WAIT=5; ( exec 8<"$MAINT_LOCK"; flock 8; sleep 1 ) & holder=$!; sleep 0.3

@@ -461,7 +461,9 @@ cmd_menu() {
         [[ "$pick" =~ ^[0-9]+$ ]] && (( pick>=1 && pick<=${#opts[@]} )) || { warn "Pick 1-${#opts[@]}"; continue; }
         local cmd="${opts[$((pick-1))]}"
         [[ "$cmd" == exit ]] && return 0
-        "cmd_${cmd//-/_}" || warn "'$cmd' exited with an error (see above)"
+        # each through the dispatcher, a process of its own: it takes the lock as its
+        # registry line says, and lets go when it ends (the menu itself holds nothing)
+        bash "$SCRIPT_DIR/mediastack.sh" "$cmd" || warn "'$cmd' exited with an error (see above)"
     done
 }
 
@@ -1237,7 +1239,7 @@ cmd_set_user_facing() {
 # ------------------------------------------------------------ dispatcher --
 
 # ---- verb registry ----
-# ONE line per verb: verb~usage~args~group~description (~ separates fields; main() dispatches
+# ONE line per verb: verb~usage~args~group~description~lock (~ separates fields; main() dispatches
 # usage text may contain |). main() dispatches from it (cmd_<verb>, dashes as
 # underscores), the args column is the
 # verb's argument contract, and help renders the table — so a verb cannot
@@ -1250,62 +1252,69 @@ cmd_set_user_facing() {
 #          free            the verb parses its own (its `*)` arm dies on unknown input)
 #   group: Setup Run Maintain Connect Check Other Internal — Internal verbs
 #          exist for the panel, timers and units and are listed last.
+#   lock:  the maintenance lock (lib/backup.sh), so nothing changes the stack
+#          while an update, a backup or another change has it:
+#          lock  main() takes it before the verb runs (refused after a short
+#                wait while another run holds it) — anything that starts,
+#                stops or changes the stack, .env or the apps' settings
+#          own   the verb takes it itself (a timer's run waits, or skips and says so)
+#          read  never takes it: it reads, or changes nothing the lock guards
 VERBS=(
-    "help~help~~Other~This list."
-    "install~install [--answers FILE] [--domain D] [--services a,b] [--signin X]~free~Setup~Install host dependencies (docker, jq, ...), then configure; with answers given it asks nothing (docs/design-answers.md). Run once."
-    "configure~configure [--answers FILE] [--domain D] [--services a,b] [--signin X]~free~Setup~Interactive setup wizard, quick or full: .env, users, folders; --answers: questions answered ahead (docs/design-answers.md). Safe to re-run."
-    "add-mount~add-mount~none~Setup~Guided NFS/SMB mount on this host (fstab automount + poison layer)."
-    "up~up~none~Run~Start the stack (everything enabled in COMPOSE_PROFILES)."
-    "down~down~none~Run~Stop the stack and pause its scheduled jobs until up. Configs and data are untouched."
-    "enable~enable <svc>~max=1~Run~Turn one service on (dependencies come along) and start it as up does (the leak gate first)."
-    "disable~disable <svc>~max=1~Run~Turn one service off (refused while others depend on it)."
-    "status~status [svc]~max=1~Run~Overview table of every service, or a deep view of one."
-    "logs~logs <svc> [--no-follow]~free~Run~Follow one service's logs (--no-follow: bounded snapshot)."
-    "update~update [svc] [--to TAG] [--dry-run|--now]~free~Maintain~Container images: backup, pull, apply (toggles + pins respected)."
-    "apply-timer~apply-timer~none~Maintain~Install/refresh the systemd timers from UPDATE_SCHEDULE, BACKUP_SCHEDULE, MANIFEST_SCHEDULE and DOCTOR_SCHEDULE."
-    "backup~backup [--note TEXT] | verify [TS] | list [svc]~free~Maintain~Take a restore point now (cold); 'verify' checks checksums and archives; 'list' shows every point (kind, note, a service's version). The timer runs 'backup --auto'."
-    "manifest~manifest [--accept|diff [A [B]]|find <text>]~free~Maintain~Snapshot the media library now; 'diff' shows what was lost between snapshots; 'find' says when a path was last seen."
-    "restore~restore --service <svc>|--all [--from TS]~free~Maintain~Restore configs + image from a restore point."
-    "rollback~rollback <svc> [--from TS] [--yes]~free~Maintain~Return one service to the image it ran before (its config with it) and pin it there; --from picks a point. Asks first."
-    "unpin~unpin <svc>~max=1~Maintain~Release a pinned service back to normal updates."
-    "upgrade~upgrade~none~Maintain~Mediastack itself: git pull + .env migration, then says whether up has anything to apply (images stay put: update)."
-    "wire~wire [app] [--dry-run|--verify]~free~Connect~Connect the apps to each other; idempotent, GUI changes never overwritten (addresses it made follow VPN toggles)."
-    "invite~invite [--expires 1|7|30] [--email ADDRESS]~free~Connect~Mint an invitation (the portal's, or Wizarr's) and print the ready-to-share URL; with the portal and working email, --email sends it."
-    "credentials~credentials [service|--all]~max=1~Connect~The stack's own logins and the keys your apps ask for; one service's every secret, or every service's (--all)."
-    "set-credentials~set-credentials <target|all>~max=1~Connect~Rotate a stored login everywhere it lives, atomically."
-    "rotate-secrets~rotate-secrets~none~Connect~Give every secret the stack made for itself a new value, rewire what holds it, prove it (docs/design-rotate.md)."
-    "reset-password~reset-password <user>~max=1~Connect~Someone locked out: the portal's single-use sign-in link, or with Wizarr its single-use reset link."
-    "signout~signout <user>~max=1~Connect~Sign someone out of Jellyfin on every device (each goes to sign-in on its next request); their password is not changed."
-    "access~access [list [user]] | access tier <app> frontend|admin [--yes] | access grant|revoke <user> <app> | access admin <user> on|off | access portal <user> on|off [--yes]~max=4~Connect~Who may open which app behind the portal: list them (or one person's), move an app between the household (frontend) and admins only (admin), give one person one app (grant) and take it back (revoke), make a person an admin (admin on) and take it back (admin off), or let an admin manage the portal itself, authentik's admin screens (portal on|off)."
-    "set-email~set-email <user> <address> [--yes]~free~Connect~An admin changes a person's portal email; Kavita follows. A shared address warns and asks (--yes overrides)."
-    "users~users~none~Connect~The portal's people: username, name, email, groups, and whether they can sign in."
-    "email~email [status|test <address>]~free~Connect~The portal's outgoing email: status, or send a real test message (docs/email.md)."
-    "link-account~link-account <portal-user>~max=1~Connect~A person's existing Jellyfin/Kavita/Audiobookshelf accounts become their portal account (history kept)."
-    "notify~notify [status|test [stream]|set <stream>|clear <stream>|send <stream> <title> <message> [--type T]]~free~Connect~Notification streams (ops, users): status, test, change or clear a stream's URLs, send your own message."
-    "brand~brand [status|colour <type> <#hex>|default|accent <#hex>|default|icon|logo|background <file>|default|app-icon <svc> <file.png>|default]~free~Connect~The household's kit: the name, icon, logo, background, app icons and colours — show them, or change one (checked, then applied at once to the messages and the portal)."
-    "set-user-facing~set-user-facing [<svc> true|false]~max=2~Connect~Show or change which services notify the household on update (the 'users' stream)."
-    "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login)."
-    "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift)."
-    "support~support [--note TEXT] [--logs SVC,...] [--custom] [--host-events]~free~Check~One text file to send to whoever helps you: the system, settings (no secrets), the stack, reachability, doctor, wire --verify and recent runs — redacted, checked, never sent by itself (--logs, --custom, --host-events add more)."
-    "doctor~doctor [--scheduled]~allow=--scheduled~Check~Full health/permission/port/backup audit; every failure states its fix (--scheduled: the timer's run — problems go to ops, the run itself succeeds)."
-    "audit~audit [status|on|off|report [--since DATE] [--path TEXT]]~free~Check~Deletion attribution (opt-in): who deleted or renamed media; 'report' reads the history, 'status' proves it live."
-    "leak-test~leak-test [--killswitch|--local]~allow=--killswitch,--local max=1~Check~Prove no VPN'd service can leak; a leak stops them (--killswitch: disruptive proof; --local: no outside party)."
-    "vpn~vpn [svc on|off] [--i-know]~max=3~Check~Show or change which services run behind the VPN; apply with: up."
-    "fix-perms~fix-perms [svc]~max=1~Check~Repair ownership of a service's config/cache/transcode folders from the UID map."
-    "new-service~new-service <name>~max=1~Other~Add your own service: asks image/port/VPN/folders, then enables and starts it."
-    "frontdoor-install~frontdoor-install~none~Other~Install the OliveTin web panel over the safe verbs."
-    "uninstall~uninstall [--nuke]~allow=--nuke~Other~Remove the stack (tiered; --nuke: one confirmed shot). Media and backups are never touched."
-    "menu~menu~none~Other~Interactive menu wrapping the common verbs."
-    "list~list [--json]~free~Internal~Enabled services, one per line (--json: panel entity records)."
-    "vpn-apply~vpn-apply <svc> on|off~max=2~Internal~Set a service's VPN membership AND apply it (panel button)."
-    "vpn-guard~vpn-guard [--boot]~allow=--boot~Internal~Start the VPN group through the leak gate (boot/daemon unit)."
-    "vpn-watch~vpn-watch [--full]~allow=--full~Internal~The 5-minute leak check; starts any VPN'd service that is not running, through the gate (--full: the hourly run)."
-    "questionnaire~questionnaire [--fresh] [--answers FILE] | --for SVC...~free~Internal~configure's questions (--for: those of the services enable brings), in their own process: they record answers in .env and nothing else (exit 0 done, 130 cancelled, 3 no terminal, 4 the answers file's problems)."
-    "host-identity~host-identity~none~Internal~Refresh the record of this host's own address that leak-test compares against (daily timer)."
-    "unit-failed~unit-failed <unit>~max=1~Internal~Tell ops a scheduled or boot run failed (systemd's OnFailure hook)."
-    "frontdoor-refresh~frontdoor-refresh~none~Internal~Regenerate the panel's config and entity files."
-    "audit-extract~audit-extract~none~Internal~Copy new deletion events from auditd's rotating log into the durable log (hourly timer)."
-    "people-sync~people-sync~none~Internal~With the portal: the apps' own accounts follow it (every 15 minutes) — Navidrome's music apps stop for anyone it no longer lets open Navidrome; Jellyfin, Kavita and Audiobookshelf admin rights follow its admin group."
+    "help~help~~Other~This list.~read"
+    "install~install [--answers FILE] [--domain D] [--services a,b] [--signin X]~free~Setup~Install host dependencies (docker, jq, ...), then configure; with answers given it asks nothing (docs/design-answers.md). Run once.~lock"
+    "configure~configure [--answers FILE] [--domain D] [--services a,b] [--signin X]~free~Setup~Interactive setup wizard, quick or full: .env, users, folders; --answers: questions answered ahead (docs/design-answers.md). Safe to re-run.~lock"
+    "add-mount~add-mount~none~Setup~Guided NFS/SMB mount on this host (fstab automount + poison layer).~lock"
+    "up~up~none~Run~Start the stack (everything enabled in COMPOSE_PROFILES).~lock"
+    "down~down~none~Run~Stop the stack and pause its scheduled jobs until up. Configs and data are untouched.~lock"
+    "enable~enable <svc>~max=1~Run~Turn one service on (dependencies come along) and start it as up does (the leak gate first).~lock"
+    "disable~disable <svc>~max=1~Run~Turn one service off (refused while others depend on it).~lock"
+    "status~status [svc]~max=1~Run~Overview table of every service, or a deep view of one.~read"
+    "logs~logs <svc> [--no-follow]~free~Run~Follow one service's logs (--no-follow: bounded snapshot).~read"
+    "update~update [svc] [--to TAG] [--dry-run|--now]~free~Maintain~Container images: backup, pull, apply (toggles + pins respected).~own"
+    "apply-timer~apply-timer~none~Maintain~Install/refresh the systemd timers from UPDATE_SCHEDULE, BACKUP_SCHEDULE, MANIFEST_SCHEDULE and DOCTOR_SCHEDULE.~lock"
+    "backup~backup [--note TEXT] | verify [TS] | list [svc]~free~Maintain~Take a restore point now (cold); 'verify' checks checksums and archives; 'list' shows every point (kind, note, a service's version). The timer runs 'backup --auto'.~own"
+    "manifest~manifest [--accept|diff [A [B]]|find <text>]~free~Maintain~Snapshot the media library now; 'diff' shows what was lost between snapshots; 'find' says when a path was last seen.~read"
+    "restore~restore --service <svc>|--all [--from TS]~free~Maintain~Restore configs + image from a restore point.~lock"
+    "rollback~rollback <svc> [--from TS] [--yes]~free~Maintain~Return one service to the image it ran before (its config with it) and pin it there; --from picks a point. Asks first.~lock"
+    "unpin~unpin <svc>~max=1~Maintain~Release a pinned service back to normal updates.~lock"
+    "upgrade~upgrade~none~Maintain~Mediastack itself: git pull + .env migration, then says whether up has anything to apply (images stay put: update).~lock"
+    "wire~wire [app] [--dry-run|--verify]~free~Connect~Connect the apps to each other; idempotent, GUI changes never overwritten (addresses it made follow VPN toggles).~lock"
+    "invite~invite [--expires 1|7|30] [--email ADDRESS]~free~Connect~Mint an invitation (the portal's, or Wizarr's) and print the ready-to-share URL; with the portal and working email, --email sends it.~read"
+    "credentials~credentials [service|--all]~max=1~Connect~The stack's own logins and the keys your apps ask for; one service's every secret, or every service's (--all).~read"
+    "set-credentials~set-credentials <target|all>~max=1~Connect~Rotate a stored login everywhere it lives, atomically.~lock"
+    "rotate-secrets~rotate-secrets~none~Connect~Give every secret the stack made for itself a new value, rewire what holds it, prove it (docs/design-rotate.md).~lock"
+    "reset-password~reset-password <user>~max=1~Connect~Someone locked out: the portal's single-use sign-in link, or with Wizarr its single-use reset link.~read"
+    "signout~signout <user>~max=1~Connect~Sign someone out of Jellyfin on every device (each goes to sign-in on its next request); their password is not changed.~read"
+    "access~access [list [user]] | access tier <app> frontend|admin [--yes] | access grant|revoke <user> <app> | access admin <user> on|off | access portal <user> on|off [--yes]~max=4~Connect~Who may open which app behind the portal: list them (or one person's), move an app between the household (frontend) and admins only (admin), give one person one app (grant) and take it back (revoke), make a person an admin (admin on) and take it back (admin off), or let an admin manage the portal itself, authentik's admin screens (portal on|off).~read"
+    "set-email~set-email <user> <address> [--yes]~free~Connect~An admin changes a person's portal email; Kavita follows. A shared address warns and asks (--yes overrides).~read"
+    "users~users~none~Connect~The portal's people: username, name, email, groups, and whether they can sign in.~read"
+    "email~email [status|test <address>]~free~Connect~The portal's outgoing email: status, or send a real test message (docs/email.md).~read"
+    "link-account~link-account <portal-user>~max=1~Connect~A person's existing Jellyfin/Kavita/Audiobookshelf accounts become their portal account (history kept).~read"
+    "notify~notify [status|test [stream]|set <stream>|clear <stream>|send <stream> <title> <message> [--type T]]~free~Connect~Notification streams (ops, users): status, test, change or clear a stream's URLs, send your own message.~lock"
+    "brand~brand [status|colour <type> <#hex>|default|accent <#hex>|default|icon|logo|background <file>|default|app-icon <svc> <file.png>|default]~free~Connect~The household's kit: the name, icon, logo, background, app icons and colours — show them, or change one (checked, then applied at once to the messages and the portal).~lock"
+    "set-user-facing~set-user-facing [<svc> true|false]~max=2~Connect~Show or change which services notify the household on update (the 'users' stream).~lock"
+    "traefik-setup~traefik-setup [--hosts|--certs]~allow=--hosts,--certs max=1~Connect~Configure the HTTPS edge (domain, token, staging/production, dashboard login).~lock"
+    "trash-sync~trash-sync [--dry-run]~allow=--dry-run~Connect~Sync TRaSH Guides quality profiles to the arrs (--dry-run previews drift).~lock"
+    "support~support [--note TEXT] [--logs SVC,...] [--custom] [--host-events]~free~Check~One text file to send to whoever helps you: the system, settings (no secrets), the stack, reachability, doctor, wire --verify and recent runs — redacted, checked, never sent by itself (--logs, --custom, --host-events add more).~read"
+    "doctor~doctor [--scheduled]~allow=--scheduled~Check~Full health/permission/port/backup audit; every failure states its fix (--scheduled: the timer's run — problems go to ops, the run itself succeeds).~read"
+    "audit~audit [status|on|off|report [--since DATE] [--path TEXT]]~free~Check~Deletion attribution (opt-in): who deleted or renamed media; 'report' reads the history, 'status' proves it live.~read"
+    "leak-test~leak-test [--killswitch|--local]~allow=--killswitch,--local max=1~Check~Prove no VPN'd service can leak; a leak stops them (--killswitch: disruptive proof; --local: no outside party).~lock"
+    "vpn~vpn [svc on|off] [--i-know]~max=3~Check~Show or change which services run behind the VPN; apply with: up.~lock"
+    "fix-perms~fix-perms [svc]~max=1~Check~Repair ownership of a service's config/cache/transcode folders from the UID map.~lock"
+    "new-service~new-service <name>~max=1~Other~Add your own service: asks image/port/VPN/folders, then enables and starts it.~lock"
+    "frontdoor-install~frontdoor-install~none~Other~Install the OliveTin web panel over the safe verbs.~lock"
+    "uninstall~uninstall [--nuke]~allow=--nuke~Other~Remove the stack (tiered; --nuke: one confirmed shot). Media and backups are never touched.~lock"
+    "menu~menu~none~Other~Interactive menu wrapping the common verbs.~read"
+    "list~list [--json]~free~Internal~Enabled services, one per line (--json: panel entity records).~read"
+    "vpn-apply~vpn-apply <svc> on|off~max=2~Internal~Set a service's VPN membership AND apply it (panel button).~lock"
+    "vpn-guard~vpn-guard [--boot]~allow=--boot~Internal~Start the VPN group through the leak gate (boot/daemon unit).~own"
+    "vpn-watch~vpn-watch [--full]~allow=--full~Internal~The 5-minute leak check; starts any VPN'd service that is not running, through the gate (--full: the hourly run).~own"
+    "questionnaire~questionnaire [--fresh] [--answers FILE] | --for SVC...~free~Internal~configure's questions (--for: those of the services enable brings), in their own process: they record answers in .env and nothing else (exit 0 done, 130 cancelled, 3 no terminal, 4 the answers file's problems).~read"
+    "host-identity~host-identity~none~Internal~Refresh the record of this host's own address that leak-test compares against (daily timer).~read"
+    "unit-failed~unit-failed <unit>~max=1~Internal~Tell ops a scheduled or boot run failed (systemd's OnFailure hook).~read"
+    "frontdoor-refresh~frontdoor-refresh~none~Internal~Regenerate the panel's config and entity files.~read"
+    "audit-extract~audit-extract~none~Internal~Copy new deletion events from auditd's rotating log into the durable log (hourly timer).~read"
+    "people-sync~people-sync~none~Internal~With the portal: the apps' own accounts follow it (every 15 minutes) — Navidrome's music apps stop for anyone it no longer lets open Navidrome; Jellyfin, Kavita and Audiobookshelf admin rights follow its admin group.~own"
 )
 
 verb_entry() { # verb_entry <verb> -> its registry line, rc 1 if unknown
@@ -1351,6 +1360,11 @@ main() {
         info "the stack was stopped with 'down' ($(stack_down_since)) — skipping '$cmd${*:+ $*}'; scheduled jobs resume after: ./mediastack.sh up"
         exit 0
     fi
+    case "${entry##*~}" in
+        lock) maint_lock "$cmd" 0 ;;   # held until this process ends; a child it starts runs inside the hold
+        own|read) ;;
+        *) die "registry: '$cmd' has no lock column (lock, own or read) — VERBS, mediastack.sh" ;;
+    esac
     "cmd_${cmd//-/_}" "$@"
 }
 

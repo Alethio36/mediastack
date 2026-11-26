@@ -165,6 +165,8 @@ jobs:
         run: scripts/test-env.sh
       - name: everything outside the repo is in the footprint registry (scripts/test-footprint.sh)
         run: scripts/test-footprint.sh
+      - name: the maintenance lock guards every verb that changes the stack (scripts/test-lock.sh)
+        run: scripts/test-lock.sh
       - name: the folders deleted or moved whole — roots of their own, kept roots kept, a move verified, the update's own point kept (scripts/test-roots.sh)
         run: scripts/test-roots.sh
       - name: where things live — the layout move and your compose files (scripts/test-layout.sh)

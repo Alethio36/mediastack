@@ -723,10 +723,17 @@ agreed first:
       included (NordVPN's gains the timeout F4 listed); gluetun's key check
       writes its own request into busybox `nc`, off every command line. The
       tests' 17 `curl` stubs became `scurl` stubs. `test-secrets` fails a
-      bare host `curl` (a call inside a container says why: `# curl-ok:`). *F3 (to do):* verbs that change the
-      stack (`down`, `restart`, `enable`/`disable`, `set-credentials`,
-      `configure`, nuke/uninstall, `brand` …) run without the maintenance
-      lock — a lock column in `VERBS`, taken by the dispatcher. *F4 (to do):*
+      bare host `curl` (a call inside a container says why: `# curl-ok:`). *F3, the lock (done):* verbs that
+      change the stack (`down`, `enable`/`disable`, `set-credentials`,
+      `configure`, nuke/uninstall, `brand`, `trash-sync`, `notify`, `vpn` …)
+      ran without the maintenance lock, so a nightly backup could start what
+      `down` had stopped, or copy a `.env` half rewritten. `VERBS` has a lock
+      column: `lock` (main() takes it before the verb), `own` (the verb takes
+      it itself: update, backup, vpn-guard, vpn-watch, people-sync — their
+      timers' waits) or `read`; a line without one is refused. The hold is
+      exported with the lock's descriptor, so the children a holder starts
+      (configure's up and wire) run inside it; the menu runs each verb
+      through the dispatcher. `test-lock`. *F4 (to do):*
       qBittorrent's rotation matches the first QBittorrent entry, not
       mediastack's (the shared resyncs do); the kill-switch proof checks no
       egress before the drop and reads a failed drop as "NOT working"; no

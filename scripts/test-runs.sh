@@ -39,7 +39,7 @@ source "$PWD/$lib"
 LOCAL_DIR=\$T/local; ENV_FILE=\$T/env; CGROUP_FILE=\$T/cgroup
 repo_owned() { :; }
 sudo() { :; }
-VERBS+=("fx~fx~free~Internal~fixture" "fxexec~fxexec~free~Internal~fixture" "fxchild~fxchild~free~Internal~fixture" "fxsleep~fxsleep~free~Internal~fixture")
+VERBS+=("fx~fx~free~Internal~fixture~read" "fxexec~fxexec~free~Internal~fixture~read" "fxchild~fxchild~free~Internal~fixture~read" "fxsleep~fxsleep~free~Internal~fixture~read")
 cmd_fx() {
     echo "out one"; echo "err one" >&2; printf '\e[32mOK\e[0m green\n'; echo "out two"
     echo "secret: hunter2hunter2"

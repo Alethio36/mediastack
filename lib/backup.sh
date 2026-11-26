@@ -68,11 +68,13 @@ backup_scheduled() {
 }
 
 # ------------------------------------------------------- maintenance lock --
-# Updates and backups stop and start the stack: two at once would fight over
-# it. One lock: a run you start refuses while another holds it; a timer's run
-# waits (MAINT_WAIT). Held until the process exits; re-entry (update's own
-# restore point) is a no-op, and so is a child the holder starts with
-# MAINT_LOCKED=1 (update's own wire --verify: a separate process, inside the hold).
+# Updates and backups stop and start the stack, and every verb that changes
+# it takes this lock too (the lock column of VERBS, mediastack.sh): two at once
+# would fight over it. A run you start refuses while another holds it; a
+# timer's run waits (MAINT_WAIT). Held until the process exits; re-entry
+# (update's own restore point) is a no-op, and so is a child the holder starts
+# (configure's up and wire, update's wire --verify): MAINT_LOCKED is exported
+# with the hold, and the lock's descriptor is inherited with it.
 MAINT_LOCK=/run/lock/mediastack-maintenance.lock
 MAINT_WAIT=21600   # seconds a timer's run waits: an update postponed for streams (UPDATE_DEFER_MAX_MIN) plus its run
 MAINT_SHORT_WAIT=120   # seconds a run you start waits: the 5-minute leak check is done well within it, a backup or update is not
@@ -83,15 +85,15 @@ maint_lock() { # maint_lock WHAT WAIT-SECONDS — 0: refuse at once when held; r
     exec 8<"$MAINT_LOCK"
     if ! flock -n 8; then
         if (( $2 == 0 )); then   # yours: a short hold (the leak check) is waited out, a long one refused
-            info "Another maintenance run holds the stack — $1 waits up to $(( MAINT_SHORT_WAIT / 60 )) min for it..."
+            info "Another run holds the stack — $1 waits up to $(( MAINT_SHORT_WAIT / 60 )) min for it..."
             flock -w "$MAINT_SHORT_WAIT" 8 \
-                || die "Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — $1 refused. Try again once it has finished."
+                || die "Another run holds the stack (an update, a backup, the boot guard, or a change such as up, configure or set-credentials) — $1 refused. Try again once it has finished."
         else
-            info "Another maintenance run holds the stack (an update, a backup, up, upgrade or the boot guard) — $1 waits for it (up to $(( $2 / 3600 )) hours)..."
+            info "Another run holds the stack (an update, a backup, or a change such as up or configure) — $1 waits for it (up to $(( $2 / 3600 )) hours)..."
             flock -w "$2" 8 || return 1
         fi
     fi
-    MAINT_LOCKED=1
+    export MAINT_LOCKED=1
 }
 
 maint_try_lock() { # take the maintenance lock if it is free -> 1 when someone holds it (never waits)
@@ -99,7 +101,7 @@ maint_try_lock() { # take the maintenance lock if it is free -> 1 when someone h
     [[ -e "$MAINT_LOCK" ]] || : > "$MAINT_LOCK"
     exec 8<"$MAINT_LOCK"
     flock -n 8 || return 1
-    MAINT_LOCKED=1
+    export MAINT_LOCKED=1
 }
 
 defer_while_streaming() { # defer_while_streaming WHAT — postpone while someone streams (UPDATE_DEFER_*); rc 1 = skip this run
